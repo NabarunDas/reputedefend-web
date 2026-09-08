@@ -1,0 +1,1 @@
+import type {MetadataRoute} from "next";export default function sitemap():MetadataRoute.Sitemap{if(process.env.VERCEL_ENV!=="production")return [];return ["/","/business-profile-recovery","/review-protection","/how-it-works","/about","/contact","/get-help","/privacy","/terms","/disclaimer"].map(url=>({url:`https://reputedefend.com${url}`,lastModified:new Date()}))}

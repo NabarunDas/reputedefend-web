@@ -1,0 +1,1 @@
+import type {MetadataRoute} from "next";export default function manifest():MetadataRoute.Manifest{return {name:"ReputeDefend",short_name:"ReputeDefend",description:"Practical reputation support for businesses.",start_url:"/",display:"standalone",background_color:"#f7f8f3",theme_color:"#0b6b52",icons:[{src:"/icon.svg",sizes:"any",type:"image/svg+xml"}]}}

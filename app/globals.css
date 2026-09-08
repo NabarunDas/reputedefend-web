@@ -14,3 +14,20 @@ button, input, textarea, select { font:inherit; }
 .section-title { font-family:var(--font-display), Arial, Helvetica, sans-serif; font-size:clamp(2.25rem, 4.5vw, 4.5rem); letter-spacing:-.06em; line-height:.96; font-weight:800; }
 .grid-lines { background-image:linear-gradient(to right, rgba(16,38,31,.06) 1px, transparent 1px); background-size:25% 100%; }
 @media (max-width:640px){ .container{width:min(100% - 32px,1180px)} .grid-lines{background-size:50% 100%} }
+.site-header { background:var(--paper); transition:background-color 220ms ease-out, border-color 220ms ease-out, box-shadow 220ms ease-out, backdrop-filter 220ms ease-out; }
+.site-header-scrolled { background:color-mix(in srgb, var(--paper) 88%, transparent); border-color:color-mix(in srgb, var(--line) 82%, transparent); box-shadow:0 8px 24px rgba(16,38,31,.04); backdrop-filter:blur(12px); }
+.nav-link { position:relative; display:inline-flex; transform:translateY(0); color:var(--ink); transition:color 200ms ease-out, transform 200ms ease-out; }
+.nav-link::after { content:""; position:absolute; right:0; bottom:-6px; left:0; height:1px; transform:scaleX(0); transform-origin:left; background:currentColor; transition:transform 200ms ease-out; }
+.nav-link:hover, .nav-link:focus-visible, .nav-link-active { color:var(--green-dark); transform:translateY(-1px); }
+.nav-link:hover::after, .nav-link:focus-visible::after, .nav-link-active::after { transform:scaleX(1); }
+.button-primary, .button-secondary { transition:transform 220ms ease-out, background-color 220ms ease-out, border-color 220ms ease-out, box-shadow 220ms ease-out, color 220ms ease-out; }
+.button-primary:hover { background:var(--green-dark); transform:translateY(-3px) scale(1.01); box-shadow:0 10px 22px rgba(8,77,61,.16); }
+.button-primary:active { transform:translateY(-1px) scale(.995); }
+.button-primary:focus-visible, .button-secondary:focus-visible { transform:translateY(0); }
+.button-arrow { transition:transform 220ms ease-out; }
+.button-primary:hover .button-arrow, .button-secondary:hover .button-arrow { transform:translateX(4px); }
+.button-secondary:hover { background:var(--surface); border-color:var(--green); transform:translateY(-1px); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior:auto; }
+  *, *::before, *::after { transition-duration:0.01ms !important; animation-duration:0.01ms !important; animation-iteration-count:1 !important; }
+}

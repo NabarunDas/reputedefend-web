@@ -13,7 +13,7 @@ export function validateEnquiry(raw:EnquiryInput):{valid:boolean;data?:EnquiryIn
  return {valid:true,data}
 }
 export async function deliverEnquiry(data:EnquiryInput):Promise<EnquiryResult>{
- if(process.env.ENQUIRY_PROVIDER_URL){return {ok:false,message:"The configured enquiry provider is not yet enabled in this build."}}
+ if(process.env.ENQUIRY_PROVIDER_URL){return {ok:false,message:"Enquiries are temporarily unavailable. Please try again shortly."}}
  if(process.env.NODE_ENV!=="production") return {ok:true,message:"Development enquiry recorded. In production, this will only confirm after delivery."}
  return {ok:false,message:"Enquiries are temporarily unavailable. Please try again shortly."}
 }

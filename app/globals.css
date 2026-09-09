@@ -23,6 +23,8 @@ button, input, textarea, select { font:inherit; }
 .nav-link::after { content:""; position:absolute; right:0; bottom:-6px; left:0; height:1px; transform:scaleX(0); transform-origin:left; background:currentColor; transition:transform 200ms ease-out; }
 .nav-link:hover, .nav-link:focus-visible, .nav-link-active { color:var(--green-dark); transform:translateY(-1px); }
 .nav-link:hover::after, .nav-link:focus-visible::after, .nav-link-active::after { transform:scaleX(1); }
+.facts-cta-ink { color:#fff; -webkit-text-stroke:.4px #17362d; text-shadow:0 1px 1px rgba(11,43,34,.28), 0 0 1px rgba(11,43,34,.22); transition:color 220ms ease-out, -webkit-text-stroke-color 220ms ease-out, text-shadow 220ms ease-out; }
+.group:hover .facts-cta-ink, .group:focus-visible .facts-cta-ink { color:#fff; -webkit-text-stroke:0 transparent; text-shadow:none; }
 .button-primary, .button-secondary { transition:transform 220ms ease-out, background-color 220ms ease-out, border-color 220ms ease-out, box-shadow 220ms ease-out, color 220ms ease-out; }
 .button-primary:hover { background:var(--green-dark); transform:translateY(-3px) scale(1.01); box-shadow:0 10px 22px rgba(8,77,61,.16); }
 .button-primary:active { transform:translateY(-1px) scale(.995); }

@@ -1,0 +1,178 @@
+import { afterEach, describe, expect, it, vi } from "vitest"
+import {
+  deliverEnquiry,
+  parseServiceParam,
+  validateEnquiry,
+  type EnquiryInput,
+} from "./enquiry"
+
+const validCase = {
+  fullName: "Alex Morgan",
+  email: "alex@example.com",
+  businessName: "Harbour Bakery",
+  country: "United Kingdom",
+  phone: "+44 7700 900123",
+  service: "profile-recovery",
+  websiteUrl: "https://harbourbakery.example",
+  businessProfileUrl: "https://maps.google.com/?cid=123",
+  reviewUrl: "",
+  details: "The profile was suspended on Monday after a verification prompt. We have the original notice and have not tried another appeal yet.",
+  informationAccurate: true,
+  privacyAccepted: true,
+  source: "get-help",
+  companyFax: "",
+} satisfies EnquiryInput & { companyFax: string }
+
+const validGeneral = {
+  fullName: "Jordan Lee",
+  email: "jordan@example.com",
+  businessName: "Lee & Co",
+  service: "review-protection",
+  details: "We would like to understand whether a recent review can be assessed.",
+  source: "homepage",
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
+describe("validateEnquiry", () => {
+  it("accepts a complete case intake payload", () => {
+    const result = validateEnquiry(validCase)
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.fullName).toBe("Alex Morgan")
+      expect(result.data.websiteUrl).toBe("https://harbourbakery.example")
+      expect(result.data.source).toBe("get-help")
+    }
+  })
+
+  it("accepts a lightweight homepage enquiry", () => {
+    const result = validateEnquiry(validGeneral)
+    expect(result.valid).toBe(true)
+  })
+
+  it("requires core fields", () => {
+    const result = validateEnquiry({ ...validCase, fullName: "", details: "" })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.fullName).toMatch(/name/i)
+      expect(result.errors?.details).toMatch(/happened/i)
+    }
+  })
+
+  it("validates email addresses", () => {
+    const result = validateEnquiry({ ...validCase, email: "not-an-email" })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.errors?.email).toMatch(/email/i)
+  })
+
+  it("validates optional URLs when they are provided", () => {
+    const invalid = validateEnquiry({ ...validCase, websiteUrl: "javascript:alert(1)" })
+    expect(invalid.valid).toBe(false)
+    if (!invalid.valid) expect(invalid.errors?.websiteUrl).toMatch(/url/i)
+
+    const missingProtocol = validateEnquiry({ ...validCase, businessProfileUrl: "maps.google.com/profile" })
+    expect(missingProtocol.valid).toBe(false)
+
+    const valid = validateEnquiry({ ...validCase, websiteUrl: "https://example.com/about" })
+    expect(valid.valid).toBe(true)
+  })
+
+  it("rejects unexpected service values", () => {
+    const result = validateEnquiry({ ...validCase, service: "guaranteed-removal" })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.errors?.service).toBeTruthy()
+  })
+
+  it("rejects a filled honeypot without treating websiteUrl as spam", () => {
+    const trapped = validateEnquiry({ ...validCase, companyFax: "https://spam.example" })
+    expect(trapped.valid).toBe(false)
+    if (!trapped.valid) {
+      expect(trapped.error).toBe("Unable to process this enquiry.")
+      expect(trapped.errors).toBeUndefined()
+    }
+
+    const legitimateWebsite = validateEnquiry({
+      ...validCase,
+      websiteUrl: "https://legitimate.example",
+      companyFax: "",
+    })
+    expect(legitimateWebsite.valid).toBe(true)
+  })
+
+  it("requires the privacy acknowledgement for case intake", () => {
+    const result = validateEnquiry({ ...validCase, privacyAccepted: false })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.errors?.privacyAccepted).toMatch(/privacy/i)
+  })
+
+  it("requires the accuracy confirmation for case intake", () => {
+    const result = validateEnquiry({ ...validCase, informationAccurate: false })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.errors?.informationAccurate).toMatch(/accurate/i)
+  })
+
+  it("does not require case confirmations for general enquiries", () => {
+    const result = validateEnquiry(validGeneral)
+    expect(result.valid).toBe(true)
+  })
+
+  it("requires country and business name for case intake", () => {
+    const result = validateEnquiry({ ...validCase, country: "", businessName: "" })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.country).toBeTruthy()
+      expect(result.errors?.businessName).toBeTruthy()
+    }
+  })
+
+  it("ignores a leftover website field so it is no longer a honeypot", () => {
+    const result = validateEnquiry({ ...validCase, website: "https://spam.example" })
+    expect(result.valid).toBe(true)
+  })
+
+  it("rejects non-string field types", () => {
+    const result = validateEnquiry({ ...validCase, email: 42 })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.error).toBe("Unable to process this enquiry.")
+  })
+
+  it("strips control characters from narrative text without otherwise rewriting it", () => {
+    const result = validateEnquiry({
+      ...validCase,
+      details: "Line one\nLine two\u0007 still readable.",
+    })
+    expect(result.valid).toBe(true)
+    if (result.valid) expect(result.data.details).toBe("Line one\nLine two still readable.")
+  })
+})
+
+describe("parseServiceParam", () => {
+  it("maps valid query values and ignores unknown ones", () => {
+    expect(parseServiceParam("profile")).toBe("profile-recovery")
+    expect(parseServiceParam("review")).toBe("review-protection")
+    expect(parseServiceParam("unknown")).toBe("")
+    expect(parseServiceParam(undefined)).toBe("")
+  })
+})
+
+describe("deliverEnquiry", () => {
+  it("may return explicitly simulated success outside production", async () => {
+    vi.stubEnv("NODE_ENV", "development")
+    vi.stubEnv("ENQUIRY_PROVIDER_URL", "")
+    const result = await deliverEnquiry(validCase)
+    expect(result.ok).toBe(true)
+    expect(result.simulated).toBe(true)
+    expect(result.message).toMatch(/development/i)
+  })
+
+  it("never returns simulated success in production", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("ENQUIRY_PROVIDER_URL", "")
+    const result = await deliverEnquiry(validCase)
+    expect(result.simulated).not.toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/unavailable/i)
+  })
+})

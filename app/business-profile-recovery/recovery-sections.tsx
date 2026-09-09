@@ -4,7 +4,7 @@ import { assessment, advice, evidence, process, recoveryFaqs, situations, suppor
 import s from "./recovery.module.css"
 
 function Action({ children }: { children: React.ReactNode }) {
-  return <Link href="/get-help" className={s.button}>{children}<ArrowUpRight size={18} aria-hidden="true" /></Link>
+  return <Link href="/get-help?service=profile" className={s.button}>{children}<ArrowUpRight size={18} aria-hidden="true" /></Link>
 }
 function Heading({ eyebrow, title, id }: { eyebrow: string; title: string; id: string }) {
   return <div className={s.heading}><p className={s.eyebrow}>{eyebrow}</p><h2 id={id}>{title}</h2></div>

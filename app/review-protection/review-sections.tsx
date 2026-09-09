@@ -4,7 +4,7 @@ import { assessmentAreas, evidenceItems, precautions, reviewFaqs, reviewProcess,
 import s from "./review.module.css"
 
 function AssessmentLink({ closing = false }: { closing?: boolean }) {
-  return <Link href="/get-help" className={`${s.button} ${closing ? s.limeButton : ""}`}>Request a review assessment <ArrowUpRight aria-hidden="true" size={18} /></Link>
+  return <Link href="/get-help?service=review" className={`${s.button} ${closing ? s.limeButton : ""}`}>Request a review assessment <ArrowUpRight aria-hidden="true" size={18} /></Link>
 }
 
 export function ReviewHero() {

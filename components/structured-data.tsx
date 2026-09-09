@@ -56,3 +56,28 @@ export function FaqStructuredData({ questions }: { questions: Array<{ q: string;
 
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 }
+
+export function HowToStructuredData({
+  name,
+  description,
+  steps,
+}: {
+  name: string
+  description: string
+  steps: Array<{ name: string; text: string }>
+}) {
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    name,
+    description,
+    step: steps.map((step, index) => ({
+      "@type": "HowToStep",
+      position: index + 1,
+      name: step.name,
+      text: step.text,
+    })),
+  }
+
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
+}

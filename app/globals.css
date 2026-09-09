@@ -29,8 +29,8 @@ button, input, textarea, select { font:inherit; }
 .service-card:hover, .service-card:focus-visible { transform:translateY(-4px) scale(1.005); border-color:var(--green); box-shadow:0 18px 50px rgba(16,38,31,.08); }
 .service-card-arrow { transition:transform 240ms ease-out; }
 .service-card:hover .service-card-arrow, .service-card:focus-visible .service-card-arrow { transform:translate(3px, -2px); }
-.service-card-link { color:var(--ink); transition:color 200ms ease-out; }
-.service-card-link::after { content:""; display:block; height:1px; width:100%; transform:scaleX(0); transform-origin:left; background:currentColor; transition:transform 240ms ease-out; }
+.service-card-link { position:relative; color:var(--ink); transition:color 200ms ease-out; }
+.service-card-link::after { content:""; position:absolute; right:0; bottom:-5px; left:0; height:1px; transform:scaleX(0); transform-origin:left; background:currentColor; transition:transform 240ms ease-out; }
 .service-card:hover .service-card-link, .service-card:focus-visible .service-card-link { color:var(--green-dark); }
 .service-card:hover .service-card-link::after, .service-card:focus-visible .service-card-link::after { transform:scaleX(1); }
 .service-card-link-arrow { transition:transform 240ms ease-out; }

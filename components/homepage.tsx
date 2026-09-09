@@ -37,7 +37,7 @@ export function HomeHero() {
           <Link className={styles.primaryButton} href="/get-help">Get help with a case <ArrowUpRight aria-hidden="true" size={18} /></Link>
           <Link className={styles.secondaryButton} href="#home-services">Explore our services <ArrowDown aria-hidden="true" size={18} /></Link>
         </div>
-        <p className={styles.heroNote}>Independent of Google. Transparent about what is possible.</p>
+        <p className={styles.heroNote}>Independent • Evidence-led • No guaranteed outcomes</p>
       </div>
       <CaseVisual />
     </section>
@@ -66,7 +66,7 @@ const homeServices = [
 export function HomeServices() {
   return (
     <section id="home-services" className={`${styles.section} ${styles.reveal}`} aria-labelledby="services-title">
-      <div className={styles.sectionHeading}><div><Eyebrow>Two focused services</Eyebrow><h2 id="services-title">The right support.<br />For the issue in front of you.</h2></div><p>Your profile and your reviews affect how people find and understand your business. Each needs a different, careful approach.</p></div>
+      <div className={styles.sectionHeading}><div><Eyebrow>Two focused services</Eyebrow><h2 id="services-title">Focused support for the issue in front of you.</h2></div><p>Your profile and your reviews affect how people find and understand your business. Each needs a different, careful approach.</p></div>
       <div className={styles.serviceGrid}>
         {homeServices.map(({ title, label, icon: Icon, description, points, href }) => (
           <Link className={styles.serviceCard} href={href} key={href}>
@@ -92,7 +92,7 @@ const situations = [
 export function HomeSituations() {
   return (
     <section className={`${styles.situations} ${styles.reveal}`} aria-labelledby="situations-title">
-      <div className={styles.situationIntro}><Eyebrow>Recognise the situation?</Eyebrow><h2 id="situations-title">When something changes, clarity matters.</h2><p>A platform message or an unexpected review can leave you with more questions than answers. You do not need to know the process before asking for help.</p><Link className={styles.textLink} href="/get-help">Tell us what happened <ArrowUpRight aria-hidden="true" size={18} /></Link></div>
+      <div className={styles.situationIntro}><Eyebrow>Recognise the situation?</Eyebrow><h2 id="situations-title">When something changes, clarity matters.</h2><p>A platform message or an unexpected review can leave you with more questions than answers. You do not need to know the process before asking for help.</p><Link className={styles.textLink} href="/get-help">Tell us what happened <ArrowUpRight aria-hidden="true" size={18} /></Link><div className={styles.reassurance}><p>You don&apos;t need to diagnose the problem first.</p><p>You don&apos;t need a completed case file.</p><p>Start with what you know.</p></div></div>
       <div className={styles.situationList}>{situations.map(([title, copy]) => <article key={title}><h3>{title}</h3><p>{copy}</p></article>)}</div>
     </section>
   )

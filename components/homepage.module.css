@@ -63,6 +63,9 @@
 .situationIntro > p:not(.eyebrow), .faqSection > div > p:not(.eyebrow) { color: var(--muted); margin-top: 24px; }
 .home .textLink { position: relative; display: inline-flex; align-items: center; gap: 10px; color: var(--green); font-weight: 700; font-size: 14px; width: fit-content; }
 .situationIntro .textLink, .faqSection .textLink { margin-top: 28px; }
+.reassurance { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--home-border); color: var(--muted); font-size: 14px; }
+.reassurance p + p { margin-top: 8px; }
+.reassurance p:last-child { color: var(--ink); font-weight: 600; }
 .situationList article { border-top: 1px solid var(--home-border); padding-block: 22px; }
 .situationList article:first-child { padding-top: 0; border: 0; }
 .situationList article:last-child { padding-bottom: 0; }
@@ -94,6 +97,10 @@
 .processList { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
 .processList li { border-top: 1px solid var(--home-border); padding-top: 24px; }
 .processNumber { color: var(--green); font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--home-border); border-radius: 50%; }
+@media (min-width: 768px) {
+  .processList li { position: relative; }
+  .processList li:not(:last-child)::after { content: ""; position: absolute; top: 42px; left: 44px; right: -32px; height: 1px; background: var(--home-border); pointer-events: none; }
+}
 .processList h3 { margin-top: 24px; }
 .processList p { color: var(--muted); margin-top: 12px; font-size: 15px; }
 .expectations { border-top: 1px solid var(--home-border); border-bottom: 1px solid var(--home-border); padding-block: 64px; display: grid; grid-template-columns: .9fr 1.1fr; gap: 88px; }

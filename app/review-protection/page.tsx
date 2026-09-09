@@ -1,2 +1,37 @@
-import {PageIntro,Bullets,EnquirySection} from "@/components/sections";
-import { ServiceStructuredData } from "@/components/structured-data";export const metadata={title:"Review Protection",description:"Careful, practical support for review issues and protecting your business reputation.",alternates:{canonical:"/review-protection"}};export default function Page(){return <><ServiceStructuredData name="Review Protection" description="Careful, practical support for review issues and protecting your business reputation." path="/review-protection"/><PageIntro kicker="Review Protection" title="Respond carefully. Protect what comes next." body="Reviews can change the way a potential customer sees your business. We help you understand the issue, choose a proportionate response and build better habits for the future."/><section className="bg-white py-20"><div className="container grid gap-12 md:grid-cols-2"><div><h2 className="section-title">A considered approach to review issues.</h2></div><Bullets items={["Separate genuine feedback from policy concerns","Map the facts before choosing a response","Avoid reactive or risky public replies","Create a repeatable process for future reviews"]}/></div></section><EnquirySection caseMode/></>}
+import type { Metadata } from "next"
+import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
+import { reviewFaqs } from "./content"
+import { ReviewAssessment, ReviewClosing, ReviewDistinction, ReviewEvidence, ReviewExpectations, ReviewFaq, ReviewHero, ReviewPathways, ReviewPrecautions, ReviewProcess, ReviewScenarios, ReviewSupport } from "./review-sections"
+import styles from "./review.module.css"
+
+const title = "Google Review Protection & Review Challenge Support | ReputeDefend"
+const description = "Independent support for suspicious or potentially policy-violating Google reviews. Assess the facts, organise evidence and prepare an appropriate reporting or challenge route."
+
+export const metadata: Metadata = {
+  title: { absolute: title },
+  description,
+  alternates: { canonical: "/review-protection" },
+  openGraph: { type: "website", siteName: "ReputeDefend", title, description, url: "/review-protection", images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }] },
+  twitter: { card: "summary_large_image", title, description, images: ["/og-image.png"] },
+}
+
+export default function ReviewProtectionPage() {
+  return <>
+    <ServiceStructuredData name="Google Review Protection" description="Independent, evidence-led support to assess suspicious or potentially policy-violating Google reviews, organise relevant evidence and prepare an appropriate reporting, challenge or response route. Review removal is not guaranteed." path="/review-protection" />
+    <FaqStructuredData questions={reviewFaqs} />
+    <div className={`${styles.page} font-sans`}>
+      <ReviewHero />
+      <ReviewDistinction />
+      <ReviewScenarios />
+      <ReviewAssessment />
+      <ReviewEvidence />
+      <ReviewSupport />
+      <ReviewPathways />
+      <ReviewPrecautions />
+      <ReviewProcess />
+      <ReviewExpectations />
+      <ReviewFaq />
+      <ReviewClosing />
+    </div>
+  </>
+}

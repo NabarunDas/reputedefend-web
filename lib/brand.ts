@@ -1,13 +1,13 @@
 /**
- * Brand tokens and temporary asset paths for ReputeDefend.
+ * Brand tokens and approved asset paths for ReputeDefend.
  *
- * The current mark and wordmark are TEMPORARY. Header, footer and metadata
- * should keep using ReputeLogo / ReputeMark / these paths. When the approved
- * logo is supplied, replace the files under /public/brand and app/icon.svg —
- * do not redesign the symbol in code, and do not restructure header/footer.
+ * Header, footer and metadata should keep using ReputeLogo / ReputeMark /
+ * these paths. Replace the files under /public/brand when a vector original
+ * is supplied; do not redesign the symbol in code, and do not restructure
+ * header/footer.
  *
- * TODO(brand): approved horizontal logo (dark, light, mono)
- * TODO(brand): approved icon/mark (dark, light, mono, favicon, apple PNG)
+ * The horizontal lockup is the site logo (mark + ReputeDefend). The square
+ * mark is for favicon and other compact uses.
  */
 export const brandColors = {
   forest: "#10261F",
@@ -21,22 +21,22 @@ export const brandColors = {
 
 export const brandName = "ReputeDefend"
 
-export const logoSize = { width: 280, height: 64 } as const
-export const markSize = { width: 64, height: 64 } as const
+export const logoSize = { width: 1456, height: 300 } as const
+export const markSize = { width: 256, height: 256 } as const
 
 export type BrandVariant = "dark" | "light" | "mono"
 export type BrandLayout = "horizontal" | "mark"
 
 export const brandAssets: Record<BrandLayout, Record<BrandVariant, string>> = {
   horizontal: {
-    dark: "/brand/logo-horizontal-dark.svg",
-    light: "/brand/logo-horizontal-light.svg",
-    mono: "/brand/logo-horizontal-mono.svg",
+    dark: "/brand/logo-horizontal-dark.png",
+    light: "/brand/logo-horizontal-light.png",
+    mono: "/brand/logo-horizontal-mono.png",
   },
   mark: {
-    dark: "/brand/mark-dark.svg",
-    light: "/brand/mark-light.svg",
-    mono: "/brand/mark-mono.svg",
+    dark: "/brand/mark-dark.png",
+    light: "/brand/mark-light.png",
+    mono: "/brand/mark-mono.png",
   },
 }
 

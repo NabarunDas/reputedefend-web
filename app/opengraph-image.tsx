@@ -1,11 +1,18 @@
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { ImageResponse } from "next/og"
-import { brandColors, ogCopy, ogImage } from "@/lib/brand"
+import { brandColors, logoSize, ogCopy, ogImage } from "@/lib/brand"
 
 export const alt = ogImage.alt
 export const size = { width: ogImage.width, height: ogImage.height }
 export const contentType = ogImage.contentType
 
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
+  const logo = await readFile(join(process.cwd(), "public/brand/logo-horizontal-light.png"))
+  const logoSrc = `data:image/png;base64,${logo.toString("base64")}`
+  const logoWidth = 520
+  const logoHeight = Math.round((logoWidth * logoSize.height) / logoSize.width)
+
   return new ImageResponse(
     (
       <div
@@ -17,20 +24,10 @@ export default function OpenGraphImage() {
           justifyContent: "space-between",
           backgroundColor: brandColors.forest,
           color: brandColors.paper,
-          padding: "72px 80px 64px",
+          padding: "64px 80px 64px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            fontSize: 72,
-            fontWeight: 800,
-            letterSpacing: -2.4,
-            lineHeight: 1,
-          }}
-        >
-          {ogCopy.name}
-        </div>
+        <img src={logoSrc} width={logoWidth} height={logoHeight} alt="" />
 
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div

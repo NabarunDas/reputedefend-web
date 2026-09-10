@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
-import { legalIdentity } from "@/lib/legal"
+import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 const title = "Disclaimer | ReputeDefend"
@@ -22,6 +22,9 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>{legalIdentity.tradingName} is independent of Google. We are not Google, we do not speak for Google, and we do not claim official representation or special access to Google’s systems or decisions.</p>
+        {hasLegalValue(legalIdentity.legalName) ? (
+          <p>{legalIdentity.tradingName} is a trading name of {legalIdentity.legalName}.</p>
+        ) : null}
         <p>Google controls its own platform processes, including Business Profile status, verification, access, reviews and related decisions. Using this website does not change that.</p>
         <LegalCallout>ReputeDefend is an independent support service. It is not an official Google partner page and should not be read as one.</LegalCallout>
       </>

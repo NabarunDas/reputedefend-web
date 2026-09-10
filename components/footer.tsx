@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 import { ReputeLogo } from "@/components/logo"
+import { hasLegalValue, legalIdentity } from "@/lib/legal"
 
 const explore = [
   ["Profile recovery", "/business-profile-recovery"],
@@ -54,7 +55,9 @@ export function Footer() {
         </div>
       </div>
       <div className="container mt-14 border-t border-white/15 pt-5 text-xs leading-6 text-[#A8B8B0]">
-        © {new Date().getFullYear()} ReputeDefend. ReputeDefend is independent of Google.
+        © {new Date().getFullYear()} {legalIdentity.tradingName}.
+        {hasLegalValue(legalIdentity.legalName) ? ` ${legalIdentity.tradingName} is a trading name of ${legalIdentity.legalName}.` : ""}
+        {" "}{legalIdentity.tradingName} is independent of Google.
       </div>
     </footer>
   )

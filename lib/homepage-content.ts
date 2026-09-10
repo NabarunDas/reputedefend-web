@@ -1,3 +1,5 @@
+import { feeWording } from "@/lib/legal"
+
 export const allHomepageFaqs = [
   {
     q: "My Business Profile has been suspended. Where should I start?",
@@ -33,7 +35,7 @@ export const allHomepageFaqs = [
   },
   {
     q: "What happens after I send an enquiry?",
-    a: "Our team reviews the information you share to understand the situation. We contact you with our assessment and recommended next steps, which may include asking for more context. The level of support depends on the situation. Any proposed support and associated fees will be explained clearly before you decide how to proceed.",
+    a: `Our team reviews the information you share to understand the situation. We contact you with our assessment and recommended next steps, which may include asking for more context. ${feeWording}`,
   },
 ]
 

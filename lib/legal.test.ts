@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { hasLegalValue, legalIdentity } from "@/lib/legal"
+import { feeWording, hasLegalValue, legalIdentity } from "@/lib/legal"
 
 describe("legal identity", () => {
   it("exposes only confirmed customer-facing identity values", () => {
     expect(legalIdentity.tradingName).toBe("ReputeDefend")
     expect(legalIdentity.siteUrl).toBe("https://reputedefend.com")
     expect(legalIdentity.noticeUpdated).toMatch(/\d{1,2} \w+ \d{4}/)
+    expect(feeWording).toMatch(/fees will be explained clearly before you decide how to proceed/)
   })
 
   it("keeps unconfirmed business details unset rather than inventing them", () => {

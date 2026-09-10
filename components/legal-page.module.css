@@ -6,6 +6,8 @@
   padding-block: 48px 80px;
   color: var(--ink);
   font-family: var(--font-body), Arial, sans-serif;
+  overflow-wrap: break-word;
+  overflow-x: clip;
 }
 
 .page h1,
@@ -90,6 +92,9 @@
 }
 
 .toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
   color: var(--ink);
   font-size: 15px;
   font-weight: 650;
@@ -148,12 +153,19 @@
 .related {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
+  gap: 8px 20px;
   margin-top: 48px;
   padding-top: 24px;
   border-top: 1px solid var(--edge);
   font-size: 14px;
   font-weight: 700;
+}
+
+.related a,
+.related span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .related a { color: var(--green); }
@@ -162,7 +174,14 @@
 @media (max-width: 480px) {
   .page { width: calc(100% - 32px); padding-block: 36px 64px; }
   .toc { padding: 16px; }
-  .page h1 { font-size: clamp(2rem, 8vw, 2.5rem); }
+  .toc ol { gap: 2px; }
+  .page h1 { max-width: 14ch; font-size: clamp(1.85rem, 8vw, 2.35rem); }
+  .lead { font-size: 16px; }
+  .body { font-size: 15.5px; }
+}
+
+@media (max-width: 360px) {
+  .page { width: calc(100% - 24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

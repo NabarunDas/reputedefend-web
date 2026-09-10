@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
-  deliverEnquiry,
   parseServiceParam,
   validateEnquiry,
   type EnquiryInput,
@@ -32,10 +31,6 @@ const validGeneral = {
   details: "We would like to understand whether a recent review can be assessed.",
   source: "homepage",
 }
-
-afterEach(() => {
-  vi.unstubAllEnvs()
-})
 
 describe("validateEnquiry", () => {
   it("accepts a complete case intake payload", () => {
@@ -217,25 +212,5 @@ describe("parseServiceParam", () => {
     expect(parseServiceParam("review")).toBe("review-protection")
     expect(parseServiceParam("unknown")).toBe("")
     expect(parseServiceParam(undefined)).toBe("")
-  })
-})
-
-describe("deliverEnquiry", () => {
-  it("may return explicitly simulated success outside production", async () => {
-    vi.stubEnv("NODE_ENV", "development")
-    vi.stubEnv("ENQUIRY_PROVIDER_URL", "")
-    const result = await deliverEnquiry(validCase)
-    expect(result.ok).toBe(true)
-    expect(result.simulated).toBe(true)
-    expect(result.message).toMatch(/development/i)
-  })
-
-  it("never returns simulated success in production", async () => {
-    vi.stubEnv("NODE_ENV", "production")
-    vi.stubEnv("ENQUIRY_PROVIDER_URL", "")
-    const result = await deliverEnquiry(validCase)
-    expect(result.simulated).not.toBe(true)
-    expect(result.ok).toBe(false)
-    expect(result.message).toMatch(/unavailable/i)
   })
 })

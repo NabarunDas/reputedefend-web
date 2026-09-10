@@ -108,11 +108,11 @@ const sections: LegalSection[] = [
     title: "Service providers",
     content: (
       <>
-        <p>ReputeDefend reviews submissions. Specialist providers may be used to host the website or to receive and store enquiry messages. Any such provider would process information only to provide that technical service.</p>
+        <p>ReputeDefend reviews submissions. Enquiry messages are delivered by email using Resend so that we can receive and review them. Resend processes that information only to provide that email delivery service. This notice does not describe Resend’s hosting locations, retention rules or other contractual terms.</p>
         {hasLegalValue(legalIdentity.enquiryProcessorName) || hasLegalValue(legalIdentity.hostingProvider) ? (
           <ul>
             {hasLegalValue(legalIdentity.hostingProvider) ? <li>Website hosting: {legalIdentity.hostingProvider}</li> : null}
-            {hasLegalValue(legalIdentity.enquiryProcessorName) ? <li>Enquiry delivery or storage: {legalIdentity.enquiryProcessorName}</li> : null}
+            {hasLegalValue(legalIdentity.enquiryProcessorName) ? <li>Enquiry email delivery: {legalIdentity.enquiryProcessorName}</li> : null}
           </ul>
         ) : null}
       </>

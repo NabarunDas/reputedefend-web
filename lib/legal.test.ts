@@ -20,7 +20,6 @@ describe("legal identity", () => {
       legalIdentity.dpoEmail,
       legalIdentity.governingLaw,
       legalIdentity.courts,
-      legalIdentity.enquiryProcessorName,
       legalIdentity.hostingProvider,
       legalIdentity.retentionPeriod,
     ]
@@ -29,5 +28,9 @@ describe("legal identity", () => {
       expect(value).toBeUndefined()
       expect(hasLegalValue(value)).toBe(false)
     }
+  })
+
+  it("names Resend as the enquiry email processor now that delivery uses it", () => {
+    expect(legalIdentity.enquiryProcessorName).toBe("Resend")
   })
 })

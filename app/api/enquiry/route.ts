@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server"
-import { deliverEnquiry, validateEnquiry } from "@/lib/enquiry"
+import { validateEnquiry } from "@/lib/enquiry"
+import { ENQUIRY_UNAVAILABLE, deliverEnquiry } from "@/lib/enquiry-delivery"
+import { checkEnquiryRateLimit, enquiryClientKey } from "@/lib/enquiry-rate-limit"
+
+export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
@@ -10,6 +14,10 @@ export async function POST(request: Request) {
         { ok: false, message: checked.error, errors: checked.errors },
         { status: 400 },
       )
+    }
+
+    if (!checkEnquiryRateLimit(enquiryClientKey(request)).ok) {
+      return NextResponse.json({ ok: false, message: ENQUIRY_UNAVAILABLE }, { status: 429 })
     }
 
     const result = await deliverEnquiry(checked.data)

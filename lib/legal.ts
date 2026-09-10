@@ -7,7 +7,10 @@
  * TODO(owner): supply confirmed values before launch. Do not invent:
  * legal company name, registration number, registered office, postal address,
  * VAT number, DPO, phone, support email, retention period, hosting provider,
- * email/CRM provider, governing law, or courts.
+ * governing law, or courts.
+ *
+ * Enquiry email delivery uses Resend when configured. Do not invent Resend
+ * hosting regions or retention commitments.
  *
  * Empty optional fields must not be rendered as customer-facing placeholders.
  */
@@ -33,6 +36,7 @@ export const legalIdentity: LegalIdentity = {
   tradingName: "ReputeDefend",
   siteUrl: "https://reputedefend.com",
   noticeUpdated: "10 September 2026",
+  enquiryProcessorName: "Resend",
 }
 
 export function hasLegalValue(value: string | undefined): value is string {

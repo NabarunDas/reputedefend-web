@@ -341,19 +341,3 @@ export function getCaseIntakeStepErrors(step: 1 | 2 | 3 | 4, values: Partial<Enq
   }
   return errors
 }
-
-export async function deliverEnquiry(_data: EnquiryInput): Promise<EnquiryResult> {
-  if (process.env.ENQUIRY_PROVIDER_URL) {
-    return { ok: false, message: "Enquiries are temporarily unavailable. Please try again shortly." }
-  }
-
-  if (process.env.NODE_ENV !== "production") {
-    return {
-      ok: true,
-      simulated: true,
-      message: "Development enquiry recorded. In production, this will only confirm after delivery.",
-    }
-  }
-
-  return { ok: false, message: "Enquiries are temporarily unavailable. Please try again shortly." }
-}

@@ -171,6 +171,33 @@
 .related a { color: var(--green); }
 .related span { color: var(--ink); }
 
+.operator {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--edge);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.operator p + p,
+.operator p + address,
+.operator address + p {
+  margin-top: 8px;
+}
+
+.operator address {
+  font-style: normal;
+  white-space: pre-line;
+}
+
+.operator a {
+  color: var(--green);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 @media (max-width: 480px) {
   .page { width: calc(100% - 32px); padding-block: 36px 64px; }
   .toc { padding: 16px; }

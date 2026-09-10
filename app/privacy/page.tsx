@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
-import { feeWording, hasLegalValue, legalIdentity } from "@/lib/legal"
+import { feeWording, hasLegalValue, legalIdentity, showsCompanyRegistration, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 const title = "Privacy notice | ReputeDefend"
@@ -21,7 +21,7 @@ const sections: LegalSection[] = [
     title: "What this notice covers",
     content: (
       <>
-        <p>This notice explains how {legalIdentity.tradingName} handles information that visitors may submit through this website. It reflects the current site: public information pages and enquiry forms. It is not an account product, a customer dashboard or a payment system.</p>
+        <p>This notice explains how {tradingAsLine()} handles information that visitors may submit through this website. It reflects the current site: public information pages and enquiry forms. It is not an account product, a customer dashboard or a payment system.</p>
         <p>Submitting a form does not, by itself, create a client or paid-service relationship. Any later support, and any associated fees, are explained before you decide how to proceed.</p>
       </>
     ),
@@ -165,9 +165,21 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>Questions about this notice can be sent through the <Link href="/contact">Contact</Link> page or, if you already have an active case, through <Link href="/get-help">Get Help</Link>.</p>
-        {hasLegalValue(legalIdentity.contactEmail) ? <p>You can also write to {legalIdentity.contactEmail}.</p> : null}
-        {hasLegalValue(legalIdentity.postalAddress) ? <p>Postal correspondence: {legalIdentity.postalAddress}.</p> : null}
-        {hasLegalValue(legalIdentity.legalName) ? <p>The organisation responsible for this website is {legalIdentity.legalName}{hasLegalValue(legalIdentity.registrationNumber) ? `, registration number ${legalIdentity.registrationNumber}` : ""}.</p> : null}
+        {hasLegalValue(legalIdentity.contactEmail) ? (
+          <p>
+            You can also write to{" "}
+            <a href={`mailto:${legalIdentity.contactEmail}`}>{legalIdentity.contactEmail}</a>.
+          </p>
+        ) : null}
+        <p>This website is operated by {tradingAsLine()}.</p>
+        {hasLegalValue(legalIdentity.postalAddress) ? (
+          <p>Correspondence may be sent to the business address shown below.</p>
+        ) : null}
+        {showsCompanyRegistration() ? (
+          <p>Company number {legalIdentity.registrationNumber}.</p>
+        ) : null}
+        {hasLegalValue(legalIdentity.vatNumber) ? <p>VAT number {legalIdentity.vatNumber}.</p> : null}
+        {hasLegalValue(legalIdentity.phone) ? <p>Telephone: {legalIdentity.phone}.</p> : null}
         <p>If data protection law gives you a right to complain to a supervisory authority, you may do so in the country where you live, work, or where you believe a problem occurred.</p>
       </>
     ),

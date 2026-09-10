@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
-import { feeWording, hasLegalValue, legalIdentity } from "@/lib/legal"
+import { feeWording, hasLegalValue, legalIdentity, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 const title = "Terms of use | ReputeDefend"
@@ -22,6 +22,7 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>These terms apply to your use of the {legalIdentity.tradingName} website and to information you send through its enquiry forms. They do not replace a separate written agreement for paid support, if one is later offered and accepted.</p>
+        <p>This website is operated by {tradingAsLine()}.</p>
         <p>If you do not agree with these terms, please do not use the website or send a submission.</p>
       </>
     ),
@@ -99,7 +100,7 @@ const sections: LegalSection[] = [
     title: "Intellectual property",
     content: (
       <>
-        <p>The website’s design, text and other content belong to {legalIdentity.tradingName} or its licensors, unless a page says otherwise. You may view and print pages for your own business use. You may not copy the site, present it as your own service, or use the ReputeDefend name in a way that suggests affiliation with Google or with us without permission.</p>
+        <p>The website’s design, text and other content belong to {tradingAsLine()} or its licensors, unless a page says otherwise. You may view and print pages for your own business use. You may not copy the site, present it as your own service, or use the ReputeDefend name in a way that suggests affiliation with Google or with us without permission.</p>
       </>
     ),
   },

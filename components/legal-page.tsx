@@ -1,6 +1,11 @@
 import Link from "next/link"
 import type { ReactNode } from "react"
-import { legalIdentity } from "@/lib/legal"
+import {
+  hasLegalValue,
+  legalIdentity,
+  showsCompanyRegistration,
+  tradingAsLine,
+} from "@/lib/legal"
 import styles from "./legal-page.module.css"
 
 export type LegalSection = {
@@ -17,6 +22,25 @@ const related = [
 
 export function LegalCallout({ children }: { children: ReactNode }) {
   return <aside className={styles.callout}>{children}</aside>
+}
+
+export function LegalOperatorIdentity() {
+  return (
+    <div className={styles.operator}>
+      <p>{tradingAsLine()}</p>
+      {hasLegalValue(legalIdentity.postalAddress) ? (
+        <address>{legalIdentity.postalAddress}</address>
+      ) : null}
+      {hasLegalValue(legalIdentity.contactEmail) ? (
+        <p>
+          <a href={`mailto:${legalIdentity.contactEmail}`}>{legalIdentity.contactEmail}</a>
+        </p>
+      ) : null}
+      {hasLegalValue(legalIdentity.phone) ? <p>{legalIdentity.phone}</p> : null}
+      {hasLegalValue(legalIdentity.vatNumber) ? <p>VAT number {legalIdentity.vatNumber}</p> : null}
+      {showsCompanyRegistration() ? <p>Company number {legalIdentity.registrationNumber}</p> : null}
+    </div>
+  )
 }
 
 export function LegalPage({
@@ -58,6 +82,8 @@ export function LegalPage({
           <div className={styles.body}>{section.content}</div>
         </section>
       ))}
+
+      <LegalOperatorIdentity />
 
       <nav className={styles.related} aria-label="Related legal pages">
         {related.map(([label, href]) => (

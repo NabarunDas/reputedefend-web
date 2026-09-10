@@ -32,7 +32,7 @@ export const viewport: Viewport = { themeColor: "#f7f8f3", width: "device-width"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" data-scroll-behavior="smooth">
       <body className={`${bodyFont.variable} ${displayFont.variable}`}>
         <OrganizationStructuredData />
         <a className="skip-link" href="#main-content">Skip to content</a>

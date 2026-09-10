@@ -53,7 +53,7 @@ export function Header() {
         <Link href="/" aria-label="ReputeDefend home" className="inline-flex min-w-0" onClick={() => setMenuOpen(false)}>
           <ReputeLogo className="site-logo" />
         </Link>
-        <nav aria-label="Primary" className="hidden items-center gap-6 text-[.78rem] font-bold lg:flex xl:gap-8">
+        <nav aria-label="Primary" className="desktop-nav hidden items-center gap-6 text-[.78rem] font-bold lg:flex xl:gap-8">
           {navigation.map(([label, href]) => (
             <Link
               key={href}
@@ -68,14 +68,14 @@ export function Header() {
         <div className="flex shrink-0 items-center gap-2 sm:gap-4">
           <Link
             href="/contact"
-            className={`nav-link hidden text-sm font-bold lg:inline-flex ${pathname === "/contact" ? "nav-link-active" : ""}`}
+            className={`nav-link nav-contact hidden text-sm font-bold lg:inline-flex ${pathname === "/contact" ? "nav-link-active" : ""}`}
             aria-current={pathname === "/contact" ? "page" : undefined}
           >
             Contact
           </Link>
           <Link
             href="/get-help"
-            className="button-primary group flex items-center gap-1.5 rounded-full bg-[var(--green)] px-3 py-2.5 text-[.78rem] font-bold text-white sm:gap-2 sm:px-5 sm:py-3 sm:text-sm"
+            className="button-primary group inline-flex items-center gap-1.5 rounded-full bg-[var(--green)] px-3 py-2.5 text-[.78rem] font-bold text-white sm:gap-2 sm:px-5 sm:py-3 sm:text-sm"
             aria-current={pathname === "/get-help" ? "page" : undefined}
           >
             Get help <ArrowUpRight data-icon="inline-end" className="button-arrow" aria-hidden="true" />
@@ -87,7 +87,7 @@ export function Header() {
             aria-controls={menuId}
             aria-label={menuOpen ? "Close navigation" : "Open navigation"}
             onClick={() => setMenuOpen((open) => !open)}
-            className="button-secondary inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-[var(--line)] lg:hidden"
+            className="menu-toggle button-secondary inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-[var(--line)] lg:hidden"
           >
             {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
           </button>

@@ -72,6 +72,7 @@ const FIELD_STEPS: Record<EnquiryField, 1 | 2 | 3 | 4> = {
   informationAccurate: 4,
   privacyAccepted: 4,
   source: 1,
+  subject: 1,
 }
 
 type CaseIntakeFormProps = {
@@ -130,6 +131,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
       informationAccurate: values.informationAccurate,
       privacyAccepted: values.privacyAccepted,
       source: "get-help",
+      subject: "",
     }
   }
 
@@ -384,18 +386,34 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               <ReviewItem label="What happened" value={values.details} wide />
             </ReviewBlock>
             <label className={styles.check} htmlFor={`${formId}-informationAccurate`}>
-              <input id={`${formId}-informationAccurate`} name="informationAccurate" type="checkbox" checked={values.informationAccurate} onChange={(event) => update("informationAccurate", event.target.checked)} />
+              <input
+                id={`${formId}-informationAccurate`}
+                name="informationAccurate"
+                type="checkbox"
+                checked={values.informationAccurate}
+                onChange={(event) => update("informationAccurate", event.target.checked)}
+                aria-invalid={Boolean(errors.informationAccurate) || undefined}
+                aria-describedby={errors.informationAccurate ? `${formId}-informationAccurate-error` : undefined}
+              />
               <span>I confirm that the information provided is accurate to the best of my knowledge.</span>
             </label>
-            {errors.informationAccurate ? <p className={styles.error}>{errors.informationAccurate}</p> : null}
+            {errors.informationAccurate ? <p id={`${formId}-informationAccurate-error`} className={styles.error}>{errors.informationAccurate}</p> : null}
             <label className={styles.check} htmlFor={`${formId}-privacyAccepted`}>
-              <input id={`${formId}-privacyAccepted`} name="privacyAccepted" type="checkbox" checked={values.privacyAccepted} onChange={(event) => update("privacyAccepted", event.target.checked)} />
+              <input
+                id={`${formId}-privacyAccepted`}
+                name="privacyAccepted"
+                type="checkbox"
+                checked={values.privacyAccepted}
+                onChange={(event) => update("privacyAccepted", event.target.checked)}
+                aria-invalid={Boolean(errors.privacyAccepted) || undefined}
+                aria-describedby={errors.privacyAccepted ? `${formId}-privacyAccepted-error` : undefined}
+              />
               <span>
                 I understand how ReputeDefend handles this information, as described in the{" "}
                 <Link href="/privacy">privacy information</Link>.
               </span>
             </label>
-            {errors.privacyAccepted ? <p className={styles.error}>{errors.privacyAccepted}</p> : null}
+            {errors.privacyAccepted ? <p id={`${formId}-privacyAccepted-error`} className={styles.error}>{errors.privacyAccepted}</p> : null}
           </div>
         )}
       </div>

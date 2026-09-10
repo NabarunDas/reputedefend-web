@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   Homepage,
   HomeHero,
@@ -12,6 +13,10 @@ import {
 } from "@/components/homepage"
 import { FaqStructuredData } from "@/components/structured-data"
 import { homepageFaqs } from "@/lib/homepage-content"
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+}
 
 export default function Home() {
   return (

@@ -1,4 +1,4 @@
-.page { --edge: color-mix(in srgb, var(--ink) 14%, transparent); --tint: color-mix(in srgb, var(--green) 5%, var(--paper)); color: var(--ink); background: var(--paper); font-family: var(--font-body), Arial, sans-serif; overflow-x: clip; }
+.page { --edge: color-mix(in srgb, var(--ink) 14%, transparent); --tint: color-mix(in srgb, var(--green) 5%, var(--paper)); color: var(--ink); background: var(--paper); font-family: var(--font-body), Arial, sans-serif; }
 .page h1, .page h2, .page h3 { font-family: var(--font-display), Arial, sans-serif; text-wrap: balance; }
 .page h1 { font-size: clamp(40px, 4.4vw, 62px); line-height: 1.1; letter-spacing: -.055em; font-weight: 800; }
 .page h1 span { color: var(--green); }
@@ -83,7 +83,7 @@
 .deliverables span { color: var(--green); font-size: 13px; font-weight: 700; padding-top: 3px; }
 .deliverables p { font-size: 16px; }
 
-.paths { margin-top: 48px; padding: 56px 40px 40px; background: var(--tint); border: 1px solid var(--edge); border-radius: 28px; }
+.paths { margin-top: 48px; padding: 56px 40px 40px; background: var(--tint); border: 1px solid var(--edge); border-radius: 28px; overflow: hidden; }
 .paths header { text-align: center; max-width: 700px; margin-inline: auto; }
 .paths header h2 { margin-bottom: 16px; }
 .paths header > p:last-child { color: var(--muted); }
@@ -164,7 +164,6 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .enter { animation: arrive 600ms ease-out both; }
-  .visualPath li:not(:last-child)::after { animation: path-pulse 2.8s ease-in-out infinite; }
   @supports (animation-timeline: view()) {
     .reveal { animation: arrive ease-out both; animation-timeline: view(); animation-range: entry 0% entry 12%; }
     .railProgress { animation: draw-line linear both; animation-timeline: view(); animation-range: entry 0% cover 55%; }
@@ -173,7 +172,6 @@
 
 @keyframes arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes draw-line { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-@keyframes path-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 
 @media (max-width: 1100px) {
   .lenses { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -234,9 +232,3 @@
   .page a:hover, .page a:hover svg, .railItem:hover .railCard, .profileBranch:hover, .reviewBranch:hover { transform: none !important; }
 }
 
-:global(body):has(.page) { overflow-x: visible; }
-@media (max-width: 359px) {
-  :global(body):has(.page) :global(.site-header > .container) { padding-inline: 0; gap: 8px; }
-  :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"]) { flex-shrink: 1; }
-  :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"] > svg) { max-width: 100%; }
-}

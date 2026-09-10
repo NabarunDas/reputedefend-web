@@ -1,1 +1,24 @@
-export const metadata={title:"Terms",description:"Read the terms that apply to using the ReputeDefend website and enquiry route.",alternates:{canonical:"/terms"}};export default function Page(){return <article className="container max-w-3xl py-20"><p className="eyebrow">Terms</p><h1 className="section-title mt-4">Terms of use</h1><p className="mt-6 leading-8 text-[var(--muted)]">This site provides general information and an enquiry route. It does not create a client relationship or promise a particular platform decision. These terms should be reviewed and replaced with final legal terms before launch.</p></article>}
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Terms",
+  description: "Read the terms that apply to using the ReputeDefend website and enquiry route.",
+  alternates: { canonical: "/terms" },
+  openGraph: {
+    type: "website",
+    siteName: "ReputeDefend",
+    title: "Terms | ReputeDefend",
+    description: "Read the terms that apply to using the ReputeDefend website and enquiry route.",
+    url: "/terms",
+  },
+}
+
+export default function TermsPage() {
+  return (
+    <article className="legal">
+      <p className="eyebrow">Terms</p>
+      <h1>Terms of use</h1>
+      <p>This site provides general information and an enquiry route. It does not create a client relationship or promise a particular platform decision.</p>
+    </article>
+  )
+}

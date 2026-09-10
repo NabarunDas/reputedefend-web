@@ -1,12 +1,13 @@
 "use client"
 
+import { useId } from "react"
+
 export function HoneypotField() {
+  const id = useId()
   return (
-    <div aria-hidden="true" className="absolute top-0 left-0 h-0 w-0 overflow-hidden opacity-0">
-      <label>
-        Company fax
-        <input name="companyFax" type="text" tabIndex={-1} autoComplete="off" />
-      </label>
+    <div className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden">
+      <label htmlFor={id}>Company fax</label>
+      <input id={id} name="companyFax" type="text" tabIndex={-1} autoComplete="off" />
     </div>
   )
 }

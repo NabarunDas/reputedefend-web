@@ -20,6 +20,7 @@ const validCase = {
   informationAccurate: true,
   privacyAccepted: true,
   source: "get-help",
+  subject: "",
   companyFax: "",
 } satisfies EnquiryInput & { companyFax: string }
 
@@ -113,8 +114,70 @@ describe("validateEnquiry", () => {
     if (!result.valid) expect(result.errors?.informationAccurate).toMatch(/accurate/i)
   })
 
-  it("does not require case confirmations for general enquiries", () => {
-    const result = validateEnquiry(validGeneral)
+  it("accepts a contact enquiry with a valid subject and no case service", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      businessName: "Patel Studio",
+      subject: "partnership",
+      details: "We are exploring whether a partnership conversation would be appropriate.",
+      source: "contact",
+    })
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.subject).toBe("partnership")
+      expect(result.data.service).toBe("")
+      expect(result.data.source).toBe("contact")
+    }
+  })
+
+  it("still accepts a lightweight contact payload that uses a service field", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      service: "general",
+      details: "A general question about the service.",
+      source: "contact",
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it("rejects an unexpected contact subject", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      subject: "guaranteed-pricing",
+      details: "How much does it cost?",
+      source: "contact",
+    })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.errors?.subject).toMatch(/subject/i)
+  })
+
+  it("requires a subject or enquiry type for contact messages", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      details: "Hello, I have a question.",
+      source: "contact",
+    })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.subject).toMatch(/subject/i)
+      expect(result.errors?.service).toMatch(/enquiry type/i)
+    }
+  })
+
+  it("does not require case confirmations or a case service for contact", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      subject: "general-question",
+      details: "Could you explain how you work with clients?",
+      source: "contact",
+      informationAccurate: false,
+      privacyAccepted: false,
+    })
     expect(result.valid).toBe(true)
   })
 

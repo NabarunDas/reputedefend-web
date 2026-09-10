@@ -1,24 +1,20 @@
 "use client"
 
+import Link from "next/link"
 import { useId, useRef, useState, type FormEvent } from "react"
 import {
-  GENERAL_SERVICE_OPTIONS,
+  CONTACT_SUBJECTS,
   enquiryLimits,
   validateEnquiry,
   type EnquiryField,
   type EnquiryFieldErrors,
 } from "@/lib/enquiry"
 import { HoneypotField } from "@/components/honeypot-field"
-import styles from "./enquiry-form.module.css"
+import styles from "./contact-form.module.css"
 
-const SEND_ERROR = "We couldn't send this enquiry right now. Your information is still on this page. Please try again shortly."
+const SEND_ERROR = "We couldn't send your message right now. Your information is still on this page. Please try again shortly."
 
-type EnquiryFormProps = {
-  source?: "homepage" | "contact"
-  caseMode?: boolean
-}
-
-export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFormProps) {
+export function ContactForm() {
   const formId = useId()
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
@@ -31,7 +27,8 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
-    const body = { ...Object.fromEntries(new FormData(form)), source }
+    const entries = Object.fromEntries(new FormData(form))
+    const body = { ...entries, source: "contact" }
     const checked = validateEnquiry(body)
 
     if (!checked.valid) {
@@ -45,7 +42,7 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
     setStatus("loading")
     setDeliveryError(false)
     setErrors({})
-    setStatusText("Sending your enquiry.")
+    setStatusText("Sending your message.")
 
     try {
       const res = await fetch("/api/enquiry", {
@@ -53,12 +50,12 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       })
-      const json = await res.json() as { ok?: boolean; simulated?: boolean; errors?: EnquiryFieldErrors; message?: string }
+      const json = await res.json() as { ok?: boolean; simulated?: boolean; errors?: EnquiryFieldErrors }
 
       if (json.ok) {
         setSimulated(json.simulated === true)
         setStatus("success")
-        setStatusText(json.simulated ? "Development simulation complete." : "Your enquiry has been received.")
+        setStatusText(json.simulated ? "Development simulation complete." : "Your message has been received.")
         window.setTimeout(() => successRef.current?.focus(), 0)
         return
       }
@@ -69,7 +66,7 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
 
       setStatus("idle")
       setDeliveryError(true)
-      setStatusText(json.message ?? SEND_ERROR)
+      setStatusText(SEND_ERROR)
       window.setTimeout(() => summaryRef.current?.focus(), 0)
     } catch {
       setStatus("idle")
@@ -94,29 +91,32 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
         {simulated ? (
           <>
             <p className={styles.simulated}>Development simulation</p>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>This is not a live enquiry.</h2>
-            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the enquiry has actually been sent.</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>This is not a live message.</h2>
+            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the message has actually been sent.</p>
           </>
         ) : (
           <>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your enquiry.</h2>
-            <p>We’ll review what you sent and come back with a practical view of the next step.</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your message.</h2>
+            <p>We’ll review what you sent and reply if a response is appropriate. If this is really a Business Profile or review case, we may ask you to use Get Help so the relevant information can be collected properly.</p>
           </>
         )}
       </div>
     )
   }
 
-  const errorEntries = Object.entries(errors).filter(([field]) => (
-    field === "fullName" || field === "email" || field === "businessName" || field === "service" || field === "details"
-  )) as [EnquiryField, string][]
+  const errorEntries = Object.entries(errors).filter(([field]) => field === "fullName" || field === "email" || field === "businessName" || field === "subject" || field === "details") as [EnquiryField, string][]
   const showSummary = errorEntries.length > 0 || deliveryError
 
   return (
     <form className={styles.form} onSubmit={submit} noValidate aria-busy={status === "loading"}>
+      <div>
+        <p className={styles.formEyebrow}>General enquiry</p>
+        <h2 className={styles.formTitle}>Send a message</h2>
+      </div>
+
       {showSummary && (
         <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.summary}>
-          {deliveryError ? <p>{statusText || SEND_ERROR}</p> : null}
+          {deliveryError ? <p>{SEND_ERROR}</p> : null}
           {errorEntries.length > 0 && (
             <>
               <p>Please correct the following:</p>
@@ -182,34 +182,34 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
           {errors.businessName ? <p id={`${formId}-businessName-error`} className={styles.error}>{errors.businessName}</p> : null}
         </div>
         <div className={styles.field}>
-          <label htmlFor={`${formId}-service`}>What do you need help with?</label>
+          <label htmlFor={`${formId}-subject`}>Subject</label>
           <select
-            id={`${formId}-service`}
-            name="service"
+            id={`${formId}-subject`}
+            name="subject"
             required
             className={styles.control}
+            aria-invalid={Boolean(errors.subject) || undefined}
+            aria-describedby={errors.subject ? `${formId}-subject-error` : undefined}
+            onChange={() => clearField("subject")}
             defaultValue=""
-            aria-invalid={Boolean(errors.service) || undefined}
-            aria-describedby={errors.service ? `${formId}-service-error` : undefined}
-            onChange={() => clearField("service")}
           >
             <option value="">Select one</option>
-            {GENERAL_SERVICE_OPTIONS.map((option) => (
+            {CONTACT_SUBJECTS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          {errors.service ? <p id={`${formId}-service-error`} className={styles.error}>{errors.service}</p> : null}
+          {errors.subject ? <p id={`${formId}-subject-error`} className={styles.error}>{errors.subject}</p> : null}
         </div>
         <div className={styles.field}>
-          <label htmlFor={`${formId}-details`}>{caseMode ? "Tell us what happened" : "How can we help?"}</label>
+          <label htmlFor={`${formId}-details`}>Message</label>
           <textarea
             id={`${formId}-details`}
             name="details"
             required
+            rows={7}
             maxLength={enquiryLimits.details}
-            rows={6}
             className={styles.control}
-            placeholder={caseMode ? "Include dates, messages or changes you have noticed." : "Share a little context and the best next step for you."}
+            placeholder="Share your question. Please do not include passwords, verification codes or account credentials."
             aria-invalid={Boolean(errors.details) || undefined}
             aria-describedby={errors.details ? `${formId}-details-error` : undefined}
             onChange={() => clearField("details")}
@@ -220,10 +220,14 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
 
       <HoneypotField />
 
-      <p className={styles.privacy}>Please do not include passwords, verification codes or account credentials.</p>
+      <p className={styles.redirect}>
+        Already dealing with a Business Profile or review issue?{" "}
+        <Link href="/get-help">Get help with a case</Link>
+      </p>
+      <p className={styles.redirect}>Please do not include passwords, verification codes or account credentials.</p>
 
       <button type="submit" className={styles.submit} disabled={status === "loading"}>
-        {status === "loading" ? "Sending…" : caseMode ? "Get help with a case" : "Send enquiry"}
+        {status === "loading" ? "Sending…" : "Send message"}
       </button>
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>

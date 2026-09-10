@@ -36,6 +36,16 @@ export const GENERAL_SERVICE_OPTIONS = [
   { value: "general", label: "Something else" },
 ] as const
 
+export const CONTACT_SUBJECTS = [
+  { value: "general-question", label: "General question" },
+  { value: "service-question", label: "Service question" },
+  { value: "partnership", label: "Partnership / business enquiry" },
+  { value: "media", label: "Media / professional enquiry" },
+  { value: "something-else", label: "Something else" },
+] as const
+
+export type ContactSubject = (typeof CONTACT_SUBJECTS)[number]["value"]
+
 export const enquiryLimits = {
   fullName: 100,
   email: 254,
@@ -43,6 +53,7 @@ export const enquiryLimits = {
   country: 80,
   phone: 40,
   service: 64,
+  subject: 64,
   websiteUrl: 1000,
   businessProfileUrl: 1000,
   reviewUrl: 1000,
@@ -56,7 +67,8 @@ export type EnquiryInput = {
   businessName: string
   country: string
   phone: string
-  service: CaseService
+  service: CaseService | ""
+  subject: string
   websiteUrl: string
   businessProfileUrl: string
   reviewUrl: string
@@ -87,6 +99,7 @@ const STRING_FIELDS = [
   "country",
   "phone",
   "service",
+  "subject",
   "websiteUrl",
   "businessProfileUrl",
   "reviewUrl",
@@ -108,6 +121,10 @@ export function isEnquirySource(value: string): value is EnquirySource {
 
 export function isCaseService(value: string): value is CaseService {
   return CASE_SERVICES.some((service) => service.value === value)
+}
+
+export function isContactSubject(value: string): value is ContactSubject {
+  return CONTACT_SUBJECTS.some((subject) => subject.value === value)
 }
 
 export function caseServiceLabel(value: string) {
@@ -184,7 +201,8 @@ export function validateEnquiry(raw: unknown): EnquiryValidation {
     businessName: normalizeEnquiryText(asString(input.businessName)),
     country: normalizeEnquiryText(asString(input.country)),
     phone: normalizeEnquiryText(asString(input.phone)),
-    service: normalizeEnquiryText(asString(input.service)) as CaseService,
+    service: normalizeEnquiryText(asString(input.service)) as CaseService | "",
+    subject: normalizeEnquiryText(asString(input.subject)),
     websiteUrl: normalizeEnquiryText(asString(input.websiteUrl)),
     businessProfileUrl: normalizeEnquiryText(asString(input.businessProfileUrl)),
     reviewUrl: normalizeEnquiryText(asString(input.reviewUrl)),
@@ -205,6 +223,7 @@ export function validateEnquiry(raw: unknown): EnquiryValidation {
 export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
   const errors: EnquiryFieldErrors = {}
   const isCase = data.source === "get-help"
+  const isContact = data.source === "contact"
 
   if (!data.fullName) errors.fullName = "Please enter your name."
   else if (data.fullName.length > enquiryLimits.fullName) errors.fullName = `Please keep your name within ${enquiryLimits.fullName} characters.`
@@ -229,7 +248,22 @@ export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
     }
   }
 
-  if (!isCaseService(data.service)) errors.service = isCase ? "Please choose what you need help with." : "Please choose an enquiry type."
+  if (isContact) {
+    const validSubject = isContactSubject(data.subject)
+    const validService = isCaseService(data.service)
+    if (!validSubject && !validService) {
+      errors.subject = "Please choose a subject."
+      errors.service = "Please choose an enquiry type."
+    } else if (data.subject && !validSubject) {
+      errors.subject = "Please choose a subject."
+    }
+  } else if (!isCaseService(data.service)) {
+    errors.service = isCase ? "Please choose what you need help with." : "Please choose an enquiry type."
+  }
+
+  if (data.subject.length > enquiryLimits.subject) {
+    errors.subject = `Please keep the subject within ${enquiryLimits.subject} characters.`
+  }
 
   if (data.websiteUrl) {
     if (data.websiteUrl.length > enquiryLimits.websiteUrl || !isHttpUrl(data.websiteUrl)) {
@@ -249,7 +283,13 @@ export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
     }
   }
 
-  if (!data.details) errors.details = isCase ? "Please tell us what happened." : "Please add a little more detail, within 5,000 characters."
+  if (!data.details) {
+    errors.details = isCase
+      ? "Please tell us what happened."
+      : isContact
+        ? "Please enter your message."
+        : "Please add a little more detail, within 5,000 characters."
+  }
   else if (data.details.length > enquiryLimits.details) {
     errors.details = "Please add a little more detail, within 5,000 characters."
   }
@@ -272,7 +312,8 @@ export function getCaseIntakeStepErrors(step: 1 | 2 | 3 | 4, values: Partial<Enq
     businessName: values.businessName ?? "",
     country: values.country ?? "",
     phone: values.phone ?? "",
-    service: (values.service ?? "") as CaseService,
+    service: (values.service ?? "") as CaseService | "",
+    subject: values.subject ?? "",
     websiteUrl: values.websiteUrl ?? "",
     businessProfileUrl: values.businessProfileUrl ?? "",
     reviewUrl: values.reviewUrl ?? "",

@@ -72,6 +72,7 @@ const FIELD_STEPS: Record<EnquiryField, 1 | 2 | 3 | 4> = {
   informationAccurate: 4,
   privacyAccepted: 4,
   source: 1,
+  subject: 1,
 }
 
 type CaseIntakeFormProps = {
@@ -130,6 +131,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
       informationAccurate: values.informationAccurate,
       privacyAccepted: values.privacyAccepted,
       source: "get-help",
+      subject: "",
     }
   }
 

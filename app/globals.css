@@ -137,10 +137,10 @@ button, input, textarea, select { font: inherit; }
 
 .site-logo {
   display: block;
-  width: clamp(118px, 34vw, 176px);
+  width: clamp(132px, 38vw, 196px);
   height: auto;
   max-width: 100%;
-  aspect-ratio: 280 / 64;
+  aspect-ratio: 1456 / 300;
   object-fit: contain;
   object-position: left center;
   flex-shrink: 0;

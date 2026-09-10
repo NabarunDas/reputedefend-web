@@ -30,8 +30,8 @@ describe("brand assets", () => {
     }
   })
 
-  it("preserves the temporary wordmark aspect ratio", () => {
-    expect(logoSize.width / logoSize.height).toBeCloseTo(280 / 64)
+  it("preserves the approved wordmark aspect ratio", () => {
+    expect(logoSize.width / logoSize.height).toBeCloseTo(1456 / 300)
     expect(markSize.width).toBe(markSize.height)
   })
 

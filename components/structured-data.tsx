@@ -19,7 +19,7 @@ export function OrganizationStructuredData() {
     "@type": "Organization",
     name: "ReputeDefend",
     url: "https://reputedefend.com",
-    logo: "https://reputedefend.com/icon.svg",
+    logo: "https://reputedefend.com/icon.png",
     description: "Independent, practical support for Google Business Profile recovery and review issues.",
   }
 

@@ -14,10 +14,10 @@ type LogoProps = {
 }
 
 /**
- * Temporary ReputeDefend wordmark / mark.
+ * Approved ReputeDefend lockup / mark.
  *
- * Swap the files in public/brand when the approved logo is supplied.
  * Header and footer should keep importing ReputeLogo / ReputeMark.
+ * Swap the files in public/brand if a vector original is supplied later.
  */
 export function ReputeMark({
   variant = "dark",

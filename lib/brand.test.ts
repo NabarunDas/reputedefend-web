@@ -1,6 +1,13 @@
+import type { Metadata } from "next"
 import { describe, expect, it } from "vitest"
 import { brandAssets, brandColors, logoSize, markSize, ogCopy, ogImage } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+
+function isSummaryLargeImageTwitter(
+  twitter: NonNullable<Metadata["twitter"]>,
+): twitter is Extract<NonNullable<Metadata["twitter"]>, { card: "summary_large_image" }> {
+  return "card" in twitter && twitter.card === "summary_large_image"
+}
 
 describe("brand assets", () => {
   it("keeps the social image at the Open Graph size", () => {
@@ -56,8 +63,13 @@ describe("social metadata helpers", () => {
         type: "image/png",
       },
     ])
+    expect(isSummaryLargeImageTwitter(twitter)).toBe(true)
+    if (!isSummaryLargeImageTwitter(twitter)) return
+
     expect(twitter.card).toBe("summary_large_image")
-    expect(twitter.images[0]?.url).toBe("/twitter-image")
+    const image = Array.isArray(twitter.images) ? twitter.images[0] : twitter.images
+    const imageUrl = typeof image === "object" && image && "url" in image ? String(image.url) : image
+    expect(imageUrl).toBe("/twitter-image")
     expect(JSON.stringify(openGraph)).not.toContain("og-image.png")
     expect(JSON.stringify(twitter)).not.toContain("og-image.png")
   })

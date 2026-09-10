@@ -140,6 +140,10 @@ button, input, textarea, select { font: inherit; }
   width: clamp(118px, 34vw, 176px);
   height: auto;
   max-width: 100%;
+  aspect-ratio: 280 / 64;
+  object-fit: contain;
+  object-position: left center;
+  flex-shrink: 0;
 }
 
 .nav-link {

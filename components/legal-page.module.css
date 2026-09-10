@@ -1,0 +1,194 @@
+.page {
+  --edge: color-mix(in srgb, var(--ink) 14%, transparent);
+  --tint: color-mix(in srgb, var(--green) 5%, var(--paper));
+  width: min(760px, calc(100% - 48px));
+  margin-inline: auto;
+  padding-block: 48px 80px;
+  color: var(--ink);
+  font-family: var(--font-body), Arial, sans-serif;
+  overflow-wrap: break-word;
+  overflow-x: clip;
+}
+
+.page h1,
+.page h2,
+.page h3 {
+  font-family: var(--font-display), Arial, sans-serif;
+  text-wrap: balance;
+}
+
+.page h1 {
+  margin-top: 12px;
+  max-width: 18ch;
+  font-size: clamp(2.25rem, 4.2vw, 3rem);
+  line-height: 1.14;
+  letter-spacing: -.04em;
+  font-weight: 800;
+}
+
+.page h2 {
+  margin-bottom: 14px;
+  font-size: clamp(1.35rem, 2.2vw, 1.65rem);
+  line-height: 1.25;
+  letter-spacing: -.03em;
+  font-weight: 800;
+}
+
+.page h3 {
+  margin-top: 22px;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: -.02em;
+  font-weight: 750;
+}
+
+.page section[id] { scroll-margin-top: 108px; }
+
+.eyebrow {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.lead {
+  margin-top: 20px;
+  max-width: 42rem;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.meta {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.toc {
+  margin-top: 36px;
+  padding: 20px 22px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--tint);
+}
+
+.toc p {
+  margin-bottom: 12px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.toc ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+
+.toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--edge);
+  text-underline-offset: 4px;
+}
+
+.toc a:hover,
+.toc a:focus-visible { color: var(--green-dark); }
+
+.section {
+  margin-top: 40px;
+  padding-top: 8px;
+  border-top: 1px solid var(--edge);
+}
+
+.body {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.body p + p,
+.body p + ul,
+.body ul + p,
+.body h3 + p { margin-top: 14px; }
+
+.body ul {
+  margin-top: 12px;
+  padding-left: 1.15rem;
+}
+
+.body li { margin-top: 6px; }
+.body li::marker { color: var(--green); }
+
+.body a {
+  color: var(--green);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.callout {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-left: 3px solid var(--green);
+  border-radius: 0 12px 12px 0;
+  background: var(--tint);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--edge);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.related a,
+.related span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.related a { color: var(--green); }
+.related span { color: var(--ink); }
+
+@media (max-width: 480px) {
+  .page { width: calc(100% - 32px); padding-block: 36px 64px; }
+  .toc { padding: 16px; }
+  .toc ol { gap: 2px; }
+  .page h1 { max-width: 14ch; font-size: clamp(1.85rem, 8vw, 2.35rem); }
+  .lead { font-size: 16px; }
+  .body { font-size: 15.5px; }
+}
+
+@media (max-width: 360px) {
+  .page { width: calc(100% - 24px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *,
+  .page *::before,
+  .page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

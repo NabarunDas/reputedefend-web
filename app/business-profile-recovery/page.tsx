@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
 import { recoveryDescription, recoveryFaqs } from "./content"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import { BeforeSubmitting, CommonSituations, FirstAssessment, PrepareEvidence, RecoveryClosing, RecoveryFaq, RecoveryHero, RecoveryProcess, RecoverySupport, RecoveryTransparency } from "./recovery-sections"
 import styles from "./recovery.module.css"
 
@@ -9,14 +10,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description: recoveryDescription,
   alternates: { canonical: "/business-profile-recovery" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description: recoveryDescription,
-    url: "/business-profile-recovery",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
+  openGraph: socialOpenGraph({ title, description: recoveryDescription, path: "/business-profile-recovery" }),
+  twitter: socialTwitter({ title, description: recoveryDescription }),
 }
 
 export default function BusinessProfileRecoveryPage() {

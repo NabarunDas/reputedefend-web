@@ -299,7 +299,7 @@ export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
   }
 
   if (isCase && !data.privacyAccepted) {
-    errors.privacyAccepted = "Please confirm that you have read the privacy information."
+    errors.privacyAccepted = "Please confirm that you have read the privacy notice."
   }
 
   return errors

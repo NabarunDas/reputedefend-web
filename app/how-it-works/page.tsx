@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, HowToStructuredData } from "@/components/structured-data"
 import { howDescription, howFaqs, journeySteps } from "./content"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   HowAssessment,
   HowClosing,
@@ -21,15 +22,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description: howDescription,
   alternates: { canonical: "/how-it-works" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description: howDescription,
-    url: "/how-it-works",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
-  twitter: { card: "summary_large_image", title, description: howDescription, images: ["/og-image.png"] },
+  openGraph: socialOpenGraph({ title, description: howDescription, path: "/how-it-works" }),
+  twitter: socialTwitter({ title, description: howDescription }),
 }
 
 export default function HowItWorksPage() {

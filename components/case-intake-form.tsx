@@ -410,7 +410,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               />
               <span>
                 I understand how ReputeDefend handles this information, as described in the{" "}
-                <Link href="/privacy">privacy information</Link>.
+                <Link href="/privacy">privacy notice</Link>.
               </span>
             </label>
             {errors.privacyAccepted ? <p id={`${formId}-privacyAccepted-error`} className={styles.error}>{errors.privacyAccepted}</p> : null}

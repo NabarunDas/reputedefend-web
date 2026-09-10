@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 import styles from "./about.module.css"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 const title = "About ReputeDefend | Independent Reputation Support"
 const description = "ReputeDefend is an independent support service for Google Business Profile recovery and review issues. We focus on the facts, explain the options and avoid promises no independent service can honestly make."
@@ -10,14 +11,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description,
   alternates: { canonical: "/about" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description,
-    url: "/about",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
+  openGraph: socialOpenGraph({ title, description, path: "/about" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 const principles = [

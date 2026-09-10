@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowRight, ArrowUpRight, Plus } from "lucide-react"
 import { ContactForm } from "@/components/contact-form"
+import { feeWording } from "@/lib/legal"
 import { FaqStructuredData } from "@/components/structured-data"
 import styles from "./contact.module.css"
 
@@ -29,7 +30,7 @@ const faqs = [
   },
   {
     q: "Can I ask about fees before submitting a case?",
-    a: "Yes. The level of support depends on the situation. Any proposed support and associated fees will be explained clearly before you decide how to proceed.",
+    a: `Yes. ${feeWording}`,
   },
   {
     q: "Do you provide guaranteed outcomes?",

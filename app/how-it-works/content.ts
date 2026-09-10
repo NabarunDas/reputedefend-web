@@ -1,3 +1,5 @@
+import { feeWording } from "@/lib/legal"
+
 export const howDescription =
   "See how ReputeDefend assesses Google Business Profile and review issues, organises evidence and helps businesses understand an appropriate next step."
 
@@ -125,7 +127,7 @@ export const howFaqs = [
   },
   {
     q: "Do you submit appeals or reports on my behalf?",
-    a: "The level of support depends on the situation. Any proposed support and associated fees will be explained clearly before you decide how to proceed. Some situations need assessment and evidence preparation. Others may involve further help with an available recovery, appeal, report or challenge process.",
+    a: `${feeWording} Some situations need assessment and evidence preparation. Others may involve further help with an available recovery, appeal, report or challenge process.`,
   },
   {
     q: "How long does the assessment process take?",

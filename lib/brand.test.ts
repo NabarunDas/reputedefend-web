@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest"
+import { brandAssets, brandColors, logoSize, markSize, ogCopy, ogImage } from "@/lib/brand"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+
+describe("brand assets", () => {
+  it("keeps the social image at the Open Graph size", () => {
+    expect(ogImage.width).toBe(1200)
+    expect(ogImage.height).toBe(630)
+    expect(ogImage.contentType).toBe("image/png")
+  })
+
+  it("uses the current site palette", () => {
+    expect(brandColors.forest).toBe("#10261F")
+    expect(brandColors.paper).toBe("#f7f8f3")
+    expect(brandColors.green).toBe("#0b6b52")
+    expect(brandColors.lime).toBe("#cbe86b")
+  })
+
+  it("exposes replaceable horizontal and mark files for each variant", () => {
+    for (const variant of ["dark", "light", "mono"] as const) {
+      expect(brandAssets.horizontal[variant]).toMatch(/^\/brand\/logo-horizontal-/)
+      expect(brandAssets.mark[variant]).toMatch(/^\/brand\/mark-/)
+    }
+  })
+
+  it("preserves the temporary wordmark aspect ratio", () => {
+    expect(logoSize.width / logoSize.height).toBeCloseTo(280 / 64)
+    expect(markSize.width).toBe(markSize.height)
+  })
+
+  it("keeps OG copy aligned with public claims", () => {
+    expect(ogCopy.name).toBe("ReputeDefend")
+    expect(ogCopy.headline).toMatch(/business presence and reputation on Google/)
+    expect(ogCopy.support).toBe("Independent • Evidence-led • No guaranteed outcomes")
+  })
+})
+
+describe("social metadata helpers", () => {
+  it("does not invent a static PNG path", () => {
+    const openGraph = socialOpenGraph({
+      title: "Privacy notice | ReputeDefend",
+      description: "How information is handled.",
+      path: "/privacy",
+    })
+    const twitter = socialTwitter({
+      title: "Privacy notice | ReputeDefend",
+      description: "How information is handled.",
+    })
+
+    expect(openGraph.images).toBeUndefined()
+    expect(twitter.images).toBeUndefined()
+    expect(twitter.site).toBeUndefined()
+    expect(twitter.creator).toBeUndefined()
+    expect(twitter.card).toBe("summary_large_image")
+  })
+})

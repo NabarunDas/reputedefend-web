@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { feeWording, hasLegalValue, legalIdentity } from "@/lib/legal"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 const title = "Terms of use | ReputeDefend"
 const description = "Terms that apply to using the ReputeDefend website and sending an enquiry or case submission."
@@ -10,14 +11,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description,
   alternates: { canonical: "/terms" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description,
-    url: "/terms",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
+  openGraph: socialOpenGraph({ title, description, path: "/terms" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 const sections: LegalSection[] = [

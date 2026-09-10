@@ -50,8 +50,8 @@ export function Header() {
   return (
     <header className={`site-header sticky top-0 z-30 border-b ${scrolled ? "site-header-scrolled" : "border-transparent"}`}>
       <div className="container">
-        <Link href="/" aria-label="ReputeDefend home" className="inline-flex min-w-0" onClick={() => setMenuOpen(false)}>
-          <ReputeLogo className="site-logo" />
+        <Link href="/" aria-label="ReputeDefend home" className="inline-flex min-w-0 shrink-0 items-center" onClick={() => setMenuOpen(false)}>
+          <ReputeLogo className="site-logo" decorative priority />
         </Link>
         <nav aria-label="Primary" className="desktop-nav hidden items-center gap-6 text-[.78rem] font-bold lg:flex xl:gap-8">
           {navigation.map(([label, href]) => (

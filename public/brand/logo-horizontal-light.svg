@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" fill="none" role="img" aria-label="ReputeDefend">
+  <g aria-hidden="true">
+    <path d="M14 17.5A5.5 5.5 0 0 1 19.5 12h23A5.5 5.5 0 0 1 48 17.5v14.2c0 3.04-1.23 5.95-3.42 8.07L32 52 19.42 39.77A11.16 11.16 0 0 1 16 31.7V20.5" stroke="#f7fbf4" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="27" cy="25" r="4.2" fill="#c7f36b"/>
+    <path d="M27 32.5c-4.8 0-8 2.35-8 5.8h16c0-3.45-3.2-5.8-8-5.8Zm11-7.5h7m-7 6h5" stroke="#c7f36b" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M8 39.5c6 10 17.1 16.1 29.3 15.2 8.1-.6 14.8-4.3 19.1-10.1" stroke="#c7f36b" stroke-width="3.2" stroke-linecap="round"/>
+  </g>
+  <text x="76" y="42" fill="#f7fbf4" font-family="Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="-1.8">Repute<tspan fill="#c7f36b">Defend</tspan></text>
+</svg>

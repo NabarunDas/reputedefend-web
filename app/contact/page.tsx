@@ -3,6 +3,7 @@ import Link from "next/link"
 import { ArrowRight, ArrowUpRight, Plus } from "lucide-react"
 import { ContactForm } from "@/components/contact-form"
 import { feeWording } from "@/lib/legal"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import { FaqStructuredData } from "@/components/structured-data"
 import styles from "./contact.module.css"
 
@@ -13,14 +14,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description,
   alternates: { canonical: "/contact" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description,
-    url: "/contact",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
+  openGraph: socialOpenGraph({ title, description, path: "/contact" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 const faqs = [

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { LockKeyhole } from "lucide-react"
 import { CaseIntakeForm } from "@/components/case-intake-form"
 import { parseServiceParam } from "@/lib/enquiry"
+import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./get-help.module.css"
 
 const title = "Get Help With a Google Business Profile or Review Issue | ReputeDefend"
@@ -11,14 +12,8 @@ export const metadata: Metadata = {
   title: { absolute: title },
   description,
   alternates: { canonical: "/get-help" },
-  openGraph: {
-    type: "website",
-    siteName: "ReputeDefend",
-    title,
-    description,
-    url: "/get-help",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
-  },
+  openGraph: socialOpenGraph({ title, description, path: "/get-help" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 const nextSteps = [

@@ -4,25 +4,35 @@ import "./globals.css"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { OrganizationStructuredData } from "@/components/structured-data"
+import { socialTwitter } from "@/lib/social-metadata"
 
 const bodyFont = Inter({ subsets: ["latin"], variable: "--font-body" })
 const displayFont = Manrope({ subsets: ["latin"], variable: "--font-display" })
 
+const title = "ReputeDefend | Practical reputation support"
+const description = "Practical support for Google Business Profile recovery and review protection."
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://reputedefend.com"),
+  applicationName: "ReputeDefend",
   title: {
-    default: "ReputeDefend | Practical reputation support",
+    default: title,
     template: "%s | ReputeDefend",
   },
-  description: "Practical support for Google Business Profile recovery and review protection.",
-  icons: { icon: "/icon.svg", shortcut: "/icon.svg" },
+  description,
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: "/icon.svg",
+  },
   openGraph: {
     type: "website",
+    locale: "en_GB",
     siteName: "ReputeDefend",
-    title: "ReputeDefend | Practical reputation support",
-    description: "Practical support for Google Business Profile recovery and review protection.",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "ReputeDefend practical reputation support" }],
+    title,
+    description,
+    url: "/",
   },
+  twitter: socialTwitter({ title, description }),
   robots: process.env.VERCEL_ENV === "production"
     ? { index: true, follow: true }
     : { index: false, follow: false },

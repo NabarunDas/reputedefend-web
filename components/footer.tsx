@@ -22,7 +22,9 @@ export function Footer() {
     <footer className="border-t border-white/10 bg-[#10261F] py-16 text-[#F7F4EC]">
       <div className="container grid gap-14 md:grid-cols-[1.5fr_1fr_1fr]">
         <div>
-          <ReputeLogo variant="light" className="site-logo" />
+          <Link href="/" aria-label="ReputeDefend home" className="inline-flex items-center">
+            <ReputeLogo variant="light" className="site-logo" decorative />
+          </Link>
           <p className="mt-5 max-w-xs text-sm leading-7 text-[#A8B8B0]">
             Clear, practical support when your business reputation needs a steadier hand.
           </p>

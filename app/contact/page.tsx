@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowRight, ArrowUpRight, Plus } from "lucide-react"
 import { ContactForm } from "@/components/contact-form"
+import { FaqStructuredData } from "@/components/structured-data"
 import styles from "./contact.module.css"
 
 const title = "Contact ReputeDefend | General Enquiries"
@@ -49,6 +50,7 @@ const nextSteps = [
 export default function ContactPage() {
   return (
     <div className={styles.page}>
+      <FaqStructuredData questions={faqs} />
       <section className={`${styles.wrap} ${styles.hero}`} aria-labelledby="contact-title">
         <p className={styles.eyebrow}>Contact ReputeDefend</p>
         <h1 id="contact-title">Have a question before you start?</h1>

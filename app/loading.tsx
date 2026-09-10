@@ -1,1 +1,10 @@
-export default function Loading(){return <div className="container py-28" aria-live="polite"><p className="eyebrow">Loading</p><div className="mt-6 h-3 max-w-sm rounded-full bg-[var(--line)]"/><p className="mt-4 text-sm text-[var(--muted)]">Preparing the next step…</p></div>}
+export default function Loading() {
+  return (
+    <div className="status-page" aria-live="polite" aria-busy="true">
+      <p className="eyebrow">Loading</p>
+      <h1 className="section-title">Preparing the next step</h1>
+      <div className="mt-6 h-2 max-w-sm rounded-full bg-[var(--line)]" />
+      <p>This should only take a moment.</p>
+    </div>
+  )
+}

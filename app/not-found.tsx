@@ -1,1 +1,20 @@
-import Link from "next/link";export default function NotFound(){return <section className="container py-28"><p className="eyebrow">404</p><h1 className="display mt-5 max-w-2xl">That page took a wrong turn.</h1><p className="mt-6 max-w-lg text-lg leading-8 text-[var(--muted)]">The page you’re looking for may have moved. Try the home page or tell us what you need.</p><Link href="/" className="mt-8 inline-block rounded-full bg-[var(--green)] px-5 py-3 font-bold text-white">Back home</Link></section>}
+import type { Metadata } from "next"
+import Link from "next/link"
+
+export const metadata: Metadata = {
+  title: "Page not found",
+  robots: { index: false, follow: false },
+}
+
+export default function NotFound() {
+  return (
+    <section className="status-page">
+      <p className="eyebrow">404</p>
+      <h1>That page took a wrong turn.</h1>
+      <p>The page you’re looking for may have moved. Try the home page or tell us what you need.</p>
+      <Link href="/" className="button-primary rounded-full bg-[var(--green)] px-5 py-3 font-bold text-white">
+        Back home
+      </Link>
+    </section>
+  )
+}

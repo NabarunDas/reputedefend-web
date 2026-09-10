@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { FaqStructuredData, HowToStructuredData, ServiceStructuredData } from "@/components/structured-data"
+import { FaqStructuredData, HowToStructuredData } from "@/components/structured-data"
 import { howDescription, howFaqs, journeySteps } from "./content"
 import {
   HowAssessment,
@@ -35,11 +35,6 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <div className={`${styles.page} font-sans`}>
-      <ServiceStructuredData
-        name="Google reputation support process"
-        description={howDescription}
-        path="/how-it-works"
-      />
       <HowToStructuredData
         name="How ReputeDefend works"
         description={howDescription}

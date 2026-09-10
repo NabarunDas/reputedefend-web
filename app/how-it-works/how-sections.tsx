@@ -271,7 +271,7 @@ export function HowClosing() {
         <p>You do not need a finished case file. Start with the issue, the relevant links or messages and what you have already tried.</p>
       </div>
       <div className={s.closingAction}>
-        <StartCase closing>Start my case</StartCase>
+        <StartCase closing>Start a case</StartCase>
         <div className={s.closingLinks}>
           <Link href="/business-profile-recovery">Business Profile help <ArrowUpRight size={16} aria-hidden="true" /></Link>
           <Link href="/review-protection">Review Protection <ArrowUpRight size={16} aria-hidden="true" /></Link>

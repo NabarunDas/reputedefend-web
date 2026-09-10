@@ -191,7 +191,7 @@
     width: calc(100% - 32px);
   }
   .page h1 {
-    font-size: clamp(32px, 9vw, 40px);
+    font-size: clamp(36px, 9vw, 42px);
   }
   .next,
   .avoid {
@@ -208,19 +208,3 @@
   }
 }
 
-:global(body):has(.page) {
-  overflow-x: visible;
-}
-
-@media (max-width: 359px) {
-  :global(body):has(.page) :global(.site-header > .container) {
-    padding-inline: 0;
-    gap: 8px;
-  }
-  :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"]) {
-    flex-shrink: 1;
-  }
-  :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"] > svg) {
-    max-width: 100%;
-  }
-}

@@ -176,9 +176,10 @@ export function ContactForm() {
             maxLength={enquiryLimits.businessName}
             className={styles.control}
             aria-invalid={Boolean(errors.businessName) || undefined}
+            aria-describedby={errors.businessName ? `${formId}-businessName-error` : undefined}
             onChange={() => clearField("businessName")}
           />
-          {errors.businessName ? <p className={styles.error}>{errors.businessName}</p> : null}
+          {errors.businessName ? <p id={`${formId}-businessName-error`} className={styles.error}>{errors.businessName}</p> : null}
         </div>
         <div className={styles.field}>
           <label htmlFor={`${formId}-subject`}>Subject</label>
@@ -221,8 +222,9 @@ export function ContactForm() {
 
       <p className={styles.redirect}>
         Already dealing with a Business Profile or review issue?{" "}
-        <Link href="/get-help">Submit a case instead →</Link>
+        <Link href="/get-help">Get help with a case</Link>
       </p>
+      <p className={styles.redirect}>Please do not include passwords, verification codes or account credentials.</p>
 
       <button type="submit" className={styles.submit} disabled={status === "loading"}>
         {status === "loading" ? "Sending…" : "Send message"}

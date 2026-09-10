@@ -1,1 +1,24 @@
-export const metadata={title:"Privacy",description:"Learn how ReputeDefend handles information shared through this website.",alternates:{canonical:"/privacy"}};export default function Page(){return <article className="container max-w-3xl py-20"><p className="eyebrow">Privacy</p><h1 className="section-title mt-4">Privacy information</h1><p className="mt-6 leading-8 text-[var(--muted)]">This website is designed to keep data collection minimal. Enquiry details are only used to respond to your message and are not sold. Before launch, this page should be reviewed and completed with the final provider and retention details.</p></article>}
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Privacy",
+  description: "Learn how ReputeDefend handles information shared through this website.",
+  alternates: { canonical: "/privacy" },
+  openGraph: {
+    type: "website",
+    siteName: "ReputeDefend",
+    title: "Privacy | ReputeDefend",
+    description: "Learn how ReputeDefend handles information shared through this website.",
+    url: "/privacy",
+  },
+}
+
+export default function PrivacyPage() {
+  return (
+    <article className="legal">
+      <p className="eyebrow">Privacy</p>
+      <h1>Privacy information</h1>
+      <p>This website is designed to keep data collection minimal. Enquiry details are only used to respond to your message and are not sold.</p>
+    </article>
+  )
+}

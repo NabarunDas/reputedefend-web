@@ -125,7 +125,7 @@ export const howFaqs = [
   },
   {
     q: "Do you submit appeals or reports on my behalf?",
-    a: "The appropriate level of support depends on the case and will be explained before work proceeds. Some situations need assessment and evidence preparation. Others may involve further help with an available recovery, appeal, report or challenge process. Any proposed support should be clear before you decide how to proceed.",
+    a: "The level of support depends on the situation. Any proposed support and associated fees will be explained clearly before you decide how to proceed. Some situations need assessment and evidence preparation. Others may involve further help with an available recovery, appeal, report or challenge process.",
   },
   {
     q: "How long does the assessment process take?",

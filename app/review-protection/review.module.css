@@ -66,7 +66,7 @@
 .evidenceRecord > p { font-size:14px; color:var(--muted); border-top:1px solid var(--edge); padding-top:20px; }
 .supportList { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:64px; }
 .supportList > div { border-top:1px solid var(--edge); padding-block:28px; }
-.pathways { padding:56px 40px 40px; background:var(--tint); border:1px solid var(--edge); border-radius:28px; }
+.pathways { padding:56px 40px 40px; background:var(--tint); border:1px solid var(--edge); border-radius:28px; overflow:hidden; }
 .pathways header { text-align:center; max-width:660px; margin-inline:auto; }
 .pathways header > p:last-child { margin-top:20px; color:var(--muted); }
 .routeOrigin { display:flex; justify-content:center; position:relative; padding-block:32px 40px; }
@@ -128,5 +128,3 @@
 @media(max-width:480px) { .hero,.section,.distinction,.evidence,.pathways,.expectations,.closing { width:calc(100% - 32px); } .scenarios,.supportList,.precautions,.boundaries { grid-template-columns:minmax(0,1fr); } .evidence,.expectations,.closing { padding:28px 24px; } .evidenceRecord { padding:24px 20px; } .pathways { padding:32px 18px 24px; } .route { padding:24px 20px; } .page .eyebrow { letter-spacing:.04em; } .actions { align-items:stretch; } .page .button,.page .textLink { max-width:100%; text-align:center; } .page .button { padding:14px 16px; } .visualHeading { gap:12px; } .visual li { gap:14px; } .process li { grid-template-columns:24px minmax(0,1fr); gap:16px; } .process li > svg { display:none; } .assessmentList li { gap:16px; } .closingAction { align-items:stretch; } }
 @media(min-width:768px) { .routeGrid { row-gap:0; } .route { display:grid; grid-template-rows:subgrid; grid-row:span 5; } .routeNote { margin-top:0; } }
 @media(prefers-reduced-motion:reduce) { .page *,.page *::before,.page *::after { animation:none !important; transition:none !important; } .page a:hover,.page a:hover svg,.route:hover { transform:none !important; } }
-:global(body):has(.page) { overflow-x:visible; }
-@media(max-width:359px) { :global(body):has(.page) :global(.site-header > .container) { padding-inline:0; gap:8px; } :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"]) { flex-shrink:1; } :global(body):has(.page) :global(.site-header a[aria-label="ReputeDefend home"] > svg) { max-width:100%; } }

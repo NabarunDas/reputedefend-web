@@ -21,7 +21,7 @@
 .home .secondaryButton { border: 1px solid var(--home-border); color: var(--ink); }
 .primaryButton svg, .secondaryButton svg, .textLink svg { flex-shrink: 0; transition: transform 240ms ease-out; }
 .home .heroNote { color: var(--muted); font-size: 14px; margin-top: 22px; }
-.caseVisual { border: 1px solid var(--home-border); border-radius: 24px; background: color-mix(in srgb, var(--green) 5%, var(--paper)); padding: 28px; }
+.caseVisual { border: 1px solid var(--home-border); border-radius: 24px; background: color-mix(in srgb, var(--green) 5%, var(--paper)); padding: 28px; overflow: hidden; }
 .visualCaption { color: var(--green); font-size: 14px; font-weight: 700; letter-spacing: .03em; margin-bottom: 28px; }
 .caseDocument { border: 1px solid var(--home-border); background: var(--paper); border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 5%, transparent); transform: rotate(-2deg); }
 .documentTop { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 700; color: var(--green); }

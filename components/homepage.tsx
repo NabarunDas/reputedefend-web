@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, FileText, ListChecks, MessageSquareText, Plus, ScanSearch, Store } from "lucide-react"
+import { ArrowDown, ArrowUpRight, Check, FileText, ListChecks, MessageSquareText, Plus, ScanSearch, Store } from "lucide-react"
 import { EnquiryForm } from "@/components/enquiry-form"
 import { homepageFaqs } from "@/lib/homepage-content"
 import styles from "./homepage.module.css"

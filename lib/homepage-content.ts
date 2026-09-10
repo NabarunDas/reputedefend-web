@@ -33,10 +33,9 @@ export const allHomepageFaqs = [
   },
   {
     q: "What happens after I send an enquiry?",
-    a: "Our team reviews the information you share to understand the situation. We contact you with our assessment and recommended next steps, which may include asking for more context. Any proposed support should be clear before you decide how to proceed.",
+    a: "Our team reviews the information you share to understand the situation. We contact you with our assessment and recommended next steps, which may include asking for more context. The level of support depends on the situation. Any proposed support and associated fees will be explained clearly before you decide how to proceed.",
   },
 ]
 
 const homepageFaqIndices = new Set([0, 1, 2, 4, 7, 8])
 export const homepageFaqs = allHomepageFaqs.filter((_, index) => homepageFaqIndices.has(index))
-export const serviceFaqsForLater = allHomepageFaqs.filter((_, index) => !homepageFaqIndices.has(index))

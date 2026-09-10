@@ -47,8 +47,18 @@ describe("social metadata helpers", () => {
       description: "How information is handled.",
     })
 
-    expect(openGraph.images).toBeUndefined()
+    expect(openGraph.images).toEqual([
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: expect.stringContaining("ReputeDefend"),
+        type: "image/png",
+      },
+    ])
     expect(twitter.card).toBe("summary_large_image")
-    expect(Object.keys(twitter).sort()).toEqual(["card", "description", "title"])
+    expect(twitter.images[0]?.url).toBe("/twitter-image")
+    expect(JSON.stringify(openGraph)).not.toContain("og-image.png")
+    expect(JSON.stringify(twitter)).not.toContain("og-image.png")
   })
 })

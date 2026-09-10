@@ -1,15 +1,15 @@
 import type { Metadata } from "next"
 import {
-  Homepage,
+  HomeConversion,
+  HomeExpertise,
+  HomeFaq,
   HomeHero,
+  Homepage,
+  HomeProcess,
   HomeServices,
   HomeSituations,
-  HomeSupport,
   HomeTrust,
-  HomeProcess,
-  HomeExpectations,
-  HomeFaq,
-  HomeConversion,
+  HomeTrustStrip,
 } from "@/components/homepage"
 import { FaqStructuredData } from "@/components/structured-data"
 import { homepageFaqs } from "@/lib/homepage-content"
@@ -23,12 +23,12 @@ export default function Home() {
     <Homepage>
       <FaqStructuredData questions={homepageFaqs} />
       <HomeHero />
-      <HomeServices />
+      <HomeTrustStrip />
       <HomeSituations />
-      <HomeSupport />
-      <HomeTrust />
+      <HomeServices />
+      <HomeExpertise />
       <HomeProcess />
-      <HomeExpectations />
+      <HomeTrust />
       <HomeFaq />
       <HomeConversion />
     </Homepage>

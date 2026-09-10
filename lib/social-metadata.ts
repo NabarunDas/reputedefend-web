@@ -29,7 +29,11 @@ export function socialTwitter({
 }: {
   title: string
   description: string
-}): NonNullable<Metadata["twitter"]> {
+}): {
+  card: "summary_large_image"
+  title: string
+  description: string
+} {
   return {
     card: "summary_large_image",
     title,

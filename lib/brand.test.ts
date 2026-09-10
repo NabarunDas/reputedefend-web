@@ -48,9 +48,7 @@ describe("social metadata helpers", () => {
     })
 
     expect(openGraph.images).toBeUndefined()
-    expect(twitter.images).toBeUndefined()
-    expect(twitter.site).toBeUndefined()
-    expect(twitter.creator).toBeUndefined()
     expect(twitter.card).toBe("summary_large_image")
+    expect(Object.keys(twitter).sort()).toEqual(["card", "description", "title"])
   })
 })

@@ -43,12 +43,12 @@ export const brandAssets: Record<BrandLayout, Record<BrandVariant, string>> = {
 export const ogImage = {
   width: 1200,
   height: 630,
-  alt: "ReputeDefend. Protect your business presence and reputation on Google. Independent, evidence-led, no guaranteed outcomes.",
+  alt: "ReputeDefend — Google Business Profile recovery and review protection support.",
   contentType: "image/png" as const,
 }
 
 export const ogCopy = {
   name: brandName,
   headline: "Protect your business presence and reputation on Google.",
-  support: "Independent • Evidence-led • No guaranteed outcomes",
+  support: "Human review • Evidence-led • Clear next steps",
 }

@@ -57,7 +57,7 @@ export function HomeHero() {
       <div className={styles.heroCopy}>
         <Eyebrow>Google Business Profile &amp; Review Support</Eyebrow>
         <h1 id="home-title">Your Google presence shouldn&apos;t be <span>costing you customers.</span></h1>
-        <p className={styles.lead}>If your Business Profile has been suspended, you&apos;ve lost access, verification has stalled or suspicious reviews are damaging trust, the uncertainty can quickly affect your business. ReputeDefend helps you understand what happened, build the strongest appropriate case and take the right next step.</p>
+        <p className={styles.lead}>If your Business Profile has been suspended, you&apos;ve lost access, verification has stalled or suspicious reviews are damaging trust, customers may struggle to find, contact or choose your business with confidence. ReputeDefend helps you understand what happened, identify what matters and take the strongest appropriate next step.</p>
         <div className={styles.actions}>
           <Link className={styles.primaryButton} href="/get-help">Tell us what happened <ArrowUpRight aria-hidden="true" size={18} /></Link>
           <Link className={styles.secondaryButton} href="#home-services">See how we can help <ArrowDown aria-hidden="true" size={18} /></Link>
@@ -92,10 +92,10 @@ export function HomeTrustStrip() {
 }
 
 const situations = [
-  ["Your Business Profile disappeared or was suspended", "Customers may struggle to find accurate information about your business."],
-  ["You're locked out or unable to complete verification", "Uncertainty about access can make it difficult to respond confidently."],
-  ["Important profile features have suddenly changed", "A restriction or missing feature can leave you unsure what customers now see."],
-  ["Suspicious reviews are affecting confidence in your business", "A damaging review can influence what prospective customers see when comparing businesses."],
+  ["Your Business Profile disappeared or was suspended", "Customers may be unable to find or verify the business as they expect."],
+  ["You're locked out or unable to complete verification", "The business may be unable to keep important information accurate or respond in the usual way."],
+  ["Important profile features have suddenly changed", "Customers may see incomplete or outdated information about the business."],
+  ["Suspicious reviews are affecting confidence in your business", "Prospective customers may see damaging information while comparing businesses."],
 ]
 
 export function HomeSituations() {
@@ -104,7 +104,7 @@ export function HomeSituations() {
       <div className={styles.situationIntro}>
         <Eyebrow>Recognise the situation?</Eyebrow>
         <h2 id="situations-title">When your Google presence changes, the impact can reach your customers too.</h2>
-        <p>A suspended profile, lost access or damaging reviews are not just platform problems. They can affect how customers find you, contact you and decide whether to trust your business.</p>
+        <p>A suspended profile, lost access or damaging reviews are not just platform problems. If customers cannot find accurate information, confirm you&apos;re open, get directions, contact you easily or feel confident about what they see, that can mean missed calls, enquiries, bookings or opportunities.</p>
         <p className={styles.reassuranceLead}>You don&apos;t need to diagnose the problem before asking for help.</p>
         <Link className={styles.primaryButton} href="/get-help">Tell us what&apos;s happening <ArrowUpRight aria-hidden="true" size={18} /></Link>
       </div>
@@ -125,8 +125,8 @@ const homeServices = [
     title: "Google Business Profile Protection & Recovery",
     label: "Suspensions, access and verification",
     icon: Store,
-    description: "When your profile is suspended, inaccessible or stuck in verification, we help establish what changed, what information matters and what recovery route is appropriate.",
-    points: ["Suspension and restriction assessment", "Access and verification guidance", "Recovery and appeal preparation"],
+    description: "When your profile is suspended, inaccessible or stuck in verification, we help establish what changed, identify the evidence that matters and prepare the recovery route clearly.",
+    points: ["Suspension, access and verification assessment", "Evidence and recovery/appeal preparation", "Support carrying the recommended recovery route forward"],
     href: "/business-profile-recovery",
     cta: "Get help with my profile",
   },
@@ -134,8 +134,8 @@ const homeServices = [
     title: "Google Review Protection",
     label: "Suspicious or potentially policy-breaching reviews",
     icon: MessageSquareText,
-    description: "When a suspicious or potentially policy-breaching review is affecting your reputation, we assess the circumstances, evidence and available response or challenge route.",
-    points: ["Review and policy assessment", "Relevant evidence and context", "Response and challenge guidance"],
+    description: "When a suspicious or potentially policy-breaching review is affecting trust, we assess the review and surrounding evidence, then help prepare the response, reporting or challenge route that fits.",
+    points: ["Review and policy assessment", "Evidence and reporting/challenge preparation", "Professional response support where that is the stronger route"],
     href: "/review-protection",
     cta: "Assess a review issue",
   },
@@ -226,6 +226,10 @@ export function HomeProcess() {
           </li>
         ))}
       </ol>
+      <div className={styles.processSupport}>
+        <h3>If you want help carrying the next step through</h3>
+        <p>Depending on the situation, further support can include organising relevant evidence, preparing recovery or reporting wording, reviewing previous attempts, or helping shape a professional response. The exact scope depends on the case and is explained before any paid work begins.</p>
+      </div>
     </section>
   )
 }
@@ -255,7 +259,7 @@ export function HomeTrust() {
       </ul>
       <div className={styles.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google ultimately controls platform decisions such as profile reinstatement and review removal. We focus on the part you can control: presenting the situation clearly, using relevant evidence and following the appropriate process.</p>
+        <p>Google makes the final platform decision. ReputeDefend focuses on what you can influence: understanding the issue, presenting relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
       </div>
     </section>
   )
@@ -291,7 +295,6 @@ export function HomeConversion() {
         <p>Tell us what happened, what changed and what you have already tried. We&apos;ll review the information and help you understand the next practical step.</p>
         <ul className={styles.conversionPoints}>
           <li>Submitting an enquiry does not commit you to paid support.</li>
-          <li>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide how to proceed.</li>
           <li>Please don&apos;t send passwords or verification codes.</li>
         </ul>
       </div>

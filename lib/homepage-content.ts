@@ -1,5 +1,3 @@
-import { feeWording } from "@/lib/legal"
-
 export const homepageFaqs = [
   {
     q: "My Business Profile has been suspended. Where should I start?",
@@ -15,7 +13,7 @@ export const homepageFaqs = [
   },
   {
     q: "What happens after I send an enquiry?",
-    a: `We review what you sent and come back with a practical view of the next step. That may include asking for more context. Submitting an enquiry does not commit you to paid support. ${feeWording}`,
+    a: "We review what you send and form an initial view of the situation and the next step that appears appropriate. If you want help carrying that recommendation through, further support may include organising evidence, preparing recovery or reporting material, reviewing previous attempts or helping shape a professional response. The exact scope and any fee are explained before you decide.",
   },
   {
     q: "Is ReputeDefend affiliated with Google?",

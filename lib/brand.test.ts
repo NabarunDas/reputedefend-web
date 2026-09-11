@@ -38,7 +38,9 @@ describe("brand assets", () => {
   it("keeps OG copy aligned with public claims", () => {
     expect(ogCopy.name).toBe("ReputeDefend")
     expect(ogCopy.headline).toMatch(/business presence and reputation on Google/)
-    expect(ogCopy.support).toBe("Independent • Evidence-led • No guaranteed outcomes")
+    expect(ogCopy.support).toBe("Human review • Evidence-led • Clear next steps")
+    expect(ogImage.alt).toBe("ReputeDefend — Google Business Profile recovery and review protection support.")
+    expect(`${ogCopy.support} ${ogImage.alt}`.toLowerCase()).not.toMatch(/guaranteed/)
   })
 })
 

@@ -240,6 +240,15 @@
 }
 .processList h3 { margin-top: 24px; }
 .processList p { color: var(--home-muted-strong); margin-top: 12px; font-size: 15px; }
+.processSupport {
+  margin-top: 36px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--green) 5%, var(--paper));
+  border: 1px solid var(--home-border);
+}
+.processSupport h3 { margin: 0; font-size: 18px; }
+.processSupport p { margin-top: 10px; color: var(--home-muted-strong); font-size: 15px; line-height: 1.65; }
 
 .faqSection { display: grid; grid-template-columns: .8fr 1.2fr; gap: 88px; padding-block: 88px; }
 .faqList details { border-bottom: 1px solid var(--home-border); }
@@ -342,7 +351,7 @@
   .trustStrip { padding: 16px; }
   .trustStrip ul { gap: 14px 12px; }
   .situations, .expertise { padding: 28px 20px; }
-  .trustGrid li, .trustLimit { padding: 20px; }
+  .trustGrid li, .trustLimit, .processSupport { padding: 20px; }
   .expertiseGrid li { padding: 22px; }
   .conversion { padding: 28px 16px 16px; }
   .conversionCopy { padding-inline: 8px; }

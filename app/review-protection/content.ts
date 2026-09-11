@@ -1,14 +1,14 @@
 export const reviewDescription =
-  "Independent support for suspicious, misleading or potentially policy-breaching Google reviews. Assess the review, organise relevant evidence and choose the response, reporting or challenge route that fits."
+  "Human, evidence-led support for suspicious or potentially policy-breaching Google reviews. Assess the review, organise relevant evidence and prepare the response, reporting or challenge route that fits."
 
 export const situations = [
   {
     title: "You're unsure the reviewer had a genuine interaction",
-    body: "The review may not match a recognisable visit, booking or conversation, and the connection needs checking before you reply.",
+    body: "The review may not match a recognisable visit, booking or conversation, so a public reply or report may rest on the wrong assumption.",
   },
   {
     title: "Several unusual reviews appeared close together",
-    body: "A cluster of similar reviews in a short period can feel coordinated, even when the reason is not yet clear.",
+    body: "A cluster of similar reviews in a short period can change how other customers read the profile, even when the reason is not yet clear.",
   },
   {
     title: "The review may concern the wrong business",
@@ -16,15 +16,15 @@ export const situations = [
   },
   {
     title: "The content includes threats, harassment or potentially prohibited material",
-    body: "Some reviews go beyond ordinary criticism and may need careful handling before anything is said in public.",
+    body: "This kind of content can require a different route from ordinary criticism, including whether anything should be said in public at all.",
   },
   {
     title: "The review exposes personal or sensitive information",
-    body: "Personal details, private messages or other sensitive material should be treated with extra caution.",
+    body: "A public reply can spread the problem. The first decision is often what not to repeat.",
   },
   {
     title: "You suspect coordinated or misleading activity",
-    body: "Similar wording, timing or other patterns may be worth recording, while keeping what is observed separate from what is assumed.",
+    body: "Similar wording, timing or other patterns can support a different route from an isolated complaint, while keeping observation separate from assumption.",
   },
 ]
 
@@ -32,20 +32,20 @@ export const routes = [
   {
     title: "Respond",
     cue: "When the review appears to reflect a genuine experience",
-    body: "A calm, professional response may do more for customer confidence than trying to turn ordinary criticism into a policy dispute.",
-    action: "Acknowledge what can be acknowledged, keep private information private and show prospective customers that the business takes concerns seriously.",
+    body: "A calm, professional public response may protect customer confidence better than forcing ordinary criticism into a policy dispute.",
+    action: "ReputeDefend can help you consider what should be acknowledged, what should remain private and how the response may look to future customers.",
   },
   {
     title: "Assess & report",
     cue: "When there appears to be a supported policy concern",
-    body: "If the content or circumstances raise a genuine platform-policy question, the next step may be to organise the evidence and use the reporting or challenge route that fits.",
-    action: "Establish what can be supported, build a focused record and explain the concern clearly.",
+    body: "When the content or circumstances raise a supported policy concern, the next step may be to organise the evidence and use the reporting or challenge route that fits.",
+    action: "We can help organise the relevant evidence and structure the reporting or challenge rationale clearly.",
   },
   {
     title: "Document & monitor",
     cue: "When the picture is incomplete",
-    body: "Sometimes the most responsible next move is to preserve the evidence, avoid an unnecessary confrontation and reassess if relevant information emerges.",
-    action: "Keep a dated record, note what remains unknown and watch for meaningful developments.",
+    body: "When the picture is incomplete, preserving evidence and avoiding an unsupported escalation can be the stronger move.",
+    action: "We can help identify what should be recorded, what remains unknown and what kind of new information would materially change the position.",
   },
 ]
 
@@ -66,47 +66,39 @@ export const expertisePrinciples = [
 
 export const assessmentAreas = [
   {
-    title: "The review itself",
-    body: "What does it say, and what can be observed directly?",
+    title: "The review & context",
+    body: "What the review says, what can be observed directly and what surrounding business context may be relevant.",
   },
   {
-    title: "The business context",
-    body: "Is there information that helps explain whether or how the reviewer may be connected to an interaction?",
+    title: "Available evidence",
+    body: "What dates, records, communications, public links or other information may support the concern.",
   },
   {
-    title: "The available evidence",
-    body: "What dates, communications, records or public links are relevant?",
+    title: "Potential policy position",
+    body: "Whether the content or circumstances appear to provide a reasonable basis for a platform report or challenge.",
   },
   {
-    title: "Potential policy concerns",
-    body: "Does the content or context appear to provide a reasonable basis for a platform report or challenge?",
-  },
-  {
-    title: "The proportionate response",
-    body: "Is the better route to respond, report, document or take no further action?",
+    title: "The proportionate route",
+    body: "Whether responding, reporting, documenting or taking no immediate action appears to be the stronger approach.",
   },
 ]
 
 export const supportItems = [
   {
-    title: "Review & context assessment",
-    body: "We examine the review, surrounding facts and information you can share to understand the concern.",
+    title: "Organise the evidence",
+    body: "Help bring the review link, timeline, relevant records and surrounding facts into a clear, focused record.",
   },
   {
-    title: "Identify the evidence that matters",
-    body: "We help separate relevant records and observable facts from assumptions or material that does not strengthen the case.",
+    title: "Prepare a reporting or challenge case",
+    body: "Where a supported policy concern exists, help structure the evidence and rationale for the appropriate reporting or challenge route.",
   },
   {
-    title: "Assess the reporting or challenge route",
-    body: "Where there appears to be a genuine policy concern, we help you understand the available process and how the issue can be presented clearly.",
+    title: "Shape a professional public response",
+    body: "Where responding is the stronger option, help prepare a calm response that protects customer confidence without exposing private information or escalating the dispute.",
   },
   {
-    title: "Prepare a professional response",
-    body: "Where a public reply is the better route, we help you consider a calm response that protects customer confidence without exposing private information.",
-  },
-  {
-    title: "Understand what to do next",
-    body: "We explain the route we believe is appropriate and why, including when further reporting may not be the strongest option.",
+    title: "Support what happens next",
+    body: "Help interpret new information or platform responses, preserve the record and decide whether another step is genuinely supported.",
   },
 ]
 
@@ -141,16 +133,16 @@ export const trustPrinciples = [
     body: "Your review issue is considered in context rather than reduced to the star rating alone.",
   },
   {
-    title: "Policy-aware approach",
-    body: "We consider the available platform route when the facts suggest a genuine policy concern.",
-  },
-  {
     title: "Evidence before accusations",
     body: "We distinguish what can be supported from what is suspected or unknown.",
   },
   {
-    title: "Independent guidance",
-    body: "ReputeDefend is independent of Google. Our role is to help you choose and prepare the response, not claim control over the platform.",
+    title: "Policy-aware approach",
+    body: "We consider the available platform route when the facts suggest a genuine policy concern.",
+  },
+  {
+    title: "Practical response support",
+    body: "We focus on helping you prepare and carry out the strongest appropriate response, reporting or documentation route for the situation.",
   },
 ]
 
@@ -172,8 +164,8 @@ export const reviewFaqs = [
     a: "Keep the links, dates, wording and any similarities you can observe. Avoid hostile public replies or attempting to balance the situation with false feedback. We can look at the pattern with you and consider whether it provides useful context for a response or a report.",
   },
   {
-    q: "Should I respond publicly or report the review?",
-    a: "It depends on what the review says and what the surrounding facts show. Ordinary criticism may be better met with a calm public reply. Content involving threats, sensitive information or a supported policy concern may need a different route. We help you choose before you react.",
+    q: "What can ReputeDefend help with after the initial assessment?",
+    a: "If you want further support, the work may include organising relevant evidence, preparing reporting or challenge material, reviewing the route already taken, helping shape a professional public response, or supporting the next stage after new information or a platform response. The exact scope depends on the situation and any fee is explained before you decide.",
   },
   {
     q: "What happens if Google does not remove the review?",

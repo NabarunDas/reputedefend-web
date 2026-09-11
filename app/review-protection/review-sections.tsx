@@ -75,12 +75,12 @@ export function ReviewHero() {
       <div>
         <Eyebrow>Google Review Protection</Eyebrow>
         <h1 id="review-title">A damaging Google review deserves <span>the right response</span> — not a rushed one.</h1>
-        <p className={s.lead}>If a suspicious, misleading or potentially policy-breaching review is affecting trust in your business, deciding what to do next can be difficult. ReputeDefend helps you assess the review, understand the evidence and choose the response, reporting or challenge route that best fits the situation.</p>
+        <p className={s.lead}>If a suspicious, misleading or potentially policy-breaching review is affecting trust in your business, prospective customers may see it while deciding whether to call, visit or choose you. ReputeDefend helps you assess what the review actually shows, organise the evidence that matters and prepare the response, reporting or challenge route that fits.</p>
         <div className={s.actions}>
           <HelpLink>Assess my review issue</HelpLink>
           <a href="#review-routes" className={s.secondaryButton}>See the response options <ArrowDown size={18} aria-hidden="true" /></a>
         </div>
-        <p className={s.heroNote}>Human review • Policy-aware assessment • Clear response options</p>
+        <p className={s.heroNote}>Human review • Evidence-led review support • Clear response options</p>
       </div>
       <ReviewVisual />
     </section>
@@ -115,7 +115,8 @@ export function ReviewSituations() {
       <div className={s.situationIntro}>
         <Eyebrow>When a review raises concern</Eyebrow>
         <h2 id="situations-title">A review can influence customers before you get the chance to explain.</h2>
-        <p>Reviews often appear at the point where a prospective customer is deciding whether to call, visit or choose a business. When a review seems suspicious, misleading or potentially harmful, the pressure to react quickly is understandable.</p>
+        <p>Reviews often appear at exactly the moment a prospective customer is deciding whether to call, book, visit or choose a business. A suspicious or damaging review can shape that decision before they ever hear your side of the story.</p>
+        <p>When that happens, reacting emotionally or using the wrong reporting route can create another problem alongside the first.</p>
         <p className={s.reassuranceLead}>You don&apos;t need to decide whether a Google policy has been breached before asking for an assessment.</p>
         <HelpLink>Tell us what concerns you</HelpLink>
       </div>
@@ -211,7 +212,7 @@ export function ReviewSupport() {
       <div className={s.sectionHeading}>
         <div>
           <Eyebrow>Review protection support</Eyebrow>
-          <h2 id="support-title">Turn a damaging review concern into a clear, evidence-based next step.</h2>
+          <h2 id="support-title">Help carrying the response or challenge through — not just choosing it.</h2>
         </div>
       </div>
       <div className={s.helpGrid}>
@@ -223,6 +224,7 @@ export function ReviewSupport() {
           </article>
         ))}
       </div>
+      <p className={s.supportNote}>The exact work depends on the review and available evidence. If further paid support appears appropriate, we&apos;ll explain what we can help with and the fee before you decide.</p>
     </section>
   )
 }
@@ -278,7 +280,7 @@ export function ReviewTrust() {
   return (
     <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
       <div className={s.trustIntro}>
-        <Eyebrow>Independent review support</Eyebrow>
+        <Eyebrow>Why ReputeDefend</Eyebrow>
         <h2 id="trust-title">Clear guidance for the response you can control.</h2>
       </div>
       <ul className={s.trustGrid}>
@@ -292,7 +294,7 @@ export function ReviewTrust() {
       </ul>
       <div className={s.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google ultimately decides whether a review is removed. ReputeDefend cannot remove a Google review directly or guarantee the outcome of a report or challenge. We focus on the part you can control: understanding the review, organising relevant evidence and taking the strongest appropriate next step.</p>
+        <p>Google makes the final decision on review removal and platform enforcement. ReputeDefend focuses on what you can influence: understanding the review, organising relevant evidence clearly and approaching the strongest appropriate response or reporting route.</p>
       </div>
     </section>
   )
@@ -324,11 +326,9 @@ export function ReviewClosing() {
       <div className={s.closingCopy}>
         <Eyebrow>Get a clearer view of the review</Eyebrow>
         <h2 id="closing-title">Before you react, understand your strongest option.</h2>
-        <p>Share the review, what concerns you and anything relevant you already know. We&apos;ll assess the situation and help you understand whether responding, reporting, challenging or documenting the issue is the better next step.</p>
+        <p>Share the review, what concerns you and anything relevant you already know. We&apos;ll assess the situation and help you understand which route fits. If you want help carrying that route through, further support can be agreed after the initial assessment.</p>
         <ul className={s.closingPoints}>
           <li>No payment is required to submit your enquiry.</li>
-          <li>Submitting your case does not commit you to paid support.</li>
-          <li>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</li>
           <li>Please don&apos;t send passwords or unnecessary sensitive personal information.</li>
         </ul>
       </div>

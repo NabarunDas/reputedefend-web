@@ -16,9 +16,11 @@ const SEND_ERROR = "We couldn't send this enquiry right now. Your information is
 type EnquiryFormProps = {
   source?: "homepage" | "contact"
   caseMode?: boolean
+  submitLabel?: string
 }
 
-export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFormProps) {
+export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel }: EnquiryFormProps) {
+  const buttonLabel = submitLabel ?? (caseMode ? "Get help with a case" : "Send enquiry")
   const formId = useId()
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
@@ -223,7 +225,7 @@ export function EnquiryForm({ source = "homepage", caseMode = false }: EnquiryFo
       <p className={styles.privacy}>Please do not include passwords, verification codes or account credentials.</p>
 
       <button type="submit" className={styles.submit} disabled={status === "loading"}>
-        {status === "loading" ? "Sending…" : caseMode ? "Get help with a case" : "Send enquiry"}
+        {status === "loading" ? "Sending…" : buttonLabel}
       </button>
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>

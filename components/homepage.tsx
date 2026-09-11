@@ -4,6 +4,8 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
+  Info,
+  ListChecks,
   Lock,
   Plus,
   Shield,
@@ -41,7 +43,7 @@ function CaseVisual() {
         <span className={styles.flowCheck} aria-hidden="true"><Check size={18} /></span>
         <div>
           <p className={styles.flowLabel}>Take the right next step</p>
-          <p className={styles.flowCopy}>A clear recommendation for what to do next.</p>
+          <p className={styles.flowCopy}>Know what to do next — and why.</p>
         </div>
       </div>
       <figcaption className={styles.visualNote}>From uncertainty to a clearer way forward.</figcaption>
@@ -71,7 +73,7 @@ const trustStrip = [
   { label: "Human-reviewed cases", icon: UserRoundCheck },
   { label: "No payment to submit an enquiry", icon: Wallet },
   { label: "Independent of Google", icon: Shield },
-  { label: "Confidential, careful handling", icon: Lock },
+  { label: "Careful handling of your information", icon: Lock },
 ]
 
 export function HomeTrustStrip() {
@@ -130,7 +132,7 @@ const homeServices = [
   },
   {
     title: "Google Review Protection",
-    label: "Suspicious or policy-risk reviews",
+    label: "Suspicious or potentially policy-breaching reviews",
     icon: MessageSquareText,
     description: "When a suspicious or potentially policy-breaching review is affecting your reputation, we assess the circumstances, evidence and available response or challenge route.",
     points: ["Review and policy assessment", "Relevant evidence and context", "Response and challenge guidance"],
@@ -229,26 +231,31 @@ export function HomeProcess() {
 }
 
 const trustPrinciples = [
-  ["Human assessment", "Your case is reviewed in context rather than reduced to a generic answer."],
-  ["Evidence before assumptions", "Recommendations follow the facts and information available."],
-  ["Clear communication", "You should understand what we recommend, why we recommend it and what happens next."],
-  ["Independent guidance", "ReputeDefend is independent of Google, so our role is to help you prepare and navigate the process — not pretend to control it."],
+  { title: "Human assessment", copy: "Your case is reviewed in context rather than reduced to a generic answer.", icon: UserRoundCheck },
+  { title: "Evidence before assumptions", copy: "Recommendations follow the facts and information available.", icon: ListChecks },
+  { title: "Clear communication", copy: "You should understand what we recommend, why we recommend it and what happens next.", icon: MessageSquareText },
+  { title: "Independent guidance", copy: "ReputeDefend is independent of Google, so our role is to help you prepare and navigate the process — not pretend to control it.", icon: Shield },
 ]
 
 export function HomeTrust() {
   return (
     <section className={`${styles.trust} ${styles.reveal}`} aria-labelledby="trust-title">
-      <div>
+      <div className={styles.trustIntro}>
         <Eyebrow>Why ReputeDefend</Eyebrow>
         <h2 id="trust-title">Clear advice when the situation feels anything but clear.</h2>
       </div>
-      <div className={styles.trustDetails}>
-        <ul>
-          {trustPrinciples.map(([title, copy]) => (
-            <li key={title}><strong>{title}</strong><span>{copy}</span></li>
-          ))}
-        </ul>
-        <p className={styles.trustLimit}>Google ultimately controls platform decisions such as profile reinstatement and review removal. We focus on the part you can control: presenting the situation clearly, using relevant evidence and following the appropriate process.</p>
+      <ul className={styles.trustGrid}>
+        {trustPrinciples.map(({ title, copy, icon: Icon }) => (
+          <li key={title}>
+            <span className={styles.trustIcon}><Icon aria-hidden="true" size={18} /></span>
+            <h3>{title}</h3>
+            <p>{copy}</p>
+          </li>
+        ))}
+      </ul>
+      <div className={styles.trustLimit}>
+        <Info aria-hidden="true" size={20} />
+        <p>Google ultimately controls platform decisions such as profile reinstatement and review removal. We focus on the part you can control: presenting the situation clearly, using relevant evidence and following the appropriate process.</p>
       </div>
     </section>
   )
@@ -289,7 +296,7 @@ export function HomeConversion() {
         </ul>
       </div>
       <div className={styles.formPanel}>
-        <EnquiryForm caseMode source="homepage" />
+        <EnquiryForm caseMode source="homepage" submitLabel="Send my case for assessment" />
       </div>
     </section>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useRef, useState, type FormEvent } from "react"
+import { useEffect, useId, useRef, useState, type FormEvent } from "react"
 import {
   CONTACT_SUBJECTS,
   enquiryLimits,
@@ -23,6 +23,10 @@ export function ContactForm() {
   const [deliveryError, setDeliveryError] = useState(false)
   const [simulated, setSimulated] = useState(false)
   const [statusText, setStatusText] = useState("")
+
+  useEffect(() => {
+    if (status === "success") successRef.current?.focus()
+  }, [status])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -56,7 +60,6 @@ export function ContactForm() {
         setSimulated(json.simulated === true)
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your message has been received.")
-        window.setTimeout(() => successRef.current?.focus(), 0)
         return
       }
 

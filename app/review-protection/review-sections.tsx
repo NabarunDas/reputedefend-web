@@ -1,72 +1,341 @@
 import Link from "next/link"
-import { ArrowDown, ArrowDownRight, ArrowUpRight, Check, FileText, LockKeyhole, MessageSquare, Plus, Scale, Search } from "lucide-react"
-import { assessmentAreas, evidenceItems, precautions, reviewFaqs, reviewProcess, scenarios, supportAreas } from "./content"
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  FileSearch,
+  Info,
+  Lock,
+  MessageSquare,
+  Plus,
+  Scale,
+  Shield,
+  UserRoundCheck,
+  Wallet,
+} from "lucide-react"
+import {
+  assessmentAreas,
+  evidenceItems,
+  expertisePrinciples,
+  processSteps,
+  reviewFaqs,
+  routes,
+  situations,
+  supportItems,
+  trustPrinciples,
+} from "./content"
 import s from "./review.module.css"
 
-function AssessmentLink({ closing = false }: { closing?: boolean }) {
-  return <Link href="/get-help?service=review" className={`${s.button} ${closing ? s.limeButton : ""}`}>Request a review assessment <ArrowUpRight aria-hidden="true" size={18} /></Link>
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className={s.eyebrow}>{children}</p>
+}
+
+function HelpLink({ children, className = s.primaryButton }: { children: React.ReactNode; className?: string }) {
+  return (
+    <Link href="/get-help?service=review" className={className}>
+      {children}
+      <ArrowUpRight size={18} aria-hidden="true" />
+    </Link>
+  )
+}
+
+function ReviewVisual() {
+  return (
+    <figure className={s.visual} aria-label="From a concerning review to a clearer response">
+      <div className={s.flowCard}>
+        <p className={s.flowLabel}>Review appears</p>
+        <ul className={s.changeList}>
+          <li>Suspicious review</li>
+          <li>Wrong-business concern</li>
+          <li>Potential policy issue</li>
+        </ul>
+      </div>
+      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
+      <div className={s.flowCard}>
+        <p className={s.flowLabel}>Understand the context</p>
+        <p className={s.flowCopy}>Review content. Timeline. Relevant records.</p>
+      </div>
+      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
+      <div className={`${s.flowCard} ${s.flowCardAction}`}>
+        <span className={s.flowCheck} aria-hidden="true"><Scale size={18} /></span>
+        <div>
+          <p className={s.flowLabel}>Choose the right response</p>
+          <p className={s.routeChips}><span>Respond</span><span>Assess &amp; report</span><span>Document &amp; monitor</span></p>
+        </div>
+      </div>
+      <figcaption className={s.visualNote}>Different situations call for different responses.</figcaption>
+    </figure>
+  )
 }
 
 export function ReviewHero() {
-  const visual = [
-    { title: "Review", text: "What does it actually say?", Icon: MessageSquare },
-    { title: "Evidence", text: "What can be supported?", Icon: FileText },
-    { title: "Policy assessment", text: "Is there a reasonable concern?", Icon: Scale },
-    { title: "Appropriate action", text: "Choose a proportionate response.", Icon: ArrowDownRight },
-  ]
-  return <section className={`${s.hero} ${s.enter}`} aria-labelledby="review-title">
-    <div><p className={s.eyebrow}>Google review protection</p><h1 id="review-title">Protect your reputation <span>without making promises the evidence cannot support.</span></h1><p className={s.lead}>A damaging review can feel urgent, but the right response starts with understanding what actually happened. ReputeDefend helps assess suspicious or potentially policy-violating reviews, organise relevant evidence and support an appropriate reporting or challenge process.</p><div className={s.actions}><AssessmentLink /><Link className={s.textLink} href="#review-process">See how review protection works <ArrowDown aria-hidden="true" size={18} /></Link></div><p className={s.trustLine}>Independent • Policy-aware • No guaranteed removal</p></div>
-    <figure className={s.visual}><div className={s.visualHeading}><span className={s.eyebrow}>A considered route</span><Scale size={24} aria-hidden="true" /></div><ol>{visual.map(({ title, text, Icon }) => <li key={title}><span className={s.visualIcon}><Icon size={20} aria-hidden="true" /></span><div><strong>{title}</strong><p>{text}</p></div></li>)}</ol><figcaption>A clear concern. A relevant record.<br />An action the facts can support.</figcaption></figure>
-  </section>
+  return (
+    <section className={`${s.hero} ${s.enter}`} aria-labelledby="review-title">
+      <div>
+        <Eyebrow>Google Review Protection</Eyebrow>
+        <h1 id="review-title">A damaging Google review deserves <span>the right response</span> — not a rushed one.</h1>
+        <p className={s.lead}>If a suspicious, misleading or potentially policy-breaching review is affecting trust in your business, deciding what to do next can be difficult. ReputeDefend helps you assess the review, understand the evidence and choose the response, reporting or challenge route that best fits the situation.</p>
+        <div className={s.actions}>
+          <HelpLink>Assess my review issue</HelpLink>
+          <a href="#review-routes" className={s.secondaryButton}>See the response options <ArrowDown size={18} aria-hidden="true" /></a>
+        </div>
+        <p className={s.heroNote}>Human review • Policy-aware assessment • Clear response options</p>
+      </div>
+      <ReviewVisual />
+    </section>
+  )
 }
 
-export function ReviewDistinction() {
-  return <section className={`${s.distinction} ${s.reveal}`} aria-labelledby="distinction-title"><div><p className={s.eyebrow}>An important distinction</p><h2 id="distinction-title">A bad review is not automatically a policy violation.</h2></div><div className={s.distinctionBody}><p className={s.statement}>Not every negative review can — or should — be removed.</p><p>Legitimate criticism may remain even when it is uncomfortable. Disagreeing with a review does not, on its own, make it a policy concern.</p><p>Policy-based reporting should be based on the content and context, not simply the rating. The first step is to understand what can actually be supported by facts.</p><strong>Assess the concern. Not just the impact.</strong></div></section>
+const trustStrip = [
+  { label: "Human-reviewed cases", icon: UserRoundCheck },
+  { label: "Review & policy assessment", icon: FileSearch },
+  { label: "No payment to submit an enquiry", icon: Wallet },
+  { label: "Independent of Google", icon: Shield },
+]
+
+export function ReviewTrustStrip() {
+  return (
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend handles review protection enquiries">
+      <ul>
+        {trustStrip.map(({ label, icon: Icon }) => (
+          <li key={label}>
+            <span className={s.stripIcon}><Icon aria-hidden="true" size={18} /></span>
+            {label}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
-export function ReviewScenarios() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="scenarios-title"><div className={s.splitIntro}><div><p className={s.eyebrow}>When to look more closely</p><h2 id="scenarios-title">Some review situations deserve a closer look.</h2></div><p>These situations may warrant assessment. They are not automatic violations, and none establishes that a review must be removed.</p></div><dl className={s.scenarios}>{scenarios.map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl></section>
+export function ReviewSituations() {
+  return (
+    <section className={`${s.situations} ${s.reveal}`} aria-labelledby="situations-title">
+      <div className={s.situationIntro}>
+        <Eyebrow>When a review raises concern</Eyebrow>
+        <h2 id="situations-title">A review can influence customers before you get the chance to explain.</h2>
+        <p>Reviews often appear at the point where a prospective customer is deciding whether to call, visit or choose a business. When a review seems suspicious, misleading or potentially harmful, the pressure to react quickly is understandable.</p>
+        <p className={s.reassuranceLead}>You don&apos;t need to decide whether a Google policy has been breached before asking for an assessment.</p>
+        <HelpLink>Tell us what concerns you</HelpLink>
+      </div>
+      <div className={s.problemGrid}>
+        {situations.map(({ title, body }) => (
+          <article key={title}>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+const routeIcons = [MessageSquare, Scale, FileSearch]
+
+export function ReviewRoutes() {
+  return (
+    <section id="review-routes" className={`${s.section} ${s.reveal}`} aria-labelledby="routes-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>Choose the response, not just the reaction</Eyebrow>
+          <h2 id="routes-title">Every damaging review needs a strategy — but not necessarily the same strategy.</h2>
+        </div>
+        <p>The right next step depends on what the review says, what the surrounding facts show and what outcome is realistically available.</p>
+      </div>
+      <div className={s.routeGrid}>
+        {routes.map(({ title, cue, body, action }, index) => {
+          const Icon = routeIcons[index]
+          return (
+            <article key={title} className={index === 1 ? s.routeEmphasis : undefined}>
+              <span className={s.routeCue}><Icon size={18} aria-hidden="true" />{cue}</span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+              <p className={s.routeAction}>{action}</p>
+            </article>
+          )
+        })}
+      </div>
+      <p className={s.routeFoot}>Taking no immediate action can also be a deliberate strategy when the evidence does not yet support another route. Here, &lsquo;monitor&rsquo; means keeping a dated record and watching for meaningful developments.</p>
+    </section>
+  )
+}
+
+export function ReviewExpertise() {
+  return (
+    <section className={`${s.expertise} ${s.reveal}`} aria-labelledby="expertise-title">
+      <div className={s.expertiseIntro}>
+        <Eyebrow>Before you respond</Eyebrow>
+        <h2 id="expertise-title">Protect the business while you protect the reputation.</h2>
+        <p>When a review feels unfair or damaging, an emotional response can be tempting. But public accusations, unnecessary disclosure or repeated unsupported reports can create a second problem alongside the first.</p>
+      </div>
+      <ol className={s.expertiseGrid}>
+        {expertisePrinciples.map(({ title, body }, index) => (
+          <li key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
 }
 
 export function ReviewAssessment() {
-  return <section className={`${s.section} ${s.framework} ${s.reveal}`} aria-labelledby="assessment-title"><div><p className={s.eyebrow}>What we assess</p><h2 id="assessment-title">A clear framework.<br />A proportionate view.</h2><p className={s.intro}>Google review policy assessment starts with what is observable, considers what is uncertain and keeps the response proportionate to the evidence.</p><p className={s.marginNote}>A reasonable concern is a starting point for assessment, not a promise of removal.</p></div><ol className={s.assessmentList}>{assessmentAreas.map((item, index) => <li key={item.title}><span className={s.number}>{String(index + 1).padStart(2, "0")}</span><div><h3>{item.title}</h3><p>{item.text}</p></div></li>)}</ol></section>
-}
-
-export function ReviewEvidence() {
-  return <section className={`${s.evidence} ${s.reveal}`} aria-labelledby="evidence-title"><div><p className={s.eyebrow}>Useful evidence</p><h2 id="evidence-title">Good review protection starts with a clear record.</h2><p className={s.intro}>A concise account with relevant supporting information is more useful than a large, unfocused collection of files. Start with what you know; make uncertainties clear.</p><div className={s.security}><LockKeyhole aria-hidden="true" size={20} /><p><strong>Keep the information proportionate.</strong><br />Share only information that is relevant. Do not send passwords, account credentials or unnecessary personal data.</p></div></div><div className={s.evidenceRecord}><h3>A useful starting record</h3><ul>{evidenceItems.map(item => <li key={item}><Check size={16} aria-hidden="true" /><span>{item}</span></li>)}</ul><p>Not every case requires every type of evidence. Include only what is relevant, lawful and appropriate to share.</p></div></section>
+  return (
+    <section className={`${s.section} ${s.reveal}`} aria-labelledby="assessment-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>What we look at</Eyebrow>
+          <h2 id="assessment-title">A review assessment starts with what can actually be supported.</h2>
+        </div>
+        <p>An unfamiliar reviewer name or a missing customer record does not, by itself, prove that a review is false.</p>
+      </div>
+      <div className={s.assessGrid}>
+        {assessmentAreas.map(({ title, body }, index) => (
+          <article key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 export function ReviewSupport() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="support-title"><div className={s.splitIntro}><div><p className={s.eyebrow}>How we help</p><h2 id="support-title">A policy-based challenge should be built on facts, not frustration.</h2></div><p>We help businesses understand whether and how to report problematic Google reviews through an appropriate route. We support the process; Google decides whether a review is removed.</p></div><dl className={s.supportList}>{supportAreas.map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl></section>
+  return (
+    <section id="review-help" className={`${s.section} ${s.reveal}`} aria-labelledby="support-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>Review protection support</Eyebrow>
+          <h2 id="support-title">Turn a damaging review concern into a clear, evidence-based next step.</h2>
+        </div>
+      </div>
+      <div className={s.helpGrid}>
+        {supportItems.map(({ title, body }, index) => (
+          <article key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
 }
 
-export function ReviewPathways() {
-  const paths = [
-    { title: "Respond", cue: "A genuine experience", Icon: MessageSquare, text: "When a legitimate review may benefit from a calm, professional public response.", action: "Acknowledge the concern. Explain what is helpful. Keep private information private.", note: "Criticism can be valid, even when it is difficult." },
-    { title: "Assess & report", cue: "A supported policy concern", Icon: Scale, text: "When there appears to be a reasonable policy concern supported by relevant evidence.", action: "Check the context. Organise the record. Use an appropriate reporting or challenge route.", note: "A report is a request for assessment, not a guarantee." },
-    { title: "Document & monitor", cue: "An incomplete picture", Icon: Search, text: "When the situation is unclear and gathering context may be more appropriate than reacting immediately.", action: "Keep a dated record. Note what is unknown. Reassess if relevant information emerges.", note: "A considered pause can be the right response." },
-  ]
-  return <section id="review-pathways" className={`${s.pathways} ${s.reveal}`} aria-labelledby="pathways-title"><header><p className={s.eyebrow}>Respond, report or leave alone?</p><h2 id="pathways-title">Not every review needs the same response.</h2><p>Let the facts determine the route — not the pressure to react.</p></header><div className={s.routeOrigin}><span>What does the evidence support?</span></div><div className={s.routeGrid}>{paths.map(({ title, cue, Icon, text, action, note }, index) => <article key={title} className={`${s.route} ${index === 1 ? s.policyRoute : ""}`}><div className={s.routeCue}><Icon size={22} aria-hidden="true" /><span>{cue}</span></div><h3>{title}</h3><p className={s.routeDescription}>{text}</p><div className={s.routeAction}><span>Appropriate next step</span><p>{action}</p></div><p className={s.routeNote}>{note}</p></article>)}</div><p className={s.pathwayNote}>General guidance, not a definitive policy or legal determination. The appropriate route depends on the particular facts; taking no further action may also be reasonable.</p></section>
-}
-
-export function ReviewPrecautions() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="precautions-title"><div className={s.splitIntro}><div><p className={s.eyebrow}>What not to do</p><h2 id="precautions-title">Protect the business while you protect the reputation.</h2></div><p>A measured approach helps avoid making an already difficult situation more complicated. These are practical precautions, not a substitute for case-specific advice.</p></div><dl className={s.precautions}>{precautions.map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl></section>
+export function ReviewEvidence() {
+  return (
+    <section className={`${s.evidence} ${s.reveal}`} aria-labelledby="evidence-title">
+      <div className={s.evidenceIntro}>
+        <Eyebrow>What may help</Eyebrow>
+        <h2 id="evidence-title">You don&apos;t need a perfect evidence file.</h2>
+        <p>If you already have any of the following, keep them available. If something is missing, you can still start with the review and what you know.</p>
+      </div>
+      <div className={s.evidencePanel}>
+        <ul>
+          {evidenceItems.map((item) => (
+            <li key={item}><Check aria-hidden="true" size={17} />{item}</li>
+          ))}
+        </ul>
+        <p className={s.safetyNote}><Lock aria-hidden="true" size={18} />Do not send passwords, account credentials or unnecessary sensitive personal information.</p>
+        <p className={s.evidenceClose}>Start with what you have. We can identify what may matter next.</p>
+      </div>
+    </section>
+  )
 }
 
 export function ReviewProcess() {
-  return <section id="review-process" className={`${s.section} ${s.processSection} ${s.reveal}`} aria-labelledby="process-title"><div><p className={s.eyebrow}>The review protection process</p><h2 id="process-title">From an initial concern to a considered next step.</h2><p className={s.intro}>A deliberate sequence, with room to change direction when the facts call for it.</p><Link className={s.textLink} href="#review-pathways">Explore the three response routes <ArrowUpRight size={18} aria-hidden="true" /></Link></div><ol className={s.process}>{reviewProcess.map(([title, text], index) => <li key={title}><span className={s.number}>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{text}</p></div><ArrowDownRight aria-hidden="true" size={20} /></li>)}</ol></section>
+  return (
+    <section id="review-process" className={`${s.section} ${s.reveal}`} aria-labelledby="process-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>How it works</Eyebrow>
+          <h2 id="process-title">Start with the review and the context around it.</h2>
+        </div>
+        <Link className={s.textLink} href="/how-it-works">See the full ReputeDefend process <ArrowRight size={18} aria-hidden="true" /></Link>
+      </div>
+      <ol className={s.processList}>
+        {processSteps.map(({ title, body }, index) => (
+          <li key={title}>
+            <span className={s.processNumber}>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+      <div className={s.processCta}>
+        <HelpLink>Assess my review issue</HelpLink>
+      </div>
+    </section>
+  )
 }
 
-export function ReviewExpectations() {
-  const can = ["Assess the review and context", "Organise relevant evidence", "Identify potential policy concerns", "Support reporting or challenge preparation", "Explain realistic next steps"]
-  const cannot = ["Guarantee review removal", "Remove reviews directly", "Override Google decisions", "Guarantee a decision timeframe", "Turn legitimate criticism into a policy violation"]
-  return <section className={`${s.expectations} ${s.reveal}`} aria-labelledby="expectations-title"><p className={s.eyebrow}>Clear expectations</p><h2 id="expectations-title">We help build the strongest appropriate case. <span>We do not promise removal.</span></h2><div className={s.boundaries}><div><h3>ReputeDefend can help</h3><ul>{can.map(text => <li key={text}><Check size={18} aria-hidden="true" />{text}</li>)}</ul></div><div><h3>ReputeDefend cannot</h3><ul>{cannot.map(text => <li key={text}><span aria-hidden="true">—</span>{text}</li>)}</ul></div></div><div className={s.principles}><p>Evidence over promises.</p><p>Fairness over reaction.</p><p>Transparency over certainty.</p></div></section>
+export function ReviewTrust() {
+  return (
+    <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
+      <div className={s.trustIntro}>
+        <Eyebrow>Independent review support</Eyebrow>
+        <h2 id="trust-title">Clear guidance for the response you can control.</h2>
+      </div>
+      <ul className={s.trustGrid}>
+        {trustPrinciples.map(({ title, body }) => (
+          <li key={title}>
+            <span className={s.trustIcon}><Check aria-hidden="true" size={18} /></span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ul>
+      <div className={s.trustLimit}>
+        <Info aria-hidden="true" size={20} />
+        <p>Google ultimately decides whether a review is removed. ReputeDefend cannot remove a Google review directly or guarantee the outcome of a report or challenge. We focus on the part you can control: understanding the review, organising relevant evidence and taking the strongest appropriate next step.</p>
+      </div>
+    </section>
+  )
 }
 
 export function ReviewFaq() {
-  return <section className={`${s.section} ${s.faq} ${s.reveal}`} aria-labelledby="faq-title"><div><p className={s.eyebrow}>Questions, answered</p><h2 id="faq-title">A clearer view of review protection.</h2><p className={s.intro}>Useful context before you decide what to do next.</p></div><div>{reviewFaqs.map(({ q, a }) => <details key={q}><summary>{q}<Plus aria-hidden="true" size={20} /></summary><p>{a}</p></details>)}</div></section>
+  return (
+    <section className={`${s.faq} ${s.reveal}`} aria-labelledby="faq-title">
+      <div>
+        <Eyebrow>Questions you may have</Eyebrow>
+        <h2 id="faq-title">A little clarity before you begin.</h2>
+        <p>If a Google review is already affecting how customers see the business, these answers may help you decide how to start.</p>
+      </div>
+      <div className={s.faqList}>
+        {reviewFaqs.map(({ q, a }) => (
+          <details key={q}>
+            <summary>{q}<Plus aria-hidden="true" size={20} /></summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 export function ReviewClosing() {
-  return <section className={`${s.closing} ${s.reveal}`} aria-labelledby="closing-title"><div><p className={s.eyebrow}>Start with the review</p><h2 id="closing-title">Concerned about a review? Start with the facts.</h2><p>Share the review, the context and what concerns you. We&apos;ll assess the information and help you understand whether an appropriate reporting, challenge or response route may be available.</p></div><div className={s.closingAction}><AssessmentLink closing /><p>A relevant record is a better starting point than a promise.</p></div></section>
+  return (
+    <section className={`${s.closing} ${s.reveal}`} aria-labelledby="closing-title">
+      <div className={s.closingCopy}>
+        <Eyebrow>Get a clearer view of the review</Eyebrow>
+        <h2 id="closing-title">Before you react, understand your strongest option.</h2>
+        <p>Share the review, what concerns you and anything relevant you already know. We&apos;ll assess the situation and help you understand whether responding, reporting, challenging or documenting the issue is the better next step.</p>
+        <ul className={s.closingPoints}>
+          <li>No payment is required to submit your enquiry.</li>
+          <li>Submitting your case does not commit you to paid support.</li>
+          <li>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</li>
+          <li>Please don&apos;t send passwords or unnecessary sensitive personal information.</li>
+        </ul>
+      </div>
+      <div className={s.closingPanel}>
+        <p>Start with the review as it stands. We&apos;ll help you see which response fits before you make the next move.</p>
+        <HelpLink>Assess my review issue</HelpLink>
+      </div>
+    </section>
+  )
 }

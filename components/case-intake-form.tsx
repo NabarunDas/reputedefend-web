@@ -22,8 +22,8 @@ import styles from "./case-intake.module.css"
 const STEP_TITLES = {
   1: "What do you need help with?",
   2: "About you and your business",
-  3: "About the issue",
-  4: "Review & submit",
+  3: "Tell us about the issue",
+  4: "Review and send",
 } as const
 
 const SUBMIT_ERROR = "We couldn't submit your case right now. Your information is still on this page. Please try again shortly."
@@ -192,7 +192,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 
     setStatus("loading")
     setDeliveryError(false)
-    setStatusText("Submitting your case.")
+    setStatusText("Sending your case.")
 
     try {
       const res = await fetch("/api/enquiry", {
@@ -240,10 +240,11 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         ) : (
           <>
             <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your case.</h2>
-            <p>The information you shared will be reviewed. ReputeDefend may contact you for additional context before recommending a next step.</p>
+            <p>A human will review the information you shared. If anything important needs clarification, we&apos;ll contact you using the details you provided before recommending the next step.</p>
+            <p>Submitting your case has not committed you to paid support.</p>
+            <p>If further support appears appropriate, we&apos;ll explain the proposed scope and fee before you decide.</p>
           </>
         )}
-        <p className={styles.successNote}>Independent support. No guaranteed reinstatement or review removal.</p>
       </div>
     )
   }
@@ -355,7 +356,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <Field
               id={`${formId}-details`}
               label="Tell us what happened"
-              hint="Include when the issue started, messages you received, changes you noticed and steps you have already tried."
+              hint="Include when the issue started, any messages you received, changes you noticed and what you have already tried."
               error={errors.details}
             >
               <textarea name="details" value={values.details} onChange={(event) => update("details", event.target.value)} maxLength={enquiryLimits.details} rows={8} required />
@@ -369,6 +370,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 
         {step === 4 && (
           <div className={styles.review}>
+            <p className={styles.reviewIntro}>Check the details below before sending your case. You can go back and change anything that doesn&apos;t look right.</p>
             <ReviewBlock title="Help needed" onEdit={() => goToStep(1)}>
               <ReviewItem label="Service" value={values.service ? caseServiceLabel(values.service) : "Not selected"} />
             </ReviewBlock>
@@ -432,10 +434,16 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
           </button>
         ) : (
           <button type="submit" className={styles.next} disabled={status === "loading"}>
-            {status === "loading" ? "Submitting…" : "Submit my case"}
+            {status === "loading" ? "Sending…" : "Send my case for assessment"}
           </button>
         )}
       </div>
+      {step === 4 ? (
+        <div className={styles.submitNotes}>
+          <p>Submitting your case does not commit you to paid support.</p>
+          <p>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</p>
+        </div>
+      ) : null}
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>
     </form>

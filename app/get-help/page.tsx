@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { LockKeyhole } from "lucide-react"
+import { Lock, Shield, UserRoundCheck, Wallet } from "lucide-react"
 import { CaseIntakeForm } from "@/components/case-intake-form"
 import { parseServiceParam } from "@/lib/enquiry"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
@@ -16,17 +16,17 @@ export const metadata: Metadata = {
   twitter: socialTwitter({ title, description }),
 }
 
-const nextSteps = [
-  "We review what you share",
-  "We identify what may need clarification",
-  "We contact you with an assessment and recommended next step",
-]
+const trustStrip = [
+  { label: "Human-reviewed enquiries", icon: UserRoundCheck },
+  { label: "No payment to submit", icon: Wallet },
+  { label: "No passwords or verification codes", icon: Lock },
+  { label: "Independent of Google", icon: Shield },
+] as const
 
-const avoid = [
-  "Passwords",
-  "Verification codes",
-  "Account credentials",
-  "Unnecessary sensitive personal information",
+const nextSteps = [
+  "A human reviews your enquiry",
+  "We clarify anything important",
+  "We explain the recommended next step",
 ]
 
 export default async function GetHelpPage({
@@ -39,41 +39,60 @@ export default async function GetHelpPage({
 
   return (
     <div className={styles.page}>
-      <div className={styles.layout}>
+      <div className={styles.inner}>
         <section className={styles.hero} aria-labelledby="get-help-title">
-          <p className={styles.eyebrow}>Get help with a case</p>
+          <p className={styles.eyebrow}>Get help with your case</p>
           <h1 id="get-help-title">Tell us what happened.</h1>
-          <p className={styles.lead}>Start with the situation, the relevant links or messages and what you have already tried. You do not need to diagnose the problem or prepare a perfect case file before getting in touch.</p>
-          <p className={styles.trustLine}>Independent • Confidential handling • No guaranteed outcomes</p>
+          <p className={styles.lead}>
+            You don&apos;t need to diagnose the problem or prepare a perfect case file. Start with what changed, what Google has told you and what you have already tried. A human will review the information and help you understand the next practical step.
+          </p>
+          <p className={styles.trustLine}>Human case review • No payment to submit • No commitment to paid support</p>
         </section>
-        <div className={styles.formColumn}>
-          <CaseIntakeForm initialService={initialService} />
+
+        <section className={styles.trustStrip} aria-label="How ReputeDefend handles enquiries">
+          <ul>
+            {trustStrip.map(({ label, icon: Icon }) => (
+              <li key={label}>
+                <span className={styles.stripIcon}>
+                  <Icon aria-hidden="true" size={18} />
+                </span>
+                {label}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <div className={styles.main}>
+          <div className={styles.formColumn}>
+            <CaseIntakeForm initialService={initialService} />
+          </div>
+          <aside className={styles.aside}>
+            <section className={styles.next} aria-labelledby="next-title">
+              <h2 id="next-title">What happens after you send this?</h2>
+              <ol>
+                {nextSteps.map((step, index) => (
+                  <li key={step}>
+                    <span className={styles.step} aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                    <p>{step}</p>
+                  </li>
+                ))}
+              </ol>
+              <p className={styles.nextNote}>If further paid support appears appropriate, the scope and fee will be explained before you decide.</p>
+            </section>
+            <section className={styles.security} aria-labelledby="security-title">
+              <h2 id="security-title">
+                <Lock aria-hidden="true" size={18} />
+                Keep your account secure
+              </h2>
+              <p>Never send passwords, verification codes or account credentials. If an action needs to be completed inside your Google account, we&apos;ll explain what you need to do.</p>
+              <p className={styles.securityNote}>Only share information that is relevant to the issue.</p>
+            </section>
+            <section className={styles.payment} aria-labelledby="payment-title">
+              <h2 id="payment-title">No payment to submit</h2>
+              <p>Sending your case asks ReputeDefend to review the situation. It does not commit you to further paid support.</p>
+            </section>
+          </aside>
         </div>
-        <aside className={styles.aside}>
-          <section className={styles.next} aria-labelledby="next-title">
-            <h2 id="next-title">What happens next?</h2>
-            <ol>
-              {nextSteps.map((step, index) => (
-                <li key={step}>
-                  <span className={styles.step}>{String(index + 1).padStart(2, "0")}</span>
-                  <p>{step}</p>
-                </li>
-              ))}
-            </ol>
-            <p className={styles.nextNote}>You may be asked for additional information depending on the situation.</p>
-          </section>
-          <section className={styles.avoid} aria-labelledby="avoid-title">
-            <h2 id="avoid-title">What not to send</h2>
-            <ul>
-              {avoid.map((item) => (
-                <li key={item}>
-                  <LockKeyhole size={16} aria-hidden="true" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
       </div>
     </div>
   )

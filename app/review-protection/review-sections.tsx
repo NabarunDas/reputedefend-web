@@ -156,7 +156,7 @@ export function ReviewRoutes() {
           )
         })}
       </div>
-      <p className={s.routeFoot}>Taking no immediate action can also be a deliberate strategy when the evidence does not yet support another route. Documenting and monitoring here means keeping your own dated record — not an automated alert service.</p>
+      <p className={s.routeFoot}>Taking no immediate action can also be a deliberate strategy when the evidence does not yet support another route. Here, &lsquo;monitor&rsquo; means keeping a dated record and watching for meaningful developments.</p>
     </section>
   )
 }
@@ -279,7 +279,7 @@ export function ReviewTrust() {
     <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
       <div className={s.trustIntro}>
         <Eyebrow>Independent review support</Eyebrow>
-        <h2 id="trust-title">Clear guidance without pretending every bad review can be removed.</h2>
+        <h2 id="trust-title">Clear guidance for the response you can control.</h2>
       </div>
       <ul className={s.trustGrid}>
         {trustPrinciples.map(({ title, body }) => (

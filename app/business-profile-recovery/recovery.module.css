@@ -78,6 +78,7 @@
 .helpGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .helpGrid span { display: block; color: var(--green); font-size: 14px; font-weight: 700; letter-spacing: .06em; }
 .helpGrid h3 { margin-top: 12px; }
+.helpGrid article:last-child { grid-column: 1 / -1; }
 
 .processList { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin: 0; padding: 0; }
 .processList li { border-top: 1px solid var(--edge); padding-top: 24px; }
@@ -171,6 +172,7 @@
   .sectionHeading { flex-direction: column; align-items: flex-start; gap: 20px; margin-bottom: 28px; }
   .sectionHeading > p { max-width: 540px; }
   .helpGrid, .problemGrid, .trustGrid { grid-template-columns: minmax(0, 1fr); }
+  .helpGrid article:last-child { grid-column: auto; }
   .situations, .expertise, .evidence { padding: 32px; }
   .trust { padding-block: 56px; }
   .processList { grid-template-columns: minmax(0, 1fr); gap: 0; }

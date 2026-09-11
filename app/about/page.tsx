@@ -125,7 +125,7 @@ export default function AboutPage() {
         <div>
           <p className={styles.eyebrow}>About ReputeDefend</p>
           <h1 id="about-title">
-            A <span>human, evidence-led</span> approach to difficult Google reputation problems.
+            <span>Human support</span> for difficult Google reputation problems.
           </h1>
           <p className={styles.lead}>
             ReputeDefend helps businesses make sense of Google Business Profile disruptions and difficult review situations. We focus on understanding what happened, identifying the information that matters and helping you take a clearer next step.
@@ -143,7 +143,7 @@ export default function AboutPage() {
           <p className={styles.heroNote}>Human review • Independent of Google • Clear next steps</p>
         </div>
         <figure className={styles.visual}>
-          <ol className={styles.visualBoard} aria-label="ReputeDefend approach">
+          <ol className={styles.visualBoard}>
             {visualSteps.map((step, index) => (
               <li key={step.n} className={index === visualSteps.length - 1 ? styles.visualFinal : undefined}>
                 {index === visualSteps.length - 1 ? (

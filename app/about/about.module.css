@@ -12,6 +12,11 @@
 .page h2,
 .page h3 {
   font-family: var(--font-display), Arial, sans-serif;
+  overflow-wrap: break-word;
+}
+
+.page h2,
+.page h3 {
   text-wrap: balance;
 }
 
@@ -20,6 +25,7 @@
   line-height: 1.1;
   letter-spacing: -.05em;
   font-weight: 800;
+  text-wrap-style: auto;
 }
 
 .page h1 span {
@@ -68,9 +74,9 @@
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, .9fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, .8fr);
   align-items: center;
-  gap: 56px;
+  gap: 48px;
   padding-block: 56px 32px;
 }
 
@@ -178,6 +184,7 @@
   font-size: 16px;
   font-weight: 750;
   letter-spacing: -.02em;
+  overflow-wrap: break-word;
 }
 
 .visualFinal {
@@ -219,6 +226,7 @@
   font-size: 14px;
   font-weight: 650;
   line-height: 1.35;
+  overflow-wrap: break-word;
 }
 
 .stripIcon {
@@ -552,13 +560,21 @@
 @media (max-width: 1100px) {
   .hero { gap: 32px; padding-block: 44px 24px; }
   .page h1 { font-size: clamp(30px, 4.6vw, 44px); }
-  .trustStrip ul,
-  .whyGrid,
-  .trustGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trustStrip ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .approachGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; }
   .sectionHeading { grid-template-columns: minmax(0, 1fr); }
   .why,
   .trust { padding: 36px; }
+}
+
+@media (max-width: 1023px) {
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .page h1 { text-wrap: pretty; }
+}
+
+@media (max-width: 900px) {
+  .whyGrid,
+  .trustGrid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 767px) {
@@ -570,6 +586,7 @@
   .identity { padding-block: 48px; }
   .section { padding-block: 56px; }
   .centerHead { text-align: left; }
+  .serviceGrid h3 { max-width: none; }
   .serviceGrid,
   .whyGrid,
   .trustGrid,
@@ -590,6 +607,8 @@
   .actions { flex-direction: column; }
   .actions a { width: 100%; }
   .trustStrip ul { grid-template-columns: minmax(0, 1fr); }
+  .visual { padding: 16px; }
+  .visualBoard li { padding: 14px 12px; }
   .why,
   .trust,
   .closing { padding: 24px 18px; }

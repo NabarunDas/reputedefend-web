@@ -61,7 +61,7 @@ function ReviewVisual() {
         <span className={s.flowCheck} aria-hidden="true"><Scale size={18} /></span>
         <div>
           <p className={s.flowLabel}>Choose the right response</p>
-          <p className={s.flowCopy}>Respond · Assess &amp; report · Document &amp; monitor</p>
+          <p className={s.routeChips}><span>Respond</span><span>Assess &amp; report</span><span>Document &amp; monitor</span></p>
         </div>
       </div>
       <figcaption className={s.visualNote}>Different situations call for different responses.</figcaption>

@@ -39,6 +39,8 @@
 .visualConnector { display: flex; justify-content: center; color: var(--green); padding-block: 8px; }
 .flowCardAction { display: flex; align-items: center; gap: 14px; background: var(--ink); color: var(--paper); border-color: transparent; transform: rotate(.6deg); }
 .flowCardAction .flowCopy { color: color-mix(in srgb, var(--paper) 82%, transparent); }
+.routeChips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.routeChips span { font-size: 12px; font-weight: 650; line-height: 1.3; padding: 5px 8px; border-radius: 8px; background: color-mix(in srgb, var(--paper) 14%, transparent); color: color-mix(in srgb, var(--paper) 92%, transparent); }
 .flowCheck { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; color: var(--ink); background: var(--lime); }
 .visualNote { font-size: 14px; color: var(--green); font-weight: 700; letter-spacing: .02em; margin-top: 20px; text-align: center; }
 
@@ -71,8 +73,8 @@
 .routeEmphasis { background: var(--ink) !important; color: var(--paper); border-color: transparent; }
 .routeEmphasis .routeCue { color: var(--lime); }
 .routeEmphasis h3 { color: var(--paper); }
-.routeEmphasis p { color: color-mix(in srgb, var(--paper) 86%, transparent); }
-.routeEmphasis .routeAction { border-color: color-mix(in srgb, var(--paper) 18%, transparent); }
+.routeGrid .routeEmphasis > p { color: color-mix(in srgb, var(--paper) 88%, transparent); }
+.routeGrid .routeEmphasis .routeAction { border-color: color-mix(in srgb, var(--paper) 18%, transparent); }
 .routeFoot { margin-top: 24px; color: var(--muted-strong); font-size: 15px; max-width: 840px; line-height: 1.6; }
 
 .expertise { background: var(--ink); color: var(--paper); border-radius: 24px; padding: 64px; margin-top: 8px; }

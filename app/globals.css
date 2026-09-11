@@ -212,6 +212,8 @@ button, input, textarea, select { font: inherit; }
 .mobile-nav-cta:hover,
 .mobile-nav-cta:focus-visible { background: var(--green-dark) !important; color: var(--paper) !important; }
 
+.footer-email { font-weight: 650; }
+
 .facts-cta {
   --facts-hover: var(--green);
   background: var(--lime);
@@ -224,7 +226,14 @@ button, input, textarea, select { font: inherit; }
 .facts-cta:hover { background: var(--facts-hover); color: var(--surface); transform: translateY(-2px); }
 .facts-cta:hover svg { transform: translateX(4px); }
 
-.footer-link { transition: color 200ms ease-out; }
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--paper);
+  overflow-wrap: anywhere;
+  transition: color 200ms ease-out;
+}
 .footer-link:hover,
 .footer-link:focus-visible { color: var(--lime); }
 

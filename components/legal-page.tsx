@@ -26,7 +26,8 @@ export function LegalCallout({ children }: { children: ReactNode }) {
 
 export function LegalOperatorIdentity() {
   return (
-    <div className={styles.operator}>
+    <section className={styles.operator} aria-labelledby="legal-business-details">
+      <h2 id="legal-business-details">Business details</h2>
       <p>{tradingAsLine()}</p>
       {hasLegalValue(legalIdentity.postalAddress) ? (
         <address>{legalIdentity.postalAddress}</address>
@@ -39,7 +40,7 @@ export function LegalOperatorIdentity() {
       {hasLegalValue(legalIdentity.phone) ? <p>{legalIdentity.phone}</p> : null}
       {hasLegalValue(legalIdentity.vatNumber) ? <p>VAT number {legalIdentity.vatNumber}</p> : null}
       {showsCompanyRegistration() ? <p>Company number {legalIdentity.registrationNumber}</p> : null}
-    </div>
+    </section>
   )
 }
 
@@ -85,12 +86,15 @@ export function LegalPage({
 
       <LegalOperatorIdentity />
 
-      <nav className={styles.related} aria-label="Related legal pages">
-        {related.map(([label, href]) => (
-          href === currentPath
-            ? <span key={href} aria-current="page">{label}</span>
-            : <Link key={href} href={href}>{label}</Link>
-        ))}
+      <nav className={styles.related} aria-label="Related legal information">
+        <p className={styles.relatedLabel}>Related legal information</p>
+        <div className={styles.relatedLinks}>
+          {related.map(([label, href]) => (
+            href === currentPath
+              ? <span key={href} aria-current="page">{label}</span>
+              : <Link key={href} href={href}>{label}</Link>
+          ))}
+        </div>
       </nav>
     </article>
   )

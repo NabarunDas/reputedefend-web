@@ -1,6 +1,7 @@
 .page {
   --edge: color-mix(in srgb, var(--ink) 14%, transparent);
   --tint: color-mix(in srgb, var(--green) 5%, var(--paper));
+  --muted-strong: #52615b;
   width: min(760px, calc(100% - 48px));
   margin-inline: auto;
   padding-block: 48px 80px;
@@ -27,7 +28,7 @@
 }
 
 .page h2 {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   font-size: clamp(1.35rem, 2.2vw, 1.65rem);
   line-height: 1.25;
   letter-spacing: -.03em;
@@ -35,14 +36,19 @@
 }
 
 .page h3 {
-  margin-top: 22px;
+  margin-top: 24px;
   font-size: 1.05rem;
   line-height: 1.35;
   letter-spacing: -.02em;
   font-weight: 750;
 }
 
-.page section[id] { scroll-margin-top: 108px; }
+.page section[id] { scroll-margin-top: 112px; }
+
+.page a:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 4px;
+}
 
 .eyebrow {
   color: var(--green);
@@ -55,7 +61,7 @@
 .lead {
   margin-top: 20px;
   max-width: 42rem;
-  color: var(--muted);
+  color: var(--muted-strong);
   font-size: 17px;
   line-height: 1.7;
   text-wrap: pretty;
@@ -63,13 +69,14 @@
 
 .meta {
   margin-top: 16px;
-  color: var(--muted);
+  color: var(--muted-strong);
   font-size: 14px;
+  font-weight: 650;
 }
 
 .toc {
   margin-top: 36px;
-  padding: 20px 22px;
+  padding: 22px 24px;
   border: 1px solid var(--edge);
   border-radius: 16px;
   background: var(--tint);
@@ -87,33 +94,35 @@
 .toc ol {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   list-style: none;
 }
 
 .toc a {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
+  padding-block: 4px;
   color: var(--ink);
   font-size: 15px;
   font-weight: 650;
   text-decoration: underline;
   text-decoration-color: var(--edge);
   text-underline-offset: 4px;
+  overflow-wrap: anywhere;
 }
 
 .toc a:hover,
 .toc a:focus-visible { color: var(--green-dark); }
 
 .section {
-  margin-top: 40px;
-  padding-top: 8px;
+  margin-top: 44px;
+  padding-top: 12px;
   border-top: 1px solid var(--edge);
 }
 
 .body {
-  color: var(--muted);
+  color: var(--muted-strong);
   font-size: 16px;
   line-height: 1.7;
   text-wrap: pretty;
@@ -122,14 +131,14 @@
 .body p + p,
 .body p + ul,
 .body ul + p,
-.body h3 + p { margin-top: 14px; }
+.body h3 + p { margin-top: 16px; }
 
 .body ul {
-  margin-top: 12px;
-  padding-left: 1.15rem;
+  margin-top: 14px;
+  padding-left: 1.2rem;
 }
 
-.body li { margin-top: 6px; }
+.body li { margin-top: 8px; }
 .body li::marker { color: var(--green); }
 
 .body a {
@@ -141,22 +150,34 @@
 
 .callout {
   margin-top: 18px;
-  padding: 16px 18px;
+  padding: 18px 20px;
   border-left: 3px solid var(--green);
   border-radius: 0 12px 12px 0;
   background: var(--tint);
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .related {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
   margin-top: 48px;
   padding-top: 24px;
   border-top: 1px solid var(--edge);
+}
+
+.relatedLabel {
+  margin-bottom: 8px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.relatedLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
   font-size: 14px;
   font-weight: 700;
 }
@@ -172,18 +193,22 @@
 .related span { color: var(--ink); }
 
 .operator {
-  margin-top: 40px;
-  padding-top: 24px;
+  margin-top: 44px;
+  padding-top: 28px;
   border-top: 1px solid var(--edge);
-  color: var(--muted);
-  font-size: 14px;
+  color: var(--muted-strong);
+  font-size: 15px;
   line-height: 1.65;
+}
+
+.operator h2 {
+  margin-bottom: 14px;
 }
 
 .operator p + p,
 .operator p + address,
 .operator address + p {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .operator address {
@@ -196,15 +221,15 @@
   font-weight: 650;
   text-decoration: underline;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 480px) {
   .page { width: calc(100% - 32px); padding-block: 36px 64px; }
-  .toc { padding: 16px; }
-  .toc ol { gap: 2px; }
+  .toc { padding: 16px 18px; }
   .page h1 { max-width: 14ch; font-size: clamp(1.85rem, 8vw, 2.35rem); }
   .lead { font-size: 16px; }
-  .body { font-size: 15.5px; }
+  .body { font-size: 16px; }
 }
 
 @media (max-width: 360px) {

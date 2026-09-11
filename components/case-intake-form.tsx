@@ -240,9 +240,8 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         ) : (
           <>
             <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your case.</h2>
-            <p>A human will review the information you shared. If anything important needs clarification, we&apos;ll contact you using the details you provided before recommending the next step.</p>
-            <p>Submitting your case has not committed you to paid support.</p>
-            <p>If further support appears appropriate, we&apos;ll explain the proposed scope and fee before you decide.</p>
+            <p>A human will review the information you shared. If anything important needs clarification, we&apos;ll contact you using the details you provided. We&apos;ll then explain how we understand the situation and the next step we believe makes sense.</p>
+            <p>If you later want help carrying that recommendation through, we&apos;ll explain what further support could involve.</p>
           </>
         )}
       </div>
@@ -356,7 +355,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <Field
               id={`${formId}-details`}
               label="Tell us what happened"
-              hint="Include when the issue started, any messages you received, changes you noticed and what you have already tried."
+              hint="Include when the issue started, any messages you received, changes you noticed and what you have already tried. You don't need to know the cause."
               error={errors.details}
             >
               <textarea name="details" value={values.details} onChange={(event) => update("details", event.target.value)} maxLength={enquiryLimits.details} rows={8} required />
@@ -440,8 +439,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
       </div>
       {step === 4 ? (
         <div className={styles.submitNotes}>
-          <p>Submitting your case does not commit you to paid support.</p>
-          <p>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</p>
+          <p>Submitting your case does not commit you to paid support. If further paid work is appropriate, we&apos;ll explain the scope and fee before you decide.</p>
         </div>
       ) : null}
 

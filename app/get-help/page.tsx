@@ -6,7 +6,7 @@ import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./get-help.module.css"
 
 const title = "Get Help With a Google Business Profile or Review Issue | ReputeDefend"
-const description = "Tell ReputeDefend about a Google Business Profile, verification, access or review issue. Share the facts and get an independent assessment of the next appropriate step."
+const description = "Tell ReputeDefend about a Google Business Profile, verification, access or review issue. A human reviews the situation, identifies the information that matters and helps you understand the strongest appropriate next step."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -24,10 +24,17 @@ const trustStrip = [
 ] as const
 
 const nextSteps = [
-  "A human reviews your enquiry",
-  "We clarify anything important",
-  "We explain the recommended next step",
+  "A human reviews your case",
+  "We identify what matters or needs clarification",
+  "We explain the recommended next step and why",
 ]
+
+const lookAt = [
+  "What changed and when",
+  "What Google has told you",
+  "What you have already tried",
+  "What evidence or information may matter next",
+] as const
 
 export default async function GetHelpPage({
   searchParams,
@@ -44,9 +51,9 @@ export default async function GetHelpPage({
           <p className={styles.eyebrow}>Get help with your case</p>
           <h1 id="get-help-title">Tell us what happened.</h1>
           <p className={styles.lead}>
-            You don&apos;t need to diagnose the problem or prepare a perfect case file. Start with what changed, what Google has told you and what you have already tried. A human will review the information and help you understand the next practical step.
+            You don&apos;t need to diagnose the problem or prepare a perfect case file. Start with what changed, what Google has told you and what you have already tried. A human will review the situation, identify what matters and help you understand the strongest appropriate next step.
           </p>
-          <p className={styles.trustLine}>Human case review • No payment to submit • No commitment to paid support</p>
+          <p className={styles.trustLine}>Human case review • Evidence-led assessment • Clear next steps</p>
         </section>
 
         <section className={styles.trustStrip} aria-label="How ReputeDefend handles enquiries">
@@ -77,7 +84,15 @@ export default async function GetHelpPage({
                   </li>
                 ))}
               </ol>
-              <p className={styles.nextNote}>If further paid support appears appropriate, the scope and fee will be explained before you decide.</p>
+            </section>
+            <section className={styles.look} aria-labelledby="look-title">
+              <h2 id="look-title">What we&apos;ll look at</h2>
+              <p>You don&apos;t need to organise the case perfectly. We look at the information together to understand what is most relevant.</p>
+              <ul>
+                {lookAt.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </section>
             <section className={styles.security} aria-labelledby="security-title">
               <h2 id="security-title">
@@ -86,10 +101,6 @@ export default async function GetHelpPage({
               </h2>
               <p>Never send passwords, verification codes or account credentials. If an action needs to be completed inside your Google account, we&apos;ll explain what you need to do.</p>
               <p className={styles.securityNote}>Only share information that is relevant to the issue.</p>
-            </section>
-            <section className={styles.payment} aria-labelledby="payment-title">
-              <h2 id="payment-title">No payment to submit</h2>
-              <p>Sending your case asks ReputeDefend to review the situation. It does not commit you to further paid support.</p>
             </section>
           </aside>
         </div>

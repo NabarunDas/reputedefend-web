@@ -210,6 +210,9 @@ describe("parseServiceParam", () => {
   it("maps valid query values and ignores unknown ones", () => {
     expect(parseServiceParam("profile")).toBe("profile-recovery")
     expect(parseServiceParam("review")).toBe("review-protection")
+    expect(parseServiceParam("access")).toBe("profile-access")
+    expect(parseServiceParam("general")).toBe("general")
+    expect(parseServiceParam("profile-recovery")).toBe("profile-recovery")
     expect(parseServiceParam("unknown")).toBe("")
     expect(parseServiceParam(undefined)).toBe("")
   })

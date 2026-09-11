@@ -44,7 +44,7 @@ function HelpLink({ children, className = s.primaryButton }: { children: React.R
 
 function HeroVisual() {
   return (
-    <figure className={s.visual} aria-label={howVisualCaption}>
+    <figure className={s.visual}>
       <ol className={s.visualBoard}>
         {howVisualSteps.map((step, index) => (
           <li key={step.n} className={index === howVisualSteps.length - 1 ? s.visualFinal : undefined}>

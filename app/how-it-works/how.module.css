@@ -138,7 +138,7 @@
   border: 1px solid var(--edge);
   border-radius: 50%;
 }
-@media (min-width: 1024px) {
+@media (min-width: 1101px) {
   .processList li { position: relative; }
   .processList li:not(:last-child)::after {
     content: "";

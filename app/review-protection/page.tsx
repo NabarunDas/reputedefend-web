@@ -1,38 +1,53 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
-import { reviewFaqs } from "./content"
+import { reviewDescription, reviewFaqs } from "./content"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
-import { ReviewAssessment, ReviewClosing, ReviewDistinction, ReviewEvidence, ReviewExpectations, ReviewFaq, ReviewHero, ReviewPathways, ReviewPrecautions, ReviewProcess, ReviewScenarios, ReviewSupport } from "./review-sections"
+import {
+  ReviewAssessment,
+  ReviewClosing,
+  ReviewEvidence,
+  ReviewExpertise,
+  ReviewFaq,
+  ReviewHero,
+  ReviewProcess,
+  ReviewRoutes,
+  ReviewSituations,
+  ReviewSupport,
+  ReviewTrust,
+  ReviewTrustStrip,
+} from "./review-sections"
 import styles from "./review.module.css"
 
 const title = "Google Review Protection & Review Challenge Support | ReputeDefend"
-const description = "Independent support for suspicious or potentially policy-violating Google reviews. Assess the facts, organise evidence and prepare an appropriate reporting or challenge route."
-
 export const metadata: Metadata = {
   title: { absolute: title },
-  description,
+  description: reviewDescription,
   alternates: { canonical: "/review-protection" },
-  openGraph: socialOpenGraph({ title, description, path: "/review-protection" }),
-  twitter: socialTwitter({ title, description }),
+  openGraph: socialOpenGraph({ title, description: reviewDescription, path: "/review-protection" }),
+  twitter: socialTwitter({ title, description: reviewDescription }),
 }
 
 export default function ReviewProtectionPage() {
-  return <>
-    <ServiceStructuredData name="Google Review Protection" description="Independent, evidence-led support to assess suspicious or potentially policy-violating Google reviews, organise relevant evidence and prepare an appropriate reporting, challenge or response route. Review removal is not guaranteed." path="/review-protection" />
-    <FaqStructuredData questions={reviewFaqs} />
+  return (
     <div className={`${styles.page} font-sans`}>
+      <ServiceStructuredData
+        name="Google Review Protection"
+        description="Independent, evidence-led support to assess suspicious or potentially policy-violating Google reviews, organise relevant evidence and prepare an appropriate reporting, challenge or response route. Review removal is not guaranteed."
+        path="/review-protection"
+      />
+      <FaqStructuredData questions={reviewFaqs} />
       <ReviewHero />
-      <ReviewDistinction />
-      <ReviewScenarios />
+      <ReviewTrustStrip />
+      <ReviewSituations />
+      <ReviewRoutes />
+      <ReviewExpertise />
       <ReviewAssessment />
-      <ReviewEvidence />
       <ReviewSupport />
-      <ReviewPathways />
-      <ReviewPrecautions />
+      <ReviewEvidence />
       <ReviewProcess />
-      <ReviewExpectations />
+      <ReviewTrust />
       <ReviewFaq />
       <ReviewClosing />
     </div>
-  </>
+  )
 }

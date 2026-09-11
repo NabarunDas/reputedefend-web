@@ -3,16 +3,16 @@ import { FaqStructuredData, HowToStructuredData } from "@/components/structured-
 import { howDescription, howFaqs, journeySteps } from "./content"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
-  HowAssessment,
-  HowClosing,
-  HowCommunication,
+  HowAssess,
+  HowClose,
+  HowExpect,
   HowFaq,
   HowHero,
   HowJourney,
-  HowLimits,
-  HowNeed,
   HowPaths,
-  HowReceive,
+  HowSend,
+  HowTrust,
+  HowTrustStrip,
 } from "./how-sections"
 import styles from "./how.module.css"
 
@@ -36,15 +36,15 @@ export default function HowItWorksPage() {
       />
       <FaqStructuredData questions={howFaqs} />
       <HowHero />
+      <HowTrustStrip />
       <HowJourney />
-      <HowNeed />
-      <HowAssessment />
-      <HowReceive />
+      <HowSend />
+      <HowAssess />
+      <HowExpect />
       <HowPaths />
-      <HowLimits />
-      <HowCommunication />
+      <HowTrust />
       <HowFaq />
-      <HowClosing />
+      <HowClose />
     </div>
   )
 }

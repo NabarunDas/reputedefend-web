@@ -1,154 +1,182 @@
 import Link from "next/link"
 import {
   ArrowDown,
-  ArrowRightFromLine,
   ArrowUpRight,
   Check,
-  Compass,
-  FolderOpen,
-  ListFilter,
-  LockKeyhole,
-  MessageSquareText,
+  Info,
+  Lock,
   Plus,
-  Scale,
-  ScanSearch,
-  Store,
+  Shield,
+  UserRoundCheck,
+  Wallet,
 } from "lucide-react"
 import {
-  assessmentLenses,
-  communicationPrinciples,
-  heroStages,
+  howAssess,
+  howClose,
+  howExpect,
   howFaqs,
+  howHero,
+  howJourney,
+  howPaths,
+  howSend,
+  howTrust,
+  howTrustStrip,
+  howVisualCaption,
+  howVisualSteps,
   journeySteps,
-  limits,
-  profilePath,
-  receiveItems,
-  reviewPath,
-  usefulInformation,
 } from "./content"
 import s from "./how.module.css"
 
-const stepIcons = [MessageSquareText, ScanSearch, ListFilter, FolderOpen, Compass, ArrowRightFromLine]
+const stripIcons = [UserRoundCheck, Wallet, Lock, Shield] as const
 
-function StartCase({ children, closing = false }: { children: React.ReactNode; closing?: boolean }) {
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className={s.eyebrow}>{children}</p>
+}
+
+function HelpLink({ children, className = s.primaryButton }: { children: React.ReactNode; className?: string }) {
   return (
-    <Link href="/get-help" className={`${s.button} ${closing ? s.limeButton : ""}`}>
+    <Link href="/get-help" className={className}>
       {children}
       <ArrowUpRight size={18} aria-hidden="true" />
     </Link>
   )
 }
 
-function Heading({ eyebrow, title, id }: { eyebrow: string; title: string; id: string }) {
+function HeroVisual() {
   return (
-    <div className={s.heading}>
-      <p className={s.eyebrow}>{eyebrow}</p>
-      <h2 id={id}>{title}</h2>
-    </div>
+    <figure className={s.visual} aria-label={howVisualCaption}>
+      <ol className={s.visualBoard}>
+        {howVisualSteps.map((step, index) => (
+          <li key={step.n} className={index === howVisualSteps.length - 1 ? s.visualFinal : undefined}>
+            {index === howVisualSteps.length - 1 ? (
+              <span className={s.visualCheck} aria-hidden="true">
+                <Check size={16} />
+              </span>
+            ) : (
+              <span className={s.visualN} aria-hidden="true">
+                {step.n}
+              </span>
+            )}
+            <strong>{step.title}</strong>
+            {"support" in step ? <p>{step.support}</p> : null}
+          </li>
+        ))}
+      </ol>
+      <figcaption>{howVisualCaption}</figcaption>
+    </figure>
   )
 }
 
 export function HowHero() {
   return (
-    <section className={`${s.hero} ${s.enter}`} aria-labelledby="how-title">
+    <section className={`${s.hero} ${s.enter}`} aria-labelledby="how-hero-title">
       <div>
-        <p className={s.eyebrow}>How ReputeDefend works</p>
-        <h1 id="how-title">A clear process for situations that <span>rarely feel clear.</span></h1>
-        <p className={s.lead}>You do not need to diagnose the problem before contacting us. Start with what happened, what changed and what you already know. We review the situation, organise the relevant facts and help you understand an appropriate next step.</p>
+        <Eyebrow>{howHero.eyebrow}</Eyebrow>
+        <h1 id="how-hero-title">
+          {howHero.titleBefore}
+          <span>{howHero.titleAccent}</span>
+        </h1>
+        <p className={s.lead}>{howHero.lead}</p>
         <div className={s.actions}>
-          <StartCase>Start a case</StartCase>
-          <a href="#service-paths" className={s.textLink}>Explore our services <ArrowDown size={18} aria-hidden="true" /></a>
+          <HelpLink>{howHero.primaryCta}</HelpLink>
+          <a className={s.secondaryButton} href={`#${howJourney.id}`}>
+            {howHero.secondaryCta}
+            <ArrowDown size={18} aria-hidden="true" />
+          </a>
         </div>
-        <p className={s.trustLine}>Human review • Evidence-led • Clear next steps</p>
+        <p className={s.heroNote}>{howHero.note}</p>
       </div>
-      <figure className={s.visual} aria-label="The ReputeDefend journey: tell us what happened, assess, organise evidence, recommend action, follow through">
-        <p className={s.visualCaption}>The complete journey</p>
-        <ol className={s.visualPath}>
-          {heroStages.map((stage, index) => (
-            <li key={stage}>
-              <span className={s.visualNode}>{String(index + 1).padStart(2, "0")}</span>
-              <span className={s.visualLabel}>{stage}</span>
+      <HeroVisual />
+    </section>
+  )
+}
+
+export function HowTrustStrip() {
+  return (
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend works — at a glance">
+      <ul>
+        {howTrustStrip.map((item, index) => {
+          const Icon = stripIcons[index]
+          return (
+            <li key={item}>
+              <span className={s.stripIcon}>
+                <Icon aria-hidden="true" size={18} />
+              </span>
+              {item}
             </li>
-          ))}
-        </ol>
-        <figcaption>A Google Business Profile support process and Google review assessment, taken one considered step at a time.</figcaption>
-      </figure>
+          )
+        })}
+      </ul>
     </section>
   )
 }
 
 export function HowJourney() {
   return (
-    <section id="full-journey" className={`${s.section} ${s.reveal}`} aria-labelledby="journey-title">
-      <Heading eyebrow="The full journey" title="From first contact to a considered next step." id="journey-title" />
-      <p className={s.sectionLead}>A reputation case assessment follows a clear sequence. Each stage builds on the last, without assuming an outcome before the facts are in view.</p>
-      <div className={s.railWrap}>
-        <span className={s.railTrack} aria-hidden="true"><span className={s.railProgress} /></span>
-        <ol className={s.rail}>
-          {journeySteps.map((step, index) => {
-            const Icon = stepIcons[index]
-            return (
-              <li key={step.title} className={s.railItem}>
-                <span className={s.railMarker}>{String(index + 1).padStart(2, "0")}</span>
-                <article className={s.railCard}>
-                  <div className={s.railCardTop}>
-                    <Icon size={20} aria-hidden="true" />
-                    <h3>{step.title}</h3>
-                  </div>
-                  <p>{step.body}</p>
-                </article>
-              </li>
-            )
-          })}
-        </ol>
-      </div>
+    <section id={howJourney.id} className={`${s.section} ${s.reveal}`} aria-labelledby="how-journey-title">
+      <header className={s.sectionHeading}>
+        <div>
+          <Eyebrow>{howJourney.eyebrow}</Eyebrow>
+          <h2 id="how-journey-title">{howJourney.title}</h2>
+        </div>
+        <p>{howJourney.lead}</p>
+      </header>
+      <ol className={s.processList}>
+        {journeySteps.map((step) => (
+          <li key={step.id}>
+            <span className={s.processNumber} aria-hidden="true">
+              {step.n}
+            </span>
+            <h3>{step.title}</h3>
+            <p>{step.body}</p>
+          </li>
+        ))}
+      </ol>
     </section>
   )
 }
 
-export function HowNeed() {
+export function HowSend() {
   return (
-    <section className={`${s.need} ${s.reveal}`} aria-labelledby="need-title">
-      <div>
-        <Heading eyebrow="What we need from you" title="Start with what you know." id="need-title" />
-        <p className={s.muted}>Useful information may include the facts below. You do not need every piece of information before contacting us. We can identify what may be relevant after reviewing the situation.</p>
+    <section className={`${s.send} ${s.reveal}`} aria-labelledby="how-send-title">
+      <div className={s.sendIntro}>
+        <Eyebrow>{howSend.eyebrow}</Eyebrow>
+        <h2 id="how-send-title">{howSend.title}</h2>
+        <p>{howSend.lead}</p>
       </div>
-      <div className={s.dossier}>
-        <div className={s.dossierHead}>
-          <FolderOpen size={20} aria-hidden="true" />
-          <strong>A useful starting record</strong>
-        </div>
-        <ul className={s.checklist}>
-          {usefulInformation.map((item) => (
+      <div className={s.sendPanel}>
+        <ul>
+          {howSend.items.map((item) => (
             <li key={item}>
-              <span className={s.check} aria-hidden="true"><Check size={14} /></span>
-              <span>{item}</span>
+              <Check aria-hidden="true" size={17} />
+              {item}
             </li>
           ))}
         </ul>
-        <aside className={s.security}>
-          <LockKeyhole size={20} aria-hidden="true" />
-          <div>
-            <strong>Keep your account secure</strong>
-            <p>Never send passwords, verification codes or account credentials.</p>
-          </div>
-        </aside>
+        <p className={s.safetyNote}>
+          <Lock aria-hidden="true" size={18} />
+          {howSend.safety}
+        </p>
+        <p className={s.sendClose}>{howSend.safetyNote}</p>
       </div>
     </section>
   )
 }
 
-export function HowAssessment() {
+export function HowAssess() {
   return (
-    <section className={`${s.section} ${s.reveal}`} aria-labelledby="assessment-title">
-      <div className={s.splitIntro}>
-        <Heading eyebrow="What happens during assessment" title="Assessment before action." id="assessment-title" />
-        <p>ReputeDefend considers the situation as a whole: the event, the surrounding context, the evidence that can be shown, the process that appears available, and the limits of what remains uncertain. That is how a Google review assessment or Business Profile recovery support stays proportionate to the facts.</p>
-      </div>
-      <ol className={s.lenses}>
-        {assessmentLenses.map((item, index) => (
-          <li key={item.title}>
-            <span className={s.lensNumber}>{String(index + 1).padStart(2, "0")}</span>
+    <section className={`${s.section} ${s.reveal}`} aria-labelledby="how-assess-title">
+      <header className={s.sectionHeading}>
+        <div>
+          <Eyebrow>{howAssess.eyebrow}</Eyebrow>
+          <h2 id="how-assess-title">{howAssess.title}</h2>
+        </div>
+        <p>{howAssess.lead}</p>
+      </header>
+      <ol className={s.assessGrid}>
+        {howAssess.items.map((item) => (
+          <li key={item.n}>
+            <span aria-hidden="true">{item.n}</span>
             <h3>{item.title}</h3>
             <p>{item.body}</p>
           </li>
@@ -158,19 +186,22 @@ export function HowAssessment() {
   )
 }
 
-export function HowReceive() {
+export function HowExpect() {
   return (
-    <section className={`${s.receive} ${s.reveal}`} aria-labelledby="receive-title">
-      <div>
-        <Heading eyebrow="What you receive" title="Clearer information before you decide what to do." id="receive-title" />
-        <p className={s.muted}>Depending on the situation, customers may receive some or all of the following. These are practical explanations to help you decide, not formal legal opinions, and not a fixed package for every enquiry.</p>
-        <p className={s.marginNote}>Any proposed support should be clear before you decide how to proceed.</p>
-      </div>
-      <ul className={s.deliverables}>
-        {receiveItems.map((item, index) => (
-          <li key={item}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <p>{item}</p>
+    <section className={`${s.section} ${s.reveal}`} aria-labelledby="how-expect-title">
+      <header className={s.sectionHeading}>
+        <div>
+          <Eyebrow>{howExpect.eyebrow}</Eyebrow>
+          <h2 id="how-expect-title">{howExpect.title}</h2>
+        </div>
+        <p>{howExpect.lead}</p>
+      </header>
+      <ul className={s.expectGrid}>
+        {howExpect.items.map((item, index) => (
+          <li key={item.title}>
+            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
           </li>
         ))}
       </ul>
@@ -180,80 +211,77 @@ export function HowReceive() {
 
 export function HowPaths() {
   return (
-    <section id="service-paths" className={`${s.paths} ${s.reveal}`} aria-labelledby="paths-title">
-      <header>
-        <p className={s.eyebrow}>Two service paths</p>
-        <h2 id="paths-title">Different problems need different routes.</h2>
-        <p>The same evidence-led process applies throughout. The available next step depends on whether the issue is a Business Profile disruption or a review concern.</p>
+    <section className={`${s.paths} ${s.reveal}`} aria-labelledby="how-paths-title">
+      <header className={s.centerHead}>
+        <Eyebrow>{howPaths.eyebrow}</Eyebrow>
+        <h2 id="how-paths-title">{howPaths.title}</h2>
+        <p>{howPaths.lead}</p>
       </header>
-      <p className={s.forkOrigin}>Start with the situation</p>
-      <div className={s.branchGrid}>
-        <article className={s.profileBranch}>
-          <div className={s.branchCue}><Store size={22} aria-hidden="true" /><span>Business presence</span></div>
-          <h3>Business Profile Protection &amp; Recovery</h3>
-          <ol className={s.branchPath}>
-            {profilePath.map((stage) => <li key={stage}>{stage}</li>)}
-          </ol>
-          <Link href="/business-profile-recovery" className={s.branchLink}>Explore Profile Recovery <ArrowUpRight size={17} aria-hidden="true" /></Link>
-        </article>
-        <article className={s.reviewBranch}>
-          <div className={s.branchCue}><Scale size={22} aria-hidden="true" /><span>Business reputation</span></div>
-          <h3>Review Protection</h3>
-          <ol className={s.branchPath}>
-            {reviewPath.map((stage) => <li key={stage}>{stage}</li>)}
-          </ol>
-          <Link href="/review-protection" className={s.branchLink}>Explore Review Protection <ArrowUpRight size={17} aria-hidden="true" /></Link>
-        </article>
-      </div>
-    </section>
-  )
-}
-
-export function HowLimits() {
-  return (
-    <section className={`${s.limits} ${s.reveal}`} aria-labelledby="limits-title">
-      <Heading eyebrow="What we do not do" title="Responsible support includes knowing where the limits are." id="limits-title" />
-      <p className={s.limitsLead}>ReputeDefend does not:</p>
-      <ul className={s.limitList}>
-        {limits.map((item) => (
-          <li key={item}><span aria-hidden="true">—</span>{item}</li>
+      <div className={s.pathGrid}>
+        {howPaths.items.map((item) => (
+          <article key={item.href}>
+            <p className={s.pathCue}>{item.cue}</p>
+            <h3>{item.title}</h3>
+            <ol>
+              {item.path.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <Link className={s.pathCta} href={item.href}>
+              {item.cta}
+              <ArrowUpRight size={16} aria-hidden="true" />
+            </Link>
+          </article>
         ))}
-      </ul>
-      <p className={s.limitsRole}>Our role is to help you understand the situation, prepare relevant information and approach the available process responsibly.</p>
+      </div>
     </section>
   )
 }
 
-export function HowCommunication() {
+export function HowTrust() {
   return (
-    <section className={`${s.section} ${s.reveal}`} aria-labelledby="communication-title">
-      <div className={s.splitIntro}>
-        <Heading eyebrow="Communication" title="Clear communication throughout." id="communication-title" />
-        <p>These principles shape every enquiry. They are how ReputeDefend stays precise when a situation is still unfolding, and how we differ from providers who sell certainty they cannot deliver.</p>
-      </div>
-      <ol className={s.principles}>
-        {communicationPrinciples.map((item, index) => (
-          <li key={item}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <p>{item}</p>
+    <section className={`${s.trust} ${s.reveal}`} aria-labelledby="how-trust-title">
+      <header className={s.sectionHeading}>
+        <div>
+          <Eyebrow>{howTrust.eyebrow}</Eyebrow>
+          <h2 id="how-trust-title">{howTrust.title}</h2>
+        </div>
+        <p>{howTrust.lead}</p>
+      </header>
+      <ul className={s.trustGrid}>
+        {howTrust.principles.map((item) => (
+          <li key={item.title}>
+            <span className={s.trustIcon}>
+              <Check aria-hidden="true" size={18} />
+            </span>
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
           </li>
         ))}
-      </ol>
+      </ul>
+      <aside className={s.trustLimit}>
+        <Info aria-hidden="true" size={20} />
+        <p>{howTrust.callout}</p>
+      </aside>
     </section>
   )
 }
 
 export function HowFaq() {
   return (
-    <section className={`${s.faq} ${s.reveal}`} aria-labelledby="faq-title">
+    <section className={`${s.faq} ${s.reveal}`} aria-labelledby="how-faq-title">
       <div>
-        <Heading eyebrow="Questions, answered" title="Useful context before you start." id="faq-title" />
-        <p className={s.muted}>Practical answers about the process, evidence preparation and what happens after you get in touch.</p>
+        <Eyebrow>Common questions</Eyebrow>
+        <h2 id="how-faq-title">Before you send the enquiry.</h2>
+        <p>A short look at what happens after you get in touch, what to send, and what you are — and are not — committing to.</p>
       </div>
-      <div>
+      <div className={s.faqList}>
         {howFaqs.map(({ q, a }) => (
           <details key={q}>
-            <summary>{q}<Plus size={20} aria-hidden="true" /></summary>
+            <summary>
+              {q}
+              <Plus aria-hidden="true" size={20} />
+            </summary>
             <p>{a}</p>
           </details>
         ))}
@@ -262,20 +290,26 @@ export function HowFaq() {
   )
 }
 
-export function HowClosing() {
+export function HowClose() {
   return (
-    <section className={s.closing} aria-labelledby="closing-title">
-      <div>
-        <p className={s.eyebrow}>Ready to start?</p>
-        <h2 id="closing-title">Tell us what happened. We&apos;ll help make the next step clearer.</h2>
-        <p>You do not need a finished case file. Start with the issue, the relevant links or messages and what you have already tried.</p>
+    <section className={`${s.closing} ${s.reveal}`} aria-labelledby="how-close-title">
+      <div className={s.closingCopy}>
+        <Eyebrow>{howClose.eyebrow}</Eyebrow>
+        <h2 id="how-close-title">{howClose.title}</h2>
+        <p>{howClose.lead}</p>
+        <ul className={s.closingPoints}>
+          {howClose.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
       </div>
-      <div className={s.closingAction}>
-        <StartCase closing>Start a case</StartCase>
-        <div className={s.closingLinks}>
-          <Link href="/business-profile-recovery">Business Profile help <ArrowUpRight size={16} aria-hidden="true" /></Link>
-          <Link href="/review-protection">Review Protection <ArrowUpRight size={16} aria-hidden="true" /></Link>
-        </div>
+      <div className={s.closingPanel}>
+        <p>Share the situation as it stands. A human will review it and help you understand the next practical step.</p>
+        <HelpLink>{howClose.cta}</HelpLink>
+        <p className={s.closingLinks}>
+          <Link href="/business-profile-recovery">Business Profile Recovery</Link>
+          <Link href="/review-protection">Review Protection</Link>
+        </p>
       </div>
     </section>
   )

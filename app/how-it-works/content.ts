@@ -1,144 +1,246 @@
-import { feeWording } from "@/lib/legal"
-
 export const howDescription =
-  "See how ReputeDefend assesses Google Business Profile and review issues, organises evidence and helps businesses understand an appropriate next step."
+  "See how ReputeDefend's Google Business Profile support process works: share the situation, a human reviews it, we explain the recommended next step, and you decide how to proceed."
 
-export const heroStages = [
-  "Tell us what happened",
-  "Assess",
-  "Organise evidence",
-  "Recommend action",
-  "Follow through",
-]
+export const howHero = {
+  eyebrow: "How ReputeDefend works",
+  titleBefore: "A clear process for situations that ",
+  titleAccent: "rarely feel clear.",
+  lead:
+    "You don't need to diagnose the issue or prepare a perfect case before contacting us. Tell us what happened and what you have already tried. A human reviews the information, identifies anything that needs clarification and helps you understand the next practical step.",
+  primaryCta: "Tell us what happened",
+  secondaryCta: "See what happens next",
+  note: "Human case review • No payment to submit • Clear next steps",
+}
+
+export const howVisualSteps = [
+  { n: "01", title: "You share the situation" },
+  { n: "02", title: "We review & clarify" },
+  { n: "03", title: "You understand the options" },
+  {
+    n: "04",
+    title: "You decide how to proceed",
+    support: "No further paid support until scope and fee are clear.",
+  },
+] as const
+
+export const howVisualCaption =
+  "A clear route from uncertainty to an informed next step."
+
+export const howTrustStrip = [
+  "Human-reviewed enquiries",
+  "No payment to submit",
+  "No passwords or verification codes",
+  "Independent of Google",
+] as const
+
+export const howJourney = {
+  id: "what-happens-next",
+  eyebrow: "What happens next",
+  title: "From your enquiry to a clearer decision.",
+  lead:
+    "One reputation support process, whether the issue is a Google Business Profile recovery question or review protection. You stay in control of whether further paid support goes ahead.",
+}
 
 export const journeySteps = [
   {
-    title: "Share the situation",
-    body: "Tell us what happened, when you noticed the issue and what you have already tried. Relevant profile or review links and platform messages are useful, but you do not need to prepare a perfect case file before getting in touch.",
+    id: "tell-us",
+    n: "01",
+    title: "Tell us what happened",
+    body: "Share the issue, when you noticed it, any relevant links or messages and what you have already tried. You do not need to diagnose the problem first.",
   },
   {
-    title: "Initial assessment",
-    body: "We review the information you provide to understand the issue, identify obvious gaps and determine what may need closer examination.",
+    id: "review",
+    n: "02",
+    title: "We review and clarify",
+    body: "A human reviews what you send. If something important is missing or unclear, we'll explain what additional information may help and why.",
   },
   {
-    title: "Clarify the facts",
-    body: "Where necessary, we ask for additional context or supporting information so assumptions can be separated from what can actually be demonstrated.",
+    id: "recommend",
+    n: "03",
+    title: "We explain the recommended next step",
+    body: "We bring the facts, available evidence and relevant process together and explain the route we believe makes sense for the situation.",
   },
   {
-    title: "Organise the evidence",
-    body: "Relevant notices, links, dates, business information and other supporting material are brought together into a clearer picture of the situation.",
+    id: "decide",
+    n: "04",
+    title: "You decide how to proceed",
+    body: "Submitting an enquiry does not commit you to paid support. If further work is appropriate, we'll explain the proposed scope and any fee before you decide.",
   },
-  {
-    title: "Recommend an appropriate route",
-    body: "We explain the available or appropriate next step, which may involve recovery, verification, appeal, reporting, challenge, public response or another reasonable action depending on the issue.",
-  },
-  {
-    title: "Support the follow-through",
-    body: "Where further support is appropriate, we help interpret responses, understand what has changed and consider the next reasonable action.",
-  },
-]
+] as const
 
-export const usefulInformation = [
-  "A clear description of the issue",
-  "When the issue began",
-  "Relevant Business Profile or review URLs",
-  "Exact platform messages or notices",
-  "Recent changes made before the issue appeared",
-  "Actions already attempted",
-  "Relevant supporting evidence",
-]
+export const howSend = {
+  eyebrow: "What to send",
+  title: "Start with what you have.",
+  lead:
+    "A useful enquiry usually starts with the basics. If something is missing, you can still contact us — we'll tell you if more information may help.",
+  items: [
+    "A short description of what happened",
+    "When the issue started",
+    "Business Profile or review link, if available",
+    "Relevant Google messages or notices",
+    "What you have already tried",
+    "Useful screenshots or supporting information",
+  ],
+  safety: "Never send passwords, verification codes or account credentials.",
+  safetyNote:
+    "If an action needs to be taken inside your Google account, we'll explain what you need to do rather than asking you to hand over login details.",
+}
 
-export const assessmentLenses = [
-  {
-    title: "The event",
-    body: "What actually happened and when.",
-  },
-  {
-    title: "The context",
-    body: "Relevant business, profile or review circumstances.",
-  },
-  {
-    title: "The evidence",
-    body: "What can be supported with information rather than assumption.",
-  },
-  {
-    title: "The process",
-    body: "Which platform route appears appropriate.",
-  },
-  {
-    title: "The limitations",
-    body: "What remains uncertain or outside ReputeDefend's control.",
-  },
-]
+export const howAssess = {
+  eyebrow: "How we assess the situation",
+  title: "We look at the whole position before recommending an action.",
+  lead:
+    "A useful Google review assessment or profile recovery view looks at the event, the evidence, the process that may apply, and what still sits outside anyone's control.",
+  items: [
+    {
+      n: "01",
+      title: "What happened",
+      body: "The event, timeline and relevant changes.",
+    },
+    {
+      n: "02",
+      title: "What can be supported",
+      body: "Messages, links, records and other useful evidence.",
+    },
+    {
+      n: "03",
+      title: "Which route fits",
+      body: "The recovery, verification, reporting, challenge, response or other process that appears relevant.",
+    },
+    {
+      n: "04",
+      title: "What remains uncertain",
+      body: "Anything that needs clarification or sits outside ReputeDefend's control.",
+    },
+  ],
+}
 
-export const receiveItems = [
-  "An assessment of the issue",
-  "Identification of information gaps",
-  "Evidence preparation guidance",
-  "Explanation of the relevant process",
-  "Help preparing an appropriate recovery, appeal, report or challenge",
-  "Practical next-step recommendations",
-]
+export const howExpect = {
+  eyebrow: "After we review your enquiry",
+  title: "You should come away knowing what the next step is — and why.",
+  lead:
+    "This is what you can expect after a human review — not a packaged report and not a guaranteed platform result.",
+  items: [
+    {
+      title: "An initial view of the issue",
+      body: "A clear explanation of how we understand the situation based on the information available.",
+    },
+    {
+      title: "Any important information gaps",
+      body: "If something may materially affect the assessment, we'll explain what's missing and why it matters.",
+    },
+    {
+      title: "A recommended next step",
+      body: "We'll explain the route we believe is appropriate rather than leaving you with a list of generic options.",
+    },
+    {
+      title: "The reasoning behind it",
+      body: "You should understand what information supports the recommendation and what remains uncertain.",
+    },
+    {
+      title: "Clear scope before further paid support",
+      body: "If further work is appropriate, we'll explain the proposed support and any associated fee before you decide.",
+    },
+  ],
+}
 
-export const profilePath = ["Suspension / Access / Verification", "Assessment", "Evidence", "Recovery or appeal support"]
-export const reviewPath = ["Review concern", "Assessment", "Policy/evidence consideration", "Appropriate response or challenge"]
+export const howPaths = {
+  eyebrow: "Two types of case",
+  title: "The process is consistent. The route depends on the problem.",
+  lead:
+    "Both lines of work start the same way: you share the situation, we review it, and you decide whether to continue. The recommended process then follows the issue.",
+  items: [
+    {
+      href: "/business-profile-recovery",
+      cue: "Suspension • Access • Verification",
+      title: "Business Profile Protection & Recovery",
+      path: [
+        "Understand the issue",
+        "Review relevant information",
+        "Prepare recovery route",
+        "Support the next step",
+      ],
+      cta: "Explore Profile Recovery",
+    },
+    {
+      href: "/review-protection",
+      cue: "Suspicious or damaging reviews",
+      title: "Review Protection",
+      path: [
+        "Understand the review",
+        "Assess context & evidence",
+        "Choose response/reporting route",
+        "Support the next step",
+      ],
+      cta: "Explore Review Protection",
+    },
+  ],
+}
 
-export const limits = [
-  "Guarantee profile reinstatement",
-  "Guarantee review removal",
-  "Control Google decisions",
-  "Claim special access to Google",
-  "Fabricate evidence",
-  "Promise an outcome or timeframe outside our control",
-]
-
-export const communicationPrinciples = [
-  "We explain what we know.",
-  "We identify what we still need.",
-  "We separate possibilities from facts.",
-  "We explain limitations before action.",
-  "We do not manufacture certainty where none exists.",
-]
+export const howTrust = {
+  eyebrow: "What you can expect from us",
+  title: "Clear communication, even when the platform outcome is uncertain.",
+  lead:
+    "We keep the conversation factual: what the information supports, what we recommend, and what Google still decides.",
+  principles: [
+    {
+      title: "Human review",
+      body: "We review the situation in context rather than automatically generating a generic answer.",
+    },
+    {
+      title: "Facts before assumptions",
+      body: "We distinguish what the information supports from what is possible, suspected or still unknown.",
+    },
+    {
+      title: "Clear recommendations",
+      body: "We explain what we think the next step should be and why.",
+    },
+    {
+      title: "Independent guidance",
+      body: "ReputeDefend is independent of Google and does not claim special access or control over platform decisions.",
+    },
+  ],
+  callout:
+    "Google ultimately controls platform decisions such as profile reinstatement and review removal. ReputeDefend cannot guarantee those outcomes or platform timeframes. Our role is to help you understand the situation, prepare relevant information and approach the strongest appropriate next step.",
+}
 
 export const howFaqs = [
   {
     q: "What happens after I submit a case?",
-    a: "We review the information you share so we can understand the situation. A member of the team will then contact you using the details you provide, typically by email, with an initial view of the issue, any obvious gaps and a recommended next step. That may include asking for more context before any further support is proposed.",
+    a: "A human reviews what you send. If something important is missing or unclear, we may ask for clarification. We then explain how we understand the situation, the next step we believe makes sense, and — if further work is appropriate — the proposed scope and any fee before you decide.",
   },
   {
-    q: "Do I need to prepare all my evidence before contacting you?",
-    a: "No. Start with what you know: a clear description of the issue, when it began, relevant links or notices, and what you have already tried. You do not need a finished case file. After a reputation case assessment, we can identify what further information may be useful.",
-  },
-  {
-    q: "How will you contact me after reviewing my enquiry?",
-    a: "We use the contact details you include with your enquiry, typically your email address. If we need to clarify something before we can form a useful view, we will ask. We will not request passwords, verification codes or account credentials in that correspondence.",
+    q: "Do I need all my evidence before contacting you?",
+    a: "No. Start with what you have: a short description, timing, any relevant links or notices, and what you have already tried. If more information would help, we'll explain what and why.",
   },
   {
     q: "Will you need access to my Google account?",
-    a: "We work from the information you share, such as public Business Profile or review links, notices and relevant business context. You should not hand over account access, passwords or verification codes. If a situation requires you to take an action inside your own account, that will be explained clearly rather than handled through shared login details.",
+    a: "You should not send passwords, verification codes or account credentials. We work from the information you share. If an action needs to be taken inside your account, we'll explain what you need to do.",
   },
   {
-    q: "Do I need to share passwords or verification codes?",
-    a: "No. Never send passwords, verification codes or account credentials. A useful enquiry can be based on public links, the wording of platform messages and a factual account of what happened.",
+    q: "What if you need more information from me?",
+    a: "We'll explain what additional information may help and why it matters. You can still contact us if the picture is incomplete — a useful enquiry does not require a perfect file.",
   },
   {
-    q: "What if you need more information?",
-    a: "We will tell you what is missing and why it may matter. Additional context is requested so that assumptions can be separated from what can actually be demonstrated, not to delay a decision without reason.",
+    q: "Does submitting an enquiry commit me to paid support?",
+    a: "No. Submitting your case asks ReputeDefend to review the situation; it does not commit you to paid support. If further work appears appropriate, we'll explain the proposed scope and any associated fee before you decide how to proceed.",
   },
   {
-    q: "Do you submit appeals or reports on my behalf?",
-    a: `${feeWording} Some situations need assessment and evidence preparation. Others may involve further help with an available recovery, appeal, report or challenge process.`,
-  },
-  {
-    q: "How long does the assessment process take?",
-    a: "Timing depends on the information required and the nature of the issue. We do not promise platform decision times that are outside our control. A first review of your enquiry is a human process, and we may need further context before an assessment is complete.",
-  },
-  {
-    q: "What happens if Google rejects the request or challenge?",
-    a: "We can help you understand the response, what has changed and whether a further reasonable action is available. A rejection does not mean another submission is automatically appropriate. Google controls the decision; we cannot override it or guarantee a different outcome.",
-  },
-  {
-    q: "Can I contact you if I have already tried to resolve the issue myself?",
-    a: "Yes. Share what you tried, when you tried it and any response you received. That history is part of the situation and helps us consider an appropriate next step without assuming that repeating the same action is useful.",
+    q: "Can you guarantee the outcome or how long Google will take?",
+    a: "No. Google controls platform outcomes and timeframes, including profile reinstatement and review removal. We can help you understand the situation and take a clearer next step; we cannot guarantee what Google will decide or when.",
   },
 ]
+
+export const howClose = {
+  eyebrow: "Ready to start?",
+  title: "You don't need to have the answer before you ask for help.",
+  lead:
+    "Tell us what happened, what changed and what you have already tried. We'll review the situation and help you understand the next practical step.",
+  notes: [
+    "No payment is required to submit your enquiry.",
+    "Submitting your case does not commit you to paid support.",
+    "If further support is appropriate, we'll explain the proposed scope and any fee before you decide.",
+    "Please don't send passwords or verification codes.",
+  ],
+  cta: "Tell us what happened",
+}

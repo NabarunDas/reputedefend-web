@@ -165,8 +165,9 @@ export function RecoveryAssessment() {
         <p>We work from the information you can share: messages you have received, the profile as you can see it, and any supporting records.</p>
       </div>
       <div className={s.assessGrid}>
-        {assessmentAreas.map(({ title, body }) => (
+        {assessmentAreas.map(({ title, body }, index) => (
           <article key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
             <h3>{title}</h3>
             <p>{body}</p>
           </article>

@@ -72,23 +72,23 @@ export const assessmentAreas = [
 
 export const supportItems = [
   {
-    title: "Case assessment",
+    title: "Case & timeline review",
     body: "We review the situation, timeline and available information to understand the current position.",
   },
   {
-    title: "Evidence preparation",
+    title: "Identify the evidence that matters",
     body: "We help identify the records and business information that may be relevant to the recovery route.",
   },
   {
-    title: "Appeal or recovery preparation",
+    title: "Prepare the recovery route",
     body: "We help you organise the case clearly before the appropriate submission or next action.",
   },
   {
-    title: "Previous-attempt review",
+    title: "Review what you've already tried",
     body: "If you've already appealed or made changes, we factor that history into the assessment.",
   },
   {
-    title: "Next-step guidance",
+    title: "Understand the recommended next step",
     body: "You receive a practical explanation of what we believe the next step should be and why.",
   },
 ]

@@ -1,52 +1,312 @@
 import Link from "next/link"
-import { ArrowDown, ArrowUpRight, Check, FileSearch, FolderCheck, LockKeyhole, Plus, Route, ShieldCheck } from "lucide-react"
-import { assessment, advice, evidence, process, recoveryFaqs, situations, support } from "./content"
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Info,
+  Lock,
+  Plus,
+  Shield,
+  Store,
+  UserRoundCheck,
+  Wallet,
+} from "lucide-react"
+import {
+  assessmentAreas,
+  evidenceItems,
+  expertisePrinciples,
+  processSteps,
+  recoveryFaqs,
+  situations,
+  supportItems,
+  trustPrinciples,
+} from "./content"
 import s from "./recovery.module.css"
 
-function Action({ children }: { children: React.ReactNode }) {
-  return <Link href="/get-help?service=profile" className={s.button}>{children}<ArrowUpRight size={18} aria-hidden="true" /></Link>
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className={s.eyebrow}>{children}</p>
 }
-function Heading({ eyebrow, title, id }: { eyebrow: string; title: string; id: string }) {
-  return <div className={s.heading}><p className={s.eyebrow}>{eyebrow}</p><h2 id={id}>{title}</h2></div>
+
+function HelpLink({ children, className = s.primaryButton }: { children: React.ReactNode; className?: string }) {
+  return (
+    <Link href="/get-help?service=profile" className={className}>
+      {children}
+      <ArrowUpRight size={18} aria-hidden="true" />
+    </Link>
+  )
 }
-export function RecoveryHero() {
-  return <section className={`${s.hero} ${s.enter}`} aria-labelledby="recovery-title">
-    <div><p className={s.eyebrow}>Google Business Profile Protection &amp; Recovery</p><h1 id="recovery-title">When your Business Profile is disrupted, <span>start with the facts.</span></h1><p className={s.lead}>Suspension, verification problems, access issues or unexpected restrictions can affect how customers find your business. ReputeDefend helps you understand what changed, organise the relevant evidence and prepare an appropriate recovery or appeal route.</p><div className={s.actions}><Action>Get help with my profile</Action><a href="#recovery-process" className={s.secondary}>See how recovery support works<ArrowDown size={18} aria-hidden="true" /></a></div><p className={s.note}>Independent · Evidence-led · No guaranteed reinstatement</p></div>
-    <figure className={s.visual} aria-label="Our approach: profile issue, evidence review, recovery route">
-      <p className={s.eyebrow}>From uncertainty to a clear next step</p>
-      <div className={s.document}><div className={s.visualLabel}><FileSearch size={22} aria-hidden="true" /><span>Profile issue</span></div><p>Understand the notice.<br />Establish what changed.</p><div className={s.documentTags}><span>Notice</span><span>Timeline</span><span>Profile history</span></div></div>
-      <div className={s.connector}><ArrowDown size={20} aria-hidden="true" /></div>
-      <div className={s.evidenceSlip}><FolderCheck size={24} aria-hidden="true" /><div><strong>Evidence review</strong><p>Relevant. Accurate. In context.</p></div></div>
-      <div className={s.connector}><ArrowDown size={20} aria-hidden="true" /></div>
-      <div className={s.routeSlip}><Route size={24} aria-hidden="true" /><div><strong>Recovery route</strong><p>Prepare an appropriate next step.</p></div></div>
-      <figcaption>Preparation and process support.<br />Platform decisions remain with Google.</figcaption>
+
+function RecoveryVisual() {
+  return (
+    <figure className={s.visual} aria-label="From a profile issue to a clearer recovery route">
+      <div className={s.flowCard}>
+        <p className={s.flowLabel}>Profile issue detected</p>
+        <ul className={s.changeList}>
+          <li>Suspended</li>
+          <li>Verification required</li>
+          <li>Access unavailable</li>
+        </ul>
+      </div>
+      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
+      <div className={s.flowCard}>
+        <p className={s.flowLabel}>Review what changed</p>
+        <p className={s.flowCopy}>Look at the notice, timeline and recent activity.</p>
+      </div>
+      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
+      <div className={s.flowCard}>
+        <p className={s.flowLabel}>Prepare the recovery route</p>
+        <p className={s.flowCopy}>Organise the information that may support the next step.</p>
+      </div>
+      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
+      <div className={`${s.flowCard} ${s.flowCardAction}`}>
+        <span className={s.flowCheck} aria-hidden="true"><Check size={18} /></span>
+        <div>
+          <p className={s.flowLabel}>Move forward with clarity</p>
+          <p className={s.flowCopy}>Know the next move before you make it.</p>
+        </div>
+      </div>
+      <figcaption className={s.visualNote}>Understand the issue before deciding the next move.</figcaption>
     </figure>
-  </section>
+  )
 }
-export function CommonSituations() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="situations-title"><Heading eyebrow="Recognise the situation" title="Business Profile problems can take different forms." id="situations-title" /><div className={s.scenarios}>{situations.map(item => <article key={item.title}><h3>{item.title}</h3><p>{item.body}</p></article>)}</div></section>
+
+export function RecoveryHero() {
+  return (
+    <section className={`${s.hero} ${s.enter}`} aria-labelledby="recovery-title">
+      <div>
+        <Eyebrow>Google Business Profile Protection &amp; Recovery</Eyebrow>
+        <h1 id="recovery-title">When your Google Business Profile goes down, your business shouldn&apos;t be <span>left guessing.</span></h1>
+        <p className={s.lead}>A suspension, failed verification or loss of access can affect how customers find, contact and trust your business. ReputeDefend helps you understand what changed, identify the information that matters and prepare the strongest appropriate recovery route.</p>
+        <div className={s.actions}>
+          <HelpLink>Tell us what happened</HelpLink>
+          <a href="#recovery-help" className={s.secondaryButton}>See how recovery support works <ArrowDown size={18} aria-hidden="true" /></a>
+        </div>
+        <p className={s.heroNote}>Human case review • Independent support • Clear recovery guidance</p>
+      </div>
+      <RecoveryVisual />
+    </section>
+  )
 }
-export function FirstAssessment() {
-  return <section className={`${s.assessment} ${s.reveal}`} aria-labelledby="assessment-title"><div><Heading eyebrow="What we assess first" title="Before taking action, understand what changed." id="assessment-title" /><p className={s.muted}>Repeated speculative changes or submissions can make a situation harder to understand. A careful review helps distinguish what is known, what is missing and what may need attention.</p><p className={s.marginNote}>A clearer timeline is a better starting point than another assumption.</p></div><ol className={s.assessmentList}>{assessment.map((item, i) => <li key={item.title}><span className={s.number}>{String(i + 1).padStart(2, "0")}</span><div><h3>{item.title}</h3><p>{item.body}</p></div></li>)}</ol></section>
+
+const trustStrip = [
+  { label: "Human-reviewed cases", icon: UserRoundCheck },
+  { label: "Support for suspensions, access & verification", icon: Store },
+  { label: "No payment to submit an enquiry", icon: Wallet },
+  { label: "Independent of Google", icon: Shield },
+]
+
+export function RecoveryTrustStrip() {
+  return (
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend handles profile recovery enquiries">
+      <ul>
+        {trustStrip.map(({ label, icon: Icon }) => (
+          <li key={label}>
+            <span className={s.stripIcon}><Icon aria-hidden="true" size={18} /></span>
+            {label}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
-export function PrepareEvidence() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="evidence-title"><div className={s.split}><div><Heading eyebrow="Useful information to prepare" title="Useful evidence makes a clearer case." id="evidence-title" /><p className={s.muted}>Start with what you have. The information that matters depends on the issue; not every case needs every document. Relevant, accurate records are more helpful than a large collection without context.</p></div><div className={s.evidencePanel}><div className={s.visualLabel}><FolderCheck size={22} aria-hidden="true" /><strong>Your case, in context</strong></div><ul className={s.evidenceList}>{evidence.map(item => <li key={item}><Check size={16} aria-hidden="true" /><span>{item}</span></li>)}</ul><aside className={s.security}><LockKeyhole size={20} aria-hidden="true" /><div><strong>Keep your account secure</strong><p>Never send passwords, one-time codes or Google account credentials.</p></div></aside></div></div></section>
+
+export function RecoverySituations() {
+  return (
+    <section className={`${s.situations} ${s.reveal}`} aria-labelledby="situations-title">
+      <div className={s.situationIntro}>
+        <Eyebrow>When your profile changes</Eyebrow>
+        <h2 id="situations-title">A profile problem can quickly become a customer problem.</h2>
+        <p>Your Google Business Profile can be one of the first places customers check before calling, visiting or choosing your business. If it disappears, becomes restricted or you lose control of it, the impact can go beyond the platform itself.</p>
+        <p className={s.reassuranceLead}>You do not need to know the cause before asking for help.</p>
+        <HelpLink>Tell us what&apos;s happened</HelpLink>
+      </div>
+      <div className={s.problemGrid}>
+        {situations.map(({ title, body }) => (
+          <article key={title}>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
 }
+
+export function RecoveryExpertise() {
+  return (
+    <section className={`${s.expertise} ${s.reveal}`} aria-labelledby="expertise-title">
+      <div className={s.expertiseIntro}>
+        <Eyebrow>Before you make another change</Eyebrow>
+        <h2 id="expertise-title">When a profile is already restricted, more activity is not always better activity.</h2>
+        <p>It can be tempting to change several profile details, submit another appeal or keep trying different fixes. But without understanding the issue first, those actions can make the timeline harder to interpret and the case harder to explain.</p>
+      </div>
+      <ol className={s.expertiseGrid}>
+        {expertisePrinciples.map(({ title, body }, index) => (
+          <li key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+export function RecoveryAssessment() {
+  return (
+    <section className={`${s.section} ${s.reveal}`} aria-labelledby="assessment-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>Understanding your position</Eyebrow>
+          <h2 id="assessment-title">The right recovery route starts with knowing where the problem actually is.</h2>
+        </div>
+        <p>We work from the information you can share: messages you have received, the profile as you can see it, and any supporting records.</p>
+      </div>
+      <div className={s.assessGrid}>
+        {assessmentAreas.map(({ title, body }) => (
+          <article key={title}>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export function RecoverySupport() {
-  return <section className={`${s.section} ${s.reveal}`} aria-labelledby="support-title"><div className={s.split}><div><Heading eyebrow="What we help with" title="From a confusing restriction to a structured next step." id="support-title" /><p className={s.muted}>Our Google Business Profile recovery support brings the facts, evidence and available processes together, so you can understand the next step rather than guess it.</p><div className={s.boundary}><ShieldCheck size={24} aria-hidden="true" /><p>We support preparation and process.<br /><strong>Google controls platform decisions.</strong></p></div></div><div className={s.supportList}>{support.map(item => <article key={item.title}><h3>{item.title}</h3><p>{item.body}</p></article>)}</div></div></section>
+  return (
+    <section id="recovery-help" className={`${s.section} ${s.reveal}`} aria-labelledby="support-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>Recovery support</Eyebrow>
+          <h2 id="support-title">Turn a confusing profile problem into a structured next step.</h2>
+        </div>
+      </div>
+      <div className={s.helpGrid}>
+        {supportItems.map(({ title, body }, index) => (
+          <article key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
 }
-export function BeforeSubmitting() {
-  return <section className={`${s.advisory} ${s.reveal}`} aria-labelledby="advice-title"><div><Heading eyebrow="A considered approach" title="Before you submit again, pause and check the facts." id="advice-title" /><p className={s.muted}>These are practical preparation principles, not a substitute for the instructions specific to your case. Consider the notice and relevant published guidance before acting.</p></div><ul className={s.adviceList}>{advice.map(item => <li key={item.title}><h3>{item.title}</h3><p>{item.body}</p></li>)}</ul></section>
-}
+
 export function RecoveryProcess() {
-  return <section id="recovery-process" className={`${s.section} ${s.reveal}`} aria-labelledby="process-title"><Heading eyebrow="Recovery support process" title="A clear sequence. A considered next step." id="process-title" /><ol className={s.process}>{process.map((item, i) => <li key={item.title}><span className={s.step}>{String(i + 1).padStart(2, "0")}</span><div><h3>{item.title}</h3><p>{item.body}</p></div></li>)}</ol></section>
+  return (
+    <section id="recovery-process" className={`${s.section} ${s.reveal}`} aria-labelledby="process-title">
+      <div className={s.sectionHeading}>
+        <div>
+          <Eyebrow>How it works</Eyebrow>
+          <h2 id="process-title">Start with what you know.</h2>
+        </div>
+        <Link className={s.textLink} href="/how-it-works">See the full ReputeDefend process <ArrowRight size={18} aria-hidden="true" /></Link>
+      </div>
+      <ol className={s.processList}>
+        {processSteps.map(({ title, body }, index) => (
+          <li key={title}>
+            <span className={s.processNumber}>{String(index + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+      <div className={s.processCta}>
+        <HelpLink>Start my case</HelpLink>
+      </div>
+    </section>
+  )
 }
-export function RecoveryTransparency() {
-  return <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title"><div className={s.trustIntro}><Heading eyebrow="Clear about our role" title="A stronger case is not the same as a guaranteed outcome." id="trust-title" /><p>Transparency is central to ReputeDefend. Google Business Profile suspension help should make the situation clearer, including the limits of what any independent service can do.</p></div><div className={s.controlGrid}><div><h3>ReputeDefend can help</h3><ul>{["Understand the issue", "Organise evidence", "Prepare clear information", "Understand relevant processes", "Support appropriate next steps"].map(text => <li key={text}><Check size={18} aria-hidden="true" />{text}</li>)}</ul></div><div><h3>ReputeDefend cannot</h3><ul>{["Guarantee reinstatement", "Override Google decisions", "Provide special access to Google", "Guarantee a specific timeframe"].map(text => <li key={text}><span className={s.dash} aria-hidden="true">—</span>{text}</li>)}</ul></div></div></section>
+
+export function RecoveryEvidence() {
+  return (
+    <section className={`${s.evidence} ${s.reveal}`} aria-labelledby="evidence-title">
+      <div className={s.evidenceIntro}>
+        <Eyebrow>What may help</Eyebrow>
+        <h2 id="evidence-title">You don&apos;t need a perfect case file.</h2>
+        <p>If you already have any of the following, keep them available. If something is missing, you can still start the conversation.</p>
+      </div>
+      <div className={s.evidencePanel}>
+        <ul>
+          {evidenceItems.map((item) => (
+            <li key={item}><Check aria-hidden="true" size={17} />{item}</li>
+          ))}
+        </ul>
+        <p className={s.safetyNote}><Lock aria-hidden="true" size={18} />Do not send passwords, verification codes or account credentials.</p>
+        <p className={s.evidenceClose}>Start with what you have. We can identify what may be useful next.</p>
+      </div>
+    </section>
+  )
 }
+
+export function RecoveryTrust() {
+  return (
+    <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
+      <div className={s.trustIntro}>
+        <Eyebrow>Independent support</Eyebrow>
+        <h2 id="trust-title">Clear guidance without pretending to control the platform.</h2>
+      </div>
+      <ul className={s.trustGrid}>
+        {trustPrinciples.map(({ title, body }) => (
+          <li key={title}>
+            <span className={s.trustIcon}><Check aria-hidden="true" size={18} /></span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ul>
+      <div className={s.trustLimit}>
+        <Info aria-hidden="true" size={20} />
+        <p>Google ultimately decides whether a Business Profile is reinstated and how platform enforcement is applied. ReputeDefend focuses on the part you can control: understanding the issue, preparing relevant information and approaching the next step clearly.</p>
+      </div>
+    </section>
+  )
+}
+
 export function RecoveryFaq() {
-  return <section className={`${s.faq} ${s.reveal}`} aria-labelledby="faq-title"><div><Heading eyebrow="Questions, answered" title="Clarity before you take the next step." id="faq-title" /><p className={s.muted}>Practical answers about recovery, appeals and the support we provide.</p></div><div>{recoveryFaqs.map(({ q, a }) => <details key={q}><summary>{q}<Plus size={20} aria-hidden="true" /></summary><p>{a}</p></details>)}</div></section>
+  return (
+    <section className={`${s.faq} ${s.reveal}`} aria-labelledby="faq-title">
+      <div>
+        <Eyebrow>Questions you may have</Eyebrow>
+        <h2 id="faq-title">A little clarity before you begin.</h2>
+        <p>If a Google Business Profile suspension, verification or access issue is already affecting the business, these answers may help you decide how to start.</p>
+      </div>
+      <div className={s.faqList}>
+        {recoveryFaqs.map(({ q, a }) => (
+          <details key={q}>
+            <summary>{q}<Plus aria-hidden="true" size={20} /></summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
 }
+
 export function RecoveryClosing() {
-  return <section className={s.closing} aria-labelledby="closing-title"><div><p className={s.eyebrow}>Start with the facts</p><h2 id="closing-title">Tell us what happened to your Business Profile.</h2><p>Share the issue, any messages you received and what you have already tried. We&apos;ll review the information and help you understand an appropriate next step.</p></div><div className={s.closingAction}><Action>Get help with my profile</Action><p>No need to diagnose the problem first.<br />Start with what you know.</p></div></section>
+  return (
+    <section className={`${s.closing} ${s.reveal}`} aria-labelledby="closing-title">
+      <div className={s.closingCopy}>
+        <Eyebrow>Start your profile recovery assessment</Eyebrow>
+        <h2 id="closing-title">Don&apos;t keep guessing at the next step.</h2>
+        <p>Tell us what changed, what Google has told you and what you have already tried. You do not need to diagnose the problem or prepare a perfect case before contacting us.</p>
+        <ul className={s.closingPoints}>
+          <li>No payment is required to submit your enquiry.</li>
+          <li>Submitting your case does not commit you to paid support.</li>
+          <li>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</li>
+          <li>Please don&apos;t send passwords or verification codes.</li>
+        </ul>
+      </div>
+      <div className={s.closingPanel}>
+        <p>Share the situation as it stands. We&apos;ll review it and help you understand the next practical step.</p>
+        <HelpLink>Tell us what happened</HelpLink>
+      </div>
+    </section>
+  )
 }

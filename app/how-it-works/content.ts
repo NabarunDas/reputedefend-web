@@ -1,15 +1,15 @@
 export const howDescription =
-  "See how ReputeDefend's Google Business Profile support process works: share the situation, a human reviews it, we explain the recommended next step, and you decide how to proceed."
+  "See how ReputeDefend works: share your Google Business Profile or review issue, receive a human evidence-led assessment, understand the recommended route, and choose whether you want help carrying it through."
 
 export const howHero = {
   eyebrow: "How ReputeDefend works",
   titleBefore: "A clear process for situations that ",
   titleAccent: "rarely feel clear.",
   lead:
-    "You don't need to diagnose the issue or prepare a perfect case before contacting us. Tell us what happened and what you have already tried. A human reviews the information, identifies anything that needs clarification and helps you understand the next practical step.",
+    "You don't need to diagnose the issue before contacting us. Tell us what happened, what Google has told you and what you have already tried. A human reviews the situation, identifies what matters and helps you understand the strongest appropriate route forward.",
   primaryCta: "Tell us what happened",
   secondaryCta: "See what happens next",
-  note: "Human case review • No payment to submit • Clear next steps",
+  note: "Human case review • Evidence-led assessment • Clear next steps",
 }
 
 export const howVisualSteps = [
@@ -19,7 +19,7 @@ export const howVisualSteps = [
   {
     n: "04",
     title: "You decide how to proceed",
-    support: "No further paid support until scope and fee are clear.",
+    support: "Act on the recommendation yourself or ask us to help carry it through.",
   },
 ] as const
 
@@ -38,7 +38,7 @@ export const howJourney = {
   eyebrow: "What happens next",
   title: "From your enquiry to a clearer decision.",
   lead:
-    "One reputation support process, whether the issue is a Google Business Profile recovery question or review protection. You stay in control of whether further paid support goes ahead.",
+    "The first stage is about understanding the situation and identifying the route that makes sense. If you later want help carrying that recommendation through, the type of support depends on the problem.",
 }
 
 export const journeySteps = [
@@ -58,13 +58,13 @@ export const journeySteps = [
     id: "recommend",
     n: "03",
     title: "We explain the recommended next step",
-    body: "We bring the facts, available evidence and relevant process together and explain the route we believe makes sense for the situation.",
+    body: "We bring the facts, available evidence and relevant process together and explain the route we believe makes sense — and why.",
   },
   {
     id: "decide",
     n: "04",
     title: "You decide how to proceed",
-    body: "Submitting an enquiry does not commit you to paid support. If further work is appropriate, we'll explain the proposed scope and any fee before you decide.",
+    body: "You can act on the recommendation yourself or ask ReputeDefend to help carry the next stage through. The right level of support depends on the situation.",
   },
 ] as const
 
@@ -90,7 +90,7 @@ export const howAssess = {
   eyebrow: "How we assess the situation",
   title: "We look at the whole position before recommending an action.",
   lead:
-    "A useful Google review assessment or profile recovery view looks at the event, the evidence, the process that may apply, and what still sits outside anyone's control.",
+    "A useful review or profile-recovery assessment brings together what happened, the available evidence, the process that may apply and any gaps that could materially affect the recommendation.",
   items: [
     {
       n: "01",
@@ -109,8 +109,8 @@ export const howAssess = {
     },
     {
       n: "04",
-      title: "What remains uncertain",
-      body: "Anything that needs clarification or sits outside ReputeDefend's control.",
+      title: "What could affect the route",
+      body: "Any missing information, previous action or unresolved point that may materially change what should happen next.",
     },
   ],
 }
@@ -119,46 +119,42 @@ export const howExpect = {
   eyebrow: "After we review your enquiry",
   title: "You should come away knowing what the next step is — and why.",
   lead:
-    "This is what you can expect after a human review — not a packaged report and not a guaranteed platform result.",
+    "The initial review is designed to turn a confusing situation into a clearer decision: what appears to be happening, what matters, and which route makes sense from here.",
   items: [
     {
-      title: "An initial view of the issue",
-      body: "A clear explanation of how we understand the situation based on the information available.",
+      title: "An initial view of the situation",
+      body: "A clear explanation of how we understand the issue based on the information available.",
     },
     {
-      title: "Any important information gaps",
-      body: "If something may materially affect the assessment, we'll explain what's missing and why it matters.",
+      title: "The information that matters",
+      body: "If something is missing or could materially change the assessment, we'll explain what it is and why it matters.",
     },
     {
-      title: "A recommended next step",
-      body: "We'll explain the route we believe is appropriate rather than leaving you with a list of generic options.",
+      title: "A recommended route",
+      body: "We'll explain the next step we believe is appropriate rather than leaving you with a generic list of options.",
     },
     {
-      title: "The reasoning behind it",
-      body: "You should understand what information supports the recommendation and what remains uncertain.",
-    },
-    {
-      title: "Clear scope before further paid support",
-      body: "If further work is appropriate, we'll explain the proposed support and any associated fee before you decide.",
+      title: "Why we recommend it",
+      body: "You should understand what supports the recommendation and what would make us reconsider it.",
     },
   ],
 }
 
 export const howPaths = {
-  eyebrow: "Two types of case",
-  title: "The process is consistent. The route depends on the problem.",
+  eyebrow: "If you want further support",
+  title: "What carrying the recommendation through can look like.",
   lead:
-    "Both lines of work start the same way: you share the situation, we review it, and you decide whether to continue. The recommended process then follows the issue.",
+    "The initial review helps clarify the route. If you want ReputeDefend to help carry that route forward, the work depends on whether the issue involves a Business Profile or a review.",
   items: [
     {
       href: "/business-profile-recovery",
       cue: "Suspension • Access • Verification",
       title: "Business Profile Protection & Recovery",
       path: [
-        "Understand the issue",
-        "Review relevant information",
-        "Prepare recovery route",
-        "Support the next step",
+        "Organise relevant evidence",
+        "Prepare recovery or appeal material",
+        "Review previous recovery attempts",
+        "Support the next stage",
       ],
       cta: "Explore Profile Recovery",
     },
@@ -167,21 +163,22 @@ export const howPaths = {
       cue: "Suspicious or damaging reviews",
       title: "Review Protection",
       path: [
-        "Understand the review",
-        "Assess context & evidence",
-        "Choose response/reporting route",
-        "Support the next step",
+        "Organise the review evidence",
+        "Prepare reporting or challenge material",
+        "Shape a professional response where appropriate",
+        "Support what happens next",
       ],
       cta: "Explore Review Protection",
     },
   ],
+  note: "The exact work depends on the situation. If you want further paid support, we'll explain what we can help with and the fee before any paid work begins.",
 }
 
 export const howTrust = {
   eyebrow: "What you can expect from us",
-  title: "Clear communication, even when the platform outcome is uncertain.",
+  title: "Clear guidance from the first review to the next action.",
   lead:
-    "We keep the conversation factual: what the information supports, what we recommend, and what Google still decides.",
+    "We keep the work focused on the facts, the evidence and the route that appears strongest for the situation.",
   principles: [
     {
       title: "Human review",
@@ -196,18 +193,18 @@ export const howTrust = {
       body: "We explain what we think the next step should be and why.",
     },
     {
-      title: "Independent guidance",
-      body: "ReputeDefend is independent of Google and does not claim special access or control over platform decisions.",
+      title: "Practical support",
+      body: "If you want help carrying the recommendation through, we focus on preparing and supporting the appropriate next stage rather than leaving you with generic advice.",
     },
   ],
   callout:
-    "Google ultimately controls platform decisions such as profile reinstatement and review removal. ReputeDefend cannot guarantee those outcomes or platform timeframes. Our role is to help you understand the situation, prepare relevant information and approach the strongest appropriate next step.",
+    "Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ReputeDefend focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.",
 }
 
 export const howFaqs = [
   {
     q: "What happens after I submit a case?",
-    a: "A human reviews what you send. If something important is missing or unclear, we may ask for clarification. We then explain how we understand the situation, the next step we believe makes sense, and — if further work is appropriate — the proposed scope and any fee before you decide.",
+    a: "A human reviews what you send. If something important is missing or unclear, we may ask for clarification. We then explain how we understand the situation and the next step we believe makes sense.",
   },
   {
     q: "Do I need all my evidence before contacting you?",
@@ -222,8 +219,8 @@ export const howFaqs = [
     a: "We'll explain what additional information may help and why it matters. You can still contact us if the picture is incomplete — a useful enquiry does not require a perfect file.",
   },
   {
-    q: "Does submitting an enquiry commit me to paid support?",
-    a: "No. Submitting your case asks ReputeDefend to review the situation; it does not commit you to paid support. If further work appears appropriate, we'll explain the proposed scope and any associated fee before you decide how to proceed.",
+    q: "What can further support include?",
+    a: "Depending on the situation, further support may include organising evidence, preparing recovery, appeal, reporting or challenge material, reviewing previous attempts, helping shape a professional public response, or supporting the next stage after new information or a platform response. The exact scope and any fee are explained before you decide.",
   },
   {
     q: "Can you guarantee the outcome or how long Google will take?",
@@ -231,16 +228,22 @@ export const howFaqs = [
   },
 ]
 
+export const howFaqIntro = {
+  eyebrow: "Common questions",
+  title: "Questions before you start.",
+  lead: "A few practical answers about the initial review, what information helps and what further support may involve.",
+}
+
 export const howClose = {
   eyebrow: "Ready to start?",
   title: "You don't need to have the answer before you ask for help.",
   lead:
-    "Tell us what happened, what changed and what you have already tried. We'll review the situation and help you understand the next practical step.",
+    "Tell us what happened, what changed and what you have already tried. We'll review the situation, explain the route that appears strongest and, if you want further help, show you what carrying that route through could involve.",
   notes: [
     "No payment is required to submit your enquiry.",
-    "Submitting your case does not commit you to paid support.",
-    "If further support is appropriate, we'll explain the proposed scope and any fee before you decide.",
     "Please don't send passwords or verification codes.",
   ],
+  panel:
+    "Start with the situation as it stands. A human will review it, explain the route that makes sense and help you understand what happens next.",
   cta: "Tell us what happened",
 }

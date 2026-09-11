@@ -188,17 +188,14 @@
 .assessGrid h3 { margin-top: 10px; font-size: 18px; }
 .assessGrid p { margin-top: 10px; color: var(--muted-strong); font-size: 15px; }
 
-.expectGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.expectGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .expectGrid li {
   min-width: 0;
-  grid-column: span 2;
   background: var(--tint);
   border: 1px solid var(--edge);
   border-radius: 18px;
   padding: 24px;
 }
-.expectGrid li:nth-child(4) { grid-column: 2 / span 2; }
-.expectGrid li:nth-child(5) { grid-column: 4 / span 2; }
 .expectGrid span { display: block; color: var(--green); font-size: 14px; font-weight: 700; letter-spacing: .06em; }
 .expectGrid h3 { margin-top: 12px; }
 .expectGrid p { margin-top: 10px; color: var(--muted-strong); font-size: 15px; }
@@ -252,6 +249,14 @@
   font-size: 14px;
   font-weight: 750;
   color: var(--green);
+}
+.pathsNote {
+  margin: 24px auto 0;
+  max-width: 720px;
+  text-align: center;
+  color: var(--muted-strong);
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .trust { padding-block: 80px; border-top: 1px solid var(--edge); }
@@ -382,9 +387,6 @@
   .trustStrip ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .processList { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
   .assessGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 32px; }
-  .expectGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .expectGrid li, .expectGrid li:nth-child(4), .expectGrid li:nth-child(5) { grid-column: auto; }
-  .expectGrid li:last-child { grid-column: 1 / -1; max-width: calc(50% - 8px); justify-self: center; width: 100%; }
   .send, .paths { gap: 36px; padding: 40px; }
   .faq { gap: 48px; }
   .closing { gap: 32px; padding: 32px; }
@@ -398,6 +400,7 @@
   .visual { max-width: 480px; width: 100%; justify-self: center; }
   .section { padding-block: 56px; }
   .centerHead, .sectionHeading { text-align: left; margin-bottom: 28px; }
+  .pathsNote { text-align: left; }
   .send, .paths { padding: 32px; }
   .trust { padding-block: 56px; }
   .processList { grid-template-columns: minmax(0, 1fr); gap: 0; }
@@ -413,10 +416,6 @@
 
 @media (max-width: 639px) {
   .visualBoard, .trustGrid, .assessGrid, .expectGrid { grid-template-columns: minmax(0, 1fr); }
-  .expectGrid li, .expectGrid li:nth-child(4), .expectGrid li:nth-child(5), .expectGrid li:last-child {
-    grid-column: auto;
-    max-width: none;
-  }
 }
 
 @media (max-width: 480px) {

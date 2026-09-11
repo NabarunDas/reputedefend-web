@@ -14,6 +14,7 @@ import {
   howAssess,
   howClose,
   howExpect,
+  howFaqIntro,
   howFaqs,
   howHero,
   howJourney,
@@ -234,6 +235,7 @@ export function HowPaths() {
           </article>
         ))}
       </div>
+      <p className={s.pathsNote}>{howPaths.note}</p>
     </section>
   )
 }
@@ -271,9 +273,9 @@ export function HowFaq() {
   return (
     <section className={`${s.faq} ${s.reveal}`} aria-labelledby="how-faq-title">
       <div>
-        <Eyebrow>Common questions</Eyebrow>
-        <h2 id="how-faq-title">Before you send the enquiry.</h2>
-        <p>A short look at what happens after you get in touch, what to send, and what you are — and are not — committing to.</p>
+        <Eyebrow>{howFaqIntro.eyebrow}</Eyebrow>
+        <h2 id="how-faq-title">{howFaqIntro.title}</h2>
+        <p>{howFaqIntro.lead}</p>
       </div>
       <div className={s.faqList}>
         {howFaqs.map(({ q, a }) => (
@@ -304,7 +306,7 @@ export function HowClose() {
         </ul>
       </div>
       <div className={s.closingPanel}>
-        <p>Share the situation as it stands. A human will review it and help you understand the next practical step.</p>
+        <p>{howClose.panel}</p>
         <HelpLink>{howClose.cta}</HelpLink>
         <p className={s.closingLinks}>
           <Link href="/business-profile-recovery">Business Profile Recovery</Link>

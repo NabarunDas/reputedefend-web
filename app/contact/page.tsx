@@ -8,7 +8,7 @@ import styles from "./contact.module.css"
 
 const title = "Contact ReputeDefend | General Enquiries"
 const description =
-  "Contact ReputeDefend with a general question about our services or approach. For active Google Business Profile or review issues, use the dedicated Get Help process."
+  "Contact ReputeDefend with a general question about our services or approach. For an active Google Business Profile or review issue, use the dedicated Get Help process so the relevant case information can be collected."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -20,8 +20,8 @@ export const metadata: Metadata = {
 
 const nextSteps = [
   "We review your message",
-  "We consider the right response",
-  "We reply or point you to the right route",
+  "We identify the right route",
+  "We reply or point you to the right place",
 ] as const
 
 export default function ContactPage() {
@@ -34,15 +34,15 @@ export default function ContactPage() {
           <p className={styles.eyebrow}>Contact ReputeDefend</p>
           <h1 id="contact-title">Have a question before you start?</h1>
           <p className={styles.lead}>
-            Use this page for general questions about ReputeDefend, our services or how we work. If you&apos;re already dealing with a Business Profile, verification, access or review issue, use Get Help so we can collect the information needed to understand the case.
+            Use this page for general questions about ReputeDefend, our services or how we work. If you&apos;re already dealing with a Business Profile suspension, access or verification problem, or a difficult review issue, use Get Help so we can collect the information needed to understand the case properly.
           </p>
-          <p className={styles.trustLine}>Human-reviewed messages • Independent of Google • Clear communication</p>
+          <p className={styles.trustLine}>Human-reviewed messages • Clear routing • Clear communication</p>
         </section>
 
         <aside className={styles.banner} aria-labelledby="case-banner-title">
           <div>
             <h2 id="case-banner-title">Already dealing with an active Google issue?</h2>
-            <p>If your Business Profile is suspended, inaccessible or stuck in verification — or you need help with a suspicious or damaging review — use the dedicated Get Help form so the right case information can be collected.</p>
+            <p>If your Business Profile is suspended, inaccessible or stuck in verification — or you need help with a suspicious or damaging review — use Get Help so we can collect the relevant case information from the start.</p>
           </div>
           <Link className={styles.bannerCta} href="/get-help">
             Get help with my case
@@ -64,7 +64,7 @@ export default function ContactPage() {
                 </li>
               ))}
             </ol>
-            <p className={styles.nextNote}>If your question turns out to be an active Profile or review case, we may ask you to use Get Help so the relevant details can be collected properly.</p>
+            <p className={styles.nextNote}>If your question turns out to involve an active Business Profile or review case, we may direct you to Get Help so the relevant details can be collected properly.</p>
             {contactEmail ? (
               <div className={styles.emailBlock}>
                 <p className={styles.emailLabel}>Prefer email?</p>

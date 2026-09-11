@@ -97,7 +97,7 @@ export function ContactForm() {
         ) : (
           <>
             <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We&apos;ve received your message.</h2>
-            <p>A human will review what you sent. If a reply is needed, we&apos;ll use the email address you provided.</p>
+            <p>We&apos;ll review your message and use the email address you provided to reply or point you to the right route.</p>
             <p>If your message is about an active Business Profile or review issue, we may direct you to Get Help so the relevant case information can be collected properly.</p>
           </>
         )}

@@ -1,14 +1,14 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, ArrowUpRight, Plus } from "lucide-react"
+import { ArrowUpRight } from "lucide-react"
 import { ContactForm } from "@/components/contact-form"
-import { feeWording } from "@/lib/legal"
+import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
-import { FaqStructuredData } from "@/components/structured-data"
 import styles from "./contact.module.css"
 
 const title = "Contact ReputeDefend | General Enquiries"
-const description = "Contact ReputeDefend with a general question about our Google Business Profile recovery, review protection services or independent approach."
+const description =
+  "Contact ReputeDefend with a general question about our services or approach. For active Google Business Profile or review issues, use the dedicated Get Help process."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -18,99 +18,63 @@ export const metadata: Metadata = {
   twitter: socialTwitter({ title, description }),
 }
 
-const faqs = [
-  {
-    q: "Should I use Contact or Get Help?",
-    a: "Use Contact for general questions about ReputeDefend, our services, partnerships or whether our approach may be suitable. Use Get Help if you already have an active Business Profile, verification, access or review issue and want that situation assessed.",
-  },
-  {
-    q: "Can I ask about fees before submitting a case?",
-    a: `Yes. ${feeWording}`,
-  },
-  {
-    q: "Do you provide guaranteed outcomes?",
-    a: "No. ReputeDefend cannot guarantee profile reinstatement, verification or review removal. Google makes those decisions. We help you understand the facts and the next appropriate step.",
-  },
-  {
-    q: "Is ReputeDefend affiliated with Google?",
-    a: "No. ReputeDefend is an independent support service. We do not represent Google and do not have special access to platform decisions.",
-  },
-]
-
 const nextSteps = [
-  "We review your message.",
-  "We determine the appropriate response or route.",
-  "If your question is really a case enquiry, we may direct you to the Get Help process so the relevant information can be collected properly.",
-]
+  "We review your message",
+  "We consider the right response",
+  "We reply or point you to the right route",
+] as const
 
 export default function ContactPage() {
+  const contactEmail = hasLegalValue(legalIdentity.contactEmail) ? legalIdentity.contactEmail : undefined
+
   return (
     <div className={styles.page}>
-      <FaqStructuredData questions={faqs} />
-      <section className={`${styles.wrap} ${styles.hero}`} aria-labelledby="contact-title">
-        <p className={styles.eyebrow}>Contact ReputeDefend</p>
-        <h1 id="contact-title">Have a question before you start?</h1>
-        <p className={styles.lead}>For general questions about ReputeDefend, our services or our approach, send us a message here. If you already have an active Business Profile or review issue, use our dedicated case-intake route instead.</p>
-        <p className={styles.trustLine}>Independent • Clear communication • No unrealistic promises</p>
-        <Link className={styles.caseLink} href="/get-help">
-          Get help with a case <ArrowUpRight size={16} aria-hidden="true" />
-        </Link>
-      </section>
+      <div className={styles.inner}>
+        <section className={styles.hero} aria-labelledby="contact-title">
+          <p className={styles.eyebrow}>Contact ReputeDefend</p>
+          <h1 id="contact-title">Have a question before you start?</h1>
+          <p className={styles.lead}>
+            Use this page for general questions about ReputeDefend, our services or how we work. If you&apos;re already dealing with a Business Profile, verification, access or review issue, use Get Help so we can collect the information needed to understand the case.
+          </p>
+          <p className={styles.trustLine}>Human-reviewed messages • Independent of Google • Clear communication</p>
+        </section>
 
-      <section className={`${styles.wrap} ${styles.routesBlock}`} aria-labelledby="routes-title">
-        <p className={styles.eyebrow} id="routes-title">Choose the right route</p>
-        <div className={styles.routes}>
-          <article className={styles.route}>
-            <p className={styles.routeIndex}>01</p>
-            <h2>I have an active reputation issue</h2>
-            <p>Use Get Help if you are dealing with a suspended or inaccessible Business Profile, verification problem, suspicious review or another active case.</p>
-            <Link className={styles.routeLink} href="/get-help">
-              Start a case <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </article>
-          <article className={styles.route}>
-            <p className={styles.routeIndex}>02</p>
-            <h2>I have a general question</h2>
-            <p>Use the contact form for general questions about ReputeDefend, our services, partnerships or whether our approach may be suitable for your situation.</p>
-            <a className={styles.routeLink} href="#contact-form">
-              Write a message <ArrowRight size={16} aria-hidden="true" />
-            </a>
-          </article>
-        </div>
-      </section>
-
-      <div className={`${styles.wrap} ${styles.intake}`}>
-        <div className={styles.formColumn} id="contact-form">
-          <ContactForm />
-        </div>
-        <aside className={styles.aside} aria-labelledby="next-title">
-          <h2 id="next-title">What happens after you contact us?</h2>
-          <ol>
-            {nextSteps.map((step, index) => (
-              <li key={step}>
-                <span className={styles.step}>{String(index + 1).padStart(2, "0")}</span>
-                <p>{step}</p>
-              </li>
-            ))}
-          </ol>
+        <aside className={styles.banner} aria-labelledby="case-banner-title">
+          <div>
+            <h2 id="case-banner-title">Already dealing with an active Google issue?</h2>
+            <p>If your Business Profile is suspended, inaccessible or stuck in verification — or you need help with a suspicious or damaging review — use the dedicated Get Help form so the right case information can be collected.</p>
+          </div>
+          <Link className={styles.bannerCta} href="/get-help">
+            Get help with my case
+            <ArrowUpRight size={18} aria-hidden="true" />
+          </Link>
         </aside>
-      </div>
 
-      <section className={`${styles.wrap} ${styles.faq}`} aria-labelledby="contact-faq-title">
-        <div className={styles.faqIntro}>
-          <p className={styles.eyebrow}>Before you write</p>
-          <h2 id="contact-faq-title">A few useful distinctions.</h2>
-          <p>These answers are for general contact. Detailed case questions belong on Get Help.</p>
+        <div className={styles.main}>
+          <div className={styles.formColumn}>
+            <ContactForm />
+          </div>
+          <aside className={styles.aside} aria-labelledby="next-title">
+            <h2 id="next-title">What happens after you write?</h2>
+            <ol>
+              {nextSteps.map((step, index) => (
+                <li key={step}>
+                  <span className={styles.step} aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                  <p>{step}</p>
+                </li>
+              ))}
+            </ol>
+            <p className={styles.nextNote}>If your question turns out to be an active Profile or review case, we may ask you to use Get Help so the relevant details can be collected properly.</p>
+            {contactEmail ? (
+              <div className={styles.emailBlock}>
+                <p className={styles.emailLabel}>Prefer email?</p>
+                <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+              </div>
+            ) : null}
+            <p className={styles.identityNote}>ReputeDefend is an independent UK business.</p>
+          </aside>
         </div>
-        <div className={styles.faqList}>
-          {faqs.map(({ q, a }) => (
-            <details key={q}>
-              <summary>{q}<Plus size={20} aria-hidden="true" /></summary>
-              <p>{a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+      </div>
     </div>
   )
 }

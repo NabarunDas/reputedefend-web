@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useId, useRef, useState, type FormEvent } from "react"
 import {
   CONTACT_SUBJECTS,
@@ -13,6 +12,7 @@ import { HoneypotField } from "@/components/honeypot-field"
 import styles from "./contact-form.module.css"
 
 const SEND_ERROR = "We couldn't send your message right now. Your information is still on this page. Please try again shortly."
+const MESSAGE_HINT = "Please don't include passwords, verification codes or account credentials."
 
 export function ContactForm() {
   const formId = useId()
@@ -96,8 +96,9 @@ export function ContactForm() {
           </>
         ) : (
           <>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your message.</h2>
-            <p>We’ll review what you sent and reply if a response is appropriate. If this is really a Business Profile or review case, we may ask you to use Get Help so the relevant information can be collected properly.</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We&apos;ve received your message.</h2>
+            <p>A human will review what you sent. If a reply is needed, we&apos;ll use the email address you provided.</p>
+            <p>If your message is about an active Business Profile or review issue, we may direct you to Get Help so the relevant case information can be collected properly.</p>
           </>
         )}
       </div>
@@ -106,12 +107,17 @@ export function ContactForm() {
 
   const errorEntries = Object.entries(errors).filter(([field]) => field === "fullName" || field === "email" || field === "businessName" || field === "subject" || field === "details") as [EnquiryField, string][]
   const showSummary = errorEntries.length > 0 || deliveryError
+  const detailsDescribedBy = [
+    `${formId}-details-hint`,
+    errors.details ? `${formId}-details-error` : null,
+  ].filter(Boolean).join(" ")
 
   return (
     <form className={styles.form} onSubmit={submit} noValidate aria-busy={status === "loading"}>
       <div>
         <p className={styles.formEyebrow}>General enquiry</p>
-        <h2 className={styles.formTitle}>Send a message</h2>
+        <h2 className={styles.formTitle}>Send us a message</h2>
+        <p className={styles.formLead}>We only need enough information to understand your question.</p>
       </div>
 
       {showSummary && (
@@ -209,25 +215,20 @@ export function ContactForm() {
             rows={7}
             maxLength={enquiryLimits.details}
             className={styles.control}
-            placeholder="Share your question. Please do not include passwords, verification codes or account credentials."
+            placeholder="Tell us what you'd like to ask."
             aria-invalid={Boolean(errors.details) || undefined}
-            aria-describedby={errors.details ? `${formId}-details-error` : undefined}
+            aria-describedby={detailsDescribedBy}
             onChange={() => clearField("details")}
           />
+          <p id={`${formId}-details-hint`} className={styles.hint}>{MESSAGE_HINT}</p>
           {errors.details ? <p id={`${formId}-details-error`} className={styles.error}>{errors.details}</p> : null}
         </div>
       </div>
 
       <HoneypotField />
 
-      <p className={styles.redirect}>
-        Already dealing with a Business Profile or review issue?{" "}
-        <Link href="/get-help">Get help with a case</Link>
-      </p>
-      <p className={styles.redirect}>Please do not include passwords, verification codes or account credentials.</p>
-
       <button type="submit" className={styles.submit} disabled={status === "loading"}>
-        {status === "loading" ? "Sending…" : "Send message"}
+        {status === "loading" ? "Sending…" : "Send my message"}
       </button>
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>

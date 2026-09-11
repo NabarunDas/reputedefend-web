@@ -38,7 +38,7 @@ export const howJourney = {
   eyebrow: "What happens next",
   title: "From your enquiry to a clearer decision.",
   lead:
-    "The first stage is about understanding the situation and identifying the route that makes sense. If you later want help carrying that recommendation through, the type of support depends on the problem.",
+    "The first stage is about understanding the situation and identifying the next step that makes sense. If you later want help carrying that recommendation through, the type of support depends on the problem.",
 }
 
 export const journeySteps = [
@@ -64,7 +64,7 @@ export const journeySteps = [
     id: "decide",
     n: "04",
     title: "You decide how to proceed",
-    body: "You can act on the recommendation yourself or ask ReputeDefend to help carry the next stage through. The right level of support depends on the situation.",
+    body: "You can act on the recommendation yourself or ask ReputeDefend to help carry the next stage through — organising the work so you do not have to piece the evidence, wording and process together alone.",
   },
 ] as const
 
@@ -119,7 +119,7 @@ export const howExpect = {
   eyebrow: "After we review your enquiry",
   title: "You should come away knowing what the next step is — and why.",
   lead:
-    "The initial review is designed to turn a confusing situation into a clearer decision: what appears to be happening, what matters, and which route makes sense from here.",
+    "The initial review is designed to turn a confusing situation into a clearer decision: what appears to be happening, what matters, and which next step makes sense from here.",
   items: [
     {
       title: "An initial view of the situation",
@@ -144,7 +144,7 @@ export const howPaths = {
   eyebrow: "If you want further support",
   title: "What carrying the recommendation through can look like.",
   lead:
-    "The initial review helps clarify the route. If you want ReputeDefend to help carry that route forward, the work depends on whether the issue involves a Business Profile or a review.",
+    "The initial review helps clarify the route. If you want ReputeDefend to carry more of the work forward, we can help organise the evidence, prepare the material and support the next stage rather than leaving you to piece the process together alone.",
   items: [
     {
       href: "/business-profile-recovery",
@@ -238,12 +238,12 @@ export const howClose = {
   eyebrow: "Ready to start?",
   title: "You don't need to have the answer before you ask for help.",
   lead:
-    "Tell us what happened, what changed and what you have already tried. We'll review the situation, explain the route that appears strongest and, if you want further help, show you what carrying that route through could involve.",
+    "Tell us what happened, what changed and what you have already tried. We'll review the situation, explain the next step that appears strongest and, if you want further help, show you what carrying that recommendation through could involve.",
   notes: [
     "No payment is required to submit your enquiry.",
     "Please don't send passwords or verification codes.",
   ],
   panel:
-    "Start with the situation as it stands. A human will review it, explain the route that makes sense and help you understand what happens next.",
+    "Start with the situation as it stands. A human will review it, explain the next step that makes sense and help you understand what happens next.",
   cta: "Tell us what happened",
 }

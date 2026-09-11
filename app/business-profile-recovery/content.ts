@@ -1,30 +1,30 @@
 export const recoveryDescription =
-  "Independent support for Google Business Profile suspension, verification, access and recovery. Understand what changed, prepare the relevant information and take a clearer next step."
+  "Human, evidence-led support for Google Business Profile suspension, verification and access problems. Understand what changed, organise the evidence that matters and prepare the appropriate recovery route."
 
 export const situations = [
   {
     title: "Your profile has been suspended",
-    body: "Customers may no longer see the profile as expected, while the reason for the suspension may not be immediately clear.",
+    body: "Customers may be unable to find or verify the business as they expect while the profile is down.",
   },
   {
     title: "You can't complete verification",
-    body: "You may be stuck proving ownership or business legitimacy without knowing what evidence is actually relevant.",
+    body: "You may be unable to prove ownership or keep the listing usable, so customer-facing information can stay incomplete or inaccessible.",
   },
   {
     title: "You've lost owner or manager access",
-    body: "Without access, it can be difficult to respond, update details or even confirm what customers now see.",
+    body: "Without access, the business may be unable to update details, respond, or keep customer-facing information accurate.",
   },
   {
     title: "An appeal has already been rejected",
-    body: "A rejection does not mean the next step should be another identical submission.",
+    body: "A rejected appeal does not mean the next attempt should repeat the same submission. The previous attempt needs to be understood first.",
   },
   {
     title: "Important business details have changed or disappeared",
-    body: "Missing hours, contact details or other features can leave customers with incomplete or outdated information.",
+    body: "Customers may see incomplete or outdated hours, contact details or other information.",
   },
   {
     title: "You're unsure what triggered the issue",
-    body: "You do not need a confirmed cause before asking for a careful look at what happened.",
+    body: "You do not need a confirmed cause to start. The profile can still be unavailable or inaccurate for customers while the issue remains unresolved.",
   },
 ]
 
@@ -45,51 +45,39 @@ export const expertisePrinciples = [
 
 export const assessmentAreas = [
   {
-    title: "Profile status",
-    body: "What restriction, suspension, verification or access state appears to be present, based on what you can see and have been told?",
+    title: "Current profile position",
+    body: "What restriction, verification, access or suspension state appears to be present, and what Google has communicated.",
   },
   {
-    title: "Recent changes",
-    body: "What changed shortly before the issue appeared, including edits, ownership changes or business updates?",
+    title: "Timeline & recent changes",
+    body: "What happened before the issue appeared, including edits, ownership changes, verification attempts or other relevant activity.",
   },
   {
-    title: "Google communications",
-    body: "What notices, emails or appeal responses have already been received?",
+    title: "Evidence & business information",
+    body: "What records, profile details, messages and other information may support the business position.",
   },
   {
-    title: "Business information",
-    body: "Does the information you can supply support the business details that may need to be demonstrated?",
-  },
-  {
-    title: "Previous actions",
-    body: "What edits, appeals or recovery steps have already been attempted?",
-  },
-  {
-    title: "Evidence gaps",
-    body: "What useful information may still be missing before another step is taken?",
+    title: "Previous recovery attempts",
+    body: "What has already been changed, submitted or appealed, what response came back, and what may need to be approached differently.",
   },
 ]
 
 export const supportItems = [
   {
-    title: "Case & timeline review",
-    body: "We review the situation, timeline and available information to understand the current position.",
+    title: "Organise the recovery evidence",
+    body: "Help bring the relevant notices, business information, timeline and supporting records into a clearer recovery case.",
   },
   {
-    title: "Identify the evidence that matters",
-    body: "We help identify the records and business information that may be relevant to the recovery route.",
+    title: "Prepare recovery or appeal material",
+    body: "Help structure the information and wording needed for the appropriate recovery, verification or appeal route.",
   },
   {
-    title: "Prepare the recovery route",
-    body: "We help you organise the case clearly before the appropriate submission or next action.",
+    title: "Review previous attempts",
+    body: "If you have already appealed, changed profile details or received a rejection, we review that history so the next step is not simply a repeat of what has already failed.",
   },
   {
-    title: "Review what you've already tried",
-    body: "If you've already appealed or made changes, we factor that history into the assessment.",
-  },
-  {
-    title: "Understand the recommended next step",
-    body: "You receive a practical explanation of what we believe the next step should be and why.",
+    title: "Support the next stage",
+    body: "Help you understand how to act on the recommendation, respond to new information and decide what is worth doing next.",
   },
 ]
 
@@ -131,8 +119,8 @@ export const trustPrinciples = [
     body: "You should understand what we recommend, why we recommend it and what happens next.",
   },
   {
-    title: "Independent of Google",
-    body: "We help you prepare and navigate the process. We do not control platform decisions and we are not a Google partner.",
+    title: "Practical recovery support",
+    body: "We focus on helping you prepare and carry out the strongest appropriate recovery route based on the position in front of you.",
   },
 ]
 
@@ -146,8 +134,8 @@ export const recoveryFaqs = [
     a: "Yes. Share what you submitted, when you submitted it and any reply you received. That history helps us understand the current position before recommending a next step.",
   },
   {
-    q: "What information should I send you?",
-    a: "Start with what you have: notices, dates, the profile URL if you have it, screenshots and a short account of what you have already tried. If something is missing, you can still begin — we can identify what may be useful next. Do not send passwords, verification codes or account credentials.",
+    q: "What can ReputeDefend help with after the initial assessment?",
+    a: "If you want further support, the work may include organising relevant evidence, preparing recovery or appeal material, reviewing previous failed attempts and helping you act on the recommended recovery route. The exact scope depends on the situation and any fee is explained before you decide.",
   },
   {
     q: "Can you guarantee my Business Profile will be reinstated?",

@@ -72,16 +72,15 @@
 .expertiseGrid p { margin-top: 12px; color: color-mix(in srgb, var(--paper) 82%, transparent); font-size: 15px; }
 .expertise a:focus-visible { outline-color: var(--lime); }
 
-.assessGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 48px; }
+.assessGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 48px; }
 .assessGrid article { min-width: 0; padding: 22px 0 28px; border-top: 1px solid var(--edge); }
 .assessGrid span { display: block; color: var(--green); font-size: 13px; font-weight: 700; letter-spacing: .08em; }
 .assessGrid h3 { margin-top: 10px; font-size: 18px; }
 .assessGrid p { margin-top: 10px; color: var(--muted-strong); font-size: 15px; }
 
-.helpGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
-.helpGrid article { min-width: 0; grid-column: span 2; background: var(--tint); border: 1px solid var(--edge); border-radius: 18px; padding: 24px; }
-.helpGrid article:nth-child(4) { grid-column: 2 / span 2; }
-.helpGrid article:nth-child(5) { grid-column: 4 / span 2; }
+.helpGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.helpGrid article { min-width: 0; background: var(--tint); border: 1px solid var(--edge); border-radius: 18px; padding: 24px; }
+.supportNote { margin-top: 24px; max-width: 720px; color: var(--muted-strong); font-size: 15px; line-height: 1.65; }
 .helpGrid span { display: block; color: var(--green); font-size: 14px; font-weight: 700; letter-spacing: .06em; }
 .helpGrid h3 { margin-top: 12px; }
 .helpGrid p { margin-top: 10px; color: var(--muted-strong); font-size: 15px; }
@@ -163,10 +162,7 @@
   .situations, .evidence { grid-template-columns: minmax(0, 1fr); gap: 36px; padding: 40px; }
   .expertise { padding: 40px; }
   .expertiseGrid { grid-template-columns: minmax(0, 1fr); }
-  .assessGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 32px; }
-  .helpGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .helpGrid article, .helpGrid article:nth-child(4), .helpGrid article:nth-child(5) { grid-column: auto; }
-  .helpGrid article:last-child { grid-column: 1 / -1; max-width: calc(50% - 8px); justify-self: center; width: 100%; }
+  .assessGrid { gap: 8px 32px; }
   .faq { gap: 48px; }
   .closing { gap: 32px; padding: 32px; }
 }
@@ -195,7 +191,6 @@
 
 @media (max-width: 639px) {
   .helpGrid, .problemGrid, .trustGrid, .assessGrid { grid-template-columns: minmax(0, 1fr); }
-  .helpGrid article, .helpGrid article:nth-child(4), .helpGrid article:nth-child(5), .helpGrid article:last-child { grid-column: auto; max-width: none; }
 }
 
 @media (max-width: 480px) {

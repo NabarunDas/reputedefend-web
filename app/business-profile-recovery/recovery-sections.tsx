@@ -77,12 +77,12 @@ export function RecoveryHero() {
       <div>
         <Eyebrow>Google Business Profile Protection &amp; Recovery</Eyebrow>
         <h1 id="recovery-title">When your Google Business Profile goes down, your business shouldn&apos;t be <span>left guessing.</span></h1>
-        <p className={s.lead}>A suspension, failed verification or loss of access can affect how customers find, contact and trust your business. ReputeDefend helps you understand what changed, identify the information that matters and prepare the strongest appropriate recovery route.</p>
+        <p className={s.lead}>A suspension, failed verification or loss of access can affect one of the main places customers use to find, contact and assess your business. ReputeDefend helps you understand what changed, identify the evidence that matters and prepare the strongest appropriate recovery route.</p>
         <div className={s.actions}>
           <HelpLink>Tell us what happened</HelpLink>
           <a href="#recovery-help" className={s.secondaryButton}>See how recovery support works <ArrowDown size={18} aria-hidden="true" /></a>
         </div>
-        <p className={s.heroNote}>Human case review • Independent support • Clear recovery guidance</p>
+        <p className={s.heroNote}>Human case review • Evidence-led recovery support • Clear next steps</p>
       </div>
       <RecoveryVisual />
     </section>
@@ -117,7 +117,7 @@ export function RecoverySituations() {
       <div className={s.situationIntro}>
         <Eyebrow>When your profile changes</Eyebrow>
         <h2 id="situations-title">A profile problem can quickly become a customer problem.</h2>
-        <p>Your Google Business Profile can be one of the first places customers check before calling, visiting or choosing your business. If it disappears, becomes restricted or you lose control of it, the impact can go beyond the platform itself.</p>
+        <p>Your Google Business Profile can be one of the first places customers use to call, get directions, check opening information or decide whether to visit. If the profile disappears, becomes restricted or contains incomplete information, that can mean missed enquiries and lost opportunities while the problem remains unresolved.</p>
         <p className={s.reassuranceLead}>You do not need to know the cause before asking for help.</p>
         <HelpLink>Tell us what&apos;s happened</HelpLink>
       </div>
@@ -183,7 +183,7 @@ export function RecoverySupport() {
       <div className={s.sectionHeading}>
         <div>
           <Eyebrow>Recovery support</Eyebrow>
-          <h2 id="support-title">Turn a confusing profile problem into a structured next step.</h2>
+          <h2 id="support-title">Help carrying the recovery route through — not just identifying it.</h2>
         </div>
       </div>
       <div className={s.helpGrid}>
@@ -195,6 +195,7 @@ export function RecoverySupport() {
           </article>
         ))}
       </div>
+      <p className={s.supportNote}>The exact work depends on the case. If further paid support appears appropriate, we&apos;ll explain what we can help with and the fee before you decide.</p>
     </section>
   )
 }
@@ -219,7 +220,7 @@ export function RecoveryProcess() {
         ))}
       </ol>
       <div className={s.processCta}>
-        <HelpLink>Start my case</HelpLink>
+        <HelpLink>Tell us what happened</HelpLink>
       </div>
     </section>
   )
@@ -250,8 +251,8 @@ export function RecoveryTrust() {
   return (
     <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
       <div className={s.trustIntro}>
-        <Eyebrow>Independent support</Eyebrow>
-        <h2 id="trust-title">Clear guidance without pretending to control the platform.</h2>
+        <Eyebrow>Why ReputeDefend</Eyebrow>
+        <h2 id="trust-title">Clear recovery support when the situation is anything but clear.</h2>
       </div>
       <ul className={s.trustGrid}>
         {trustPrinciples.map(({ title, body }) => (
@@ -264,7 +265,7 @@ export function RecoveryTrust() {
       </ul>
       <div className={s.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google ultimately decides whether a Business Profile is reinstated and how platform enforcement is applied. ReputeDefend focuses on the part you can control: understanding the issue, preparing relevant information and approaching the next step clearly.</p>
+        <p>Google makes the final decision on Business Profile reinstatement and enforcement. ReputeDefend focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate recovery process in a stronger position.</p>
       </div>
     </section>
   )
@@ -299,8 +300,6 @@ export function RecoveryClosing() {
         <p>Tell us what changed, what Google has told you and what you have already tried. You do not need to diagnose the problem or prepare a perfect case before contacting us.</p>
         <ul className={s.closingPoints}>
           <li>No payment is required to submit your enquiry.</li>
-          <li>Submitting your case does not commit you to paid support.</li>
-          <li>If further support is appropriate, we&apos;ll explain the proposed scope and any fee before you decide.</li>
           <li>Please don&apos;t send passwords or verification codes.</li>
         </ul>
       </div>

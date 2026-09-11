@@ -14,9 +14,9 @@ import { isSoleTrader, legalIdentity, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./about.module.css"
 
-const title = "About ReputeDefend | Independent Reputation Support"
+const title = "About ReputeDefend | Google Business Profile & Review Support"
 const description =
-  "Learn about ReputeDefend, an independent UK service operated by Saswati Das, helping businesses understand Google Business Profile and review-related reputation issues."
+  "Learn who operates ReputeDefend, how the service approaches Google Business Profile and review-related problems, and what evidence-led support can involve."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -39,7 +39,7 @@ const identityStrip = [
     icon: UserRound,
   },
   {
-    label: isSoleTrader() ? "UK sole-trader business" : "Independent UK business",
+    label: "UK-based independent business",
     icon: Landmark,
   },
   { label: "Independent of Google", icon: Shield },
@@ -66,14 +66,14 @@ const services = [
     href: "/business-profile-recovery",
     cue: "Suspension • Access • Verification",
     title: "Business Profile Protection & Recovery",
-    body: "Support when a Google Business Profile is suspended, inaccessible, stuck in verification or affected by another account or profile issue.",
+    body: "Support for suspensions, access and verification problems — from understanding what changed and organising relevant evidence to preparing the recovery or appeal route and supporting the next stage.",
     cta: "Explore Profile Recovery",
   },
   {
     href: "/review-protection",
     cue: "Suspicious or damaging reviews",
     title: "Review Protection",
-    body: "Support when a review raises questions about authenticity, policy, evidence, reporting or the right public response.",
+    body: "Support for suspicious or damaging reviews — from assessing the facts and policy position to organising evidence, preparing a reporting or challenge case, or shaping a professional response where appropriate.",
     cta: "Explore Review Protection",
   },
 ]
@@ -96,23 +96,23 @@ const approach = [
   },
   {
     n: "04",
-    title: "Customer control",
-    body: "Submitting an enquiry does not commit you to paid support. If further work is appropriate, the proposed scope and fee are explained before you decide.",
+    title: "Practical support",
+    body: "If you want help carrying the recommendation through, the focus shifts from identifying the next step to helping organise and prepare the work needed for that stage.",
   },
 ]
 
 const trustPoints = [
   {
-    title: "Independent of Google",
-    body: "ReputeDefend does not claim special access or control over platform decisions.",
+    title: "Clear accountability",
+    body: "ReputeDefend openly identifies who operates the service and provides direct business contact and legal information.",
   },
   {
     title: "Evidence-aware",
-    body: "Recommendations follow the information available, not pressure to act immediately.",
+    body: "Recommendations follow the information available rather than pressure to act immediately.",
   },
   {
-    title: "No hidden commitment",
-    body: "Sending an enquiry asks for a human review. Further paid support is explained before you decide.",
+    title: "Practical support",
+    body: "Where further help is wanted, support can move beyond the initial recommendation into organising evidence, preparing material and supporting the next stage.",
   },
 ]
 
@@ -128,7 +128,7 @@ export default function AboutPage() {
             <span>Human support</span> for difficult Google reputation problems.
           </h1>
           <p className={styles.lead}>
-            ReputeDefend helps businesses make sense of Google Business Profile disruptions and difficult review situations. We focus on understanding what happened, identifying the information that matters and helping you take a clearer next step.
+            ReputeDefend helps businesses deal with Google Business Profile disruptions and difficult review situations with a clearer, evidence-led process. We focus on understanding what happened, identifying what matters and helping you prepare or carry out the strongest appropriate next step.
           </p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/get-help">
@@ -140,7 +140,7 @@ export default function AboutPage() {
               <ArrowRight size={18} aria-hidden="true" />
             </Link>
           </div>
-          <p className={styles.heroNote}>Human review • Independent of Google • Clear next steps</p>
+          <p className={styles.heroNote}>Human review • Evidence-led support • Clear next steps</p>
         </div>
         <figure className={styles.visual}>
           <ol className={styles.visualBoard}>
@@ -155,7 +155,7 @@ export default function AboutPage() {
               </li>
             ))}
           </ol>
-          <figcaption>Technology can organise information. Reputation decisions still need context.</figcaption>
+          <figcaption>Facts, context and evidence turn a confusing situation into a clearer decision.</figcaption>
         </figure>
       </section>
 
@@ -175,17 +175,17 @@ export default function AboutPage() {
       <section className={styles.identity} aria-labelledby="identity-title">
         <div>
           <p className={styles.eyebrow}>Who is behind ReputeDefend?</p>
-          <h2 id="identity-title">A real business, clearly identified.</h2>
+          <h2 id="identity-title">Clear accountability behind the service.</h2>
         </div>
         <div className={styles.copy}>
           <p>
-            ReputeDefend is operated by {operatorLine}. The service provides independent support to businesses dealing with Google Business Profile and review-related reputation issues.
+            ReputeDefend is operated by {operatorLine}. It is a UK-based independent service for businesses dealing with Google Business Profile and review-related reputation problems.
           </p>
           {isSoleTrader() ? (
-            <p>ReputeDefend is an independent UK sole-trader business.</p>
+            <p>ReputeDefend operates as a UK sole-trader business.</p>
           ) : null}
           <p>
-            The aim is straightforward: help businesses understand the situation, organise the information that matters and make a more informed decision about what to do next.
+            The person operating the service, the business identity and the contact route are stated openly so customers know who they are dealing with.
           </p>
           <p className={styles.identityNote}>
             ReputeDefend&apos;s legal identity and contact details are stated openly across the site&apos;s{" "}
@@ -202,7 +202,7 @@ export default function AboutPage() {
           </div>
           <div>
             <p>When a Business Profile is suspended, verification stalls or a damaging review appears, the immediate question is usually simple: what should I do now?</p>
-            <p>Platform messages, policies and reporting routes can be difficult to interpret when the business is already under pressure. ReputeDefend exists to help turn that uncertainty into a structured next step.</p>
+            <p>Platform messages, policies and reporting routes can be difficult to interpret when the business is already under pressure. ReputeDefend exists to bring the facts, evidence and available process together so the owner can make a clearer decision and, where wanted, get help carrying the next stage through.</p>
           </div>
         </header>
         <ul className={styles.whyGrid}>
@@ -256,8 +256,8 @@ export default function AboutPage() {
       <section className={styles.trust} aria-labelledby="trust-title">
         <header className={styles.sectionHeading}>
           <div>
-            <p className={styles.eyebrow}>Independent support</p>
-            <h2 id="trust-title">Clear guidance without pretending to control the platform.</h2>
+            <p className={styles.eyebrow}>What the service is built around</p>
+            <h2 id="trust-title">Clear guidance grounded in the facts and evidence.</h2>
           </div>
         </header>
         <ul className={styles.trustGrid}>
@@ -271,7 +271,7 @@ export default function AboutPage() {
         </ul>
         <aside className={styles.callout}>
           <Info aria-hidden="true" size={20} />
-          <p>Google ultimately controls platform decisions such as profile reinstatement and review removal. ReputeDefend focuses on the part a business can influence: understanding the issue, preparing relevant information and approaching the next step clearly.</p>
+          <p>Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ReputeDefend focuses on what a business can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
         </aside>
       </section>
 
@@ -279,14 +279,14 @@ export default function AboutPage() {
         <div className={styles.closingCopy}>
           <p className={styles.eyebrow}>Need help with a current issue?</p>
           <h2 id="about-closing-title">Start with what happened. You don&apos;t need to diagnose it first.</h2>
-          <p>Share the situation, relevant links or messages and what you have already tried. A human will review the information and help you understand the next practical step.</p>
+          <p>Share the situation, relevant links or messages and what you have already tried. A human will review the information, explain the next step that appears appropriate and, if you want further help, show you what carrying that recommendation through could involve.</p>
           <ul className={styles.closingPoints}>
-            <li>No payment is required to submit an enquiry.</li>
-            <li>Submitting your case does not commit you to paid support.</li>
+            <li>Human-reviewed case assessment</li>
+            <li>Never send passwords or verification codes</li>
           </ul>
         </div>
         <div className={styles.closingPanel}>
-          <p>Tell us what happened. You do not need a perfect case file before getting in touch.</p>
+          <p>You don&apos;t need a perfect case file. Start with the situation as it stands and we&apos;ll help identify what matters.</p>
           <Link className={styles.primaryButton} href="/get-help">
             Tell us what happened
             <ArrowUpRight size={18} aria-hidden="true" />

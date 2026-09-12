@@ -977,11 +977,13 @@
   .routeSplit article { padding: 24px 20px; }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 361px) {
   .page { --wrap: calc(100% - 24px); }
   .page h1 { font-size: 30px; }
   .page h2 { font-size: 26px; }
   .trustStrip ul { grid-template-columns: minmax(0, 1fr); }
+  .trustStrip li,
+  .trustStrip li:nth-last-child(-n+2) { border-bottom: 1px solid var(--edge); }
   .trustStrip li:last-child { border-bottom: 0; }
   .modelRow { padding: 22px 18px; }
 }

@@ -1,26 +1,19 @@
 import Link from "next/link"
+import { ArrowRight, ArrowUpRight, Check, Plus } from "lucide-react"
 import {
-  ArrowDown,
-  ArrowRight,
-  ArrowUpRight,
-  Check,
-  Info,
-  Lock,
-  Plus,
-  Shield,
-  Store,
-  UserRoundCheck,
-  Wallet,
-} from "lucide-react"
-import {
-  assessmentAreas,
-  evidenceItems,
-  expertisePrinciples,
-  processSteps,
+  recoveryAppealed,
+  recoveryAssessment,
+  recoveryClosing,
+  recoveryExpertise,
   recoveryFaqs,
-  situations,
-  supportItems,
-  trustPrinciples,
+  recoveryHero,
+  recoveryHelpHref,
+  recoveryModels,
+  recoveryPricing,
+  recoveryProcess,
+  recoverySituations,
+  recoveryTrustStrip,
+  recoveryWork,
 } from "./content"
 import s from "./recovery.module.css"
 
@@ -28,9 +21,15 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   return <p className={s.eyebrow}>{children}</p>
 }
 
-function HelpLink({ children, className = s.primaryButton }: { children: React.ReactNode; className?: string }) {
+function HelpLink({
+  children,
+  className = s.primaryButton,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <Link href="/get-help?service=profile" className={className}>
+    <Link href={recoveryHelpHref} className={className}>
       {children}
       <ArrowUpRight size={18} aria-hidden="true" />
     </Link>
@@ -39,72 +38,74 @@ function HelpLink({ children, className = s.primaryButton }: { children: React.R
 
 function RecoveryVisual() {
   return (
-    <figure className={s.visual} aria-label="From a profile issue to a clearer recovery route">
-      <div className={s.flowCard}>
-        <p className={s.flowLabel}>Profile issue detected</p>
-        <ul className={s.changeList}>
+    <figure className={s.visual} aria-label="Profile status, then case review, then a Guided or Managed recovery route">
+      <div className={s.visualChrome}>
+        <span>Recovery case</span>
+        <span>Profile Recovery</span>
+      </div>
+      <div className={`${s.stage} ${s.stageStatus}`}>
+        <p className={s.stageLabel}>Profile status</p>
+        <ul>
           <li>Suspended</li>
-          <li>Verification required</li>
-          <li>Access unavailable</li>
+          <li>Verification</li>
+          <li>Access</li>
         </ul>
       </div>
-      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
-      <div className={s.flowCard}>
-        <p className={s.flowLabel}>Review what changed</p>
-        <p className={s.flowCopy}>Look at the notice, timeline and recent activity.</p>
+      <div className={s.visualArrow} aria-hidden="true" />
+      <div className={`${s.stage} ${s.stageReview}`}>
+        <p className={s.stageLabel}>Case review</p>
+        <ul>
+          <li>Notice</li>
+          <li>Timeline</li>
+          <li>Business evidence</li>
+          <li>Profile history</li>
+        </ul>
       </div>
-      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
-      <div className={s.flowCard}>
-        <p className={s.flowLabel}>Prepare the recovery route</p>
-        <p className={s.flowCopy}>Organise the information that may support the next step.</p>
-      </div>
-      <div className={s.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
-      <div className={`${s.flowCard} ${s.flowCardAction}`}>
-        <span className={s.flowCheck} aria-hidden="true"><Check size={18} /></span>
-        <div>
-          <p className={s.flowLabel}>Move forward with clarity</p>
-          <p className={s.flowCopy}>Know the next move before you make it.</p>
+      <div className={s.visualArrow} aria-hidden="true" />
+      <div className={`${s.stage} ${s.stageRoute}`}>
+        <p className={s.stageLabel}>Recovery route</p>
+        <div className={s.routePair}>
+          <span>Guided</span>
+          <span className={s.routeOr}>or</span>
+          <span>Managed</span>
         </div>
       </div>
-      <figcaption className={s.visualNote}>Understand the issue before deciding the next move.</figcaption>
     </figure>
   )
 }
 
 export function RecoveryHero() {
   return (
-    <section className={`${s.hero} ${s.enter}`} aria-labelledby="recovery-title">
-      <div>
-        <Eyebrow>Google Business Profile Protection &amp; Recovery</Eyebrow>
-        <h1 id="recovery-title">When your Google Business Profile goes down, your business shouldn&apos;t be <span>left guessing.</span></h1>
-        <p className={s.lead}>A suspension, failed verification or loss of access can affect one of the main places customers use to find, contact and assess your business. ProfileRelaunch helps you understand what changed, identify the evidence that matters and prepare the strongest appropriate recovery route.</p>
-        <div className={s.actions}>
-          <HelpLink>Tell us what happened</HelpLink>
-          <a href="#recovery-help" className={s.secondaryButton}>See how recovery support works <ArrowDown size={18} aria-hidden="true" /></a>
+    <section className={`${s.heroBand} ${s.enter}`} aria-labelledby="recovery-title">
+      <div className={s.hero}>
+        <div>
+          <Eyebrow>{recoveryHero.eyebrow}</Eyebrow>
+          <h1 id="recovery-title">
+            <span className={s.titleMain}>{recoveryHero.titleLines[0]}</span>
+            <span>{recoveryHero.titleLines[1]}</span>
+          </h1>
+          <p className={s.lead}>{recoveryHero.lead}</p>
+          <div className={s.actions}>
+            <HelpLink className={s.primaryOnDark}>{recoveryHero.primaryCta}</HelpLink>
+            <Link className={s.secondaryOnDark} href={recoveryHero.secondaryHref}>
+              {recoveryHero.secondaryCta}
+              <ArrowRight size={18} aria-hidden="true" />
+            </Link>
+          </div>
+          <p className={s.heroNote}>{recoveryHero.supportLine}</p>
         </div>
-        <p className={s.heroNote}>Human case review • Evidence-led recovery support • Clear next steps</p>
+        <RecoveryVisual />
       </div>
-      <RecoveryVisual />
     </section>
   )
 }
 
-const trustStrip = [
-  { label: "Human-reviewed cases", icon: UserRoundCheck },
-  { label: "Support for suspensions, access & verification", icon: Store },
-  { label: "No payment to submit an enquiry", icon: Wallet },
-  { label: "Independent of Google", icon: Shield },
-]
-
 export function RecoveryTrustStrip() {
   return (
-    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ProfileRelaunch handles profile recovery enquiries">
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ProfileRelaunch handles Profile Recovery">
       <ul>
-        {trustStrip.map(({ label, icon: Icon }) => (
-          <li key={label}>
-            <span className={s.stripIcon}><Icon aria-hidden="true" size={18} /></span>
-            {label}
-          </li>
+        {recoveryTrustStrip.map((label) => (
+          <li key={label}>{label}</li>
         ))}
       </ul>
     </section>
@@ -115,158 +116,208 @@ export function RecoverySituations() {
   return (
     <section className={`${s.situations} ${s.reveal}`} aria-labelledby="situations-title">
       <div className={s.situationIntro}>
-        <Eyebrow>When your profile changes</Eyebrow>
-        <h2 id="situations-title">A profile problem can quickly become a customer problem.</h2>
-        <p>Your Google Business Profile can be one of the first places customers use to call, get directions, check opening information or decide whether to visit. If the profile disappears, becomes restricted or contains incomplete information, that can mean missed enquiries and lost opportunities while the problem remains unresolved.</p>
-        <p className={s.reassuranceLead}>You do not need to know the cause before asking for help.</p>
-        <HelpLink>Tell us what&apos;s happened</HelpLink>
+        <Eyebrow>{recoverySituations.eyebrow}</Eyebrow>
+        <h2 id="situations-title">{recoverySituations.title}</h2>
+        <p>{recoverySituations.lead}</p>
       </div>
-      <div className={s.problemGrid}>
-        {situations.map(({ title, body }) => (
-          <article key={title}>
-            <h3>{title}</h3>
-            <p>{body}</p>
-          </article>
+      <ol className={s.problemList}>
+        {recoverySituations.items.map((item, index) => (
+          <li key={item}>
+            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            {item}
+          </li>
         ))}
-      </div>
+      </ol>
+      <p className={s.situationCta}>
+        {recoverySituations.unsure}{" "}
+        <Link href={recoveryHelpHref}>{recoverySituations.ctaLead}</Link>
+      </p>
     </section>
   )
 }
 
 export function RecoveryExpertise() {
   return (
-    <section className={`${s.expertise} ${s.reveal}`} aria-labelledby="expertise-title">
-      <div className={s.expertiseIntro}>
-        <Eyebrow>Before you make another change</Eyebrow>
-        <h2 id="expertise-title">When a profile is already restricted, more activity is not always better activity.</h2>
-        <p>It can be tempting to change several profile details, submit another appeal or keep trying different fixes. But without understanding the issue first, those actions can make the timeline harder to interpret and the case harder to explain.</p>
+    <section className={`${s.expertiseBand} ${s.reveal}`} aria-labelledby="expertise-title">
+      <div className={s.expertise}>
+        <div className={s.expertiseIntro}>
+          <Eyebrow>{recoveryExpertise.eyebrow}</Eyebrow>
+          <h2 id="expertise-title">{recoveryExpertise.title}</h2>
+          <p>{recoveryExpertise.lead}</p>
+        </div>
+        <ol className={s.expertiseList}>
+          {recoveryExpertise.items.map((item, index) => (
+            <li key={item.title}>
+              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-      <ol className={s.expertiseGrid}>
-        {expertisePrinciples.map(({ title, body }, index) => (
-          <li key={title}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{body}</p>
-          </li>
-        ))}
-      </ol>
     </section>
   )
 }
 
 export function RecoveryAssessment() {
   return (
-    <section className={`${s.section} ${s.reveal}`} aria-labelledby="assessment-title">
-      <div className={s.sectionHeading}>
-        <div>
-          <Eyebrow>Understanding your position</Eyebrow>
-          <h2 id="assessment-title">The right recovery route starts with knowing where the problem actually is.</h2>
-        </div>
-        <p>We work from the information you can share: messages you have received, the profile as you can see it, and any supporting records.</p>
+    <section className={`${s.assess} ${s.reveal}`} aria-labelledby="assessment-title">
+      <div className={s.assessIntro}>
+        <Eyebrow>{recoveryAssessment.eyebrow}</Eyebrow>
+        <h2 id="assessment-title">{recoveryAssessment.title}</h2>
+        <p>{recoveryAssessment.lead}</p>
       </div>
-      <div className={s.assessGrid}>
-        {assessmentAreas.map(({ title, body }, index) => (
-          <article key={title}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{body}</p>
-          </article>
+      <ol className={s.assessList}>
+        {recoveryAssessment.items.map((item, index) => (
+          <li key={item.title}>
+            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.copy}</p>
+            </div>
+          </li>
         ))}
+      </ol>
+    </section>
+  )
+}
+
+export function RecoveryWork() {
+  return (
+    <section className={`${s.work} ${s.reveal}`} aria-labelledby="work-title">
+      <div className={s.workIntro}>
+        <Eyebrow>{recoveryWork.eyebrow}</Eyebrow>
+        <h2 id="work-title">{recoveryWork.title}</h2>
+        <p>{recoveryWork.lead}</p>
+      </div>
+      <ol className={s.workList}>
+        {recoveryWork.items.map((item, index) => (
+          <li key={item}>
+            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            {item}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+export function RecoveryModels() {
+  const { guided, managed } = recoveryModels
+  return (
+    <section id="recovery-help" className={`${s.modelsBand} ${s.reveal}`} aria-labelledby="models-title">
+      <div className={s.modelsIntro}>
+        <Eyebrow>{recoveryModels.eyebrow}</Eyebrow>
+        <h2 id="models-title">{recoveryModels.title}</h2>
+        <p>{recoveryModels.lead}</p>
+      </div>
+      <div className={s.modelGrid}>
+        <article className={s.modelGuided} aria-labelledby="guided-title">
+          <p className={s.modelKicker}>{guided.name}</p>
+          <p className={s.modelPrice}>
+            {guided.price} <span>{guided.cadence}</span>
+          </p>
+          <h3 id="guided-title">{guided.line}</h3>
+          <p>{guided.copy}</p>
+          <ul>
+            {guided.points.map((point) => (
+              <li key={point}>
+                <Check aria-hidden="true" size={16} />
+                {point}
+              </li>
+            ))}
+          </ul>
+          <HelpLink>{guided.cta}</HelpLink>
+        </article>
+        <article className={s.modelManaged} aria-labelledby="managed-title">
+          <p className={s.modelKicker}>{managed.name}</p>
+          <p className={s.modelPrice}>
+            {managed.today} <span>{managed.price} {managed.cadence}</span>
+          </p>
+          <h3 id="managed-title">{managed.line}</h3>
+          <p>{managed.copy}</p>
+          <ul>
+            {managed.points.map((point) => (
+              <li key={point}>
+                <Check aria-hidden="true" size={16} />
+                {point}
+              </li>
+            ))}
+          </ul>
+          <HelpLink className={s.primaryOnDark}>{managed.cta}</HelpLink>
+        </article>
       </div>
     </section>
   )
 }
 
-export function RecoverySupport() {
+export function RecoveryPricing() {
   return (
-    <section id="recovery-help" className={`${s.section} ${s.reveal}`} aria-labelledby="support-title">
-      <div className={s.sectionHeading}>
-        <div>
-          <Eyebrow>Recovery support</Eyebrow>
-          <h2 id="support-title">Help carrying the recovery route through — not just identifying it.</h2>
-        </div>
+    <section className={`${s.pricing} ${s.reveal}`} aria-labelledby="pricing-title">
+      <div className={s.pricingIntro}>
+        <Eyebrow>{recoveryPricing.eyebrow}</Eyebrow>
+        <h2 id="pricing-title">{recoveryPricing.title}</h2>
+        <p>{recoveryPricing.lead}</p>
       </div>
-      <div className={s.helpGrid}>
-        {supportItems.map(({ title, body }, index) => (
-          <article key={title}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{body}</p>
-          </article>
+      <ul className={s.priceRow}>
+        {recoveryPricing.items.map((item) => (
+          <li key={item.name}>
+            <p className={s.priceLabel}>{item.name}</p>
+            <p className={s.priceFigure}>{item.figure}</p>
+            <p className={s.priceDetail}>{item.detail}</p>
+          </li>
         ))}
+      </ul>
+      <p className={s.pricingNote}>{recoveryPricing.note}</p>
+      <div className={s.actions}>
+        <HelpLink>{recoveryPricing.primaryCta}</HelpLink>
+        <Link className={s.ghostButton} href={recoveryPricing.secondaryHref}>
+          {recoveryPricing.secondaryCta}
+          <ArrowRight size={18} aria-hidden="true" />
+        </Link>
       </div>
-      <p className={s.supportNote}>The exact work depends on the case. If further paid support appears appropriate, we&apos;ll explain what we can help with and the fee before you decide.</p>
     </section>
   )
 }
 
 export function RecoveryProcess() {
   return (
-    <section id="recovery-process" className={`${s.section} ${s.reveal}`} aria-labelledby="process-title">
-      <div className={s.sectionHeading}>
-        <div>
-          <Eyebrow>How it works</Eyebrow>
-          <h2 id="process-title">Start with what you know.</h2>
-        </div>
-        <Link className={s.textLink} href="/how-it-works">See the full ProfileRelaunch process <ArrowRight size={18} aria-hidden="true" /></Link>
+    <section className={`${s.process} ${s.reveal}`} aria-labelledby="process-title">
+      <div className={s.processIntro}>
+        <Eyebrow>{recoveryProcess.eyebrow}</Eyebrow>
+        <h2 id="process-title">{recoveryProcess.title}</h2>
       </div>
       <ol className={s.processList}>
-        {processSteps.map(({ title, body }, index) => (
-          <li key={title}>
-            <span className={s.processNumber}>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{body}</p>
+        {recoveryProcess.steps.map((step) => (
+          <li key={step.n}>
+            <span className={s.processNumber}>{step.n}</span>
+            <h3>{step.title}</h3>
           </li>
         ))}
       </ol>
-      <div className={s.processCta}>
-        <HelpLink>Tell us what happened</HelpLink>
-      </div>
     </section>
   )
 }
 
-export function RecoveryEvidence() {
+export function RecoveryAppealed() {
   return (
-    <section className={`${s.evidence} ${s.reveal}`} aria-labelledby="evidence-title">
-      <div className={s.evidenceIntro}>
-        <Eyebrow>What may help</Eyebrow>
-        <h2 id="evidence-title">You don&apos;t need a perfect case file.</h2>
-        <p>If you already have any of the following, keep them available. If something is missing, you can still start the conversation.</p>
+    <section className={`${s.appealed} ${s.reveal}`} aria-labelledby="appealed-title">
+      <div>
+        <Eyebrow>{recoveryAppealed.eyebrow}</Eyebrow>
+        <h2 id="appealed-title">{recoveryAppealed.title}</h2>
+        <p>{recoveryAppealed.lead}</p>
+        <HelpLink>{recoveryAppealed.cta}</HelpLink>
       </div>
-      <div className={s.evidencePanel}>
-        <ul>
-          {evidenceItems.map((item) => (
-            <li key={item}><Check aria-hidden="true" size={17} />{item}</li>
-          ))}
-        </ul>
-        <p className={s.safetyNote}><Lock aria-hidden="true" size={18} />Do not send passwords, verification codes or account credentials.</p>
-        <p className={s.evidenceClose}>Start with what you have. We can identify what may be useful next.</p>
-      </div>
-    </section>
-  )
-}
-
-export function RecoveryTrust() {
-  return (
-    <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
-      <div className={s.trustIntro}>
-        <Eyebrow>Why ProfileRelaunch</Eyebrow>
-        <h2 id="trust-title">Clear recovery support when the situation is anything but clear.</h2>
-      </div>
-      <ul className={s.trustGrid}>
-        {trustPrinciples.map(({ title, body }) => (
-          <li key={title}>
-            <span className={s.trustIcon}><Check aria-hidden="true" size={18} /></span>
-            <h3>{title}</h3>
-            <p>{body}</p>
+      <ul>
+        {recoveryAppealed.points.map((point) => (
+          <li key={point}>
+            <Check aria-hidden="true" size={16} />
+            {point}
           </li>
         ))}
       </ul>
-      <div className={s.trustLimit}>
-        <Info aria-hidden="true" size={20} />
-        <p>Google makes the final decision on Business Profile reinstatement and enforcement. ProfileRelaunch focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate recovery process in a stronger position.</p>
-      </div>
     </section>
   )
 }
@@ -275,9 +326,8 @@ export function RecoveryFaq() {
   return (
     <section className={`${s.faq} ${s.reveal}`} aria-labelledby="faq-title">
       <div>
-        <Eyebrow>Questions you may have</Eyebrow>
-        <h2 id="faq-title">A little clarity before you begin.</h2>
-        <p>If a Google Business Profile suspension, verification or access issue is already affecting the business, these answers may help you decide how to start.</p>
+        <Eyebrow>Recovery questions</Eyebrow>
+        <h2 id="faq-title">Answers specific to a downed or stuck profile.</h2>
       </div>
       <div className={s.faqList}>
         {recoveryFaqs.map(({ q, a }) => (
@@ -293,19 +343,18 @@ export function RecoveryFaq() {
 
 export function RecoveryClosing() {
   return (
-    <section className={`${s.closing} ${s.reveal}`} aria-labelledby="closing-title">
-      <div className={s.closingCopy}>
-        <Eyebrow>Start your profile recovery assessment</Eyebrow>
-        <h2 id="closing-title">Don&apos;t keep guessing at the next step.</h2>
-        <p>Tell us what changed, what Google has told you and what you have already tried. You do not need to diagnose the problem or prepare a perfect case before contacting us.</p>
-        <ul className={s.closingPoints}>
-          <li>No payment is required to submit your enquiry.</li>
-          <li>Please don&apos;t send passwords or verification codes.</li>
-        </ul>
-      </div>
-      <div className={s.closingPanel}>
-        <p>Share the situation as it stands. We&apos;ll review it and help you understand the next practical step.</p>
-        <HelpLink>Tell us what happened</HelpLink>
+    <section className={`${s.closingBand} ${s.reveal}`} aria-labelledby="closing-title">
+      <div className={s.closing}>
+        <Eyebrow>{recoveryClosing.eyebrow}</Eyebrow>
+        <h2 id="closing-title">{recoveryClosing.title}</h2>
+        <p>{recoveryClosing.lead}</p>
+        <div className={s.actions}>
+          <HelpLink className={s.primaryOnDark}>{recoveryClosing.primaryCta}</HelpLink>
+          <Link className={s.secondaryOnDark} href={recoveryClosing.secondaryHref}>
+            {recoveryClosing.secondaryCta}
+            <ArrowRight size={18} aria-hidden="true" />
+          </Link>
+        </div>
       </div>
     </section>
   )

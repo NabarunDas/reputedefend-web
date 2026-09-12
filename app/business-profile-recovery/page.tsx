@@ -1,46 +1,54 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
-import { recoveryDescription, recoveryFaqs } from "./content"
+import { recoveryFaqs, recoverySeo } from "./content"
 import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
+  RecoveryAppealed,
   RecoveryAssessment,
   RecoveryClosing,
-  RecoveryEvidence,
   RecoveryExpertise,
   RecoveryFaq,
   RecoveryHero,
+  RecoveryModels,
+  RecoveryPricing,
   RecoveryProcess,
   RecoverySituations,
-  RecoverySupport,
-  RecoveryTrust,
   RecoveryTrustStrip,
+  RecoveryWork,
 } from "./recovery-sections"
 import styles from "./recovery.module.css"
 
-const title = pageTitle("Google Business Profile Recovery & Suspension Help")
+const title = pageTitle(recoverySeo.titlePage)
+const description = recoverySeo.description
+
 export const metadata: Metadata = {
   title: { absolute: title },
-  description: recoveryDescription,
+  description,
   alternates: { canonical: "/business-profile-recovery" },
-  openGraph: socialOpenGraph({ title, description: recoveryDescription, path: "/business-profile-recovery" }),
-  twitter: socialTwitter({ title, description: recoveryDescription }),
+  openGraph: socialOpenGraph({ title, description, path: "/business-profile-recovery" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 export default function BusinessProfileRecoveryPage() {
   return (
     <div className={`${styles.page} font-sans`}>
-      <ServiceStructuredData name="Google Business Profile Recovery & Suspension Help" description={recoveryDescription} path="/business-profile-recovery" />
-      <FaqStructuredData questions={recoveryFaqs} />
+      <ServiceStructuredData
+        name="Google Business Profile Recovery & Suspension Help"
+        description={description}
+        path="/business-profile-recovery"
+      />
+      <FaqStructuredData questions={recoveryFaqs.map(({ q, a }) => ({ q, a }))} />
       <RecoveryHero />
       <RecoveryTrustStrip />
       <RecoverySituations />
       <RecoveryExpertise />
       <RecoveryAssessment />
-      <RecoverySupport />
+      <RecoveryWork />
+      <RecoveryModels />
+      <RecoveryPricing />
       <RecoveryProcess />
-      <RecoveryEvidence />
-      <RecoveryTrust />
+      <RecoveryAppealed />
       <RecoveryFaq />
       <RecoveryClosing />
     </div>

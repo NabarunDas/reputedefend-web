@@ -982,6 +982,7 @@
   .page h1 { font-size: 30px; }
   .page h2 { font-size: 26px; }
   .trustStrip ul { grid-template-columns: minmax(0, 1fr); }
+  .trustStrip li { border-bottom: 1px solid var(--edge); }
   .trustStrip li:last-child { border-bottom: 0; }
   .modelRow { padding: 22px 18px; }
 }

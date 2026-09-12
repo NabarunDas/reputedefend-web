@@ -94,7 +94,7 @@ export function HowHero() {
 
 export function HowTrustStrip() {
   return (
-    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend works — at a glance">
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ProfileRelaunch works — at a glance">
       <ul>
         {howTrustStrip.map((item, index) => {
           const Icon = stripIcons[index]

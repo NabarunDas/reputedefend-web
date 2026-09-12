@@ -16,7 +16,7 @@ export const homepageFaqs = [
     a: "We review what you send and form an initial view of the situation and the next step that appears appropriate. If you want help carrying that recommendation through, further support may include organising evidence, preparing recovery or reporting material, reviewing previous attempts or helping shape a professional response. The exact scope and any fee are explained before you decide.",
   },
   {
-    q: "Is ReputeDefend affiliated with Google?",
-    a: "No. ReputeDefend is independent of Google. We help you prepare and navigate the process; we do not control platform decisions and we are not an official Google partner.",
+    q: "Is ProfileRelaunch affiliated with Google?",
+    a: "No. ProfileRelaunch is independent of Google. We help you prepare and navigate the process; we do not control platform decisions and we are not an official Google partner.",
   },
 ]

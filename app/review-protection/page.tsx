@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
 import { reviewDescription, reviewFaqs } from "./content"
+import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   ReviewAssessment,
@@ -18,7 +19,7 @@ import {
 } from "./review-sections"
 import styles from "./review.module.css"
 
-const title = "Google Review Protection & Review Challenge Support | ReputeDefend"
+const title = pageTitle("Google Review Protection & Review Challenge Support")
 export const metadata: Metadata = {
   title: { absolute: title },
   description: reviewDescription,

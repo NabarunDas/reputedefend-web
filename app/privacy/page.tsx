@@ -1,11 +1,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { feeWording, hasLegalValue, legalIdentity, showsCompanyRegistration, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
-const title = "Privacy notice | ReputeDefend"
-const description = "How ReputeDefend handles information submitted through this website, including general enquiries and case-intake submissions."
+const title = pageTitle("Privacy notice")
+const description = "How ProfileRelaunch handles information submitted through this website, including general enquiries and case-intake submissions."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -108,7 +109,7 @@ const sections: LegalSection[] = [
     title: "Service providers",
     content: (
       <>
-        <p>ReputeDefend reviews submissions. Enquiry messages are delivered by email using Resend so that we can receive and review them. Resend processes that information only to provide that email delivery service. This notice does not describe Resend’s hosting locations, retention rules or other contractual terms.</p>
+        <p>{legalIdentity.tradingName} reviews submissions. Enquiry messages are delivered by email using Resend so that we can receive and review them. Resend processes that information only to provide that email delivery service. This notice does not describe Resend’s hosting locations, retention rules or other contractual terms.</p>
         {hasLegalValue(legalIdentity.enquiryProcessorName) || hasLegalValue(legalIdentity.hostingProvider) ? (
           <ul>
             {hasLegalValue(legalIdentity.hostingProvider) ? <li>Website hosting: {legalIdentity.hostingProvider}</li> : null}
@@ -200,7 +201,7 @@ export default function PrivacyPage() {
     <LegalPage
       eyebrow="Privacy"
       title="Privacy notice"
-      lead="This notice describes the information visitors may submit through ReputeDefend, why it is used, and the limits of what this website collects."
+      lead={`This notice describes the information visitors may submit through ${legalIdentity.tradingName}, why it is used, and the limits of what this website collects.`}
       currentPath="/privacy"
       sections={sections}
     />

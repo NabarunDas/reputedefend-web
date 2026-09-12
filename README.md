@@ -1,6 +1,8 @@
-# ReputeDefend
+# ProfileRelaunch
 
-A Next.js App Router marketing site for independent reputation support.
+A Next.js App Router marketing site for Google Business Profile recovery, review protection and reputation monitoring.
+
+The public trading brand is **ProfileRelaunch**. Legal operator remains Saswati Das, a UK sole trader.
 
 ## Architecture
 
@@ -24,7 +26,7 @@ With no Resend configuration, development returns a clearly labelled simulated s
 Live delivery requires all three of:
 
 - `RESEND_API_KEY`
-- `ENQUIRY_FROM_EMAIL` — a verified ReputeDefend sending address, not the customer’s email
+- `ENQUIRY_FROM_EMAIL` — a verified sending address, not the customer’s email
 - `ENQUIRY_TO_EMAIL` — the internal inbox that should receive enquiries
 
 Optional:
@@ -32,12 +34,23 @@ Optional:
 - `ENQUIRY_REPLY_TO_EMAIL` — extra Reply-To in addition to the customer’s validated email
 - `ENQUIRY_SEND_CUSTOMER_ACK=true` — send a customer receipt. Leave this off unless you have explicitly chosen to enable it.
 
-Reply-To on the internal notification is the customer’s validated email so you can reply directly. The From address must stay on the verified ReputeDefend domain.
+Reply-To on the internal notification is the customer’s validated email so you can reply directly. The From address must stay on the currently verified sending domain.
+
+### Pending email migration
+
+Customer-facing pages now use the ProfileRelaunch trading name and `https://profilerelaunch.com`. Operational mailboxes have **not** been migrated in this stage.
+
+Until Workspace/Resend is moved:
+
+- public contact remains `contact@reputedefend.com`
+- enquiry From/To addresses stay on the verified `reputedefend.com` domain
+- do not invent a `@profilerelaunch.com` mailbox
+- customer acknowledgement stays disabled
 
 ### Resend setup
 
 1. Create a Resend account and an API key. Store the key only in the host environment, never in the repository.
-2. Add and verify the sending domain (for example `reputedefend.com`) in Resend.
+2. Add and verify the sending domain (currently `reputedefend.com`) in Resend.
 3. Publish the DNS records Resend shows for that domain, typically:
    - domain verification TXT
    - DKIM CNAME records
@@ -53,7 +66,7 @@ If required configuration is missing, or Resend does not accept the message, the
 - Resend credentials are server-only and must not be prefixed with `NEXT_PUBLIC_`.
 - `VERCEL_ENV=production` enables the production sitemap, indexing and canonical behavior.
 - Preview and development environments are noindex and excluded from the sitemap.
-- Production canonical URLs resolve to `https://reputedefend.com`.
+- Production canonical URLs resolve to `https://profilerelaunch.com`.
 
 No analytics, tracking, cookies, CAPTCHA, authentication, database, payments or CRM integrations are included in V1.
 

@@ -1,11 +1,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
-const title = "Disclaimer | ReputeDefend"
-const description = "ReputeDefend is independent of Google. Profile reinstatement, review removal and platform timeframes are not guaranteed. Website information is not legal advice."
+const title = pageTitle("Disclaimer")
+const description = "ProfileRelaunch is independent of Google. Profile reinstatement, review removal and platform timeframes are not guaranteed. Website information is not legal advice."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -26,7 +27,7 @@ const sections: LegalSection[] = [
           <p>{legalIdentity.tradingName} is a trading name of {legalIdentity.legalName}.</p>
         ) : null}
         <p>Google controls its own platform processes, including Business Profile status, verification, access, reviews and related decisions. Using this website does not change that.</p>
-        <LegalCallout>ReputeDefend is an independent support service. It is not an official Google partner page and should not be read as one.</LegalCallout>
+        <LegalCallout>{legalIdentity.tradingName} is an independent support service. It is not an official Google partner page and should not be read as one.</LegalCallout>
       </>
     ),
   },
@@ -83,7 +84,7 @@ export default function DisclaimerPage() {
     <LegalPage
       eyebrow="Disclaimer"
       title="Independent support, not Google."
-      lead="ReputeDefend is independent of Google. We cannot guarantee reinstatement, review removal, ranking changes or any other platform outcome. Information on this website is practical guidance, not legal advice."
+      lead={`${legalIdentity.tradingName} is independent of Google. We cannot guarantee reinstatement, review removal, ranking changes or any other platform outcome. Information on this website is practical guidance, not legal advice.`}
       currentPath="/disclaimer"
       sections={sections}
     />

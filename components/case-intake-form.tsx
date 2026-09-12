@@ -17,6 +17,7 @@ import {
   type EnquiryInput,
 } from "@/lib/enquiry"
 import { HoneypotField } from "@/components/honeypot-field"
+import { brandName } from "@/lib/brand"
 import styles from "./case-intake.module.css"
 
 const STEP_TITLES = {
@@ -410,7 +411,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
                 aria-describedby={errors.privacyAccepted ? `${formId}-privacyAccepted-error` : undefined}
               />
               <span>
-                I understand how ReputeDefend handles this information, as described in the{" "}
+                I understand how {brandName} handles this information, as described in the{" "}
                 <Link href="/privacy">privacy notice</Link>.
               </span>
             </label>

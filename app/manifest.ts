@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next"
-import { brandColors } from "@/lib/brand"
+import { brandColors, brandDescription, brandName } from "@/lib/brand"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "ReputeDefend",
-    short_name: "ReputeDefend",
-    description: "Practical reputation support for businesses.",
+    name: brandName,
+    short_name: brandName,
+    description: brandDescription,
     start_url: "/",
     display: "browser",
     background_color: brandColors.paper,

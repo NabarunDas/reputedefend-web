@@ -134,7 +134,7 @@ export const recoveryFaqs = [
     a: "Yes. Share what you submitted, when you submitted it and any reply you received. That history helps us understand the current position before recommending a next step.",
   },
   {
-    q: "What can ReputeDefend help with after the initial assessment?",
+    q: "What can ProfileRelaunch help with after the initial assessment?",
     a: "If you want further support, the work may include organising relevant evidence, preparing recovery or appeal material, reviewing previous failed attempts and helping you act on the recommended recovery route. The exact scope depends on the situation and any fee is explained before you decide.",
   },
   {
@@ -146,7 +146,7 @@ export const recoveryFaqs = [
     a: "There is no fixed timescale. Timing varies with the type of issue, the information available and how Google handles the case. We can help you prepare a clearer next step; we cannot control how long a platform review takes.",
   },
   {
-    q: "Is ReputeDefend affiliated with Google?",
-    a: "No. ReputeDefend is independent of Google. We help you prepare and navigate the process; we do not control platform decisions and we are not an official Google partner.",
+    q: "Is ProfileRelaunch affiliated with Google?",
+    a: "No. ProfileRelaunch is independent of Google. We help you prepare and navigate the process; we do not control platform decisions and we are not an official Google partner.",
   },
 ]

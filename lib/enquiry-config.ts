@@ -42,6 +42,7 @@ export function readEnquiryEmailConfig(
 
 export function formattedFromAddress(fromEmail: string) {
   if (fromEmail.includes("<")) return fromEmail
+  // Keep the verified ReputeDefend mailbox identity until email migration.
   return `ReputeDefend <${fromEmail}>`
 }
 

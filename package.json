@@ -1,7 +1,7 @@
 {
   "name": "v0-project",
   "version": "1.0.0",
-  "description": "ReputeDefend web application – Google Business Profile recovery and review protection",
+  "description": "ProfileRelaunch web application – Google Business Profile recovery and review protection",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",

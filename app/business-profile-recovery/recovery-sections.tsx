@@ -77,7 +77,7 @@ export function RecoveryHero() {
       <div>
         <Eyebrow>Google Business Profile Protection &amp; Recovery</Eyebrow>
         <h1 id="recovery-title">When your Google Business Profile goes down, your business shouldn&apos;t be <span>left guessing.</span></h1>
-        <p className={s.lead}>A suspension, failed verification or loss of access can affect one of the main places customers use to find, contact and assess your business. ReputeDefend helps you understand what changed, identify the evidence that matters and prepare the strongest appropriate recovery route.</p>
+        <p className={s.lead}>A suspension, failed verification or loss of access can affect one of the main places customers use to find, contact and assess your business. ProfileRelaunch helps you understand what changed, identify the evidence that matters and prepare the strongest appropriate recovery route.</p>
         <div className={s.actions}>
           <HelpLink>Tell us what happened</HelpLink>
           <a href="#recovery-help" className={s.secondaryButton}>See how recovery support works <ArrowDown size={18} aria-hidden="true" /></a>
@@ -98,7 +98,7 @@ const trustStrip = [
 
 export function RecoveryTrustStrip() {
   return (
-    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend handles profile recovery enquiries">
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ProfileRelaunch handles profile recovery enquiries">
       <ul>
         {trustStrip.map(({ label, icon: Icon }) => (
           <li key={label}>
@@ -208,7 +208,7 @@ export function RecoveryProcess() {
           <Eyebrow>How it works</Eyebrow>
           <h2 id="process-title">Start with what you know.</h2>
         </div>
-        <Link className={s.textLink} href="/how-it-works">See the full ReputeDefend process <ArrowRight size={18} aria-hidden="true" /></Link>
+        <Link className={s.textLink} href="/how-it-works">See the full ProfileRelaunch process <ArrowRight size={18} aria-hidden="true" /></Link>
       </div>
       <ol className={s.processList}>
         {processSteps.map(({ title, body }, index) => (
@@ -251,7 +251,7 @@ export function RecoveryTrust() {
   return (
     <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
       <div className={s.trustIntro}>
-        <Eyebrow>Why ReputeDefend</Eyebrow>
+        <Eyebrow>Why ProfileRelaunch</Eyebrow>
         <h2 id="trust-title">Clear recovery support when the situation is anything but clear.</h2>
       </div>
       <ul className={s.trustGrid}>
@@ -265,7 +265,7 @@ export function RecoveryTrust() {
       </ul>
       <div className={s.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google makes the final decision on Business Profile reinstatement and enforcement. ReputeDefend focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate recovery process in a stronger position.</p>
+        <p>Google makes the final decision on Business Profile reinstatement and enforcement. ProfileRelaunch focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate recovery process in a stronger position.</p>
       </div>
     </section>
   )

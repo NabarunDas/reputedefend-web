@@ -69,7 +69,7 @@ export function HomeHero() {
         <div className={styles.heroCopy}>
           <Eyebrow>{homepageHero.eyebrow}</Eyebrow>
           <h1 id="home-title">
-            {homepageHero.titleLines[0]}
+            <span className={styles.titleMain}>{homepageHero.titleLines[0]}</span>
             <span>{homepageHero.titleLines[1]}</span>
           </h1>
           <p className={styles.lead}>{homepageHero.lead}</p>

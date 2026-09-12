@@ -1,249 +1,420 @@
-export const howDescription =
-  "See how ProfileRelaunch works: share your Google Business Profile or review issue, receive a human evidence-led assessment, understand the recommended route, and choose whether you want help carrying it through."
+import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+
+const recovery = pricingGroups[0]
+const review = pricingGroups[1]
+const guard = pricingGroups[2]
+const guidedRecovery = recovery.items[0]
+const managedRecovery = recovery.items[1]
+const guidedReview = review.items[0]
+const managedReview = review.items[1]
+const guardPlan = guard.items[0]
+
+export const howHelpHref = "/get-help"
+export const howPricingHref = "/pricing"
+export const howRecoveryHref = "/business-profile-recovery"
+export const howReviewHref = "/review-protection"
+
+export const howSeo = {
+  titlePage: "How It Works — Google Profile Recovery & Review Process",
+  description:
+    "How ProfileRelaunch works: tell us what happened, receive a human assessment of your Google Business Profile or review issue, then choose Guided or Managed support. Google Connect is coming soon.",
+} as const
 
 export const howHero = {
   eyebrow: "How ProfileRelaunch works",
-  titleBefore: "A clear process for situations that ",
-  titleAccent: "rarely feel clear.",
+  titleLines: ['From “what happened?”', "to a clear next move."] as const,
   lead:
-    "You don't need to diagnose the issue before contacting us. Tell us what happened, what Google has told you and what you have already tried. A human reviews the situation, identifies what matters and helps you understand the strongest appropriate route forward.",
-  primaryCta: "Tell us what happened",
-  secondaryCta: "See what happens next",
-  note: "Human case review • Evidence-led assessment • Clear next steps",
-}
+    "You do not need to diagnose the problem before you start. Tell us what changed, what Google has told you and what you have already tried. We review the situation, identify what matters and explain the strongest appropriate route before you decide whether you want paid support.",
+  primaryCta: "Start your assessment",
+  primaryHref: howHelpHref,
+  secondaryCta: "View pricing",
+  secondaryHref: howPricingHref,
+  supportLine: "Human-reviewed • Evidence-led • Clear recommendation",
+} as const
 
-export const howVisualSteps = [
-  { n: "01", title: "You share the situation" },
-  { n: "02", title: "We review & clarify" },
-  { n: "03", title: "You understand the options" },
-  {
-    n: "04",
-    title: "You decide how to proceed",
-    support: "Act on the recommendation yourself or ask us to help carry it through.",
-  },
-] as const
-
-export const howVisualCaption =
-  "A clear route from uncertainty to an informed next step."
+export const howVisual = {
+  chrome: ["Case journey", "How it works"] as const,
+  stages: [
+    {
+      label: "Start",
+      items: ["Tell us what happened"],
+    },
+    {
+      label: "Assess",
+      items: ["Issue", "Timeline", "Evidence", "Previous attempts"],
+    },
+    {
+      label: "Recommend",
+      items: ["Recovery", "Challenge/report", "Professional response", "Specialist review", "No paid support yet"],
+    },
+    {
+      label: "Choose",
+      items: ["Guided", "Managed"],
+    },
+  ],
+} as const
 
 export const howTrustStrip = [
-  "Human-reviewed enquiries",
-  "No payment to submit",
-  "No passwords or verification codes",
-  "Independent of Google",
+  "Human-reviewed assessment",
+  "Evidence-led recommendation",
+  "Guided or Managed if you want support",
+  earlyAccessLabel,
 ] as const
 
-export const howJourney = {
-  id: "what-happens-next",
-  eyebrow: "What happens next",
-  title: "From your enquiry to a clearer decision.",
+export const howStart = {
+  eyebrow: "How you begin",
+  title: "Two ways to start. One assessment process.",
   lead:
-    "The first stage is about understanding the situation and identifying the next step that makes sense. If you later want help carrying that recommendation through, the type of support depends on the problem.",
-}
-
-export const journeySteps = [
-  {
-    id: "tell-us",
-    n: "01",
+    "Both routes feed the same human review. Today you tell us what happened. A Google connection is planned for later, once a supported integration is available.",
+  live: {
+    status: "Available now",
     title: "Tell us what happened",
-    body: "Share the issue, when you noticed it, any relevant links or messages and what you have already tried. You do not need to diagnose the problem first.",
+    copy:
+      "Describe what changed, share links, notices or screenshots where you have them, and tell us what you have already tried. A person reviews it. This remains the live production route even after automation exists.",
+    points: [
+      "Describe what changed",
+      "Provide links, notices or screenshots where available",
+      "Explain previous attempts",
+      "Human assessment",
+      "Permanent route",
+    ],
+    cta: "Start your assessment",
+    href: howHelpHref,
   },
-  {
-    id: "review",
-    n: "02",
-    title: "We review and clarify",
-    body: "A human reviews what you send. If something important is missing or unclear, we'll explain what additional information may help and why.",
+  future: {
+    status: "Coming soon",
+    title: "Connect Google",
+    copy:
+      "A future authorised connection, intended to retrieve supported Business Profile and review information where Google permits. Customer authorisation would be required. The same assessment process would follow once information is retrieved.",
+    points: [
+      "Authorised connection, when supported",
+      "Retrieve permitted profile or review information",
+      "Customer authorisation required",
+      "Same assessment process after retrieval",
+    ],
+    note: "Not live yet. Pending supported integration and API availability. This page does not offer a live Google connection.",
   },
-  {
-    id: "recommend",
-    n: "03",
-    title: "We explain the recommended next step",
-    body: "We bring the facts, available evidence and relevant process together and explain the route we believe makes sense — and why.",
-  },
-  {
-    id: "decide",
-    n: "04",
-    title: "You decide how to proceed",
-    body: "You can act on the recommendation yourself or ask ProfileRelaunch to help carry the next stage through — organising the work so you do not have to piece the evidence, wording and process together alone.",
-  },
-] as const
+} as const
 
 export const howSend = {
   eyebrow: "What to send",
   title: "Start with what you have.",
   lead:
-    "A useful enquiry usually starts with the basics. If something is missing, you can still contact us — we'll tell you if more information may help.",
+    "A useful assessment does not require a perfect case file. Send the picture as it stands. If something material is missing, we will say so.",
   items: [
     "A short description of what happened",
-    "When the issue started",
-    "Business Profile or review link, if available",
-    "Relevant Google messages or notices",
-    "What you have already tried",
-    "Useful screenshots or supporting information",
+    "When the issue began",
+    "Business Profile or review link",
+    "Google messages or notices",
+    "Relevant screenshots",
+    "Previous appeal or report attempts",
+    "Google's previous response, if any",
+    "Relevant supporting business evidence",
   ],
-  safety: "Never send passwords, verification codes or account credentials.",
-  safetyNote:
-    "If an action needs to be taken inside your Google account, we'll explain what you need to do rather than asking you to hand over login details.",
-}
+  safety: "Never send passwords, OTPs, verification codes or security answers.",
+  safetyNote: "Avoid unnecessary sensitive personal information. If Google requires an owner-only step, we will explain what you need to complete yourself.",
+} as const
 
 export const howAssess = {
-  eyebrow: "How we assess the situation",
-  title: "We look at the whole position before recommending an action.",
+  eyebrow: "Human assessment",
+  title: "A person reviews the case before we recommend a route.",
   lead:
-    "A useful review or profile-recovery assessment brings together what happened, the available evidence, the process that may apply and any gaps that could materially affect the recommendation.",
+    "Automation may assist later. The customer promise is human QA: someone reads the situation, checks what the information actually supports, and explains a recommendation. We do not claim knowledge of private or internal Google enforcement data.",
   items: [
+    { title: "What happened", body: "The event, the listing or review concerned, and how it is affecting the business." },
+    { title: "Timeline", body: "When it started, what changed, and the order of notices, appeals or reports." },
+    { title: "What Google has communicated", body: "The wording of messages, notices or replies you can share — not hidden internal systems." },
+    { title: "Available evidence", body: "Links, screenshots, records and other material that can support or qualify the picture." },
+    { title: "Previous attempts", body: "What has already been submitted, and how Google responded if a response exists." },
+    { title: "Gaps and contradictions", body: "Missing facts, inconsistent records, or points that would change the recommendation." },
+    { title: "The process that appears relevant", body: "Recovery, challenge, report, professional response, specialist review — or no paid support yet." },
+  ],
+} as const
+
+export const howOutcomes = {
+  eyebrow: "Assessment outcomes",
+  title: "A recommendation category — not a score.",
+  lead:
+    "These are judgement labels after a human review. They are not statistical probabilities, confidence percentages or an automated ranking engine.",
+  recovery: [
     {
-      n: "01",
-      title: "What happened",
-      body: "The event, timeline and relevant changes.",
+      label: "Strong recovery fit",
+      copy: "The information supports progressing with structured Profile Recovery.",
     },
     {
-      n: "02",
-      title: "What can be supported",
-      body: "Messages, links, records and other useful evidence.",
+      label: "Moderate recovery fit",
+      copy: "Recovery may be appropriate, but important evidence or clarification is still needed.",
     },
     {
-      n: "03",
-      title: "Which route fits",
-      body: "The recovery, verification, reporting, challenge, response or other process that appears relevant.",
+      label: "Specialist review required",
+      copy: "The situation is more complex and should not be pushed into a standard route yet.",
     },
     {
-      n: "04",
-      title: "What could affect the route",
-      body: "Any missing information, previous action or unresolved point that may materially change what should happen next.",
+      label: "No paid support recommended yet",
+      copy: "The available information does not currently justify paid execution support.",
     },
   ],
-}
+  reviewNote: {
+    title: "For Review Protection, the recommendation may instead be:",
+    items: [
+      "Challenge or report route",
+      "Professional response route",
+      "More evidence needed",
+      "No further platform action recommended yet",
+    ],
+  },
+} as const
 
-export const howExpect = {
-  eyebrow: "After we review your enquiry",
-  title: "You should come away knowing what the next step is — and why.",
+export const howValue = {
+  eyebrow: "What the free assessment covers",
+  title: "The assessment tells you the direction. Paid support prepares or manages the execution.",
   lead:
-    "The initial review is designed to turn a confusing situation into a clearer decision: what appears to be happening, what matters, and which next step makes sense from here.",
-  items: [
-    {
-      title: "An initial view of the situation",
-      body: "A clear explanation of how we understand the issue based on the information available.",
-    },
-    {
-      title: "The information that matters",
-      body: "If something is missing or could materially change the assessment, we'll explain what it is and why it matters.",
-    },
-    {
-      title: "A recommended route",
-      body: "We'll explain the next step we believe is appropriate rather than leaving you with a generic list of options.",
-    },
-    {
-      title: "Why we recommend it",
-      body: "You should understand what supports the recommendation and what would make us reconsider it.",
-    },
+    "The first review should reduce uncertainty. It is not the Guided or Managed execution package.",
+  gives: {
+    title: "The assessment should give you",
+    items: [
+      "An initial understanding of the situation",
+      "What information matters",
+      "The recommended route",
+      "Why that route appears appropriate",
+      "What kind of paid support is available if you want it",
+    ],
+  },
+  holds: {
+    title: "It does not include, before purchase",
+    items: [
+      "Complete appeal wording",
+      "A full evidence pack",
+      "A detailed submission script",
+      "A complete challenge document",
+      "Field-by-field paid submission instructions",
+    ],
+  },
+} as const
+
+export const howChoice = {
+  eyebrow: "Step 4",
+  title: "Choose how you want us to help.",
+  lead:
+    "If paid support is appropriate and you want it, this is the commercial choice. Both options start from the same assessment. The difference is who prepares the case, who submits, and when you pay.",
+  guided: {
+    kicker: "Guided",
+    line: "We prepare it. You submit it.",
+    copy:
+      "We prepare the evidence and case material, wording and instructions. You make the relevant submission through the appropriate Google route.",
+    prices: [
+      { service: "Profile Recovery", figure: guidedRecovery.price, cadence: guidedRecovery.cadence },
+      { service: "Review Protection", figure: guidedReview.price, cadence: "upfront" },
+    ],
+  },
+  managed: {
+    kicker: "Managed",
+    line: "You authorise us. We manage the case.",
+    copy:
+      "You authorise agreed case work. We organise and manage the permitted work. Owner-only, security and verification steps remain with you. The success fee applies only on the defined successful outcome under the service terms.",
+    prices: [
+      {
+        service: "Profile Recovery",
+        figure: managedRecovery.detail ?? "£0 today",
+        cadence: `${managedRecovery.price} ${managedRecovery.cadence}`,
+      },
+      {
+        service: "Review Protection",
+        figure: managedReview.detail ?? "£0 today",
+        cadence: `${managedReview.price} ${managedReview.cadence}`,
+      },
+    ],
+  },
+  note: pricingNote,
+} as const
+
+export const howAuth = {
+  eyebrow: "Managed authorisation",
+  title: "Managed does not mean handing over your Google password.",
+  lead:
+    "Authorisation is permission to carry out agreed case work. It is not unrestricted account control, and it is never a request for login secrets.",
+  weMay: {
+    title: "Depending on the case, Managed may involve",
+    items: [
+      "Customer authorisation",
+      "Manager access where appropriate and supported",
+      "ProfileRelaunch organising evidence",
+      "ProfileRelaunch preparing case material",
+      "Permitted profile or case actions",
+      "Monitoring responses",
+      "Helping coordinate the next step",
+    ],
+  },
+  youKeep: {
+    title: "You still perform",
+    items: [
+      "Password and security actions",
+      "OTPs",
+      "Identity and security verification",
+      "Owner-only steps",
+      "Anything Google requires the account owner to complete personally",
+    ],
+  },
+  never: "We never ask for passwords, OTPs, security codes or security answers.",
+} as const
+
+export const howRecoveryPath = {
+  eyebrow: "Profile Recovery path",
+  title: "When the issue is the listing itself.",
+  steps: [
+    "Issue",
+    "Assessment",
+    "Recovery recommendation",
+    "Guided or Managed",
+    "Evidence and case preparation",
+    "Submission or management",
+    "Google platform decision",
   ],
-}
+  cta: "Explore Profile Recovery",
+  href: howRecoveryHref,
+} as const
 
-export const howPaths = {
-  eyebrow: "If you want further support",
-  title: "What carrying the recommendation through can look like.",
-  lead:
-    "The initial review helps clarify the route. If you want ProfileRelaunch to carry more of the work forward, we can help organise the evidence, prepare the material and support the next stage rather than leaving you to piece the process together alone.",
-  items: [
+export const howReviewPath = {
+  eyebrow: "Review Protection path",
+  title: "When the issue is a review.",
+  steps: [
+    "Review concern",
+    "Evidence and context assessment",
+    "Challenge/report or professional response",
+    "Guided or Managed",
+    "Preparation or management",
+    "Google removal decision where applicable",
+  ],
+  cta: "Explore Review Protection",
+  href: howReviewHref,
+} as const
+
+export const howPricing = {
+  eyebrow: earlyAccessLabel,
+  title: "Clear fees before you choose.",
+  lead: "Detailed terms live on Pricing and in the service terms. This is the commercial summary.",
+  groups: [
     {
-      href: "/business-profile-recovery",
-      cue: "Suspension • Access • Verification",
-      title: "Business Profile Protection & Recovery",
-      path: [
-        "Organise relevant evidence",
-        "Prepare recovery or appeal material",
-        "Review previous recovery attempts",
-        "Support the next stage",
+      title: recovery.title,
+      items: [
+        { name: "Guided", figure: guidedRecovery.price, cadence: `${guidedRecovery.cadence}. ${guidedRecovery.detail}` },
+        {
+          name: "Managed",
+          figure: managedRecovery.detail ?? "£0 today",
+          cadence: `${managedRecovery.price} ${managedRecovery.cadence}`,
+        },
       ],
-      cta: "Explore Profile Recovery",
     },
     {
-      href: "/review-protection",
-      cue: "Suspicious or damaging reviews",
-      title: "Review Protection",
-      path: [
-        "Organise the review evidence",
-        "Prepare reporting or challenge material",
-        "Shape a professional response where appropriate",
-        "Support what happens next",
+      title: review.title,
+      items: [
+        { name: "Guided", figure: guidedReview.price, cadence: "upfront. We prepare it. You submit it." },
+        {
+          name: "Managed",
+          figure: managedReview.detail ?? "£0 today",
+          cadence: `${managedReview.price} ${managedReview.cadence}`,
+        },
       ],
-      cta: "Explore Review Protection",
+    },
+    {
+      title: guard.title,
+      items: [
+        {
+          name: guardPlan.name,
+          figure: guardPlan.price,
+          cadence: guardPlan.cadence,
+        },
+      ],
     },
   ],
-  note: "The exact work depends on the situation. If you want further paid support, we'll explain what we can help with and the fee before any paid work begins.",
-}
+  cta: "View full pricing",
+  href: howPricingHref,
+  note: pricingNote,
+} as const
 
-export const howTrust = {
-  eyebrow: "What you can expect from us",
-  title: "Clear guidance from the first review to the next action.",
+export const howGuard = {
+  eyebrow: "After the immediate case",
+  title: "Optional monitoring once the situation is stable.",
   lead:
-    "We keep the work focused on the facts, the evidence and the route that appears strongest for the situation.",
-  principles: [
-    {
-      title: "Human review",
-      body: "We review the situation in context rather than automatically generating a generic answer.",
-    },
-    {
-      title: "Facts before assumptions",
-      body: "We distinguish what the information supports from what is possible, suspected or still unknown.",
-    },
-    {
-      title: "Clear recommendations",
-      body: "We explain what we think the next step should be and why.",
-    },
-    {
-      title: "Practical support",
-      body: "If you want help carrying the recommendation through, we focus on preparing and supporting the appropriate next stage rather than leaving you with generic advice.",
-    },
+    "Once the immediate problem is resolved or stabilised, Relaunch Guard can provide ongoing Profile + Review monitoring so relevant changes are easier to notice and act on.",
+  figure: guardPlan.price,
+  cadence: guardPlan.cadence,
+  model: "Early Access managed monitoring. It is not a self-service dashboard, and it does not claim impossible real-time Google suspension detection.",
+} as const
+
+export const howTimeline = {
+  eyebrow: "The operating process",
+  title: "From the first message to Google's decision.",
+  steps: [
+    { n: "01", title: "Tell us what happened", body: "Share the situation, links, notices and what you have already tried." },
+    { n: "02", title: "Human assessment", body: "A person reviews the issue, evidence, timeline and previous attempts." },
+    { n: "03", title: "Receive the recommendation", body: "We explain the route that appears strongest, and why." },
+    { n: "04", title: "Choose how you want us to help", body: "Guided: we prepare it, you submit it. Managed: you authorise us, we manage the case." },
+    { n: "05", title: "Prepare or manage the case", body: "Paid support organises evidence, wording and the agreed next stage." },
+    { n: "06", title: "Google makes the relevant platform decision", body: "Reinstatement, review removal and similar outcomes remain Google's to decide." },
+    { n: "07", title: "Optional ongoing monitoring", body: "Relaunch Guard can watch Profile + Review changes after the immediate case." },
   ],
-  callout:
-    "Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ProfileRelaunch focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.",
-}
+} as const
 
 export const howFaqs = [
   {
-    q: "What happens after I submit a case?",
-    a: "A human reviews what you send. If something important is missing or unclear, we may ask for clarification. We then explain how we understand the situation and the next step we believe makes sense.",
+    q: "Do I need to know what caused the problem?",
+    a: "No. Start with what happened, what changed and what Google has told you. Diagnosis is part of the assessment, not a requirement before you contact us.",
   },
   {
-    q: "Do I need all my evidence before contacting you?",
-    a: "No. Start with what you have: a short description, timing, any relevant links or notices, and what you have already tried. If more information would help, we'll explain what and why.",
+    q: "Do I need all my evidence before starting?",
+    a: "No. Start with what you have. If something material is missing, we will explain what would help and why. A useful enquiry does not require a perfect case file.",
   },
   {
-    q: "Will you need access to my Google account?",
-    a: "You should not send passwords, verification codes or account credentials. We work from the information you share. If an action needs to be taken inside your account, we'll explain what you need to do.",
+    q: "Is the assessment automated?",
+    a: "No. A person reviews the case before we recommend a route. Automation may assist later, but the customer promise is human QA — not an AI score or a generic generated answer.",
   },
   {
-    q: "What if you need more information from me?",
-    a: "We'll explain what additional information may help and why it matters. You can still contact us if the picture is incomplete — a useful enquiry does not require a perfect file.",
+    q: "Can I connect my Google account?",
+    a: "Not yet. Connect Google is Coming Soon, pending supported integration and API availability. There is no launch date. Until then, tell us what happened — that is the live production route.",
   },
   {
-    q: "What can further support include?",
-    a: "Depending on the situation, further support may include organising evidence, preparing recovery, appeal, reporting or challenge material, reviewing previous attempts, helping shape a professional public response, or supporting the next stage after new information or a platform response. The exact scope and any fee are explained before you decide.",
+    q: "Will you need my password?",
+    a: "No. Never send passwords, OTPs, verification codes or security answers. Owner-only and security steps stay with you. Managed authorisation is permission for agreed case work, not a request for login secrets.",
   },
   {
-    q: "Can you guarantee the outcome or how long Google will take?",
-    a: "No. Google controls platform outcomes and timeframes, including profile reinstatement and review removal. We can help you understand the situation and take a clearer next step; we cannot guarantee what Google will decide or when.",
+    q: "What is Guided vs Managed?",
+    a: "Guided means we prepare it and you submit it. Managed means you authorise us and we manage the case. Guided Profile Recovery is £99 upfront; Guided Review is £59 upfront. Managed Profile Recovery is £0 today and £299 on successful restoration; Managed Review is £0 today and £149 on successful removal.",
   },
-]
+  {
+    q: "What does authorisation mean?",
+    a: "Authorisation is your permission for ProfileRelaunch to carry out agreed case work. Depending on the case that may include organising evidence, preparing material, permitted actions and coordinating next steps. It does not mean handing over your Google password or unrestricted account control.",
+  },
+  {
+    q: "Can you submit everything for me?",
+    a: "No. Some Google processes can only be completed by the account owner. Even on Managed, you still perform passwords, OTPs, identity checks and any owner-only step Google requires personally.",
+  },
+  {
+    q: "What if you don't recommend paid support?",
+    a: "Then we will say so. One possible outcome is that paid execution support is not justified yet — or that a professional response, more evidence, or no further platform action is the stronger move.",
+  },
+  {
+    q: "When do I pay?",
+    a: "The assessment enquiry does not require payment to submit. Guided is an upfront fee if you choose that route. Managed is £0 today, with a success fee only when the defined successful outcome is achieved under the service terms.",
+  },
+  {
+    q: "What happens after Google responds?",
+    a: "We help you understand what the response means for the next step. Google still controls the platform decision and the timeframe. Optional Relaunch Guard monitoring can follow once the immediate case is resolved or stabilised.",
+  },
+] as const
 
 export const howFaqIntro = {
-  eyebrow: "Common questions",
-  title: "Questions before you start.",
-  lead: "A few practical answers about the initial review, what information helps and what further support may involve.",
-}
+  eyebrow: "Process questions",
+  title: "How the operating model actually works.",
+  lead: "These answers cover starting, assessment, authorisation and payment — not every service-specific FAQ.",
+} as const
 
 export const howClose = {
-  eyebrow: "Ready to start?",
-  title: "You don't need to have the answer before you ask for help.",
-  lead:
-    "Tell us what happened, what changed and what you have already tried. We'll review the situation, explain the next step that appears strongest and, if you want further help, show you what carrying that recommendation through could involve.",
-  notes: [
-    "No payment is required to submit your enquiry.",
-    "Please don't send passwords or verification codes.",
-  ],
-  panel:
-    "Start with the situation as it stands. A human will review it, explain the next step that makes sense and help you understand what happens next.",
-  cta: "Tell us what happened",
-}
+  eyebrow: "Start the process",
+  title: "You bring the situation. We'll help make the route clear.",
+  lead: "Start with what changed, what Google told you and what you've already tried.",
+  primaryCta: "Start your assessment",
+  primaryHref: howHelpHref,
+  secondaryCta: "View pricing",
+  secondaryHref: howPricingHref,
+} as const

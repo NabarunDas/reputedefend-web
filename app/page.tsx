@@ -1,24 +1,24 @@
 import type { Metadata } from "next"
 import {
   HomeConversion,
-  HomeExpertise,
   HomeFaq,
+  HomeGuard,
   HomeHero,
   Homepage,
+  HomePricing,
   HomeProcess,
   HomeServices,
   HomeSituations,
-  HomeTrust,
   HomeTrustStrip,
+  HomeWhy,
 } from "@/components/homepage"
 import { FaqStructuredData } from "@/components/structured-data"
-import { homepageFaqs } from "@/lib/homepage-content"
+import { homepageFaqs, homepageSeo } from "@/lib/homepage-content"
 import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
-const title = pageTitle("Google Business Profile Recovery & Review Protection")
-const description =
-  "Human, evidence-led support for Google Business Profile suspensions, access and verification problems, and suspicious or damaging Google reviews."
+const title = pageTitle(homepageSeo.titlePage)
+const description = homepageSeo.description
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -31,14 +31,15 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <Homepage>
-      <FaqStructuredData questions={homepageFaqs} />
+      <FaqStructuredData questions={homepageFaqs.map(({ q, a }) => ({ q, a }))} />
       <HomeHero />
       <HomeTrustStrip />
       <HomeSituations />
       <HomeServices />
-      <HomeExpertise />
       <HomeProcess />
-      <HomeTrust />
+      <HomePricing />
+      <HomeGuard />
+      <HomeWhy />
       <HomeFaq />
       <HomeConversion />
     </Homepage>

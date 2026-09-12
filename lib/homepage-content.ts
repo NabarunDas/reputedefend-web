@@ -13,7 +13,7 @@ const guardPlan = relaunchGuard.items[0]
 export const homepageSeo = {
   titlePage: "Google Business Profile Recovery & Review Protection",
   description:
-    "Google Business Profile recovery and review protection for UK businesses. Human-reviewed help when a profile is suspended, inaccessible or stuck — or a suspicious review is damaging trust.",
+    "Google Business Profile recovery and review protection for businesses. Human-reviewed help when a profile is suspended, inaccessible or stuck — or a suspicious review is damaging trust.",
 } as const
 
 export const homepageHero = {
@@ -36,7 +36,7 @@ export const homepageTrustStrip = [
 ] as const
 
 export const homepageProblems = {
-  eyebrow: "Problem recognition",
+  eyebrow: "Common profile & review issues",
   title: "Has your Google presence suddenly changed?",
   lead:
     "These are the situations we assess. You do not need a diagnosis before you contact us — only a clear account of what changed.",
@@ -170,13 +170,13 @@ export const homepageGuard = {
   eyebrow: relaunchGuard.title,
   title: "Profile + Review monitoring, once the immediate issue is in hand.",
   lead:
-    "Relaunch Guard is Profile + Review monitoring for a location. It is intended to watch for relevant changes in Google Business Profile health and review activity. It is offered as Early Access monitoring — we will confirm what is in place when you add it, and there is no self-serve dashboard yet.",
+    "Relaunch Guard is Early Access Profile + Review monitoring for a location. We monitor relevant changes in Google Business Profile health and review activity and confirm the monitoring coverage before activation. Early Access monitoring is currently delivered as a managed service rather than through a self-serve dashboard.",
   points: [
     "Google Business Profile health and status changes",
     "Review activity on the listing",
   ],
   price: `${guardPlan.price} ${guardPlan.cadence}`,
-  cta: "See Relaunch Guard on pricing",
+  cta: "View Relaunch Guard pricing",
   href: "/pricing",
 } as const
 

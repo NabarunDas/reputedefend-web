@@ -565,7 +565,7 @@
   background: var(--surface);
 }
 
-.valueHolds {
+.valueSplit article.valueHolds {
   background: var(--ink);
   color: var(--paper);
   border-color: transparent;
@@ -582,7 +582,7 @@
 }
 
 .valueSplit article:first-child li svg { color: var(--green); margin-top: 2px; }
-.valueHolds li { color: color-mix(in srgb, var(--paper) 86%, transparent); padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--lime) 50%, transparent); }
+.valueSplit article.valueHolds li { color: color-mix(in srgb, var(--paper) 86%, transparent); padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--lime) 50%, transparent); }
 
 .choice { padding-block: 56px; }
 
@@ -625,7 +625,7 @@
   padding: 28px;
 }
 
-.choiceManaged {
+.choiceFork article.choiceManaged {
   background: var(--ink);
   color: var(--paper);
   border-color: transparent;
@@ -640,7 +640,7 @@
   color: var(--green);
 }
 
-.choiceManaged .modelKicker { color: var(--lime); }
+.choiceFork article.choiceManaged .modelKicker { color: var(--lime); }
 
 .choiceFork h3 { margin-top: 12px; font-size: clamp(22px, 2.4vw, 28px); }
 
@@ -650,7 +650,7 @@
   font-size: 15px;
 }
 
-.choiceManaged > p:not(.modelKicker) {
+.choiceFork article.choiceManaged > p:not(.modelKicker) {
   color: color-mix(in srgb, var(--paper) 78%, transparent);
 }
 
@@ -664,7 +664,7 @@
   border-top: 1px solid var(--edge);
 }
 
-.choiceManaged dl div { border-top-color: color-mix(in srgb, var(--paper) 14%, transparent); }
+.choiceFork article.choiceManaged dl div { border-top-color: color-mix(in srgb, var(--paper) 14%, transparent); }
 
 .choiceFork dt { font-size: 13px; font-weight: 750; }
 .choiceFork dd { margin: 0; text-align: right; }
@@ -682,7 +682,7 @@
   color: var(--muted-strong);
 }
 
-.choiceManaged dd span { color: color-mix(in srgb, var(--paper) 68%, transparent); }
+.choiceFork article.choiceManaged dd span { color: color-mix(in srgb, var(--paper) 68%, transparent); }
 
 .choiceOr {
   align-self: center;

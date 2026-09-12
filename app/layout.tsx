@@ -4,22 +4,27 @@ import "./globals.css"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { OrganizationStructuredData } from "@/components/structured-data"
+import {
+  brandColors,
+  brandDescription,
+  brandName,
+  brandSiteUrl,
+  defaultTitle,
+  titleTemplate,
+} from "@/lib/brand"
 import { socialTwitter } from "@/lib/social-metadata"
 
 const bodyFont = Inter({ subsets: ["latin"], variable: "--font-body" })
 const displayFont = Manrope({ subsets: ["latin"], variable: "--font-display" })
 
-const title = "ReputeDefend | Practical reputation support"
-const description = "Practical support for Google Business Profile recovery and review protection."
-
 export const metadata: Metadata = {
-  metadataBase: new URL("https://reputedefend.com"),
-  applicationName: "ReputeDefend",
+  metadataBase: new URL(brandSiteUrl),
+  applicationName: brandName,
   title: {
-    default: title,
-    template: "%s | ReputeDefend",
+    default: defaultTitle,
+    template: titleTemplate,
   },
-  description,
+  description: brandDescription,
   icons: {
     icon: [{ url: "/icon.png", type: "image/png" }],
     shortcut: "/icon.png",
@@ -28,18 +33,18 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_GB",
-    siteName: "ReputeDefend",
-    title,
-    description,
+    siteName: brandName,
+    title: defaultTitle,
+    description: brandDescription,
     url: "/",
   },
-  twitter: socialTwitter({ title, description }),
+  twitter: socialTwitter({ title: defaultTitle, description: brandDescription }),
   robots: process.env.VERCEL_ENV === "production"
     ? { index: true, follow: true }
     : { index: false, follow: false },
 }
 
-export const viewport: Viewport = { themeColor: "#f7f8f3", width: "device-width", initialScale: 1 }
+export const viewport: Viewport = { themeColor: brandColors.paper, width: "device-width", initialScale: 1 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

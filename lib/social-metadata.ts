@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { ogImage } from "@/lib/brand"
+import { brandName, ogImage } from "@/lib/brand"
 
 const socialImage = {
   url: "/opengraph-image",
@@ -24,7 +24,7 @@ export function socialOpenGraph({
 }): NonNullable<Metadata["openGraph"]> {
   return {
     type: "website",
-    siteName: "ReputeDefend",
+    siteName: brandName,
     title,
     description,
     url: path,

@@ -1,1 +1,8 @@
-import type {MetadataRoute} from "next";export default function sitemap():MetadataRoute.Sitemap{if(process.env.VERCEL_ENV!=="production")return [];return ["/","/business-profile-recovery","/review-protection","/how-it-works","/about","/contact","/get-help","/privacy","/terms","/disclaimer"].map(url=>({url:`https://reputedefend.com${url}`}))}
+import type { MetadataRoute } from "next"
+import { brandSiteUrl } from "@/lib/brand"
+import { sitemapPaths } from "@/lib/site-nav"
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  if (process.env.VERCEL_ENV !== "production") return []
+  return sitemapPaths.map((url) => ({ url: `${brandSiteUrl}${url}` }))
+}

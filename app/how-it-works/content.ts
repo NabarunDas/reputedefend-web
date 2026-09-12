@@ -1,5 +1,5 @@
 export const howDescription =
-  "See how ReputeDefend works: share your Google Business Profile or review issue, receive a human evidence-led assessment, understand the recommended route, and choose whether you want help carrying it through."
+  "See how ProfileRelaunch works: share your Google Business Profile or review issue, receive a human evidence-led assessment, understand the recommended route, and choose whether you want help carrying it through."
 
 export const howHero = {
   eyebrow: "How ReputeDefend works",

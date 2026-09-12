@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
 import { recoveryDescription, recoveryFaqs } from "./content"
+import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   RecoveryAssessment,
@@ -17,7 +18,7 @@ import {
 } from "./recovery-sections"
 import styles from "./recovery.module.css"
 
-const title = "Google Business Profile Recovery & Suspension Help | ReputeDefend"
+const title = pageTitle("Google Business Profile Recovery & Suspension Help")
 export const metadata: Metadata = {
   title: { absolute: title },
   description: recoveryDescription,

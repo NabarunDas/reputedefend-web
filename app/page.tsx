@@ -13,9 +13,10 @@ import {
 } from "@/components/homepage"
 import { FaqStructuredData } from "@/components/structured-data"
 import { homepageFaqs } from "@/lib/homepage-content"
+import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
-const title = "Google Business Profile Recovery & Review Protection | ReputeDefend"
+const title = pageTitle("Google Business Profile Recovery & Review Protection")
 const description =
   "Human, evidence-led support for Google Business Profile suspensions, access and verification problems, and suspicious or damaging Google reviews."
 

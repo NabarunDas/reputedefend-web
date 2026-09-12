@@ -6,9 +6,9 @@ import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./contact.module.css"
 
-const title = "Contact ReputeDefend | General Enquiries"
+const title = "Contact ProfileRelaunch | General Enquiries"
 const description =
-  "Contact ReputeDefend with a general question about our services or approach. For an active Google Business Profile or review issue, use the dedicated Get Help process so the relevant case information can be collected."
+  "Contact ProfileRelaunch with a general question about our services or approach. For an active Google Business Profile or review issue, use the dedicated Get Help process so the relevant case information can be collected."
 
 export const metadata: Metadata = {
   title: { absolute: title },

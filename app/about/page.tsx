@@ -14,9 +14,9 @@ import { isSoleTrader, legalIdentity, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./about.module.css"
 
-const title = "About ReputeDefend | Google Business Profile & Review Support"
+const title = "About ProfileRelaunch | Google Business Profile & Review Support"
 const description =
-  "Learn who operates ReputeDefend, how the service approaches Google Business Profile and review-related problems, and what evidence-led support can involve."
+  "Learn who operates ProfileRelaunch, how the service approaches Google Business Profile and review-related problems, and what evidence-led support can involve."
 
 export const metadata: Metadata = {
   title: { absolute: title },

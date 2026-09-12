@@ -9,18 +9,18 @@ import {
 } from "@/lib/legal"
 
 describe("legal identity", () => {
-  it("describes a UK sole trader trading as ReputeDefend", () => {
-    expect(legalIdentity.tradingName).toBe("ReputeDefend")
+  it("describes a UK sole trader trading as ProfileRelaunch", () => {
+    expect(legalIdentity.tradingName).toBe("ProfileRelaunch")
     expect(legalIdentity.legalName).toBe("Saswati Das")
     expect(legalIdentity.businessStructure).toBe("sole-trader")
     expect(isSoleTrader()).toBe(true)
-    expect(tradingAsLine()).toBe("Saswati Das, trading as ReputeDefend")
-    expect(legalIdentity.siteUrl).toBe("https://reputedefend.com")
+    expect(tradingAsLine()).toBe("Saswati Das, trading as ProfileRelaunch")
+    expect(legalIdentity.siteUrl).toBe("https://profilerelaunch.com")
     expect(legalIdentity.noticeUpdated).toMatch(/\d{1,2} \w+ \d{4}/)
     expect(feeWording).toMatch(/fees will be explained clearly before you decide how to proceed/)
   })
 
-  it("publishes the confirmed correspondence address and contact email", () => {
+  it("publishes the confirmed correspondence address and keeps the existing contact mailbox", () => {
     expect(legalIdentity.contactEmail).toBe("contact@reputedefend.com")
     expect(legalIdentity.postalAddress).toContain("6 Bradford Road")
     expect(legalIdentity.postalAddress).toContain("Old Town")

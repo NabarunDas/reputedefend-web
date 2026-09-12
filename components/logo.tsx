@@ -1,5 +1,5 @@
 import Image from "next/image"
-import { brandAssets, logoSize, markSize, type BrandVariant } from "@/lib/brand"
+import { brandAssets, brandName, logoSize, markSize, type BrandVariant } from "@/lib/brand"
 
 type LogoProps = {
   variant?: BrandVariant
@@ -14,12 +14,12 @@ type LogoProps = {
 }
 
 /**
- * Approved ReputeDefend lockup / mark.
+ * Approved ProfileRelaunch lockup / mark.
  *
- * Header and footer should keep importing ReputeLogo / ReputeMark.
+ * Header and footer should keep importing BrandLogo / BrandMark.
  * Swap the files in public/brand if a vector original is supplied later.
  */
-export function ReputeMark({
+export function BrandMark({
   variant = "dark",
   className,
   decorative = false,
@@ -28,7 +28,7 @@ export function ReputeMark({
   return (
     <Image
       src={brandAssets.mark[variant]}
-      alt={decorative ? "" : "ReputeDefend mark"}
+      alt={decorative ? "" : `${brandName} mark`}
       width={markSize.width}
       height={markSize.height}
       className={className}
@@ -38,7 +38,7 @@ export function ReputeMark({
   )
 }
 
-export function ReputeLogo({
+export function BrandLogo({
   variant = "dark",
   markOnly = false,
   className,
@@ -47,7 +47,7 @@ export function ReputeLogo({
 }: LogoProps) {
   if (markOnly) {
     return (
-      <ReputeMark
+      <BrandMark
         variant={variant}
         className={className}
         decorative={decorative}
@@ -59,7 +59,7 @@ export function ReputeLogo({
   return (
     <Image
       src={brandAssets.horizontal[variant]}
-      alt={decorative ? "" : "ReputeDefend"}
+      alt={decorative ? "" : brandName}
       width={logoSize.width}
       height={logoSize.height}
       className={className}

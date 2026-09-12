@@ -1,39 +1,29 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import { ReputeLogo } from "@/components/logo"
+import { BrandLogo } from "@/components/logo"
+import { brandDescriptor, brandHomeLabel, brandTagline } from "@/lib/brand"
 import { hasLegalValue, legalIdentity } from "@/lib/legal"
-
-const explore = [
-  ["Profile recovery", "/business-profile-recovery"],
-  ["Review protection", "/review-protection"],
-  ["How it works", "/how-it-works"],
-  ["About", "/about"],
-] as const
-
-const information = [
-  ["Get help", "/get-help"],
-  ["Contact", "/contact"],
-  ["Privacy", "/privacy"],
-  ["Terms", "/terms"],
-  ["Disclaimer", "/disclaimer"],
-] as const
+import { informationNav, primaryNav } from "@/lib/site-nav"
 
 export function Footer() {
   const contactEmail = hasLegalValue(legalIdentity.contactEmail) ? legalIdentity.contactEmail : undefined
 
   return (
-    <footer className="border-t border-white/10 bg-[#10261F] py-16 text-[#F7F4EC]">
+    <footer className="border-t border-white/10 bg-[var(--ink)] py-16 text-[var(--paper)]">
       <div className="container grid gap-14 md:grid-cols-[1.5fr_1fr_1fr]">
         <div>
-          <Link href="/" aria-label="ReputeDefend home" className="inline-flex items-center">
-            <ReputeLogo variant="light" className="site-logo" decorative />
+          <Link href="/" aria-label={brandHomeLabel} className="inline-flex items-center">
+            <BrandLogo variant="light" className="site-logo site-logo-footer" decorative />
           </Link>
           <p className="mt-5 max-w-xs text-sm leading-7 text-[#C9D5CE]">
-            Clear, practical support when your business reputation needs a steadier hand.
+            {brandTagline}
+          </p>
+          <p className="mt-2 max-w-xs text-[13px] leading-6 text-[#A8B8B0]">
+            {brandDescriptor}
           </p>
           <Link
             href="/get-help"
-            className="facts-cta group mt-8 inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-3 text-sm font-bold focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10261F]"
+            className="facts-cta group mt-8 inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-3 text-sm font-bold focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ink)]"
           >
             <span>Tell us what happened</span>
             <ArrowRight aria-hidden="true" size={20} />
@@ -42,7 +32,7 @@ export function Footer() {
         <div>
           <p className="mb-5 text-[.68rem] font-bold uppercase tracking-[.16em] text-[#C9D5CE]">Explore</p>
           <div className="flex flex-col gap-1 text-sm">
-            {explore.map(([label, href]) => (
+            {primaryNav.map(({ label, href }) => (
               <Link key={href} className="footer-link" href={href}>{label}</Link>
             ))}
           </div>
@@ -50,7 +40,7 @@ export function Footer() {
         <div>
           <p className="mb-5 text-[.68rem] font-bold uppercase tracking-[.16em] text-[#C9D5CE]">Information</p>
           <div className="flex flex-col gap-1 text-sm">
-            {information.map(([label, href]) => (
+            {informationNav.map(({ label, href }) => (
               <Link key={href} className="footer-link" href={href}>{label}</Link>
             ))}
             {contactEmail ? (

@@ -1,12 +1,13 @@
 import type { Metadata } from "next"
 import { Lock, Shield, UserRoundCheck, Wallet } from "lucide-react"
 import { CaseIntakeForm } from "@/components/case-intake-form"
+import { pageTitle } from "@/lib/brand"
 import { parseServiceParam } from "@/lib/enquiry"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import styles from "./get-help.module.css"
 
-const title = "Get Help With a Google Business Profile or Review Issue | ReputeDefend"
-const description = "Tell ReputeDefend about a Google Business Profile, verification, access or review issue. A human reviews the situation, identifies the information that matters and helps you understand the strongest appropriate next step."
+const title = pageTitle("Get Help With a Google Business Profile or Review Issue")
+const description = "Tell ProfileRelaunch about a Google Business Profile, verification, access or review issue. A human reviews the situation, identifies the information that matters and helps you understand the strongest appropriate next step."
 
 export const metadata: Metadata = {
   title: { absolute: title },

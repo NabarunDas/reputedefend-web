@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, HowToStructuredData } from "@/components/structured-data"
 import { howDescription, howFaqs, journeySteps } from "./content"
+import { brandName } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   HowAssess,
@@ -16,7 +17,7 @@ import {
 } from "./how-sections"
 import styles from "./how.module.css"
 
-const title = "How ReputeDefend Works | Google Reputation Support Process"
+const title = "How ProfileRelaunch Works | Google Reputation Support Process"
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -30,7 +31,7 @@ export default function HowItWorksPage() {
   return (
     <div className={`${styles.page} font-sans`}>
       <HowToStructuredData
-        name="How ReputeDefend works"
+        name={`How ${brandName} works`}
         description={howDescription}
         steps={journeySteps.map((step) => ({ name: step.title, text: step.body }))}
       />

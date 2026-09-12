@@ -1,11 +1,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { feeWording, hasLegalValue, legalIdentity, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
-const title = "Terms of use | ReputeDefend"
-const description = "Terms that apply to using the ReputeDefend website and sending an enquiry or case submission."
+const title = pageTitle("Terms of use")
+const description = "Terms that apply to using the ProfileRelaunch website and sending an enquiry or case submission."
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -100,7 +101,7 @@ const sections: LegalSection[] = [
     title: "Intellectual property",
     content: (
       <>
-        <p>The website’s design, text and other content belong to {tradingAsLine()} or its licensors, unless a page says otherwise. You may view and print pages for your own business use. You may not copy the site, present it as your own service, or use the ReputeDefend name in a way that suggests affiliation with Google or with us without permission.</p>
+        <p>The website’s design, text and other content belong to {tradingAsLine()} or its licensors, unless a page says otherwise. You may view and print pages for your own business use. You may not copy the site, present it as your own service, or use the {legalIdentity.tradingName} name in a way that suggests affiliation with Google or with us without permission.</p>
       </>
     ),
   },
@@ -168,7 +169,7 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Terms"
       title="Terms of use"
-      lead="These terms cover use of the ReputeDefend website and its enquiry forms. They do not create a paid-service contract, promise a Google decision, or replace a separate agreement if paid support is later offered."
+      lead={`These terms cover use of the ${legalIdentity.tradingName} website and its enquiry forms. They do not create a paid-service contract, promise a Google decision, or replace a separate agreement if paid support is later offered.`}
       currentPath="/terms"
       sections={sections}
     />

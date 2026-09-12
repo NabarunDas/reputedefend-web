@@ -11,7 +11,13 @@
  * Empty optional fields must not be rendered as customer-facing placeholders.
  * Sole-trader mode must not display company registration, “Ltd”, “registered
  * office” or Companies House wording.
+ *
+ * Contact email remains on the existing ReputeDefend mailbox until the owner
+ * migrates Workspace/Resend to @profilerelaunch.com. Do not invent a new
+ * address in this stage.
  */
+import { brandName, brandSiteUrl } from "@/lib/brand"
+
 export type BusinessStructure = "sole-trader"
 
 export type LegalIdentity = {
@@ -34,9 +40,9 @@ export type LegalIdentity = {
 }
 
 export const legalIdentity: LegalIdentity = {
-  tradingName: "ReputeDefend",
-  siteUrl: "https://reputedefend.com",
-  noticeUpdated: "10 September 2026",
+  tradingName: brandName,
+  siteUrl: brandSiteUrl,
+  noticeUpdated: "12 September 2026",
   businessStructure: "sole-trader",
   legalName: "Saswati Das",
   contactEmail: "contact@reputedefend.com",
@@ -52,7 +58,7 @@ export function isSoleTrader(identity: LegalIdentity = legalIdentity) {
   return identity.businessStructure === "sole-trader"
 }
 
-/** “Saswati Das, trading as ReputeDefend” when the legal name is known. */
+/** “Saswati Das, trading as ProfileRelaunch” when the legal name is known. */
 export function tradingAsLine(identity: LegalIdentity = legalIdentity) {
   if (!hasLegalValue(identity.legalName)) return identity.tradingName
   return `${identity.legalName}, trading as ${identity.tradingName}`

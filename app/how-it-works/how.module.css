@@ -475,7 +475,7 @@
   letter-spacing: .1em;
 }
 
-.assessList h3 { margin-top: 8px; color: var(--paper); }
+.assessList h3 { margin-top: 8px; color: var(--paper); overflow-wrap: anywhere; }
 .assessList p {
   margin-top: 10px;
   color: color-mix(in srgb, var(--paper) 72%, transparent);
@@ -1043,9 +1043,13 @@
   .authSplit,
   .paths,
   .guard,
-  .faq { grid-template-columns: minmax(0, 1fr); }
+  .faq,
+  .assessList,
+  .outcomeBoard { grid-template-columns: minmax(0, 1fr); }
   .choiceOr { justify-self: start; }
   .guardPrice { text-align: left; }
+  .choiceFork dl div { grid-template-columns: minmax(0, 1fr); }
+  .choiceFork dd { text-align: left; }
 }
 
 @media (max-width: 767px) {

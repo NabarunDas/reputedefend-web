@@ -1,31 +1,35 @@
 import type { Metadata } from "next"
 import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
-import { reviewDescription, reviewFaqs } from "./content"
+import { reviewFaqs, reviewSeo } from "./content"
 import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   ReviewAssessment,
   ReviewClosing,
   ReviewEvidence,
-  ReviewExpertise,
   ReviewFaq,
   ReviewHero,
+  ReviewJudgement,
+  ReviewModels,
+  ReviewPricing,
   ReviewProcess,
+  ReviewReported,
   ReviewRoutes,
   ReviewSituations,
-  ReviewSupport,
-  ReviewTrust,
   ReviewTrustStrip,
+  ReviewWork,
 } from "./review-sections"
 import styles from "./review.module.css"
 
-const title = pageTitle("Google Review Protection & Review Challenge Support")
+const title = pageTitle(reviewSeo.titlePage)
+const description = reviewSeo.description
+
 export const metadata: Metadata = {
   title: { absolute: title },
-  description: reviewDescription,
+  description,
   alternates: { canonical: "/review-protection" },
-  openGraph: socialOpenGraph({ title, description: reviewDescription, path: "/review-protection" }),
-  twitter: socialTwitter({ title, description: reviewDescription }),
+  openGraph: socialOpenGraph({ title, description, path: "/review-protection" }),
+  twitter: socialTwitter({ title, description }),
 }
 
 export default function ReviewProtectionPage() {
@@ -33,20 +37,22 @@ export default function ReviewProtectionPage() {
     <div className={`${styles.page} font-sans`}>
       <ServiceStructuredData
         name="Google Review Protection"
-        description={reviewDescription}
+        description={description}
         path="/review-protection"
       />
-      <FaqStructuredData questions={reviewFaqs} />
+      <FaqStructuredData questions={reviewFaqs.map(({ q, a }) => ({ q, a }))} />
       <ReviewHero />
       <ReviewTrustStrip />
       <ReviewSituations />
-      <ReviewRoutes />
-      <ReviewExpertise />
+      <ReviewJudgement />
       <ReviewAssessment />
-      <ReviewSupport />
       <ReviewEvidence />
+      <ReviewWork />
+      <ReviewModels />
+      <ReviewRoutes />
+      <ReviewReported />
       <ReviewProcess />
-      <ReviewTrust />
+      <ReviewPricing />
       <ReviewFaq />
       <ReviewClosing />
     </div>

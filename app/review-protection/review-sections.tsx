@@ -75,7 +75,7 @@ export function ReviewHero() {
       <div>
         <Eyebrow>Google Review Protection</Eyebrow>
         <h1 id="review-title">A damaging Google review deserves <span>the right response</span> — not a rushed one.</h1>
-        <p className={s.lead}>If a suspicious, misleading or potentially policy-breaching review is affecting trust in your business, prospective customers may see it while deciding whether to call, visit or choose you. ReputeDefend helps you assess what the review actually shows, organise the evidence that matters and prepare the response, reporting or challenge route that fits.</p>
+        <p className={s.lead}>If a suspicious, misleading or potentially policy-breaching review is affecting trust in your business, prospective customers may see it while deciding whether to call, visit or choose you. ProfileRelaunch helps you assess what the review actually shows, organise the evidence that matters and prepare the response, reporting or challenge route that fits.</p>
         <div className={s.actions}>
           <HelpLink>Assess my review issue</HelpLink>
           <a href="#review-routes" className={s.secondaryButton}>See the response options <ArrowDown size={18} aria-hidden="true" /></a>
@@ -96,7 +96,7 @@ const trustStrip = [
 
 export function ReviewTrustStrip() {
   return (
-    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ReputeDefend handles review protection enquiries">
+    <section className={`${s.trustStrip} ${s.reveal}`} aria-label="How ProfileRelaunch handles review protection enquiries">
       <ul>
         {trustStrip.map(({ label, icon: Icon }) => (
           <li key={label}>
@@ -258,7 +258,7 @@ export function ReviewProcess() {
           <Eyebrow>How it works</Eyebrow>
           <h2 id="process-title">Start with the review and the context around it.</h2>
         </div>
-        <Link className={s.textLink} href="/how-it-works">See the full ReputeDefend process <ArrowRight size={18} aria-hidden="true" /></Link>
+        <Link className={s.textLink} href="/how-it-works">See the full ProfileRelaunch process <ArrowRight size={18} aria-hidden="true" /></Link>
       </div>
       <ol className={s.processList}>
         {processSteps.map(({ title, body }, index) => (
@@ -280,7 +280,7 @@ export function ReviewTrust() {
   return (
     <section className={`${s.trust} ${s.reveal}`} aria-labelledby="trust-title">
       <div className={s.trustIntro}>
-        <Eyebrow>Why ReputeDefend</Eyebrow>
+        <Eyebrow>Why ProfileRelaunch</Eyebrow>
         <h2 id="trust-title">Clear guidance for the response you can control.</h2>
       </div>
       <ul className={s.trustGrid}>
@@ -294,7 +294,7 @@ export function ReviewTrust() {
       </ul>
       <div className={s.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google makes the final decision on review removal and platform enforcement. ReputeDefend focuses on what you can influence: understanding the review, organising relevant evidence clearly and approaching the strongest appropriate response or reporting route.</p>
+        <p>Google makes the final decision on review removal and platform enforcement. ProfileRelaunch focuses on what you can influence: understanding the review, organising relevant evidence clearly and approaching the strongest appropriate response or reporting route.</p>
       </div>
     </section>
   )

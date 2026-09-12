@@ -57,7 +57,7 @@ export default async function GetHelpPage({
           <p className={styles.trustLine}>Human case review • Evidence-led assessment • Clear next steps</p>
         </section>
 
-        <section className={styles.trustStrip} aria-label="How ReputeDefend handles enquiries">
+        <section className={styles.trustStrip} aria-label="How ProfileRelaunch handles enquiries">
           <ul>
             {trustStrip.map(({ label, icon: Icon }) => (
               <li key={label}>

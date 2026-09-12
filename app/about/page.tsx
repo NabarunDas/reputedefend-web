@@ -104,7 +104,7 @@ const approach = [
 const trustPoints = [
   {
     title: "Clear accountability",
-    body: "ReputeDefend openly identifies who operates the service and provides direct business contact and legal information.",
+    body: "ProfileRelaunch openly identifies who operates the service and provides direct business contact and legal information.",
   },
   {
     title: "Evidence-aware",
@@ -123,12 +123,12 @@ export default function AboutPage() {
     <div className={styles.page}>
       <section className={`${styles.hero} ${styles.enter}`} aria-labelledby="about-title">
         <div>
-          <p className={styles.eyebrow}>About ReputeDefend</p>
+          <p className={styles.eyebrow}>About ProfileRelaunch</p>
           <h1 id="about-title">
             <span>Human support</span> for difficult Google reputation problems.
           </h1>
           <p className={styles.lead}>
-            ReputeDefend helps businesses deal with Google Business Profile disruptions and difficult review situations with a clearer, evidence-led process. We focus on understanding what happened, identifying what matters and helping you prepare or carry out the strongest appropriate next step.
+            ProfileRelaunch helps businesses deal with Google Business Profile disruptions and difficult review situations with a clearer, evidence-led process. We focus on understanding what happened, identifying what matters and helping you prepare or carry out the strongest appropriate next step.
           </p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/get-help">
@@ -136,7 +136,7 @@ export default function AboutPage() {
               <ArrowUpRight size={18} aria-hidden="true" />
             </Link>
             <Link className={styles.secondaryButton} href="/how-it-works">
-              See how ReputeDefend works
+              See how ProfileRelaunch works
               <ArrowRight size={18} aria-hidden="true" />
             </Link>
           </div>
@@ -159,7 +159,7 @@ export default function AboutPage() {
         </figure>
       </section>
 
-      <section className={styles.trustStrip} aria-label="Who operates ReputeDefend">
+      <section className={styles.trustStrip} aria-label="Who operates ProfileRelaunch">
         <ul>
           {identityStrip.map(({ label, icon: Icon }) => (
             <li key={label}>
@@ -174,21 +174,21 @@ export default function AboutPage() {
 
       <section className={styles.identity} aria-labelledby="identity-title">
         <div>
-          <p className={styles.eyebrow}>Who is behind ReputeDefend?</p>
+          <p className={styles.eyebrow}>Who is behind ProfileRelaunch?</p>
           <h2 id="identity-title">Clear accountability behind the service.</h2>
         </div>
         <div className={styles.copy}>
           <p>
-            ReputeDefend is operated by {operatorLine}. It is a UK-based independent service for businesses dealing with Google Business Profile and review-related reputation problems.
+            ProfileRelaunch is operated by {operatorLine}. It is a UK-based independent service for businesses dealing with Google Business Profile and review-related reputation problems.
           </p>
           {isSoleTrader() ? (
-            <p>ReputeDefend operates as a UK sole-trader business.</p>
+            <p>ProfileRelaunch operates as a UK sole-trader business.</p>
           ) : null}
           <p>
             The person operating the service, the business identity and the contact route are stated openly so customers know who they are dealing with.
           </p>
           <p className={styles.identityNote}>
-            ReputeDefend&apos;s legal identity and contact details are stated openly across the site&apos;s{" "}
+            ProfileRelaunch&apos;s legal identity and contact details are stated openly across the site&apos;s{" "}
             <Link href="/disclaimer">legal information</Link>.
           </p>
         </div>
@@ -197,12 +197,12 @@ export default function AboutPage() {
       <section className={styles.why} aria-labelledby="why-title">
         <header className={styles.sectionHeading}>
           <div>
-            <p className={styles.eyebrow}>Why ReputeDefend exists</p>
+            <p className={styles.eyebrow}>Why ProfileRelaunch exists</p>
             <h2 id="why-title">Platform problems can leave businesses with plenty of information — but very little clarity.</h2>
           </div>
           <div>
             <p>When a Business Profile is suspended, verification stalls or a damaging review appears, the immediate question is usually simple: what should I do now?</p>
-            <p>Platform messages, policies and reporting routes can be difficult to interpret when the business is already under pressure. ReputeDefend exists to bring the facts, evidence and available process together so the owner can make a clearer decision and, where wanted, get help carrying the next stage through.</p>
+            <p>Platform messages, policies and reporting routes can be difficult to interpret when the business is already under pressure. ProfileRelaunch exists to bring the facts, evidence and available process together so the owner can make a clearer decision and, where wanted, get help carrying the next stage through.</p>
           </div>
         </header>
         <ul className={styles.whyGrid}>
@@ -271,7 +271,7 @@ export default function AboutPage() {
         </ul>
         <aside className={styles.callout}>
           <Info aria-hidden="true" size={20} />
-          <p>Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ReputeDefend focuses on what a business can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
+          <p>Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ProfileRelaunch focuses on what a business can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
         </aside>
       </section>
 

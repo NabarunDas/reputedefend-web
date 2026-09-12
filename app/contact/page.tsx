@@ -31,10 +31,10 @@ export default function ContactPage() {
     <div className={styles.page}>
       <div className={styles.inner}>
         <section className={styles.hero} aria-labelledby="contact-title">
-          <p className={styles.eyebrow}>Contact ReputeDefend</p>
+          <p className={styles.eyebrow}>Contact ProfileRelaunch</p>
           <h1 id="contact-title">Have a question before you start?</h1>
           <p className={styles.lead}>
-            Use this page for general questions about ReputeDefend, our services or how we work. If you&apos;re already dealing with a Business Profile suspension, access or verification problem, or a difficult review issue, use Get Help so we can collect the information needed to understand the case properly.
+            Use this page for general questions about ProfileRelaunch, our services or how we work. If you&apos;re already dealing with a Business Profile suspension, access or verification problem, or a difficult review issue, use Get Help so we can collect the information needed to understand the case properly.
           </p>
           <p className={styles.trustLine}>Human-reviewed messages • Clear routing • Clear communication</p>
         </section>
@@ -71,7 +71,7 @@ export default function ContactPage() {
                 <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
               </div>
             ) : null}
-            <p className={styles.identityNote}>ReputeDefend is an independent UK business.</p>
+            <p className={styles.identityNote}>ProfileRelaunch is an independent UK business.</p>
           </aside>
         </div>
       </div>

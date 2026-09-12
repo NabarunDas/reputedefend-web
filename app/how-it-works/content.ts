@@ -2,7 +2,7 @@ export const howDescription =
   "See how ProfileRelaunch works: share your Google Business Profile or review issue, receive a human evidence-led assessment, understand the recommended route, and choose whether you want help carrying it through."
 
 export const howHero = {
-  eyebrow: "How ReputeDefend works",
+  eyebrow: "How ProfileRelaunch works",
   titleBefore: "A clear process for situations that ",
   titleAccent: "rarely feel clear.",
   lead:
@@ -64,7 +64,7 @@ export const journeySteps = [
     id: "decide",
     n: "04",
     title: "You decide how to proceed",
-    body: "You can act on the recommendation yourself or ask ReputeDefend to help carry the next stage through — organising the work so you do not have to piece the evidence, wording and process together alone.",
+    body: "You can act on the recommendation yourself or ask ProfileRelaunch to help carry the next stage through — organising the work so you do not have to piece the evidence, wording and process together alone.",
   },
 ] as const
 
@@ -144,7 +144,7 @@ export const howPaths = {
   eyebrow: "If you want further support",
   title: "What carrying the recommendation through can look like.",
   lead:
-    "The initial review helps clarify the route. If you want ReputeDefend to carry more of the work forward, we can help organise the evidence, prepare the material and support the next stage rather than leaving you to piece the process together alone.",
+    "The initial review helps clarify the route. If you want ProfileRelaunch to carry more of the work forward, we can help organise the evidence, prepare the material and support the next stage rather than leaving you to piece the process together alone.",
   items: [
     {
       href: "/business-profile-recovery",
@@ -198,7 +198,7 @@ export const howTrust = {
     },
   ],
   callout:
-    "Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ReputeDefend focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.",
+    "Google makes the final platform decision on matters such as Business Profile reinstatement and review removal. ProfileRelaunch focuses on what you can influence: understanding the issue, preparing relevant evidence clearly and approaching the appropriate process in a stronger position.",
 }
 
 export const howFaqs = [

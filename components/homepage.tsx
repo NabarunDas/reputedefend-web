@@ -57,7 +57,7 @@ export function HomeHero() {
       <div className={styles.heroCopy}>
         <Eyebrow>Google Business Profile &amp; Review Support</Eyebrow>
         <h1 id="home-title">Your Google presence shouldn&apos;t be <span>costing you customers.</span></h1>
-        <p className={styles.lead}>If your Business Profile has been suspended, you&apos;ve lost access, verification has stalled or suspicious reviews are damaging trust, customers may struggle to find, contact or choose your business with confidence. ReputeDefend helps you understand what happened, identify what matters and take the strongest appropriate next step.</p>
+        <p className={styles.lead}>If your Business Profile has been suspended, you&apos;ve lost access, verification has stalled or suspicious reviews are damaging trust, customers may struggle to find, contact or choose your business with confidence. ProfileRelaunch helps you understand what happened, identify what matters and take the strongest appropriate next step.</p>
         <div className={styles.actions}>
           <Link className={styles.primaryButton} href="/get-help">Tell us what happened <ArrowUpRight aria-hidden="true" size={18} /></Link>
           <Link className={styles.secondaryButton} href="#home-services">See how we can help <ArrowDown aria-hidden="true" size={18} /></Link>
@@ -78,7 +78,7 @@ const trustStrip = [
 
 export function HomeTrustStrip() {
   return (
-    <section className={`${styles.trustStrip} ${styles.reveal}`} aria-label="How ReputeDefend handles enquiries">
+    <section className={`${styles.trustStrip} ${styles.reveal}`} aria-label="How ProfileRelaunch handles enquiries">
       <ul>
         {trustStrip.map(({ label, icon: Icon }) => (
           <li key={label}>
@@ -212,7 +212,7 @@ export function HomeProcess() {
     <section className={`${styles.section} ${styles.reveal}`} aria-labelledby="process-title">
       <div className={styles.sectionHeading}>
         <div>
-          <Eyebrow>How ReputeDefend works</Eyebrow>
+          <Eyebrow>How ProfileRelaunch works</Eyebrow>
           <h2 id="process-title">A clearer way forward starts with understanding the problem.</h2>
         </div>
         <Link className={styles.textLink} href="/how-it-works">See the full process <ArrowRight aria-hidden="true" size={18} /></Link>
@@ -238,14 +238,14 @@ const trustPrinciples = [
   { title: "Human assessment", copy: "Your case is reviewed in context rather than reduced to a generic answer.", icon: UserRoundCheck },
   { title: "Evidence before assumptions", copy: "Recommendations follow the facts and information available.", icon: ListChecks },
   { title: "Clear communication", copy: "You should understand what we recommend, why we recommend it and what happens next.", icon: MessageSquareText },
-  { title: "Independent guidance", copy: "ReputeDefend is independent of Google, so our role is to help you prepare and navigate the process — not pretend to control it.", icon: Shield },
+  { title: "Independent guidance", copy: "ProfileRelaunch is independent of Google, so our role is to help you prepare and navigate the process — not pretend to control it.", icon: Shield },
 ]
 
 export function HomeTrust() {
   return (
     <section className={`${styles.trust} ${styles.reveal}`} aria-labelledby="trust-title">
       <div className={styles.trustIntro}>
-        <Eyebrow>Why ReputeDefend</Eyebrow>
+        <Eyebrow>Why ProfileRelaunch</Eyebrow>
         <h2 id="trust-title">Clear advice when the situation feels anything but clear.</h2>
       </div>
       <ul className={styles.trustGrid}>
@@ -259,7 +259,7 @@ export function HomeTrust() {
       </ul>
       <div className={styles.trustLimit}>
         <Info aria-hidden="true" size={20} />
-        <p>Google makes the final platform decision. ReputeDefend focuses on what you can influence: understanding the issue, presenting relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
+        <p>Google makes the final platform decision. ProfileRelaunch focuses on what you can influence: understanding the issue, presenting relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
       </div>
     </section>
   )

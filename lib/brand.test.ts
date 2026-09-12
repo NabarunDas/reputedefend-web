@@ -17,6 +17,7 @@ import {
   pageTitle,
   titleTemplate,
 } from "@/lib/brand"
+import { homepageFaqs } from "@/lib/homepage-content"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 function isSummaryLargeImageTwitter(
@@ -39,6 +40,11 @@ describe("brand identity", () => {
   it("does not use defensive wording as social-share headline copy", () => {
     const social = `${ogCopy.headline} ${ogCopy.headlineLines.join(" ")} ${ogCopy.support} ${ogImage.alt}`
     expect(social.toLowerCase()).not.toMatch(/guaranteed|independent of google/)
+  })
+
+  it("keeps customer-facing FAQs on the ProfileRelaunch name", () => {
+    expect(JSON.stringify(homepageFaqs)).not.toContain("ReputeDefend")
+    expect(homepageFaqs.some((item) => item.q.includes("ProfileRelaunch"))).toBe(true)
   })
 })
 

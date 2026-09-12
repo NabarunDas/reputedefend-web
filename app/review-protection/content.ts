@@ -33,7 +33,7 @@ export const routes = [
     title: "Respond",
     cue: "When the review appears to reflect a genuine experience",
     body: "A calm, professional public response may protect customer confidence better than forcing ordinary criticism into a policy dispute.",
-    action: "ReputeDefend can help you consider what should be acknowledged, what should remain private and how the response may look to future customers.",
+    action: "ProfileRelaunch can help you consider what should be acknowledged, what should remain private and how the response may look to future customers.",
   },
   {
     title: "Assess & report",
@@ -148,8 +148,8 @@ export const trustPrinciples = [
 
 export const reviewFaqs = [
   {
-    q: "Can ReputeDefend remove a negative Google review?",
-    a: "Google makes the final removal decision. ReputeDefend does not remove reviews directly. We help assess whether there appears to be a genuine policy concern, organise the relevant evidence and prepare the reporting, challenge or response route that fits.",
+    q: "Can ProfileRelaunch remove a negative Google review?",
+    a: "Google makes the final removal decision. ProfileRelaunch does not remove reviews directly. We help assess whether there appears to be a genuine policy concern, organise the relevant evidence and prepare the reporting, challenge or response route that fits.",
   },
   {
     q: "What types of reviews may be worth assessing?",
@@ -164,7 +164,7 @@ export const reviewFaqs = [
     a: "Keep the links, dates, wording and any similarities you can observe. Avoid hostile public replies or attempting to balance the situation with false feedback. We can look at the pattern with you and consider whether it provides useful context for a response or a report.",
   },
   {
-    q: "What can ReputeDefend help with after the initial assessment?",
+    q: "What can ProfileRelaunch help with after the initial assessment?",
     a: "If you want further support, the work may include organising relevant evidence, preparing reporting or challenge material, reviewing the route already taken, helping shape a professional public response, or supporting the next stage after new information or a platform response. The exact scope depends on the situation and any fee is explained before you decide.",
   },
   {

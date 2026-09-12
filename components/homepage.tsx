@@ -1,21 +1,24 @@
 import Link from "next/link"
 import {
-  ArrowDown,
   ArrowRight,
   ArrowUpRight,
   Check,
-  Info,
-  ListChecks,
-  Lock,
+  FileSearch,
   Plus,
-  Shield,
-  Store,
-  UserRoundCheck,
-  Wallet,
-  MessageSquareText,
 } from "lucide-react"
 import { EnquiryForm } from "@/components/enquiry-form"
-import { homepageFaqs } from "@/lib/homepage-content"
+import {
+  homepageConversion,
+  homepageFaqs,
+  homepageGuard,
+  homepageHero,
+  homepagePricingPreview,
+  homepageProblems,
+  homepageProcess,
+  homepageServices,
+  homepageTrustStrip,
+  homepageWhy,
+} from "@/lib/homepage-content"
 import styles from "./homepage.module.css"
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -24,242 +27,281 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 
 function CaseVisual() {
   return (
-    <figure className={styles.caseVisual} aria-label="From a changed Google presence to a clearer next step">
-      <div className={styles.flowCard}>
-        <p className={styles.flowLabel}>Something changed</p>
-        <ul className={styles.changeList}>
+    <figure className={styles.caseVisual} aria-label="Issue detected, then case review, then a Guided or Managed next step">
+      <div className={styles.caseChrome}>
+        <span>Case file</span>
+        <span>Assessment</span>
+      </div>
+      <div className={`${styles.caseStage} ${styles.stageIssue}`}>
+        <p className={styles.stageLabel}>Issue detected</p>
+        <ul>
           <li>Profile suspended</li>
-          <li>Verification issue</li>
+          <li>Verification failed</li>
           <li>Suspicious review</li>
         </ul>
       </div>
-      <div className={styles.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
-      <div className={styles.flowCard}>
-        <p className={styles.flowLabel}>Understand the situation</p>
-        <p className={styles.flowCopy}>Review the facts, messages and history.</p>
+      <div className={styles.caseArrow} aria-hidden="true" />
+      <div className={`${styles.caseStage} ${styles.stageReview}`}>
+        <p className={styles.stageLabel}>Case review</p>
+        <ul>
+          <li>Evidence checked</li>
+          <li>Policy/context reviewed</li>
+          <li>Route identified</li>
+        </ul>
       </div>
-      <div className={styles.visualConnector} aria-hidden="true"><ArrowDown size={20} /></div>
-      <div className={`${styles.flowCard} ${styles.flowCardAction}`}>
-        <span className={styles.flowCheck} aria-hidden="true"><Check size={18} /></span>
-        <div>
-          <p className={styles.flowLabel}>Take the right next step</p>
-          <p className={styles.flowCopy}>Know what to do next — and why.</p>
+      <div className={styles.caseArrow} aria-hidden="true" />
+      <div className={`${styles.caseStage} ${styles.stageNext}`}>
+        <p className={styles.stageLabel}>Next step</p>
+        <div className={styles.routePair}>
+          <span>Guided</span>
+          <span className={styles.routeOr}>or</span>
+          <span>Managed</span>
         </div>
       </div>
-      <figcaption className={styles.visualNote}>From uncertainty to a clearer way forward.</figcaption>
     </figure>
   )
 }
 
 export function HomeHero() {
   return (
-    <section className={`${styles.hero} ${styles.enter}`} aria-labelledby="home-title">
-      <div className={styles.heroCopy}>
-        <Eyebrow>Google Business Profile &amp; Review Support</Eyebrow>
-        <h1 id="home-title">Your Google presence shouldn&apos;t be <span>costing you customers.</span></h1>
-        <p className={styles.lead}>If your Business Profile has been suspended, you&apos;ve lost access, verification has stalled or suspicious reviews are damaging trust, customers may struggle to find, contact or choose your business with confidence. ProfileRelaunch helps you understand what happened, identify what matters and take the strongest appropriate next step.</p>
-        <div className={styles.actions}>
-          <Link className={styles.primaryButton} href="/get-help">Tell us what happened <ArrowUpRight aria-hidden="true" size={18} /></Link>
-          <Link className={styles.secondaryButton} href="#home-services">See how we can help <ArrowDown aria-hidden="true" size={18} /></Link>
+    <section className={`${styles.heroBand} ${styles.enter}`} aria-labelledby="home-title">
+      <div className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <Eyebrow>{homepageHero.eyebrow}</Eyebrow>
+          <h1 id="home-title">
+            {homepageHero.titleLines[0]}
+            <span>{homepageHero.titleLines[1]}</span>
+          </h1>
+          <p className={styles.lead}>{homepageHero.lead}</p>
+          <div className={styles.actions}>
+            <Link className={styles.primaryButton} href={homepageHero.primaryHref}>
+              {homepageHero.primaryCta}
+              <ArrowUpRight aria-hidden="true" size={18} />
+            </Link>
+            <Link className={styles.secondaryButton} href={homepageHero.secondaryHref}>
+              {homepageHero.secondaryCta}
+              <ArrowRight aria-hidden="true" size={18} />
+            </Link>
+          </div>
+          <p className={styles.heroNote}>{homepageHero.supportLine}</p>
         </div>
-        <p className={styles.heroNote}>Human case review • Independent support • Clear next steps</p>
+        <CaseVisual />
       </div>
-      <CaseVisual />
     </section>
   )
 }
 
-const trustStrip = [
-  { label: "Human-reviewed cases", icon: UserRoundCheck },
-  { label: "No payment to submit an enquiry", icon: Wallet },
-  { label: "Independent of Google", icon: Shield },
-  { label: "Careful handling of your information", icon: Lock },
-]
-
 export function HomeTrustStrip() {
   return (
-    <section className={`${styles.trustStrip} ${styles.reveal}`} aria-label="How ProfileRelaunch handles enquiries">
+    <section className={`${styles.trustStrip} ${styles.reveal}`} aria-label="How ProfileRelaunch works with you">
       <ul>
-        {trustStrip.map(({ label, icon: Icon }) => (
-          <li key={label}>
-            <span className={styles.stripIcon}><Icon aria-hidden="true" size={18} /></span>
-            {label}
-          </li>
+        {homepageTrustStrip.map((label) => (
+          <li key={label}>{label}</li>
         ))}
       </ul>
     </section>
   )
 }
-
-const situations = [
-  ["Your Business Profile disappeared or was suspended", "Customers may be unable to find or verify the business as they expect."],
-  ["You're locked out or unable to complete verification", "The business may be unable to keep important information accurate or respond in the usual way."],
-  ["Important profile features have suddenly changed", "Customers may see incomplete or outdated information about the business."],
-  ["Suspicious reviews are affecting confidence in your business", "Prospective customers may see damaging information while comparing businesses."],
-]
 
 export function HomeSituations() {
   return (
     <section id="home-situations" className={`${styles.situations} ${styles.reveal}`} aria-labelledby="situations-title">
       <div className={styles.situationIntro}>
-        <Eyebrow>Recognise the situation?</Eyebrow>
-        <h2 id="situations-title">When your Google presence changes, the impact can reach your customers too.</h2>
-        <p>A suspended profile, lost access or damaging reviews are not just platform problems. If customers cannot find accurate information, confirm you&apos;re open, get directions, contact you easily or feel confident about what they see, that can mean missed calls, enquiries, bookings or opportunities.</p>
-        <p className={styles.reassuranceLead}>You don&apos;t need to diagnose the problem before asking for help.</p>
-        <Link className={styles.primaryButton} href="/get-help">Tell us what&apos;s happening <ArrowUpRight aria-hidden="true" size={18} /></Link>
+        <Eyebrow>{homepageProblems.eyebrow}</Eyebrow>
+        <h2 id="situations-title">{homepageProblems.title}</h2>
+        <p>{homepageProblems.lead}</p>
       </div>
-      <div className={styles.problemGrid}>
-        {situations.map(([title, copy]) => (
-          <article key={title}>
-            <h3>{title}</h3>
-            <p>{copy}</p>
-          </article>
+      <ol className={styles.problemList}>
+        {homepageProblems.items.map((item, index) => (
+          <li key={item}>
+            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            {item}
+          </li>
         ))}
-      </div>
+      </ol>
+      <p className={styles.situationCta}>
+        {homepageProblems.unsure}{" "}
+        <Link href="/get-help">{homepageProblems.cta}</Link>
+      </p>
     </section>
   )
 }
-
-const homeServices = [
-  {
-    title: "Google Business Profile Protection & Recovery",
-    label: "Suspensions, access and verification",
-    icon: Store,
-    description: "When your profile is suspended, inaccessible or stuck in verification, we help establish what changed, identify the evidence that matters and prepare the recovery route clearly.",
-    points: ["Suspension, access and verification assessment", "Evidence and recovery/appeal preparation", "Support carrying the recommended recovery route forward"],
-    href: "/business-profile-recovery",
-    cta: "Get help with my profile",
-  },
-  {
-    title: "Google Review Protection",
-    label: "Suspicious or potentially policy-breaching reviews",
-    icon: MessageSquareText,
-    description: "When a suspicious or potentially policy-breaching review is affecting trust, we assess the review and surrounding evidence, then help prepare the response, reporting or challenge route that fits.",
-    points: ["Review and policy assessment", "Evidence and reporting/challenge preparation", "Professional response support where that is the stronger route"],
-    href: "/review-protection",
-    cta: "Assess a review issue",
-  },
-]
 
 export function HomeServices() {
+  const { profile, review } = homepageServices
   return (
-    <section id="home-services" className={`${styles.section} ${styles.reveal}`} aria-labelledby="services-title">
-      <div className={styles.sectionHeading}>
-        <div>
-          <Eyebrow>Two focused services</Eyebrow>
-          <h2 id="services-title">Specialist support for the issue in front of you.</h2>
-        </div>
-        <p>Your profile and your reviews affect how people find and trust your business. Each needs a different route.</p>
+    <section id="home-services" className={`${styles.servicesBand} ${styles.reveal}`} aria-labelledby="services-title">
+      <div className={styles.servicesIntro}>
+        <Eyebrow>{homepageServices.eyebrow}</Eyebrow>
+        <h2 id="services-title">{homepageServices.title}</h2>
+        <p>{homepageServices.lead}</p>
       </div>
-      <div className={styles.serviceGrid}>
-        {homeServices.map(({ title, label, icon: Icon, description, points, href, cta }) => (
-          <Link className={styles.serviceCard} href={href} key={href}>
-            <div className={styles.serviceTop}>
-              <span className={styles.serviceIcon}><Icon aria-hidden="true" size={24} /></span>
-              <ArrowUpRight aria-hidden="true" className={styles.cardArrow} size={22} />
-            </div>
-            <p className={styles.serviceLabel}>{label}</p>
-            <h3>{title}</h3>
-            <p className={styles.serviceDescription}>{description}</p>
-            <ul>
-              {points.map((point) => (
-                <li key={point}><Check aria-hidden="true" size={17} />{point}</li>
-              ))}
-            </ul>
-            <span className={styles.explore}>{cta} <ArrowUpRight aria-hidden="true" size={17} /></span>
+      <article className={styles.serviceProfile} aria-labelledby="profile-recovery-title">
+        <div className={styles.serviceCopy}>
+          <p className={styles.serviceKicker}>{profile.kicker}</p>
+          <h3 id="profile-recovery-title">{profile.title}</h3>
+          <p>{profile.lead}</p>
+          <Link className={styles.serviceCta} href={profile.href}>
+            {profile.cta}
+            <ArrowUpRight aria-hidden="true" size={18} />
           </Link>
-        ))}
-      </div>
+        </div>
+        <ul>
+          {profile.points.map((point) => (
+            <li key={point}>
+              <Check aria-hidden="true" size={16} />
+              {point}
+            </li>
+          ))}
+        </ul>
+      </article>
+      <article className={styles.serviceReview} aria-labelledby="review-protection-title">
+        <ul>
+          {review.points.map((point) => (
+            <li key={point}>
+              <Check aria-hidden="true" size={16} />
+              {point}
+            </li>
+          ))}
+        </ul>
+        <div className={styles.serviceCopy}>
+          <p className={styles.serviceKicker}>{review.kicker}</p>
+          <h3 id="review-protection-title">{review.title}</h3>
+          <p>{review.lead}</p>
+          <p className={styles.serviceLimit}>{review.limit}</p>
+          <Link className={styles.serviceCtaLight} href={review.href}>
+            {review.cta}
+            <ArrowUpRight aria-hidden="true" size={18} />
+          </Link>
+        </div>
+      </article>
     </section>
   )
 }
-
-const expertisePrinciples = [
-  ["Understand before changing", "Review the notice, timeline and recent activity before making several changes at once."],
-  ["Build the right evidence", "Focus on relevant, accurate information rather than sending everything you have."],
-  ["Use the appropriate route", "Choose the recovery, appeal, reporting or response process that fits the issue."],
-]
-
-export function HomeExpertise() {
-  return (
-    <section className={`${styles.expertise} ${styles.reveal}`} aria-labelledby="expertise-title">
-      <div className={styles.expertiseIntro}>
-        <Eyebrow>Before you react</Eyebrow>
-        <h2 id="expertise-title">When the pressure is high, guessing can make the situation harder.</h2>
-        <p>It is natural to want to fix a suspension or damaging review immediately. But repeated appeals, unnecessary profile changes or unsupported accusations can create more confusion. A considered first step gives you a clearer position.</p>
-      </div>
-      <ol className={styles.expertiseGrid}>
-        {expertisePrinciples.map(([title, copy], index) => (
-          <li key={title}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{copy}</p>
-          </li>
-        ))}
-      </ol>
-    </section>
-  )
-}
-
-const processSteps = [
-  ["Tell us what happened", "Share the issue, relevant messages or links and anything you have already tried. You don't need a perfect case file."],
-  ["We assess the situation", "We review the context, identify information that matters and determine what may need further clarification."],
-  ["We recommend the next step", "We explain the route we believe is appropriate and what support may help before you decide how to proceed."],
-]
 
 export function HomeProcess() {
+  const closing = homepageProcess.steps[3]
   return (
-    <section className={`${styles.section} ${styles.reveal}`} aria-labelledby="process-title">
-      <div className={styles.sectionHeading}>
+    <section id="home-process" className={`${styles.process} ${styles.reveal}`} aria-labelledby="process-title">
+      <div className={styles.processIntro}>
         <div>
-          <Eyebrow>How ProfileRelaunch works</Eyebrow>
-          <h2 id="process-title">A clearer way forward starts with understanding the problem.</h2>
+          <Eyebrow>{homepageProcess.eyebrow}</Eyebrow>
+          <h2 id="process-title">{homepageProcess.title}</h2>
         </div>
-        <Link className={styles.textLink} href="/how-it-works">See the full process <ArrowRight aria-hidden="true" size={18} /></Link>
+        <p>{homepageProcess.lead}</p>
       </div>
       <ol className={styles.processList}>
-        {processSteps.map(([title, copy], index) => (
-          <li key={title}>
-            <span className={styles.processNumber}>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{title}</h3>
-            <p>{copy}</p>
+        {homepageProcess.steps.slice(0, 3).map((step) => (
+          <li key={step.n}>
+            <span className={styles.processNumber}>{step.n}</span>
+            <h3>{step.title}</h3>
+            <p>{step.copy}</p>
           </li>
         ))}
       </ol>
-      <div className={styles.processSupport}>
-        <h3>If you want help carrying the next step through</h3>
-        <p>Depending on the situation, further support can include organising relevant evidence, preparing recovery or reporting wording, reviewing previous attempts, or helping shape a professional response. The exact scope depends on the case and is explained before any paid work begins.</p>
+      <div className={styles.processChoice}>
+        <div className={styles.processChoiceIntro}>
+          <span className={styles.processNumber}>{closing.n}</span>
+          <h3>{closing.title}</h3>
+          <p>{closing.copy}</p>
+        </div>
+        <div className={styles.modelGrid}>
+          {homepageProcess.models.map((model) => (
+            <article key={model.name}>
+              <h4>{model.name}</h4>
+              <p className={styles.modelLine}>{model.line}</p>
+              <p>{model.copy}</p>
+            </article>
+          ))}
+        </div>
       </div>
+      <Link className={styles.textLink} href={homepageProcess.moreHref}>
+        {homepageProcess.moreCta}
+        <ArrowRight aria-hidden="true" size={18} />
+      </Link>
     </section>
   )
 }
 
-const trustPrinciples = [
-  { title: "Human assessment", copy: "Your case is reviewed in context rather than reduced to a generic answer.", icon: UserRoundCheck },
-  { title: "Evidence before assumptions", copy: "Recommendations follow the facts and information available.", icon: ListChecks },
-  { title: "Clear communication", copy: "You should understand what we recommend, why we recommend it and what happens next.", icon: MessageSquareText },
-  { title: "Independent guidance", copy: "ProfileRelaunch is independent of Google, so our role is to help you prepare and navigate the process — not pretend to control it.", icon: Shield },
-]
-
-export function HomeTrust() {
+export function HomePricing() {
   return (
-    <section className={`${styles.trust} ${styles.reveal}`} aria-labelledby="trust-title">
-      <div className={styles.trustIntro}>
-        <Eyebrow>Why ProfileRelaunch</Eyebrow>
-        <h2 id="trust-title">Clear advice when the situation feels anything but clear.</h2>
+    <section id="home-pricing" className={`${styles.pricing} ${styles.reveal}`} aria-labelledby="pricing-title">
+      <div className={styles.pricingIntro}>
+        <Eyebrow>{homepagePricingPreview.eyebrow}</Eyebrow>
+        <h2 id="pricing-title">{homepagePricingPreview.title}</h2>
+        <p>{homepagePricingPreview.lead}</p>
       </div>
-      <ul className={styles.trustGrid}>
-        {trustPrinciples.map(({ title, copy, icon: Icon }) => (
-          <li key={title}>
-            <span className={styles.trustIcon}><Icon aria-hidden="true" size={18} /></span>
-            <h3>{title}</h3>
-            <p>{copy}</p>
+      <ul className={styles.priceGrid}>
+        {homepagePricingPreview.items.map((item) => (
+          <li key={item.label}>
+            <p className={styles.priceLabel}>{item.label}</p>
+            <p className={styles.priceFigure}>{item.figure}</p>
+            <p className={styles.priceDetail}>{item.detail}</p>
           </li>
         ))}
       </ul>
-      <div className={styles.trustLimit}>
-        <Info aria-hidden="true" size={20} />
-        <p>Google makes the final platform decision. ProfileRelaunch focuses on what you can influence: understanding the issue, presenting relevant evidence clearly and approaching the appropriate process in a stronger position.</p>
+      <p className={styles.pricingNote}>{homepagePricingPreview.note}</p>
+      <div className={styles.actions}>
+        <Link className={styles.primaryButton} href={homepagePricingPreview.primaryHref}>
+          {homepagePricingPreview.primaryCta}
+          <ArrowUpRight aria-hidden="true" size={18} />
+        </Link>
+        <Link className={styles.ghostButton} href={homepagePricingPreview.secondaryHref}>
+          {homepagePricingPreview.secondaryCta}
+          <ArrowRight aria-hidden="true" size={18} />
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+export function HomeGuard() {
+  return (
+    <section className={`${styles.guard} ${styles.reveal}`} aria-labelledby="guard-title">
+      <div className={styles.guardCopy}>
+        <Eyebrow>{homepageGuard.eyebrow}</Eyebrow>
+        <h2 id="guard-title">{homepageGuard.title}</h2>
+        <p>{homepageGuard.lead}</p>
+        <Link className={styles.textLink} href={homepageGuard.href}>
+          {homepageGuard.cta}
+          <ArrowRight aria-hidden="true" size={18} />
+        </Link>
+      </div>
+      <div className={styles.guardMeta}>
+        <p className={styles.guardPrice}>{homepageGuard.price}</p>
+        <ul>
+          {homepageGuard.points.map((point) => (
+            <li key={point}>
+              <FileSearch aria-hidden="true" size={16} />
+              {point}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+export function HomeWhy() {
+  return (
+    <section className={`${styles.whyBand} ${styles.reveal}`} aria-labelledby="why-title">
+      <div className={styles.why}>
+        <div className={styles.whyIntro}>
+          <Eyebrow>{homepageWhy.eyebrow}</Eyebrow>
+          <h2 id="why-title">{homepageWhy.title}</h2>
+          <p>{homepageWhy.lead}</p>
+        </div>
+        <ol className={styles.whyList}>
+          {homepageWhy.principles.map((item, index) => (
+            <li key={item.title}>
+              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   )
@@ -270,9 +312,8 @@ export function HomeFaq() {
     <section className={`${styles.faqSection} ${styles.reveal}`} aria-labelledby="faq-title">
       <div>
         <Eyebrow>Questions you may have</Eyebrow>
-        <h2 id="faq-title">A little clarity before you begin.</h2>
-        <p>If your Google Business Profile or a review issue is already affecting the business, these answers may help you decide how to start.</p>
-        <Link className={styles.textLink} href="/contact">Ask a different question <ArrowUpRight aria-hidden="true" size={18} /></Link>
+        <h2 id="faq-title">Straight answers before you start.</h2>
+        <p>If a Business Profile or review issue is already affecting the business, these should help you decide how to begin.</p>
       </div>
       <div className={styles.faqList}>
         {homepageFaqs.map(({ q, a }) => (
@@ -288,18 +329,32 @@ export function HomeFaq() {
 
 export function HomeConversion() {
   return (
-    <section className={`${styles.conversion} ${styles.reveal}`} aria-labelledby="case-title">
-      <div className={styles.conversionCopy}>
-        <Eyebrow>Get a clearer view of your situation</Eyebrow>
-        <h2 id="case-title">You don&apos;t need to solve the problem before asking for help.</h2>
-        <p>Tell us what happened, what changed and what you have already tried. We&apos;ll review the information and help you understand the next practical step.</p>
-        <ul className={styles.conversionPoints}>
-          <li>Submitting an enquiry does not commit you to paid support.</li>
-          <li>Please don&apos;t send passwords or verification codes.</li>
-        </ul>
-      </div>
-      <div className={styles.formPanel}>
-        <EnquiryForm caseMode source="homepage" submitLabel="Send my case for assessment" />
+    <section className={`${styles.conversionBand} ${styles.reveal}`} aria-labelledby="case-title">
+      <div className={styles.conversion}>
+        <div className={styles.conversionCopy}>
+          <Eyebrow>{homepageConversion.eyebrow}</Eyebrow>
+          <h2 id="case-title">{homepageConversion.title}</h2>
+          <p>{homepageConversion.lead}</p>
+          <div className={styles.actions}>
+            <Link className={styles.primaryOnDark} href={homepageConversion.primaryHref}>
+              {homepageConversion.primaryCta}
+              <ArrowUpRight aria-hidden="true" size={18} />
+            </Link>
+            <Link className={styles.secondaryOnDark} href={homepageConversion.secondaryHref}>
+              {homepageConversion.secondaryCta}
+              <ArrowRight aria-hidden="true" size={18} />
+            </Link>
+          </div>
+          <ul className={styles.conversionPoints}>
+            {homepageConversion.points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </div>
+        <div className={styles.formPanel}>
+          <p className={styles.formIntro}>{homepageConversion.formIntro}</p>
+          <EnquiryForm caseMode source="homepage" submitLabel="Send a short note" />
+        </div>
       </div>
     </section>
   )

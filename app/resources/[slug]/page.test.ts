@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import ResourceArticlePage, { generateMetadata, generateStaticParams } from "./page"
+import ResourceArticlePage, { dynamicParams, generateMetadata, generateStaticParams } from "./page"
 
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
 describe("resource article route", () => {
   it("does not prerender draft slugs", () => {
     expect(generateStaticParams()).toEqual([])
+    expect(dynamicParams).toBe(false)
   })
 
   it("404s draft slugs instead of rendering a coming-soon shell", async () => {

@@ -9,6 +9,8 @@ type ResourcePageProps = {
   params: Promise<{ slug: string }>
 }
 
+export const dynamicParams = false
+
 export function generateStaticParams() {
   return getPublishedResources()
     .filter((resource) => getResourceBody(resource.slug))

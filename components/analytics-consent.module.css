@@ -1,0 +1,237 @@
+.banner {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  padding: 16px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 -12px 32px color-mix(in srgb, var(--ink) 24%, transparent);
+}
+
+.bannerInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(220px, auto);
+  gap: 16px 24px;
+  align-items: center;
+  width: min(1100px, 100%);
+  margin-inline: auto;
+}
+
+.heading {
+  margin: 0 0 8px;
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: 1.05rem;
+  letter-spacing: -.03em;
+  font-weight: 800;
+}
+
+.banner p,
+.dialogLead,
+.category p {
+  color: color-mix(in srgb, var(--paper) 78%, transparent);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.banner a {
+  color: var(--lime);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accept,
+.reject,
+.settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.accept:focus-visible,
+.reject:focus-visible,
+.settings:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 3px;
+}
+
+.dialog .accept:focus-visible,
+.dialog .settings:focus-visible,
+.dialog .reject:focus-visible {
+  outline-color: var(--green);
+}
+
+.accept {
+  border: 0;
+  background: var(--green);
+  color: var(--paper);
+}
+
+.reject {
+  border: 2px solid var(--paper);
+  background: transparent;
+  color: var(--paper);
+}
+
+.settings {
+  border: 2px solid color-mix(in srgb, var(--paper) 55%, transparent);
+  background: transparent;
+  color: var(--paper);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: end center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  max-height: min(90vh, 640px);
+  overflow: auto;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.dialogLead {
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+
+.category {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper) 92%, white);
+}
+
+.category p { color: #52615b; }
+
+.categoryHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.categoryName {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.always,
+.optional {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.always { color: var(--green); }
+.optional { color: #52615b; }
+
+.toggle {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  border: 0;
+  padding: 0;
+}
+
+.toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.dialog .accept {
+  background: var(--green);
+  color: var(--paper);
+}
+
+.dialog .settings {
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+  color: var(--ink);
+}
+
+.dialog .reject {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (hover: hover) {
+  .accept:hover { background: var(--green-dark); }
+  .reject:hover { background: color-mix(in srgb, var(--paper) 12%, transparent); }
+  .settings:hover { color: var(--paper); }
+  .dialog .settings:hover { color: var(--ink); }
+}
+
+@media (max-width: 767px) {
+  .bannerInner,
+  .actions { grid-template-columns: minmax(0, 1fr); }
+  .actions { display: grid; }
+  .accept,
+  .reject,
+  .settings { width: 100%; }
+  .overlay { place-items: end stretch; }
+}
+
+@media (max-width: 360px) {
+  .banner { padding: 12px; }
+  .dialog { padding: 18px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .dialog,
+  .accept,
+  .reject,
+  .settings {
+    transition: none !important;
+  }
+}

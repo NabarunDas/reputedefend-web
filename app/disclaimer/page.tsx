@@ -4,9 +4,10 @@ import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+import { disclaimerHero, disclaimerInternational, disclaimerSeo } from "./content"
 
-const title = pageTitle("Disclaimer")
-const description = "ProfileRelaunch is independent of Google. Profile reinstatement, review removal and platform timeframes are not guaranteed. Website information is not legal advice."
+const title = pageTitle(disclaimerSeo.titlePage)
+const description = disclaimerSeo.description
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -65,6 +66,7 @@ const sections: LegalSection[] = [
       <>
         <p>Information on this website is general information and practical service guidance. It is not legal advice, it is not a substitute for advice about your specific circumstances, and it is not a Google decision.</p>
         <p>Examples, process descriptions and frequently asked questions are illustrative. They do not mean that every situation has the same route or the same result.</p>
+        <p>{disclaimerInternational}</p>
       </>
     ),
   },
@@ -73,7 +75,7 @@ const sections: LegalSection[] = [
     title: "If you need support",
     content: (
       <>
-        <p>If you have an active Business Profile or review issue, use <Link href="/get-help">Get Help</Link>. For a general question, use <Link href="/contact">Contact</Link>. How we handle information you send is described in the <Link href="/privacy">privacy notice</Link>. Website and enquiry use is described in the <Link href="/terms">terms of use</Link>.</p>
+        <p>If you have an active Business Profile or review issue, use <Link href="/get-help">Get Help</Link>. For a general question, use <Link href="/contact">Contact</Link>. How we handle information you send is described in the <Link href="/privacy">privacy notice</Link>. Website and enquiry use is described in the <Link href="/terms">terms of use</Link>. Optional analytics is described in the <Link href="/cookies">Cookie &amp; analytics notice</Link>.</p>
       </>
     ),
   },
@@ -82,9 +84,9 @@ const sections: LegalSection[] = [
 export default function DisclaimerPage() {
   return (
     <LegalPage
-      eyebrow="Disclaimer"
-      title="Independent support, not Google."
-      lead={`${legalIdentity.tradingName} is independent of Google. We cannot guarantee reinstatement, review removal, ranking changes or any other platform outcome. Information on this website is practical guidance, not legal advice.`}
+      eyebrow={disclaimerHero.eyebrow}
+      title={disclaimerHero.title}
+      lead={disclaimerHero.lead}
       currentPath="/disclaimer"
       sections={sections}
     />

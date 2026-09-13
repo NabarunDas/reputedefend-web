@@ -16,6 +16,7 @@ describe("legal identity", () => {
     expect(isSoleTrader()).toBe(true)
     expect(tradingAsLine()).toBe("Saswati Das, trading as ProfileRelaunch")
     expect(legalIdentity.siteUrl).toBe("https://profilerelaunch.com")
+    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
     expect(legalIdentity.noticeUpdated).toMatch(/\d{1,2} \w+ \d{4}/)
     expect(feeWording).toMatch(/fees will be explained clearly before you decide how to proceed/)
   })

@@ -4,9 +4,22 @@ import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
 import { feeWording, hasLegalValue, legalIdentity, showsCompanyRegistration, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+import {
+  privacyAnalytics,
+  privacyCaseFields,
+  privacyContactFields,
+  privacyCovers,
+  privacyHero,
+  privacyHomepageFields,
+  privacyMarketing,
+  privacyNoPayment,
+  privacyNoUpload,
+  privacySeo,
+  privacyUses,
+} from "./content"
 
-const title = pageTitle("Privacy notice")
-const description = "How ProfileRelaunch handles information submitted through this website, including general enquiries and case-intake submissions."
+const title = pageTitle(privacySeo.titlePage)
+const description = privacySeo.description
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -22,8 +35,7 @@ const sections: LegalSection[] = [
     title: "What this notice covers",
     content: (
       <>
-        <p>This notice explains how {tradingAsLine()} handles information that visitors may submit through this website. It reflects the current site: public information pages and enquiry forms. It is not an account product, a customer dashboard or a payment system.</p>
-        <p>Submitting a form does not, by itself, create a client or paid-service relationship. Any later support, and any associated fees, are explained before you decide how to proceed.</p>
+        {privacyCovers.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       </>
     ),
   },
@@ -34,24 +46,18 @@ const sections: LegalSection[] = [
       <>
         <p>We do not ask you to create an account. Information reaches us only if you choose to send a form. What we receive depends on which form you use.</p>
         <h3>Homepage enquiry</h3>
-        <p>The short homepage form may include your name, email address, optional business name, the type of help you select, and a description of what happened or what you need.</p>
+        <p>The short homepage form may include {privacyHomepageFields.join(", ")}.</p>
         <h3>Contact form</h3>
-        <p>A general message may include your name, email address, optional business name, a subject (such as a general question, service question, partnership or media enquiry), and your message. Older contact submissions may instead include a service type rather than a subject.</p>
+        <p>A general message may include {privacyContactFields.join("; ")}. Older contact submissions may instead include a service type rather than a subject.</p>
         <h3>Get Help case intake</h3>
         <p>A case submission may include:</p>
         <ul>
-          <li>the type of help needed</li>
-          <li>your name and email address</li>
-          <li>optional phone number</li>
-          <li>business name and country</li>
-          <li>optional website, Business Profile or review URLs</li>
-          <li>an account of what happened, including dates, messages or steps already taken</li>
-          <li>confirmation that the information is accurate to the best of your knowledge</li>
-          <li>confirmation that you have read this privacy information</li>
+          {privacyCaseFields.map((item) => <li key={item}>{item}</li>)}
         </ul>
+        <p>{privacyNoUpload}</p>
         <p>We also record which form you used, so that a general question and a case submission can be handled appropriately.</p>
         <h3>Technical information</h3>
-        <p>The systems used to operate this website may automatically record ordinary technical details, such as IP address, browser type and the time of a request, as part of running the site securely and reducing abuse. This website does not run advertising, profiling or analytics products.</p>
+        <p>The systems used to operate this website may automatically record ordinary request-level technical details as part of running the site securely and reducing abuse. That can include information such as IP address, browser type and the time of a request where the hosting or security systems provide it. We do not list fields a hosting platform has not been confirmed to record.</p>
       </>
     ),
   },
@@ -62,13 +68,9 @@ const sections: LegalSection[] = [
       <>
         <p>If a submission is received, we use it to:</p>
         <ul>
-          <li>respond to an enquiry</li>
-          <li>assess a case you have asked us to look at</li>
-          <li>communicate about requested support</li>
-          <li>ask for clarification where the information is incomplete</li>
-          <li>maintain reasonable security and reduce automated or abusive submissions</li>
+          {privacyUses.map((item) => <li key={item}>{item}</li>)}
         </ul>
-        <p>We do not sell the information you submit. We do not use it for advertising, profiling or analytics. We do not use it to create an account or take payment, because this website does not collect payments or provide a customer login.</p>
+        <p>{privacyNoPayment}</p>
         <p>{feeWording}</p>
       </>
     ),
@@ -79,7 +81,18 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>Where data protection law requires a legal basis, we process a submission because you have asked us to look at a question or a case. That is usually necessary to take steps at your request, or because we have a legitimate interest in responding to a business enquiry, assessing the information you sent and protecting the service against abuse.</p>
-        <p>On Get Help, the accuracy and privacy confirmations record that you have checked the information and have read this notice. They are not used as marketing consent.</p>
+        <p>Optional analytics, when configured, is used only after you accept it. Consent is the model this website uses for that analytics. We do not invent a different lawful basis to avoid asking.</p>
+        <p>{privacyMarketing}</p>
+      </>
+    ),
+  },
+  {
+    id: "analytics",
+    title: "Optional analytics",
+    content: (
+      <>
+        {privacyAnalytics.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+        <p>The <Link href="/cookies">Cookie &amp; analytics notice</Link> explains the preference storage and how to change your choice.</p>
       </>
     ),
   },
@@ -88,7 +101,7 @@ const sections: LegalSection[] = [
     title: "What not to send",
     content: (
       <>
-        <p>Please do not include passwords, verification codes, account credentials or unnecessary sensitive personal information. A useful enquiry can be based on public links, the wording of platform messages and a factual account of what happened.</p>
+        <p>Please do not include passwords, OTPs, verification codes, account credentials or unnecessary sensitive personal information. A useful enquiry can be based on public links, the wording of platform messages and a factual account of what happened.</p>
         <p>If a situation later requires you to take an action inside your own account, that will be explained rather than handled through shared login details.</p>
         <LegalCallout>We may reject or ignore submissions that appear automated, abusive, or that include credentials or other information that should not be sent through this website.</LegalCallout>
       </>
@@ -99,8 +112,8 @@ const sections: LegalSection[] = [
     title: "Cookies, accounts and tracking",
     content: (
       <>
-        <p>This website does not use advertising cookies, analytics cookies or a cookie banner, because it does not run advertising or analytics tracking. There is no account registration, customer dashboard or payment collection.</p>
-        <p>Typefaces used on the site are prepared during the website build and served from this site. We do not load a separate advertising or analytics script.</p>
+        <p>This website does not use advertising cookies, session replay, heatmaps, Google Ads or social-media advertising tags. There is no account registration, customer dashboard or payment collection.</p>
+        <p>If analytics is configured, a first-visit choice is shown so you can accept or reject it. Necessary storage can remember that choice. Typefaces used on the site are prepared during the website build and served from this site.</p>
       </>
     ),
   },
@@ -110,10 +123,12 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>{legalIdentity.tradingName} reviews submissions. Enquiry messages are delivered by email using Resend so that we can receive and review them. Resend processes that information only to provide that email delivery service. This notice does not describe Resend’s hosting locations, retention rules or other contractual terms.</p>
+        <p>If Google Analytics is configured and you have accepted analytics, Google processes usage and technical information as the analytics provider. This notice does not invent processor contractual clauses.</p>
         {hasLegalValue(legalIdentity.enquiryProcessorName) || hasLegalValue(legalIdentity.hostingProvider) ? (
           <ul>
             {hasLegalValue(legalIdentity.hostingProvider) ? <li>Website hosting: {legalIdentity.hostingProvider}</li> : null}
             {hasLegalValue(legalIdentity.enquiryProcessorName) ? <li>Enquiry email delivery: {legalIdentity.enquiryProcessorName}</li> : null}
+            <li>Optional website analytics: Google Analytics 4, only if configured and accepted</li>
           </ul>
         ) : null}
       </>
@@ -129,6 +144,7 @@ const sections: LegalSection[] = [
         ) : (
           <p>We keep enquiry information only for as long as it is needed to respond, assess the situation, communicate about requested support and meet any legal obligations that apply. There is no single published retention period that applies to every submission.</p>
         )}
+        <p>We do not publish a Google Analytics retention duration. Any such period is determined by the configured Google property and is not established in this notice.</p>
       </>
     ),
   },
@@ -137,7 +153,7 @@ const sections: LegalSection[] = [
     title: "Where information may be processed",
     content: (
       <>
-        <p>If a technical provider is used to host the website or receive messages, information may be processed in more than one country. We do not describe a specific country-to-country transfer in this notice.</p>
+        <p>If a technical provider is used to host the website, receive messages or provide optional analytics, information may be processed in more than one country. We do not promise that all information stays in the United Kingdom, and we do not describe a specific country-to-country transfer mechanism in this notice.</p>
       </>
     ),
   },
@@ -199,9 +215,9 @@ const sections: LegalSection[] = [
 export default function PrivacyPage() {
   return (
     <LegalPage
-      eyebrow="Privacy"
-      title="Privacy notice"
-      lead={`This notice describes the information visitors may submit through ${legalIdentity.tradingName}, why it is used, and the limits of what this website collects.`}
+      eyebrow={privacyHero.eyebrow}
+      title={privacyHero.title}
+      lead={privacyHero.lead}
       currentPath="/privacy"
       sections={sections}
     />

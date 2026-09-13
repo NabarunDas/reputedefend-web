@@ -1,3 +1,4 @@
+import { brandName } from "@/lib/brand"
 import {
   CASE_SERVICES,
   CONTACT_SUBJECTS,
@@ -5,6 +6,10 @@ import {
   caseServiceLabel,
   type EnquiryInput,
 } from "@/lib/enquiry"
+
+function brandedSubject(rest: string) {
+  return `[${brandName}] ${rest}`
+}
 
 export function escapeHtml(value: string) {
   return value
@@ -34,20 +39,20 @@ function contactSubjectLabel(data: EnquiryInput) {
 export function enquiryEmailSubject(data: EnquiryInput) {
   if (data.source === "get-help") {
     const business = compactSubjectPart(data.businessName) || "Business"
-    if (data.service === "profile-recovery") return `[ReputeDefend] New Profile Recovery case — ${business}`
-    if (data.service === "review-protection") return `[ReputeDefend] New Review Protection case — ${business}`
-    if (data.service === "profile-access") return `[ReputeDefend] New Profile / Access case — ${business}`
-    return `[ReputeDefend] New case enquiry — ${business}`
+    if (data.service === "profile-recovery") return brandedSubject(`New Profile Recovery case — ${business}`)
+    if (data.service === "review-protection") return brandedSubject(`New Review Protection case — ${business}`)
+    if (data.service === "profile-access") return brandedSubject(`New Profile / Access case — ${business}`)
+    return brandedSubject(`New case enquiry — ${business}`)
   }
 
   if (data.source === "contact") {
-    return `[ReputeDefend] General enquiry — ${compactSubjectPart(contactSubjectLabel(data))}`
+    return brandedSubject(`General enquiry — ${compactSubjectPart(contactSubjectLabel(data))}`)
   }
 
   const service = GENERAL_SERVICE_OPTIONS.find((item) => item.value === data.service)?.label
     ?? CASE_SERVICES.find((item) => item.value === data.service)?.label
     ?? "General enquiry"
-  return `[ReputeDefend] General enquiry — ${compactSubjectPart(service)}`
+  return brandedSubject(`General enquiry — ${compactSubjectPart(service)}`)
 }
 
 type EmailRow = { label: string; value: string }
@@ -110,7 +115,7 @@ export function enquiryEmailHtml(data: EnquiryInput, submittedAt: Date) {
 }
 
 export function customerAcknowledgementSubject() {
-  return "[ReputeDefend] We have received your enquiry"
+  return brandedSubject("We have received your enquiry")
 }
 
 export function customerAcknowledgementText() {

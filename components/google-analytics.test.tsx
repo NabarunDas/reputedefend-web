@@ -69,6 +69,8 @@ describe("GoogleAnalytics", () => {
     expect(serialized).not.toMatch(/service=|email|businessName|reviewUrl/)
     expect(serialized).toContain("allow_google_signals")
     expect(serialized).toContain("allow_ad_personalization_signals")
+    expect(serialized).toContain("cookie_domain")
+    expect(serialized).toContain("none")
     expect(serialized).not.toMatch(/"ad_storage":"granted"/)
   })
 

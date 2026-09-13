@@ -1,3 +1,5 @@
+import { brandName } from "@/lib/brand"
+
 const EMAIL_PATTERN = /^\S+@\S+\.\S+$/
 
 function trimEnv(value: string | undefined) {
@@ -42,8 +44,9 @@ export function readEnquiryEmailConfig(
 
 export function formattedFromAddress(fromEmail: string) {
   if (fromEmail.includes("<")) return fromEmail
-  // Keep the verified ReputeDefend mailbox identity until email migration.
-  return `ReputeDefend <${fromEmail}>`
+  // Display brand is ProfileRelaunch. The mailbox domain may still be the
+  // currently verified sending domain until Workspace/Resend migration.
+  return `${brandName} <${fromEmail}>`
 }
 
 export function runtimeAllowsSimulation(nodeEnv: string | undefined = process.env.NODE_ENV) {

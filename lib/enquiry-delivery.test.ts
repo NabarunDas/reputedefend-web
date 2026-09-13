@@ -7,7 +7,7 @@ import {
   buildInternalEnquiryMessage,
   deliverEnquiry,
 } from "@/lib/enquiry-delivery"
-import { enquiryEmailSubject } from "@/lib/enquiry-email"
+import { customerAcknowledgementSubject, enquiryEmailSubject } from "@/lib/enquiry-email"
 import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
 import { POST } from "@/app/api/enquiry/route"
@@ -101,7 +101,7 @@ describe("deliverEnquiry", () => {
     const message = firstSend(send)
     expect(message?.replyTo).toBe("alex@example.com")
     expect(message?.to).toBe("owner@example.com")
-    expect(message?.from).toContain("enquiries@reputedefend.com")
+    expect(message?.from).toBe("ProfileRelaunch <enquiries@reputedefend.com>")
     expect(message?.kind).toBe("internal")
   })
 
@@ -220,12 +220,12 @@ describe("deliverEnquiry", () => {
 
 describe("enquiry email mapping", () => {
   it("distinguishes case and general enquiry subjects", () => {
-    expect(enquiryEmailSubject(validCase)).toBe("[ReputeDefend] New Profile Recovery case — Harbour Bakery")
+    expect(enquiryEmailSubject(validCase)).toBe("[ProfileRelaunch] New Profile Recovery case — Harbour Bakery")
     expect(enquiryEmailSubject({
       ...validCase,
       service: "review-protection",
       businessName: "Lee & Co",
-    })).toBe("[ReputeDefend] New Review Protection case — Lee & Co")
+    })).toBe("[ProfileRelaunch] New Review Protection case — Lee & Co")
     expect(enquiryEmailSubject({
       fullName: "Sam Patel",
       email: "sam@example.com",
@@ -241,7 +241,7 @@ describe("enquiry email mapping", () => {
       informationAccurate: false,
       privacyAccepted: false,
       source: "contact",
-    })).toBe("[ReputeDefend] General enquiry — Partnership / business enquiry")
+    })).toBe("[ProfileRelaunch] General enquiry — Partnership / business enquiry")
     expect(enquiryEmailSubject({
       fullName: "Jordan Lee",
       email: "jordan@example.com",
@@ -257,7 +257,8 @@ describe("enquiry email mapping", () => {
       informationAccurate: false,
       privacyAccepted: false,
       source: "homepage",
-    })).toBe("[ReputeDefend] General enquiry — Review issue")
+    })).toBe("[ProfileRelaunch] General enquiry — Review issue")
+    expect(customerAcknowledgementSubject()).toBe("[ProfileRelaunch] We have received your enquiry")
   })
 
   it("includes case-intake fields and omits empty optionals and any honeypot", () => {

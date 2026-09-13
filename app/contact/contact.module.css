@@ -77,6 +77,7 @@
   line-height: 1.08;
   letter-spacing: -.045em;
   font-weight: 800;
+  padding-inline-end: .12em;
 }
 
 .lead {
@@ -372,8 +373,13 @@
 
 @media (max-width: 480px) {
   .page { --wrap: calc(100% - 32px); }
+  .page h1 {
+    letter-spacing: -.03em;
+  }
   .aside,
-  .banner { padding: 18px 16px; }
+  .banner,
+  .routeStay,
+  .routeHelp { padding: 16px 14px; }
   .finalNote { margin-bottom: 48px; }
 }
 

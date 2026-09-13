@@ -175,18 +175,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-verification-stuck-or-rejected",
     title: "Google Business Profile Verification Stuck or Rejected: What to Check",
     seoTitle: "Google Business Profile Verification Stuck or Rejected: What to Check",
     description:
-      "A practical checklist for a Google Business Profile verification that is stuck or has been rejected.",
+      "If Google Business Profile verification is stuck or rejected, identify the exact verification state, check the requirements and follow the correct retry or support route.",
     category: "verification-access",
-    excerpt: "What to check when Google Business Profile verification is stuck or rejected.",
+    excerpt:
+      "A practical guide to waiting reviews, rejected verification videos, re-verification, missing methods and ownership issues.",
+    published: true,
+    featured: false,
     urgent: false,
-    relatedResourceSlugs: ["lost-access-to-google-business-profile"],
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 12,
+    relatedResourceSlugs: [
+      "google-business-profile-suspended-before-appeal",
+      "lost-access-to-google-business-profile",
+    ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "can-a-google-review-be-removed",
     title: "Can a Google Review Be Removed? What Google's Policy Actually Allows",

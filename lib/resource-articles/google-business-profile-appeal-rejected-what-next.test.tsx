@@ -68,7 +68,9 @@ describe("Article #3 rejected appeal next steps", () => {
       "google-business-profile-suspended-before-appeal",
       "google-business-profile-appeal-evidence-checklist",
     ])
-    expect(getPublishedResourceBySlug("google-business-profile-verification-stuck-or-rejected")).toBeUndefined()
+    expect(related.map((item) => item.slug)).not.toContain(
+      "google-business-profile-verification-stuck-or-rejected",
+    )
   })
 
   it("renders approved copy, related published guides, and the Profile Recovery CTA", () => {
@@ -81,6 +83,7 @@ describe("Article #3 rejected appeal next steps", () => {
       "A rejected appeal should trigger a diagnosis before it triggers another submission.",
     )
     expect(container.textContent).toContain("What did the first appeal fail to establish?")
+    expect(container.textContent).not.toContain("Keep Article #1's principle")
     expect(container.textContent).toContain("additional review as guaranteed")
     expect(
       screen.getByRole("heading", {

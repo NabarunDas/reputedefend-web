@@ -439,7 +439,7 @@ export const appealRejectedWhatNextBody = {
       "Correct real inaccuracies where Google's process allows, rather than making speculative changes.",
       "Gather additional genuine evidence that adds useful information to the case.",
       "Decide what each new document actually proves.",
-      "Keep Article #1's principle in mind: do not create a replacement Business Profile for the same business as a workaround.",
+      "Do not create a replacement Business Profile for the same business as a workaround.",
       "Request additional review only through the appropriate Google route when the denied case is eligible for that next step.",
     ],
   },

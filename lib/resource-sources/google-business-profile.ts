@@ -47,3 +47,27 @@ export const sourceRepresentBusinessGuidelines: OfficialSource = {
   title: "Guidelines for representing your business on Google",
   url: "https://support.google.com/business/answer/3038177?hl=en-GB",
 }
+
+export const sourceVerifyBusiness: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Verify your business on Google",
+  url: "https://support.google.com/business/answer/7107242?hl=en-GB",
+}
+
+export const sourceVideoVerification: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Verify your business with a video recording",
+  url: "https://support.google.com/business/answer/14271705?hl=en-GB",
+}
+
+export const sourceRequestOwnership: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Request ownership of a Business Profile",
+  url: "https://support.google.com/business/answer/4566671?hl=en-GB",
+}
+
+export const sourceDuplicateOwnershipIssues: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Resolve duplicate profiles and ownership issues",
+  url: "https://support.google.com/business/answer/12756178?hl=en-GB",
+}

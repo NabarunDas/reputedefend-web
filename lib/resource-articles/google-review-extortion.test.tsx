@@ -77,8 +77,8 @@ describe("Article #7 Google review extortion", () => {
     expect(body?.googleSays?.sources).not.toContain(sourceReportInappropriateReviews)
     expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
     expect(body?.urgentCallout).toBe(googleReviewExtortionUrgentCallout)
-    expect(related).toEqual([])
-    expect(getPublishedResourceBySlug("google-review-bombing")).toBeUndefined()
+    expect(related.map((item) => item.slug)).toEqual(["google-review-bombing"])
+    expect(getPublishedResourceBySlug("google-review-bombing")).toBeDefined()
     expect(getPublishedResourceBySlug("customer-threatening-bad-google-review")).toBeUndefined()
     expect(getPublishedResourceBySlug("offered-to-remove-google-reviews-for-money")).toBeUndefined()
   })
@@ -134,8 +134,8 @@ describe("Article #7 Google review extortion", () => {
     expect(within(bibliography as HTMLElement).getByText("Fake engagement")).toBeInTheDocument()
 
     expect(
-      screen.queryByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
-    ).not.toBeInTheDocument()
+      screen.getByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
+    ).toBeInTheDocument()
     expect(
       screen.queryByText(
         "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them",

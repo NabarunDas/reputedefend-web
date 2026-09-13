@@ -268,21 +268,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-review-bombing",
     title: "Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once",
     seoTitle: "Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once",
     description:
-      "A calm first-response guide when several suspicious Google reviews appear in a short period.",
+      "If several suspicious Google reviews arrive at once, preserve the pattern, assess each review against Google's policies and use the correct reporting and appeal process.",
     category: "review-abuse-scams",
-    excerpt: "What to do when several suspicious Google reviews appear in a short period.",
+    excerpt:
+      "A calm first-response guide when several suspicious Google reviews appear in a short period.",
+    published: true,
+    featured: false,
     urgent: true,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "google-review-extortion",
       "fake-google-review-or-genuine-negative-feedback",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "can-a-competitor-or-ex-employee-leave-a-google-review",
     title: "Can a Competitor or Ex-Employee Leave a Google Review?",

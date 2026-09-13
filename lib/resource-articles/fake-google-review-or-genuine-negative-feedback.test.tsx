@@ -76,11 +76,13 @@ describe("Article #6 fake review or genuine negative feedback", () => {
     expect(body?.googleSays?.sources).toEqual([sourceProhibitedRestrictedContent, sourceFakeEngagement])
     expect(body?.googleSays?.sources).not.toContain(sourceReportInappropriateReviews)
     expect(body?.googleSays?.sources).not.toContain(sourceManageCustomerReviews)
-    expect(related.map((item) => item.slug)).toEqual(["can-a-google-review-be-removed"])
-    expect(getPublishedResourceBySlug("google-review-bombing")).toBeUndefined()
+    expect(related.map((item) => item.slug)).toEqual([
+      "can-a-google-review-be-removed",
+      "google-review-bombing",
+    ])
   })
 
-  it("renders approved copy, related Article #5 only, and the Review Protection CTA", () => {
+  it("renders approved copy, related Articles #5 and #8, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -116,8 +118,8 @@ describe("Article #6 fake review or genuine negative feedback", () => {
       screen.getByText("Can a Google Review Be Removed? What Google's Policy Actually Allows"),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
-    ).not.toBeInTheDocument()
+      screen.getByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

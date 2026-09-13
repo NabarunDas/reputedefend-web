@@ -53,3 +53,21 @@ export const sourceReviewRatingScams: OfficialSource = {
   title: "Identify scams on reviews & ratings",
   url: "https://support.google.com/maps/answer/14014039?hl=en",
 }
+
+export const sourceReportUserProfiles: OfficialSource = {
+  name: "Maps User Contributed Content Policy Help",
+  title: "Report inappropriate user profiles",
+  url: "https://support.google.com/contributionpolicy/answer/9968060?hl=en-GB",
+}
+
+export const sourcePostingRestrictions: OfficialSource = {
+  name: "Maps User Contributed Content Policy Help",
+  title: "Posting restrictions",
+  url: "https://support.google.com/contributionpolicy/answer/13036130?hl=en-GB",
+}
+
+export const sourceConsumerAlerts: OfficialSource = {
+  name: "Maps User Generated Content Policy Help",
+  title: "Consumer Alerts",
+  url: "https://support.google.com/contributionpolicy/answer/15178562?hl=en",
+}

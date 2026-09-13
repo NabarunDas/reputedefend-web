@@ -186,7 +186,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "/resources/google-business-profile-suspended-before-appeal",
     )
     expect(
-      screen.queryByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
+      screen.queryByText("Google Rejected My Review Report: What Can You Do Next?"),
     ).not.toBeInTheDocument()
   })
 

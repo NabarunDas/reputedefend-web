@@ -5,11 +5,15 @@ import { resourcePath, type ResourceRecord } from "@/lib/resources"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
+  if (!resource.datePublished || !resource.dateReviewed) {
+    throw new Error(`Cannot emit article metadata without publication dates for ${resource.slug}`)
+  }
+
   const title = `${resource.seoTitle} | ${brandName}`
   const description = resource.description
   const path = resourcePath(resource.slug)
-  const publishedTime = resource.datePublished ?? undefined
-  const modifiedTime = resource.dateReviewed ?? resource.dateModified ?? resource.datePublished ?? undefined
+  const publishedTime = resource.datePublished
+  const modifiedTime = resource.dateReviewed ?? resource.dateModified ?? resource.datePublished
 
   return {
     title: { absolute: title },
@@ -27,10 +31,14 @@ export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
 }
 
 export function resourceArticleJsonLd(resource: ResourceRecord) {
+  if (!resource.datePublished || !resource.dateReviewed) {
+    throw new Error(`Cannot emit Article JSON-LD without publication dates for ${resource.slug}`)
+  }
+
   const url = organizationUrl()
   const pageUrl = `${url}${resourcePath(resource.slug)}`
   const datePublished = resource.datePublished
-  const dateModified = resource.dateReviewed ?? resource.dateModified ?? resource.datePublished
+  const dateModified = resource.dateReviewed
 
   return {
     "@context": "https://schema.org",

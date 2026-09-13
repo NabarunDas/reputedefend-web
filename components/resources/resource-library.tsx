@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import {
   getResourceCategory,
   type ResourceCategoryId,
@@ -9,8 +9,15 @@ import {
 import { ResourceCard } from "./resource-card"
 import styles from "../../app/resources/resources.module.css"
 
-export function ResourceLibrary({ resources }: { resources: ResourceRecord[] }) {
-  const [filter, setFilter] = useState<ResourceCategoryId | "all">("all")
+export function ResourceLibrary({
+  resources,
+  filter,
+  onFilterChange,
+}: {
+  resources: ResourceRecord[]
+  filter: ResourceCategoryId | "all"
+  onFilterChange: (filter: ResourceCategoryId | "all") => void
+}) {
   const visible = useMemo(
     () => (filter === "all" ? resources : resources.filter((item) => item.category === filter)),
     [filter, resources],
@@ -24,12 +31,12 @@ export function ResourceLibrary({ resources }: { resources: ResourceRecord[] }) 
 
   return (
     <div>
-      <div className={styles.filterRow} role="toolbar" aria-label="Filter published resources">
+      <div className={styles.filterRow} role="group" aria-label="Filter published resources">
         <button
           type="button"
           className={styles.filterChip}
           aria-pressed={filter === "all"}
-          onClick={() => setFilter("all")}
+          onClick={() => onFilterChange("all")}
         >
           All published guides
         </button>
@@ -41,7 +48,7 @@ export function ResourceLibrary({ resources }: { resources: ResourceRecord[] }) 
               type="button"
               className={styles.filterChip}
               aria-pressed={filter === id}
-              onClick={() => setFilter(id)}
+              onClick={() => onFilterChange(id)}
             >
               {category.title}
             </button>
@@ -64,6 +71,7 @@ export function ResourceCategoryCard({
   urgentLabel,
   count,
   emptyLabel,
+  selected = false,
   onSelect,
 }: {
   id: ResourceCategoryId
@@ -72,38 +80,35 @@ export function ResourceCategoryCard({
   urgentLabel?: string
   count: number
   emptyLabel: string
+  selected?: boolean
   onSelect?: (id: ResourceCategoryId) => void
 }) {
+  const selectable = count > 0 && Boolean(onSelect)
   const meta = count === 0 ? emptyLabel : count === 1 ? "1 published guide" : `${count} published guides`
-  const selectable = count > 0 && onSelect
 
-  const inner = (
-    <>
+  return (
+    <article
+      className={selected && selectable ? `${styles.categoryCard} ${styles.categoryCardSelected}` : styles.categoryCard}
+      id={`category-${id}`}
+    >
       <h3 className={styles.categoryTitle}>
         <span>{title}</span>
         {urgentLabel ? <span className={styles.urgentLabel}>{urgentLabel}</span> : null}
       </h3>
       <p className={styles.categoryCopy}>{description}</p>
-      <p className={styles.categoryMeta}>{meta}</p>
-    </>
-  )
-
-  if (!selectable) {
-    return (
-      <article className={styles.categoryCard} id={`category-${id}`}>
-        {inner}
-      </article>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      className={styles.categoryButton}
-      id={`category-${id}`}
-        onClick={() => onSelect?.(id)}
-    >
-      {inner}
-    </button>
+      {selectable ? (
+        <button
+          type="button"
+          className={styles.categoryAction}
+          aria-pressed={selected}
+          aria-controls="resource-library"
+          onClick={() => onSelect?.(id)}
+        >
+          {`${meta} in ${title}`}
+        </button>
+      ) : (
+        <p className={styles.categoryMeta}>{meta}</p>
+      )}
+    </article>
   )
 }

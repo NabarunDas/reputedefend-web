@@ -1,10 +1,17 @@
 import type { ResourceRecord } from "@/lib/resources"
 import { resourceAuthor } from "@/lib/resources"
+import type { OfficialSource } from "@/lib/resources"
 
 /**
  * Test-only fixtures. Never import these into production pages or the
  * public resource registry — they would become indexable content.
  */
+export const fixtureOfficialSource: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Test fixture help page",
+  url: "https://support.google.com/business/answer/test-fixture",
+}
+
 export const publishedResourceFixture: ResourceRecord = {
   slug: "test-published-guide",
   title: "Test published guide for template checks",
@@ -19,13 +26,6 @@ export const publishedResourceFixture: ResourceRecord = {
   dateReviewed: "2026-09-13",
   dateModified: "2026-09-13",
   readingMinutes: 8,
-  officialSources: [
-    {
-      name: "Google Business Profile Help",
-      title: "Test fixture help page",
-      url: "https://support.google.com/business/answer/test-fixture",
-    },
-  ],
   relatedResourceSlugs: ["test-related-published-guide", "test-unpublished-related", "google-review-extortion"],
   commercialRoute: "profile-recovery",
   author: resourceAuthor,
@@ -38,7 +38,6 @@ export const publishedRelatedFixture: ResourceRecord = {
   seoTitle: "Related published guide",
   featured: false,
   relatedResourceSlugs: ["test-published-guide"],
-  officialSources: [],
 }
 
 export const unpublishedRelatedFixture: ResourceRecord = {
@@ -51,13 +50,6 @@ export const unpublishedRelatedFixture: ResourceRecord = {
   dateReviewed: null,
   dateModified: null,
   readingMinutes: null,
-  officialSources: [
-    {
-      name: "Should never appear",
-      title: "Fake bibliography",
-      url: "https://example.com/fake-source",
-    },
-  ],
   relatedResourceSlugs: [],
 }
 
@@ -70,5 +62,26 @@ export const publishedReviewFixture: ResourceRecord = {
   urgent: true,
   featured: false,
   relatedResourceSlugs: [],
-  officialSources: [],
+}
+
+/** Accidental `published: true` without a registered article body. */
+export const publishedWithoutBodyFixture: ResourceRecord = {
+  ...publishedResourceFixture,
+  slug: "published-without-body",
+  title: "Incomplete published record",
+  featured: false,
+  relatedResourceSlugs: [],
+}
+
+export function fixtureBodyLookup(slug: string) {
+  if (slug === publishedWithoutBodyFixture.slug) return undefined
+  if (slug === unpublishedRelatedFixture.slug) return undefined
+  if (
+    slug === publishedResourceFixture.slug ||
+    slug === publishedRelatedFixture.slug ||
+    slug === publishedReviewFixture.slug
+  ) {
+    return { sourcesUsed: [fixtureOfficialSource] }
+  }
+  return undefined
 }

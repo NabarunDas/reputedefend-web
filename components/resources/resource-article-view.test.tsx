@@ -7,6 +7,7 @@ import { ResourceArticleView } from "./resource-article-view"
 import type { ResourceArticleBody } from "@/lib/resource-content"
 import { reviewExtortionUrgentCallout } from "@/lib/resources"
 import {
+  fixtureOfficialSource,
   publishedRelatedFixture,
   publishedResourceFixture,
   publishedReviewFixture,
@@ -29,7 +30,7 @@ const body: ResourceArticleBody = {
   main: <p>Main editorial content for template tests.</p>,
   googleSays: {
     paraphrase: <p>Google publishes review and profile policies on its Help pages.</p>,
-    sources: publishedResourceFixture.officialSources,
+    sources: [fixtureOfficialSource],
   },
   interpretation: <p>ProfileRelaunch interpretation stays separate from official wording.</p>,
   beforeYouAct: <p>Do not send passwords or verification codes.</p>,
@@ -42,7 +43,7 @@ const body: ResourceArticleBody = {
       body: <p>Document what arrived and when.</p>,
     },
   ],
-  sourcesUsed: publishedResourceFixture.officialSources,
+  sourcesUsed: [fixtureOfficialSource],
 }
 
 describe("resource article template", () => {
@@ -91,7 +92,7 @@ describe("resource article template", () => {
   })
 
   it("routes review content to the Review Protection assessment", () => {
-    render(
+    const { container } = render(
       <ResourceArticleView
         resource={publishedReviewFixture}
         body={{ ...body, sourcesUsed: [], googleSays: undefined, urgentCallout: reviewExtortionUrgentCallout }}
@@ -104,5 +105,6 @@ describe("resource article template", () => {
     )
     expect(screen.queryByText("Fake bibliography")).not.toBeInTheDocument()
     expect(screen.getByText(/Urgent situations/)).toBeInTheDocument()
+    expect(container.querySelectorAll('script[type="application/ld+json"]')).toHaveLength(0)
   })
 })

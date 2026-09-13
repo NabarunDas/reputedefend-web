@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next"
 import { brandSiteUrl } from "@/lib/brand"
+import { getResourceBody, type ResourceArticleBody } from "@/lib/resource-content"
 import type { ResourceCommercialRoute } from "@/lib/resource-links"
 
 export const resourceAuthor = "ProfileRelaunch" as const
@@ -34,7 +35,6 @@ export type ResourceRecord = {
   dateReviewed: string | null
   dateModified: string | null
   readingMinutes: number | null
-  officialSources: OfficialSource[]
   relatedResourceSlugs: string[]
   commercialRoute: ResourceCommercialRoute
   author: typeof resourceAuthor
@@ -85,8 +85,7 @@ export const resourceCategories: readonly ResourceCategory[] = [
   },
 ] as const
 
-function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author" | "officialSources" | "datePublished" | "dateReviewed" | "dateModified" | "readingMinutes"> & {
-  officialSources?: OfficialSource[]
+function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author" | "datePublished" | "dateReviewed" | "dateModified" | "readingMinutes"> & {
   featured?: boolean
 }): ResourceRecord {
   return {
@@ -94,7 +93,6 @@ function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author"
     published: false,
     featured: partial.featured ?? false,
     author: resourceAuthor,
-    officialSources: partial.officialSources ?? [],
     datePublished: null,
     dateReviewed: null,
     dateModified: null,
@@ -380,6 +378,8 @@ export const resourceRegistry: readonly ResourceRecord[] = [
   }),
 ] as const
 
+export type ResourceBodyLookup = (slug: string) => Pick<ResourceArticleBody, "sourcesUsed"> | undefined
+
 export type ResourceIndex = {
   all: readonly ResourceRecord[]
   getBySlug: (slug: string) => ResourceRecord | undefined
@@ -387,8 +387,38 @@ export type ResourceIndex = {
   published: () => ResourceRecord[]
 }
 
-export function createResourceIndex(records: readonly ResourceRecord[]): ResourceIndex {
+function hasIsoDate(value: string | null): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+/**
+ * Single definition of a resource that is safe to expose publicly.
+ * `published: true` is not enough on its own.
+ */
+export function isPublicResource(
+  record: ResourceRecord,
+  body: Pick<ResourceArticleBody, "sourcesUsed"> | undefined,
+): boolean {
+  return (
+    record.published === true &&
+    Boolean(body) &&
+    hasIsoDate(record.datePublished) &&
+    hasIsoDate(record.dateReviewed) &&
+    typeof record.readingMinutes === "number" &&
+    record.readingMinutes > 0 &&
+    Array.isArray(body?.sourcesUsed) &&
+    body.sourcesUsed.length > 0
+  )
+}
+
+export function createResourceIndex(
+  records: readonly ResourceRecord[],
+  getBody: ResourceBodyLookup = getResourceBody,
+): ResourceIndex {
   const bySlug = new Map(records.map((record) => [record.slug, record]))
+  function isPublic(record: ResourceRecord) {
+    return isPublicResource(record, getBody(record.slug))
+  }
   return {
     all: records,
     getBySlug(slug) {
@@ -396,15 +426,26 @@ export function createResourceIndex(records: readonly ResourceRecord[]): Resourc
     },
     getPublishedBySlug(slug) {
       const record = bySlug.get(slug)
-      return record?.published ? record : undefined
+      return record && isPublic(record) ? record : undefined
     },
     published() {
-      return records.filter((record) => record.published)
+      return records.filter(isPublic)
     },
   }
 }
 
-export const resources = createResourceIndex(resourceRegistry)
+export const resources = createResourceIndex(resourceRegistry, getResourceBody)
+
+const unsafePublished = resourceRegistry.filter(
+  (record) => record.published && !isPublicResource(record, getResourceBody(record.slug)),
+)
+if (unsafePublished.length > 0) {
+  throw new Error(
+    `Invalid resource publication state: ${unsafePublished.map((record) => record.slug).join(", ")} ${
+      unsafePublished.length === 1 ? "is" : "are"
+    } marked published without a complete public article.`,
+  )
+}
 
 export function getResourceCategory(id: ResourceCategoryId): ResourceCategory {
   const category = resourceCategories.find((item) => item.id === id)

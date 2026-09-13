@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourcesHub } from "./resources-hub"
-import { publishedResourceFixture } from "@/lib/resource-test-fixtures"
+import { publishedResourceFixture, publishedReviewFixture } from "@/lib/resource-test-fixtures"
 
 vi.mock("next/link", () => ({
   default({ href, children }: { href: string; children: React.ReactNode }) {
@@ -33,6 +33,8 @@ describe("Resources hub", () => {
     expect(screen.queryByText("Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews")).not.toBeInTheDocument()
     expect(container.textContent).not.toMatch(/\bBlog\b/)
     expect(screen.queryByRole("link", { name: /profile recovery/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/Planned guides remain hidden until they have been researched/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /published guide/i })).not.toBeInTheDocument()
   })
 
   it("uses a published fixture in the featured slot without inventing production articles", () => {
@@ -41,5 +43,31 @@ describe("Resources hub", () => {
     const guideLinks = screen.getAllByRole("link", { name: /read guide/i })
     expect(guideLinks.length).toBeGreaterThan(0)
     expect(guideLinks[0]).toHaveAttribute("href", "/resources/test-published-guide")
+  })
+
+  it("keeps empty categories static and filters the library from populated categories", () => {
+    const scrollIntoView = vi.fn()
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+    render(<ResourcesHub published={[publishedResourceFixture, publishedReviewFixture]} />)
+
+    expect(screen.queryByRole("button", { name: /Verification & Access/i })).not.toBeInTheDocument()
+    expect(screen.getAllByText("Guides in preparation").length).toBeGreaterThanOrEqual(3)
+
+    const profileFilter = screen.getByRole("button", { name: /1 published guide in Profile Recovery/i })
+    expect(profileFilter).toHaveAttribute("aria-pressed", "false")
+    fireEvent.click(profileFilter)
+
+    expect(screen.getByRole("button", { name: /1 published guide in Profile Recovery/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Profile Recovery" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("link", { name: /Test published review guide/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole("link", { name: /Test published guide for template checks/i }).length).toBeGreaterThan(0)
+    expect(scrollIntoView).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "All published guides" }))
+    expect(screen.getByRole("link", { name: /Test published review guide/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "All published guides" })).toHaveAttribute("aria-pressed", "true")
   })
 })

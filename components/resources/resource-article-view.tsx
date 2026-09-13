@@ -4,6 +4,7 @@ import { conversionForCommercialRoute } from "@/lib/resource-links"
 import {
   formatResourceLongDate,
   getResourceCategory,
+  isPublicResource,
   relatedPublishedResources,
   type ResourceRecord,
 } from "@/lib/resources"
@@ -36,17 +37,22 @@ export function ResourceArticleView({
   const conversion = conversionForCommercialRoute(resource.commercialRoute)
   const sourcesUsed = body.sourcesUsed
   const googleSources = body.googleSays?.sources ?? sourcesUsed
+  const exposeStructuredData = isPublicResource(resource, body)
 
   return (
     <article className={styles.page}>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(resourceArticleJsonLd(resource)) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(resourceBreadcrumbJsonLd(resource, category.title)) }}
-      />
+      {exposeStructuredData ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(resourceArticleJsonLd(resource)) }}
+        />
+      ) : null}
+      {exposeStructuredData ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(resourceBreadcrumbJsonLd(resource, category.title)) }}
+        />
+      ) : null}
       <ResourceBreadcrumbs resource={resource} />
       <header className={`${styles.hero} ${styles.measure}`}>
         <p className={styles.eyebrow}>

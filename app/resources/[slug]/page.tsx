@@ -12,16 +12,13 @@ type ResourcePageProps = {
 export const dynamicParams = false
 
 export function generateStaticParams() {
-  return getPublishedResources()
-    .filter((resource) => getResourceBody(resource.slug))
-    .map((resource) => ({ slug: resource.slug }))
+  return getPublishedResources().map((resource) => ({ slug: resource.slug }))
 }
 
 export async function generateMetadata({ params }: ResourcePageProps): Promise<Metadata> {
   const { slug } = await params
   const resource = getPublishedResourceBySlug(slug)
-  const body = getResourceBody(slug)
-  if (!resource || !body) notFound()
+  if (!resource) notFound()
   return resourceArticleMetadata(resource)
 }
 

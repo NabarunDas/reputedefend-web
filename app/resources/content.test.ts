@@ -26,6 +26,8 @@ describe("Resources hub copy", () => {
     expect(resourcesBrowse.emptyCount).toBe("Guides in preparation")
     expect(resourcesFeaturedEmpty.copy).toContain("Practical guides are being prepared")
     expect(resourcesHowProduced.copy).toContain("distinguish Google's rules from our practical interpretation")
-    expect(resourcesLibrary.empty.toLowerCase()).toContain("no guides are published yet")
+    expect(resourcesLibrary.empty).toBe(
+      "No guides are published yet. Planned guides remain hidden until they have been researched, reviewed and released.",
+    )
   })
 })

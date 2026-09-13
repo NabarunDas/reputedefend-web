@@ -36,7 +36,7 @@ export const resourcesLibrary = {
   eyebrow: "Resource library",
   title: "Published guides",
   empty:
-    "No guides are published yet. The titles below are not listed here until they have been researched, reviewed and released.",
+    "No guides are published yet. Planned guides remain hidden until they have been researched, reviewed and released.",
   allFilter: "All published guides",
 } as const
 

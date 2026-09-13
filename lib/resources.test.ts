@@ -8,6 +8,7 @@ import {
   getFeaturedPublishedResource,
   getPublishedResourceBySlug,
   getPublishedResources,
+  isPublicResource,
   pickFeaturedResource,
   publishedCountForCategory,
   publishedResourceSitemapEntries,
@@ -16,12 +17,15 @@ import {
   resourceRegistry,
   reviewExtortionUrgentCallout,
 } from "@/lib/resources"
-import { resourceArticleJsonLd, resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
+import { resourceArticleJsonLd, resourceArticleMetadata, resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
 import { brandName, brandSiteUrl } from "@/lib/brand"
 import { footerExploreExtra, primaryNav } from "@/lib/site-nav"
 import {
+  fixtureBodyLookup,
+  fixtureOfficialSource,
   publishedRelatedFixture,
   publishedResourceFixture,
+  publishedWithoutBodyFixture,
   unpublishedRelatedFixture,
 } from "@/lib/resource-test-fixtures"
 
@@ -30,7 +34,6 @@ describe("resource registry", () => {
     expect(resourceRegistry).toHaveLength(18)
     expect(resourceRegistry.every((item) => item.published === false)).toBe(true)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
-    expect(resourceRegistry.every((item) => item.officialSources.length === 0)).toBe(true)
     expect(resourceRegistry.every((item) => item.datePublished === null)).toBe(true)
     expect(listResourceBodySlugs()).toEqual([])
     expect(getPublishedResources()).toEqual([])
@@ -73,20 +76,27 @@ describe("resource registry", () => {
   })
 })
 
-describe("published resource fixtures", () => {
-  const index = createResourceIndex([
-    publishedResourceFixture,
-    publishedRelatedFixture,
-    unpublishedRelatedFixture,
-  ])
+describe("publish-ready public resources", () => {
+  const index = createResourceIndex(
+    [
+      publishedResourceFixture,
+      publishedRelatedFixture,
+      unpublishedRelatedFixture,
+      publishedWithoutBodyFixture,
+    ],
+    fixtureBodyLookup,
+  )
 
-  it("lists only published resources and can feature one", () => {
+  it("does not expose published=true records that have no article body", () => {
+    expect(publishedWithoutBodyFixture.published).toBe(true)
+    expect(isPublicResource(publishedWithoutBodyFixture, fixtureBodyLookup(publishedWithoutBodyFixture.slug))).toBe(
+      false,
+    )
+    expect(index.getPublishedBySlug("published-without-body")).toBeUndefined()
     expect(index.published().map((item) => item.slug)).toEqual([
       "test-published-guide",
       "test-related-published-guide",
     ])
-    expect(index.getPublishedBySlug("test-unpublished-related")).toBeUndefined()
-    expect(pickFeaturedResource(index.published())?.slug).toBe("test-published-guide")
     expect(relatedPublishedResources(publishedResourceFixture, index).map((item) => item.slug)).toEqual([
       "test-related-published-guide",
     ])
@@ -94,13 +104,30 @@ describe("published resource fixtures", () => {
       `${brandSiteUrl}/resources/test-published-guide`,
       `${brandSiteUrl}/resources/test-related-published-guide`,
     ])
+    expect(getPublishedResources(index).map((item) => item.slug)).not.toContain("published-without-body")
+  })
+
+  it("lists only publish-ready resources and can feature one", () => {
+    expect(index.getPublishedBySlug("test-unpublished-related")).toBeUndefined()
+    expect(pickFeaturedResource(index.published())?.slug).toBe("test-published-guide")
     expect(formatResourceMonthYear("2026-09-13")).toBe("Sep 2026")
   })
 
-  it("emits article and breadcrumb structured data only for the published fixture", () => {
+  it("rejects published records that lack dates, reading time or sources", () => {
+    const body = { sourcesUsed: [fixtureOfficialSource] }
+    expect(isPublicResource({ ...publishedResourceFixture, datePublished: null }, body)).toBe(false)
+    expect(isPublicResource({ ...publishedResourceFixture, dateReviewed: null }, body)).toBe(false)
+    expect(isPublicResource({ ...publishedResourceFixture, readingMinutes: 0 }, body)).toBe(false)
+    expect(isPublicResource(publishedResourceFixture, { sourcesUsed: [] })).toBe(false)
+    expect(isPublicResource(publishedResourceFixture, body)).toBe(true)
+  })
+
+  it("emits article and breadcrumb structured data only with real dates", () => {
     const article = resourceArticleJsonLd(publishedResourceFixture)
     const breadcrumbs = resourceBreadcrumbJsonLd(publishedResourceFixture, "Profile Recovery")
     expect(article["@type"]).toBe("Article")
+    expect(article.datePublished).toBe("2026-09-01")
+    expect(article.dateModified).toBe("2026-09-13")
     expect(article.author).toEqual({
       "@type": "Organization",
       name: brandName,
@@ -109,8 +136,10 @@ describe("published resource fixtures", () => {
     expect(article.publisher.name).toBe(brandName)
     expect(article).not.toHaveProperty("image")
     expect(JSON.stringify(article)).not.toMatch(/FAQPage/)
+    expect(JSON.stringify(article)).not.toMatch(/null/)
     expect(breadcrumbs.itemListElement).toHaveLength(3)
-    expect(resourceArticleJsonLd(unpublishedRelatedFixture).datePublished).toBeNull()
+    expect(() => resourceArticleJsonLd(unpublishedRelatedFixture)).toThrow(/publication dates/)
+    expect(() => resourceArticleMetadata(unpublishedRelatedFixture)).toThrow(/publication dates/)
   })
 })
 

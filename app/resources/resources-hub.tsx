@@ -1,14 +1,12 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 import { ResourceCard } from "@/components/resources/resource-card"
-import { ResourceCategoryCard, ResourceLibrary } from "@/components/resources/resource-library"
-import { pickFeaturedResource, resourceCategories, type ResourceRecord } from "@/lib/resources"
+import { ResourcesExplorer } from "@/components/resources/resources-explorer"
+import { pickFeaturedResource, type ResourceRecord } from "@/lib/resources"
 import {
-  resourcesBrowse,
   resourcesFeaturedEmpty,
   resourcesHowProduced,
   resourcesHubHero,
-  resourcesLibrary,
 } from "./content"
 import styles from "./resources.module.css"
 
@@ -51,34 +49,7 @@ export function ResourcesHub({ published }: { published: ResourceRecord[] }) {
         )}
       </section>
 
-      <section className={styles.browse} id="browse-by-problem" aria-labelledby="browse-title">
-        <p className={styles.eyebrow}>{resourcesBrowse.eyebrow}</p>
-        <h2 id="browse-title">{resourcesBrowse.title}</h2>
-        <p className={styles.browseLead}>{resourcesBrowse.lead}</p>
-        <div className={styles.categoryGrid}>
-          {resourceCategories.map((category) => (
-            <ResourceCategoryCard
-              key={category.id}
-              id={category.id}
-              title={category.title}
-              description={category.description}
-              urgentLabel={category.urgentLabel}
-              count={published.filter((item) => item.category === category.id).length}
-              emptyLabel={resourcesBrowse.emptyCount}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.library} id={resourcesLibrary.id} aria-labelledby="library-title">
-        <p className={styles.eyebrow}>{resourcesLibrary.eyebrow}</p>
-        <h2 id="library-title">{resourcesLibrary.title}</h2>
-        {published.length === 0 ? (
-          <p className={styles.libraryEmpty}>{resourcesLibrary.empty}</p>
-        ) : (
-          <ResourceLibrary resources={published} />
-        )}
-      </section>
+      <ResourcesExplorer resources={published} />
 
       <section className={styles.how} aria-labelledby="how-produced-title">
         <p className={styles.eyebrow}>{resourcesHowProduced.eyebrow}</p>

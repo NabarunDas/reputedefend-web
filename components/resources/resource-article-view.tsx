@@ -60,7 +60,9 @@ export function ResourceArticleView({
           {resource.urgent && category.urgentLabel ? ` · ${category.urgentLabel}` : ""}
         </p>
         <h1>{resource.title}</h1>
-        <p className={styles.intro}>{body.intro}</p>
+        <div className={styles.intro}>
+          {typeof body.intro === "string" ? <p>{body.intro}</p> : body.intro}
+        </div>
         <dl className={styles.meta}>
           {resource.dateReviewed ? (
             <div>
@@ -121,6 +123,12 @@ export function ResourceArticleView({
           <div className={styles.prose}>{scenario.body}</div>
         </section>
       ))}
+
+      {body.closing ? (
+        <section className={`${styles.section} ${styles.measure}`}>
+          <div className={styles.prose}>{body.closing}</div>
+        </section>
+      ) : null}
 
       <ResourceConversion
         heading={conversion.heading}

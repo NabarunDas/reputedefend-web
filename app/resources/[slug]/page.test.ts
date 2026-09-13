@@ -8,8 +8,10 @@ vi.mock("next/navigation", () => ({
 }))
 
 describe("resource article route", () => {
-  it("does not prerender draft slugs", () => {
-    expect(generateStaticParams()).toEqual([])
+  it("prerenders only the published suspension pre-appeal guide", () => {
+    expect(generateStaticParams()).toEqual([
+      { slug: "google-business-profile-suspended-before-appeal" },
+    ])
     expect(dynamicParams).toBe(false)
   })
 
@@ -18,10 +20,27 @@ describe("resource article route", () => {
       generateMetadata({ params: Promise.resolve({ slug: "google-review-extortion" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
-      generateMetadata({ params: Promise.resolve({ slug: "google-business-profile-suspended-before-appeal" }) }),
+      generateMetadata({
+        params: Promise.resolve({ slug: "google-business-profile-appeal-evidence-checklist" }),
+      }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
       ResourceArticlePage({ params: Promise.resolve({ slug: "google-review-extortion" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+
+  it("emits approved metadata for the published suspension guide", async () => {
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "google-business-profile-suspended-before-appeal" }),
+    })
+    expect(metadata.description).toBe(
+      "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
+    )
+    expect(metadata.alternates).toEqual({
+      canonical: "/resources/google-business-profile-suspended-before-appeal",
+    })
+    expect(JSON.stringify(metadata.openGraph)).toContain('"type":"article"')
+    expect(JSON.stringify(metadata.openGraph)).toContain('"publishedTime":"2026-09-13"')
+    expect(metadata.twitter).toBeDefined()
   })
 })

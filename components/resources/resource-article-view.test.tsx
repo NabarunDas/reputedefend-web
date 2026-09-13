@@ -43,6 +43,12 @@ const body: ResourceArticleBody = {
       body: <p>Document what arrived and when.</p>,
     },
   ],
+  closing: (
+    <>
+      <h2>Before you appeal</h2>
+      <p>Closing copy for template tests.</p>
+    </>
+  ),
   sourcesUsed: [fixtureOfficialSource],
 }
 
@@ -66,6 +72,8 @@ describe("resource article template", () => {
     expect(screen.getByRole("heading", { name: "Practical checklist" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Where businesses commonly go wrong" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What if several reviews appear at once?" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Before you appeal" })).toBeInTheDocument()
+    expect(screen.getByText("Closing copy for template tests.")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Continue understanding your situation" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "How these guides are produced" })).toBeInTheDocument()
     expect(screen.getByText(/Last reviewed: 13 September 2026/)).toBeInTheDocument()

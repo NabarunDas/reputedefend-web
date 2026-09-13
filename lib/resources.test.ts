@@ -9,6 +9,7 @@ import {
   getPublishedResourceBySlug,
   getPublishedResources,
   isPublicResource,
+  isResourceCalendarDate,
   pickFeaturedResource,
   publishedCountForCategory,
   publishedResourceSitemapEntries,
@@ -30,14 +31,23 @@ import {
 } from "@/lib/resource-test-fixtures"
 
 describe("resource registry", () => {
-  it("registers the planned titles as unpublished metadata only", () => {
+  it("publishes only the first researched guide and keeps the other 17 as drafts", () => {
+    const published = resourceRegistry.filter((item) => item.published)
+    const drafts = resourceRegistry.filter((item) => !item.published)
     expect(resourceRegistry).toHaveLength(18)
-    expect(resourceRegistry.every((item) => item.published === false)).toBe(true)
+    expect(published.map((item) => item.slug)).toEqual([
+      "google-business-profile-suspended-before-appeal",
+    ])
+    expect(drafts).toHaveLength(17)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
-    expect(resourceRegistry.every((item) => item.datePublished === null)).toBe(true)
-    expect(listResourceBodySlugs()).toEqual([])
-    expect(getPublishedResources()).toEqual([])
-    expect(getFeaturedPublishedResource()).toBeNull()
+    expect(listResourceBodySlugs()).toEqual(["google-business-profile-suspended-before-appeal"])
+    expect(getPublishedResources().map((item) => item.slug)).toEqual([
+      "google-business-profile-suspended-before-appeal",
+    ])
+    expect(getFeaturedPublishedResource()?.slug).toBe(
+      "google-business-profile-suspended-before-appeal",
+    )
+    expect(publishedCountForCategory("profile-recovery")).toBe(1)
   })
 
   it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
@@ -45,7 +55,9 @@ describe("resource registry", () => {
     expect(extortion?.urgent).toBe(true)
     expect(getPublishedResourceBySlug("google-review-extortion")).toBeUndefined()
     expect(relatedPublishedResources(extortion!)).toEqual([])
-    expect(publishedResourceSitemapEntries().map((entry) => entry.url)).toEqual([])
+    expect(publishedResourceSitemapEntries().map((entry) => entry.url)).toEqual([
+      `${brandSiteUrl}/resources/google-business-profile-suspended-before-appeal`,
+    ])
     expect(resourceRegistry.map((item) => item.slug)).toContain("google-review-extortion")
     expect(resourceRegistry.map((item) => item.slug)).toContain(
       "google-business-profile-suspended-before-appeal",
@@ -120,6 +132,29 @@ describe("publish-ready public resources", () => {
     expect(isPublicResource({ ...publishedResourceFixture, readingMinutes: 0 }, body)).toBe(false)
     expect(isPublicResource(publishedResourceFixture, { sourcesUsed: [] })).toBe(false)
     expect(isPublicResource(publishedResourceFixture, body)).toBe(true)
+  })
+
+  it("accepts real calendar dates and rejects invalid YYYY-MM-DD values", () => {
+    expect(isResourceCalendarDate("2026-09-13")).toBe(true)
+    expect(isResourceCalendarDate("2024-02-29")).toBe(true)
+    expect(isResourceCalendarDate("2026-13-13")).toBe(false)
+    expect(isResourceCalendarDate("2026-02-30")).toBe(false)
+    expect(isResourceCalendarDate("2026-00-10")).toBe(false)
+    expect(isResourceCalendarDate("2026-09-00")).toBe(false)
+    expect(isResourceCalendarDate("2025-02-29")).toBe(false)
+    expect(isResourceCalendarDate("2026-9-13")).toBe(false)
+    expect(isResourceCalendarDate(null)).toBe(false)
+
+    const body = { sourcesUsed: [fixtureOfficialSource] }
+    expect(isPublicResource({ ...publishedResourceFixture, datePublished: "2026-02-30" }, body)).toBe(
+      false,
+    )
+    expect(isPublicResource({ ...publishedResourceFixture, dateReviewed: "2026-13-13" }, body)).toBe(
+      false,
+    )
+    expect(isPublicResource({ ...publishedResourceFixture, datePublished: "2026-09-13" }, body)).toBe(
+      true,
+    )
   })
 
   it("emits article and breadcrumb structured data only with real dates", () => {

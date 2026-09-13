@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
 import { brandName } from "@/lib/brand"
 import { organizationUrl } from "@/lib/organization-schema"
-import { resourcePath, type ResourceRecord } from "@/lib/resources"
+import { isResourceCalendarDate, resourcePath, type ResourceRecord } from "@/lib/resources"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
-  if (!resource.datePublished || !resource.dateReviewed) {
+  if (!isResourceCalendarDate(resource.datePublished) || !isResourceCalendarDate(resource.dateReviewed)) {
     throw new Error(`Cannot emit article metadata without publication dates for ${resource.slug}`)
   }
 
@@ -31,7 +31,7 @@ export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
 }
 
 export function resourceArticleJsonLd(resource: ResourceRecord) {
-  if (!resource.datePublished || !resource.dateReviewed) {
+  if (!isResourceCalendarDate(resource.datePublished) || !isResourceCalendarDate(resource.dateReviewed)) {
     throw new Error(`Cannot emit Article JSON-LD without publication dates for ${resource.slug}`)
   }
 

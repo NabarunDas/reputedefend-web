@@ -1,14 +1,21 @@
 import type { ReactNode } from "react"
+import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import type { OfficialSource } from "@/lib/resources"
 
 /**
  * Article body for a published resource.
- * Production map stays empty until researched content is supplied in Phase 1B.
  * Tests inject bodies directly into ResourceArticleView — they must not be
  * registered here or they would become publicly indexable.
  */
+export type ResourceMistakeItem =
+  | string
+  | {
+      title: string
+      body: ReactNode
+    }
+
 export type ResourceArticleBody = {
-  intro: string
+  intro: ReactNode
   quickAnswer: ReactNode
   main: ReactNode
   googleSays?: {
@@ -24,16 +31,19 @@ export type ResourceArticleBody = {
   }
   commonMistakes?: {
     heading?: string
-    items: string[]
+    items: ResourceMistakeItem[]
   }
   scenarios?: Array<{
     heading: string
     body: ReactNode
   }>
+  closing?: ReactNode
   sourcesUsed: OfficialSource[]
 }
 
-const resourceBodies: Record<string, ResourceArticleBody> = {}
+const resourceBodies: Record<string, ResourceArticleBody> = {
+  "google-business-profile-suspended-before-appeal": suspensionBeforeAppealBody,
+}
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {
   return resourceBodies[slug]

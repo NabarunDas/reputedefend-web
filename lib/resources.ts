@@ -106,22 +106,29 @@ function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author"
  * Do not add fake article bodies or decorative source lists here.
  */
 export const resourceRegistry: readonly ResourceRecord[] = [
-  draft({
+  {
     slug: "google-business-profile-suspended-before-appeal",
     title: "Google Business Profile Suspended: What to Do Before You Appeal",
     seoTitle: "Google Business Profile Suspended: What to Do Before You Appeal",
     description:
-      "A plain-English guide to gathering the right information before you appeal a Google Business Profile suspension.",
+      "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
     category: "profile-recovery",
     excerpt:
-      "What to gather and check before you submit a Google Business Profile suspension appeal.",
+      "A practical pre-appeal guide to checking your profile, preparing evidence and avoiding mistakes that can make a suspension harder to resolve.",
+    published: true,
+    featured: true,
     urgent: false,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 10,
     relatedResourceSlugs: [
       "google-business-profile-appeal-evidence-checklist",
       "google-business-profile-appeal-rejected-what-next",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-appeal-evidence-checklist",
     title: "Google Business Profile Appeal Evidence Checklist",
@@ -387,8 +394,23 @@ export type ResourceIndex = {
   published: () => ResourceRecord[]
 }
 
-function hasIsoDate(value: string | null): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * A public Resource date must be a real calendar day in YYYY-MM-DD form.
+ * Shape alone is not enough: 2026-02-30 and 2026-13-13 are invalid.
+ */
+export function isResourceCalendarDate(value: string | null): value is string {
+  if (typeof value !== "string") return false
+  const match = ISO_CALENDAR_DATE.exec(value)
+  if (!match) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12 || day < 1) return false
+  const utc = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(utc.getTime())) return false
+  return utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === day
 }
 
 /**
@@ -402,8 +424,8 @@ export function isPublicResource(
   return (
     record.published === true &&
     Boolean(body) &&
-    hasIsoDate(record.datePublished) &&
-    hasIsoDate(record.dateReviewed) &&
+    isResourceCalendarDate(record.datePublished) &&
+    isResourceCalendarDate(record.dateReviewed) &&
     typeof record.readingMinutes === "number" &&
     record.readingMinutes > 0 &&
     Array.isArray(body?.sourcesUsed) &&

@@ -51,7 +51,7 @@ export default async function GetHelpPage({
               <p>{getHelpRoutes.live.copy}</p>
             </article>
             <article className={styles.routeSoon}>
-              <p className={styles.statusSoon} role="status">
+              <p className={styles.statusSoon}>
                 {getHelpRoutes.future.status}
               </p>
               <p className={styles.routeTitle}>{getHelpRoutes.future.title}</p>

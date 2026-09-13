@@ -59,7 +59,7 @@ export const aboutWhy = {
 
 export const aboutBrandLine = {
   title: brandName,
-  copy: `${brandName} represents the two things the service is built around: restore visibility, and protect reputation.`,
+  copy: `${brandName} represents the two things the service is built around.`,
   tagline: brandTagline,
 } as const
 

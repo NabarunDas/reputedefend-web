@@ -2,13 +2,21 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 import { ContactForm } from "@/components/contact-form"
-import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+import {
+  contactBanner,
+  contactClose,
+  contactHero,
+  contactIdentity,
+  contactProcess,
+  contactRoutes,
+  contactSeo,
+  contactTrust,
+} from "./content"
 import styles from "./contact.module.css"
 
-const title = "Contact ProfileRelaunch | General Enquiries"
-const description =
-  "Contact ProfileRelaunch with a general question about our services or approach. For an active Google Business Profile or review issue, use the dedicated Get Help process so the relevant case information can be collected."
+const title = contactSeo.titlePage
+const description = contactSeo.description
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -18,63 +26,98 @@ export const metadata: Metadata = {
   twitter: socialTwitter({ title, description }),
 }
 
-const nextSteps = [
-  "We review your message",
-  "We identify the right route",
-  "We reply or point you to the right place",
-] as const
-
 export default function ContactPage() {
-  const contactEmail = hasLegalValue(legalIdentity.contactEmail) ? legalIdentity.contactEmail : undefined
-
   return (
-    <div className={styles.page}>
-      <div className={styles.inner}>
-        <section className={styles.hero} aria-labelledby="contact-title">
-          <p className={styles.eyebrow}>Contact ProfileRelaunch</p>
-          <h1 id="contact-title">Have a question before you start?</h1>
-          <p className={styles.lead}>
-            Use this page for general questions about ProfileRelaunch, our services or how we work. If you&apos;re already dealing with a Business Profile suspension, access or verification problem, or a difficult review issue, use Get Help so we can collect the information needed to understand the case properly.
-          </p>
-          <p className={styles.trustLine}>Human-reviewed messages • Clear routing • Clear communication</p>
-        </section>
-
-        <aside className={styles.banner} aria-labelledby="case-banner-title">
-          <div>
-            <h2 id="case-banner-title">Already dealing with an active Google issue?</h2>
-            <p>If your Business Profile is suspended, inaccessible or stuck in verification — or you need help with a suspicious or damaging review — use Get Help so we can collect the relevant case information from the start.</p>
-          </div>
-          <Link className={styles.bannerCta} href="/get-help">
-            Get help with my case
-            <ArrowUpRight size={18} aria-hidden="true" />
+    <div className={`${styles.page} font-sans`}>
+      <section className={styles.heroBand} aria-labelledby="contact-title">
+        <div className={styles.hero}>
+          <p className={styles.eyebrow}>{contactHero.eyebrow}</p>
+          <h1 id="contact-title">{contactHero.title}</h1>
+          <p className={styles.lead}>{contactHero.lead}</p>
+          <p className={styles.heroNote}>{contactHero.supportLine}</p>
+          <Link className={styles.heroLink} href={contactHero.assessmentHref}>
+            {contactHero.assessmentCta}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </Link>
-        </aside>
+        </div>
+      </section>
 
-        <div className={styles.main}>
-          <div className={styles.formColumn}>
-            <ContactForm />
-          </div>
-          <aside className={styles.aside} aria-labelledby="next-title">
-            <h2 id="next-title">What happens after you write?</h2>
+      <section className={styles.routes} aria-labelledby="routes-title">
+        <h2 id="routes-title" className={styles.routesEyebrow}>{contactRoutes.eyebrow}</h2>
+        <div className={styles.routeGrid}>
+          <article className={styles.routeStay}>
+            <p className={styles.statusStay}>{contactRoutes.general.status}</p>
+            <h3>{contactRoutes.general.title}</h3>
+            <p>{contactRoutes.general.copy}</p>
+            <ul className={styles.examples}>
+              {contactRoutes.general.examples.map((example) => (
+                <li key={example}>{example}</li>
+              ))}
+            </ul>
+          </article>
+          <article className={styles.routeHelp}>
+            <p className={styles.statusHelp}>{contactRoutes.active.status}</p>
+            <h3>{contactRoutes.active.title}</h3>
+            <p>{contactRoutes.active.copy}</p>
+            <ul className={styles.examples}>
+              {contactRoutes.active.examples.map((example) => (
+                <li key={example}>{example}</li>
+              ))}
+            </ul>
+            <Link href={contactRoutes.active.href}>
+              {contactRoutes.active.cta}
+              <ArrowUpRight size={16} aria-hidden="true" />
+            </Link>
+          </article>
+        </div>
+      </section>
+
+      <div className={styles.main}>
+        <div className={styles.formColumn}>
+          <ContactForm />
+        </div>
+        <aside className={styles.aside}>
+          <section aria-labelledby="next-title">
+            <h2 id="next-title">{contactProcess.title}</h2>
             <ol>
-              {nextSteps.map((step, index) => (
-                <li key={step}>
-                  <span className={styles.step} aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                  <p>{step}</p>
+              {contactProcess.steps.map((step) => (
+                <li key={step.n}>
+                  <span className={styles.step} aria-hidden="true">{step.n}</span>
+                  <p>{step.title}</p>
                 </li>
               ))}
             </ol>
-            <p className={styles.nextNote}>If your question turns out to involve an active Business Profile or review case, we may direct you to Get Help so the relevant details can be collected properly.</p>
-            {contactEmail ? (
-              <div className={styles.emailBlock}>
-                <p className={styles.emailLabel}>Prefer email?</p>
-                <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
-              </div>
-            ) : null}
-            <p className={styles.identityNote}>ProfileRelaunch is an independent UK business.</p>
-          </aside>
-        </div>
+          </section>
+          <ul className={styles.trust} aria-label="How Contact works">
+            {contactTrust.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          {contactIdentity.email ? (
+            <div className={styles.emailBlock}>
+              <p className={styles.emailLabel}>{contactIdentity.emailLabel}</p>
+              <a href={`mailto:${contactIdentity.email}`}>{contactIdentity.email}</a>
+            </div>
+          ) : null}
+          <p className={styles.identityNote}>{contactIdentity.positioning}</p>
+        </aside>
       </div>
+
+      <aside className={styles.banner} aria-labelledby="case-banner-title">
+        <div>
+          <h2 id="case-banner-title">{contactBanner.title}</h2>
+          <p>{contactBanner.copy}</p>
+        </div>
+        <Link className={styles.bannerCta} href={contactBanner.href}>
+          {contactBanner.cta}
+          <ArrowUpRight size={18} aria-hidden="true" />
+        </Link>
+      </aside>
+
+      <p className={styles.finalNote}>
+        {contactClose.title}{" "}
+        <Link href={contactClose.href}>{contactClose.cta}</Link>
+      </p>
     </div>
   )
 }

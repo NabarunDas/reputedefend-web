@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useId, useRef, useState, type FormEvent } from "react"
 import {
   CONTACT_SUBJECTS,
@@ -11,8 +12,26 @@ import {
 import { HoneypotField } from "@/components/honeypot-field"
 import styles from "./contact-form.module.css"
 
-const SEND_ERROR = "We couldn't send your message right now. Your information is still on this page. Please try again shortly."
-const MESSAGE_HINT = "Please don't include passwords, verification codes or account credentials."
+export const SUCCESS_COPY = {
+  title: "Message received.",
+  body:
+    "We’ll review your message and reply using the email address you provided. If your question relates to an active Business Profile or review case, we may point you to the dedicated assessment so the relevant information can be collected properly.",
+} as const
+
+export const SIMULATED_COPY = {
+  kicker: "Development simulation",
+  title: "This is not a live message.",
+  body:
+    "The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the message has actually been sent.",
+} as const
+
+export const SEND_ERROR =
+  "We couldn't send your message right now. Your information is still on this page. Please try again shortly."
+
+export const MESSAGE_HINT =
+  "Please don't include passwords, OTPs, verification codes, security answers or other account credentials."
+
+const CONTACT_FIELDS: EnquiryField[] = ["fullName", "email", "businessName", "subject", "details"]
 
 export function ContactForm() {
   const formId = useId()
@@ -27,6 +46,10 @@ export function ContactForm() {
   useEffect(() => {
     if (status === "success") successRef.current?.focus()
   }, [status])
+
+  function goToField(field: EnquiryField) {
+    document.getElementById(`${formId}-${field}`)?.focus()
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -90,25 +113,26 @@ export function ContactForm() {
 
   if (status === "success") {
     return (
-      <div className={styles.success} role="status">
+      <div className={`${styles.success} ${simulated ? styles.successSimulated : ""}`} role="status">
         {simulated ? (
           <>
-            <p className={styles.simulated}>Development simulation</p>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>This is not a live message.</h2>
-            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the message has actually been sent.</p>
+            <p className={styles.simulated}>{SIMULATED_COPY.kicker}</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{SIMULATED_COPY.title}</h2>
+            <p>{SIMULATED_COPY.body}</p>
           </>
         ) : (
           <>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We&apos;ve received your message.</h2>
-            <p>We&apos;ll review your message and use the email address you provided to reply or point you to the right route.</p>
-            <p>If your message is about an active Business Profile or review issue, we may direct you to Get Help so the relevant case information can be collected properly.</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{SUCCESS_COPY.title}</h2>
+            <p>{SUCCESS_COPY.body}</p>
           </>
         )}
       </div>
     )
   }
 
-  const errorEntries = Object.entries(errors).filter(([field]) => field === "fullName" || field === "email" || field === "businessName" || field === "subject" || field === "details") as [EnquiryField, string][]
+  const errorEntries = Object.entries(errors).filter(([field]) =>
+    CONTACT_FIELDS.includes(field as EnquiryField),
+  ) as [EnquiryField, string][]
   const showSummary = errorEntries.length > 0 || deliveryError
   const detailsDescribedBy = [
     `${formId}-details-hint`,
@@ -116,11 +140,17 @@ export function ContactForm() {
   ].filter(Boolean).join(" ")
 
   return (
-    <form className={styles.form} onSubmit={submit} noValidate aria-busy={status === "loading"}>
+    <form
+      className={styles.form}
+      onSubmit={submit}
+      noValidate
+      aria-busy={status === "loading"}
+      aria-label="General enquiry"
+    >
       <div>
         <p className={styles.formEyebrow}>General enquiry</p>
         <h2 className={styles.formTitle}>Send us a message</h2>
-        <p className={styles.formLead}>We only need enough information to understand your question.</p>
+        <p className={styles.formLead}>We only need enough information to understand your question. This is not the form for an active Business Profile or review case.</p>
       </div>
 
       {showSummary && (
@@ -132,7 +162,15 @@ export function ContactForm() {
               <ul>
                 {errorEntries.map(([field, message]) => (
                   <li key={field}>
-                    <a href={`#${formId}-${field}`}>{message}</a>
+                    <a
+                      href={`#${formId}-${field}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        goToField(field)
+                      }}
+                    >
+                      {message}
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -202,7 +240,7 @@ export function ContactForm() {
             onChange={() => clearField("subject")}
             defaultValue=""
           >
-            <option value="">Select one</option>
+            <option value="">Select a subject</option>
             {CONTACT_SUBJECTS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
@@ -230,8 +268,13 @@ export function ContactForm() {
 
       <HoneypotField />
 
+      <p className={styles.privacyNote}>
+        We use your details only to review this enquiry. See the{" "}
+        <Link href="/privacy">Privacy Policy</Link>.
+      </p>
+
       <button type="submit" className={styles.submit} disabled={status === "loading"}>
-        {status === "loading" ? "Sending…" : "Send my message"}
+        {status === "loading" ? "Sending…" : "Send message"}
       </button>
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>

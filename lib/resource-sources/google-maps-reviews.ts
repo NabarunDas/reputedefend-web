@@ -41,3 +41,9 @@ export const sourceReviewExtortion: OfficialSource = {
   title: "Report negative review extortion scams on your Business Profile",
   url: "https://support.google.com/business/answer/16404809?hl=en-GB",
 }
+
+export const sourceManageCustomerReviews: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage customer reviews",
+  url: "https://support.google.com/business/answer/3474050?hl=en-GB",
+}

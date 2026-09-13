@@ -221,21 +221,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "fake-google-review-or-genuine-negative-feedback",
     title: "Fake Google Review or Genuine Negative Feedback? How to Tell the Difference",
     seoTitle: "Fake Google Review or Genuine Negative Feedback? How to Tell the Difference",
     description:
-      "A decision framework for distinguishing a suspicious Google review from genuine negative feedback.",
+      "A suspicious Google review is not automatically fake. Use this evidence-based framework to distinguish possible fake engagement from genuine negative customer feedback.",
     category: "reviews-reputation",
-    excerpt: "How to look at a Google review before deciding whether it is suspicious or genuine criticism.",
+    excerpt:
+      "How to assess a suspicious Google review without treating every unfamiliar or critical reviewer as fake.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",
       "google-review-bombing",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-review-extortion",
     title: "Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews",

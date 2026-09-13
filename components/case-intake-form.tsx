@@ -20,11 +20,40 @@ import { HoneypotField } from "@/components/honeypot-field"
 import { brandName } from "@/lib/brand"
 import styles from "./case-intake.module.css"
 
-const STEP_TITLES = {
+export const STEP_TITLES = {
   1: "What do you need help with?",
   2: "About you and your business",
-  3: "Tell us about the issue",
+  3: "Tell us what happened",
   4: "Review and send",
+} as const
+
+export const DETAILS_HINTS = {
+  "profile-recovery":
+    "You can include when the issue started, any suspension, disabled or verification message, what changed beforehand, what you have already tried, whether an appeal or recovery attempt was already made, and Google's response if there was one. Start with what you know — you do not need a separate answer for each point.",
+  "profile-access":
+    "You can include when the issue started, any verification, ownership or access message, what changed beforehand, what you have already tried, and Google's response if there was one. Start with what you know — you do not need a separate answer for each point.",
+  "review-protection":
+    "You can include what concerns you about the review, when it appeared, whether it appears connected to a genuine customer interaction, whether it has already been reported, Google's response if any, and what evidence or context exists. Start with what you know — you do not need a separate answer for each point.",
+  general:
+    "You can include what changed, what you noticed, what Google said and what you have already tried. You do not need to know the cause, and you do not need a separate answer for each point.",
+  "":
+    "Include when the issue started, any messages you received, changes you noticed and what you have already tried. You don't need to know the cause.",
+} as const
+
+export const EVIDENCE_NOTE =
+  "Start with the links, messages and details you have. If additional documents or screenshots would materially help the assessment, we'll tell you what is needed after reviewing your submission."
+
+export const SUBMIT_NOTE = "No payment is taken when you submit the assessment."
+
+export const SUCCESS_COPY = {
+  title: "Assessment received.",
+  body: "A human will review it. We may ask for clarification if something important is missing. You will then receive a recommended next step. If paid execution support is appropriate, Guided or Managed options and the applicable fee will be explained before you decide.",
+} as const
+
+export const SIMULATED_COPY = {
+  kicker: "Development simulation",
+  title: "This is not a live case submission.",
+  body: "The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the assessment has actually been sent.",
 } as const
 
 const SUBMIT_ERROR = "We couldn't submit your case right now. Your information is still on this page. Please try again shortly."
@@ -231,18 +260,17 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 
   if (status === "success") {
     return (
-      <div className={styles.success} role="status">
+      <div className={`${styles.success} ${simulated ? styles.successSimulated : ""}`} role="status">
         {simulated ? (
           <>
-            <p className={styles.simulated}>Development simulation</p>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>This is not a live case submission.</h2>
-            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the case has actually been sent.</p>
+            <p className={styles.simulated}>{SIMULATED_COPY.kicker}</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{SIMULATED_COPY.title}</h2>
+            <p>{SIMULATED_COPY.body}</p>
           </>
         ) : (
           <>
-            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you. We’ve received your case.</h2>
-            <p>A human will review the information you shared. If anything important needs clarification, we&apos;ll contact you using the details you provided. We&apos;ll then explain how we understand the situation and the next step we believe makes sense.</p>
-            <p>If you later want help carrying that recommendation through, we&apos;ll explain what further support could involve.</p>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{SUCCESS_COPY.title}</h2>
+            <p>{SUCCESS_COPY.body}</p>
           </>
         )}
       </div>
@@ -300,6 +328,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
                   <span>
                     <span className={styles.optionLabel}>{option.label}</span>
                     <span className={styles.optionCopy}>{option.description}</span>
+                    {selected ? <span className={styles.optionState}>Selected</span> : null}
                   </span>
                 </label>
               )
@@ -329,14 +358,12 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>
                 <input name="businessName" value={values.businessName} onChange={(event) => update("businessName", event.target.value)} maxLength={enquiryLimits.businessName} autoComplete="organization" required />
               </Field>
-              <div className={styles.twoCol}>
-                <Field id={`${formId}-country`} label="Country" error={errors.country}>
-                  <input name="country" value={values.country} onChange={(event) => update("country", event.target.value)} maxLength={enquiryLimits.country} autoComplete="country-name" required />
-                </Field>
-                <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
-                  <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(event) => update("websiteUrl", event.target.value)} maxLength={enquiryLimits.websiteUrl} autoComplete="url" inputMode="url" placeholder="https://" />
-                </Field>
-              </div>
+              <Field id={`${formId}-country`} label="Country" hint="Where the business is based. ProfileRelaunch is designed for businesses internationally." error={errors.country}>
+                <input name="country" value={values.country} onChange={(event) => update("country", event.target.value)} maxLength={enquiryLimits.country} autoComplete="country-name" required />
+              </Field>
+              <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
+                <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(event) => update("websiteUrl", event.target.value)} maxLength={enquiryLimits.websiteUrl} autoComplete="url" inputMode="url" placeholder="https://" />
+              </Field>
             </div>
           </div>
         )}
@@ -356,13 +383,14 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <Field
               id={`${formId}-details`}
               label="Tell us what happened"
-              hint="Include when the issue started, any messages you received, changes you noticed and what you have already tried. You don't need to know the cause."
+              hint={DETAILS_HINTS[values.service || ""]}
               error={errors.details}
             >
               <textarea name="details" value={values.details} onChange={(event) => update("details", event.target.value)} maxLength={enquiryLimits.details} rows={8} required />
             </Field>
+            <p className={styles.evidence}>{EVIDENCE_NOTE}</p>
             <div className={styles.metaRow}>
-              <p className={styles.reminder}>Do not include passwords, verification codes or account credentials.</p>
+              <p className={styles.reminder}>Never send passwords, OTPs, verification codes or security answers.</p>
               <p className={styles.counter} aria-live="polite">{values.details.length.toLocaleString("en-GB")} / 5,000</p>
             </div>
           </div>
@@ -370,7 +398,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 
         {step === 4 && (
           <div className={styles.review}>
-            <p className={styles.reviewIntro}>Check the details below before sending your case. You can go back and change anything that doesn&apos;t look right.</p>
+            <p className={styles.reviewIntro}>Check the details below before submitting your assessment. You can go back and change anything that doesn&apos;t look right.</p>
             <ReviewBlock title="Help needed" onEdit={() => goToStep(1)}>
               <ReviewItem label="Service" value={values.service ? caseServiceLabel(values.service) : "Not selected"} />
             </ReviewBlock>
@@ -429,18 +457,18 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
           </button>
         ) : <span />}
         {step < 4 ? (
-          <button type="submit" className={styles.next}>
+          <button type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (
-          <button type="submit" className={styles.next} disabled={status === "loading"}>
-            {status === "loading" ? "Sending…" : "Send my case for assessment"}
+          <button type="submit" className={styles.next} disabled={status === "loading"} aria-describedby={`${formId}-submit-note`}>
+            {status === "loading" ? "Submitting…" : "Submit assessment"}
           </button>
         )}
       </div>
       {step === 4 ? (
         <div className={styles.submitNotes}>
-          <p>Submitting your case does not commit you to paid support. If further paid work is appropriate, we&apos;ll explain the scope and fee before you decide.</p>
+          <p id={`${formId}-submit-note`}>{SUBMIT_NOTE}</p>
         </div>
       ) : null}
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  getCaseIntakeStepErrors,
   parseServiceParam,
   validateEnquiry,
   type EnquiryInput,
@@ -206,6 +207,23 @@ describe("validateEnquiry", () => {
   })
 })
 
+describe("getCaseIntakeStepErrors", () => {
+  it("only returns errors for the current step", () => {
+    const empty = getCaseIntakeStepErrors(1, { source: "get-help" })
+    expect(empty.service).toMatch(/help with/i)
+    expect(empty.fullName).toBeUndefined()
+    expect(empty.details).toBeUndefined()
+
+    const aboutYou = getCaseIntakeStepErrors(2, {
+      service: "profile-recovery",
+      source: "get-help",
+    })
+    expect(aboutYou.fullName).toBeTruthy()
+    expect(aboutYou.service).toBeUndefined()
+    expect(aboutYou.details).toBeUndefined()
+  })
+})
+
 describe("parseServiceParam", () => {
   it("maps valid query values and ignores unknown ones", () => {
     expect(parseServiceParam("profile")).toBe("profile-recovery")
@@ -213,6 +231,8 @@ describe("parseServiceParam", () => {
     expect(parseServiceParam("access")).toBe("profile-access")
     expect(parseServiceParam("general")).toBe("general")
     expect(parseServiceParam("profile-recovery")).toBe("profile-recovery")
+    expect(parseServiceParam("review-protection")).toBe("review-protection")
+    expect(parseServiceParam("profile-access")).toBe("profile-access")
     expect(parseServiceParam("unknown")).toBe("")
     expect(parseServiceParam(undefined)).toBe("")
   })

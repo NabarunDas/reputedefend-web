@@ -6,25 +6,25 @@ export const CASE_SERVICES = [
     value: "profile-recovery",
     query: "profile",
     label: "Business Profile Recovery",
-    description: "A suspended, restricted or disabled Google Business Profile.",
+    description: "Suspended, disabled or restricted profile",
   },
   {
     value: "profile-access",
     query: "access",
     label: "Business Profile / Verification / Access issue",
-    description: "Problems with verification, ownership or access to the profile.",
+    description: "Verification, ownership or profile access",
   },
   {
     value: "review-protection",
     query: "review",
     label: "Review Protection",
-    description: "A suspicious or potentially policy-violating review that needs a careful look.",
+    description: "Suspicious or potentially policy-breaching review",
   },
   {
     value: "general",
     query: "general",
     label: "General / not sure",
-    description: "Another reputation issue, or you are still working out what happened.",
+    description: "I'm not sure which route applies",
   },
 ] as const
 

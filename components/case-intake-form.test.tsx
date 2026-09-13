@@ -36,6 +36,7 @@ describe("CaseIntakeForm", () => {
     render(<CaseIntakeForm />)
     expect(screen.getByText("Step 1 of 4")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: STEP_TITLES[1] })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveAttribute("type", "button")
     expect(screen.queryByRole("radio", { name: /managed/i })).not.toBeInTheDocument()
     expect(screen.queryByRole("radio", { name: /guided/i })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/budget/i)).not.toBeInTheDocument()

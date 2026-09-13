@@ -231,6 +231,8 @@ describe("parseServiceParam", () => {
     expect(parseServiceParam("access")).toBe("profile-access")
     expect(parseServiceParam("general")).toBe("general")
     expect(parseServiceParam("profile-recovery")).toBe("profile-recovery")
+    expect(parseServiceParam("review-protection")).toBe("review-protection")
+    expect(parseServiceParam("profile-access")).toBe("profile-access")
     expect(parseServiceParam("unknown")).toBe("")
     expect(parseServiceParam(undefined)).toBe("")
   })

@@ -457,7 +457,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
           </button>
         ) : <span />}
         {step < 4 ? (
-          <button type="submit" className={styles.next}>
+          <button type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (

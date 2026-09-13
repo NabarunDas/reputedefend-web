@@ -244,23 +244,30 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-review-extortion",
     title: "Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews",
     seoTitle: "Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews",
     description:
-      "Practical first steps if someone demands money, goods or services in exchange for removing Google reviews.",
+      "If someone demands money, goods, services or favours to remove negative Google reviews, do not pay. Preserve the evidence and use Google's dedicated extortion reporting route.",
     category: "review-abuse-scams",
     excerpt:
-      "What to preserve and consider if someone demands money, goods or services to remove Google reviews.",
+      "What to preserve and what to do when negative Google reviews are tied to a demand for money, goods, services or favours.",
+    published: true,
+    featured: false,
     urgent: true,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-review-bombing",
       "customer-threatening-bad-google-review",
       "offered-to-remove-google-reviews-for-money",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-review-bombing",
     title: "Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once",

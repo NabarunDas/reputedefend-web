@@ -47,3 +47,9 @@ export const sourceManageCustomerReviews: OfficialSource = {
   title: "Manage customer reviews",
   url: "https://support.google.com/business/answer/3474050?hl=en-GB",
 }
+
+export const sourceReviewRatingScams: OfficialSource = {
+  name: "Google Maps Help",
+  title: "Identify scams on reviews & ratings",
+  url: "https://support.google.com/maps/answer/14014039?hl=en",
+}

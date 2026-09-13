@@ -185,7 +185,9 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "href",
       "/resources/google-business-profile-suspended-before-appeal",
     )
-    expect(screen.queryByText("Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
+    ).not.toBeInTheDocument()
   })
 
   it("keeps Resources out of the primary header", () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
@@ -49,6 +50,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-business-profile-appeal-evidence-checklist": appealEvidenceChecklistBody,
   "google-business-profile-appeal-rejected-what-next": appealRejectedWhatNextBody,
   "google-business-profile-verification-stuck-or-rejected": verificationStuckOrRejectedBody,
+  "can-a-google-review-be-removed": canAGoogleReviewBeRemovedBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

@@ -198,21 +198,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "can-a-google-review-be-removed",
     title: "Can a Google Review Be Removed? What Google's Policy Actually Allows",
     seoTitle: "Can a Google Review Be Removed? What Google's Policy Actually Allows",
     description:
-      "A plain-English explanation of when Google may remove a review, based on official review policies.",
+      "Google does not remove reviews simply because they are negative. Learn which policy violations can qualify for removal, how to report a review and when a one-time appeal is available.",
     category: "reviews-reputation",
-    excerpt: "What Google's published review policies say about removal — and what they do not.",
+    excerpt:
+      "A plain-English guide to when Google may remove a review, when it may stay live and how the reporting and appeal process works.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "fake-google-review-or-genuine-negative-feedback",
       "google-rejected-my-review-report",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "fake-google-review-or-genuine-negative-feedback",
     title: "Fake Google Review or Genuine Negative Feedback? How to Tell the Difference",

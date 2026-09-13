@@ -14,6 +14,8 @@ describe("resource article route", () => {
     expect(slugs).toContain("google-business-profile-appeal-evidence-checklist")
     expect(slugs).toContain("google-business-profile-appeal-rejected-what-next")
     expect(slugs).toContain("google-business-profile-verification-stuck-or-rejected")
+    expect(slugs).toContain("can-a-google-review-be-removed")
+    expect(slugs).not.toContain("fake-google-review-or-genuine-negative-feedback")
     expect(slugs).not.toContain("lost-access-to-google-business-profile")
     expect(dynamicParams).toBe(false)
   })

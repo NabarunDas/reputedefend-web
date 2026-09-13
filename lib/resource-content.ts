@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
+import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import type { OfficialSource } from "@/lib/resources"
 
@@ -45,6 +46,7 @@ export type ResourceArticleBody = {
 const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-business-profile-suspended-before-appeal": suspensionBeforeAppealBody,
   "google-business-profile-appeal-evidence-checklist": appealEvidenceChecklistBody,
+  "google-business-profile-appeal-rejected-what-next": appealRejectedWhatNextBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

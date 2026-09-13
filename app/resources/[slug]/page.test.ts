@@ -12,7 +12,8 @@ describe("resource article route", () => {
     const slugs = generateStaticParams().map((item) => item.slug)
     expect(slugs).toContain("google-business-profile-suspended-before-appeal")
     expect(slugs).toContain("google-business-profile-appeal-evidence-checklist")
-    expect(slugs).not.toContain("google-business-profile-appeal-rejected-what-next")
+    expect(slugs).toContain("google-business-profile-appeal-rejected-what-next")
+    expect(slugs).not.toContain("google-business-profile-verification-stuck-or-rejected")
     expect(dynamicParams).toBe(false)
   })
 
@@ -22,7 +23,7 @@ describe("resource article route", () => {
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
       generateMetadata({
-        params: Promise.resolve({ slug: "google-business-profile-appeal-rejected-what-next" }),
+        params: Promise.resolve({ slug: "google-business-profile-verification-stuck-or-rejected" }),
       }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(

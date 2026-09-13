@@ -39,7 +39,8 @@ describe("resource registry", () => {
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
     expect(publishedSlugs).toContain("google-business-profile-suspended-before-appeal")
     expect(publishedSlugs).toContain("google-business-profile-appeal-evidence-checklist")
-    expect(publishedSlugs).not.toContain("google-business-profile-appeal-rejected-what-next")
+    expect(publishedSlugs).toContain("google-business-profile-appeal-rejected-what-next")
+    expect(publishedSlugs).not.toContain("google-business-profile-verification-stuck-or-rejected")
     expect(unpublished.map((item) => item.slug)).toContain("google-review-extortion")
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(

@@ -21,7 +21,6 @@ import {
   getPublishedResourceBySlug,
   getPublishedResources,
   isPublicResource,
-  relatedPublishedResources,
 } from "@/lib/resources"
 import { primaryNav } from "@/lib/site-nav"
 
@@ -57,9 +56,6 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
     )
     expect(isPublicResource(resource!, body)).toBe(true)
-    expect(relatedPublishedResources(resource!).map((item) => item.slug)).not.toContain(
-      "google-business-profile-appeal-rejected-what-next",
-    )
   })
 
   it("uses exactly six official Google Help sources and two What Google says cards", () => {
@@ -115,9 +111,6 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(screen.queryByText("Google Partner")).not.toBeInTheDocument()
     expect(screen.queryByText(/Google-certified/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Coming soon/i)).not.toBeInTheDocument()
-    expect(
-      screen.queryByText("Google Business Profile Appeal Rejected: What Can You Do Next?"),
-    ).not.toBeInTheDocument()
 
     const googleSays = screen.getByRole("heading", { name: "What Google says" }).closest("section")
     expect(googleSays).not.toBeNull()

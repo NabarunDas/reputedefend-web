@@ -41,3 +41,9 @@ export const sourceEditBusinessProfile: OfficialSource = {
   title: "Edit your Business Profile",
   url: "https://support.google.com/business/answer/3039617?hl=en-GB",
 }
+
+export const sourceRepresentBusinessGuidelines: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Guidelines for representing your business on Google",
+  url: "https://support.google.com/business/answer/3038177?hl=en-GB",
+}

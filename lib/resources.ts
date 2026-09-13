@@ -152,21 +152,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-appeal-rejected-what-next",
     title: "Google Business Profile Appeal Rejected: What Can You Do Next?",
     seoTitle: "Google Business Profile Appeal Rejected: What Can You Do Next?",
     description:
-      "A calm next-step guide for business owners whose Google Business Profile appeal has been rejected.",
+      "If Google rejected your Business Profile appeal, check the decision, review the underlying policy issue and prepare genuinely useful evidence before requesting additional review.",
     category: "profile-recovery",
-    excerpt: "What to consider after a Google Business Profile appeal is rejected.",
+    excerpt:
+      "What to check after Google does not approve a Business Profile appeal, and how to prepare for the next appropriate review step.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 10,
     relatedResourceSlugs: [
       "google-business-profile-suspended-before-appeal",
       "google-business-profile-appeal-evidence-checklist",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-verification-stuck-or-rejected",
     title: "Google Business Profile Verification Stuck or Rejected: What to Check",

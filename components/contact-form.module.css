@@ -5,7 +5,7 @@
   --muted-strong: #52615b;
   --control-border: color-mix(in srgb, var(--ink) 42%, var(--paper));
   min-width: 0;
-  background: var(--surface);
+  background: var(--surface, var(--paper));
   border: 1px solid var(--edge);
   border-radius: 24px;
 }
@@ -111,6 +111,7 @@
 .control {
   width: 100%;
   min-width: 0;
+  min-height: 44px;
   margin-top: 8px;
   padding: 13px 14px;
   border: 1px solid var(--control-border);
@@ -189,13 +190,36 @@ textarea.control {
 .successTitle:focus { outline: none; }
 .successTitle:focus-visible { outline: 3px solid var(--green); outline-offset: 4px; }
 
+.successSimulated {
+  border-color: color-mix(in srgb, var(--green) 35%, var(--edge));
+  background: color-mix(in srgb, var(--green) 6%, var(--paper));
+}
+
 .simulated {
+  display: inline-flex;
   margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--green);
   color: var(--green);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.privacyNote {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.privacyNote a {
+  color: var(--green);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .success p {
@@ -219,6 +243,7 @@ textarea.control {
 
 @media (hover: hover) {
   .submit:hover:not(:disabled) { background: var(--green-dark); }
+  .privacyNote a:hover { color: var(--ink); }
 }
 
 @media (max-width: 700px) {

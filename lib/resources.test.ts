@@ -6,6 +6,7 @@ import {
   createResourceIndex,
   formatResourceMonthYear,
   getFeaturedPublishedResource,
+  getPublishedResourceArticle,
   getPublishedResourceBySlug,
   getPublishedResources,
   isPublicResource,
@@ -47,6 +48,10 @@ describe("resource registry", () => {
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
     )
+    expect(getPublishedResourceArticle("google-business-profile-suspended-before-appeal")?.body.sourcesUsed).toHaveLength(
+      6,
+    )
+    expect(getPublishedResourceArticle("google-review-extortion")).toBeUndefined()
     expect(publishedCountForCategory("profile-recovery")).toBe(1)
   })
 

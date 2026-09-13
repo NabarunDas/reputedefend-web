@@ -1,43 +1,40 @@
-import type { ResourceArticleBody } from "@/lib/resource-content"
-import type { OfficialSource } from "@/lib/resources"
-
-export const sourceFixSuspended: OfficialSource = {
+export const sourceFixSuspended = {
   name: "Google Business Profile Help",
   title: "Fix suspended or disabled profiles",
   url: "https://support.google.com/business/answer/4569145?hl=en-GB",
 }
 
-export const sourceAppealRestrictions: OfficialSource = {
+export const sourceAppealRestrictions = {
   name: "Google Business Profile Help",
   title: "Appeal Business Profile content and profile restrictions",
   url: "https://support.google.com/business/answer/13597551?hl=en-GB",
 }
 
-export const sourceEligibility: OfficialSource = {
+export const sourceEligibility = {
   name: "Google Business Profile Help",
   title: "Business eligibility and ownership guidelines",
   url: "https://support.google.com/business/answer/13763036?hl=en-GB",
 }
 
-export const sourceServiceAreas: OfficialSource = {
+export const sourceServiceAreas = {
   name: "Google Business Profile Help",
   title: "Manage your service areas for service-area & hybrid businesses",
   url: "https://support.google.com/business/answer/9157481?hl=en-GB",
 }
 
-export const sourceBusinessAddress: OfficialSource = {
+export const sourceBusinessAddress = {
   name: "Google Business Profile Help",
   title: "Manage your business address",
   url: "https://support.google.com/business/answer/2853879?hl=en-GB",
 }
 
-export const sourceAllPolicies: OfficialSource = {
+export const sourceAllPolicies = {
   name: "Google Business Profile Help",
   title: "All Business Profile policies & guidelines",
   url: "https://support.google.com/business/answer/7667250?hl=en-GB",
 }
 
-export const suspensionBeforeAppealSources: OfficialSource[] = [
+export const suspensionBeforeAppealSources = [
   sourceFixSuspended,
   sourceAppealRestrictions,
   sourceEligibility,
@@ -48,7 +45,7 @@ export const suspensionBeforeAppealSources: OfficialSource[] = [
 
 export const suspensionBeforeAppealSlug = "google-business-profile-suspended-before-appeal"
 
-export const suspensionBeforeAppealBody: ResourceArticleBody = {
+export const suspensionBeforeAppealBody = {
   intro: (
     <>
       <p>

@@ -486,6 +486,13 @@ export function getPublishedResourceBySlug(
   return index.getPublishedBySlug(slug)
 }
 
+export function getPublishedResourceArticle(slug: string) {
+  const resource = getPublishedResourceBySlug(slug)
+  const body = getResourceBody(slug)
+  if (!resource || !body) return undefined
+  return { resource, body }
+}
+
 export function pickFeaturedResource(published: ResourceRecord[]): ResourceRecord | null {
   return published.find((record) => record.featured) ?? published[0] ?? null
 }

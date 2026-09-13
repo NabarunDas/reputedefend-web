@@ -42,7 +42,7 @@ export type LegalIdentity = {
 export const legalIdentity: LegalIdentity = {
   tradingName: brandName,
   siteUrl: brandSiteUrl,
-  noticeUpdated: "12 September 2026",
+  noticeUpdated: "13 September 2026",
   businessStructure: "sole-trader",
   legalName: "Saswati Das",
   contactEmail: "contact@reputedefend.com",

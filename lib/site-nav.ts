@@ -10,6 +10,7 @@ export const informationNav = [
   { label: "Get Help", href: "/get-help" },
   { label: "Contact", href: "/contact" },
   { label: "Privacy", href: "/privacy" },
+  { label: "Cookies", href: "/cookies" },
   { label: "Terms", href: "/terms" },
   { label: "Disclaimer", href: "/disclaimer" },
 ] as const
@@ -24,6 +25,7 @@ export const sitemapPaths = [
   "/contact",
   "/get-help",
   "/privacy",
+  "/cookies",
   "/terms",
   "/disclaimer",
 ] as const

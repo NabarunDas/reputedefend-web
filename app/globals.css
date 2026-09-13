@@ -241,8 +241,21 @@ button, input, textarea, select { font: inherit; }
   overflow-wrap: anywhere;
   transition: color 200ms ease-out;
 }
+
+button.footer-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
 .footer-link:hover,
 .footer-link:focus-visible { color: var(--lime); }
+button.footer-link:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 3px;
+}
 
 .button-primary,
 .button-secondary {

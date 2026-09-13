@@ -16,6 +16,7 @@ export type LegalSection = {
 
 const related = [
   ["Privacy", "/privacy"],
+  ["Cookies", "/cookies"],
   ["Terms", "/terms"],
   ["Disclaimer", "/disclaimer"],
 ] as const
@@ -54,7 +55,7 @@ export function LegalPage({
   eyebrow: string
   title: string
   lead: string
-  currentPath: "/privacy" | "/terms" | "/disclaimer"
+  currentPath: "/privacy" | "/terms" | "/disclaimer" | "/cookies"
   sections: LegalSection[]
 }) {
   return (

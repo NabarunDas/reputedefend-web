@@ -2,11 +2,12 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
-import { feeWording, hasLegalValue, legalIdentity, tradingAsLine } from "@/lib/legal"
+import { hasLegalValue, legalIdentity, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+import { termsHero, termsPricing, termsSeo } from "./content"
 
-const title = pageTitle("Terms of use")
-const description = "Terms that apply to using the ProfileRelaunch website and sending an enquiry or case submission."
+const title = pageTitle(termsSeo.titlePage)
+const description = termsSeo.description
 
 export const metadata: Metadata = {
   title: { absolute: title },
@@ -33,7 +34,7 @@ const sections: LegalSection[] = [
     title: "Using this website",
     content: (
       <>
-        <p>The website provides general information about independent Google Business Profile recovery and review protection support, and a way to contact {legalIdentity.tradingName}. It is intended for use in a business context.</p>
+        <p>The website provides general information about independent Google Business Profile recovery and review protection support, and a way to contact {legalIdentity.tradingName}. It is intended for use in a business context and is designed to support businesses internationally.</p>
         <p>You are responsible for the device, browser and connection you use to reach the site, and for keeping your own accounts and credentials secure.</p>
       </>
     ),
@@ -61,11 +62,16 @@ const sections: LegalSection[] = [
   },
   {
     id: "fees-and-paid-support",
-    title: "Fees and paid support",
+    title: termsPricing.title,
     content: (
       <>
-        <p>{feeWording}</p>
-        <p>This website does not collect payment and does not publish a price list. If paid support is later agreed, the work, limitations and commercial terms will be set out separately. These website terms do not create refund, cancellation or package rules for a service that has not been agreed.</p>
+        <p>{termsPricing.intro}</p>
+        <ul>
+          {termsPricing.items.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+        <p>{termsPricing.contract}</p>
+        <p>{termsPricing.google}</p>
+        <p>{termsPricing.noCheckout}</p>
       </>
     ),
   },
@@ -135,10 +141,10 @@ const sections: LegalSection[] = [
   },
   {
     id: "privacy",
-    title: "Privacy",
+    title: "Privacy and cookies",
     content: (
       <>
-        <p>The <Link href="/privacy">privacy notice</Link> explains how information submitted through this website is handled.</p>
+        <p>The <Link href="/privacy">privacy notice</Link> explains how information submitted through this website is handled. The <Link href="/cookies">Cookie &amp; analytics notice</Link> explains optional analytics and how to change that choice.</p>
       </>
     ),
   },
@@ -167,9 +173,9 @@ const sections: LegalSection[] = [
 export default function TermsPage() {
   return (
     <LegalPage
-      eyebrow="Terms"
-      title="Terms of use"
-      lead={`These terms cover use of the ${legalIdentity.tradingName} website and its enquiry forms. They do not create a paid-service contract, promise a Google decision, or replace a separate agreement if paid support is later offered.`}
+      eyebrow={termsHero.eyebrow}
+      title={termsHero.title}
+      lead={termsHero.lead}
       currentPath="/terms"
       sections={sections}
     />

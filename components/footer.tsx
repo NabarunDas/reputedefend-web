@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react"
 import { BrandLogo } from "@/components/logo"
 import { brandDescriptor, brandHomeLabel, brandTagline } from "@/lib/brand"
 import { hasLegalValue, legalIdentity } from "@/lib/legal"
+import { CookieSettingsButton } from "@/components/analytics-consent"
 import { informationNav, primaryNav } from "@/lib/site-nav"
 
 export function Footer() {
@@ -43,6 +44,7 @@ export function Footer() {
             {informationNav.map(({ label, href }) => (
               <Link key={href} className="footer-link" href={href}>{label}</Link>
             ))}
+            <CookieSettingsButton />
             {contactEmail ? (
               <a className="footer-link footer-email" href={`mailto:${contactEmail}`}>{contactEmail}</a>
             ) : null}

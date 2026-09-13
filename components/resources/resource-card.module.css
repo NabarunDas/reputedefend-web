@@ -1,0 +1,86 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 28px 4px 26px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  min-height: 44px;
+  background: transparent;
+}
+
+.card:hover .title,
+.card:focus-visible .title {
+  color: var(--green-dark);
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 4px;
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.urgent {
+  color: var(--green-dark);
+}
+
+.title {
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: clamp(1.25rem, 2.2vw, 1.7rem);
+  line-height: 1.2;
+  letter-spacing: -.03em;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.excerpt {
+  max-width: 40rem;
+  color: #52615b;
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.details {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 0.9rem;
+  font-weight: 750;
+  color: var(--green-dark);
+}
+
+.updated {
+  font-weight: 800;
+}

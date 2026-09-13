@@ -71,5 +71,6 @@ describe("navigation", () => {
     ])
     expect(sitemapPaths).toContain("/cookies")
     expect(sitemapPaths).toContain("/pricing")
+    expect(sitemapPaths).toContain("/resources")
   })
 })

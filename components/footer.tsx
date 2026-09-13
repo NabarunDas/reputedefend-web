@@ -4,7 +4,7 @@ import { BrandLogo } from "@/components/logo"
 import { brandDescriptor, brandHomeLabel, brandTagline } from "@/lib/brand"
 import { hasLegalValue, legalIdentity } from "@/lib/legal"
 import { CookieSettingsButton } from "@/components/analytics-consent"
-import { informationNav, primaryNav } from "@/lib/site-nav"
+import { footerExploreExtra, informationNav, primaryNav } from "@/lib/site-nav"
 
 export function Footer() {
   const contactEmail = hasLegalValue(legalIdentity.contactEmail) ? legalIdentity.contactEmail : undefined
@@ -34,6 +34,9 @@ export function Footer() {
           <p className="mb-5 text-[.68rem] font-bold uppercase tracking-[.16em] text-[#C9D5CE]">Explore</p>
           <div className="flex flex-col gap-1 text-sm">
             {primaryNav.map(({ label, href }) => (
+              <Link key={href} className="footer-link" href={href}>{label}</Link>
+            ))}
+            {footerExploreExtra.map(({ label, href }) => (
               <Link key={href} className="footer-link" href={href}>{label}</Link>
             ))}
           </div>

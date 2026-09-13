@@ -103,6 +103,13 @@ export function removeAnalyticsCookies() {
   }
 }
 
+export function removeGoogleAnalyticsScripts() {
+  if (typeof document === "undefined") return
+  document
+    .querySelectorAll('script[src*="www.googletagmanager.com/gtag/js"]')
+    .forEach((node) => node.parentNode?.removeChild(node))
+}
+
 export function denyAdvertisingConsent() {
   if (typeof window === "undefined" || typeof window.gtag !== "function") return
   window.gtag("consent", "update", { ...DENIED_AD_CONSENT })
@@ -117,6 +124,7 @@ export function withdrawAnalytics(measurementId: string) {
     })
   }
   removeAnalyticsCookies()
+  removeGoogleAnalyticsScripts()
   storeConsent("rejected")
 }
 

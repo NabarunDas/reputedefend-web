@@ -88,6 +88,14 @@ describe("consent storage", () => {
     expect(setter.mock.calls.some((call) => String(call[0]).startsWith("_ga_TESTONLY123="))).toBe(true)
     expect(setter.mock.calls.some((call) => String(call[0]).startsWith("other="))).toBe(false)
   })
+
+  it("removes gtag scripts on withdrawal", () => {
+    const script = document.createElement("script")
+    script.src = "https://www.googletagmanager.com/gtag/js?id=G-TESTONLY123"
+    document.body.appendChild(script)
+    withdrawAnalytics("G-TESTONLY123")
+    expect(document.querySelector("script[src*='googletagmanager.com/gtag/js']")).toBeNull()
+  })
 })
 
 describe("Search Console verification", () => {

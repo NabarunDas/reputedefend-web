@@ -26,12 +26,13 @@ function queueGtag(measurementId: string) {
   }
 
   const command = configuredMeasurementId ? "update" : "default"
+  if (configuredMeasurementId === measurementId) return
+
   window.gtag("consent", command, {
     analytics_storage: "granted",
     ...DENIED_AD_CONSENT,
   })
 
-  if (configuredMeasurementId === measurementId) return
   configuredMeasurementId = measurementId
   window.gtag("js", new Date())
   window.gtag("config", measurementId, {
@@ -53,6 +54,10 @@ export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {
   if (typeof window !== "undefined" && enabled && id) {
     queueGtag(id)
   }
+
+  useEffect(() => {
+    if (consent === "rejected") resetGoogleAnalyticsRuntime()
+  }, [consent])
 
   useEffect(() => {
     if (!enabled || !id) {

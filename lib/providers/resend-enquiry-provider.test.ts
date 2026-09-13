@@ -4,10 +4,10 @@ import type { EnquiryEmailMessage } from "@/lib/enquiry-provider"
 
 const message: EnquiryEmailMessage = {
   kind: "internal",
-  from: "ReputeDefend <enquiries@reputedefend.com>",
+  from: "ProfileRelaunch <enquiries@reputedefend.com>",
   to: "owner@example.com",
   replyTo: "alex@example.com",
-  subject: "[ReputeDefend] New Profile Recovery case — Harbour Bakery",
+  subject: "[ProfileRelaunch] New Profile Recovery case — Harbour Bakery",
   text: "Name: Alex Morgan",
   html: "<p>Name: Alex Morgan</p>",
 }

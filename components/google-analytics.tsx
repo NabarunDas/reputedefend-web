@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { useEffect, useRef, useSyncExternalStore } from "react"
 import {
   DENIED_AD_CONSENT,
+  GA_RUNTIME_CONFIG,
   getConsentSnapshot,
   readGaMeasurementId,
   sendSanitizedPageView,
@@ -35,11 +36,7 @@ function queueGtag(measurementId: string) {
 
   configuredMeasurementId = measurementId
   window.gtag("js", new Date())
-  window.gtag("config", measurementId, {
-    send_page_view: false,
-    allow_google_signals: false,
-    allow_ad_personalization_signals: false,
-  })
+  window.gtag("config", measurementId, { ...GA_RUNTIME_CONFIG })
 }
 
 export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {

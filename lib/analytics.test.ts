@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   ANALYTICS_CONSENT_KEY,
+  GA_HOST_COOKIE_DOMAIN,
+  GA_RUNTIME_CONFIG,
   acceptAnalytics,
   pageViewPayload,
   readGaMeasurementId,
@@ -37,6 +39,12 @@ describe("page view sanitisation", () => {
       page_location: "https://profilerelaunch.com/get-help",
     })
     expect(JSON.stringify(payload)).not.toMatch(/service=|email=|reviewUrl|businessName/)
+  })
+
+  it("configures host-only GA cookies for the canonical hostname", () => {
+    expect(GA_HOST_COOKIE_DOMAIN).toBe("none")
+    expect(GA_RUNTIME_CONFIG.cookie_domain).toBe("none")
+    expect(GA_RUNTIME_CONFIG.send_page_view).toBe(false)
   })
 })
 

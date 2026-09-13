@@ -15,6 +15,20 @@ export const DENIED_AD_CONSENT = {
   ad_personalization: "denied",
 } as const
 
+/**
+ * Host-only GA cookies. Canonical tracking host is profilerelaunch.com;
+ * www / .co.uk variants should redirect there rather than share analytics
+ * identity across subdomains.
+ */
+export const GA_HOST_COOKIE_DOMAIN = "none"
+
+export const GA_RUNTIME_CONFIG = {
+  send_page_view: false,
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false,
+  cookie_domain: GA_HOST_COOKIE_DOMAIN,
+} as const
+
 const MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]+$/
 
 export function readGaMeasurementId(

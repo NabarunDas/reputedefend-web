@@ -1,0 +1,43 @@
+import type { OfficialSource } from "@/lib/resources"
+
+export const sourceFixSuspended: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Fix suspended or disabled profiles",
+  url: "https://support.google.com/business/answer/4569145?hl=en-GB",
+}
+
+export const sourceAppealRestrictions: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Appeal Business Profile content and profile restrictions",
+  url: "https://support.google.com/business/answer/13597551?hl=en-GB",
+}
+
+export const sourceEligibility: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Business eligibility and ownership guidelines",
+  url: "https://support.google.com/business/answer/13763036?hl=en-GB",
+}
+
+export const sourceServiceAreas: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage your service areas for service-area & hybrid businesses",
+  url: "https://support.google.com/business/answer/9157481?hl=en-GB",
+}
+
+export const sourceBusinessAddress: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage your business address",
+  url: "https://support.google.com/business/answer/2853879?hl=en-GB",
+}
+
+export const sourceAllPolicies: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "All Business Profile policies & guidelines",
+  url: "https://support.google.com/business/answer/7667250?hl=en-GB",
+}
+
+export const sourceEditBusinessProfile: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Edit your Business Profile",
+  url: "https://support.google.com/business/answer/3039617?hl=en-GB",
+}

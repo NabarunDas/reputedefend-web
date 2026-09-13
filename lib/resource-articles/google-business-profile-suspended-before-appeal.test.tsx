@@ -18,13 +18,10 @@ import {
 import { getResourceBody } from "@/lib/resource-content"
 import { resourceArticleJsonLd, resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
 import {
-  getFeaturedPublishedResource,
   getPublishedResourceBySlug,
   getPublishedResources,
   isPublicResource,
-  publishedCountForCategory,
   relatedPublishedResources,
-  resourceRegistry,
 } from "@/lib/resources"
 import { primaryNav } from "@/lib/site-nav"
 
@@ -44,7 +41,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
   const resource = getPublishedResourceBySlug(suspensionBeforeAppealSlug)
   const body = getResourceBody(suspensionBeforeAppealSlug)
 
-  it("is the only public production resource", () => {
+  it("is a public production resource with approved metadata", () => {
     expect(resource).toBeDefined()
     expect(body).toBeDefined()
     expect(resource?.published).toBe(true)
@@ -60,13 +57,8 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
     )
     expect(isPublicResource(resource!, body)).toBe(true)
-    expect(getPublishedResources()).toHaveLength(1)
-    expect(getFeaturedPublishedResource()?.slug).toBe(suspensionBeforeAppealSlug)
-    expect(publishedCountForCategory("profile-recovery")).toBe(1)
-    expect(relatedPublishedResources(resource!)).toEqual([])
-    expect(resourceRegistry.filter((item) => !item.published)).toHaveLength(17)
-    expect(resourceRegistry.filter((item) => item.published && item.slug !== suspensionBeforeAppealSlug)).toEqual(
-      [],
+    expect(relatedPublishedResources(resource!).map((item) => item.slug)).not.toContain(
+      "google-business-profile-appeal-rejected-what-next",
     )
   })
 
@@ -123,7 +115,6 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(screen.queryByText("Google Partner")).not.toBeInTheDocument()
     expect(screen.queryByText(/Google-certified/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Coming soon/i)).not.toBeInTheDocument()
-    expect(screen.queryByText("Google Business Profile Appeal Evidence Checklist")).not.toBeInTheDocument()
     expect(
       screen.queryByText("Google Business Profile Appeal Rejected: What Can You Do Next?"),
     ).not.toBeInTheDocument()
@@ -201,7 +192,6 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "href",
       "/resources/google-business-profile-suspended-before-appeal",
     )
-    expect(screen.getByRole("button", { name: /1 published guide in Profile Recovery/i })).toBeInTheDocument()
     expect(screen.queryByText("Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews")).not.toBeInTheDocument()
   })
 

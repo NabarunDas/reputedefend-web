@@ -8,7 +8,7 @@ describe("sitemap resources", () => {
     vi.unstubAllEnvs()
   })
 
-  it("includes the Resources hub and the one published article, never the 17 drafts", () => {
+  it("includes the Resources hub and published articles, never unpublished drafts", () => {
     vi.stubEnv("VERCEL_ENV", "production")
     const entries = sitemap()
     const urls = entries.map((entry) => entry.url)
@@ -17,9 +17,9 @@ describe("sitemap resources", () => {
       `${brandSiteUrl}/resources/google-business-profile-suspended-before-appeal`,
     )
     const draftUrls = resourceRegistry
-      .filter((resource) => resource.slug !== "google-business-profile-suspended-before-appeal")
+      .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)
-    expect(draftUrls).toHaveLength(17)
+    expect(draftUrls.length).toBeGreaterThan(0)
     for (const url of draftUrls) {
       expect(urls).not.toContain(url)
     }

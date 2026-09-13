@@ -129,21 +129,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-appeal-evidence-checklist",
     title: "Google Business Profile Appeal Evidence Checklist",
     seoTitle: "Google Business Profile Appeal Evidence Checklist",
     description:
-      "A practical checklist of evidence to organise before a Google Business Profile appeal.",
+      "Preparing a Google Business Profile appeal? Use this evidence checklist to organise the right records before Google's time-limited evidence step.",
     category: "profile-recovery",
-    excerpt: "The evidence to organise before you prepare a Google Business Profile appeal.",
+    excerpt:
+      "A practical checklist for organising relevant business records before you submit a Google Business Profile appeal.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-13",
+    dateReviewed: "2026-09-13",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-business-profile-suspended-before-appeal",
       "google-business-profile-appeal-rejected-what-next",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-appeal-rejected-what-next",
     title: "Google Business Profile Appeal Rejected: What Can You Do Next?",

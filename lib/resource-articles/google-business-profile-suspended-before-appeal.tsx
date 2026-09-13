@@ -1,37 +1,19 @@
-export const sourceFixSuspended = {
-  name: "Google Business Profile Help",
-  title: "Fix suspended or disabled profiles",
-  url: "https://support.google.com/business/answer/4569145?hl=en-GB",
-}
+import {
+  sourceAllPolicies,
+  sourceAppealRestrictions,
+  sourceBusinessAddress,
+  sourceEligibility,
+  sourceFixSuspended,
+  sourceServiceAreas,
+} from "@/lib/resource-sources/google-business-profile"
 
-export const sourceAppealRestrictions = {
-  name: "Google Business Profile Help",
-  title: "Appeal Business Profile content and profile restrictions",
-  url: "https://support.google.com/business/answer/13597551?hl=en-GB",
-}
-
-export const sourceEligibility = {
-  name: "Google Business Profile Help",
-  title: "Business eligibility and ownership guidelines",
-  url: "https://support.google.com/business/answer/13763036?hl=en-GB",
-}
-
-export const sourceServiceAreas = {
-  name: "Google Business Profile Help",
-  title: "Manage your service areas for service-area & hybrid businesses",
-  url: "https://support.google.com/business/answer/9157481?hl=en-GB",
-}
-
-export const sourceBusinessAddress = {
-  name: "Google Business Profile Help",
-  title: "Manage your business address",
-  url: "https://support.google.com/business/answer/2853879?hl=en-GB",
-}
-
-export const sourceAllPolicies = {
-  name: "Google Business Profile Help",
-  title: "All Business Profile policies & guidelines",
-  url: "https://support.google.com/business/answer/7667250?hl=en-GB",
+export {
+  sourceAllPolicies,
+  sourceAppealRestrictions,
+  sourceBusinessAddress,
+  sourceEligibility,
+  sourceFixSuspended,
+  sourceServiceAreas,
 }
 
 export const suspensionBeforeAppealSources = [

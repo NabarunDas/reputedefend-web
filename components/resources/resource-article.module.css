@@ -124,6 +124,10 @@
   font-size: 1.0625rem;
 }
 
+.intro p + p {
+  margin-top: 14px;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -163,13 +167,23 @@
 
 .prose p + p,
 .prose p + ul,
-.prose ul + p {
+.prose p + ol,
+.prose ul + p,
+.prose ol + p {
   margin-top: 16px;
 }
 
 .prose ul,
 .prose ol {
   padding-left: 1.2rem;
+}
+
+.prose h2 {
+  margin-top: 2.25rem;
+}
+
+.prose h2:first-child {
+  margin-top: 0;
 }
 
 .quickAnswer {
@@ -268,6 +282,14 @@
   font-family: var(--font-display), Arial, sans-serif;
   font-weight: 800;
   color: var(--green-dark);
+}
+
+.mistakes h3 {
+  margin: 0;
+}
+
+.mistakes h3 + p {
+  margin-top: 6px;
 }
 
 .conversion {

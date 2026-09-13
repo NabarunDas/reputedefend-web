@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { ReactNode } from "react"
 import { ArrowUpRight } from "lucide-react"
+import type { ResourceMistakeItem } from "@/lib/resource-content"
 import type { OfficialSource } from "@/lib/resources"
 import styles from "./resource-article.module.css"
 
@@ -114,7 +115,7 @@ export function ResourceCommonMistakes({
   items,
 }: {
   heading?: string
-  items: string[]
+  items: ResourceMistakeItem[]
 }) {
   if (items.length === 0) return null
 
@@ -123,9 +124,16 @@ export function ResourceCommonMistakes({
       <h2 id="common-mistakes">{heading}</h2>
       <ol>
         {items.map((item, index) => (
-          <li key={item}>
+          <li key={typeof item === "string" ? item : item.title}>
             <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-            <p>{item}</p>
+            {typeof item === "string" ? (
+              <p>{item}</p>
+            ) : (
+              <div>
+                <h3>{item.title}</h3>
+                {typeof item.body === "string" ? <p>{item.body}</p> : <div className={styles.prose}>{item.body}</div>}
+              </div>
+            )}
           </li>
         ))}
       </ol>

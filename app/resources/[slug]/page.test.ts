@@ -8,10 +8,13 @@ vi.mock("next/navigation", () => ({
 }))
 
 describe("resource article route", () => {
-  it("prerenders only the published suspension pre-appeal guide", () => {
-    expect(generateStaticParams()).toEqual([
-      { slug: "google-business-profile-suspended-before-appeal" },
-    ])
+  it("prerenders published resources and keeps unmatched slugs as 404s", () => {
+    const slugs = generateStaticParams().map((item) => item.slug)
+    expect(slugs).toContain("google-business-profile-suspended-before-appeal")
+    expect(slugs).toContain("google-business-profile-appeal-evidence-checklist")
+    expect(slugs).toContain("google-business-profile-appeal-rejected-what-next")
+    expect(slugs).toContain("google-business-profile-verification-stuck-or-rejected")
+    expect(slugs).not.toContain("lost-access-to-google-business-profile")
     expect(dynamicParams).toBe(false)
   })
 
@@ -21,7 +24,7 @@ describe("resource article route", () => {
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
       generateMetadata({
-        params: Promise.resolve({ slug: "google-business-profile-appeal-evidence-checklist" }),
+        params: Promise.resolve({ slug: "lost-access-to-google-business-profile" }),
       }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(

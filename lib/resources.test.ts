@@ -32,19 +32,18 @@ import {
 } from "@/lib/resource-test-fixtures"
 
 describe("resource registry", () => {
-  it("publishes only the first researched guide and keeps the other 17 as drafts", () => {
-    const published = resourceRegistry.filter((item) => item.published)
-    const drafts = resourceRegistry.filter((item) => !item.published)
+  it("hides unpublished drafts and exposes only publish-ready resources", () => {
+    const publishedSlugs = getPublishedResources().map((item) => item.slug)
+    const unpublished = resourceRegistry.filter((item) => !item.published)
     expect(resourceRegistry).toHaveLength(18)
-    expect(published.map((item) => item.slug)).toEqual([
-      "google-business-profile-suspended-before-appeal",
-    ])
-    expect(drafts).toHaveLength(17)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
-    expect(listResourceBodySlugs()).toEqual(["google-business-profile-suspended-before-appeal"])
-    expect(getPublishedResources().map((item) => item.slug)).toEqual([
-      "google-business-profile-suspended-before-appeal",
-    ])
+    expect(publishedSlugs).toContain("google-business-profile-suspended-before-appeal")
+    expect(publishedSlugs).toContain("google-business-profile-appeal-evidence-checklist")
+    expect(publishedSlugs).toContain("google-business-profile-appeal-rejected-what-next")
+    expect(publishedSlugs).toContain("google-business-profile-verification-stuck-or-rejected")
+    expect(publishedSlugs).not.toContain("lost-access-to-google-business-profile")
+    expect(unpublished.map((item) => item.slug)).toContain("google-review-extortion")
+    expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
     )
@@ -52,7 +51,7 @@ describe("resource registry", () => {
       6,
     )
     expect(getPublishedResourceArticle("google-review-extortion")).toBeUndefined()
-    expect(publishedCountForCategory("profile-recovery")).toBe(1)
+    expect(publishedCountForCategory("review-abuse-scams")).toBe(0)
   })
 
   it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
@@ -60,9 +59,9 @@ describe("resource registry", () => {
     expect(extortion?.urgent).toBe(true)
     expect(getPublishedResourceBySlug("google-review-extortion")).toBeUndefined()
     expect(relatedPublishedResources(extortion!)).toEqual([])
-    expect(publishedResourceSitemapEntries().map((entry) => entry.url)).toEqual([
-      `${brandSiteUrl}/resources/google-business-profile-suspended-before-appeal`,
-    ])
+    expect(publishedResourceSitemapEntries().map((entry) => entry.url)).toEqual(
+      getPublishedResources().map((resource) => `${brandSiteUrl}/resources/${resource.slug}`),
+    )
     expect(resourceRegistry.map((item) => item.slug)).toContain("google-review-extortion")
     expect(resourceRegistry.map((item) => item.slug)).toContain(
       "google-business-profile-suspended-before-appeal",

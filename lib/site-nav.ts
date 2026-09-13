@@ -22,10 +22,19 @@ export const sitemapPaths = [
   "/how-it-works",
   "/pricing",
   "/about",
+  "/resources",
   "/contact",
   "/get-help",
   "/privacy",
   "/cookies",
   "/terms",
   "/disclaimer",
+] as const
+
+/**
+ * Footer-only destinations. Resources stays out of the primary header until
+ * enough guides are published to justify a top-level nav item.
+ */
+export const footerExploreExtra = [
+  { label: "Resources", href: "/resources" },
 ] as const

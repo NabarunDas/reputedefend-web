@@ -58,6 +58,7 @@ describe("launch readiness", () => {
       "/how-it-works",
       "/pricing",
       "/about",
+      "/resources",
       "/contact",
       "/get-help",
       "/privacy",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  getCaseIntakeStepErrors,
   parseServiceParam,
   validateEnquiry,
   type EnquiryInput,
@@ -203,6 +204,23 @@ describe("validateEnquiry", () => {
     })
     expect(result.valid).toBe(true)
     if (result.valid) expect(result.data.details).toBe("Line one\nLine two still readable.")
+  })
+})
+
+describe("getCaseIntakeStepErrors", () => {
+  it("only returns errors for the current step", () => {
+    const empty = getCaseIntakeStepErrors(1, { source: "get-help" })
+    expect(empty.service).toMatch(/help with/i)
+    expect(empty.fullName).toBeUndefined()
+    expect(empty.details).toBeUndefined()
+
+    const aboutYou = getCaseIntakeStepErrors(2, {
+      service: "profile-recovery",
+      source: "get-help",
+    })
+    expect(aboutYou.fullName).toBeTruthy()
+    expect(aboutYou.service).toBeUndefined()
+    expect(aboutYou.details).toBeUndefined()
   })
 })
 

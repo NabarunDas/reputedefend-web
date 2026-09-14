@@ -1305,3 +1305,31 @@
   display: block;
   margin-top: 12px;
 }
+
+.namePage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.namePage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.namePage .warning h3 {
+  margin: 0;
+}
+
+.namePage .threeOutcome ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.namePage .threeOutcome li + li {
+  margin-top: 6px;
+}
+
+.namePage .sourcesPilot ul + p {
+  margin-top: 22px;
+}

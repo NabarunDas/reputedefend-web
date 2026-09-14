@@ -18,6 +18,7 @@ import { CustomerReviewThreatPilotView } from "./customer-review-threat-pilot-vi
 import { PaidReviewRemovalOfferPilotView } from "./paid-review-removal-offer-pilot-view"
 import { RejectedReviewReportPilotView } from "./rejected-review-report-pilot-view"
 import { LostAccessPilotView } from "./lost-access-pilot-view"
+import { NameRulesPilotView } from "./name-rules-pilot-view"
 import { FakeReviewAssessmentPilotView } from "./fake-review-assessment-pilot-view"
 import { ReviewBombingPilotView } from "./review-bombing-pilot-view"
 import { ReviewExtortionPilotView } from "./review-extortion-pilot-view"
@@ -102,6 +103,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "lost-access-to-google-business-profile") {
     return <LostAccessPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "google-business-profile-name-rules") {
+    return <NameRulesPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

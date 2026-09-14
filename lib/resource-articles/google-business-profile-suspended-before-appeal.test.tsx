@@ -185,9 +185,10 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "href",
       "/resources/google-business-profile-suspended-before-appeal",
     )
-    expect(
-      screen.queryByText("Google Business Profile Categories: What You Should and Shouldn't Change"),
-    ).not.toBeInTheDocument()
+    const publishedHrefs = getPublishedResources().map((item) => `/resources/${item.slug}`)
+    for (const link of guideLinks) {
+      expect(publishedHrefs).toContain(link.getAttribute("href"))
+    }
   })
 
   it("keeps Resources out of the primary header", () => {

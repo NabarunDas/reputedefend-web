@@ -32,7 +32,7 @@ import {
 } from "@/lib/resource-test-fixtures"
 
 describe("resource registry", () => {
-  it("hides unpublished drafts and exposes only publish-ready resources", () => {
+  it("exposes only publish-ready resources", () => {
     const publishedSlugs = getPublishedResources().map((item) => item.slug)
     const unpublished = resourceRegistry.filter((item) => !item.published)
     expect(resourceRegistry).toHaveLength(18)
@@ -53,14 +53,7 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("google-business-profile-name-rules")
     expect(publishedSlugs).toContain("google-business-profile-address-and-service-area-rules")
     expect(publishedSlugs).toHaveLength(15)
-    expect(publishedSlugs).not.toContain("false-or-defamatory-google-reviews")
-    expect(publishedSlugs).not.toContain("google-business-profile-scams")
-    expect(publishedSlugs).not.toContain("google-business-profile-categories")
-    expect(unpublished.map((item) => item.slug)).toEqual([
-      "google-business-profile-categories",
-      "false-or-defamatory-google-reviews",
-      "google-business-profile-scams",
-    ])
+    expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
@@ -72,7 +65,6 @@ describe("resource registry", () => {
       "review-abuse-scams",
     )
     expect(getPublishedResourceArticle("google-review-bombing")?.resource.urgent).toBe(true)
-    expect(getPublishedResourceArticle("google-business-profile-categories")).toBeUndefined()
     expect(
       getPublishedResources()
         .filter((item) => item.category === "review-abuse-scams")
@@ -81,16 +73,11 @@ describe("resource registry", () => {
     expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
   })
 
-  it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
-    const categories = resourceRegistry.find(
-      (item) => item.slug === "google-business-profile-categories",
-    )
+  it("keeps related lists and the sitemap aligned with published resources", () => {
     const extortion = getPublishedResourceBySlug("google-review-extortion")
     const bombing = getPublishedResourceBySlug("google-review-bombing")
-    expect(categories?.published).toBe(false)
     expect(extortion?.urgent).toBe(true)
     expect(bombing?.urgent).toBe(true)
-    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeUndefined()
     expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual([
       "google-review-bombing",
       "customer-threatening-bad-google-review",
@@ -121,7 +108,6 @@ describe("resource registry", () => {
     const abuse = resourceCategories.find((item) => item.id === "review-abuse-scams")
     expect(abuse?.urgentLabel).toBe("Urgent situations")
     expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
-    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeUndefined()
   })
 
   it("does not create mass placeholder article routes or a policy-updates index", () => {
@@ -166,7 +152,29 @@ describe("publish-ready public resources", () => {
     expect(getPublishedResources(index).map((item) => item.slug)).not.toContain("published-without-body")
   })
 
+  /**
+   * Unpublished behaviour is proven with synthetic records so the suite never
+   * depends on a real Resource staying unpublished.
+   */
+  it("hides an unpublished record from every public surface", () => {
+    const draftSlug = unpublishedRelatedFixture.slug
+    expect(unpublishedRelatedFixture.published).toBe(false)
+    expect(isPublicResource(unpublishedRelatedFixture, fixtureBodyLookup(draftSlug))).toBe(false)
+    expect(index.getBySlug(draftSlug)).toBeDefined()
+    expect(index.getPublishedBySlug(draftSlug)).toBeUndefined()
+    expect(getPublishedResourceBySlug(draftSlug, index)).toBeUndefined()
+    expect(getPublishedResources(index).map((item) => item.slug)).not.toContain(draftSlug)
+    expect(publishedResourceFixture.relatedResourceSlugs).toContain(draftSlug)
+    expect(relatedPublishedResources(publishedResourceFixture, index).map((item) => item.slug)).not.toContain(
+      draftSlug,
+    )
+    expect(publishedResourceSitemapEntries(index, brandSiteUrl).map((entry) => entry.url)).not.toContain(
+      `${brandSiteUrl}/resources/${draftSlug}`,
+    )
+  })
+
   it("lists only publish-ready resources and can feature one", () => {
+    expect(index.getPublishedBySlug("test-published-guide")).toBeDefined()
     expect(index.getPublishedBySlug("test-unpublished-related")).toBeUndefined()
     expect(pickFeaturedResource(index.published())?.slug).toBe("test-published-guide")
     expect(formatResourceMonthYear("2026-09-13")).toBe("Sep 2026")
@@ -240,7 +248,7 @@ describe("resource conversion routes", () => {
 
   it("keeps the extortion callout as architecture, not published advice", () => {
     expect(reviewExtortionUrgentCallout).toContain("preserve the messages and review links")
-    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeUndefined()
+    expect(getPublishedResourceBySlug("resource-that-does-not-exist")).toBeUndefined()
   })
 })
 

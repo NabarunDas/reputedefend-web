@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { getPublishedResources } from "@/lib/resources"
 import ResourceArticlePage, { dynamicParams, generateMetadata, generateStaticParams } from "./page"
 
 vi.mock("next/navigation", () => ({
@@ -26,25 +27,21 @@ describe("resource article route", () => {
     expect(slugs).toContain("google-business-profile-name-rules")
     expect(slugs).toContain("google-business-profile-address-and-service-area-rules")
     expect(slugs).toHaveLength(15)
-    expect(slugs).not.toContain("false-or-defamatory-google-reviews")
-    expect(slugs).not.toContain("google-business-profile-scams")
-    expect(slugs).not.toContain("google-business-profile-categories")
+    expect(slugs).toEqual(getPublishedResources().map((resource) => resource.slug))
     expect(dynamicParams).toBe(false)
   })
 
-  it("404s draft slugs instead of rendering a coming-soon shell", async () => {
+  /**
+   * A slug that will never exist owns this regression, so publishing more
+   * Resources cannot invalidate it. Unpublished-record filtering is covered
+   * synthetically in lib/resources.test.ts.
+   */
+  it("404s unknown slugs instead of rendering a coming-soon shell", async () => {
     await expect(
-      generateMetadata({ params: Promise.resolve({ slug: "false-or-defamatory-google-reviews" }) }),
+      generateMetadata({ params: Promise.resolve({ slug: "resource-that-does-not-exist" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
-      generateMetadata({
-        params: Promise.resolve({ slug: "google-business-profile-scams" }),
-      }),
-    ).rejects.toThrow("NEXT_NOT_FOUND")
-    await expect(
-      ResourceArticlePage({
-        params: Promise.resolve({ slug: "google-business-profile-categories" }),
-      }),
+      ResourceArticlePage({ params: Promise.resolve({ slug: "resource-that-does-not-exist" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
   })
 

@@ -37,13 +37,16 @@ describe("sitemap resources", () => {
     expect(urls).toContain(
       `${brandSiteUrl}/resources/google-business-profile-address-and-service-area-rules`,
     )
-    const draftUrls = resourceRegistry
+    // Derived, so this stays correct whether the registry has several
+    // unpublished records or none at all. Synthetic unpublished coverage lives
+    // in lib/resources.test.ts.
+    const unpublishedUrls = resourceRegistry
       .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)
-    expect(draftUrls.length).toBeGreaterThan(0)
-    for (const url of draftUrls) {
+    for (const url of unpublishedUrls) {
       expect(urls).not.toContain(url)
     }
+    expect(urls).toHaveLength(new Set(urls).size)
   })
 
   it("emits no sitemap outside production", () => {

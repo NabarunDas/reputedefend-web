@@ -397,6 +397,7 @@
 .evidenceGrid { grid-template-columns: repeat(2, 1fr); }
 .timeWarning strong { display: block; font-size: 1.15rem; }
 .timeWarning b { display: block; margin-top: 8px; }
+.timeWarning + h3 { margin-top: 32px; }
 .questionGrid { grid-template-columns: repeat(4, 1fr); }
 .questionGrid div { padding: 14px; border: 1px solid var(--edge); font-weight: 650; font-size: .92rem; }
 .inlineLink, .secondaryLink { display: inline-flex; margin-top: 8px; color: var(--green-dark); font-weight: 750; overflow-wrap: anywhere; }
@@ -439,6 +440,10 @@
   .pilotSection { padding-block: 34px; }
   .decisionGrid, .evidenceGrid, .mistakeGrid, .compactCard ul, .checkGrid { grid-template-columns: 1fr; }
   .questionGrid { grid-template-columns: repeat(2, 1fr); }
+  .timeWarning + h3 { margin-top: 28px; }
+  .pilotPage .related,
+  .pilotPage .sourcesPilot,
+  .pilotPage .aboutPilot { padding-top: 34px; }
 }
 
 @media (max-width: 360px) {
@@ -469,6 +474,33 @@
 
 .pilotPage a {
   overflow-wrap: anywhere;
+}
+
+.pilotPage .pilotSection {
+  border-top: 1px solid var(--edge);
+}
+
+.pilotPage .pilotCta + .pilotSection {
+  border-top: none;
+}
+
+.pilotPage .related,
+.pilotPage .sourcesPilot,
+.pilotPage .aboutPilot {
+  border-top: 1px solid var(--edge);
+  padding-top: 46px;
+}
+
+.pilotPage .pilotConversion + .related {
+  border-top: none;
+}
+
+.pilotPage .relatedPilotCard:last-child {
+  border-bottom: none;
+}
+
+.pilotPage .aboutPilot > p {
+  max-width: var(--prose, 720px);
 }
 
 @media (max-width: 1024px) {

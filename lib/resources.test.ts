@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { listResourceBodySlugs } from "@/lib/resource-content"
+import { getResourceBody, listResourceBodySlugs } from "@/lib/resource-content"
 import { conversionForCommercialRoute, resourceCommercialHrefs } from "@/lib/resource-links"
 import {
   createResourceIndex,
@@ -41,7 +41,7 @@ describe("resource registry", () => {
     // Publication is deliberate: a Resource going public without being added
     // to the approved allowlist fails here.
     expect(publishedSlugs).toEqual([...approvedPublishedResourceSlugs])
-    expect(publishedSlugs).toHaveLength(17)
+    expect(publishedSlugs).toHaveLength(18)
     expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
@@ -63,17 +63,35 @@ describe("resource registry", () => {
   })
 
   it("only publishes resources on the approved allowlist", () => {
-    expect(approvedPublishedResourceSlugs).toHaveLength(17)
+    expect(approvedPublishedResourceSlugs).toHaveLength(18)
     expect(new Set(approvedPublishedResourceSlugs).size).toBe(approvedPublishedResourceSlugs.length)
     expect(getPublishedResources().map((item) => item.slug)).toEqual([...approvedPublishedResourceSlugs])
-    // Article #18 is not approved for publication yet. Its production state is
-    // covered by the equality above, not by a draft-slug negative assertion.
-    expect(approvedPublishedResourceSlugs).not.toContain("google-business-profile-scams")
     expect(
       approvedPublishedResourceSlugs.every((slug) =>
         resourceRegistry.some((item) => item.slug === slug),
       ),
     ).toBe(true)
+  })
+
+  /**
+   * All 18 planned Resources are now public, so the registry holds no
+   * unpublished records. The helpers must stay correct in that state; the
+   * unpublished/incomplete behaviour itself is proven with fixtures below.
+   */
+  it("stays valid now that every planned resource is published", () => {
+    expect(resourceRegistry).toHaveLength(18)
+    expect(resourceRegistry.every((item) => item.published)).toBe(true)
+    expect(resourceRegistry.filter((item) => !item.published)).toEqual([])
+    expect(getPublishedResources()).toHaveLength(18)
+    for (const resource of getPublishedResources()) {
+      const body = getResourceBody(resource.slug)
+      expect(body, resource.slug).toBeDefined()
+      expect(isResourceCalendarDate(resource.datePublished), resource.slug).toBe(true)
+      expect(isResourceCalendarDate(resource.dateReviewed), resource.slug).toBe(true)
+      expect(resource.readingMinutes ?? 0, resource.slug).toBeGreaterThan(0)
+      expect(body?.sourcesUsed.length ?? 0, resource.slug).toBeGreaterThan(0)
+      expect(isPublicResource(resource, body), resource.slug).toBe(true)
+    }
   })
 
   it("keeps related lists and the sitemap aligned with published resources", () => {

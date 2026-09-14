@@ -131,3 +131,15 @@ export const sourceLocalRanking: OfficialSource = {
   title: "Tips to improve your local ranking on Google",
   url: "https://support.google.com/business/answer/7091?hl=en-GB",
 }
+
+export const sourceFraudulentCallsTexts: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Help protect against fraudulent calls and texts",
+  url: "https://support.google.com/business/answer/6212928?hl=en-GB",
+}
+
+export const sourceSecureCompromisedGoogleAccount: OfficialSource = {
+  name: "Google Account Help",
+  title: "Secure a hacked or compromised Google Account",
+  url: "https://support.google.com/accounts/answer/6294825?hl=en-GB",
+}

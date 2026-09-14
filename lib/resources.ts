@@ -85,25 +85,11 @@ export const resourceCategories: readonly ResourceCategory[] = [
   },
 ] as const
 
-function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author" | "datePublished" | "dateReviewed" | "dateModified" | "readingMinutes"> & {
-  featured?: boolean
-}): ResourceRecord {
-  return {
-    ...partial,
-    published: false,
-    featured: partial.featured ?? false,
-    author: resourceAuthor,
-    datePublished: null,
-    dateReviewed: null,
-    dateModified: null,
-    readingMinutes: null,
-  }
-}
-
 /**
- * Planned Resources metadata only.
- * Every record is unpublished until researched article content is supplied.
- * Do not add fake article bodies or decorative source lists here.
+ * The published Resource library. A record only becomes public once a
+ * researched article body, real dates, a reading time and official sources
+ * exist — see isPublicResource. Do not add fake article bodies or decorative
+ * source lists here.
  */
 export const resourceRegistry: readonly ResourceRecord[] = [
   {
@@ -495,22 +481,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-scams",
     title: "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",
     seoTitle: "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",
     description:
-      "How to recognise common Google Business Profile access scams involving passwords, codes, fake calls and manager requests.",
+      "Learn how to recognise Google Business Profile scams involving fake support calls, passwords, OTPs, verification codes, manager requests and third-party impersonation.",
     category: "review-abuse-scams",
     excerpt:
-      "Common Google Business Profile access scams involving passwords, codes, fake calls and manager requests.",
+      "How to protect Business Profile access from fake Google support, credential theft, unsafe manager requests and misleading third-party claims.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "offered-to-remove-google-reviews-for-money",
       "lost-access-to-google-business-profile",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
 ] as const
 
 export type ResourceBodyLookup = (slug: string) => Pick<ResourceArticleBody, "sourcesUsed"> | undefined

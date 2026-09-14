@@ -14,7 +14,7 @@ describe("resource article route", () => {
     const slugs = generateStaticParams().map((item) => item.slug)
     expect(slugs).toEqual([...approvedPublishedResourceSlugs])
     expect(slugs).toEqual(getPublishedResources().map((resource) => resource.slug))
-    expect(slugs).toHaveLength(17)
+    expect(slugs).toHaveLength(18)
     expect(dynamicParams).toBe(false)
   })
 

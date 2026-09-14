@@ -17,6 +17,7 @@ import { CompetitorReviewPilotView } from "./competitor-review-pilot-view"
 import { CustomerReviewThreatPilotView } from "./customer-review-threat-pilot-view"
 import { PaidReviewRemovalOfferPilotView } from "./paid-review-removal-offer-pilot-view"
 import { RejectedReviewReportPilotView } from "./rejected-review-report-pilot-view"
+import { LostAccessPilotView } from "./lost-access-pilot-view"
 import { FakeReviewAssessmentPilotView } from "./fake-review-assessment-pilot-view"
 import { ReviewBombingPilotView } from "./review-bombing-pilot-view"
 import { ReviewExtortionPilotView } from "./review-extortion-pilot-view"
@@ -97,6 +98,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-rejected-my-review-report") {
     return <RejectedReviewReportPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "lost-access-to-google-business-profile") {
+    return <LostAccessPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

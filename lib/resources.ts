@@ -361,7 +361,7 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     urgent: false,
     datePublished: "2026-09-14",
     dateReviewed: "2026-09-14",
-    dateModified: null,
+    dateModified: "2026-09-14",
     readingMinutes: 12,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",

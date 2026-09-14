@@ -37,13 +37,14 @@ describe("resource article route", () => {
       params: Promise.resolve({ slug: "google-business-profile-suspended-before-appeal" }),
     })
     expect(metadata.description).toBe(
-      "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
+      "If your Google Business Profile has been suspended, check the restriction, eligibility, profile details and evidence before you submit an appeal.",
     )
     expect(metadata.alternates).toEqual({
       canonical: "/resources/google-business-profile-suspended-before-appeal",
     })
     expect(JSON.stringify(metadata.openGraph)).toContain('"type":"article"')
     expect(JSON.stringify(metadata.openGraph)).toContain('"publishedTime":"2026-09-13"')
+    expect(JSON.stringify(metadata.openGraph)).toContain('"modifiedTime":"2026-09-14"')
     expect(metadata.twitter).toBeDefined()
   })
 })

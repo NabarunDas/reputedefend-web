@@ -14,6 +14,7 @@ import { AppealRejectedPilotView } from "./appeal-rejected-pilot-view"
 import { EvidenceChecklistPilotView } from "./evidence-checklist-pilot-view"
 import { SuspensionPilotView } from "./suspension-pilot-view"
 import { CompetitorReviewPilotView } from "./competitor-review-pilot-view"
+import { CustomerReviewThreatPilotView } from "./customer-review-threat-pilot-view"
 import { FakeReviewAssessmentPilotView } from "./fake-review-assessment-pilot-view"
 import { ReviewBombingPilotView } from "./review-bombing-pilot-view"
 import { ReviewExtortionPilotView } from "./review-extortion-pilot-view"
@@ -82,6 +83,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "can-a-competitor-or-ex-employee-leave-a-google-review") {
     return <CompetitorReviewPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "customer-threatening-bad-google-review") {
+    return <CustomerReviewThreatPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

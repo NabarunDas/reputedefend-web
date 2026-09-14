@@ -256,8 +256,8 @@ describe("Article #6 fake review or genuine negative feedback", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("customer-threatening-bad-google-review")
-    const otherBody = getResourceBody("customer-threatening-bad-google-review")
+    const other = getPublishedResourceBySlug("offered-to-remove-google-reviews-for-money")
+    const otherBody = getResourceBody("offered-to-remove-google-reviews-for-money")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

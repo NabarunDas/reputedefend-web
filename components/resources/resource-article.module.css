@@ -367,22 +367,22 @@
 
 .pilotMeta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; color: var(--muted); font-size: .9rem; font-weight: 650; }
 .pilotSection { padding-block: 46px; }
-.pilotSection > h2, .pilotSection > p, .pilotSection > .compactCard, .pilotSection > .checkGrid, .pilotSection > .practical { width: var(--measure); margin-inline: auto; }
-.pilotSection > p { color: var(--muted-strong); }
+.pilotSection > p { color: var(--muted-strong); max-width: var(--prose, 720px); }
 .pilotSection > h2 { margin-bottom: 14px; }
 .pilotCta > p, .pilotConversion > p { color: var(--muted-strong); }
-.process { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 26px; }
+.process { display: grid; grid-template-columns: repeat(5, 1fr); gap: 28px 24px; margin-top: 26px; }
 .processStep { position: relative; padding: 18px 14px; border-top: 3px solid var(--green); background: color-mix(in srgb, var(--paper) 84%, white); }
-.processStep:not(:last-child)::after { content: "→"; position: absolute; right: -14px; top: 18px; color: var(--green-dark); font-size: 1.2rem; z-index: 1; }
+.processStep:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 18px; color: var(--green-dark); font-size: 1.2rem; z-index: 1; }
 .processStep b { color: var(--green-dark); font-family: var(--font-display), Arial, sans-serif; }
 .processStep h3 { margin-top: 12px; }
 .processStep p { margin-top: 8px; font-size: .92rem; color: var(--muted-strong); }
 .warning, .timeWarning { margin-top: 24px; padding: 18px 20px; border-left: 4px solid var(--green); background: color-mix(in srgb, var(--green) 10%, var(--paper)); }
 .warning p, .timeWarning p { margin-top: 5px; }
-.pilotCta { width: var(--measure); margin: 18px auto; padding: 22px 0; border-block: 1px solid var(--edge); }
+.pilotCta { width: var(--wide); margin: 18px auto; padding: 22px 0; border-block: 1px solid var(--edge); }
 .pilotCta h2 { font-size: 1.25rem; }
-.primaryAction { display: inline-flex; margin-top: 14px; padding: 11px 18px; border-radius: 999px; background: var(--green); color: var(--paper); font-weight: 750; }
-.secondaryAction { display: inline-flex; margin-top: 14px; color: var(--green-dark); font-weight: 750; }
+.pilotCta > p { max-width: var(--prose, 720px); }
+.primaryAction { display: inline-flex; align-items: center; justify-content: center; margin-top: 14px; padding: 11px 18px; border-radius: 999px; background: var(--green); color: var(--paper); font-weight: 750; min-height: 48px; box-sizing: border-box; }
+.secondaryAction { display: inline-flex; align-items: center; min-height: 44px; margin-top: 14px; color: var(--green-dark); font-weight: 750; }
 .pilotCta small, .pilotConversion small { display: block; margin-top: 10px; color: var(--muted); }
 .compactCard { margin-top: 22px; padding: 18px 20px; border: 1px solid var(--edge); }
 .compactCard ul { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; margin-top: 12px; padding: 0; list-style: none; }
@@ -399,39 +399,45 @@
 .timeWarning b { display: block; margin-top: 8px; }
 .questionGrid { grid-template-columns: repeat(4, 1fr); }
 .questionGrid div { padding: 14px; border: 1px solid var(--edge); font-weight: 650; font-size: .92rem; }
-.inlineLink, .secondaryLink { display: inline-flex; margin-top: 8px; color: var(--green-dark); font-weight: 750; }
+.inlineLink, .secondaryLink { display: inline-flex; margin-top: 8px; color: var(--green-dark); font-weight: 750; overflow-wrap: anywhere; }
 .mistakeGrid { grid-template-columns: repeat(2, 1fr); margin-top: 22px; }
 .mistakeGrid > div { padding: 16px 18px; border: 0; border-top: 1px solid var(--edge); background: transparent; }
 .mistakeGrid h3 { font-size: 1rem; font-weight: 720; }
 .mistakeGrid p { max-width: 34rem; }
 .accordion { margin-top: 16px; border-top: 1px solid var(--edge); }
 .accordion details { border-bottom: 1px solid var(--edge); }
-.accordion summary { display: flex; justify-content: space-between; gap: 14px; padding: 16px 0; cursor: pointer; font-weight: 750; list-style: none; }
+.accordion summary { display: flex; justify-content: space-between; gap: 14px; padding: 16px 0; cursor: pointer; font-weight: 750; list-style: none; overflow-wrap: anywhere; }
 .accordion summary::-webkit-details-marker { display: none; }
 .accordion details[open] summary svg { transform: rotate(180deg); }
 .accordion p { padding: 0 28px 18px 0; color: var(--muted-strong); }
 .tickList { display: grid; gap: 11px; margin-top: 20px; padding: 0; list-style: none; }
 .tickList li { display: flex; gap: 9px; align-items: flex-start; }
 .practical { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--edge); }
-.practical p { margin-top: 6px; color: var(--muted-strong); }
+.practical p { margin-top: 6px; color: var(--muted-strong); max-width: var(--prose, 720px); }
 .pilotConversion { padding-block: 38px; border-block: 1px solid var(--edge); }
-.pilotConversion p { max-width: 42rem; }
-.pilotConversion .secondaryAction { margin-left: 16px; }
+.pilotConversion p { max-width: var(--prose, 720px); }
+.pilotConversionActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 14px; }
+.pilotConversionActions .primaryAction,
+.pilotConversionActions .secondaryAction { margin-top: 0; margin-left: 0; }
 .relatedPilotCard { display: grid; gap: 6px; padding: 16px 0; border-bottom: 1px solid var(--edge); }
-.relatedPilotCard strong { color: var(--ink); }
+.relatedPilotCard strong { color: var(--ink); overflow-wrap: anywhere; }
 .relatedPilotCard span { color: var(--muted-strong); }
 .sourcesPilot { padding-block: 32px; }
 .sourcesPilot > p { margin-top: 5px; color: var(--muted); }
 .sourcesPilot ul { display: grid; gap: 10px; margin-top: 15px; padding: 0; list-style: none; }
-.sourcesPilot a { display: inline-flex; gap: 7px; align-items: center; color: var(--green-dark); font-weight: 700; }
+.sourcesPilot a { display: inline-flex; gap: 7px; align-items: center; color: var(--green-dark); font-weight: 700; overflow-wrap: anywhere; max-width: 100%; }
 .aboutPilot { padding-top: 24px; }
-.aboutPilot p { max-width: 42rem; color: var(--muted-strong); }
+.aboutPilot p { max-width: var(--prose, 720px); color: var(--muted-strong); }
 .aboutPilot span { display: inline-block; margin-top: 12px; color: var(--green-dark); font-weight: 700; }
+
+@media (max-width: 1024px) {
+  .process { grid-template-columns: 1fr; }
+  .processStep:not(:last-child)::after { content: "↓"; top: auto; right: auto; bottom: -22px; left: 18px; }
+}
 
 @media (max-width: 760px) {
   .pilotSection { padding-block: 34px; }
-  .process, .decisionGrid, .evidenceGrid, .mistakeGrid { grid-template-columns: 1fr; }
-  .processStep:not(:last-child)::after { content: "↓"; top: auto; right: auto; bottom: -18px; left: 18px; }
+  .decisionGrid, .evidenceGrid, .mistakeGrid, .compactCard ul, .checkGrid { grid-template-columns: 1fr; }
   .questionGrid { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -443,5 +449,63 @@
 
   .page h1 {
     font-size: 1.75rem;
+  }
+}
+
+.pilotPage {
+  --article: min(880px, calc(100% - 48px));
+  --prose: 720px;
+  --measure: var(--article);
+  --wide: var(--article);
+}
+
+.pilotPage h1 {
+  max-width: none;
+}
+
+.pilotPage .intro {
+  max-width: var(--prose);
+}
+
+.pilotPage a {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1024px) {
+  .pilotPage {
+    --article: min(880px, calc(100% - 48px));
+  }
+}
+
+@media (max-width: 480px) {
+  .pilotPage {
+    --article: min(880px, calc(100% - 32px));
+    --prose: 100%;
+    --measure: var(--article);
+    --wide: var(--article);
+  }
+
+  .pilotPage h1 {
+    font-size: clamp(1.75rem, 7.2vw, 2.15rem);
+    letter-spacing: -.04em;
+  }
+
+  .compactCard ul,
+  .checkGrid,
+  .questionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .pilotPage .primaryAction {
+    width: 100%;
+  }
+
+  .pilotConversionActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pilotConversionActions .secondaryAction {
+    justify-content: center;
   }
 }

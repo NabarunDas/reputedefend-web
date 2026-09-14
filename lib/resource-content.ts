@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { canACompetitorOrExEmployeeLeaveAGoogleReviewBody } from "@/lib/resource-articles/can-a-competitor-or-ex-employee-leave-a-google-review"
+import { competitorOrExEmployeeReviewBody } from "@/lib/resource-articles/can-a-competitor-or-ex-employee-leave-a-google-review"
 import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
 import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
 import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
@@ -55,7 +55,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-business-profile-appeal-rejected-what-next": appealRejectedWhatNextBody,
   "google-business-profile-verification-stuck-or-rejected": verificationStuckOrRejectedBody,
   "can-a-google-review-be-removed": canAGoogleReviewBeRemovedBody,
-  "can-a-competitor-or-ex-employee-leave-a-google-review": canACompetitorOrExEmployeeLeaveAGoogleReviewBody,
+  "can-a-competitor-or-ex-employee-leave-a-google-review": competitorOrExEmployeeReviewBody,
   "fake-google-review-or-genuine-negative-feedback": fakeOrGenuineNegativeFeedbackBody,
   "google-review-extortion": googleReviewExtortionBody,
   "google-review-bombing": googleReviewBombingBody,

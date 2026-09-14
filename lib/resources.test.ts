@@ -45,9 +45,11 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("fake-google-review-or-genuine-negative-feedback")
     expect(publishedSlugs).toContain("google-review-extortion")
     expect(publishedSlugs).toContain("google-review-bombing")
+    expect(publishedSlugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
+    expect(publishedSlugs).not.toContain("false-or-defamatory-google-reviews")
     expect(publishedSlugs).not.toContain("google-rejected-my-review-report")
     expect(publishedSlugs).not.toContain("lost-access-to-google-business-profile")
-    expect(unpublished.map((item) => item.slug)).toContain("google-rejected-my-review-report")
+    expect(unpublished.map((item) => item.slug)).toContain("false-or-defamatory-google-reviews")
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",

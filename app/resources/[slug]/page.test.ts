@@ -18,6 +18,8 @@ describe("resource article route", () => {
     expect(slugs).toContain("fake-google-review-or-genuine-negative-feedback")
     expect(slugs).toContain("google-review-extortion")
     expect(slugs).toContain("google-review-bombing")
+    expect(slugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
+    expect(slugs).not.toContain("false-or-defamatory-google-reviews")
     expect(slugs).not.toContain("google-rejected-my-review-report")
     expect(slugs).not.toContain("lost-access-to-google-business-profile")
     expect(dynamicParams).toBe(false)

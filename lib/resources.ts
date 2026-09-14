@@ -291,21 +291,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "can-a-competitor-or-ex-employee-leave-a-google-review",
     title: "Can a Competitor or Ex-Employee Leave a Google Review?",
     seoTitle: "Can a Competitor or Ex-Employee Leave a Google Review?",
     description:
-      "What Google's published review policies say about reviews from competitors, former staff and people who may not have been customers.",
+      "Google's review policies restrict conflicts of interest, including some competitor and current or former employee reviews. Learn what evidence matters and how to report them.",
     category: "reviews-reputation",
-    excerpt: "How Google's published review policies treat reviews from competitors and former staff.",
+    excerpt:
+      "How Google's conflict-of-interest rules apply to reviews from competitors, current or former employees and other professionally connected people.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",
       "false-or-defamatory-google-reviews",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "customer-threatening-bad-google-review",
     title: "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them",

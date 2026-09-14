@@ -14,6 +14,7 @@ import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-busin
 import { googleBusinessProfileCategoriesBody } from "@/lib/resource-articles/google-business-profile-categories"
 import { googleBusinessProfileNameRulesBody } from "@/lib/resource-articles/google-business-profile-name-rules"
 import { googleBusinessProfileNotShowingBody } from "@/lib/resource-articles/google-business-profile-not-showing-on-google-or-maps"
+import { googleReviewsMissingOrDisappearedBody } from "@/lib/resource-articles/google-reviews-missing-or-disappeared"
 import { googleBusinessProfileScamsBody } from "@/lib/resource-articles/google-business-profile-scams"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import { verificationStuckOrRejectedBody } from "@/lib/resource-articles/google-business-profile-verification-stuck-or-rejected"
@@ -79,6 +80,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "false-or-defamatory-google-reviews": falseOrDefamatoryGoogleReviewsBody,
   "google-business-profile-scams": googleBusinessProfileScamsBody,
   "google-business-profile-not-showing-on-google-or-maps": googleBusinessProfileNotShowingBody,
+  "google-reviews-missing-or-disappeared": googleReviewsMissingOrDisappearedBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

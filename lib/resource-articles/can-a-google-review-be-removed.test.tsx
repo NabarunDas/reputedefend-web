@@ -85,11 +85,18 @@ describe("Article #5 can a Google review be removed", () => {
     ])
     expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
     expect(body?.googleSays?.sources).not.toContain(sourceReviewExtortion)
+    expect(resource?.relatedResourceSlugs).toEqual([
+      "fake-google-review-or-genuine-negative-feedback",
+      "google-rejected-my-review-report",
+      "google-reviews-missing-or-disappeared",
+    ])
     expect(related.map((item) => item.slug)).toEqual([
       "fake-google-review-or-genuine-negative-feedback",
       "google-rejected-my-review-report",
+      "google-reviews-missing-or-disappeared",
     ])
     expect(getPublishedResourceBySlug("google-rejected-my-review-report")).toBeDefined()
+    expect(getPublishedResourceBySlug("google-reviews-missing-or-disappeared")).toBeDefined()
   })
 
   it("renders approved copy, published related guides, and uses the Review Protection CTA", () => {
@@ -131,6 +138,11 @@ describe("Article #5 can a Google review be removed", () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText("Google Rejected My Review Report: What Can You Do Next?"),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "Google Reviews Missing or Disappeared: Why It Happens and What You Can Do",
+      ),
     ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",

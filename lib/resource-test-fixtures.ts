@@ -35,6 +35,7 @@ export const approvedPublishedResourceSlugs = [
   "false-or-defamatory-google-reviews",
   "google-business-profile-scams",
   "google-business-profile-not-showing-on-google-or-maps",
+  "google-reviews-missing-or-disappeared",
 ] as const
 
 export const fixtureOfficialSource: OfficialSource = {

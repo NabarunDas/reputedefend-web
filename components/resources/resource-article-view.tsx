@@ -10,6 +10,7 @@ import {
 } from "@/lib/resources"
 import { resourceArticleJsonLd, resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
 import { ResourceBreadcrumbs } from "./resource-breadcrumbs"
+import { AppealRejectedPilotView } from "./appeal-rejected-pilot-view"
 import { EvidenceChecklistPilotView } from "./evidence-checklist-pilot-view"
 import { SuspensionPilotView } from "./suspension-pilot-view"
 import { ResourceCard } from "./resource-card"
@@ -47,6 +48,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-business-profile-appeal-evidence-checklist") {
     return <EvidenceChecklistPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "google-business-profile-appeal-rejected-what-next") {
+    return <AppealRejectedPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

@@ -1035,7 +1035,8 @@
 }
 
 .extortionTimeline,
-.clusterTimeline {
+.clusterTimeline,
+.disputeTimeline {
   list-style: none;
   margin: 22px 0 0;
   padding: 0 0 0 8px;
@@ -1044,7 +1045,8 @@
 }
 
 .extortionTimeline li,
-.clusterTimeline li {
+.clusterTimeline li,
+.disputeTimeline li {
   position: relative;
   display: grid;
   grid-template-columns: 2.4rem minmax(0, 1fr);
@@ -1054,7 +1056,8 @@
 }
 
 .extortionTimeline li::before,
-.clusterTimeline li::before {
+.clusterTimeline li::before,
+.disputeTimeline li::before {
   content: "";
   position: absolute;
   left: -7px;
@@ -1066,15 +1069,53 @@
 }
 
 .extortionTimeline b,
-.clusterTimeline b {
+.clusterTimeline b,
+.disputeTimeline b {
   color: var(--green-dark);
   font-family: var(--font-display), Arial, sans-serif;
 }
 
 .extortionTimeline span,
-.clusterTimeline span {
+.clusterTimeline span,
+.disputeTimeline span {
   color: var(--muted-strong);
   font-weight: 650;
+}
+
+.disputeTimeline span strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.disputePage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.disputePage .decisionSplit ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.disputePage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.disputePage .warning h3 {
+  margin: 0;
+}
+
+.disputePage .sourcesPilot ul + p {
+  margin-top: 22px;
+}
+
+.disputePage .decisionSplit .statusKicker {
+  display: block;
+  margin-top: 12px;
 }
 
 .conflictPage .pilotSection > h3 {

@@ -205,12 +205,12 @@ describe("Article #2 appeal evidence checklist", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-review-bombing")
-    const otherBody = getResourceBody("google-review-bombing")
+    const other = getPublishedResourceBySlug("can-a-competitor-or-ex-employee-leave-a-google-review")
+    const otherBody = getResourceBody("can-a-competitor-or-ex-employee-leave-a-google-review")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "How these guides are produced" })).toBeInTheDocument()
-    expect(screen.getByText(/Last reviewed: 13 September 2026/)).toBeInTheDocument()
+    expect(screen.getByText(/Last reviewed: 14 September 2026/)).toBeInTheDocument()
   })
 })

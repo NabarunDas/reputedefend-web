@@ -205,8 +205,8 @@ describe("Article #2 appeal evidence checklist", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-review-extortion")
-    const otherBody = getResourceBody("google-review-extortion")
+    const other = getPublishedResourceBySlug("google-review-bombing")
+    const otherBody = getResourceBody("google-review-bombing")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

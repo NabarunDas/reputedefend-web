@@ -186,7 +186,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "/resources/google-business-profile-suspended-before-appeal",
     )
     expect(
-      screen.queryByText("Google Business Profile Address and Service-Area Rules Explained"),
+      screen.queryByText("Google Business Profile Categories: What You Should and Shouldn't Change"),
     ).not.toBeInTheDocument()
   })
 

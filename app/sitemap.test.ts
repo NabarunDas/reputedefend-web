@@ -34,6 +34,9 @@ describe("sitemap resources", () => {
     expect(urls).toContain(`${brandSiteUrl}/resources/google-rejected-my-review-report`)
     expect(urls).toContain(`${brandSiteUrl}/resources/lost-access-to-google-business-profile`)
     expect(urls).toContain(`${brandSiteUrl}/resources/google-business-profile-name-rules`)
+    expect(urls).toContain(
+      `${brandSiteUrl}/resources/google-business-profile-address-and-service-area-rules`,
+    )
     const draftUrls = resourceRegistry
       .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)

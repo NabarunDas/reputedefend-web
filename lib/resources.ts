@@ -426,21 +426,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-address-and-service-area-rules",
     title: "Google Business Profile Address and Service-Area Rules Explained",
     seoTitle: "Google Business Profile Address and Service-Area Rules Explained",
     description:
-      "A plain-English explanation of Google Business Profile address and service-area rules.",
+      "Learn when a Google Business Profile should show an address, when a service-area business should hide it, and how Google's storefront, virtual-office and service-area rules work.",
     category: "profile-recovery",
-    excerpt: "How Google's published address and service-area rules apply to a Business Profile.",
+    excerpt:
+      "How Google's address, storefront, service-area, home-address, virtual-office and co-working rules apply to a Business Profile.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "google-business-profile-name-rules",
       "google-business-profile-categories",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-categories",
     title: "Google Business Profile Categories: What You Should and Shouldn't Change",

@@ -51,13 +51,12 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("google-rejected-my-review-report")
     expect(publishedSlugs).toContain("lost-access-to-google-business-profile")
     expect(publishedSlugs).toContain("google-business-profile-name-rules")
-    expect(publishedSlugs).toHaveLength(14)
+    expect(publishedSlugs).toContain("google-business-profile-address-and-service-area-rules")
+    expect(publishedSlugs).toHaveLength(15)
     expect(publishedSlugs).not.toContain("false-or-defamatory-google-reviews")
     expect(publishedSlugs).not.toContain("google-business-profile-scams")
-    expect(publishedSlugs).not.toContain("google-business-profile-address-and-service-area-rules")
     expect(publishedSlugs).not.toContain("google-business-profile-categories")
     expect(unpublished.map((item) => item.slug)).toEqual([
-      "google-business-profile-address-and-service-area-rules",
       "google-business-profile-categories",
       "false-or-defamatory-google-reviews",
       "google-business-profile-scams",
@@ -73,9 +72,7 @@ describe("resource registry", () => {
       "review-abuse-scams",
     )
     expect(getPublishedResourceArticle("google-review-bombing")?.resource.urgent).toBe(true)
-    expect(
-      getPublishedResourceArticle("google-business-profile-address-and-service-area-rules"),
-    ).toBeUndefined()
+    expect(getPublishedResourceArticle("google-business-profile-categories")).toBeUndefined()
     expect(
       getPublishedResources()
         .filter((item) => item.category === "review-abuse-scams")
@@ -85,17 +82,15 @@ describe("resource registry", () => {
   })
 
   it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
-    const addressRules = resourceRegistry.find(
-      (item) => item.slug === "google-business-profile-address-and-service-area-rules",
+    const categories = resourceRegistry.find(
+      (item) => item.slug === "google-business-profile-categories",
     )
     const extortion = getPublishedResourceBySlug("google-review-extortion")
     const bombing = getPublishedResourceBySlug("google-review-bombing")
-    expect(addressRules?.published).toBe(false)
+    expect(categories?.published).toBe(false)
     expect(extortion?.urgent).toBe(true)
     expect(bombing?.urgent).toBe(true)
-    expect(
-      getPublishedResourceBySlug("google-business-profile-address-and-service-area-rules"),
-    ).toBeUndefined()
+    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeUndefined()
     expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual([
       "google-review-bombing",
       "customer-threatening-bad-google-review",

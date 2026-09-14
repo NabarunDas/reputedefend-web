@@ -366,8 +366,11 @@
 }
 
 .pilotMeta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; color: var(--muted); font-size: .9rem; font-weight: 650; }
-.pilotSection { padding-block: 34px; }
-.pilotSection > p, .pilotCta > p, .pilotConversion > p { color: var(--muted-strong); }
+.pilotSection { padding-block: 46px; }
+.pilotSection > h2, .pilotSection > p, .pilotSection > .compactCard, .pilotSection > .checkGrid, .pilotSection > .practical { width: var(--measure); margin-inline: auto; }
+.pilotSection > p { color: var(--muted-strong); }
+.pilotSection > h2 { margin-bottom: 14px; }
+.pilotCta > p, .pilotConversion > p { color: var(--muted-strong); }
 .process { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 26px; }
 .processStep { position: relative; padding: 18px 14px; border-top: 3px solid var(--green); background: color-mix(in srgb, var(--paper) 84%, white); }
 .processStep:not(:last-child)::after { content: "→"; position: absolute; right: -14px; top: 18px; color: var(--green-dark); font-size: 1.2rem; z-index: 1; }
@@ -397,8 +400,10 @@
 .questionGrid { grid-template-columns: repeat(4, 1fr); }
 .questionGrid div { padding: 14px; border: 1px solid var(--edge); font-weight: 650; font-size: .92rem; }
 .inlineLink, .secondaryLink { display: inline-flex; margin-top: 8px; color: var(--green-dark); font-weight: 750; }
-.mistakeGrid { grid-template-columns: repeat(2, 1fr); }
-.mistakeGrid h3 { font-size: 1rem; }
+.mistakeGrid { grid-template-columns: repeat(2, 1fr); margin-top: 22px; }
+.mistakeGrid > div { padding: 16px 18px; border: 0; border-top: 1px solid var(--edge); background: transparent; }
+.mistakeGrid h3 { font-size: 1rem; font-weight: 720; }
+.mistakeGrid p { max-width: 34rem; }
 .accordion { margin-top: 16px; border-top: 1px solid var(--edge); }
 .accordion details { border-bottom: 1px solid var(--edge); }
 .accordion summary { display: flex; justify-content: space-between; gap: 14px; padding: 16px 0; cursor: pointer; font-weight: 750; list-style: none; }
@@ -424,6 +429,7 @@
 .aboutPilot span { display: inline-block; margin-top: 12px; color: var(--green-dark); font-weight: 700; }
 
 @media (max-width: 760px) {
+  .pilotSection { padding-block: 34px; }
   .process, .decisionGrid, .evidenceGrid, .mistakeGrid { grid-template-columns: 1fr; }
   .processStep:not(:last-child)::after { content: "↓"; top: auto; right: auto; bottom: -18px; left: 18px; }
   .questionGrid { grid-template-columns: repeat(2, 1fr); }

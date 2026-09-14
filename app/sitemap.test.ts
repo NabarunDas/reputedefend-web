@@ -16,6 +16,12 @@ describe("sitemap resources", () => {
     expect(urls).toContain(
       `${brandSiteUrl}/resources/google-business-profile-suspended-before-appeal`,
     )
+    expect(urls).toContain(`${brandSiteUrl}/resources/can-a-google-review-be-removed`)
+    expect(urls).toContain(
+      `${brandSiteUrl}/resources/fake-google-review-or-genuine-negative-feedback`,
+    )
+    expect(urls).toContain(`${brandSiteUrl}/resources/google-review-extortion`)
+    expect(urls).toContain(`${brandSiteUrl}/resources/google-review-bombing`)
     const draftUrls = resourceRegistry
       .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)

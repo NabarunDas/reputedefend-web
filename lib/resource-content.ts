@@ -1,4 +1,8 @@
 import type { ReactNode } from "react"
+import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
+import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
+import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
+import { googleReviewExtortionBody } from "@/lib/resource-articles/google-review-extortion"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
@@ -49,6 +53,10 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-business-profile-appeal-evidence-checklist": appealEvidenceChecklistBody,
   "google-business-profile-appeal-rejected-what-next": appealRejectedWhatNextBody,
   "google-business-profile-verification-stuck-or-rejected": verificationStuckOrRejectedBody,
+  "can-a-google-review-be-removed": canAGoogleReviewBeRemovedBody,
+  "fake-google-review-or-genuine-negative-feedback": fakeOrGenuineNegativeFeedbackBody,
+  "google-review-extortion": googleReviewExtortionBody,
+  "google-review-bombing": googleReviewBombingBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

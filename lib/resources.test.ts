@@ -41,8 +41,13 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("google-business-profile-appeal-evidence-checklist")
     expect(publishedSlugs).toContain("google-business-profile-appeal-rejected-what-next")
     expect(publishedSlugs).toContain("google-business-profile-verification-stuck-or-rejected")
+    expect(publishedSlugs).toContain("can-a-google-review-be-removed")
+    expect(publishedSlugs).toContain("fake-google-review-or-genuine-negative-feedback")
+    expect(publishedSlugs).toContain("google-review-extortion")
+    expect(publishedSlugs).toContain("google-review-bombing")
+    expect(publishedSlugs).not.toContain("google-rejected-my-review-report")
     expect(publishedSlugs).not.toContain("lost-access-to-google-business-profile")
-    expect(unpublished.map((item) => item.slug)).toContain("google-review-extortion")
+    expect(unpublished.map((item) => item.slug)).toContain("google-rejected-my-review-report")
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
@@ -50,19 +55,37 @@ describe("resource registry", () => {
     expect(getPublishedResourceArticle("google-business-profile-suspended-before-appeal")?.body.sourcesUsed).toHaveLength(
       6,
     )
-    expect(getPublishedResourceArticle("google-review-extortion")).toBeUndefined()
-    expect(publishedCountForCategory("review-abuse-scams")).toBe(0)
+    expect(getPublishedResourceArticle("google-review-extortion")?.resource.category).toBe(
+      "review-abuse-scams",
+    )
+    expect(getPublishedResourceArticle("google-review-bombing")?.resource.urgent).toBe(true)
+    expect(getPublishedResourceArticle("lost-access-to-google-business-profile")).toBeUndefined()
+    expect(
+      getPublishedResources()
+        .filter((item) => item.category === "review-abuse-scams")
+        .map((item) => item.slug),
+    ).toEqual(expect.arrayContaining(["google-review-extortion", "google-review-bombing"]))
+    expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
   })
 
   it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
-    const extortion = resourceRegistry.find((item) => item.slug === "google-review-extortion")
+    const rejectedReport = resourceRegistry.find((item) => item.slug === "google-rejected-my-review-report")
+    const extortion = getPublishedResourceBySlug("google-review-extortion")
+    const bombing = getPublishedResourceBySlug("google-review-bombing")
+    expect(rejectedReport?.published).toBe(false)
     expect(extortion?.urgent).toBe(true)
-    expect(getPublishedResourceBySlug("google-review-extortion")).toBeUndefined()
-    expect(relatedPublishedResources(extortion!)).toEqual([])
+    expect(bombing?.urgent).toBe(true)
+    expect(getPublishedResourceBySlug("google-rejected-my-review-report")).toBeUndefined()
+    expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual(["google-review-bombing"])
+    expect(relatedPublishedResources(bombing!).map((item) => item.slug)).toEqual([
+      "google-review-extortion",
+      "fake-google-review-or-genuine-negative-feedback",
+    ])
     expect(publishedResourceSitemapEntries().map((entry) => entry.url)).toEqual(
       getPublishedResources().map((resource) => `${brandSiteUrl}/resources/${resource.slug}`),
     )
     expect(resourceRegistry.map((item) => item.slug)).toContain("google-review-extortion")
+    expect(resourceRegistry.map((item) => item.slug)).toContain("google-review-bombing")
     expect(resourceRegistry.map((item) => item.slug)).toContain(
       "google-business-profile-suspended-before-appeal",
     )
@@ -78,7 +101,8 @@ describe("resource registry", () => {
     ])
     const abuse = resourceCategories.find((item) => item.id === "review-abuse-scams")
     expect(abuse?.urgentLabel).toBe("Urgent situations")
-    expect(publishedCountForCategory("review-abuse-scams")).toBe(0)
+    expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
+    expect(getPublishedResourceBySlug("google-rejected-my-review-report")).toBeUndefined()
   })
 
   it("does not create mass placeholder article routes or a policy-updates index", () => {
@@ -197,7 +221,7 @@ describe("resource conversion routes", () => {
 
   it("keeps the extortion callout as architecture, not published advice", () => {
     expect(reviewExtortionUrgentCallout).toContain("preserve the messages and review links")
-    expect(getPublishedResourceBySlug("google-review-extortion")).toBeUndefined()
+    expect(getPublishedResourceBySlug("lost-access-to-google-business-profile")).toBeUndefined()
   })
 })
 

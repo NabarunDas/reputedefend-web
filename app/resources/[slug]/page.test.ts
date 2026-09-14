@@ -14,13 +14,18 @@ describe("resource article route", () => {
     expect(slugs).toContain("google-business-profile-appeal-evidence-checklist")
     expect(slugs).toContain("google-business-profile-appeal-rejected-what-next")
     expect(slugs).toContain("google-business-profile-verification-stuck-or-rejected")
+    expect(slugs).toContain("can-a-google-review-be-removed")
+    expect(slugs).toContain("fake-google-review-or-genuine-negative-feedback")
+    expect(slugs).toContain("google-review-extortion")
+    expect(slugs).toContain("google-review-bombing")
+    expect(slugs).not.toContain("google-rejected-my-review-report")
     expect(slugs).not.toContain("lost-access-to-google-business-profile")
     expect(dynamicParams).toBe(false)
   })
 
   it("404s draft slugs instead of rendering a coming-soon shell", async () => {
     await expect(
-      generateMetadata({ params: Promise.resolve({ slug: "google-review-extortion" }) }),
+      generateMetadata({ params: Promise.resolve({ slug: "google-rejected-my-review-report" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
       generateMetadata({
@@ -28,7 +33,7 @@ describe("resource article route", () => {
       }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
-      ResourceArticlePage({ params: Promise.resolve({ slug: "google-review-extortion" }) }),
+      ResourceArticlePage({ params: Promise.resolve({ slug: "lost-access-to-google-business-profile" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
   })
 

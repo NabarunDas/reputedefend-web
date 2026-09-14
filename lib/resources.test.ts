@@ -36,12 +36,12 @@ describe("resource registry", () => {
   it("exposes only publish-ready resources", () => {
     const publishedSlugs = getPublishedResources().map((item) => item.slug)
     const unpublished = resourceRegistry.filter((item) => !item.published)
-    expect(resourceRegistry).toHaveLength(18)
+    expect(resourceRegistry).toHaveLength(19)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
     // Publication is deliberate: a Resource going public without being added
     // to the approved allowlist fails here.
     expect(publishedSlugs).toEqual([...approvedPublishedResourceSlugs])
-    expect(publishedSlugs).toHaveLength(18)
+    expect(publishedSlugs).toHaveLength(19)
     expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
@@ -63,7 +63,7 @@ describe("resource registry", () => {
   })
 
   it("only publishes resources on the approved allowlist", () => {
-    expect(approvedPublishedResourceSlugs).toHaveLength(18)
+    expect(approvedPublishedResourceSlugs).toHaveLength(19)
     expect(new Set(approvedPublishedResourceSlugs).size).toBe(approvedPublishedResourceSlugs.length)
     expect(getPublishedResources().map((item) => item.slug)).toEqual([...approvedPublishedResourceSlugs])
     expect(
@@ -74,15 +74,15 @@ describe("resource registry", () => {
   })
 
   /**
-   * All 18 planned Resources are now public, so the registry holds no
+   * Every planned Resource is public, so the registry holds no
    * unpublished records. The helpers must stay correct in that state; the
    * unpublished/incomplete behaviour itself is proven with fixtures below.
    */
   it("stays valid now that every planned resource is published", () => {
-    expect(resourceRegistry).toHaveLength(18)
+    expect(resourceRegistry).toHaveLength(19)
     expect(resourceRegistry.every((item) => item.published)).toBe(true)
     expect(resourceRegistry.filter((item) => !item.published)).toEqual([])
-    expect(getPublishedResources()).toHaveLength(18)
+    expect(getPublishedResources()).toHaveLength(19)
     for (const resource of getPublishedResources()) {
       const body = getResourceBody(resource.slug)
       expect(body, resource.slug).toBeDefined()

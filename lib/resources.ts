@@ -504,6 +504,30 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
+  {
+    slug: "google-business-profile-not-showing-on-google-or-maps",
+    title: "Google Business Profile Not Showing on Google or Maps: What to Check",
+    seoTitle: "Google Business Profile Not Showing on Google or Maps: What to Check",
+    description:
+      "Can't find your Google Business Profile on Search or Maps? Check verification, suspension, profile status, recent changes and local ranking before assuming the listing has disappeared.",
+    category: "profile-recovery",
+    excerpt:
+      "How to tell whether your Business Profile is actually missing, suspended, unverified or simply not ranking for the search you tried.",
+    published: true,
+    featured: false,
+    urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
+    relatedResourceSlugs: [
+      "google-business-profile-suspended-before-appeal",
+      "google-business-profile-verification-stuck-or-rejected",
+      "lost-access-to-google-business-profile",
+    ],
+    commercialRoute: "profile-recovery",
+    author: resourceAuthor,
+  },
 ] as const
 
 export type ResourceBodyLookup = (slug: string) => Pick<ResourceArticleBody, "sourcesUsed"> | undefined

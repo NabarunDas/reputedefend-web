@@ -198,8 +198,7 @@ export const googleReviewBombingBody = {
         <li>multiple accounts repeating the same fabricated event</li>
       </ul>
       <p>Do not rely only on unfamiliar reviewer names.</p>
-      <p>Article #6&apos;s principle still applies in substance:</p>
-      <p>an unknown display name is a clue, not proof.</p>
+      <p>An unknown display name is a clue, not proof.</p>
 
       <h2>Rating manipulation can involve unusual volumes or patterns</h2>
       <p>

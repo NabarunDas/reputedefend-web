@@ -111,6 +111,7 @@ describe("Article #8 Google review bombing", () => {
     expect(container.textContent).toContain(
       "There is no published merchant “review bombing” shortcut",
     )
+    expect(container.textContent).not.toContain("Article #6")
     expect(
       screen.getByRole("heading", {
         name: "Treat the pattern as evidence, not as the verdict",

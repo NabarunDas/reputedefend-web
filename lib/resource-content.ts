@@ -2,13 +2,18 @@ import type { ReactNode } from "react"
 import { competitorOrExEmployeeReviewBody } from "@/lib/resource-articles/can-a-competitor-or-ex-employee-leave-a-google-review"
 import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
 import { customerThreateningReviewBody } from "@/lib/resource-articles/customer-threatening-bad-google-review"
+import { falseOrDefamatoryGoogleReviewsBody } from "@/lib/resource-articles/false-or-defamatory-google-reviews"
 import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
 import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
 import { googleRejectedMyReviewReportBody } from "@/lib/resource-articles/google-rejected-my-review-report"
 import { googleReviewExtortionBody } from "@/lib/resource-articles/google-review-extortion"
 import { offeredToRemoveGoogleReviewsForMoneyBody } from "@/lib/resource-articles/offered-to-remove-google-reviews-for-money"
+import { addressAndServiceAreaRulesBody } from "@/lib/resource-articles/google-business-profile-address-and-service-area-rules"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
+import { googleBusinessProfileCategoriesBody } from "@/lib/resource-articles/google-business-profile-categories"
+import { googleBusinessProfileNameRulesBody } from "@/lib/resource-articles/google-business-profile-name-rules"
+import { googleBusinessProfileScamsBody } from "@/lib/resource-articles/google-business-profile-scams"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import { verificationStuckOrRejectedBody } from "@/lib/resource-articles/google-business-profile-verification-stuck-or-rejected"
 import { lostAccessToGoogleBusinessProfileBody } from "@/lib/resource-articles/lost-access-to-google-business-profile"
@@ -67,6 +72,11 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "offered-to-remove-google-reviews-for-money": offeredToRemoveGoogleReviewsForMoneyBody,
   "google-rejected-my-review-report": googleRejectedMyReviewReportBody,
   "lost-access-to-google-business-profile": lostAccessToGoogleBusinessProfileBody,
+  "google-business-profile-name-rules": googleBusinessProfileNameRulesBody,
+  "google-business-profile-address-and-service-area-rules": addressAndServiceAreaRulesBody,
+  "google-business-profile-categories": googleBusinessProfileCategoriesBody,
+  "false-or-defamatory-google-reviews": falseOrDefamatoryGoogleReviewsBody,
+  "google-business-profile-scams": googleBusinessProfileScamsBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

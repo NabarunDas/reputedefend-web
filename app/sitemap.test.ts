@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import sitemap from "@/app/sitemap"
 import { brandSiteUrl } from "@/lib/brand"
 import { resourceRegistry } from "@/lib/resources"
+import { approvedPublishedResourceSlugs } from "@/lib/resource-test-fixtures"
 
 describe("sitemap resources", () => {
   afterEach(() => {
@@ -12,34 +13,25 @@ describe("sitemap resources", () => {
     vi.stubEnv("VERCEL_ENV", "production")
     const entries = sitemap()
     const urls = entries.map((entry) => entry.url)
+    // The hub is a fixed page; the article URLs must match the approved
+    // publication allowlist exactly.
     expect(urls).toContain(`${brandSiteUrl}/resources`)
-    expect(urls).toContain(
-      `${brandSiteUrl}/resources/google-business-profile-suspended-before-appeal`,
+    const articleUrls = urls.filter(
+      (url) => url.startsWith(`${brandSiteUrl}/resources/`) && url !== `${brandSiteUrl}/resources`,
     )
-    expect(urls).toContain(`${brandSiteUrl}/resources/can-a-google-review-be-removed`)
-    expect(urls).toContain(
-      `${brandSiteUrl}/resources/fake-google-review-or-genuine-negative-feedback`,
+    expect(articleUrls).toEqual(
+      approvedPublishedResourceSlugs.map((slug) => `${brandSiteUrl}/resources/${slug}`),
     )
-    expect(urls).toContain(`${brandSiteUrl}/resources/google-review-extortion`)
-    expect(urls).toContain(`${brandSiteUrl}/resources/google-review-bombing`)
-    expect(urls).toContain(
-      `${brandSiteUrl}/resources/can-a-competitor-or-ex-employee-leave-a-google-review`,
-    )
-    expect(urls).toContain(
-      `${brandSiteUrl}/resources/customer-threatening-bad-google-review`,
-    )
-    expect(urls).toContain(
-      `${brandSiteUrl}/resources/offered-to-remove-google-reviews-for-money`,
-    )
-    expect(urls).toContain(`${brandSiteUrl}/resources/google-rejected-my-review-report`)
-    expect(urls).toContain(`${brandSiteUrl}/resources/lost-access-to-google-business-profile`)
-    const draftUrls = resourceRegistry
+    // Derived, so this stays correct whether the registry has several
+    // unpublished records or none at all. Synthetic unpublished coverage lives
+    // in lib/resources.test.ts.
+    const unpublishedUrls = resourceRegistry
       .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)
-    expect(draftUrls.length).toBeGreaterThan(0)
-    for (const url of draftUrls) {
+    for (const url of unpublishedUrls) {
       expect(urls).not.toContain(url)
     }
+    expect(urls).toHaveLength(new Set(urls).size)
   })
 
   it("emits no sitemap outside production", () => {

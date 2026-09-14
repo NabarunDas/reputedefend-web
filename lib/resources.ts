@@ -85,25 +85,11 @@ export const resourceCategories: readonly ResourceCategory[] = [
   },
 ] as const
 
-function draft(partial: Omit<ResourceRecord, "published" | "featured" | "author" | "datePublished" | "dateReviewed" | "dateModified" | "readingMinutes"> & {
-  featured?: boolean
-}): ResourceRecord {
-  return {
-    ...partial,
-    published: false,
-    featured: partial.featured ?? false,
-    author: resourceAuthor,
-    datePublished: null,
-    dateReviewed: null,
-    dateModified: null,
-    readingMinutes: null,
-  }
-}
-
 /**
- * Planned Resources metadata only.
- * Every record is unpublished until researched article content is supplied.
- * Do not add fake article bodies or decorative source lists here.
+ * The published Resource library. A record only becomes public once a
+ * researched article body, real dates, a reading time and official sources
+ * exist — see isPublicResource. Do not add fake article bodies or decorative
+ * source lists here.
  */
 export const resourceRegistry: readonly ResourceRecord[] = [
   {
@@ -403,83 +389,121 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-name-rules",
     title: "Google Business Profile Name Rules Explained",
     seoTitle: "Google Business Profile Name Rules Explained",
     description:
-      "A plain-English explanation of Google Business Profile name rules, based on official guidelines.",
+      "Google Business Profile names should reflect the real-world name customers recognise. Learn what Google allows, what counts as name stuffing and what to check before changing your profile.",
     category: "profile-recovery",
-    excerpt: "What Google's published name guidelines mean for a Business Profile.",
+    excerpt:
+      "How Google's real-world business-name rule applies to keywords, locations, legal suffixes, service terms, rebrands and name changes.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-business-profile-address-and-service-area-rules",
       "google-business-profile-categories",
     ],
     commercialRoute: "profile-recovery",
-  }),
-  draft({
+    author: resourceAuthor,
+  },
+  {
     slug: "google-business-profile-address-and-service-area-rules",
     title: "Google Business Profile Address and Service-Area Rules Explained",
     seoTitle: "Google Business Profile Address and Service-Area Rules Explained",
     description:
-      "A plain-English explanation of Google Business Profile address and service-area rules.",
+      "Learn when a Google Business Profile should show an address, when a service-area business should hide it, and how Google's storefront, virtual-office and service-area rules work.",
     category: "profile-recovery",
-    excerpt: "How Google's published address and service-area rules apply to a Business Profile.",
+    excerpt:
+      "How Google's address, storefront, service-area, home-address, virtual-office and co-working rules apply to a Business Profile.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "google-business-profile-name-rules",
       "google-business-profile-categories",
     ],
     commercialRoute: "profile-recovery",
-  }),
-  draft({
+    author: resourceAuthor,
+  },
+  {
     slug: "google-business-profile-categories",
     title: "Google Business Profile Categories: What You Should and Shouldn't Change",
     seoTitle: "Google Business Profile Categories: What You Should and Shouldn't Change",
     description:
-      "A practical explanation of Google Business Profile categories and when changing them is unwise.",
+      "Choose Google Business Profile categories that describe what your business actually is. Learn how primary and additional categories work and when changing them deserves caution.",
     category: "profile-recovery",
-    excerpt: "When a Google Business Profile category change is worth considering — and when it is not.",
+    excerpt:
+      "How to choose a primary category, use additional categories carefully and avoid treating Business Profile categories as ranking keywords.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-business-profile-name-rules",
       "google-business-profile-address-and-service-area-rules",
     ],
     commercialRoute: "profile-recovery",
-  }),
-  draft({
+    author: resourceAuthor,
+  },
+  {
     slug: "false-or-defamatory-google-reviews",
     title: "False or Defamatory Google Reviews: What Google Can — and Can't — Decide",
     seoTitle: "False or Defamatory Google Reviews: What Google Can — and Can't — Decide",
     description:
-      "What Google's review policies can address, and what they cannot decide, when a review feels false or defamatory.",
+      "A Google review can feel false or defamatory without automatically qualifying for removal. Learn the difference between Google's content policies and separate legal-removal questions.",
     category: "reviews-reputation",
     excerpt:
-      "The difference between Google's published review rules and questions Google does not decide.",
+      "How to assess allegedly false review statements against Google's policies without turning a policy report into an unsupported legal accusation.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",
       "google-rejected-my-review-report",
     ],
     commercialRoute: "review-protection",
-  }),
-  draft({
+    author: resourceAuthor,
+  },
+  {
     slug: "google-business-profile-scams",
     title: "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",
     seoTitle: "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",
     description:
-      "How to recognise common Google Business Profile access scams involving passwords, codes, fake calls and manager requests.",
+      "Learn how to recognise Google Business Profile scams involving fake support calls, passwords, OTPs, verification codes, manager requests and third-party impersonation.",
     category: "review-abuse-scams",
     excerpt:
-      "Common Google Business Profile access scams involving passwords, codes, fake calls and manager requests.",
+      "How to protect Business Profile access from fake Google support, credential theft, unsafe manager requests and misleading third-party claims.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "offered-to-remove-google-reviews-for-money",
       "lost-access-to-google-business-profile",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
 ] as const
 
 export type ResourceBodyLookup = (slug: string) => Pick<ResourceArticleBody, "sourcesUsed"> | undefined

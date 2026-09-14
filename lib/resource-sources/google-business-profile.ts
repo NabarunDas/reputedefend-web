@@ -113,3 +113,33 @@ export const sourceRemoveBusinessProfile: OfficialSource = {
   title: "Remove a Business Profile from your Google Account",
   url: "https://support.google.com/business/answer/4669092?hl=en-GB",
 }
+
+export const sourceOverviewBusinessProfilePolicies: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Overview of Google Business Profile policies",
+  url: "https://support.google.com/business/answer/13762416?hl=en-GB",
+}
+
+export const sourceManageBusinessCategory: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage your business category",
+  url: "https://support.google.com/business/answer/7249669?hl=en-GB",
+}
+
+export const sourceLocalRanking: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Tips to improve your local ranking on Google",
+  url: "https://support.google.com/business/answer/7091?hl=en-GB",
+}
+
+export const sourceFraudulentCallsTexts: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Help protect against fraudulent calls and texts",
+  url: "https://support.google.com/business/answer/6212928?hl=en-GB",
+}
+
+export const sourceSecureCompromisedGoogleAccount: OfficialSource = {
+  name: "Google Account Help",
+  title: "Secure a hacked or compromised Google Account",
+  url: "https://support.google.com/accounts/answer/6294825?hl=en-GB",
+}

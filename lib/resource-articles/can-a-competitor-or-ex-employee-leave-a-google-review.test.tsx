@@ -83,11 +83,14 @@ describe("Article #9 competitor or ex-employee Google review", () => {
     expect(body?.googleSays?.sources).toHaveLength(2)
     expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
     expect(body?.googleSays?.sources).not.toContain(sourceManageCustomerReviews)
-    expect(related.map((item) => item.slug)).toEqual(["can-a-google-review-be-removed"])
-    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeUndefined()
+    expect(related.map((item) => item.slug)).toEqual([
+      "can-a-google-review-be-removed",
+      "false-or-defamatory-google-reviews",
+    ])
+    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeDefined()
   })
 
-  it("renders approved copy, related Article #5 only, and the Review Protection CTA", () => {
+  it("renders approved copy, related Articles #5 and #17, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -126,8 +129,8 @@ describe("Article #9 competitor or ex-employee Google review", () => {
       screen.getByText("Can a Google Review Be Removed? What Google's Policy Actually Allows"),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText("False or Defamatory Google Reviews: What Google Can — and Can't — Decide"),
-    ).not.toBeInTheDocument()
+      screen.getByText("False or Defamatory Google Reviews: What Google Can — and Can't — Decide"),
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

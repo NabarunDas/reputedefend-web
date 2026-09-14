@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
+import { getPublishedResources } from "@/lib/resources"
+import { approvedPublishedResourceSlugs } from "@/lib/resource-test-fixtures"
 import ResourceArticlePage, { dynamicParams, generateMetadata, generateStaticParams } from "./page"
 
 vi.mock("next/navigation", () => ({
@@ -10,39 +12,23 @@ vi.mock("next/navigation", () => ({
 describe("resource article route", () => {
   it("prerenders published resources and keeps unmatched slugs as 404s", () => {
     const slugs = generateStaticParams().map((item) => item.slug)
-    expect(slugs).toContain("google-business-profile-suspended-before-appeal")
-    expect(slugs).toContain("google-business-profile-appeal-evidence-checklist")
-    expect(slugs).toContain("google-business-profile-appeal-rejected-what-next")
-    expect(slugs).toContain("google-business-profile-verification-stuck-or-rejected")
-    expect(slugs).toContain("can-a-google-review-be-removed")
-    expect(slugs).toContain("fake-google-review-or-genuine-negative-feedback")
-    expect(slugs).toContain("google-review-extortion")
-    expect(slugs).toContain("google-review-bombing")
-    expect(slugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
-    expect(slugs).toContain("customer-threatening-bad-google-review")
-    expect(slugs).toContain("offered-to-remove-google-reviews-for-money")
-    expect(slugs).toContain("google-rejected-my-review-report")
-    expect(slugs).toContain("lost-access-to-google-business-profile")
-    expect(slugs).toHaveLength(13)
-    expect(slugs).not.toContain("false-or-defamatory-google-reviews")
-    expect(slugs).not.toContain("google-business-profile-scams")
-    expect(slugs).not.toContain("google-business-profile-name-rules")
-    expect(slugs).not.toContain("google-business-profile-address-and-service-area-rules")
-    expect(slugs).not.toContain("google-business-profile-categories")
+    expect(slugs).toEqual([...approvedPublishedResourceSlugs])
+    expect(slugs).toEqual(getPublishedResources().map((resource) => resource.slug))
+    expect(slugs).toHaveLength(18)
     expect(dynamicParams).toBe(false)
   })
 
-  it("404s draft slugs instead of rendering a coming-soon shell", async () => {
+  /**
+   * A slug that will never exist owns this regression, so publishing more
+   * Resources cannot invalidate it. Unpublished-record filtering is covered
+   * synthetically in lib/resources.test.ts.
+   */
+  it("404s unknown slugs instead of rendering a coming-soon shell", async () => {
     await expect(
-      generateMetadata({ params: Promise.resolve({ slug: "false-or-defamatory-google-reviews" }) }),
+      generateMetadata({ params: Promise.resolve({ slug: "resource-that-does-not-exist" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
-      generateMetadata({
-        params: Promise.resolve({ slug: "google-business-profile-scams" }),
-      }),
-    ).rejects.toThrow("NEXT_NOT_FOUND")
-    await expect(
-      ResourceArticlePage({ params: Promise.resolve({ slug: "google-business-profile-name-rules" }) }),
+      ResourceArticlePage({ params: Promise.resolve({ slug: "resource-that-does-not-exist" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
   })
 

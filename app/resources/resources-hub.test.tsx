@@ -4,7 +4,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourcesHub } from "./resources-hub"
-import { publishedResourceFixture, publishedReviewFixture } from "@/lib/resource-test-fixtures"
+import { createResourceIndex, getPublishedResources } from "@/lib/resources"
+import {
+  fixtureBodyLookup,
+  publishedResourceFixture,
+  publishedReviewFixture,
+  publishedWithoutBodyFixture,
+  unpublishedRelatedFixture,
+} from "@/lib/resource-test-fixtures"
 
 vi.mock("next/link", () => ({
   default({ href, children }: { href: string; children: React.ReactNode }) {
@@ -43,6 +50,31 @@ describe("Resources hub", () => {
     const guideLinks = screen.getAllByRole("link", { name: /read guide/i })
     expect(guideLinks.length).toBeGreaterThan(0)
     expect(guideLinks[0]).toHaveAttribute("href", "/resources/test-published-guide")
+  })
+
+  /**
+   * Synthetic records own this regression so it never depends on a real
+   * Resource staying unpublished.
+   */
+  it("never presents an unpublished or incomplete record as a public guide", () => {
+    const index = createResourceIndex(
+      [
+        publishedResourceFixture,
+        unpublishedRelatedFixture,
+        publishedWithoutBodyFixture,
+      ],
+      fixtureBodyLookup,
+    )
+    const published = getPublishedResources(index)
+    render(<ResourcesHub published={published} />)
+
+    expect(published.map((item) => item.slug)).toEqual(["test-published-guide"])
+    expect(screen.getByRole("heading", { level: 2, name: publishedResourceFixture.title })).toBeInTheDocument()
+    expect(screen.queryByText(unpublishedRelatedFixture.title)).not.toBeInTheDocument()
+    expect(screen.queryByText(publishedWithoutBodyFixture.title)).not.toBeInTheDocument()
+    for (const link of screen.getAllByRole("link", { name: /read guide/i })) {
+      expect(link).toHaveAttribute("href", "/resources/test-published-guide")
+    }
   })
 
   it("keeps empty categories static and filters the library from populated categories", () => {

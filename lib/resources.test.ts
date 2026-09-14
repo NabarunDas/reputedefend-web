@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { listResourceBodySlugs } from "@/lib/resource-content"
+import { getResourceBody, listResourceBodySlugs } from "@/lib/resource-content"
 import { conversionForCommercialRoute, resourceCommercialHrefs } from "@/lib/resource-links"
 import {
   createResourceIndex,
@@ -23,6 +23,7 @@ import { resourceArticleJsonLd, resourceArticleMetadata, resourceBreadcrumbJsonL
 import { brandName, brandSiteUrl } from "@/lib/brand"
 import { footerExploreExtra, primaryNav } from "@/lib/site-nav"
 import {
+  approvedPublishedResourceSlugs,
   fixtureBodyLookup,
   fixtureOfficialSource,
   publishedRelatedFixture,
@@ -32,37 +33,16 @@ import {
 } from "@/lib/resource-test-fixtures"
 
 describe("resource registry", () => {
-  it("hides unpublished drafts and exposes only publish-ready resources", () => {
+  it("exposes only publish-ready resources", () => {
     const publishedSlugs = getPublishedResources().map((item) => item.slug)
     const unpublished = resourceRegistry.filter((item) => !item.published)
     expect(resourceRegistry).toHaveLength(18)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
-    expect(publishedSlugs).toContain("google-business-profile-suspended-before-appeal")
-    expect(publishedSlugs).toContain("google-business-profile-appeal-evidence-checklist")
-    expect(publishedSlugs).toContain("google-business-profile-appeal-rejected-what-next")
-    expect(publishedSlugs).toContain("google-business-profile-verification-stuck-or-rejected")
-    expect(publishedSlugs).toContain("can-a-google-review-be-removed")
-    expect(publishedSlugs).toContain("fake-google-review-or-genuine-negative-feedback")
-    expect(publishedSlugs).toContain("google-review-extortion")
-    expect(publishedSlugs).toContain("google-review-bombing")
-    expect(publishedSlugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
-    expect(publishedSlugs).toContain("customer-threatening-bad-google-review")
-    expect(publishedSlugs).toContain("offered-to-remove-google-reviews-for-money")
-    expect(publishedSlugs).toContain("google-rejected-my-review-report")
-    expect(publishedSlugs).toContain("lost-access-to-google-business-profile")
-    expect(publishedSlugs).toHaveLength(13)
-    expect(publishedSlugs).not.toContain("false-or-defamatory-google-reviews")
-    expect(publishedSlugs).not.toContain("google-business-profile-scams")
-    expect(publishedSlugs).not.toContain("google-business-profile-name-rules")
-    expect(publishedSlugs).not.toContain("google-business-profile-address-and-service-area-rules")
-    expect(publishedSlugs).not.toContain("google-business-profile-categories")
-    expect(unpublished.map((item) => item.slug)).toEqual([
-      "google-business-profile-name-rules",
-      "google-business-profile-address-and-service-area-rules",
-      "google-business-profile-categories",
-      "false-or-defamatory-google-reviews",
-      "google-business-profile-scams",
-    ])
+    // Publication is deliberate: a Resource going public without being added
+    // to the approved allowlist fails here.
+    expect(publishedSlugs).toEqual([...approvedPublishedResourceSlugs])
+    expect(publishedSlugs).toHaveLength(18)
+    expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
@@ -74,7 +54,6 @@ describe("resource registry", () => {
       "review-abuse-scams",
     )
     expect(getPublishedResourceArticle("google-review-bombing")?.resource.urgent).toBe(true)
-    expect(getPublishedResourceArticle("google-business-profile-name-rules")).toBeUndefined()
     expect(
       getPublishedResources()
         .filter((item) => item.category === "review-abuse-scams")
@@ -83,14 +62,43 @@ describe("resource registry", () => {
     expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
   })
 
-  it("keeps draft slugs out of public helpers, related lists and the sitemap", () => {
-    const nameRules = resourceRegistry.find((item) => item.slug === "google-business-profile-name-rules")
+  it("only publishes resources on the approved allowlist", () => {
+    expect(approvedPublishedResourceSlugs).toHaveLength(18)
+    expect(new Set(approvedPublishedResourceSlugs).size).toBe(approvedPublishedResourceSlugs.length)
+    expect(getPublishedResources().map((item) => item.slug)).toEqual([...approvedPublishedResourceSlugs])
+    expect(
+      approvedPublishedResourceSlugs.every((slug) =>
+        resourceRegistry.some((item) => item.slug === slug),
+      ),
+    ).toBe(true)
+  })
+
+  /**
+   * All 18 planned Resources are now public, so the registry holds no
+   * unpublished records. The helpers must stay correct in that state; the
+   * unpublished/incomplete behaviour itself is proven with fixtures below.
+   */
+  it("stays valid now that every planned resource is published", () => {
+    expect(resourceRegistry).toHaveLength(18)
+    expect(resourceRegistry.every((item) => item.published)).toBe(true)
+    expect(resourceRegistry.filter((item) => !item.published)).toEqual([])
+    expect(getPublishedResources()).toHaveLength(18)
+    for (const resource of getPublishedResources()) {
+      const body = getResourceBody(resource.slug)
+      expect(body, resource.slug).toBeDefined()
+      expect(isResourceCalendarDate(resource.datePublished), resource.slug).toBe(true)
+      expect(isResourceCalendarDate(resource.dateReviewed), resource.slug).toBe(true)
+      expect(resource.readingMinutes ?? 0, resource.slug).toBeGreaterThan(0)
+      expect(body?.sourcesUsed.length ?? 0, resource.slug).toBeGreaterThan(0)
+      expect(isPublicResource(resource, body), resource.slug).toBe(true)
+    }
+  })
+
+  it("keeps related lists and the sitemap aligned with published resources", () => {
     const extortion = getPublishedResourceBySlug("google-review-extortion")
     const bombing = getPublishedResourceBySlug("google-review-bombing")
-    expect(nameRules?.published).toBe(false)
     expect(extortion?.urgent).toBe(true)
     expect(bombing?.urgent).toBe(true)
-    expect(getPublishedResourceBySlug("google-business-profile-name-rules")).toBeUndefined()
     expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual([
       "google-review-bombing",
       "customer-threatening-bad-google-review",
@@ -121,7 +129,6 @@ describe("resource registry", () => {
     const abuse = resourceCategories.find((item) => item.id === "review-abuse-scams")
     expect(abuse?.urgentLabel).toBe("Urgent situations")
     expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
-    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeUndefined()
   })
 
   it("does not create mass placeholder article routes or a policy-updates index", () => {
@@ -166,7 +173,29 @@ describe("publish-ready public resources", () => {
     expect(getPublishedResources(index).map((item) => item.slug)).not.toContain("published-without-body")
   })
 
+  /**
+   * Unpublished behaviour is proven with synthetic records so the suite never
+   * depends on a real Resource staying unpublished.
+   */
+  it("hides an unpublished record from every public surface", () => {
+    const draftSlug = unpublishedRelatedFixture.slug
+    expect(unpublishedRelatedFixture.published).toBe(false)
+    expect(isPublicResource(unpublishedRelatedFixture, fixtureBodyLookup(draftSlug))).toBe(false)
+    expect(index.getBySlug(draftSlug)).toBeDefined()
+    expect(index.getPublishedBySlug(draftSlug)).toBeUndefined()
+    expect(getPublishedResourceBySlug(draftSlug, index)).toBeUndefined()
+    expect(getPublishedResources(index).map((item) => item.slug)).not.toContain(draftSlug)
+    expect(publishedResourceFixture.relatedResourceSlugs).toContain(draftSlug)
+    expect(relatedPublishedResources(publishedResourceFixture, index).map((item) => item.slug)).not.toContain(
+      draftSlug,
+    )
+    expect(publishedResourceSitemapEntries(index, brandSiteUrl).map((entry) => entry.url)).not.toContain(
+      `${brandSiteUrl}/resources/${draftSlug}`,
+    )
+  })
+
   it("lists only publish-ready resources and can feature one", () => {
+    expect(index.getPublishedBySlug("test-published-guide")).toBeDefined()
     expect(index.getPublishedBySlug("test-unpublished-related")).toBeUndefined()
     expect(pickFeaturedResource(index.published())?.slug).toBe("test-published-guide")
     expect(formatResourceMonthYear("2026-09-13")).toBe("Sep 2026")
@@ -240,7 +269,7 @@ describe("resource conversion routes", () => {
 
   it("keeps the extortion callout as architecture, not published advice", () => {
     expect(reviewExtortionUrgentCallout).toContain("preserve the messages and review links")
-    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeUndefined()
+    expect(getPublishedResourceBySlug("resource-that-does-not-exist")).toBeUndefined()
   })
 })
 

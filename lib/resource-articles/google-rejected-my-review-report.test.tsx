@@ -88,12 +88,15 @@ describe("Article #12 Google rejected my review report", () => {
     expect(body?.googleSays?.sources).not.toContain(sourceReviewExtortion)
     expect(body?.googleSays?.sources).not.toContain(sourceLegalRemovals)
     expect(body?.urgentCallout).toBeUndefined()
-    expect(related.map((item) => item.slug)).toEqual(["can-a-google-review-be-removed"])
+    expect(related.map((item) => item.slug)).toEqual([
+      "can-a-google-review-be-removed",
+      "false-or-defamatory-google-reviews",
+    ])
     expect(getPublishedResourceBySlug("can-a-google-review-be-removed")).toBeDefined()
-    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeUndefined()
+    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeDefined()
   })
 
-  it("renders approved copy, related Article #5 only, and the Review Protection CTA", () => {
+  it("renders approved copy, related Articles #5 and #17, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -134,8 +137,8 @@ describe("Article #12 Google rejected my review report", () => {
       screen.getByText("Can a Google Review Be Removed? What Google's Policy Actually Allows"),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText("False or Defamatory Google Reviews: What Google Can — and Can't — Decide"),
-    ).not.toBeInTheDocument()
+      screen.getByText("False or Defamatory Google Reviews: What Google Can — and Can't — Decide"),
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

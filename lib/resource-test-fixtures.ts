@@ -6,6 +6,36 @@ import type { OfficialSource } from "@/lib/resources"
  * Test-only fixtures. Never import these into production pages or the
  * public resource registry — they would become indexable content.
  */
+
+/**
+ * Every Resource approved for publication, in production registry order.
+ * Publishing a Resource must be a deliberate, reviewed change: the shared
+ * tests compare the live published set against this list, so a Resource that
+ * becomes public without being added here fails the suite.
+ *
+ * Test-only. Never import this into production code.
+ */
+export const approvedPublishedResourceSlugs = [
+  "google-business-profile-suspended-before-appeal",
+  "google-business-profile-appeal-evidence-checklist",
+  "google-business-profile-appeal-rejected-what-next",
+  "google-business-profile-verification-stuck-or-rejected",
+  "can-a-google-review-be-removed",
+  "fake-google-review-or-genuine-negative-feedback",
+  "google-review-extortion",
+  "google-review-bombing",
+  "can-a-competitor-or-ex-employee-leave-a-google-review",
+  "customer-threatening-bad-google-review",
+  "offered-to-remove-google-reviews-for-money",
+  "google-rejected-my-review-report",
+  "lost-access-to-google-business-profile",
+  "google-business-profile-name-rules",
+  "google-business-profile-address-and-service-area-rules",
+  "google-business-profile-categories",
+  "false-or-defamatory-google-reviews",
+  "google-business-profile-scams",
+] as const
+
 export const fixtureOfficialSource: OfficialSource = {
   name: "Google Business Profile Help",
   title: "Test fixture help page",

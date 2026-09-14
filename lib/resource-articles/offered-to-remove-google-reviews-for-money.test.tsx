@@ -96,12 +96,15 @@ describe("Article #11 offered to remove Google reviews for money", () => {
     expect(body?.googleSays?.sources).not.toContain(sourceReviewRatingScams)
     expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
     expect(body?.urgentCallout).toBeUndefined()
-    expect(related.map((item) => item.slug)).toEqual(["google-review-extortion"])
+    expect(related.map((item) => item.slug)).toEqual([
+      "google-review-extortion",
+      "google-business-profile-scams",
+    ])
     expect(getPublishedResourceBySlug("google-review-extortion")).toBeDefined()
-    expect(getPublishedResourceBySlug("google-business-profile-scams")).toBeUndefined()
+    expect(getPublishedResourceBySlug("google-business-profile-scams")).toBeDefined()
   })
 
-  it("renders approved copy, related Article #7 only, and the Review Protection CTA", () => {
+  it("renders approved copy, related Articles #7 and #18, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -158,10 +161,10 @@ describe("Article #11 offered to remove Google reviews for money", () => {
       screen.getByText("Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews"),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(
+      screen.getByText(
         "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",
       ),
-    ).not.toBeInTheDocument()
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

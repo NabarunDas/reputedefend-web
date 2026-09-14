@@ -617,3 +617,139 @@
     grid-template-columns: 1fr;
   }
 }
+
+.rejectedPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.statusBoard {
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.statusRow {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.72fr) minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 10px 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.statusName {
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.statusMeta {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.statusKicker {
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.statusMeta p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.decisionSplit,
+.accountSplit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 28px;
+  margin-block: 22px;
+}
+
+.decisionSplit > div,
+.accountSplit > div {
+  padding: 16px 0 8px;
+  border-top: 3px solid var(--green);
+}
+
+.decisionSplit b,
+.accountSplit b {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green-dark);
+}
+
+.decisionSplit p,
+.accountSplit p {
+  margin-top: 8px;
+  color: var(--muted-strong);
+}
+
+.decisionNext {
+  display: block;
+  margin-top: 10px;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.reviewPath {
+  display: grid;
+  gap: 0;
+  margin-block: 22px;
+  max-width: var(--prose, 720px);
+}
+
+.reviewPathStep {
+  padding: 14px 0;
+  border-top: 1px solid var(--edge);
+  font-weight: 700;
+}
+
+.reviewPathStep:last-child {
+  border-bottom: 1px solid var(--edge);
+}
+
+.reviewPathArrow {
+  color: var(--green-dark);
+  font-weight: 750;
+  padding: 2px 0 2px 2px;
+}
+
+.keyQuestion {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--edge);
+  max-width: var(--prose, 720px);
+}
+
+.keyQuestion strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.05rem;
+}
+
+.keyQuestion p {
+  margin-top: 10px;
+  color: var(--muted-strong);
+}
+
+.eeaNote {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  max-width: var(--prose, 720px);
+}
+
+@media (max-width: 760px) {
+  .statusRow,
+  .decisionSplit,
+  .accountSplit {
+    grid-template-columns: 1fr;
+  }
+}

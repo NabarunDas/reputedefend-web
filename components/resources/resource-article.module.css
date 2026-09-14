@@ -1350,3 +1350,31 @@
 .addressPage .sourcesPilot ul + p {
   margin-top: 22px;
 }
+
+.categoryPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.categoryPage .warning h3 {
+  margin: 0;
+}
+
+.categoryPage .threeOutcome ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.categoryPage .threeOutcome li + li {
+  margin-top: 6px;
+}
+
+.categoryPage .decisionSplit .statusKicker {
+  display: block;
+  margin-top: 12px;
+}
+
+.categoryPage .sourcesPilot ul + p {
+  margin-top: 22px;
+}

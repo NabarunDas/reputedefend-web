@@ -1378,3 +1378,71 @@
 .categoryPage .sourcesPilot ul + p {
   margin-top: 22px;
 }
+
+.defamatoryPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.defamatoryPage .threeOutcome ul,
+.defamatoryPage .decisionSplit ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.defamatoryPage .threeOutcome li + li,
+.defamatoryPage .decisionSplit li + li {
+  margin-top: 6px;
+}
+
+.defamatoryPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.defamatoryPage .warning h3 {
+  margin: 0;
+}
+
+.defamatoryPage .integrityWarning {
+  border-left-width: 5px;
+}
+
+.defamatoryPage .sourcesPilot ul + p {
+  margin-top: 22px;
+}
+
+.defamatoryPage .threeOutcome .statusKicker,
+.defamatoryPage .decisionSplit .statusKicker {
+  display: block;
+  margin-top: 12px;
+}
+
+.disputePairs {
+  display: grid;
+  gap: 8px;
+  margin-block: 8px 14px;
+}
+
+.disputePairs .decisionSplit {
+  margin-block: 0;
+}
+
+.labelShift {
+  max-width: var(--prose, 720px);
+  margin-top: 22px;
+  padding: 16px 0;
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+}
+
+.labelShift p {
+  margin-top: 6px;
+  color: var(--muted-strong);
+}
+
+.labelShiftQuote {
+  color: var(--ink) !important;
+  font-weight: 750;
+}

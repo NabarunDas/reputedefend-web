@@ -288,8 +288,8 @@ describe("Article #15 Google Business Profile address and service-area rules", (
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("false-or-defamatory-google-reviews")
-    const otherBody = getResourceBody("false-or-defamatory-google-reviews")
+    const other = getPublishedResourceBySlug("google-business-profile-scams")
+    const otherBody = getResourceBody("google-business-profile-scams")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

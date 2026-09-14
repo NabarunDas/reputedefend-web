@@ -11,6 +11,7 @@ import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-busi
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import { verificationStuckOrRejectedBody } from "@/lib/resource-articles/google-business-profile-verification-stuck-or-rejected"
+import { lostAccessToGoogleBusinessProfileBody } from "@/lib/resource-articles/lost-access-to-google-business-profile"
 import type { OfficialSource } from "@/lib/resources"
 
 /**
@@ -65,6 +66,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-review-bombing": googleReviewBombingBody,
   "offered-to-remove-google-reviews-for-money": offeredToRemoveGoogleReviewsForMoneyBody,
   "google-rejected-my-review-report": googleRejectedMyReviewReportBody,
+  "lost-access-to-google-business-profile": lostAccessToGoogleBusinessProfileBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

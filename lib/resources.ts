@@ -383,18 +383,26 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "lost-access-to-google-business-profile",
     title: "Lost Access to Your Google Business Profile: Ownership and Manager Options",
     seoTitle: "Lost Access to Your Google Business Profile: Ownership and Manager Options",
     description:
-      "A practical explanation of ownership and manager access when you can no longer reach a Google Business Profile.",
+      "Lost access to your Google Business Profile? Identify whether the problem is your Google Account, another owner, manager access or verification before requesting ownership or creating anything new.",
     category: "verification-access",
-    excerpt: "Ownership and manager options when you have lost access to a Google Business Profile.",
+    excerpt:
+      "How to recover Business Profile access without creating duplicates, sharing passwords or surrendering control of the profile.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: ["google-business-profile-verification-stuck-or-rejected"],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-name-rules",
     title: "Google Business Profile Name Rules Explained",

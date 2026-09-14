@@ -95,3 +95,15 @@ export const sourceOwnersManagers: OfficialSource = {
   title: "Manage your Business Profile owners & managers",
   url: "https://support.google.com/business/answer/3403100?hl=en-GB",
 }
+
+export const sourceFindBusiness: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Find your business on Google",
+  url: "https://support.google.com/business/answer/145585?hl=en-GB",
+}
+
+export const sourceTransferPrimaryOwnership: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Transfer primary ownership of a Business Profile",
+  url: "https://support.google.com/business/answer/3415281?hl=en-GB",
+}

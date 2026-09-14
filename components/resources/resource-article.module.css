@@ -1446,3 +1446,78 @@
   color: var(--ink) !important;
   font-weight: 750;
 }
+
+.fiveRoute {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0 16px;
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.fiveRoute > div {
+  min-width: 0;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.fiveRoute .statusKicker {
+  display: block;
+}
+
+.fiveRoute h3 {
+  margin-top: 6px;
+}
+
+.fiveRoute p {
+  margin-top: 4px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.fiveRoute ul {
+  margin-top: 8px;
+  padding-left: 1.1rem;
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+}
+
+.fiveRoute li + li {
+  margin-top: 4px;
+}
+
+@media (max-width: 1024px) {
+  .fiveRoute {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scamsPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.scamsPage .decisionSplit ul,
+.scamsPage .fiveRoute ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.scamsPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.scamsPage .warning h3 {
+  margin: 0;
+}
+
+.scamsPage .sourcesPilot ul + p {
+  margin-top: 22px;
+}
+
+.scamsPage .decisionSplit .statusKicker {
+  display: block;
+  margin-top: 12px;
+}

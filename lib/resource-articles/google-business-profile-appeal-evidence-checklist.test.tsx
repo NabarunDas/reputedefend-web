@@ -205,8 +205,8 @@ describe("Article #2 appeal evidence checklist", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-business-profile-verification-stuck-or-rejected")
-    const otherBody = getResourceBody("google-business-profile-verification-stuck-or-rejected")
+    const other = getPublishedResourceBySlug("can-a-google-review-be-removed")
+    const otherBody = getResourceBody("can-a-google-review-be-removed")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

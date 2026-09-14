@@ -753,3 +753,66 @@
     grid-template-columns: 1fr;
   }
 }
+
+.verificationPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.diagnosticGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 32px;
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.diagnosticItem {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.diagnosticItem b {
+  color: var(--green-dark);
+  font-family: var(--font-display), Arial, sans-serif;
+}
+
+.diagnosticItem h3 {
+  margin-top: 6px;
+}
+
+.diagnosticItem .statusKicker {
+  display: block;
+  margin-top: 12px;
+}
+
+.diagnosticItem p {
+  margin-top: 4px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.verificationPage .decisionGrid p,
+.verificationPage .decisionGrid ul {
+  margin-top: 8px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.verificationPage .decisionGrid ul {
+  padding-left: 1.15rem;
+}
+
+.verificationPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.verificationPage .warning li {
+  color: var(--muted-strong);
+}
+
+@media (max-width: 760px) {
+  .diagnosticGrid {
+    grid-template-columns: 1fr;
+  }
+}

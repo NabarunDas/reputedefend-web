@@ -360,21 +360,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-rejected-my-review-report",
     title: "Google Rejected My Review Report: What Can You Do Next?",
     seoTitle: "Google Rejected My Review Report: What Can You Do Next?",
     description:
-      "A next-step guide after Google rejects a review report, based on published review policies rather than invented workarounds.",
+      "If Google says a reported review has no policy violation, check the status, prepare the one-time appeal carefully and understand what options remain after the final decision.",
     category: "reviews-reputation",
-    excerpt: "What to consider after Google rejects a review report.",
+    excerpt:
+      "What to do when Google finds no policy violation, how the one-time review appeal works and when a different Google route is genuinely separate.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",
       "false-or-defamatory-google-reviews",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "lost-access-to-google-business-profile",
     title: "Lost Access to Your Google Business Profile: Ownership and Manager Options",

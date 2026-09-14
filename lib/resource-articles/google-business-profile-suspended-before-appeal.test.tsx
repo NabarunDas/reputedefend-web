@@ -186,7 +186,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
       "/resources/google-business-profile-suspended-before-appeal",
     )
     expect(
-      screen.queryByText("Google Rejected My Review Report: What Can You Do Next?"),
+      screen.queryByText("Lost Access to Your Google Business Profile: Ownership and Manager Options"),
     ).not.toBeInTheDocument()
   })
 

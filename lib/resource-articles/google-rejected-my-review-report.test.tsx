@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourceArticleView } from "@/components/resources/resource-article-view"
 import {
-  canAGoogleReviewBeRemovedSlug,
-  canAGoogleReviewBeRemovedSources,
-} from "@/lib/resource-articles/can-a-google-review-be-removed"
+  googleRejectedMyReviewReportSlug,
+  googleRejectedMyReviewReportSources,
+} from "@/lib/resource-articles/google-rejected-my-review-report"
 import { getResourceBody } from "@/lib/resource-content"
 import {
   getPublishedResourceArticle,
@@ -16,12 +16,12 @@ import {
   relatedPublishedResources,
 } from "@/lib/resources"
 import {
-  sourceFakeEngagement,
   sourceLegalRemovals,
-  sourceMapsPrivacy,
+  sourceManageCustomerReviews,
   sourceMapsUgcPolicy,
   sourceProhibitedRestrictedContent,
   sourceReportInappropriateReviews,
+  sourceReportUserProfiles,
   sourceReviewExtortion,
 } from "@/lib/resource-sources/google-maps-reviews"
 
@@ -35,79 +35,77 @@ afterEach(() => {
   cleanup()
 })
 
-const ARTICLE_TITLE = "Can a Google Review Be Removed? What Google's Policy Actually Allows"
+const ARTICLE_TITLE = "Google Rejected My Review Report: What Can You Do Next?"
 
-describe("Article #5 can a Google review be removed", () => {
-  const resource = getPublishedResourceBySlug(canAGoogleReviewBeRemovedSlug)
-  const body = getResourceBody(canAGoogleReviewBeRemovedSlug)
+describe("Article #12 Google rejected my review report", () => {
+  const resource = getPublishedResourceBySlug(googleRejectedMyReviewReportSlug)
+  const body = getResourceBody(googleRejectedMyReviewReportSlug)
   const related = resource ? relatedPublishedResources(resource) : []
 
   it("is publish-ready with approved metadata and sources", () => {
     expect(resource).toBeDefined()
     expect(body).toBeDefined()
-    expect(getPublishedResourceArticle(canAGoogleReviewBeRemovedSlug)).toEqual({ resource, body })
+    expect(getPublishedResourceArticle(googleRejectedMyReviewReportSlug)).toEqual({ resource, body })
     expect(isPublicResource(resource!, body)).toBe(true)
     expect(resource?.published).toBe(true)
     expect(resource?.featured).toBe(false)
     expect(resource?.urgent).toBe(false)
-    expect(resource?.slug).toBe(canAGoogleReviewBeRemovedSlug)
+    expect(resource?.slug).toBe("google-rejected-my-review-report")
     expect(resource?.title).toBe(ARTICLE_TITLE)
     expect(resource?.seoTitle).toBe(ARTICLE_TITLE)
     expect(resource?.category).toBe("reviews-reputation")
     expect(resource?.description).toBe(
-      "Google does not remove reviews simply because they are negative. Learn which policy violations can qualify for removal, how to report a review and when a one-time appeal is available.",
+      "If Google says a reported review has no policy violation, check the status, prepare the one-time appeal carefully and understand what options remain after the final decision.",
     )
     expect(resource?.readingMinutes).toBe(12)
     expect(resource?.commercialRoute).toBe("review-protection")
-    expect(canAGoogleReviewBeRemovedSources).toHaveLength(7)
-    expect(body?.sourcesUsed).toEqual(canAGoogleReviewBeRemovedSources)
+    expect(googleRejectedMyReviewReportSources).toHaveLength(7)
+    expect(body?.sourcesUsed).toEqual(googleRejectedMyReviewReportSources)
     expect(body?.sourcesUsed).toEqual([
       sourceReportInappropriateReviews,
       sourceProhibitedRestrictedContent,
       sourceMapsUgcPolicy,
-      sourceFakeEngagement,
-      sourceMapsPrivacy,
-      sourceLegalRemovals,
+      sourceReportUserProfiles,
       sourceReviewExtortion,
+      sourceLegalRemovals,
+      sourceManageCustomerReviews,
     ])
     expect(body?.sourcesUsed.map((source) => source.title)).toEqual([
       "Report inappropriate reviews on your Business Profile",
       "Prohibited and restricted content",
       "Maps user-generated content policy",
-      "Fake engagement",
-      "Privacy",
-      "Legal removals",
+      "Report inappropriate user profiles",
       "Report negative review extortion scams on your Business Profile",
+      "Legal removals",
+      "Manage customer reviews",
     ])
     expect(body?.googleSays?.sources).toEqual([
       sourceReportInappropriateReviews,
       sourceProhibitedRestrictedContent,
     ])
-    expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
+    expect(body?.googleSays?.sources).toHaveLength(2)
+    expect(body?.googleSays?.sources).not.toContain(sourceReportUserProfiles)
     expect(body?.googleSays?.sources).not.toContain(sourceReviewExtortion)
-    expect(related.map((item) => item.slug)).toEqual([
-      "fake-google-review-or-genuine-negative-feedback",
-      "google-rejected-my-review-report",
-    ])
-    expect(getPublishedResourceBySlug("google-rejected-my-review-report")).toBeDefined()
+    expect(body?.googleSays?.sources).not.toContain(sourceLegalRemovals)
+    expect(body?.urgentCallout).toBeUndefined()
+    expect(related.map((item) => item.slug)).toEqual(["can-a-google-review-be-removed"])
+    expect(getPublishedResourceBySlug("can-a-google-review-be-removed")).toBeDefined()
+    expect(getPublishedResourceBySlug("false-or-defamatory-google-reviews")).toBeUndefined()
   })
 
-  it("renders approved copy, published related guides, and uses the Review Protection CTA", () => {
+  it("renders approved copy, related Article #5 only, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(ARTICLE_TITLE)
-    expect(container.textContent).toContain(
-      "Google removes policy violations, not ordinary negative feedback",
-    )
-    expect(container.textContent).toContain(
-      "Not finding the reviewer in your records does not automatically prove the review is fake",
-    )
-    expect(container.textContent).toContain("A compliant negative review may stay live")
+    expect(screen.queryByLabelText("Urgent situation")).not.toBeInTheDocument()
+    expect(container.textContent).toContain("Decision pending is not a rejection")
+    expect(container.textContent).toContain("Prepare the one-time appeal before you submit it")
+    expect(container.textContent).toContain("Do not invent a second standard review appeal")
     expect(
       screen.getByRole("heading", {
-        name: "The right question is not “Can we get this review removed?”",
+        name: "Use the one-time appeal well — and know when the removal process ends",
       }),
     ).toBeInTheDocument()
 
@@ -118,8 +116,14 @@ describe("Article #5 can a Google review be removed", () => {
     expect(
       within(googleSays as HTMLElement).getByText("Report inappropriate reviews on your Business Profile"),
     ).toBeInTheDocument()
-    expect(within(googleSays as HTMLElement).getByText("Prohibited and restricted content")).toBeInTheDocument()
-    expect(within(googleSays as HTMLElement).queryByText("Fake engagement")).not.toBeInTheDocument()
+    expect(
+      within(googleSays as HTMLElement).getByText("Prohibited and restricted content"),
+    ).toBeInTheDocument()
+    expect(
+      within(googleSays as HTMLElement).queryByText("Report inappropriate user profiles"),
+    ).not.toBeInTheDocument()
+    expect(within(googleSays as HTMLElement).queryByText("Legal removals")).not.toBeInTheDocument()
+    expect(within(googleSays as HTMLElement).queryByText("Manage customer reviews")).not.toBeInTheDocument()
 
     const bibliography = screen.getByRole("heading", { name: "Official sources" }).closest("section")
     expect(
@@ -127,11 +131,11 @@ describe("Article #5 can a Google review be removed", () => {
     ).toHaveLength(7)
 
     expect(
-      screen.getByText("Fake Google Review or Genuine Negative Feedback? How to Tell the Difference"),
+      screen.getByText("Can a Google Review Be Removed? What Google's Policy Actually Allows"),
     ).toBeInTheDocument()
     expect(
-      screen.getByText("Google Rejected My Review Report: What Can You Do Next?"),
-    ).toBeInTheDocument()
+      screen.queryByText("False or Defamatory Google Reviews: What Google Can — and Can't — Decide"),
+    ).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

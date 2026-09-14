@@ -94,8 +94,22 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(container.textContent).toContain("Prepare first and appeal second.")
     expect(container.textContent).not.toContain("View official Google guidance")
     expect(container.textContent).not.toContain("How these guides are produced")
-    expect(screen.getAllByRole("link", { name: /Start your Profile Recovery assessment/ })).toHaveLength(3)
-    expect(screen.getByRole("link", { name: /See how Profile Recovery works/ })).toHaveAttribute("href", "/business-profile-recovery")
+    const primaryCtas = screen.getAllByRole("link", { name: /Start your Profile Recovery assessment/ })
+    expect(primaryCtas).toHaveLength(2)
+    expect(primaryCtas[0]).toHaveAttribute("href", "/get-help?service=profile-recovery")
+    expect(screen.getByRole("link", { name: "Get your case reviewed" })).toHaveAttribute(
+      "href",
+      "/get-help?service=profile-recovery",
+    )
+    expect(screen.getByRole("link", { name: "See how Profile Recovery works" })).toHaveAttribute(
+      "href",
+      "/business-profile-recovery",
+    )
+    expect(screen.getByRole("link", { name: "Fix suspended or disabled profiles" })).toHaveAttribute(
+      "href",
+      "https://support.google.com/business/answer/4569145?hl=en-GB",
+    )
+    expect(screen.getAllByText("Google Business Profile Help")).toHaveLength(1)
     const sourceLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("target") === "_blank")
     expect(sourceLinks.map((link) => link.getAttribute("href"))).toEqual(suspensionBeforeAppealSources.map((source) => source.url))
     expect(screen.getByText("Google Business Profile Help")).toBeInTheDocument()

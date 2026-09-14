@@ -378,7 +378,8 @@
 .warning p, .timeWarning p { margin-top: 5px; }
 .pilotCta { width: var(--measure); margin: 18px auto; padding: 22px 0; border-block: 1px solid var(--edge); }
 .pilotCta h2 { font-size: 1.25rem; }
-.pilotCta a, .pilotConversion a { display: inline-flex; margin-top: 14px; padding: 11px 18px; border-radius: 999px; background: var(--green); color: var(--paper); font-weight: 750; }
+.primaryAction { display: inline-flex; margin-top: 14px; padding: 11px 18px; border-radius: 999px; background: var(--green); color: var(--paper); font-weight: 750; }
+.secondaryAction { display: inline-flex; margin-top: 14px; color: var(--green-dark); font-weight: 750; }
 .pilotCta small, .pilotConversion small { display: block; margin-top: 10px; color: var(--muted); }
 .compactCard { margin-top: 22px; padding: 18px 20px; border: 1px solid var(--edge); }
 .compactCard ul { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; margin-top: 12px; padding: 0; list-style: none; }
@@ -410,7 +411,7 @@
 .practical p { margin-top: 6px; color: var(--muted-strong); }
 .pilotConversion { padding-block: 38px; border-block: 1px solid var(--edge); }
 .pilotConversion p { max-width: 42rem; }
-.pilotConversion .secondaryLink { margin-left: 16px; }
+.pilotConversion .secondaryAction { margin-left: 16px; }
 .relatedPilotCard { display: grid; gap: 6px; padding: 16px 0; border-bottom: 1px solid var(--edge); }
 .relatedPilotCard strong { color: var(--ink); }
 .relatedPilotCard span { color: var(--muted-strong); }

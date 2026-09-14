@@ -337,8 +337,8 @@ describe("Article #17 false or defamatory Google reviews", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-business-profile-scams")
-    const otherBody = getResourceBody("google-business-profile-scams")
+    const other = getPublishedResourceBySlug("google-business-profile-not-showing-on-google-or-maps")
+    const otherBody = getResourceBody("google-business-profile-not-showing-on-google-or-maps")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

@@ -20,6 +20,7 @@ import {
   sourceFindBusiness,
   sourceOwnersManagers,
   sourceProtectBusinessProfile,
+  sourceRemoveBusinessProfile,
   sourceRequestOwnership,
   sourceTransferPrimaryOwnership,
   sourceVerifyBusiness,
@@ -59,7 +60,7 @@ describe("Article #13 lost access to a Google Business Profile", () => {
     )
     expect(resource?.readingMinutes).toBe(12)
     expect(resource?.commercialRoute).toBe("profile-recovery")
-    expect(lostAccessToGoogleBusinessProfileSources).toHaveLength(7)
+    expect(lostAccessToGoogleBusinessProfileSources).toHaveLength(8)
     expect(body?.sourcesUsed).toEqual(lostAccessToGoogleBusinessProfileSources)
     expect(body?.sourcesUsed).toEqual([
       sourceRequestOwnership,
@@ -69,7 +70,9 @@ describe("Article #13 lost access to a Google Business Profile", () => {
       sourceProtectBusinessProfile,
       sourceFindBusiness,
       sourceVerifyBusiness,
+      sourceRemoveBusinessProfile,
     ])
+    expect(body?.sourcesUsed[7]).toEqual(sourceRemoveBusinessProfile)
     expect(body?.sourcesUsed.map((source) => source.title)).toEqual([
       "Request ownership of a Business Profile",
       "Manage your Business Profile owners & managers",
@@ -78,6 +81,7 @@ describe("Article #13 lost access to a Google Business Profile", () => {
       "Help protect your Google Business Profile",
       "Find your business on Google",
       "Verify your business on Google",
+      "Remove a Business Profile from your Google Account",
     ])
     expect(body?.googleSays?.sources).toEqual([
       sourceRequestOwnership,
@@ -89,6 +93,7 @@ describe("Article #13 lost access to a Google Business Profile", () => {
     expect(body?.googleSays?.sources).not.toContain(sourceDuplicateOwnershipIssues)
     expect(body?.googleSays?.sources).not.toContain(sourceFindBusiness)
     expect(body?.googleSays?.sources).not.toContain(sourceVerifyBusiness)
+    expect(body?.googleSays?.sources).not.toContain(sourceRemoveBusinessProfile)
     expect(body?.urgentCallout).toBeUndefined()
     expect(related.map((item) => item.slug)).toEqual([
       "google-business-profile-verification-stuck-or-rejected",
@@ -136,11 +141,19 @@ describe("Article #13 lost access to a Google Business Profile", () => {
     expect(
       within(googleSays as HTMLElement).queryByText("Verify your business on Google"),
     ).not.toBeInTheDocument()
+    expect(
+      within(googleSays as HTMLElement).queryByText(
+        "Remove a Business Profile from your Google Account",
+      ),
+    ).not.toBeInTheDocument()
 
     const bibliography = screen.getByRole("heading", { name: "Official sources" }).closest("section")
     expect(
       within(bibliography as HTMLElement).getAllByRole("link", { name: /View official Google guidance/ }),
-    ).toHaveLength(7)
+    ).toHaveLength(8)
+    expect(
+      within(bibliography as HTMLElement).getByText("Remove a Business Profile from your Google Account"),
+    ).toBeInTheDocument()
 
     expect(
       screen.getByText("Google Business Profile Verification Stuck or Rejected: What to Check"),

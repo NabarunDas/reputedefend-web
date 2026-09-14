@@ -107,3 +107,9 @@ export const sourceTransferPrimaryOwnership: OfficialSource = {
   title: "Transfer primary ownership of a Business Profile",
   url: "https://support.google.com/business/answer/3415281?hl=en-GB",
 }
+
+export const sourceRemoveBusinessProfile: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Remove a Business Profile from your Google Account",
+  url: "https://support.google.com/business/answer/4669092?hl=en-GB",
+}

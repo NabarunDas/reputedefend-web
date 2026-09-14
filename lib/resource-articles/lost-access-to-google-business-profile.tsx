@@ -3,6 +3,7 @@ import {
   sourceFindBusiness,
   sourceOwnersManagers,
   sourceProtectBusinessProfile,
+  sourceRemoveBusinessProfile,
   sourceRequestOwnership,
   sourceTransferPrimaryOwnership,
   sourceVerifyBusiness,
@@ -18,6 +19,7 @@ export const lostAccessToGoogleBusinessProfileSources = [
   sourceProtectBusinessProfile,
   sourceFindBusiness,
   sourceVerifyBusiness,
+  sourceRemoveBusinessProfile,
 ]
 
 export const lostAccessToGoogleBusinessProfileBody = {

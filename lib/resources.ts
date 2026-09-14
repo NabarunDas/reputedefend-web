@@ -472,22 +472,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "false-or-defamatory-google-reviews",
     title: "False or Defamatory Google Reviews: What Google Can — and Can't — Decide",
     seoTitle: "False or Defamatory Google Reviews: What Google Can — and Can't — Decide",
     description:
-      "What Google's review policies can address, and what they cannot decide, when a review feels false or defamatory.",
+      "A Google review can feel false or defamatory without automatically qualifying for removal. Learn the difference between Google's content policies and separate legal-removal questions.",
     category: "reviews-reputation",
     excerpt:
-      "The difference between Google's published review rules and questions Google does not decide.",
+      "How to assess allegedly false review statements against Google's policies without turning a policy report into an unsupported legal accusation.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "can-a-google-review-be-removed",
       "google-rejected-my-review-report",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-scams",
     title: "Google Business Profile Scams: Passwords, OTPs, Fake Calls and Manager Access Requests",

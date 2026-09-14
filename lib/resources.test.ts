@@ -41,7 +41,7 @@ describe("resource registry", () => {
     // Publication is deliberate: a Resource going public without being added
     // to the approved allowlist fails here.
     expect(publishedSlugs).toEqual([...approvedPublishedResourceSlugs])
-    expect(publishedSlugs).toHaveLength(16)
+    expect(publishedSlugs).toHaveLength(17)
     expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
@@ -60,6 +60,20 @@ describe("resource registry", () => {
         .map((item) => item.slug),
     ).toEqual(expect.arrayContaining(["google-review-extortion", "google-review-bombing"]))
     expect(publishedCountForCategory("review-abuse-scams")).toBeGreaterThan(0)
+  })
+
+  it("only publishes resources on the approved allowlist", () => {
+    expect(approvedPublishedResourceSlugs).toHaveLength(17)
+    expect(new Set(approvedPublishedResourceSlugs).size).toBe(approvedPublishedResourceSlugs.length)
+    expect(getPublishedResources().map((item) => item.slug)).toEqual([...approvedPublishedResourceSlugs])
+    // Article #18 is not approved for publication yet. Its production state is
+    // covered by the equality above, not by a draft-slug negative assertion.
+    expect(approvedPublishedResourceSlugs).not.toContain("google-business-profile-scams")
+    expect(
+      approvedPublishedResourceSlugs.every((slug) =>
+        resourceRegistry.some((item) => item.slug === slug),
+      ),
+    ).toBe(true)
   })
 
   it("keeps related lists and the sitemap aligned with published resources", () => {

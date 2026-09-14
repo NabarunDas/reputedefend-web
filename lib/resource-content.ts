@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { competitorOrExEmployeeReviewBody } from "@/lib/resource-articles/can-a-competitor-or-ex-employee-leave-a-google-review"
 import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
 import { customerThreateningReviewBody } from "@/lib/resource-articles/customer-threatening-bad-google-review"
+import { falseOrDefamatoryGoogleReviewsBody } from "@/lib/resource-articles/false-or-defamatory-google-reviews"
 import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
 import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
 import { googleRejectedMyReviewReportBody } from "@/lib/resource-articles/google-rejected-my-review-report"
@@ -73,6 +74,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "google-business-profile-name-rules": googleBusinessProfileNameRulesBody,
   "google-business-profile-address-and-service-area-rules": addressAndServiceAreaRulesBody,
   "google-business-profile-categories": googleBusinessProfileCategoriesBody,
+  "false-or-defamatory-google-reviews": falseOrDefamatoryGoogleReviewsBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

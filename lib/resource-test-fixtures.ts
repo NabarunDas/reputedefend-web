@@ -32,6 +32,7 @@ export const approvedPublishedResourceSlugs = [
   "google-business-profile-name-rules",
   "google-business-profile-address-and-service-area-rules",
   "google-business-profile-categories",
+  "false-or-defamatory-google-reviews",
 ] as const
 
 export const fixtureOfficialSource: OfficialSource = {

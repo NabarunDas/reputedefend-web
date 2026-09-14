@@ -10,6 +10,7 @@ import {
 } from "@/lib/resources"
 import { resourceArticleJsonLd, resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
 import { ResourceBreadcrumbs } from "./resource-breadcrumbs"
+import { SuspensionPilotView } from "./suspension-pilot-view"
 import { ResourceCard } from "./resource-card"
 import {
   ResourceBeforeYouAct,
@@ -38,6 +39,10 @@ export function ResourceArticleView({
   const sourcesUsed = body.sourcesUsed
   const googleSources = body.googleSays?.sources ?? sourcesUsed
   const exposeStructuredData = isPublicResource(resource, body)
+
+  if (resource.slug === "google-business-profile-suspended-before-appeal") {
+    return <SuspensionPilotView resource={resource} related={relatedGuides} />
+  }
 
   return (
     <article className={styles.page}>

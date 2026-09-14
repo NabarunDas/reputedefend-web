@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourcesHub } from "@/app/resources/resources-hub"
@@ -48,12 +48,12 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(resource?.urgent).toBe(false)
     expect(resource?.readingMinutes).toBe(10)
     expect(resource?.datePublished).toBe("2026-09-13")
-    expect(resource?.dateReviewed).toBe("2026-09-13")
-    expect(resource?.dateModified).toBeNull()
+    expect(resource?.dateReviewed).toBe("2026-09-14")
+    expect(resource?.dateModified).toBe("2026-09-14")
     expect(resource?.author).toBe("ProfileRelaunch")
     expect(resource?.commercialRoute).toBe("profile-recovery")
     expect(resource?.description).toBe(
-      "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
+      "If your Google Business Profile has been suspended, check the restriction, eligibility, profile details and evidence before you submit an appeal.",
     )
     expect(isPublicResource(resource!, body)).toBe(true)
   })
@@ -84,69 +84,21 @@ describe("Article #1 suspension pre-appeal guide", () => {
 
     expect(container.querySelectorAll("h1")).toHaveLength(1)
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(ARTICLE_TITLE)
-    expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "What this means for your business" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Before you act" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Practical checklist" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Where businesses commonly go wrong" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Before you appeal" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "How these guides are produced" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Official sources" })).toBeInTheDocument()
-    expect(
-      screen.getByRole("heading", { name: "I don't know why Google suspended my profile" }),
-    ).toBeInTheDocument()
+    expect(screen.getByText("60-minute evidence window")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "What comes directly from Google" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "About this guide" })).toBeInTheDocument()
+    expect(screen.getByText("I don't know why Google suspended my profile")).toBeInTheDocument()
 
-    expect(container.textContent).toContain("speed and haste are not the same thing")
-    expect(container.textContent).toContain(
-      "use evidence to demonstrate facts, not to overwhelm the reviewer",
-    )
-    expect(container.textContent).toContain(
-      "not speculation about Google's internal enforcement systems",
-    )
-    expect(container.textContent).toContain(
-      "The goal is accuracy, not finding a configuration that appears easier to approve.",
-    )
-
-    expect(screen.queryByText("Google Partner")).not.toBeInTheDocument()
-    expect(screen.queryByText(/Google-certified/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Coming soon/i)).not.toBeInTheDocument()
-
-    const googleSays = screen.getByRole("heading", { name: "What Google says" }).closest("section")
-    expect(googleSays).not.toBeNull()
-    expect(within(googleSays as HTMLElement).getAllByRole("link", { name: /View official Google guidance/ })).toHaveLength(
-      2,
-    )
-    expect(within(googleSays as HTMLElement).getByText("Fix suspended or disabled profiles")).toBeInTheDocument()
-    expect(
-      within(googleSays as HTMLElement).getByText("Appeal Business Profile content and profile restrictions"),
-    ).toBeInTheDocument()
-    expect(
-      within(googleSays as HTMLElement).queryByText("Business eligibility and ownership guidelines"),
-    ).not.toBeInTheDocument()
-
-    const bibliography = screen.getByRole("heading", { name: "Official sources" }).closest("section")
-    expect(bibliography).not.toBeNull()
-    const bibLinks = within(bibliography as HTMLElement).getAllByRole("link", {
-      name: /View official Google guidance/,
-    })
-    expect(bibLinks).toHaveLength(6)
-    expect(bibLinks.map((link) => link.getAttribute("href"))).toEqual(
-      suspensionBeforeAppealSources.map((source) => source.url),
-    )
-    bibLinks.forEach((link) => {
-      expect(link).toHaveAttribute("target", "_blank")
-      expect(link).toHaveAttribute("rel", "noopener noreferrer")
-    })
-
-    expect(screen.getByRole("link", { name: /Start your Profile Recovery assessment/ })).toHaveAttribute(
-      "href",
-      "/get-help?service=profile-recovery",
-    )
-    expect(screen.getByRole("link", { name: /Explore Profile Recovery/ })).toHaveAttribute(
-      "href",
-      "/business-profile-recovery",
-    )
+    expect(container.textContent).toContain("While an appeal is pending")
+    expect(container.textContent).toContain("Prepare first and appeal second.")
+    expect(container.textContent).not.toContain("View official Google guidance")
+    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.getAllByRole("link", { name: /Start your Profile Recovery assessment/ })).toHaveLength(3)
+    expect(screen.getByRole("link", { name: /See how Profile Recovery works/ })).toHaveAttribute("href", "/business-profile-recovery")
+    const sourceLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("target") === "_blank")
+    expect(sourceLinks.map((link) => link.getAttribute("href"))).toEqual(suspensionBeforeAppealSources.map((source) => source.url))
+    expect(screen.getByText("Google Business Profile Help")).toBeInTheDocument()
 
     const jsonLd = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (node) => node.textContent ?? "",
@@ -156,7 +108,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(jsonLd.join("")).not.toMatch(/FAQPage/)
     expect(jsonLd.join("")).not.toMatch(/null/)
     expect(jsonLd.join("")).toContain('"datePublished":"2026-09-13"')
-    expect(jsonLd.join("")).toContain('"dateModified":"2026-09-13"')
+    expect(jsonLd.join("")).toContain('"dateModified":"2026-09-14"')
   })
 
   it("emits Article and Breadcrumb JSON-LD with valid non-null dates", () => {
@@ -164,7 +116,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
     const breadcrumbs = resourceBreadcrumbJsonLd(resource!, "Profile Recovery")
     expect(article["@type"]).toBe("Article")
     expect(article.datePublished).toBe("2026-09-13")
-    expect(article.dateModified).toBe("2026-09-13")
+    expect(article.dateModified).toBe("2026-09-14")
     expect(article.author).toMatchObject({ "@type": "Organization", name: "ProfileRelaunch" })
     expect(article.publisher).toMatchObject({ "@type": "Organization", name: "ProfileRelaunch" })
     expect(article).not.toHaveProperty("image")

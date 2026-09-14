@@ -97,7 +97,7 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     title: "Google Business Profile Suspended: What to Do Before You Appeal",
     seoTitle: "Google Business Profile Suspended: What to Do Before You Appeal",
     description:
-      "If your Google Business Profile is suspended, do not rush the appeal. Check eligibility, profile accuracy and evidence before using Google's appeals tool.",
+      "If your Google Business Profile has been suspended, check the restriction, eligibility, profile details and evidence before you submit an appeal.",
     category: "profile-recovery",
     excerpt:
       "A practical pre-appeal guide to checking your profile, preparing evidence and avoiding mistakes that can make a suspension harder to resolve.",
@@ -105,8 +105,8 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     featured: true,
     urgent: false,
     datePublished: "2026-09-13",
-    dateReviewed: "2026-09-13",
-    dateModified: null,
+    dateReviewed: "2026-09-14",
+    dateModified: "2026-09-14",
     readingMinutes: 10,
     relatedResourceSlugs: [
       "google-business-profile-appeal-evidence-checklist",

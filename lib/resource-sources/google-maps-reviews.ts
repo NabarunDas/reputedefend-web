@@ -71,3 +71,15 @@ export const sourceConsumerAlerts: OfficialSource = {
   title: "Consumer Alerts",
   url: "https://support.google.com/contributionpolicy/answer/15178562?hl=en",
 }
+
+export const sourceMissingDelayedReviews: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "About missing or delayed reviews",
+  url: "https://support.google.com/business/answer/10313341?hl=en-GB",
+}
+
+export const sourceMoveReviewsAcrossProfiles: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Move your reviews across Business Profiles",
+  url: "https://support.google.com/business/answer/3098204?hl=en-GB",
+}

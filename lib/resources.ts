@@ -203,6 +203,7 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     relatedResourceSlugs: [
       "fake-google-review-or-genuine-negative-feedback",
       "google-rejected-my-review-report",
+      "google-reviews-missing-or-disappeared",
     ],
     commercialRoute: "review-protection",
     author: resourceAuthor,
@@ -500,6 +501,54 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     relatedResourceSlugs: [
       "offered-to-remove-google-reviews-for-money",
       "lost-access-to-google-business-profile",
+    ],
+    commercialRoute: "review-protection",
+    author: resourceAuthor,
+  },
+  {
+    slug: "google-business-profile-not-showing-on-google-or-maps",
+    title: "Google Business Profile Not Showing on Google or Maps: What to Check",
+    seoTitle: "Google Business Profile Not Showing on Google or Maps: What to Check",
+    description:
+      "Can't find your Google Business Profile on Search or Maps? Check verification, suspension, profile status, recent changes and local ranking before assuming the listing has disappeared.",
+    category: "profile-recovery",
+    excerpt:
+      "How to tell whether your Business Profile is actually missing, suspended, unverified or simply not ranking for the search you tried.",
+    published: true,
+    featured: false,
+    urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
+    relatedResourceSlugs: [
+      "google-business-profile-suspended-before-appeal",
+      "google-business-profile-verification-stuck-or-rejected",
+      "lost-access-to-google-business-profile",
+    ],
+    commercialRoute: "profile-recovery",
+    author: resourceAuthor,
+  },
+  {
+    slug: "google-reviews-missing-or-disappeared",
+    title: "Google Reviews Missing or Disappeared: Why It Happens and What You Can Do",
+    seoTitle: "Google Reviews Missing or Disappeared: Why It Happens and What You Can Do",
+    description:
+      "Missing Google reviews can be delayed, removed for policy reasons or affected by profile changes. Learn what to check and when to contact Google support.",
+    category: "reviews-reputation",
+    excerpt:
+      "How to tell whether reviews are delayed, policy-removed, affected by a merge or move, or missing after Business Profile reinstatement.",
+    published: true,
+    featured: false,
+    urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
+    relatedResourceSlugs: [
+      "can-a-google-review-be-removed",
+      "fake-google-review-or-genuine-negative-feedback",
+      "google-business-profile-not-showing-on-google-or-maps",
     ],
     commercialRoute: "review-protection",
     author: resourceAuthor,

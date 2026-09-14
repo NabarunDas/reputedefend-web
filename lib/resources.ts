@@ -174,8 +174,8 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     featured: false,
     urgent: false,
     datePublished: "2026-09-13",
-    dateReviewed: "2026-09-13",
-    dateModified: null,
+    dateReviewed: "2026-09-14",
+    dateModified: "2026-09-14",
     readingMinutes: 12,
     relatedResourceSlugs: [
       "google-business-profile-suspended-before-appeal",

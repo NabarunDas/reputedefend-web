@@ -13,6 +13,7 @@ import { ResourceBreadcrumbs } from "./resource-breadcrumbs"
 import { AppealRejectedPilotView } from "./appeal-rejected-pilot-view"
 import { EvidenceChecklistPilotView } from "./evidence-checklist-pilot-view"
 import { SuspensionPilotView } from "./suspension-pilot-view"
+import { VerificationStuckPilotView } from "./verification-stuck-pilot-view"
 import { ResourceCard } from "./resource-card"
 import {
   ResourceBeforeYouAct,
@@ -52,6 +53,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-business-profile-appeal-rejected-what-next") {
     return <AppealRejectedPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "google-business-profile-verification-stuck-or-rejected") {
+    return <VerificationStuckPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

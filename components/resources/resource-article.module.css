@@ -880,3 +880,107 @@
 .reviewPage .sourcesPilot ul + p {
   margin-top: 22px;
 }
+
+.assessmentPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.assessmentPage .decisionSplit ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.assessmentPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.assessmentPage .warning li {
+  color: var(--muted-strong);
+}
+
+.assessmentPage .sourcesPilot ul + p {
+  margin-top: 22px;
+}
+
+.threeOutcome {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 24px;
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.threeOutcome > div {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.threeOutcome b {
+  color: var(--green-dark);
+  font-family: var(--font-display), Arial, sans-serif;
+}
+
+.threeOutcome h3 {
+  margin-top: 6px;
+}
+
+.threeOutcome .statusKicker {
+  display: block;
+  margin-top: 12px;
+}
+
+.threeOutcome p {
+  margin-top: 4px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.frameworkNote {
+  margin-top: 16px;
+  max-width: var(--prose, 720px);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.signalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 32px;
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.signalItem {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.signalItem b {
+  color: var(--green-dark);
+  font-family: var(--font-display), Arial, sans-serif;
+}
+
+.signalItem h3 {
+  margin-top: 6px;
+}
+
+.signalItem .statusKicker {
+  display: block;
+  margin-top: 12px;
+}
+
+.signalItem p {
+  margin-top: 4px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+@media (max-width: 760px) {
+  .threeOutcome,
+  .signalGrid {
+    grid-template-columns: 1fr;
+  }
+}

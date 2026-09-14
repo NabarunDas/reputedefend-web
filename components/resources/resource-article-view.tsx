@@ -19,6 +19,7 @@ import { PaidReviewRemovalOfferPilotView } from "./paid-review-removal-offer-pil
 import { RejectedReviewReportPilotView } from "./rejected-review-report-pilot-view"
 import { LostAccessPilotView } from "./lost-access-pilot-view"
 import { AddressServiceAreaPilotView } from "./address-service-area-pilot-view"
+import { CategoriesPilotView } from "./categories-pilot-view"
 import { NameRulesPilotView } from "./name-rules-pilot-view"
 import { FakeReviewAssessmentPilotView } from "./fake-review-assessment-pilot-view"
 import { ReviewBombingPilotView } from "./review-bombing-pilot-view"
@@ -112,6 +113,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-business-profile-address-and-service-area-rules") {
     return <AddressServiceAreaPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "google-business-profile-categories") {
+    return <CategoriesPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

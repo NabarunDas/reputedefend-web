@@ -281,8 +281,8 @@ describe("Article #14 Google Business Profile name rules", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-business-profile-not-showing-on-google-or-maps")
-    const otherBody = getResourceBody("google-business-profile-not-showing-on-google-or-maps")
+    const other = getPublishedResourceBySlug("google-reviews-missing-or-disappeared")
+    const otherBody = getResourceBody("google-reviews-missing-or-disappeared")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

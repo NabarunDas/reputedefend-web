@@ -52,7 +52,8 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("lost-access-to-google-business-profile")
     expect(publishedSlugs).toContain("google-business-profile-name-rules")
     expect(publishedSlugs).toContain("google-business-profile-address-and-service-area-rules")
-    expect(publishedSlugs).toHaveLength(15)
+    expect(publishedSlugs).toContain("google-business-profile-categories")
+    expect(publishedSlugs).toHaveLength(16)
     expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(

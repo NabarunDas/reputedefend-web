@@ -449,21 +449,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-categories",
     title: "Google Business Profile Categories: What You Should and Shouldn't Change",
     seoTitle: "Google Business Profile Categories: What You Should and Shouldn't Change",
     description:
-      "A practical explanation of Google Business Profile categories and when changing them is unwise.",
+      "Choose Google Business Profile categories that describe what your business actually is. Learn how primary and additional categories work and when changing them deserves caution.",
     category: "profile-recovery",
-    excerpt: "When a Google Business Profile category change is worth considering — and when it is not.",
+    excerpt:
+      "How to choose a primary category, use additional categories carefully and avoid treating Business Profile categories as ranking keywords.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-business-profile-name-rules",
       "google-business-profile-address-and-service-area-rules",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "false-or-defamatory-google-reviews",
     title: "False or Defamatory Google Reviews: What Google Can — and Can't — Decide",

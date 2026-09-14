@@ -10,6 +10,7 @@ import { offeredToRemoveGoogleReviewsForMoneyBody } from "@/lib/resource-article
 import { addressAndServiceAreaRulesBody } from "@/lib/resource-articles/google-business-profile-address-and-service-area-rules"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
+import { googleBusinessProfileCategoriesBody } from "@/lib/resource-articles/google-business-profile-categories"
 import { googleBusinessProfileNameRulesBody } from "@/lib/resource-articles/google-business-profile-name-rules"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import { verificationStuckOrRejectedBody } from "@/lib/resource-articles/google-business-profile-verification-stuck-or-rejected"
@@ -71,6 +72,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "lost-access-to-google-business-profile": lostAccessToGoogleBusinessProfileBody,
   "google-business-profile-name-rules": googleBusinessProfileNameRulesBody,
   "google-business-profile-address-and-service-area-rules": addressAndServiceAreaRulesBody,
+  "google-business-profile-categories": googleBusinessProfileCategoriesBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

@@ -94,12 +94,15 @@ describe("Article #15 Google Business Profile address and service-area rules", (
       "google-business-profile-name-rules",
       "google-business-profile-categories",
     ])
-    expect(related.map((item) => item.slug)).toEqual(["google-business-profile-name-rules"])
+    expect(related.map((item) => item.slug)).toEqual([
+      "google-business-profile-name-rules",
+      "google-business-profile-categories",
+    ])
     expect(getPublishedResourceBySlug("google-business-profile-name-rules")).toBeDefined()
-    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeUndefined()
+    expect(getPublishedResourceBySlug("google-business-profile-categories")).toBeDefined()
   })
 
-  it("renders approved copy, related Article #14, and the Profile Recovery CTA", () => {
+  it("renders approved copy, related Articles #14 and #16, and the Profile Recovery CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -140,8 +143,8 @@ describe("Article #15 Google Business Profile address and service-area rules", (
 
     expect(screen.getByText("Google Business Profile Name Rules Explained")).toBeInTheDocument()
     expect(
-      screen.queryByText("Google Business Profile Categories: What You Should and Shouldn't Change"),
-    ).not.toBeInTheDocument()
+      screen.getByText("Google Business Profile Categories: What You Should and Shouldn't Change"),
+    ).toBeInTheDocument()
     expect(container.textContent).not.toContain("Coming soon")
 
     expect(screen.getByRole("link", { name: /Start your Profile Recovery assessment/ })).toHaveAttribute(

@@ -37,6 +37,7 @@ describe("sitemap resources", () => {
     expect(urls).toContain(
       `${brandSiteUrl}/resources/google-business-profile-address-and-service-area-rules`,
     )
+    expect(urls).toContain(`${brandSiteUrl}/resources/google-business-profile-categories`)
     // Derived, so this stays correct whether the registry has several
     // unpublished records or none at all. Synthetic unpublished coverage lives
     // in lib/resources.test.ts.

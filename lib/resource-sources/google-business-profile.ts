@@ -119,3 +119,15 @@ export const sourceOverviewBusinessProfilePolicies: OfficialSource = {
   title: "Overview of Google Business Profile policies",
   url: "https://support.google.com/business/answer/13762416?hl=en-GB",
 }
+
+export const sourceManageBusinessCategory: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage your business category",
+  url: "https://support.google.com/business/answer/7249669?hl=en-GB",
+}
+
+export const sourceLocalRanking: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Tips to improve your local ranking on Google",
+  url: "https://support.google.com/business/answer/7091?hl=en-GB",
+}

@@ -113,3 +113,9 @@ export const sourceRemoveBusinessProfile: OfficialSource = {
   title: "Remove a Business Profile from your Google Account",
   url: "https://support.google.com/business/answer/4669092?hl=en-GB",
 }
+
+export const sourceOverviewBusinessProfilePolicies: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Overview of Google Business Profile policies",
+  url: "https://support.google.com/business/answer/13762416?hl=en-GB",
+}

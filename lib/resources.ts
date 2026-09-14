@@ -403,21 +403,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "profile-recovery",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "google-business-profile-name-rules",
     title: "Google Business Profile Name Rules Explained",
     seoTitle: "Google Business Profile Name Rules Explained",
     description:
-      "A plain-English explanation of Google Business Profile name rules, based on official guidelines.",
+      "Google Business Profile names should reflect the real-world name customers recognise. Learn what Google allows, what counts as name stuffing and what to check before changing your profile.",
     category: "profile-recovery",
-    excerpt: "What Google's published name guidelines mean for a Business Profile.",
+    excerpt:
+      "How Google's real-world business-name rule applies to keywords, locations, legal suffixes, service terms, rebrands and name changes.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-business-profile-address-and-service-area-rules",
       "google-business-profile-categories",
     ],
     commercialRoute: "profile-recovery",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-business-profile-address-and-service-area-rules",
     title: "Google Business Profile Address and Service-Area Rules Explained",

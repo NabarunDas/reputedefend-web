@@ -9,6 +9,7 @@ import { googleReviewExtortionBody } from "@/lib/resource-articles/google-review
 import { offeredToRemoveGoogleReviewsForMoneyBody } from "@/lib/resource-articles/offered-to-remove-google-reviews-for-money"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
+import { googleBusinessProfileNameRulesBody } from "@/lib/resource-articles/google-business-profile-name-rules"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
 import { verificationStuckOrRejectedBody } from "@/lib/resource-articles/google-business-profile-verification-stuck-or-rejected"
 import { lostAccessToGoogleBusinessProfileBody } from "@/lib/resource-articles/lost-access-to-google-business-profile"
@@ -67,6 +68,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "offered-to-remove-google-reviews-for-money": offeredToRemoveGoogleReviewsForMoneyBody,
   "google-rejected-my-review-report": googleRejectedMyReviewReportBody,
   "lost-access-to-google-business-profile": lostAccessToGoogleBusinessProfileBody,
+  "google-business-profile-name-rules": googleBusinessProfileNameRulesBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

@@ -1486,7 +1486,9 @@
   margin-top: 4px;
 }
 
-.sixState {
+.sixState,
+.sixRoute,
+.fiveOutcome {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0 16px;
@@ -1494,24 +1496,69 @@
   border-top: 1px solid var(--edge);
 }
 
-.sixState > div {
+.fiveOutcome {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sixState > div,
+.sixRoute > div,
+.fiveOutcome > div {
   min-width: 0;
   padding: 18px 0;
   border-bottom: 1px solid var(--edge);
 }
 
-.sixState .statusKicker {
+.sixState .statusKicker,
+.sixRoute .statusKicker,
+.fiveOutcome .statusKicker {
   display: block;
 }
 
-.sixState h3 {
+.sixState h3,
+.sixRoute h3,
+.fiveOutcome h3 {
   margin-top: 6px;
 }
 
-.sixState p {
+.sixState p,
+.sixRoute p,
+.fiveOutcome p {
   margin-top: 4px;
   color: var(--muted-strong);
   font-size: 0.94rem;
+}
+
+.fourGroup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin-top: 22px;
+  border-top: 1px solid var(--edge);
+}
+
+.fourGroup > div {
+  min-width: 0;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.fourGroup b {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green-dark);
+}
+
+.fourGroup ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.fourGroup li + li {
+  margin-top: 4px;
 }
 
 .nextAction {
@@ -1548,13 +1595,16 @@
 
 @media (max-width: 1024px) {
   .fiveRoute,
-  .sixState {
+  .sixState,
+  .sixRoute,
+  .fiveOutcome {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
-  .nextAction > div {
+  .nextAction > div,
+  .fourGroup {
     grid-template-columns: 1fr;
     gap: 6px;
   }
@@ -1617,4 +1667,29 @@
 .visibilityPage .decisionSplit .statusKicker {
   display: block;
   margin-top: 12px;
+}
+
+.missingPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.missingPage .decisionSplit ul,
+.missingPage .fourGroup ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.missingPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.missingPage .warning h3 {
+  margin: 0;
+}
+
+.missingPage .sourcesPilot ul + p {
+  margin-top: 22px;
 }

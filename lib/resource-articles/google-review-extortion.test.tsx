@@ -235,12 +235,12 @@ describe("Article #7 Google review extortion", () => {
     }
   })
 
-  it("leaves another Resource on the legacy template", () => {
+  it("leaves the remaining redesigned Resource on its dedicated view", () => {
     const other = getPublishedResourceBySlug("google-reviews-missing-or-disappeared")
     const otherBody = getResourceBody("google-reviews-missing-or-disappeared")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
-    expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "How these guides are produced" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "What happened before the review went missing?" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "The short version" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
   })
 })

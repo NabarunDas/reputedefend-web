@@ -23,6 +23,7 @@ import { CategoriesPilotView } from "./categories-pilot-view"
 import { FalseDefamatoryPilotView } from "./false-defamatory-pilot-view"
 import { GbpScamsPilotView } from "./gbp-scams-pilot-view"
 import { ProfileVisibilityPilotView } from "./profile-visibility-pilot-view"
+import { MissingReviewsPilotView } from "./missing-reviews-pilot-view"
 import { NameRulesPilotView } from "./name-rules-pilot-view"
 import { FakeReviewAssessmentPilotView } from "./fake-review-assessment-pilot-view"
 import { ReviewBombingPilotView } from "./review-bombing-pilot-view"
@@ -132,6 +133,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-business-profile-not-showing-on-google-or-maps") {
     return <ProfileVisibilityPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "google-reviews-missing-or-disappeared") {
+    return <MissingReviewsPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

@@ -1010,7 +1010,32 @@
   margin-top: 22px;
 }
 
-.extortionTimeline {
+.clusterPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.clusterPage .decisionSplit ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.clusterPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.clusterPage .warning h3 {
+  margin: 0;
+}
+
+.clusterPage .sourcesPilot ul + p {
+  margin-top: 22px;
+}
+
+.extortionTimeline,
+.clusterTimeline {
   list-style: none;
   margin: 22px 0 0;
   padding: 0 0 0 8px;
@@ -1018,7 +1043,8 @@
   border-left: 3px solid var(--green);
 }
 
-.extortionTimeline li {
+.extortionTimeline li,
+.clusterTimeline li {
   position: relative;
   display: grid;
   grid-template-columns: 2.4rem minmax(0, 1fr);
@@ -1027,7 +1053,8 @@
   padding: 4px 0 22px 20px;
 }
 
-.extortionTimeline li::before {
+.extortionTimeline li::before,
+.clusterTimeline li::before {
   content: "";
   position: absolute;
   left: -7px;
@@ -1038,12 +1065,14 @@
   background: var(--green);
 }
 
-.extortionTimeline b {
+.extortionTimeline b,
+.clusterTimeline b {
   color: var(--green-dark);
   font-family: var(--font-display), Arial, sans-serif;
 }
 
-.extortionTimeline span {
+.extortionTimeline span,
+.clusterTimeline span {
   color: var(--muted-strong);
   font-weight: 650;
 }

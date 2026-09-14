@@ -371,6 +371,7 @@
 .pilotSection > h2 { margin-bottom: 14px; }
 .pilotCta > p, .pilotConversion > p { color: var(--muted-strong); }
 .process { display: grid; grid-template-columns: repeat(5, 1fr); gap: 28px 24px; margin-top: 26px; }
+.threeProcess { grid-template-columns: repeat(3, 1fr); }
 .processStep { position: relative; padding: 18px 14px; border-top: 3px solid var(--green); background: color-mix(in srgb, var(--paper) 84%, white); }
 .processStep:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 18px; color: var(--green-dark); font-size: 1.2rem; z-index: 1; }
 .processStep b { color: var(--green-dark); font-family: var(--font-display), Arial, sans-serif; }
@@ -815,4 +816,67 @@
   .diagnosticGrid {
     grid-template-columns: 1fr;
   }
+}
+
+.reviewPage .pilotSection > h3 {
+  margin-top: 28px;
+}
+
+.reviewPage .decisionSplit ul {
+  margin-top: 10px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.reviewPage .warning ul {
+  margin-top: 8px;
+  padding-left: 1.15rem;
+}
+
+.reviewPage .warning li {
+  color: var(--muted-strong);
+}
+
+.policyMap {
+  margin-top: 22px;
+  max-width: var(--prose, 720px);
+  border-top: 1px solid var(--edge);
+}
+
+.policyMap > div {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.policyMap h3 {
+  margin: 0;
+}
+
+.policyMap p {
+  margin-top: 8px;
+  color: var(--muted-strong);
+  font-size: 0.94rem;
+}
+
+.proseList {
+  max-width: var(--prose, 720px);
+  margin-top: 8px;
+  padding-left: 1.15rem;
+  color: var(--muted-strong);
+}
+
+.numberedQuestions {
+  max-width: var(--prose, 720px);
+  margin-top: 12px;
+  padding-left: 1.35rem;
+  color: var(--muted-strong);
+}
+
+.numberedQuestions li {
+  margin-top: 8px;
+}
+
+.reviewPage .sourcesPilot ul + p {
+  margin-top: 22px;
 }

@@ -314,22 +314,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "customer-threatening-bad-google-review",
     title: "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them",
     seoTitle: "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them",
     description:
-      "How to think about a threat to leave a Google review in a billing or refund dispute, without treating every dispute as a crime.",
+      "If a customer threatens a bad Google review unless you refund or compensate them, separate the genuine dispute from the review condition and preserve the exact evidence.",
     category: "review-abuse-scams",
     excerpt:
-      "How to separate an ordinary customer dispute from coercive review behaviour — without labelling every refund request as extortion.",
+      "How to separate a genuine refund or service dispute from coercive review behaviour without calling every unhappy customer an extortionist.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 11,
     relatedResourceSlugs: [
       "google-review-extortion",
       "fake-google-review-or-genuine-negative-feedback",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "offered-to-remove-google-reviews-for-money",
     title: "Someone Offered to Remove My Google Reviews for Money: What Should I Check?",

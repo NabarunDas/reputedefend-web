@@ -46,10 +46,15 @@ describe("resource registry", () => {
     expect(publishedSlugs).toContain("google-review-extortion")
     expect(publishedSlugs).toContain("google-review-bombing")
     expect(publishedSlugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
+    expect(publishedSlugs).toContain("customer-threatening-bad-google-review")
     expect(publishedSlugs).not.toContain("false-or-defamatory-google-reviews")
+    expect(publishedSlugs).not.toContain("offered-to-remove-google-reviews-for-money")
     expect(publishedSlugs).not.toContain("google-rejected-my-review-report")
     expect(publishedSlugs).not.toContain("lost-access-to-google-business-profile")
     expect(unpublished.map((item) => item.slug)).toContain("false-or-defamatory-google-reviews")
+    expect(unpublished.map((item) => item.slug)).toContain("offered-to-remove-google-reviews-for-money")
+    expect(unpublished.map((item) => item.slug)).toContain("google-rejected-my-review-report")
+    expect(unpublished.map((item) => item.slug)).toContain("lost-access-to-google-business-profile")
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)
     expect(getFeaturedPublishedResource()?.slug).toBe(
       "google-business-profile-suspended-before-appeal",
@@ -78,7 +83,10 @@ describe("resource registry", () => {
     expect(extortion?.urgent).toBe(true)
     expect(bombing?.urgent).toBe(true)
     expect(getPublishedResourceBySlug("google-rejected-my-review-report")).toBeUndefined()
-    expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual(["google-review-bombing"])
+    expect(relatedPublishedResources(extortion!).map((item) => item.slug)).toEqual([
+      "google-review-bombing",
+      "customer-threatening-bad-google-review",
+    ])
     expect(relatedPublishedResources(bombing!).map((item) => item.slug)).toEqual([
       "google-review-extortion",
       "fake-google-review-or-genuine-negative-feedback",

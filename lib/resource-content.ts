@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { competitorOrExEmployeeReviewBody } from "@/lib/resource-articles/can-a-competitor-or-ex-employee-leave-a-google-review"
 import { canAGoogleReviewBeRemovedBody } from "@/lib/resource-articles/can-a-google-review-be-removed"
+import { customerThreateningReviewBody } from "@/lib/resource-articles/customer-threatening-bad-google-review"
 import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
 import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
 import { googleReviewExtortionBody } from "@/lib/resource-articles/google-review-extortion"
@@ -57,6 +58,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "can-a-google-review-be-removed": canAGoogleReviewBeRemovedBody,
   "can-a-competitor-or-ex-employee-leave-a-google-review": competitorOrExEmployeeReviewBody,
   "fake-google-review-or-genuine-negative-feedback": fakeOrGenuineNegativeFeedbackBody,
+  "customer-threatening-bad-google-review": customerThreateningReviewBody,
   "google-review-extortion": googleReviewExtortionBody,
   "google-review-bombing": googleReviewBombingBody,
 }

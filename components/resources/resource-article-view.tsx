@@ -13,6 +13,7 @@ import { ResourceBreadcrumbs } from "./resource-breadcrumbs"
 import { AppealRejectedPilotView } from "./appeal-rejected-pilot-view"
 import { EvidenceChecklistPilotView } from "./evidence-checklist-pilot-view"
 import { SuspensionPilotView } from "./suspension-pilot-view"
+import { ReviewRemovalPilotView } from "./review-removal-pilot-view"
 import { VerificationStuckPilotView } from "./verification-stuck-pilot-view"
 import { ResourceCard } from "./resource-card"
 import {
@@ -57,6 +58,10 @@ export function ResourceArticleView({
 
   if (resource.slug === "google-business-profile-verification-stuck-or-rejected") {
     return <VerificationStuckPilotView resource={resource} related={relatedGuides} />
+  }
+
+  if (resource.slug === "can-a-google-review-be-removed") {
+    return <ReviewRemovalPilotView resource={resource} related={relatedGuides} />
   }
 
   return (

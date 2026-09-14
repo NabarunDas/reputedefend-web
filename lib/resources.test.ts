@@ -23,6 +23,7 @@ import { resourceArticleJsonLd, resourceArticleMetadata, resourceBreadcrumbJsonL
 import { brandName, brandSiteUrl } from "@/lib/brand"
 import { footerExploreExtra, primaryNav } from "@/lib/site-nav"
 import {
+  approvedPublishedResourceSlugs,
   fixtureBodyLookup,
   fixtureOfficialSource,
   publishedRelatedFixture,
@@ -37,22 +38,9 @@ describe("resource registry", () => {
     const unpublished = resourceRegistry.filter((item) => !item.published)
     expect(resourceRegistry).toHaveLength(18)
     expect(resourceRegistry.every((item) => item.author === "ProfileRelaunch")).toBe(true)
-    expect(publishedSlugs).toContain("google-business-profile-suspended-before-appeal")
-    expect(publishedSlugs).toContain("google-business-profile-appeal-evidence-checklist")
-    expect(publishedSlugs).toContain("google-business-profile-appeal-rejected-what-next")
-    expect(publishedSlugs).toContain("google-business-profile-verification-stuck-or-rejected")
-    expect(publishedSlugs).toContain("can-a-google-review-be-removed")
-    expect(publishedSlugs).toContain("fake-google-review-or-genuine-negative-feedback")
-    expect(publishedSlugs).toContain("google-review-extortion")
-    expect(publishedSlugs).toContain("google-review-bombing")
-    expect(publishedSlugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
-    expect(publishedSlugs).toContain("customer-threatening-bad-google-review")
-    expect(publishedSlugs).toContain("offered-to-remove-google-reviews-for-money")
-    expect(publishedSlugs).toContain("google-rejected-my-review-report")
-    expect(publishedSlugs).toContain("lost-access-to-google-business-profile")
-    expect(publishedSlugs).toContain("google-business-profile-name-rules")
-    expect(publishedSlugs).toContain("google-business-profile-address-and-service-area-rules")
-    expect(publishedSlugs).toContain("google-business-profile-categories")
+    // Publication is deliberate: a Resource going public without being added
+    // to the approved allowlist fails here.
+    expect(publishedSlugs).toEqual([...approvedPublishedResourceSlugs])
     expect(publishedSlugs).toHaveLength(16)
     expect(publishedSlugs.every((slug) => listResourceBodySlugs().includes(slug))).toBe(true)
     expect(unpublished.every((item) => !listResourceBodySlugs().includes(item.slug))).toBe(true)

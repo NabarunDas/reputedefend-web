@@ -5,6 +5,7 @@ import { customerThreateningReviewBody } from "@/lib/resource-articles/customer-
 import { fakeOrGenuineNegativeFeedbackBody } from "@/lib/resource-articles/fake-google-review-or-genuine-negative-feedback"
 import { googleReviewBombingBody } from "@/lib/resource-articles/google-review-bombing"
 import { googleReviewExtortionBody } from "@/lib/resource-articles/google-review-extortion"
+import { offeredToRemoveGoogleReviewsForMoneyBody } from "@/lib/resource-articles/offered-to-remove-google-reviews-for-money"
 import { appealEvidenceChecklistBody } from "@/lib/resource-articles/google-business-profile-appeal-evidence-checklist"
 import { appealRejectedWhatNextBody } from "@/lib/resource-articles/google-business-profile-appeal-rejected-what-next"
 import { suspensionBeforeAppealBody } from "@/lib/resource-articles/google-business-profile-suspended-before-appeal"
@@ -61,6 +62,7 @@ const resourceBodies: Record<string, ResourceArticleBody> = {
   "customer-threatening-bad-google-review": customerThreateningReviewBody,
   "google-review-extortion": googleReviewExtortionBody,
   "google-review-bombing": googleReviewBombingBody,
+  "offered-to-remove-google-reviews-for-money": offeredToRemoveGoogleReviewsForMoneyBody,
 }
 
 export function getResourceBody(slug: string): ResourceArticleBody | undefined {

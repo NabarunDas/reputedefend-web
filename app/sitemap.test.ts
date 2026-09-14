@@ -28,6 +28,9 @@ describe("sitemap resources", () => {
     expect(urls).toContain(
       `${brandSiteUrl}/resources/customer-threatening-bad-google-review`,
     )
+    expect(urls).toContain(
+      `${brandSiteUrl}/resources/offered-to-remove-google-reviews-for-money`,
+    )
     const draftUrls = resourceRegistry
       .filter((resource) => !resource.published)
       .map((resource) => `${brandSiteUrl}/resources/${resource.slug}`)

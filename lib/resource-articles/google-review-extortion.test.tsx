@@ -80,10 +80,11 @@ describe("Article #7 Google review extortion", () => {
     expect(related.map((item) => item.slug)).toEqual([
       "google-review-bombing",
       "customer-threatening-bad-google-review",
+      "offered-to-remove-google-reviews-for-money",
     ])
     expect(getPublishedResourceBySlug("google-review-bombing")).toBeDefined()
     expect(getPublishedResourceBySlug("customer-threatening-bad-google-review")).toBeDefined()
-    expect(getPublishedResourceBySlug("offered-to-remove-google-reviews-for-money")).toBeUndefined()
+    expect(getPublishedResourceBySlug("offered-to-remove-google-reviews-for-money")).toBeDefined()
   })
 
   it("renders approved copy, urgent callout, hidden drafts, and the Review Protection CTA", () => {
@@ -145,8 +146,8 @@ describe("Article #7 Google review extortion", () => {
       ),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText("Someone Offered to Remove My Google Reviews for Money: What Should I Check?"),
-    ).not.toBeInTheDocument()
+      screen.getByText("Someone Offered to Remove My Google Reviews for Money: What Should I Check?"),
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=review",

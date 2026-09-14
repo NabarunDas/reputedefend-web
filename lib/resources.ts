@@ -337,21 +337,29 @@ export const resourceRegistry: readonly ResourceRecord[] = [
     commercialRoute: "review-protection",
     author: resourceAuthor,
   },
-  draft({
+  {
     slug: "offered-to-remove-google-reviews-for-money",
     title: "Someone Offered to Remove My Google Reviews for Money: What Should I Check?",
     seoTitle: "Someone Offered to Remove My Google Reviews for Money: What Should I Check?",
     description:
-      "What to check if a third party offers paid Google review removal, including fake review-removal services.",
+      "A paid Google review-removal service is not automatically a scam. Check what the provider actually promises, how it accesses your profile and whether its process follows Google's policies.",
     category: "review-abuse-scams",
-    excerpt: "What to check before paying anyone who claims they can remove Google reviews.",
+    excerpt:
+      "How to distinguish legitimate paid review-policy support from guaranteed-removal claims, impersonation, unsafe account access and other warning signs.",
+    published: true,
+    featured: false,
     urgent: false,
+    datePublished: "2026-09-14",
+    dateReviewed: "2026-09-14",
+    dateModified: null,
+    readingMinutes: 12,
     relatedResourceSlugs: [
       "google-review-extortion",
       "google-business-profile-scams",
     ],
     commercialRoute: "review-protection",
-  }),
+    author: resourceAuthor,
+  },
   draft({
     slug: "google-rejected-my-review-report",
     title: "Google Rejected My Review Report: What Can You Do Next?",

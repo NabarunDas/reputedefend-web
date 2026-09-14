@@ -18,22 +18,31 @@ describe("resource article route", () => {
     expect(slugs).toContain("fake-google-review-or-genuine-negative-feedback")
     expect(slugs).toContain("google-review-extortion")
     expect(slugs).toContain("google-review-bombing")
-    expect(slugs).not.toContain("google-rejected-my-review-report")
-    expect(slugs).not.toContain("lost-access-to-google-business-profile")
+    expect(slugs).toContain("can-a-competitor-or-ex-employee-leave-a-google-review")
+    expect(slugs).toContain("customer-threatening-bad-google-review")
+    expect(slugs).toContain("offered-to-remove-google-reviews-for-money")
+    expect(slugs).toContain("google-rejected-my-review-report")
+    expect(slugs).toContain("lost-access-to-google-business-profile")
+    expect(slugs).toHaveLength(13)
+    expect(slugs).not.toContain("false-or-defamatory-google-reviews")
+    expect(slugs).not.toContain("google-business-profile-scams")
+    expect(slugs).not.toContain("google-business-profile-name-rules")
+    expect(slugs).not.toContain("google-business-profile-address-and-service-area-rules")
+    expect(slugs).not.toContain("google-business-profile-categories")
     expect(dynamicParams).toBe(false)
   })
 
   it("404s draft slugs instead of rendering a coming-soon shell", async () => {
     await expect(
-      generateMetadata({ params: Promise.resolve({ slug: "google-rejected-my-review-report" }) }),
+      generateMetadata({ params: Promise.resolve({ slug: "false-or-defamatory-google-reviews" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
       generateMetadata({
-        params: Promise.resolve({ slug: "lost-access-to-google-business-profile" }),
+        params: Promise.resolve({ slug: "google-business-profile-scams" }),
       }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
     await expect(
-      ResourceArticlePage({ params: Promise.resolve({ slug: "lost-access-to-google-business-profile" }) }),
+      ResourceArticlePage({ params: Promise.resolve({ slug: "google-business-profile-name-rules" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND")
   })
 

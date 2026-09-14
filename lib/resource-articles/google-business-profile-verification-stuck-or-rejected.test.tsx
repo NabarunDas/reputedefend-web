@@ -79,11 +79,14 @@ describe("Article #4 verification stuck or rejected", () => {
     expect(body?.googleSays?.sources).toEqual([sourceVerifyBusiness, sourceVideoVerification])
     expect(body?.googleSays?.sources).not.toContain(sourceEligibility)
     expect(body?.googleSays?.sources).not.toContain(sourceRequestOwnership)
-    expect(related.map((item) => item.slug)).toEqual(["google-business-profile-suspended-before-appeal"])
-    expect(getPublishedResourceBySlug("lost-access-to-google-business-profile")).toBeUndefined()
+    expect(related.map((item) => item.slug)).toEqual([
+      "google-business-profile-suspended-before-appeal",
+      "lost-access-to-google-business-profile",
+    ])
+    expect(getPublishedResourceBySlug("lost-access-to-google-business-profile")).toBeDefined()
   })
 
-  it("renders approved copy, related Article #1 only, and the Profile Recovery CTA", () => {
+  it("renders approved copy, related Articles #1 and #13, and the Profile Recovery CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
@@ -121,9 +124,8 @@ describe("Article #4 verification stuck or rejected", () => {
 
     expect(screen.getByText("Google Business Profile Suspended: What to Do Before You Appeal")).toBeInTheDocument()
     expect(
-      screen.queryByText("Lost Access to Your Google Business Profile: Ownership and Manager Options"),
-    ).not.toBeInTheDocument()
-    expect(getPublishedResourceBySlug("lost-access-to-google-business-profile")).toBeUndefined()
+      screen.getByText("Lost Access to Your Google Business Profile: Ownership and Manager Options"),
+    ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Profile Recovery assessment/ })).toHaveAttribute(
       "href",
       "/get-help?service=profile-recovery",

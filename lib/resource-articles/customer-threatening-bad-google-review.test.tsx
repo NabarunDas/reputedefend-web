@@ -5,10 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourceArticleView } from "@/components/resources/resource-article-view"
 import {
-  googleReviewExtortionSlug,
-  googleReviewExtortionSources,
-  googleReviewExtortionUrgentCallout,
-} from "@/lib/resource-articles/google-review-extortion"
+  customerThreateningReviewSlug,
+  customerThreateningReviewSources,
+} from "@/lib/resource-articles/customer-threatening-bad-google-review"
 import { getResourceBody } from "@/lib/resource-content"
 import {
   getPublishedResourceArticle,
@@ -17,7 +16,8 @@ import {
   relatedPublishedResources,
 } from "@/lib/resources"
 import {
-  sourceFakeEngagement,
+  sourceManageCustomerReviews,
+  sourceProhibitedRestrictedContent,
   sourceReportInappropriateReviews,
   sourceReviewExtortion,
   sourceReviewRatingScams,
@@ -34,74 +34,80 @@ afterEach(() => {
 })
 
 const ARTICLE_TITLE =
-  "Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews"
+  "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them"
 
-describe("Article #7 Google review extortion", () => {
-  const resource = getPublishedResourceBySlug(googleReviewExtortionSlug)
-  const body = getResourceBody(googleReviewExtortionSlug)
+describe("Article #10 customer threatening a bad Google review", () => {
+  const resource = getPublishedResourceBySlug(customerThreateningReviewSlug)
+  const body = getResourceBody(customerThreateningReviewSlug)
   const related = resource ? relatedPublishedResources(resource) : []
 
   it("is publish-ready with approved metadata and sources", () => {
     expect(resource).toBeDefined()
     expect(body).toBeDefined()
-    expect(getPublishedResourceArticle(googleReviewExtortionSlug)).toEqual({ resource, body })
+    expect(getPublishedResourceArticle(customerThreateningReviewSlug)).toEqual({ resource, body })
     expect(isPublicResource(resource!, body)).toBe(true)
     expect(resource?.published).toBe(true)
     expect(resource?.featured).toBe(false)
-    expect(resource?.urgent).toBe(true)
-    expect(resource?.slug).toBe(googleReviewExtortionSlug)
+    expect(resource?.urgent).toBe(false)
+    expect(resource?.slug).toBe("customer-threatening-bad-google-review")
     expect(resource?.title).toBe(ARTICLE_TITLE)
     expect(resource?.seoTitle).toBe(ARTICLE_TITLE)
     expect(resource?.category).toBe("review-abuse-scams")
     expect(resource?.description).toBe(
-      "If someone demands money, goods, services or favours to remove negative Google reviews, do not pay. Preserve the evidence and use Google's dedicated extortion reporting route.",
+      "If a customer threatens a bad Google review unless you refund or compensate them, separate the genuine dispute from the review condition and preserve the exact evidence.",
     )
     expect(resource?.readingMinutes).toBe(11)
     expect(resource?.commercialRoute).toBe("review-protection")
-    expect(googleReviewExtortionSources).toHaveLength(4)
-    expect(body?.sourcesUsed).toEqual(googleReviewExtortionSources)
+    expect(customerThreateningReviewSources).toHaveLength(5)
+    expect(body?.sourcesUsed).toEqual(customerThreateningReviewSources)
     expect(body?.sourcesUsed).toEqual([
       sourceReviewExtortion,
-      sourceReviewRatingScams,
+      sourceProhibitedRestrictedContent,
       sourceReportInappropriateReviews,
-      sourceFakeEngagement,
+      sourceManageCustomerReviews,
+      sourceReviewRatingScams,
     ])
     expect(body?.sourcesUsed.map((source) => source.title)).toEqual([
       "Report negative review extortion scams on your Business Profile",
-      "Identify scams on reviews & ratings",
+      "Prohibited and restricted content",
       "Report inappropriate reviews on your Business Profile",
-      "Fake engagement",
+      "Manage customer reviews",
+      "Identify scams on reviews & ratings",
     ])
-    expect(body?.googleSays?.sources).toEqual([sourceReviewExtortion, sourceReviewRatingScams])
+    expect(body?.googleSays?.sources).toEqual([
+      sourceReviewExtortion,
+      sourceProhibitedRestrictedContent,
+    ])
     expect(body?.googleSays?.sources).toHaveLength(2)
     expect(body?.googleSays?.sources).not.toContain(sourceReportInappropriateReviews)
-    expect(body?.googleSays?.sources).not.toContain(sourceFakeEngagement)
-    expect(body?.urgentCallout).toBe(googleReviewExtortionUrgentCallout)
+    expect(body?.googleSays?.sources).not.toContain(sourceManageCustomerReviews)
+    expect(body?.googleSays?.sources).not.toContain(sourceReviewRatingScams)
+    expect(body?.urgentCallout).toBeUndefined()
     expect(related.map((item) => item.slug)).toEqual([
-      "google-review-bombing",
-      "customer-threatening-bad-google-review",
-      "offered-to-remove-google-reviews-for-money",
+      "google-review-extortion",
+      "fake-google-review-or-genuine-negative-feedback",
     ])
-    expect(getPublishedResourceBySlug("google-review-bombing")).toBeDefined()
-    expect(getPublishedResourceBySlug("customer-threatening-bad-google-review")).toBeDefined()
-    expect(getPublishedResourceBySlug("offered-to-remove-google-reviews-for-money")).toBeDefined()
+    expect(getPublishedResourceBySlug("google-review-extortion")).toBeDefined()
+    expect(getPublishedResourceBySlug("fake-google-review-or-genuine-negative-feedback")).toBeDefined()
   })
 
-  it("renders approved copy, urgent callout, hidden drafts, and the Review Protection CTA", () => {
+  it("renders approved copy, related Articles #7 and #6, and the Review Protection CTA", () => {
     const { container } = render(
       <ResourceArticleView resource={resource!} body={body!} related={related} />,
     )
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(ARTICLE_TITLE)
-    expect(screen.getByLabelText("Urgent situation")).toHaveTextContent(googleReviewExtortionUrgentCallout)
-    expect(container.textContent).toContain("Start with the demand, not the star rating")
+    expect(screen.queryByLabelText("Urgent situation")).not.toBeInTheDocument()
     expect(container.textContent).toContain(
-      "Connect the reviews to the demand without overstating the evidence",
+      "First separate the customer dispute from the review threat",
     )
-    expect(container.textContent).toContain("A genuine customer dispute needs careful classification")
+    expect(container.textContent).toContain("Do not pay for review deletion")
+    expect(container.textContent).toContain(
+      "If a refund is genuinely appropriate, keep it independent of the review",
+    )
     expect(
       screen.getByRole("heading", {
-        name: "Do not let urgency turn into payment",
+        name: "Resolve the dispute — do not buy the review outcome",
       }),
     ).toBeInTheDocument()
 
@@ -114,39 +120,38 @@ describe("Article #7 Google review extortion", () => {
         "Report negative review extortion scams on your Business Profile",
       ),
     ).toBeInTheDocument()
-    expect(within(googleSays as HTMLElement).getByText("Identify scams on reviews & ratings")).toBeInTheDocument()
+    expect(within(googleSays as HTMLElement).getByText("Prohibited and restricted content")).toBeInTheDocument()
     expect(
       within(googleSays as HTMLElement).queryByText("Report inappropriate reviews on your Business Profile"),
     ).not.toBeInTheDocument()
-    expect(within(googleSays as HTMLElement).queryByText("Fake engagement")).not.toBeInTheDocument()
+    expect(within(googleSays as HTMLElement).queryByText("Manage customer reviews")).not.toBeInTheDocument()
+    expect(
+      within(googleSays as HTMLElement).queryByText("Identify scams on reviews & ratings"),
+    ).not.toBeInTheDocument()
 
     const bibliography = screen.getByRole("heading", { name: "Official sources" }).closest("section")
     expect(
       within(bibliography as HTMLElement).getAllByRole("link", { name: /View official Google guidance/ }),
-    ).toHaveLength(4)
+    ).toHaveLength(5)
     expect(
       within(bibliography as HTMLElement).getByText(
         "Report negative review extortion scams on your Business Profile",
       ),
     ).toBeInTheDocument()
-    expect(
-      within(bibliography as HTMLElement).getByText("Identify scams on reviews & ratings"),
-    ).toBeInTheDocument()
+    expect(within(bibliography as HTMLElement).getByText("Prohibited and restricted content")).toBeInTheDocument()
     expect(
       within(bibliography as HTMLElement).getByText("Report inappropriate reviews on your Business Profile"),
     ).toBeInTheDocument()
-    expect(within(bibliography as HTMLElement).getByText("Fake engagement")).toBeInTheDocument()
+    expect(within(bibliography as HTMLElement).getByText("Manage customer reviews")).toBeInTheDocument()
+    expect(
+      within(bibliography as HTMLElement).getByText("Identify scams on reviews & ratings"),
+    ).toBeInTheDocument()
 
     expect(
-      screen.getByText("Google Review Bombing: What to Do When Multiple Suspicious Reviews Arrive at Once"),
+      screen.getByText("Google Review Extortion: What to Do If Someone Demands Money to Remove Reviews"),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(
-        "A Customer Is Threatening a Bad Google Review Unless You Pay or Refund Them",
-      ),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText("Someone Offered to Remove My Google Reviews for Money: What Should I Check?"),
+      screen.getByText("Fake Google Review or Genuine Negative Feedback? How to Tell the Difference"),
     ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Start your Review Protection assessment/ })).toHaveAttribute(
       "href",

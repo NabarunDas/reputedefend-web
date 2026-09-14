@@ -71,3 +71,45 @@ export const sourceDuplicateOwnershipIssues: OfficialSource = {
   title: "Resolve duplicate profiles and ownership issues",
   url: "https://support.google.com/business/answer/12756178?hl=en-GB",
 }
+
+export const sourceBusinessProfileThirdPartyPolicies: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Business Profile third-party policies",
+  url: "https://support.google.com/business/answer/7353941?hl=en-GB",
+}
+
+export const sourceWorkingWithThirdParties: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Tips for working with third parties to manage your Business Profile",
+  url: "https://support.google.com/business/answer/7163406?hl=en-GB",
+}
+
+export const sourceProtectBusinessProfile: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Help protect your Google Business Profile",
+  url: "https://support.google.com/business/answer/14509283?hl=en-GB",
+}
+
+export const sourceOwnersManagers: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Manage your Business Profile owners & managers",
+  url: "https://support.google.com/business/answer/3403100?hl=en-GB",
+}
+
+export const sourceFindBusiness: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Find your business on Google",
+  url: "https://support.google.com/business/answer/145585?hl=en-GB",
+}
+
+export const sourceTransferPrimaryOwnership: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Transfer primary ownership of a Business Profile",
+  url: "https://support.google.com/business/answer/3415281?hl=en-GB",
+}
+
+export const sourceRemoveBusinessProfile: OfficialSource = {
+  name: "Google Business Profile Help",
+  title: "Remove a Business Profile from your Google Account",
+  url: "https://support.google.com/business/answer/4669092?hl=en-GB",
+}

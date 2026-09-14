@@ -279,8 +279,8 @@ describe("Article #5 can a Google review be removed", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-business-profile-address-and-service-area-rules")
-    const otherBody = getResourceBody("google-business-profile-address-and-service-area-rules")
+    const other = getPublishedResourceBySlug("google-business-profile-categories")
+    const otherBody = getResourceBody("google-business-profile-categories")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

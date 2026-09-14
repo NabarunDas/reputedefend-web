@@ -255,8 +255,8 @@ describe("Article #12 Google rejected my review report", () => {
   })
 
   it("leaves another Resource on the legacy template", () => {
-    const other = getPublishedResourceBySlug("google-business-profile-name-rules")
-    const otherBody = getResourceBody("google-business-profile-name-rules")
+    const other = getPublishedResourceBySlug("google-business-profile-address-and-service-area-rules")
+    const otherBody = getResourceBody("google-business-profile-address-and-service-area-rules")
     render(<ResourceArticleView resource={other!} body={otherBody!} />)
     expect(screen.getByRole("heading", { name: "The short version" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What Google says" })).toBeInTheDocument()

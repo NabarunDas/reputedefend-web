@@ -85,6 +85,23 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(container.querySelectorAll("h1")).toHaveLength(1)
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(ARTICLE_TITLE)
     expect(screen.getByRole("heading", { name: "Before you appeal" })).toBeInTheDocument()
+    expect(screen.getByText("Last reviewed 14 September 2026 · 10 min read")).toBeInTheDocument()
+    expect(screen.queryByText("About 10 min read")).not.toBeInTheDocument()
+    expect(screen.queryByText("Last reviewed: 14 September 2026")).not.toBeInTheDocument()
+    expect(screen.getByText("See what Google has restricted")).toBeInTheDocument()
+    expect(screen.getByText("Save Google's reason and policy link.")).toBeInTheDocument()
+    expect(screen.getAllByText("Check that the business is eligible").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText("Make sure the business qualifies.")).toBeInTheDocument()
+    expect(screen.getByText("Compare the profile with the real business")).toBeInTheDocument()
+    expect(screen.getByText("Prepare the evidence")).toBeInTheDocument()
+    expect(screen.getByText("Submit when you are ready")).toBeInTheDocument()
+    expect(container.textContent).toContain(
+      "Before you appeal, make sure the business actually qualifies for a Google Business Profile.",
+    )
+    expect(container.textContent).toContain(
+      "If you're unsure whether the business qualifies, resolve that first. Evidence won't fix an eligibility problem.",
+    )
+    expect(container.textContent).not.toContain("Eligibility is the first gate")
     expect(screen.getByText("60-minute evidence window")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "What comes directly from Google" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "About this guide" })).toBeInTheDocument()

@@ -10,10 +10,10 @@ Launch status, environment variables and **owner / external setup** are in [`doc
 
 - Next.js 16, React 19 and Tailwind CSS v4.
 - Public pages are server-rendered with reusable section components.
-- `/api/enquiry` validates and normalizes input, applies a honeypot check, applies a process-local rate-limit boundary, then delegates delivery to `lib/enquiry-delivery.ts`.
+- `/api/enquiry` validates and normalizes input, applies a honeypot check, applies a process-local rate-limit boundary, then either persists a Get Help case through `create_case_intake_v1` when `CASE_PERSISTENCE_ENABLED=true`, or delegates to `lib/enquiry-delivery.ts`. Homepage and contact enquiries stay email-only.
 - Email sending is confined to a server-side `EnquiryProvider`. The Resend implementation lives in `lib/providers/resend-enquiry-provider.ts` and is never imported by browser components.
 - Optional consent-gated Google Analytics 4 and Search Console HTML verification are environment-driven. They do nothing unless configured.
-- Database schema lives in [`supabase/migrations/`](supabase/migrations/). Privileged access is server-only (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`). See [`supabase/README.md`](supabase/README.md). The current enquiry flow does not persist cases yet.
+- Database schema lives in [`supabase/migrations/`](supabase/migrations/). Privileged access is server-only (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`). See [`supabase/README.md`](supabase/README.md). Get Help case persistence is behind `CASE_PERSISTENCE_ENABLED` and stays email-only while that flag is unset.
 
 ## Local development
 

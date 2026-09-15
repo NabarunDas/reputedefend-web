@@ -30,6 +30,14 @@ export const CASE_SERVICES = [
 
 export type CaseService = (typeof CASE_SERVICES)[number]["value"]
 
+export const FORMAL_CASE_SERVICES = [
+  CASE_SERVICES[0],
+  CASE_SERVICES[1],
+  CASE_SERVICES[2],
+] as const
+
+export type FormalCaseService = (typeof FORMAL_CASE_SERVICES)[number]["value"]
+
 export const GENERAL_SERVICE_OPTIONS = [
   { value: "profile-recovery", label: "Business Profile recovery" },
   { value: "review-protection", label: "Review issue" },
@@ -89,6 +97,10 @@ export type EnquiryResult = {
   ok: boolean
   message: string
   simulated?: boolean
+  persisted?: boolean
+  caseRef?: string
+  caseType?: string
+  receiptEmailSent?: boolean
 }
 
 const PROCESS_ERROR = "Unable to process this enquiry."
@@ -123,6 +135,10 @@ export function isCaseService(value: string): value is CaseService {
   return CASE_SERVICES.some((service) => service.value === value)
 }
 
+export function isFormalCaseService(value: string): value is FormalCaseService {
+  return FORMAL_CASE_SERVICES.some((service) => service.value === value)
+}
+
 export function isContactSubject(value: string): value is ContactSubject {
   return CONTACT_SUBJECTS.some((subject) => subject.value === value)
 }
@@ -136,6 +152,11 @@ export function parseServiceParam(value: string | string[] | undefined) {
   if (!raw) return ""
   const match = CASE_SERVICES.find((service) => service.value === raw || service.query === raw)
   return match?.value ?? ""
+}
+
+export function parseFormalCaseService(value: string | string[] | undefined): FormalCaseService | "" {
+  const parsed = parseServiceParam(value)
+  return isFormalCaseService(parsed) ? parsed : ""
 }
 
 export function showsBusinessProfileUrl(service: string) {
@@ -257,8 +278,12 @@ export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
     } else if (data.subject && !validSubject) {
       errors.subject = "Please choose a subject."
     }
+  } else if (isCase) {
+    if (!isFormalCaseService(data.service)) {
+      errors.service = "Please choose what you need help with."
+    }
   } else if (!isCaseService(data.service)) {
-    errors.service = isCase ? "Please choose what you need help with." : "Please choose an enquiry type."
+    errors.service = isContact ? "Please choose an enquiry type." : "Please choose an enquiry type."
   }
 
   if (data.subject.length > enquiryLimits.subject) {

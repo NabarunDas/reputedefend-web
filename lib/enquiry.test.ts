@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  FORMAL_CASE_SERVICES,
   getCaseIntakeStepErrors,
+  parseFormalCaseService,
   parseServiceParam,
   validateEnquiry,
   type EnquiryInput,
@@ -235,5 +237,43 @@ describe("parseServiceParam", () => {
     expect(parseServiceParam("profile-access")).toBe("profile-access")
     expect(parseServiceParam("unknown")).toBe("")
     expect(parseServiceParam(undefined)).toBe("")
+  })
+})
+
+describe("parseFormalCaseService", () => {
+  it("keeps inbound Get Help aliases and ignores general", () => {
+    expect(parseFormalCaseService("profile-recovery")).toBe("profile-recovery")
+    expect(parseFormalCaseService("review")).toBe("review-protection")
+    expect(parseFormalCaseService("access")).toBe("profile-access")
+    expect(parseFormalCaseService("general")).toBe("")
+    expect(parseFormalCaseService("unknown")).toBe("")
+  })
+})
+
+describe("formal Get Help services", () => {
+  it("offers only the three assessment routes on Get Help", () => {
+    expect(FORMAL_CASE_SERVICES.map((item) => item.value)).toEqual([
+      "profile-recovery",
+      "profile-access",
+      "review-protection",
+    ])
+  })
+
+  it("does not treat general as a formal case", () => {
+    expect(validateEnquiry({ ...validCase, service: "general" }).valid).toBe(false)
+    const result = validateEnquiry({ ...validCase, service: "general" })
+    if (!result.valid) expect(result.errors?.service).toBeTruthy()
+  })
+
+  it("still accepts homepage general enquiries", () => {
+    const result = validateEnquiry({
+      fullName: "Jordan Lee",
+      email: "jordan@example.com",
+      businessName: "Lee & Co",
+      service: "general",
+      details: "We would like to understand whether a recent review can be assessed.",
+      source: "homepage",
+    })
+    expect(result.valid).toBe(true)
   })
 })

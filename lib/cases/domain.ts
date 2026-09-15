@@ -66,3 +66,12 @@ export function mapFormServiceToCaseType(service: string): CaseType | null {
       return null
   }
 }
+
+export function mapFormServiceToIssueSubtype(service: string): string | null {
+  if (service === "profile-access") return "ACCESS_VERIFICATION"
+  return null
+}
+
+export function caseTypeLabel(caseType: CaseType) {
+  return caseType === "PROFILE_RECOVERY" ? "Profile Recovery" : "Review Protection"
+}

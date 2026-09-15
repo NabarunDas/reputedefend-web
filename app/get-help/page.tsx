@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { CaseIntakeForm } from "@/components/case-intake-form"
 import { pageTitle } from "@/lib/brand"
-import { parseServiceParam } from "@/lib/enquiry"
+import { parseFormalCaseService } from "@/lib/enquiry"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   getHelpHero,
@@ -31,7 +31,7 @@ export default async function GetHelpPage({
   searchParams: Promise<{ service?: string | string[] }>
 }) {
   const params = await searchParams
-  const initialService = parseServiceParam(params.service)
+  const initialService = parseFormalCaseService(params.service)
 
   return (
     <div className={`${styles.page} font-sans`}>

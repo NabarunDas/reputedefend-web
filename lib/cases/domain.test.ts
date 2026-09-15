@@ -69,6 +69,15 @@ describe("mapFormServiceToCaseType", () => {
   })
 })
 
+describe("mapFormServiceToIssueSubtype", () => {
+  it("keeps profile-access as a Profile Recovery subtype", async () => {
+    const { mapFormServiceToIssueSubtype } = await import("@/lib/cases/domain")
+    expect(mapFormServiceToIssueSubtype("profile-access")).toBe("ACCESS_VERIFICATION")
+    expect(mapFormServiceToIssueSubtype("profile-recovery")).toBeNull()
+    expect(mapFormServiceToIssueSubtype("review-protection")).toBeNull()
+  })
+})
+
 describe("public ref generation ownership", () => {
   it("does not expose a TypeScript generator", async () => {
     const domain = await import("@/lib/cases/domain")

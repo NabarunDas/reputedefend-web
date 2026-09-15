@@ -186,7 +186,8 @@ export type Database = {
       communications: {
         Row: {
           id: string
-          case_id: string
+          case_id: string | null
+          monitoring_request_id: string | null
           channel: string
           communication_type: string
           direction: string
@@ -203,7 +204,8 @@ export type Database = {
         }
         Insert: {
           id?: string
-          case_id: string
+          case_id?: string | null
+          monitoring_request_id?: string | null
           channel?: string
           communication_type: string
           direction?: string
@@ -220,7 +222,8 @@ export type Database = {
         }
         Update: {
           id?: string
-          case_id?: string
+          case_id?: string | null
+          monitoring_request_id?: string | null
           channel?: string
           communication_type?: string
           direction?: string
@@ -234,6 +237,81 @@ export type Database = {
           sent_at?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      monitoring_requests: {
+        Row: {
+          id: string
+          submission_key: string
+          customer_id: string
+          business_id: string
+          location_id: string
+          status: string
+          number_of_locations: number
+          source: string
+          intake_snapshot: Json
+          terms_accepted_at: string
+          submitted_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          submission_key: string
+          customer_id: string
+          business_id: string
+          location_id: string
+          status?: string
+          number_of_locations: number
+          source?: string
+          intake_snapshot?: Json
+          terms_accepted_at: string
+          submitted_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          submission_key?: string
+          customer_id?: string
+          business_id?: string
+          location_id?: string
+          status?: string
+          number_of_locations?: number
+          source?: string
+          intake_snapshot?: Json
+          terms_accepted_at?: string
+          submitted_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      monitoring_request_events: {
+        Row: {
+          id: string
+          monitoring_request_id: string
+          event_type: string
+          actor_type: string
+          event_data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          monitoring_request_id: string
+          event_type: string
+          actor_type?: string
+          event_data?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          monitoring_request_id?: string
+          event_type?: string
+          actor_type?: string
+          event_data?: Json
+          created_at?: string
         }
         Relationships: []
       }
@@ -280,6 +358,38 @@ export type Database = {
           intake_snapshot: Json
           customer_communication_recipient: string
           internal_communication_recipient: string
+        }[]
+      }
+      create_monitoring_request_v1: {
+        Args: {
+          p_submission_key: string
+          p_full_name: string
+          p_email: string
+          p_phone: string | null
+          p_business_name: string
+          p_country: string
+          p_website_url: string | null
+          p_business_profile_url: string
+          p_number_of_locations: number
+          p_terms_accepted: boolean
+          p_intake_snapshot: Json
+          p_internal_recipient: string
+        }
+        Returns: {
+          monitoring_request_id: string
+          customer_id: string
+          business_id: string
+          location_id: string
+          status: string
+          number_of_locations: number
+          was_existing: boolean
+          customer_communication_id: string
+          customer_communication_status: string
+          customer_communication_recipient: string
+          internal_communication_id: string
+          internal_communication_status: string
+          internal_communication_recipient: string
+          intake_snapshot: Json
         }[]
       }
     }

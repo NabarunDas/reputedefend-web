@@ -19,6 +19,7 @@ describe("browser modules", () => {
       const source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
       expect(source, relative).not.toMatch(/SUPABASE_SECRET_KEY|SUPABASE_URL|createSupabaseServerClient/)
       expect(source, relative).not.toMatch(/CASE_PERSISTENCE_ENABLED|persistGetHelpCase|create_case_intake_v1/)
+      expect(source, relative).not.toMatch(/persistMonitoringRequest|create_monitoring_request_v1/)
       expect(source, relative).not.toMatch(/NEXT_PUBLIC_SUPABASE/)
     }
   })

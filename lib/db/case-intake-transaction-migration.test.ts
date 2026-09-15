@@ -50,8 +50,33 @@ describe("case intake transaction migration", () => {
 
   it("lets the database generate public_ref rather than accepting one from the application", () => {
     expect(migration).not.toMatch(/p_public_ref/)
-    const insert = migration.match(/INSERT INTO public\.cases \(([\s\S]*?)\)\s+VALUES/)?.[1] ?? ""
+    const insert = migration.match(/INSERT INTO public\.cases AS created_case \(([\s\S]*?)\)\s+VALUES/)?.[1] ?? ""
     expect(insert).toContain("submission_key")
     expect(insert).not.toContain("public_ref")
+    expect(migration).toMatch(/RETURNING\s+created_case\.id,\s+created_case\.public_ref,\s+created_case\.case_type/)
+  })
+
+  it("serialises same-key retries with a transaction advisory lock before lookup", () => {
+    const lockAt = migration.indexOf("pg_advisory_xact_lock")
+    const lookupAt = migration.indexOf("FROM public.cases AS existing_case")
+    expect(lockAt).toBeGreaterThan(0)
+    expect(lookupAt).toBeGreaterThan(lockAt)
+    expect(migration).toMatch(/hashtextextended\(p_submission_key::text/)
+    expect(migration).not.toMatch(/#variable_conflict/)
+  })
+
+  it("does not treat an arbitrary unique_violation as a submission_key hit", () => {
+    expect(migration.match(/EXCEPTION WHEN unique_violation/g)).toHaveLength(1)
+    expect(migration).toContain("INSERT INTO public.customers AS new_customer")
+    expect(migration).not.toMatch(/INSERT INTO public\.cases AS created_case[\s\S]*EXCEPTION WHEN unique_violation/)
+  })
+
+  it("returns the persisted snapshot and communication recipients", () => {
+    expect(migration).toMatch(/RETURNS TABLE \([\s\S]*intake_snapshot jsonb/)
+    expect(migration).toMatch(/RETURNS TABLE \([\s\S]*customer_communication_recipient text/)
+    expect(migration).toMatch(/RETURNS TABLE \([\s\S]*internal_communication_recipient text/)
+    expect(migration).toMatch(/intake_snapshot := v_snapshot/)
+    expect(migration).toMatch(/customer_communication_recipient := v_customer_recipient/)
+    expect(migration).toMatch(/internal_communication_recipient := v_internal_recipient/)
   })
 })

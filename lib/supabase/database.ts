@@ -277,6 +277,9 @@ export type Database = {
           was_existing: boolean
           customer_communication_status: string
           internal_communication_status: string
+          intake_snapshot: Json
+          customer_communication_recipient: string
+          internal_communication_recipient: string
         }[]
       }
     }

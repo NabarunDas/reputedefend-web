@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
+import { buildIntakeSnapshot, parseIntakeSnapshot } from "@/lib/cases/snapshot"
 import type { EnquiryInput } from "@/lib/enquiry"
 
 const validCase = {
@@ -40,5 +40,21 @@ describe("buildIntakeSnapshot", () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/companyFax|honeypot|RESEND|SUPABASE|apiKey|secret/i)
     expect(snapshot).not.toHaveProperty("companyFax")
     expect(snapshot).not.toHaveProperty("ip")
+  })
+})
+
+describe("parseIntakeSnapshot", () => {
+  it("round-trips a validated snapshot", () => {
+    const parsed = parseIntakeSnapshot(buildIntakeSnapshot(validCase))
+    expect(parsed?.businessName).toBe("Harbour Bakery")
+    expect(parsed?.service).toBe("profile-recovery")
+    expect(parsed?.email).toBe("alex@example.com")
+  })
+
+  it("rejects incomplete or unsafe snapshots", () => {
+    expect(parseIntakeSnapshot(null)).toBeNull()
+    expect(parseIntakeSnapshot({ corrupted: true })).toBeNull()
+    expect(parseIntakeSnapshot({ ...buildIntakeSnapshot(validCase), email: 42 })).toBeNull()
+    expect(parseIntakeSnapshot({ ...buildIntakeSnapshot(validCase), service: "not-a-service" })).toBeNull()
   })
 })

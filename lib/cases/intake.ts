@@ -11,7 +11,7 @@ import {
   buildCaseReceivedCustomerMessage,
   buildCaseReceivedInternalMessage,
 } from "@/lib/cases/received-email"
-import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
+import { buildIntakeSnapshot, enquiryInputFromSnapshot, parseIntakeSnapshot } from "@/lib/cases/snapshot"
 import {
   readEnquiryEmailConfig,
   runtimeMayUseLiveProvider,
@@ -38,6 +38,9 @@ export type CaseIntakeRpcResult = {
   was_existing: boolean
   customer_communication_status: string | null
   internal_communication_status: string | null
+  intake_snapshot: unknown
+  customer_communication_recipient: string | null
+  internal_communication_recipient: string | null
 }
 
 export type CaseIntakeRpcArgs = Database["public"]["Functions"]["create_case_intake_v1"]["Args"]
@@ -56,6 +59,10 @@ export type PersistGetHelpCaseOptions = {
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
 const GENERIC_UNAVAILABLE_ERROR = "Delivery unavailable."
+
+function needsDelivery(status: string | null | undefined) {
+  return status !== "SENT"
+}
 
 function asRpcRow(data: unknown): CaseIntakeRpcResult | null {
   const row = Array.isArray(data) ? data[0] : data
@@ -198,40 +205,103 @@ export async function persistGetHelpCase(
   const updateCommunication = options.updateCommunication
     ?? (client ? defaultUpdateCommunication(client) : async () => {})
 
-  const customerSent = await deliverCommunication({
-    id: intake.customer_communication_id,
-    status: intake.customer_communication_status,
-    message: buildCaseReceivedCustomerMessage(data, caseType, intake.public_ref, emailConfig.fromEmail || "undelivered"),
-    provider,
-    configReady: emailConfig.ready,
-    now,
-    updateCommunication,
-  })
-  await deliverCommunication({
-    id: intake.internal_communication_id,
-    status: intake.internal_communication_status,
-    message: buildCaseReceivedInternalMessage(
-      data,
-      caseType,
-      intake.public_ref,
-      emailConfig.fromEmail || "undelivered",
-      emailConfig.toEmail || "undelivered",
-      emailConfig.extraReplyTo,
-      now,
-    ),
-    provider,
-    configReady: emailConfig.ready,
-    now,
-    updateCommunication,
-  })
+  const canonicalType = isCaseType(intake.case_type) ? intake.case_type : null
+  const snapshot = parseIntakeSnapshot(intake.intake_snapshot)
+  const customerRecipient = intake.customer_communication_recipient?.trim() || ""
+  const internalRecipient = intake.internal_communication_recipient?.trim() || ""
+  const customerNeedsDelivery = Boolean(intake.customer_communication_id) && needsDelivery(intake.customer_communication_status)
+  const internalNeedsDelivery = Boolean(intake.internal_communication_id) && needsDelivery(intake.internal_communication_status)
 
-  return {
-    ok: true,
-    persisted: true,
+  const success = {
+    ok: true as const,
+    persisted: true as const,
     caseRef: intake.public_ref,
     caseType: intake.case_type,
-    receiptEmailSent: customerSent,
     message: "Your assessment has been received.",
+  }
+
+  if (!customerNeedsDelivery && !internalNeedsDelivery) {
+    return {
+      ...success,
+      receiptEmailSent: intake.customer_communication_status === "SENT",
+    }
+  }
+
+  if (!canonicalType || !snapshot) {
+    if (customerNeedsDelivery && intake.customer_communication_id) {
+      await updateCommunication(intake.customer_communication_id, {
+        status: "FAILED",
+        error_message: GENERIC_UNAVAILABLE_ERROR,
+      })
+    }
+    if (internalNeedsDelivery && intake.internal_communication_id) {
+      await updateCommunication(intake.internal_communication_id, {
+        status: "FAILED",
+        error_message: GENERIC_UNAVAILABLE_ERROR,
+      })
+    }
+    return {
+      ...success,
+      receiptEmailSent: intake.customer_communication_status === "SENT",
+    }
+  }
+
+  const canonicalData = enquiryInputFromSnapshot(snapshot)
+  const fromEmail = emailConfig.fromEmail || "undelivered"
+
+  const customerSent = customerRecipient
+    ? await deliverCommunication({
+      id: intake.customer_communication_id,
+      status: intake.customer_communication_status,
+      message: buildCaseReceivedCustomerMessage(
+        canonicalData,
+        canonicalType,
+        intake.public_ref,
+        fromEmail,
+        customerRecipient,
+      ),
+      provider,
+      configReady: emailConfig.ready,
+      now,
+      updateCommunication,
+    })
+    : false
+
+  if (!customerRecipient && customerNeedsDelivery && intake.customer_communication_id) {
+    await updateCommunication(intake.customer_communication_id, {
+      status: "FAILED",
+      error_message: GENERIC_UNAVAILABLE_ERROR,
+    })
+  }
+
+  if (internalRecipient) {
+    await deliverCommunication({
+      id: intake.internal_communication_id,
+      status: intake.internal_communication_status,
+      message: buildCaseReceivedInternalMessage(
+        canonicalData,
+        canonicalType,
+        intake.public_ref,
+        fromEmail,
+        internalRecipient,
+        emailConfig.extraReplyTo,
+        now,
+      ),
+      provider,
+      configReady: emailConfig.ready,
+      now,
+      updateCommunication,
+    })
+  } else if (internalNeedsDelivery && intake.internal_communication_id) {
+    await updateCommunication(intake.internal_communication_id, {
+      status: "FAILED",
+      error_message: GENERIC_UNAVAILABLE_ERROR,
+    })
+  }
+
+  return {
+    ...success,
+    receiptEmailSent: customerSent || intake.customer_communication_status === "SENT",
   }
 }
 

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import { persistGetHelpCase, type CaseIntakeRpcArgs, type CaseIntakeRpcResult } from "@/lib/cases/intake"
+import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
 import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import type { EnquiryInput } from "@/lib/enquiry"
 import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
@@ -53,6 +54,9 @@ function intakeRow(overrides: Partial<CaseIntakeRpcResult> = {}): CaseIntakeRpcR
     was_existing: false,
     customer_communication_status: "PENDING",
     internal_communication_status: "PENDING",
+    intake_snapshot: buildIntakeSnapshot(validCase),
+    customer_communication_recipient: validCase.email,
+    internal_communication_recipient: readyConfig.toEmail,
     ...overrides,
   }
 }
@@ -334,6 +338,97 @@ describe("persistGetHelpCase", () => {
     })
     const snapshot = createIntake.mock.calls[0]?.[0].p_intake_snapshot
     expect(JSON.stringify(snapshot)).not.toMatch(/companyFax|RESEND|SUPABASE|apiKey/i)
+  })
+
+  it("retries email using the original persisted intake, not the changed request", async () => {
+    const original = {
+      ...validCase,
+      fullName: "Original Name",
+      email: "original@example.com",
+      businessName: "Alpha Ltd",
+      service: "profile-recovery" as const,
+    }
+    const send = vi.fn<EnquiryProvider["send"]>(async () => ({ ok: true, id: "email_retry" }))
+    const result = await persistGetHelpCase(
+      {
+        ...validCase,
+        service: "review-protection",
+        businessName: "Beta Ltd",
+        email: "changed@example.com",
+      },
+      SUBMISSION_KEY,
+      {
+        createIntake: async () => intakeRow({
+          was_existing: true,
+          case_type: "PROFILE_RECOVERY",
+          public_ref: "PR-26-7K4M2Q",
+          customer_communication_status: "FAILED",
+          internal_communication_status: "PENDING",
+          intake_snapshot: buildIntakeSnapshot(original),
+          customer_communication_recipient: "original@example.com",
+          internal_communication_recipient: "cases@example.com",
+        }),
+        updateCommunication: async () => {},
+        provider: mockProvider(send),
+        emailConfig: { ...readyConfig, toEmail: "owner@example.com" },
+        nodeEnv: "production",
+      },
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.caseRef).toBe("PR-26-7K4M2Q")
+    expect(result.caseType).toBe("PROFILE_RECOVERY")
+    expect(send).toHaveBeenCalledTimes(2)
+
+    const customer = send.mock.calls[0]?.[0]
+    const internal = send.mock.calls[1]?.[0]
+    expect(customer?.to).toBe("original@example.com")
+    expect(customer?.subject).toContain("Profile Recovery")
+    expect(customer?.subject).toContain("PR-26-7K4M2Q")
+    expect(customer?.text).toContain("Alpha Ltd")
+    expect(customer?.text).not.toContain("Beta Ltd")
+    expect(customer?.text).not.toMatch(/Review Protection/)
+    expect(JSON.stringify(customer)).not.toContain("changed@example.com")
+
+    expect(internal?.to).toBe("cases@example.com")
+    expect(internal?.subject).toContain("Profile Recovery")
+    expect(internal?.subject).toContain("PR-26-7K4M2Q")
+    expect(internal?.subject).toContain("Alpha Ltd")
+    expect(internal?.text).toContain("original@example.com")
+    expect(internal?.text).toContain("Alpha Ltd")
+    expect(internal?.text).toContain("Form route: Business Profile Recovery")
+    expect(internal?.text).not.toContain("Beta Ltd")
+    expect(internal?.text).not.toContain("changed@example.com")
+    expect(internal?.subject).not.toMatch(/Review Protection/)
+  })
+
+  it("does not email from the current request if the persisted snapshot cannot be parsed", async () => {
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_123" }))
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    const result = await persistGetHelpCase(
+      { ...validCase, service: "review-protection", businessName: "Beta Ltd" },
+      SUBMISSION_KEY,
+      {
+        createIntake: async () => intakeRow({
+          was_existing: true,
+          customer_communication_status: "PENDING",
+          internal_communication_status: "FAILED",
+          intake_snapshot: { corrupted: true },
+        }),
+        updateCommunication: async (_id, values) => {
+          updates.push(values)
+        },
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.caseRef).toBe("PR-26-7K4M2Q")
+    expect(result.receiptEmailSent).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+    expect(updates.every((value) => value.status === "FAILED")).toBe(true)
+    expect(JSON.stringify(updates)).not.toMatch(/corrupted|stack|Beta Ltd/i)
   })
 
   it("is a server-only module", () => {

@@ -50,11 +50,12 @@ export function buildCaseReceivedCustomerMessage(
   caseType: CaseType,
   publicRef: string,
   fromEmail: string,
+  recipient: string = data.email,
 ): EnquiryEmailMessage {
   return {
     kind: "customer-ack",
     from: formattedFromAddress(fromEmail),
-    to: data.email,
+    to: recipient,
     replyTo: fromEmail,
     subject: caseReceivedCustomerSubject(caseType, publicRef),
     text: caseReceivedCustomerText(data, caseType, publicRef),

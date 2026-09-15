@@ -13,6 +13,7 @@ Launch status, environment variables and **owner / external setup** are in [`doc
 - `/api/enquiry` validates and normalizes input, applies a honeypot check, applies a process-local rate-limit boundary, then delegates delivery to `lib/enquiry-delivery.ts`.
 - Email sending is confined to a server-side `EnquiryProvider`. The Resend implementation lives in `lib/providers/resend-enquiry-provider.ts` and is never imported by browser components.
 - Optional consent-gated Google Analytics 4 and Search Console HTML verification are environment-driven. They do nothing unless configured.
+- Database schema lives in [`supabase/migrations/`](supabase/migrations/). Privileged access is server-only (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`). See [`supabase/README.md`](supabase/README.md). The current enquiry flow does not persist cases yet.
 
 ## Local development
 

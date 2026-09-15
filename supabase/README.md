@@ -21,3 +21,5 @@ Add a new timestamped file in `migrations/` for every schema change. Do not edit
 ## Case intake transaction
 
 Creating a customer, business, location, case, `CASE_RECEIVED` event and the initial communications happens in **one** PostgreSQL function: `public.create_case_intake_v1(...)`. Email is attempted only after that transaction commits. The Marketing Portal Get Help path uses this RPC when `CASE_PERSISTENCE_ENABLED=true`. Production stays on the existing email-only path while the flag is unset.
+
+`20260916000000_relaunch_guard_data_foundation_v1.sql` adds `monitoring_requests`, `monitoring_request_events`, a nullable `communications.monitoring_request_id`, and `create_monitoring_request_v1`. Relaunch Guard is **not** a case: the RPC does not insert into `cases`, does not generate a public reference, and does not use `case_events`. Apply it once to development after review. Do not re-run it. Do not apply it from application code.

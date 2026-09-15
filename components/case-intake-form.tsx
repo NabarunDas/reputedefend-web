@@ -4,7 +4,7 @@ import Link from "next/link"
 import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from "react"
 import { ArrowLeft, ArrowRight, Check } from "lucide-react"
 import {
-  CASE_SERVICES,
+  FORMAL_CASE_SERVICES,
   caseServiceLabel,
   collectEnquiryErrors,
   enquiryLimits,
@@ -48,6 +48,15 @@ export const SUBMIT_NOTE = "No payment is taken when you submit the assessment."
 export const SUCCESS_COPY = {
   title: "Assessment received.",
   body: "A human will review it. We may ask for clarification if something important is missing. You will then receive a recommended next step. If paid execution support is appropriate, Guided or Managed options and the applicable fee will be explained before you decide.",
+} as const
+
+export const PERSISTED_SUCCESS_COPY = {
+  title: "Assessment received.",
+  referenceLabel: "Case reference",
+  review: "A ProfileRelaunch specialist will review the information you submitted. We may contact you if clarification is needed.",
+  keep: "Keep this reference for future correspondence.",
+  emailSent: "We've also sent this reference to your email address.",
+  emailFailed: "We couldn't send the confirmation email right now, but your case has been safely recorded. Please keep the reference above.",
 } as const
 
 export const SIMULATED_COPY = {
@@ -116,10 +125,13 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle")
   const [deliveryError, setDeliveryError] = useState(false)
   const [simulated, setSimulated] = useState(false)
+  const [persistedRef, setPersistedRef] = useState("")
+  const [receiptEmailSent, setReceiptEmailSent] = useState(false)
   const [statusText, setStatusText] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
+  const submissionKeyRef = useRef("")
   const formId = useId()
   const focusWhat = useRef<"heading" | "summary" | "success" | "field">("heading")
   const [focusKey, setFocusKey] = useState(0)
@@ -224,16 +236,29 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
     setDeliveryError(false)
     setStatusText("Sending your case.")
 
+    if (!submissionKeyRef.current) {
+      submissionKeyRef.current = window.crypto.randomUUID()
+    }
+
     try {
       const res = await fetch("/api/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, submissionKey: submissionKeyRef.current }),
       })
-      const json = await res.json() as { ok?: boolean; simulated?: boolean; errors?: EnquiryFieldErrors }
+      const json = await res.json() as {
+        ok?: boolean
+        simulated?: boolean
+        persisted?: boolean
+        caseRef?: string
+        receiptEmailSent?: boolean
+        errors?: EnquiryFieldErrors
+      }
 
       if (json.ok) {
         setSimulated(json.simulated === true)
+        setPersistedRef(json.persisted && json.caseRef ? json.caseRef : "")
+        setReceiptEmailSent(json.receiptEmailSent === true)
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your case has been received.")
         requestFocus("success")
@@ -266,6 +291,15 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <p className={styles.simulated}>{SIMULATED_COPY.kicker}</p>
             <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{SIMULATED_COPY.title}</h2>
             <p>{SIMULATED_COPY.body}</p>
+          </>
+        ) : persistedRef ? (
+          <>
+            <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>{PERSISTED_SUCCESS_COPY.title}</h2>
+            <p className={styles.caseRefLabel}>{PERSISTED_SUCCESS_COPY.referenceLabel}</p>
+            <p className={styles.caseRef}>{persistedRef}</p>
+            <p>{PERSISTED_SUCCESS_COPY.review}</p>
+            <p>{PERSISTED_SUCCESS_COPY.keep}</p>
+            <p>{receiptEmailSent ? PERSISTED_SUCCESS_COPY.emailSent : PERSISTED_SUCCESS_COPY.emailFailed}</p>
           </>
         ) : (
           <>
@@ -310,9 +344,10 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 
       <div key={step} className={styles.panel}>
         {step === 1 && (
+          <>
           <fieldset className={styles.options} aria-invalid={Boolean(errors.service) || undefined} aria-describedby={errors.service ? `${formId}-service-error` : undefined}>
             <legend className={styles.visuallyHidden}>Choose the type of help you need</legend>
-            {CASE_SERVICES.map((option, index) => {
+            {FORMAL_CASE_SERVICES.map((option, index) => {
               const selected = values.service === option.value
               return (
                 <label key={option.value} className={`${styles.option} ${selected ? styles.optionSelected : ""}`}>
@@ -335,6 +370,10 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             })}
             {errors.service ? <p id={`${formId}-service-error`} className={styles.error}>{errors.service}</p> : null}
           </fieldset>
+          <p className={styles.contactHint}>
+            General questions belong on the <Link href="/contact">Contact</Link> page.
+          </p>
+          </>
         )}
 
         {step === 2 && (

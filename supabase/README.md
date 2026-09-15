@@ -16,8 +16,8 @@ Create the future production project from these source-controlled migrations. Do
 
 Add a new timestamped file in `migrations/` for every schema change. Do not edit an already-applied baseline in place, and do not let the Table Editor drift away from this directory.
 
-## Case intake transaction (next phase)
+`20260915193000_case_intake_transaction_v1.sql` adds `cases.submission_key` and the `create_case_intake_v1` RPC. Apply it once to development after review. Do not re-run it.
 
-Creating a customer, business, location, case, `CASE_RECEIVED` event and the initial communication must happen as **one** durable database transaction before email is attempted.
+## Case intake transaction
 
-Do not implement that as a sequence of unrelated browser writes or as a pretend multi-request “transaction” from the Supabase JS client. The next phase may use a PostgreSQL RPC/function (or another genuinely atomic server/database mechanism). That choice is not locked in here.
+Creating a customer, business, location, case, `CASE_RECEIVED` event and the initial communications happens in **one** PostgreSQL function: `public.create_case_intake_v1(...)`. Email is attempted only after that transaction commits. The Marketing Portal Get Help path uses this RPC when `CASE_PERSISTENCE_ENABLED=true`. Production stays on the existing email-only path while the flag is unset.

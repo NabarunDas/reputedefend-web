@@ -162,6 +162,9 @@ Never commit secret values. Placeholders in `.env.example` are not production cr
 | `ENQUIRY_TO_EMAIL` | Internal inbox for notifications | For live delivery | **True launch blocker** for live mail | Same if Preview sends | No (address) | Not ready; production fails safely |
 | `ENQUIRY_REPLY_TO_EMAIL` | Extra Reply-To besides the customer | Optional | Optional | Optional | No | Customer email remains Reply-To |
 | `ENQUIRY_SEND_CUSTOMER_ACK` | Send a customer receipt | Optional; leave unset | Leave unset/false unless explicitly approved | Leave unset | No | Internal delivery only (preferred for launch) |
+| `CASE_PERSISTENCE_ENABLED` | DB-backed Get Help case intake | Optional; exact `true` only | **Keep false/unset** until production Supabase is ready | May be `true` in Preview after the migration is applied | No | Get Help stays on today's email-only path |
+| `SUPABASE_URL` | Server Supabase project URL | Only when persistence is enabled | Not for this launch until production Supabase exists | Required in Preview to test persistence | No | Persist path fails safely; legacy enquiry still works while the flag is false |
+| `SUPABASE_SECRET_KEY` | Server Supabase privileged key | Only when persistence is enabled | Not for this launch until production Supabase exists | Required in Preview to test persistence | Yes | Persist path fails safely; never prefix with `NEXT_PUBLIC_` |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional GA4 web stream ID | **Optional / non-blocking** | Only after the GA4 stream is configured | Usually unset | No, but do not invent an ID | No banner, no script, no analytics cookies. Site launches normally. |
 | `GOOGLE_SITE_VERIFICATION` | Optional HTML-tag Search Console token | **Optional / non-blocking** | Only if using URL-prefix HTML verification | Usually unset | No | No verification meta tag. Site launches normally. |
 
@@ -180,6 +183,9 @@ If Preview currently has live Resend variables in Vercel, that is an operational
 | `ENQUIRY_TO_EMAIL` | Monitored internal inbox | **Yes** for live enquiry delivery | Production | Working mailbox |
 | `ENQUIRY_REPLY_TO_EMAIL` | Unset unless needed | No | Optional | — |
 | `ENQUIRY_SEND_CUSTOMER_ACK` | Unset / not `true` | No | Production | Explicit product decision |
+| `CASE_PERSISTENCE_ENABLED` | Unset / not `true` | No | Production | Production Supabase is not part of this launch |
+| `SUPABASE_URL` | Unset until a production project exists | No | Production later | Production Supabase project |
+| `SUPABASE_SECRET_KEY` | Unset until a production project exists | No | Production later | Production Supabase secret |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Unset is a valid launch state | **No** | Production after optional GA setup | GA4 stream + Enhanced Measurement off |
 | `GOOGLE_SITE_VERIFICATION` | Unset is a valid launch state | **No** | Production if using HTML-tag verification | Search Console token |
 

@@ -200,6 +200,20 @@
   text-transform: uppercase;
 }
 
+.contactHint {
+  margin: 18px 0 0;
+  color: var(--muted-strong);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.contactHint a {
+  color: var(--green-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .evidence {
   padding: 14px 16px;
   border: 1px solid var(--edge);
@@ -508,6 +522,26 @@ textarea.control {
   color: var(--muted-strong);
   font-size: 16px;
   line-height: 1.6;
+}
+
+.success .caseRefLabel {
+  margin-top: 22px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.success .caseRef {
+  margin-top: 8px;
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: clamp(1.35rem, 3vw, 1.85rem);
+  line-height: 1.2;
+  letter-spacing: .04em;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  color: var(--ink);
 }
 
 .visuallyHidden {

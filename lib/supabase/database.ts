@@ -110,6 +110,7 @@ export type Database = {
           closed_at: string | null
           created_at: string
           updated_at: string
+          submission_key: string | null
         }
         Insert: {
           id?: string
@@ -130,6 +131,7 @@ export type Database = {
           closed_at?: string | null
           created_at?: string
           updated_at?: string
+          submission_key?: string | null
         }
         Update: {
           id?: string
@@ -150,6 +152,7 @@ export type Database = {
           closed_at?: string | null
           created_at?: string
           updated_at?: string
+          submission_key?: string | null
         }
         Relationships: []
       }
@@ -242,6 +245,39 @@ export type Database = {
       generate_case_public_ref: {
         Args: { p_case_type: string }
         Returns: string
+      }
+      create_case_intake_v1: {
+        Args: {
+          p_submission_key: string
+          p_case_type: string
+          p_issue_subtype: string | null
+          p_full_name: string
+          p_email: string
+          p_phone: string | null
+          p_business_name: string
+          p_country: string
+          p_website_url: string | null
+          p_business_profile_url: string | null
+          p_review_url: string | null
+          p_issue_description: string
+          p_information_accurate: boolean
+          p_privacy_accepted: boolean
+          p_intake_snapshot: Json
+          p_internal_recipient: string
+        }
+        Returns: {
+          case_id: string
+          public_ref: string
+          case_type: string
+          customer_id: string
+          business_id: string
+          location_id: string
+          customer_communication_id: string
+          internal_communication_id: string
+          was_existing: boolean
+          customer_communication_status: string
+          internal_communication_status: string
+        }[]
       }
     }
   }

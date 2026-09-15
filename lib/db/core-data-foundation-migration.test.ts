@@ -46,7 +46,7 @@ describe("core data foundation migration", () => {
     expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.generate_case_public_ref\(text\) FROM authenticated/)
   })
 
-  it("is not wired into the current enquiry path", () => {
+  it("does not perform independent table writes from the enquiry route", () => {
     const enquiryRoute = readFileSync(
       fileURLToPath(new URL("../../app/api/enquiry/route.ts", import.meta.url)),
       "utf8",
@@ -55,9 +55,11 @@ describe("core data foundation migration", () => {
       fileURLToPath(new URL("../../app/get-help/page.tsx", import.meta.url)),
       "utf8",
     )
-    expect(enquiryRoute).not.toMatch(/supabase/i)
+    expect(enquiryRoute).toContain("persistGetHelpCase")
+    expect(enquiryRoute).toContain("isCasePersistenceEnabled")
+    expect(enquiryRoute).not.toMatch(/from\("customers"\)/)
+    expect(enquiryRoute).not.toMatch(/from\("cases"\)/)
     expect(getHelp).not.toMatch(/supabase/i)
-    expect(enquiryRoute).not.toContain("insertCase")
     expect(getHelp).not.toContain("insertCase")
   })
 })

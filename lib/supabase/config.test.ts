@@ -63,16 +63,22 @@ describe("requireSupabaseConfig", () => {
   })
 })
 
-describe("createSupabaseServerClient", () => {
-  it("is a server-only module", () => {
-    const source = readFileSync(
+describe("server-only boundaries", () => {
+  it("marks config, client factory and DB primitives as server-only", () => {
+    const files = [
+      fileURLToPath(new URL("./config.ts", import.meta.url)),
       fileURLToPath(new URL("./server.ts", import.meta.url)),
-      "utf8",
-    )
-    expect(source).toMatch(/^import "server-only"/m)
-    expect(source).not.toContain("NEXT_PUBLIC_")
+      fileURLToPath(new URL("../db/primitives.ts", import.meta.url)),
+    ]
+    for (const file of files) {
+      const source = readFileSync(file, "utf8")
+      expect(source, file).toMatch(/^import "server-only"/m)
+      expect(source, file).not.toContain("NEXT_PUBLIC_")
+    }
   })
+})
 
+describe("createSupabaseServerClient", () => {
   it("fails clearly when credentials are absent", () => {
     const previousUrl = process.env.SUPABASE_URL
     const previousKey = process.env.SUPABASE_SECRET_KEY

@@ -1,3 +1,5 @@
+import "server-only"
+
 export type SupabaseServerConfig = {
   url: string
   secretKey: string

@@ -23,6 +23,7 @@ export const sitemapPaths = [
   "/",
   "/business-profile-recovery",
   "/review-protection",
+  "/relaunch-guard",
   "/how-it-works",
   "/pricing",
   "/about",

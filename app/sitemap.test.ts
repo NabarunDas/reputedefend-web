@@ -3,6 +3,7 @@ import sitemap from "@/app/sitemap"
 import { brandSiteUrl } from "@/lib/brand"
 import { resourceRegistry } from "@/lib/resources"
 import { approvedPublishedResourceSlugs } from "@/lib/resource-test-fixtures"
+import { sitemapPaths } from "@/lib/site-nav"
 
 describe("sitemap resources", () => {
   afterEach(() => {
@@ -33,11 +34,18 @@ describe("sitemap resources", () => {
     }
     expect(urls).toHaveLength(new Set(urls).size)
     expect(urls).not.toContain(`${brandSiteUrl}/start-monitoring`)
-    expect(urls).not.toContain(`${brandSiteUrl}/relaunch-guard`)
+    for (const path of sitemapPaths) {
+      expect(urls).toContain(`${brandSiteUrl}${path}`)
+    }
+    const guardUrl = `${brandSiteUrl}/relaunch-guard`
+    expect(urls.filter((url) => url === guardUrl)).toHaveLength(1)
+    expect(entries.find((entry) => entry.url === guardUrl)).toEqual({ url: guardUrl })
   })
 
   it("emits no sitemap outside production", () => {
     vi.stubEnv("VERCEL_ENV", "preview")
+    expect(sitemap()).toEqual([])
+    vi.stubEnv("VERCEL_ENV", "development")
     expect(sitemap()).toEqual([])
   })
 })

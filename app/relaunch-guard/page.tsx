@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowRight, ArrowUpRight, Plus } from "lucide-react"
+import { FaqStructuredData, ServiceStructuredData } from "@/components/structured-data"
 import { pageTitle } from "@/lib/brand"
 import { guardHeroDisclaimer, guardPrimaryAction } from "@/lib/guard-offer"
 import { isMonitoringPersistenceEnabled } from "@/lib/monitoring/persistence-config"
@@ -51,6 +52,12 @@ export function GuardSalesView({ setupEnabled }: { setupEnabled: boolean }) {
 
   return (
     <div className={`${styles.page} font-sans`}>
+      <ServiceStructuredData
+        name="Relaunch Guard"
+        path="/relaunch-guard"
+        description="Our team checks your Google Business Profile and reviews each morning and evening, UK time, including weekends and bank holidays. We review concerning changes and email you with the details."
+      />
+      <FaqStructuredData questions={guardFaqs.map((item) => ({ q: item.q, a: item.a.join(" ") }))} />
       <section className={styles.heroBand} aria-labelledby="guard-title">
         <div className={styles.hero}>
           <div>

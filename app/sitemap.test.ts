@@ -32,6 +32,8 @@ describe("sitemap resources", () => {
       expect(urls).not.toContain(url)
     }
     expect(urls).toHaveLength(new Set(urls).size)
+    expect(urls).not.toContain(`${brandSiteUrl}/start-monitoring`)
+    expect(urls).not.toContain(`${brandSiteUrl}/relaunch-guard`)
   })
 
   it("emits no sitemap outside production", () => {

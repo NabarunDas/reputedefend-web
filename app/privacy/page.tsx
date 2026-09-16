@@ -37,7 +37,6 @@ const sections: LegalSection[] = [
     title: "What this notice covers",
     content: (
       <>
-        <p>Privacy notice updated: {privacyUpdated}</p>
         {privacyCovers.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       </>
     ),
@@ -149,9 +148,9 @@ const sections: LegalSection[] = [
     content: (
       <>
         {hasLegalValue(legalIdentity.retentionPeriod) ? (
-          <p>Enquiry information is kept for {legalIdentity.retentionPeriod}, unless a longer period is required to complete a request you have made or to meet a legal obligation.</p>
+          <p>Enquiry, case-submission and monitoring-setup information is kept for {legalIdentity.retentionPeriod}, unless a longer period is required to complete a request you have made or to meet a legal obligation.</p>
         ) : (
-          <p>We keep enquiry information only for as long as it is needed to respond, assess the situation, communicate about requested support and meet any legal obligations that apply. There is no single published retention period that applies to every submission.</p>
+          <p>We keep enquiry, case-submission and monitoring-setup information, including related activity and communication records, only for as long as needed to handle your request, provide agreed support and meet applicable legal obligations. The period depends on the type of record and why we need it.</p>
         )}
         <p>We do not publish a Google Analytics retention duration. Any such period is determined by the configured Google property and is not established in this notice.</p>
       </>
@@ -229,6 +228,7 @@ export default function PrivacyPage() {
       lead={privacyHero.lead}
       currentPath="/privacy"
       sections={sections}
+      updated={privacyUpdated}
     />
   )
 }

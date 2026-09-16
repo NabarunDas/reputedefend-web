@@ -25,7 +25,6 @@ describe("/privacy page", () => {
   it("renders monitoring fields, Supabase storage and the service-versus-marketing distinction", () => {
     render(<PrivacyPage />)
 
-    expect(screen.getByText(`Privacy notice updated: ${privacyUpdated}`)).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Relaunch Guard setup" })).toBeInTheDocument()
     expect(
       screen.getByText("When online monitoring setup is available, the form asks for:"),
@@ -49,14 +48,27 @@ describe("/privacy page", () => {
     ).toBeInTheDocument()
   })
 
-  it("keeps contact links working and does not change the shared legal notice date", () => {
+  it("displays the privacy revision date once and does not use the shared legal date", () => {
+    render(<PrivacyPage />)
+    const dates = screen.getAllByText(/^Last updated /)
+    expect(dates).toHaveLength(1)
+    expect(dates[0]).toHaveTextContent(`Last updated ${privacyUpdated}`)
+    expect(screen.queryByText(`Last updated ${legalIdentity.noticeUpdated}`)).not.toBeInTheDocument()
+    expect(screen.queryByText(`Privacy notice updated: ${privacyUpdated}`)).not.toBeInTheDocument()
+    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
+    expect(privacyUpdated).toBe("16 September 2026")
+    expect(privacyUpdated).not.toBe(legalIdentity.noticeUpdated)
+    expect(
+      screen.getByText(
+        "We keep enquiry, case-submission and monitoring-setup information, including related activity and communication records, only for as long as needed to handle your request, provide agreed support and meet applicable legal obligations. The period depends on the type of record and why we need it.",
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it("keeps contact links working", () => {
     render(<PrivacyPage />)
     const contactLinks = screen.getAllByRole("link", { name: "Contact" })
     expect(contactLinks.length).toBeGreaterThan(0)
     expect(contactLinks.every((link) => link.getAttribute("href") === "/contact")).toBe(true)
-    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
-    expect(privacyUpdated).toBe("16 September 2026")
-    expect(privacyUpdated).not.toBe(legalIdentity.noticeUpdated)
-    expect(screen.getByText(`Last updated ${legalIdentity.noticeUpdated}`)).toBeInTheDocument()
   })
 })

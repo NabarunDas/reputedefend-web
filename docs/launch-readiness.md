@@ -185,12 +185,14 @@ Never commit secret values. Placeholders in `.env.example` are not production cr
 | `ENQUIRY_SEND_CUSTOMER_ACK` | Send an ordinary enquiry customer acknowledgement | Optional; leave unset | Leave unset/false unless explicitly approved | Leave unset | No | Internal enquiry delivery only (preferred for launch). Does **not** control monitoring receipts |
 | `CASE_PERSISTENCE_ENABLED` | DB-backed Get Help case intake | Optional; exact `true` only | Exact `true` enables persistent case intake. Deployed value is an operational choice; this document does not change it | May be `true` in Preview after the relevant migration is applied | No | Get Help stays on the email-only path |
 | `MONITORING_PERSISTENCE_ENABLED` | Enables `/start-monitoring` and `/api/monitoring` intake | Optional; exact `true` only | Exact `true` enables monitoring intake. False/unset keeps setup unavailable and Guard actions pointing to Contact. Do not change the deployed value from this task | Same rule; Preview may already have been used for a controlled test | No | Guard sales page remains public; setup CTAs go to Contact |
-| `SUPABASE_URL` | Server Supabase project URL | Only when a persistence path runs | Required for enabled persistence paths. Deployed presence is an operational fact, not inferred from source | Required where Preview persistence is enabled | No | Persist path fails safely while the matching flag is false |
-| `SUPABASE_SECRET_KEY` | Server Supabase privileged key | Only when a persistence path runs | Required for enabled persistence paths. Deployed presence is an operational fact, not inferred from source | Required where Preview persistence is enabled | Yes | Persist path fails safely; never prefix with `NEXT_PUBLIC_` |
+| `SUPABASE_URL` | Server Supabase project URL | Only when a persistence path runs | Required when the corresponding persistence path is enabled | Required where Preview persistence is enabled | No | If that flag is enabled without this, intake cannot persist and must fail rather than succeed |
+| `SUPABASE_SECRET_KEY` | Server Supabase privileged key | Only when a persistence path runs | Required when the corresponding persistence path is enabled | Required where Preview persistence is enabled | Yes | If that flag is enabled without this, intake cannot persist and must fail rather than succeed. Never prefix with `NEXT_PUBLIC_` |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional GA4 web stream ID | **Optional / non-blocking** | Only after the GA4 stream is configured | Usually unset | No, but do not invent an ID | No banner, no script, no analytics cookies. Site launches normally. |
 | `GOOGLE_SITE_VERIFICATION` | Optional HTML-tag Search Console token | **Optional / non-blocking** | Only if using URL-prefix HTML verification | Usually unset | No | No verification meta tag. Site launches normally. |
 
 Display name on sent mail is `ProfileRelaunch <ENQUIRY_FROM_EMAIL>`. Changing that name does not change the mailbox domain.
+
+When a persistence flag is enabled but required Supabase configuration is missing, that intake cannot persist and must report failure rather than success. With case persistence disabled, Get Help uses its existing email-only route. With monitoring persistence disabled, monitoring setup is unavailable and Guard actions lead to Contact.
 
 If Preview currently has live Resend variables in Vercel, that is an operational choice. This PR does not silently disable Preview mail.
 
@@ -207,8 +209,8 @@ If Preview currently has live Resend variables in Vercel, that is an operational
 | `ENQUIRY_SEND_CUSTOMER_ACK` | Unset / not `true` | No | Production | Explicit product decision for ordinary enquiry acknowledgements only. Does not control monitoring receipts |
 | `CASE_PERSISTENCE_ENABLED` | Exact `true` only if persistent case intake should run | No | Production | Deployed value is an operational choice; this document does not change it |
 | `MONITORING_PERSISTENCE_ENABLED` | Exact `true` only if monitoring intake should run; otherwise unset/false | No | Production | Server-only. Do not change the deployed value from this task. Paid Guard activation still needs the operational checklist in “Before activating paid Guard monitoring” |
-| `SUPABASE_URL` | Set where an enabled persistence path needs it | No | Production / Preview as configured | Deployed project URL is an operational fact |
-| `SUPABASE_SECRET_KEY` | Set where an enabled persistence path needs it | No | Production / Preview as configured | Deployed secret is an operational fact; never in git |
+| `SUPABASE_URL` | Set when the corresponding persistence path is enabled | **Yes, when that persistence path is enabled** | Production / Preview as configured | Required for the enabled path; not a launch blocker when the matching flag is unset |
+| `SUPABASE_SECRET_KEY` | Set when the corresponding persistence path is enabled | **Yes, when that persistence path is enabled** | Production / Preview as configured | Required for the enabled path; never in git |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Unset is a valid launch state | **No** | Production after optional GA setup | GA4 stream + Enhanced Measurement off |
 | `GOOGLE_SITE_VERIFICATION` | Unset is a valid launch state | **No** | Production if using HTML-tag verification | Search Console token |
 

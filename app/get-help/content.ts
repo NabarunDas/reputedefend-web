@@ -21,9 +21,10 @@ export const getHelpRoutes = {
     copy: "Complete the assessment below.",
   },
   future: {
-    status: "Coming soon",
-    title: "Connect Google",
-    copy: "Future authorised connection for supported Business Profile and review information where Google permits.",
+    status: "Not available yet",
+    title: "Connect your Google Business Profile",
+    copy: "Google connection is not available yet. Use the assessment form below to request help without connecting your account.",
+    note: "There is no confirmed date for Google connection. Never share your Google password or verification codes.",
   },
 } as const
 

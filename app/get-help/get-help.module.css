@@ -123,11 +123,42 @@
   font-family: var(--font-display), Arial, sans-serif;
 }
 
-.routes p:last-child {
+.routeLive > p:not(.statusLive):not(.routeTitle),
+.routeSoon > p:not(.statusSoon):not(.routeTitle):not(.soonNote) {
   margin-top: 6px;
   font-size: 13px;
-  color: color-mix(in srgb, var(--paper) 72%, transparent);
+  color: color-mix(in srgb, var(--paper) 78%, transparent);
   line-height: 1.45;
+}
+
+.soonNote {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--paper) 78%, transparent);
+  line-height: 1.5;
+}
+
+.connectDisabled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  min-height: 44px;
+  min-width: 44px;
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--paper) 22%, transparent);
+  background: color-mix(in srgb, var(--paper) 10%, transparent);
+  color: color-mix(in srgb, var(--paper) 68%, transparent);
+  font-size: 14px;
+  font-weight: 750;
+  cursor: not-allowed;
+}
+
+.connectDisabled:disabled {
+  opacity: 1;
 }
 
 .trustStrip {

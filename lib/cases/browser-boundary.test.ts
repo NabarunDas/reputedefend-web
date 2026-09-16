@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 const clientFiles = [
   "../../components/case-intake-form.tsx",
+  "../../components/start-monitoring-form.tsx",
   "../../components/enquiry-form.tsx",
   "../../components/contact-form.tsx",
   "../../components/header.tsx",
@@ -20,6 +21,7 @@ describe("browser modules", () => {
       expect(source, relative).not.toMatch(/SUPABASE_SECRET_KEY|SUPABASE_URL|createSupabaseServerClient/)
       expect(source, relative).not.toMatch(/CASE_PERSISTENCE_ENABLED|persistGetHelpCase|create_case_intake_v1/)
       expect(source, relative).not.toMatch(/persistMonitoringRequest|create_monitoring_request_v1/)
+      expect(source, relative).not.toMatch(/MONITORING_PERSISTENCE_ENABLED|RESEND_API_KEY/)
       expect(source, relative).not.toMatch(/NEXT_PUBLIC_SUPABASE/)
     }
   })

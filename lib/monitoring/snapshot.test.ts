@@ -59,5 +59,17 @@ describe("parseMonitoringIntakeSnapshot", () => {
       ...buildMonitoringIntakeSnapshot(validInput),
       source: "get-help",
     })).toBeNull()
+    expect(parseMonitoringIntakeSnapshot({
+      ...buildMonitoringIntakeSnapshot(validInput),
+      termsAccepted: false,
+    })).toBeNull()
+    expect(parseMonitoringIntakeSnapshot({
+      ...buildMonitoringIntakeSnapshot(validInput),
+      numberOfLocations: 0,
+    })).toBeNull()
+    expect(parseMonitoringIntakeSnapshot({
+      ...buildMonitoringIntakeSnapshot(validInput),
+      numberOfLocations: 1001,
+    })).toBeNull()
   })
 })

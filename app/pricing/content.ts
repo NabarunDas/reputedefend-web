@@ -1,44 +1,57 @@
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { guardFaqs } from "@/app/relaunch-guard/content"
+import { guardOffer, guardPrice } from "@/lib/guard-offer"
+import { pricingGroups, pricingNote } from "@/lib/pricing"
 
 const recovery = pricingGroups[0]
 const review = pricingGroups[1]
-const guard = pricingGroups[2]
 const guidedRecovery = recovery.items[0]
 const managedRecovery = recovery.items[1]
 const guidedReview = review.items[0]
 const managedReview = review.items[1]
-const guardPlan = guard.items[0]
+
+const pricingPageLabel = "Pricing"
+
+function requiredGuardFaqAnswer(question: string) {
+  const faq = guardFaqs.find((item) => item.q === question)
+  const answer = faq?.a.join(" ").trim()
+  if (!answer) {
+    throw new Error(`Missing Guard FAQ answer for “${question}”`)
+  }
+  return answer
+}
 
 export const pricingHelpHref = "/get-help"
 export const pricingHowHref = "/how-it-works"
 export const pricingRecoveryHref = "/get-help?service=profile-recovery"
 export const pricingReviewHref = "/get-help?service=review"
+export const pricingGuardHref = "/relaunch-guard"
 
 export const pricingSeo = {
   titlePage: "Pricing — Google Business Profile Recovery & Review Support",
   description:
-    "Early Access pricing for Google Business Profile recovery, Google review protection and Relaunch Guard. Start with an assessment, then choose Guided or Managed support. Prices shown in GBP.",
+    "Compare Profile Recovery, Review Protection and Relaunch Guard monitoring. See what each service includes, what it costs and when you pay. Prices shown in GBP.",
 } as const
 
 export const pricingHero = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingPageLabel,
   titleLines: ["Clear pricing.", "Choose how much help you want."] as const,
   lead:
-    "Start with an assessment. If paid support is appropriate, choose Guided preparation or Managed case support. The price and payment trigger are clear before you proceed.",
+    "For a profile or review problem, start with an assessment. We explain the work and fee before you choose Guided or Managed support. If your profile is running normally, you can choose Relaunch Guard monitoring on its own.",
   primaryCta: "Start your assessment",
   primaryHref: pricingHelpHref,
-  secondaryCta: "See how it works",
-  secondaryHref: pricingHowHref,
-  supportLine: "Prices shown in GBP • Early Access pricing • Clear payment timing",
+  secondaryCta: "Explore monitoring",
+  secondaryHref: pricingGuardHref,
+  supportLine: "Prices in GBP • Clear fees • No obligation to proceed",
 } as const
 
 export const pricingVisual = {
-  chrome: ["Commercial model", earlyAccessLabel] as const,
+  chrome: ["Commercial model", pricingPageLabel] as const,
+  ariaLabel: "Prices for Profile Recovery, Review Protection and Relaunch Guard",
   assessment: {
-    label: "Start here",
+    label: "For profile and review problems",
     title: "Assessment",
     figure: "No fee to submit",
-    note: "Direction first. Paid support only if it makes sense.",
+    note: "We review the problem before you choose paid case support.",
   },
   rows: [
     {
@@ -66,20 +79,20 @@ export const pricingVisual = {
   ],
   guard: {
     name: "Relaunch Guard",
-    figure: `${guardPlan.price}/month/location`,
-    cadence: guardPlan.name,
+    figure: `${guardPrice}/month`,
+    cadence: "Per location",
   },
 } as const
 
 export const pricingTrustStrip = [
-  "Assessment first",
+  "Clear service options",
   "Guided or Managed",
   "Clear payment timing",
   "Prices shown in GBP",
 ] as const
 
 export const pricingStart = {
-  eyebrow: "Before paid work",
+  eyebrow: "For profile and review problems",
   title: "Start with the assessment. Choose paid support only if it makes sense.",
   lead:
     "You do not need to pick Guided or Managed before the case is understood. Submit the situation, receive a human review, then decide.",
@@ -257,32 +270,33 @@ export const pricingTiming = {
     },
     {
       kicker: "Relaunch Guard",
-      title: `${guardPlan.price}/month/location`,
-      copy: "A recurring fee when you activate managed monitoring. It is optional and not started automatically.",
+      title: `${guardPrice} per month, per location`,
+      copy: "We confirm your permission, Manager access and the profile’s starting condition before arranging payment. Monitoring starts when we confirm activation. Sending a setup request does not take payment.",
     },
   ],
   note: pricingNote,
 } as const
 
 export const pricingGuard = {
-  eyebrow: guard.title,
-  title: "Relaunch Guard",
-  kicker: guardPlan.name,
-  figure: guardPlan.price,
-  cadence: "/month/location",
-  spoken: `${guardPlan.price} per month, per location`,
-  model: "Early Access managed monitoring.",
+  eyebrow: "Relaunch Guard",
+  title: "Monitoring for your Google Business Profile",
+  kicker: "Profile and review monitoring",
+  figure: guardPrice,
+  cadence: "per month, per location",
+  spoken: `${guardPrice} per month, per location.`,
   lead:
-    "Optional Profile + Review monitoring after the immediate case. It is managed Early Access monitoring — not a self-service dashboard, and not a claim of instant suspension detection.",
+    "Use Guard on its own or add it after recovery. Our team checks your Google Business Profile and reviews each morning and evening, UK time, including weekends and bank holidays.",
   points: [
-    "Monitor relevant profile-health and status changes",
-    "Monitor review activity",
-    "Maintain a log of relevant monitoring activity later in the customer portal",
-    "Help surface changes sooner so you can decide what to do next",
+    "Two manual checks a day",
+    "Email alerts after we review a concerning change",
+    "One subscription for each Business Profile/location",
+    "Recovery work and review challenges are priced separately",
   ],
-  cta: "Ask about Relaunch Guard",
-  href: pricingHelpHref,
-  secondaryCta: "Start your assessment",
+  supporting:
+    "Checks are scheduled, not continuous. Guard cannot prevent a suspension or guarantee instant detection.",
+  cta: "Explore Relaunch Guard",
+  href: pricingGuardHref,
+  secondaryCta: "Get help with an existing problem",
   secondaryHref: pricingHelpHref,
 } as const
 
@@ -340,19 +354,31 @@ export const pricingFaqs = [
   },
   {
     q: "Is Relaunch Guard included?",
-    a: "No. Relaunch Guard is optional managed monitoring. It is not bundled automatically with Guided or Managed work, and it is not started without an explicit choice to activate it.",
+    a: `After successful Managed Profile Recovery, you can choose ${guardOffer.includedRecoveryDays} days of Guard for the restored location at no extra charge. The period starts when monitoring is activated. We remind you before it ends, and paid monitoring starts only if you choose to continue. This offer does not apply to Guided recovery or review services. The paid-member discount does not apply during the included period.`,
   },
   {
     q: "Is Relaunch Guard a subscription?",
-    a: `Yes. Relaunch Guard is ${guardPlan.price} per month, per location when activated. It is recurring managed monitoring, not a one-off case fee, and not a live self-service dashboard.`,
+    a: `Yes. Guard costs ${guardPrice} per month, per location. You can subscribe without a recovery or review case. We confirm your permission, Manager access and the profile’s starting condition before arranging payment and confirming activation.`,
   },
   {
     q: "Are prices shown in GBP?",
-    a: "Yes. Prices on this page are shown in GBP. Early Access pricing is the current commercial offer. Currency conversion, card fees and tax treatment are not defined on this page.",
+    a: "Yes. All prices on this page are shown in pounds sterling (GBP). We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.",
   },
   {
     q: "Is ProfileRelaunch available outside the UK?",
     a: "Yes. ProfileRelaunch is designed for businesses internationally, subject to whether the relevant Google process or service can be supported for that case. Availability depends on the Google route involved, not on a single-country service restriction.",
+  },
+  {
+    q: "Do Guard members receive a discount on case work?",
+    a: `Paid Guard members receive ${guardOffer.managedDiscountPercent}% off standard Managed Profile Recovery and Managed Review Protection fees for eligible new issues at the monitored location. The issue must arise while paid monitoring is active; pre-existing problems are excluded. The discount does not apply to Guided support, Guard subscriptions, custom or bulk quotations, or the included ${guardOffer.includedRecoveryDays}-day period. It cannot be combined with another offer. We agree the case fee before work starts. Cancelling Guard does not remove a discount already agreed for a case.`,
+  },
+  {
+    q: "How do I cancel Guard?",
+    a: requiredGuardFaqAnswer("How do I cancel?"),
+  },
+  {
+    q: "Can my monthly price change?",
+    a: requiredGuardFaqAnswer("Can the introductory price change?"),
   },
 ] as const
 

@@ -55,7 +55,7 @@ function IncludeList({ items, dark = false }: { items: readonly string[]; dark?:
 
 function PriceSnapshot() {
   return (
-    <figure className={s.visual} aria-label="Assessment first, then Early Access prices for Guided, Managed and Relaunch Guard">
+    <figure className={s.visual} aria-label={pricingVisual.ariaLabel}>
       <div className={s.visualChrome}>
         <span>{pricingVisual.chrome[0]}</span>
         <span>{pricingVisual.chrome[1]}</span>
@@ -338,12 +338,12 @@ export function PricingGuard() {
           <h2 id="guard-title">{pricingGuard.title}</h2>
           <p className={s.guardKicker}>{pricingGuard.kicker}</p>
           <p>{pricingGuard.lead}</p>
-          <p className={s.guardModel}>{pricingGuard.model}</p>
           <ul className={s.guardPoints}>
             {pricingGuard.points.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
+          <p className={s.guardSupport}>{pricingGuard.supporting}</p>
           <div className={s.actions}>
             <HelpLink href={pricingGuard.href} className={s.primaryOnDark}>
               {pricingGuard.cta}
@@ -359,7 +359,6 @@ export function PricingGuard() {
             {pricingGuard.figure}
             <span>{pricingGuard.cadence}</span>
           </strong>
-          <em>{pricingGuard.model}</em>
         </p>
       </div>
     </section>

@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
+import { guardFaqs } from "@/app/relaunch-guard/content"
+import { guardOffer, guardPrice } from "@/lib/guard-offer"
+import { pricingGroups } from "@/lib/pricing"
 import {
   pricingClarity,
   pricingClose,
   pricingCompare,
   pricingFaqs,
   pricingGuard,
+  pricingGuardHref,
   pricingHelpHref,
   pricingHero,
   pricingRecovery,
@@ -41,23 +44,44 @@ const recoveryGuided = pricingGroups[0].items[0]
 const recoveryManaged = pricingGroups[0].items[1]
 const reviewGuided = pricingGroups[1].items[0]
 const reviewManaged = pricingGroups[1].items[1]
-const guardPlan = pricingGroups[2].items[0]
+
+function faq(question: string) {
+  const item = pricingFaqs.find((entry) => entry.q === question)
+  expect(item, `Missing pricing FAQ: ${question}`).toBeDefined()
+  return item!
+}
+
+function guardSourceAnswer(question: string) {
+  const item = guardFaqs.find((entry) => entry.q === question)
+  const answer = item?.a.join(" ").trim()
+  expect(answer, `Missing Guard FAQ answer: ${question}`).toBeTruthy()
+  return answer!
+}
 
 describe("Pricing page copy", () => {
-  it("keeps the Early Access hero, assessment CTA and How It Works route", () => {
-    expect(pricingHero.eyebrow).toBe(earlyAccessLabel)
-    expect(pricingHero.eyebrow).toBe("Early Access pricing")
+  it("keeps the assessment CTA, pricing label and monitoring route", () => {
+    expect(pricingHero.eyebrow).toBe("Pricing")
+    expect(pricingVisual.chrome).toEqual(["Commercial model", "Pricing"])
     expect(pricingHero.titleLines[0]).toBe("Clear pricing.")
     expect(pricingHero.primaryCta).toBe("Start your assessment")
     expect(pricingHero.primaryHref).toBe("/get-help")
     expect(pricingHelpHref).toBe("/get-help")
-    expect(pricingHero.secondaryCta).toBe("See how it works")
-    expect(pricingHero.secondaryHref).toBe("/how-it-works")
+    expect(pricingHero.secondaryCta).toBe("Explore monitoring")
+    expect(pricingHero.secondaryHref).toBe("/relaunch-guard")
+    expect(pricingGuardHref).toBe("/relaunch-guard")
     expect(pricingClose.primaryHref).toBe("/get-help")
     expect(pricingClose.secondaryHref).toBe("/how-it-works")
-    expect(pricingHero.supportLine).toContain("Prices shown in GBP")
-    expect(pricingHero.supportLine).toContain("Early Access pricing")
-    expect(pricingHero.supportLine).toContain("Clear payment timing")
+    expect(pricingHero.supportLine).toBe("Prices in GBP • Clear fees • No obligation to proceed")
+    expect(pricingHero.lead).toContain("start with an assessment")
+    expect(pricingHero.lead).toContain("Relaunch Guard monitoring on its own")
+    expect(pricingTrustStrip[0]).toBe("Clear service options")
+    expect(pricingStart.eyebrow).toBe("For profile and review problems")
+    expect(pricingVisual.assessment.label).toBe("For profile and review problems")
+    expect(pricingVisual.assessment.note).toBe("We review the problem before you choose paid case support.")
+    expect(pricingVisual.ariaLabel).toBe("Prices for Profile Recovery, Review Protection and Relaunch Guard")
+    expect(pricingSeo.description).toBe(
+      "Compare Profile Recovery, Review Protection and Relaunch Guard monitoring. See what each service includes, what it costs and when you pay. Prices shown in GBP.",
+    )
   })
 
   it("locks Profile Recovery Guided £99 and Managed £299 with £0 today", () => {
@@ -89,19 +113,29 @@ describe("Pricing page copy", () => {
     expect(pricingReview.managed.href).toBe(pricingReviewHref)
   })
 
-  it("locks Relaunch Guard at £9.99/month/location without bundling it", () => {
+  it("uses the shared Guard price and sends Guard links to the sales page", () => {
+    expect(pricingGuard.figure).toBe(guardPrice)
     expect(pricingGuard.figure).toBe("£9.99")
-    expect(pricingGuard.figure).toBe(guardPlan.price)
-    expect(pricingGuard.cadence).toBe("/month/location")
-    expect(pricingGuard.spoken).toContain("per month, per location")
-    expect(pricingGuard.kicker).toBe("Profile + Review monitoring")
-    expect(pricingGuard.model.toLowerCase()).toContain("early access managed monitoring")
-    expect(copy).toContain("£9.99/month/location")
+    expect(pricingGuard.cadence).toBe("per month, per location")
+    expect(pricingGuard.spoken).toBe(`${guardPrice} per month, per location.`)
+    expect(pricingGuard.kicker).toBe("Profile and review monitoring")
+    expect(pricingGuard.title).toBe("Monitoring for your Google Business Profile")
+    expect(pricingGuard.lead).toContain("Our team checks")
+    expect(pricingGuard.points[0]).toBe("Two manual checks a day")
+    expect(pricingGuard.supporting).toContain("not continuous")
+    expect(pricingVisual.guard.figure).toBe(`${guardPrice}/month`)
+    expect(pricingVisual.guard.cadence).toBe("Per location")
+    expect(pricingTiming.items[2].title).toBe(`${guardPrice} per month, per location`)
+    expect(pricingTiming.items[2].copy).toContain("Sending a setup request does not take payment")
+    expect(copy).toContain(`${guardPrice}/month`)
+    expect(copy).not.toContain("/month/location")
     expect(copy.toLowerCase()).not.toContain("30 days free")
-    expect(copy.toLowerCase()).not.toContain("included with managed")
     expect(copy.toLowerCase()).not.toContain("automatic subscription")
-    expect(pricingFaqs.find((item) => item.q.includes("Guard included"))?.a.toLowerCase()).toContain("not bundled")
-    expect(pricingGuard.href).toBe("/get-help")
+    expect(pricingGuard.href).toBe("/relaunch-guard")
+    expect(pricingGuard.cta).toBe("Explore Relaunch Guard")
+    expect(pricingGuard.secondaryCta).toBe("Get help with an existing problem")
+    expect(pricingGuard.secondaryHref).toBe("/get-help")
+    expect(pricingHero.secondaryHref).toBe("/relaunch-guard")
   })
 
   it("explains Guided vs Managed, success-fee timing and assessment-first value", () => {
@@ -120,7 +154,43 @@ describe("Pricing page copy", () => {
     expect(copy.toLowerCase()).not.toContain("no win no fee")
   })
 
-  it("does not invent future prices, discounts, VAT claims or a UK-only restriction", () => {
+  it("keeps included Guard optional, discount exclusions visible and Guard FAQs sourced", () => {
+    const included = faq("Is Relaunch Guard included?")
+    expect(included.a).toContain(`${guardOffer.includedRecoveryDays} days of Guard`)
+    expect(included.a).toContain("The period starts when monitoring is activated")
+    expect(included.a).toContain("paid monitoring starts only if you choose to continue")
+    expect(included.a).toContain("does not apply to Guided recovery or review services")
+
+    const subscription = faq("Is Relaunch Guard a subscription?")
+    expect(subscription.a).toBe(
+      `Yes. Guard costs ${guardPrice} per month, per location. You can subscribe without a recovery or review case. We confirm your permission, Manager access and the profile’s starting condition before arranging payment and confirming activation.`,
+    )
+
+    const discount = faq("Do Guard members receive a discount on case work?")
+    expect(discount.a).toContain(`${guardOffer.managedDiscountPercent}% off`)
+    expect(discount.a).toContain("pre-existing problems are excluded")
+    expect(discount.a).toContain("does not apply to Guided support, Guard subscriptions, custom or bulk quotations")
+    expect(discount.a).toContain(`included ${guardOffer.includedRecoveryDays}-day period`)
+    expect(discount.a).toContain("It cannot be combined with another offer")
+
+    expect(faq("How do I cancel Guard?").a).toBe(guardSourceAnswer("How do I cancel?"))
+    expect(faq("Can my monthly price change?").q).toBe("Can my monthly price change?")
+    expect(faq("Can my monthly price change?").a).toBe(guardSourceAnswer("Can the introductory price change?"))
+    expect(faq("Can my monthly price change?").a).toContain("at least 30 days")
+    expect(faq("Can my monthly price change?").a).toContain("accept the change before charging the higher price")
+    expect(faq("Can my monthly price change?").a).toContain("subscription ends before that renewal")
+
+    expect(faq("Are prices shown in GBP?").a).toBe(
+      "Yes. All prices on this page are shown in pounds sterling (GBP). We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.",
+    )
+  })
+
+  it("does not present Early Access, introductory, VAT or UK-only claims on the pricing page", () => {
+    expect(copy).not.toMatch(/Early Access/i)
+    expect(copy).not.toMatch(/introductory/i)
+    expect(copy).not.toMatch(/\bbeta\b/i)
+    expect(copy).not.toMatch(/\bpilot\b/i)
+    expect(copy).not.toMatch(/launch pricing/i)
     expect(copy).not.toContain("£399")
     expect(copy).not.toContain("£17.99")
     expect(copy.toLowerCase()).not.toMatch(/was £|save £|crossed-out|strikethrough/)
@@ -144,6 +214,9 @@ describe("Pricing page copy", () => {
     expect(questions).toMatch(/switch from Guided to Managed/)
     expect(questions).toMatch(/Guard included/)
     expect(questions).toMatch(/Guard a subscription/)
+    expect(questions).toMatch(/discount on case work/)
+    expect(questions).toMatch(/cancel Guard/)
+    expect(questions).toMatch(/monthly price change/)
     expect(pricingFaqs.find((item) => item.q.includes("switch"))?.a.toLowerCase()).not.toMatch(/\bcredit|\brefund|price-offset/)
   })
 })

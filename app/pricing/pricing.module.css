@@ -700,7 +700,7 @@
   align-items: start;
 }
 
-.guard > div > p:not(.eyebrow):not(.guardKicker):not(.guardModel) {
+.guard > div > p:not(.eyebrow):not(.guardKicker) {
   margin-top: 18px;
   color: color-mix(in srgb, var(--paper) 78%, transparent);
   font-size: 17px;
@@ -711,13 +711,6 @@
   margin: 16px 0 0;
   font-size: 14px;
   font-weight: 750;
-  color: var(--lime);
-}
-
-.guardModel {
-  margin-top: 14px;
-  font-size: 15px;
-  font-weight: 700;
   color: var(--lime);
 }
 
@@ -734,6 +727,10 @@
   font-size: 15px;
   font-weight: 650;
   color: color-mix(in srgb, var(--paper) 84%, transparent);
+}
+
+.guardSupport {
+  margin-top: 22px;
 }
 
 .guardPrice {
@@ -756,16 +753,14 @@
   font-size: clamp(16px, 2vw, 22px);
   letter-spacing: -.02em;
   font-weight: 700;
+  line-height: 1.25;
   color: var(--paper);
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
-.guardPrice em {
-  display: block;
-  margin-top: 16px;
-  font-style: normal;
-  font-size: 14px;
-  font-weight: 650;
-  color: color-mix(in srgb, var(--paper) 68%, transparent);
+.guard .actions a {
+  white-space: normal;
 }
 
 .guard a:focus-visible { outline-color: var(--lime); }

@@ -1,0 +1,19 @@
+.lockedControl:disabled,
+.lockedControl:read-only {
+  opacity: 1;
+  color: inherit;
+  background: #fff;
+  -webkit-text-fill-color: inherit;
+  cursor: default;
+}
+
+.lockedCheck:disabled {
+  opacity: 1;
+  cursor: default;
+  accent-color: var(--green, #215c45);
+}
+
+.correctLink {
+  display: inline-block;
+  margin-top: 8px;
+}

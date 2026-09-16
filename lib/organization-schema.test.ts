@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { brandName, brandSiteUrl } from "@/lib/brand"
 import { organizationSchema, serviceSchema } from "@/lib/organization-schema"
 import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
-import { primaryNav, informationNav, sitemapPaths } from "@/lib/site-nav"
+import { primaryNav, informationNav, serviceNav, sitemapPaths } from "@/lib/site-nav"
 
 describe("organization schema", () => {
   it("identifies ProfileRelaunch on profilerelaunch.com without invented claims", () => {
@@ -54,9 +54,12 @@ describe("pricing", () => {
 
 describe("navigation", () => {
   it("keeps Pricing in the primary nav and Cookies in information links and sitemap", () => {
-    expect(primaryNav.map((item) => item.href)).toEqual([
+    expect(serviceNav.map((item) => item.href)).toEqual([
       "/business-profile-recovery",
       "/review-protection",
+      "/relaunch-guard",
+    ])
+    expect(primaryNav.map((item) => item.href)).toEqual([
       "/how-it-works",
       "/pricing",
       "/about",

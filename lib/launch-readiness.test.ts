@@ -5,7 +5,7 @@ import { formattedFromAddress } from "@/lib/enquiry-config"
 import { customerAcknowledgementSubject, enquiryEmailSubject } from "@/lib/enquiry-email"
 import { legalIdentity } from "@/lib/legal"
 import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
-import { informationNav, primaryNav, sitemapPaths } from "@/lib/site-nav"
+import { informationNav, primaryNav, serviceNav, sitemapPaths } from "@/lib/site-nav"
 import { homepageFaqs } from "@/lib/homepage-content"
 import { recoveryFaqs } from "@/app/business-profile-recovery/content"
 import { privacyAnalytics, privacyNoUpload } from "@/app/privacy/content"
@@ -66,15 +66,24 @@ describe("launch readiness", () => {
       "/terms",
       "/disclaimer",
     ])
-    expect(primaryNav.map((item) => item.label)).toEqual([
+    expect(serviceNav.map((item) => item.label)).toEqual([
       "Profile Recovery",
       "Review Protection",
+      "Relaunch Guard",
+    ])
+    expect(serviceNav.map((item) => item.href)).toEqual([
+      "/business-profile-recovery",
+      "/review-protection",
+      "/relaunch-guard",
+    ])
+    expect(primaryNav.map((item) => item.label)).toEqual([
       "How It Works",
       "Pricing",
       "About",
     ])
     expect(informationNav.map((item) => item.label)).toContain("Cookies")
     expect(primaryNav.map((item) => item.href)).not.toContain("/cookies")
+    expect(primaryNav.map((item) => item.href)).not.toContain("/relaunch-guard")
   })
 
   it("locks current Early Access prices and does not commit a fake GA id", () => {

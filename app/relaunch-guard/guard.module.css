@@ -31,14 +31,13 @@
   font-weight: 750;
 }
 
-.page p {
+.page :where(p) {
   font-size: 16px;
   line-height: 1.65;
 }
 
 .page svg { flex-shrink: 0; }
-.page ul,
-.page ol { list-style: none; margin: 0; padding: 0; }
+.page :where(ul, ol) { list-style: none; margin: 0; padding: 0; }
 
 .page a:focus-visible,
 .page summary:focus-visible {

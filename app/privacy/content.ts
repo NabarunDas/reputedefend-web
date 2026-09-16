@@ -3,8 +3,10 @@ import { brandName } from "@/lib/brand"
 export const privacySeo = {
   titlePage: "Privacy notice",
   description:
-    "How ProfileRelaunch handles information submitted through this website, including general enquiries, case-intake submissions and optional analytics consent.",
+    "How ProfileRelaunch handles information from enquiries, case submissions and Relaunch Guard setup requests, including storage, email delivery and optional analytics.",
 } as const
+
+export const privacyUpdated = "16 September 2026"
 
 export const privacyHero = {
   eyebrow: "Privacy",
@@ -13,7 +15,7 @@ export const privacyHero = {
 } as const
 
 export const privacyCovers = [
-  "This notice explains how information is handled on this website. It reflects the current site: public information pages, enquiry forms, optional analytics if configured, and a cookie preference. It is not an account product, a customer dashboard or a payment system.",
+  "This notice covers information collected through our public website, enquiry forms, case submissions and Relaunch Guard setup requests, together with optional analytics and cookie preferences. Sending a form does not create a customer login or take payment.",
   "Submitting a form does not, by itself, create a client or paid-service relationship. Any later support, and any associated fees, are explained before you decide how to proceed.",
 ] as const
 
@@ -44,12 +46,24 @@ export const privacyCaseFields = [
   "confirmation that you have read this privacy information",
 ] as const
 
+export const privacyMonitoringFields = [
+  "your name and email address",
+  "an optional phone number",
+  "business name and country",
+  "an optional website address",
+  "the Google Business Profile link for the main location",
+  "the number of locations you would like monitored",
+  "confirmation that you are authorised to request setup and that the information provided is accurate",
+] as const
+
 export const privacyUses = [
   "respond to an enquiry",
   "assess a case you have asked us to look at",
   "communicate about requested support",
   "ask for clarification where the information is incomplete",
   "maintain reasonable security and reduce automated or abusive submissions",
+  "review a monitoring setup request and arrange the next setup steps",
+  "keep a record of the request and related service communications",
 ] as const
 
 export const privacyAnalytics = [
@@ -62,7 +76,7 @@ export const privacyAnalytics = [
 ] as const
 
 export const privacyMarketing =
-  "No marketing email consent is collected on this website. The accuracy and privacy confirmations on Get Help record that you have checked the information and have read this notice. They are not marketing consent. There is no newsletter signup."
+  "We do not collect marketing email consent through these forms. The confirmations on our case and monitoring forms relate to your request; they do not subscribe you to marketing emails. Messages about a request you have submitted are service communications. There is no newsletter signup."
 
 export const privacyNoUpload =
   "This website does not currently provide file or screenshot upload. Do not treat the enquiry forms as a document portal."

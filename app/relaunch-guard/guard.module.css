@@ -334,6 +334,9 @@
 .benefit summary svg,
 .faqList summary svg { color: var(--green); }
 
+.benefit details[open] summary svg,
+.faqList details[open] summary svg { transform: rotate(45deg); }
+
 .benefit details p,
 .faqList details p {
   padding-bottom: 16px;

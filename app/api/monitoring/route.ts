@@ -8,8 +8,14 @@ import { checkEnquiryRateLimit, enquiryClientKey } from "@/lib/enquiry-rate-limi
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
+  let raw: unknown
   try {
-    const raw: unknown = await request.json()
+    raw = await request.json()
+  } catch {
+    return NextResponse.json({ ok: false, message: "Unable to process this request right now." }, { status: 400 })
+  }
+
+  try {
     const checked = validateMonitoringRequest(raw)
     if (!checked.valid) {
       return NextResponse.json(
@@ -37,6 +43,6 @@ export async function POST(request: Request) {
     const result = await persistMonitoringRequest(checked.data, submissionKey)
     return NextResponse.json(result, { status: result.ok ? 200 : 503 })
   } catch {
-    return NextResponse.json({ ok: false, message: "Unable to process this request right now." }, { status: 400 })
+    return NextResponse.json({ ok: false, message: MONITORING_UNAVAILABLE }, { status: 503 })
   }
 }

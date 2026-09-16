@@ -1,17 +1,26 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { persistMonitoringRequest, type CreateMonitoringRequestV1Args, type MonitoringIntakeRpcResult } from "@/lib/monitoring/intake"
+import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import { buildMonitoringIntakeSnapshot } from "@/lib/monitoring/snapshot"
 import type { MonitoringIntakeInput } from "@/lib/monitoring/snapshot"
-import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
+import type { EnquiryProvider } from "@/lib/enquiry-provider"
 import type { Database } from "@/lib/supabase/database"
 
-vi.mock("@/lib/providers/resend-enquiry-provider", () => ({
-  createResendEnquiryProvider: () => {
+const { createResendEnquiryProvider } = vi.hoisted(() => ({
+  createResendEnquiryProvider: vi.fn(() => {
     throw new Error("Resend must be mocked; tests must never send real email")
-  },
+  }),
 }))
+
+vi.mock("@/lib/providers/resend-enquiry-provider", () => ({
+  createResendEnquiryProvider,
+}))
+
+afterEach(() => {
+  createResendEnquiryProvider.mockClear()
+})
 
 const intakeSource = readFileSync(
   fileURLToPath(new URL("./intake.ts", import.meta.url)),
@@ -221,6 +230,180 @@ describe("persistMonitoringRequest", () => {
     expect(result.persisted).toBe(true)
     expect(send).not.toHaveBeenCalled()
     expect(updates.some((value) => value.status === "FAILED")).toBe(true)
+  })
+
+  it("returns failure without emails when the RPC rejects", async () => {
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_123" }))
+    const updates: Array<[string, Database["public"]["Tables"]["communications"]["Update"]]> = []
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => {
+        throw new Error("create_monitoring_request_v1 failed with monitoring_request_id")
+      },
+      updateCommunication: async (id, values) => {
+        updates.push([id, values])
+      },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result).toEqual({ ok: false, message: ENQUIRY_UNAVAILABLE })
+    expect(result.persisted).not.toBe(true)
+    expect(result.receiptEmailSent).not.toBe(true)
+    expect(send).not.toHaveBeenCalled()
+    expect(updates).toEqual([])
+    expect(JSON.stringify(result)).not.toMatch(/monitoring_request_id|re_test_key/i)
+  })
+
+  it("keeps persisted success when a communication update rejects before sending", async () => {
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_after_ledger_fail" }))
+    const logged: unknown[][] = []
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args)
+    })
+    try {
+      const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+        createRequest: async () => rpcRow(),
+        updateCommunication: async () => {
+          throw new Error("ledger update rejected for alex@example.com re_test_key")
+        },
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: true })
+      expect(send).toHaveBeenCalled()
+      expect(JSON.stringify(result)).not.toMatch(/alex@example.com|re_test_key|ledger update rejected/)
+      expect(logged.some((entry) => String(entry[0]).includes("communication-ledger-update-failed"))).toBe(true)
+      expect(JSON.stringify(logged)).not.toContain("alex@example.com")
+      expect(JSON.stringify(logged)).not.toContain("re_test_key")
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("still attempts the internal email when customer processing fails", async () => {
+    const send = vi.fn<EnquiryProvider["send"]>(async (message) => {
+      if (message.kind === "customer-ack") {
+        throw new Error("customer provider exploded for alex@example.com")
+      }
+      return { ok: true, id: "internal_ok" }
+    })
+    const updates: Array<[string, Database["public"]["Tables"]["communications"]["Update"]]> = []
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => rpcRow(),
+      updateCommunication: async (id, values) => {
+        if (id === "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee") {
+          throw new Error("customer ledger exploded")
+        }
+        updates.push([id, values])
+      },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: false })
+    expect(send.mock.calls.some(([message]) => message.kind === "internal")).toBe(true)
+    expect(updates.some(([id, value]) => (
+      id === "ffffffff-ffff-4fff-8fff-ffffffffffff" && value.status === "SENT"
+    ))).toBe(true)
+  })
+
+  it("keeps receiptEmailSent true when provider accepted but the SENT ledger write rejects", async () => {
+    const send = vi.fn(async () => ({ ok: true as const, id: "accepted_customer" }))
+    const updates: Array<[string, Database["public"]["Tables"]["communications"]["Update"]]> = []
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => rpcRow({
+        internal_communication_status: "SENT",
+      }),
+      updateCommunication: async (id, values) => {
+        updates.push([id, values])
+        if (id === "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" && values.status === "SENT") {
+          throw new Error("cannot write SENT for eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+        }
+      },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result).toMatchObject({ ok: true, persisted: true, receiptEmailSent: true })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(updates.some(([, value]) => (
+      value.status === "FAILED" && value.error_message === "Delivery failed."
+    ))).toBe(false)
+  })
+
+  it("keeps customer receiptEmailSent true when later internal processing fails", async () => {
+    const send = vi.fn<EnquiryProvider["send"]>(async (message) => {
+      if (message.kind === "internal") {
+        throw new Error("internal provider exploded")
+      }
+      return { ok: true, id: "customer_ok" }
+    })
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => rpcRow(),
+      updateCommunication: async (id) => {
+        if (id === "ffffffff-ffff-4fff-8fff-ffffffffffff") {
+          throw new Error("internal ledger exploded")
+        }
+      },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: true })
+  })
+
+  it("returns persisted success when an invalid snapshot cannot be marked FAILED", async () => {
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_123" }))
+    const result = await persistMonitoringRequest(
+      { ...validInput, businessName: "Beta Ltd", email: "changed@example.com" },
+      SUBMISSION_KEY,
+      {
+        createRequest: async () => rpcRow({
+          intake_snapshot: { corrupted: true },
+          customer_communication_recipient: "original@example.com",
+        }),
+        updateCommunication: async () => {
+          throw new Error("cannot record FAILED for original@example.com")
+        },
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      },
+    )
+    expect(result).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: false })
+    expect(send).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain("changed@example.com")
+    expect(JSON.stringify(result)).not.toContain("original@example.com")
+  })
+
+  it("returns persisted success when provider setup fails after the RPC", async () => {
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => rpcRow(),
+      updateCommunication: async () => {},
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(createResendEnquiryProvider).toHaveBeenCalled()
+    expect(result).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: false })
+    expect(JSON.stringify(result)).not.toMatch(/Resend must be mocked|re_test_key/)
+  })
+
+  it("does not initialise a provider when both communications are already SENT", async () => {
+    const result = await persistMonitoringRequest(validInput, SUBMISSION_KEY, {
+      createRequest: async () => rpcRow({
+        was_existing: true,
+        customer_communication_status: "SENT",
+        internal_communication_status: "SENT",
+      }),
+      updateCommunication: async () => {
+        throw new Error("ledger should not be used")
+      },
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result).toMatchObject({ ok: true, persisted: true, receiptEmailSent: true })
+    expect(createResendEnquiryProvider).not.toHaveBeenCalled()
   })
 
   it("does not send to the current request recipient when the persisted recipient is missing", async () => {

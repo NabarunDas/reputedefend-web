@@ -112,4 +112,50 @@ describe("POST /api/monitoring", () => {
     expect(serialized).not.toMatch(/communication/i)
     expect(serialized).not.toMatch(/caseRef|publicRef|PR-|RV-|GR-/)
   })
+
+  it("returns 200 when the request is persisted but the receipt email was not sent", async () => {
+    vi.stubEnv("MONITORING_PERSISTENCE_ENABLED", "true")
+    persistMonitoringRequest.mockResolvedValue({
+      ok: true,
+      persisted: true,
+      status: "REQUESTED",
+      receiptEmailSent: false,
+      message: "Your Relaunch Guard setup request has been received.",
+    })
+    const { POST } = await import("@/app/api/monitoring/route")
+    const response = await POST(post({ ...valid, submissionKey: SUBMISSION_KEY }))
+    const json = await response.json() as Record<string, unknown>
+    expect(response.status).toBe(200)
+    expect(json).toMatchObject({ ok: true, persisted: true, status: "REQUESTED", receiptEmailSent: false })
+  })
+
+  it("returns 400 for malformed JSON", async () => {
+    const { POST } = await import("@/app/api/monitoring/route")
+    const response = await POST(new Request("http://localhost/api/monitoring", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not-json",
+    }))
+    const json = await response.json() as Record<string, unknown>
+    expect(response.status).toBe(400)
+    expect(json.ok).toBe(false)
+    expect(persistMonitoringRequest).not.toHaveBeenCalled()
+    expect(JSON.stringify(json)).not.toMatch(/SyntaxError|Unexpected token|stack/i)
+  })
+
+  it("returns a generic 503 when the monitoring service rejects unexpectedly", async () => {
+    vi.stubEnv("MONITORING_PERSISTENCE_ENABLED", "true")
+    persistMonitoringRequest.mockRejectedValue(
+      new Error("boom monitoring_request_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa re_live_secret"),
+    )
+    const { POST } = await import("@/app/api/monitoring/route")
+    const response = await POST(post({ ...valid, submissionKey: SUBMISSION_KEY }))
+    const json = await response.json() as Record<string, unknown>
+    expect(response.status).toBe(503)
+    expect(json.ok).toBe(false)
+    expect(json.message).toBe(MONITORING_UNAVAILABLE)
+    expect(json.persisted).not.toBe(true)
+    const serialized = JSON.stringify(json)
+    expect(serialized).not.toMatch(/monitoring_request_id|aaaaaaaa-aaaa|re_live_secret|boom/i)
+  })
 })

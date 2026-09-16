@@ -188,6 +188,9 @@ button, input, textarea, select { font: inherit; }
 .services-disclosure { position: relative; }
 
 .services-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   min-height: 44px;
   padding: 0;
   border: 0;

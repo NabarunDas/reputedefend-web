@@ -32,4 +32,11 @@ describe("Footer explore navigation", () => {
     ])
     expect(new Set(hrefs.map(([, href]) => href)).size).toBe(hrefs.length)
   })
+
+  it("shows the ProfileRelaunch contact mailbox", () => {
+    render(<Footer />)
+    const email = screen.getByRole("link", { name: "contact@profilerelaunch.com" })
+    expect(email).toHaveAttribute("href", "mailto:contact@profilerelaunch.com")
+    expect(screen.queryByText("contact@reputedefend.com")).not.toBeInTheDocument()
+  })
 })

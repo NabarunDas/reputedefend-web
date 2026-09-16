@@ -68,7 +68,7 @@ describe("Privacy notice copy", () => {
     expect(legalIdentity.legalName).toBe("Saswati Das")
     expect(legalIdentity.tradingName).toBe("ProfileRelaunch")
     expect(legalIdentity.businessStructure).toBe("sole-trader")
-    expect(legalIdentity.contactEmail).toBe("contact@reputedefend.com")
+    expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
     expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
     expect(copy).not.toMatch(/for uk businesses|uk-only|uk customers only/)
   })

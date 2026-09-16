@@ -12,9 +12,7 @@
  * Sole-trader mode must not display company registration, “Ltd”, “registered
  * office” or Companies House wording.
  *
- * Contact email remains on the existing ReputeDefend mailbox until the owner
- * migrates Workspace/Resend to @profilerelaunch.com. Do not invent a new
- * address in this stage.
+ * Public contact email uses the ProfileRelaunch domain.
  */
 import { brandName, brandSiteUrl } from "@/lib/brand"
 
@@ -45,7 +43,7 @@ export const legalIdentity: LegalIdentity = {
   noticeUpdated: "13 September 2026",
   businessStructure: "sole-trader",
   legalName: "Saswati Das",
-  contactEmail: "contact@reputedefend.com",
+  contactEmail: "contact@profilerelaunch.com",
   postalAddress: "6 Bradford Road\nOld Town\nSwindon\nSN1 4FE\nUnited Kingdom",
   enquiryProcessorName: "Resend",
 }

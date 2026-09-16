@@ -98,8 +98,8 @@ describe("launch readiness", () => {
     expect(privacyNoUpload.toLowerCase()).toContain("does not currently provide file")
   })
 
-  it("does not invent a live @profilerelaunch.com mailbox in committed config", () => {
-    expect(legalIdentity.contactEmail).toBe("contact@reputedefend.com")
+  it("publishes the ProfileRelaunch public contact mailbox without changing enquiry From example", () => {
+    expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
     expect(envExample).toContain("enquiries@reputedefend.com")
     expect(envExample).not.toContain("contact@profilerelaunch.com")
     expect(envExample).not.toContain("ENQUIRY_SEND_CUSTOMER_ACK=true")

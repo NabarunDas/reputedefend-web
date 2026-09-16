@@ -64,11 +64,11 @@ describe("Contact page copy", () => {
     expect(contactSeo.description.toLowerCase()).not.toContain("united kingdom only")
   })
 
-  it("keeps the verified public contact mailbox and does not invent a new one", () => {
+  it("publishes the ProfileRelaunch public contact mailbox", () => {
     expect(contactIdentity.emailLabel).toBe("Prefer email?")
     expect(contactIdentity.email).toBe(legalIdentity.contactEmail)
-    expect(contactIdentity.email).toBe("contact@reputedefend.com")
-    expect(copy).not.toContain("contact@profilerelaunch.com")
+    expect(contactIdentity.email).toBe("contact@profilerelaunch.com")
+    expect(copy).not.toContain("contact@reputedefend.com")
     expect(contactPrivacyHref).toBe("/privacy")
   })
 

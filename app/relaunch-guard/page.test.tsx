@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
@@ -16,7 +16,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("./guard.module.css", () => ({ default: new Proxy({}, { get: (_target, key) => String(key) }) }))
 
-const pageSource = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8")
+const pageSource = readFileSync(join(process.cwd(), "app/relaunch-guard/page.tsx"), "utf8")
 
 function hrefsNamed(name: string) {
   return screen.getAllByRole("link", { name }).map((link) => link.getAttribute("href"))

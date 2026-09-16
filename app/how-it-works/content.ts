@@ -17,7 +17,7 @@ export const howReviewHref = "/review-protection"
 export const howSeo = {
   titlePage: "How It Works — Google Profile Recovery & Review Process",
   description:
-    "How ProfileRelaunch works: tell us what happened, receive a human assessment of your Google Business Profile or review issue, then choose Guided or Managed support. Google Connect is coming soon.",
+    "See how ProfileRelaunch handles profile and review enquiries, explains Guided and Managed support, and sets up optional Relaunch Guard monitoring.",
 } as const
 
 export const howHero = {
@@ -63,36 +63,32 @@ export const howTrustStrip = [
 
 export const howStart = {
   eyebrow: "How you begin",
-  title: "Two ways to start. One assessment process.",
+  title: "Start by telling us what happened.",
   lead:
-    "Both routes feed the same human review. Today you tell us what happened. A Google connection is planned for later, once a supported integration is available.",
+    "Share the problem and any relevant links. Our team reviews the details and explains the next step.",
   live: {
     status: "Available now",
     title: "Tell us what happened",
     copy:
-      "Describe what changed, share links, notices or screenshots where you have them, and tell us what you have already tried. A person reviews it. This remains the live production route even after automation exists.",
+      "Tell us what changed, share the profile or review link, and explain what you have already tried. You do not need to know what caused the problem.",
     points: [
-      "Describe what changed",
-      "Provide links, notices or screenshots where available",
-      "Explain previous attempts",
-      "Human assessment",
-      "Permanent route",
+      "Describe the problem",
+      "Share relevant links",
+      "Tell us what you have already tried",
+      "A person reviews your enquiry",
     ],
     cta: "Start your assessment",
     href: howHelpHref,
   },
   future: {
-    status: "Coming soon",
-    title: "Connect Google",
-    copy:
-      "A future authorised connection, intended to retrieve supported Business Profile and review information where Google permits. Customer authorisation would be required. The same assessment process would follow once information is retrieved.",
+    status: "Not available yet",
+    title: "Connect your Google Business Profile",
+    copy: "Google connection is not available yet. You can still request help using our form.",
     points: [
-      "Authorised connection, when supported",
-      "Retrieve permitted profile or review information",
-      "Customer authorisation required",
-      "Same assessment process after retrieval",
+      "No Google connection is needed to send an enquiry",
+      "If Manager access is needed later, we explain how to grant it",
     ],
-    note: "Not live yet. Pending supported integration and API availability. This page does not offer a live Google connection.",
+    note: "There is no confirmed date for Google connection. We will never ask for your Google password or verification codes.",
   },
 } as const
 
@@ -340,6 +336,8 @@ export const howGuard = {
   figure: guardPlan.price,
   cadence: guardPlan.cadence,
   model: "Our team checks your profile and reviews each morning and evening, UK time, including weekends and bank holidays. We review concerning changes and email you with the details. Checks are scheduled, not continuous.",
+  cta: "Explore Relaunch Guard",
+  href: "/relaunch-guard",
 } as const
 
 export const howTimeline = {
@@ -371,7 +369,7 @@ export const howFaqs = [
   },
   {
     q: "Can I connect my Google account?",
-    a: "Not yet. Connect Google is Coming Soon, pending supported integration and API availability. There is no launch date. Until then, tell us what happened — that is the live production route.",
+    a: "Not yet. You can send an enquiry without connecting Google. If we need Manager access for agreed case work or monitoring, we explain how to grant it separately. You keep ownership and never need to share your password or verification codes. There is no confirmed date for Google connection.",
   },
   {
     q: "Will you need my password?",

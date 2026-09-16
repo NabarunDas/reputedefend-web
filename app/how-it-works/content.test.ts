@@ -48,13 +48,18 @@ describe("How It Works page copy", () => {
     expect(howClose.primaryHref).toBe("/get-help")
   })
 
-  it("marks Connect Google as Coming Soon without a fake connection", () => {
-    expect(howStart.future.status).toBe("Coming soon")
-    expect(howStart.future.title).toBe("Connect Google")
-    expect(howStart.future.note.toLowerCase()).toContain("not live yet")
+  it("marks Google connection as unavailable without a fake integration", () => {
+    expect(howStart.title).toBe("Start by telling us what happened.")
+    expect(howStart.future.status).toBe("Not available yet")
+    expect(howStart.future.title).toBe("Connect your Google Business Profile")
+    expect(howStart.future.note).toContain("no confirmed date for Google connection")
+    expect(howStart.future.note.toLowerCase()).toContain("never ask for your google password")
     expect(copy.toLowerCase()).not.toMatch(/\bconnect now\b/)
     expect(copy.toLowerCase()).not.toMatch(/oauth|retrieved account|connect your google now/)
-    expect(JSON.stringify(howFaqs).toLowerCase()).toContain("coming soon")
+    expect(copy.toLowerCase()).not.toMatch(/coming soon/)
+    const connectFaq = howFaqs.find((item) => item.q === "Can I connect my Google account?")
+    expect(connectFaq?.a).toContain("You can send an enquiry without connecting Google")
+    expect(connectFaq?.a).toContain("There is no confirmed date for Google connection")
   })
 
   it("promises human assessment rather than an automated score", () => {
@@ -97,6 +102,8 @@ describe("How It Works page copy", () => {
     expect(howGuard.title).toBe("Keep an eye on your profile, with or without a case.")
     expect(howGuard.lead).toContain("running normally")
     expect(howGuard.model).toContain("Checks are scheduled, not continuous")
+    expect(howGuard.cta).toBe("Explore Relaunch Guard")
+    expect(howGuard.href).toBe("/relaunch-guard")
     expect(howTimeline.steps[6].title).toBe("Optional ongoing monitoring")
     expect(howTimeline.steps[6].body).toBe(
       "You can add Relaunch Guard after recovery. It is also available on its own, without a recovery or review case.",
@@ -117,8 +124,11 @@ describe("How It Works page copy", () => {
 
   it("keeps How It Works SEO geographically neutral", () => {
     expect(howSeo.titlePage).toMatch(/How It Works/)
-    expect(howSeo.description.toLowerCase()).toContain("google business profile")
-    expect(howSeo.description.toLowerCase()).toContain("review")
+    expect(howSeo.description).toBe(
+      "See how ProfileRelaunch handles profile and review enquiries, explains Guided and Managed support, and sets up optional Relaunch Guard monitoring.",
+    )
+    expect(howSeo.description.toLowerCase()).toContain("profile and review")
+    expect(howSeo.description.toLowerCase()).toContain("relaunch guard")
     expect(copy.toLowerCase()).not.toMatch(/uk businesses|uk-only|uk google business profile service/)
     expect(howSeo.description.toLowerCase()).not.toMatch(/uk businesses|uk-only/)
   })

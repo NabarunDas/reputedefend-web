@@ -392,13 +392,39 @@
 
 .intake .primaryButton { margin-top: 28px; }
 
-.soonNote {
+.soonFooter {
   margin-top: auto;
   padding-top: 22px;
+  width: 100%;
+}
+
+.soonNote {
+  margin: 0;
   font-size: 13px;
   font-weight: 650;
   color: var(--muted-strong);
   line-height: 1.5;
+}
+
+.connectDisabled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: color-mix(in srgb, var(--ink) 12%, var(--paper));
+  color: var(--muted-strong);
+  font-size: 14px;
+  font-weight: 750;
+  cursor: not-allowed;
+}
+
+.connectDisabled:disabled {
+  opacity: 1;
 }
 
 .send {
@@ -881,6 +907,10 @@
   color: var(--muted-strong);
 }
 
+.guard .primaryButton {
+  margin-top: 24px;
+}
+
 .guardPrice {
   margin: 0;
   text-align: right;
@@ -1092,7 +1122,8 @@
   .actions a,
   .page .primaryButton,
   .page .primaryOnDark,
-  .page .secondaryOnDark { width: 100%; }
+  .page .secondaryOnDark,
+  .connectDisabled { width: 100%; }
   .trustStrip ul { gap: 0; }
   .trustStrip li {
     text-align: left;

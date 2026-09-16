@@ -31,7 +31,7 @@ describe("Profile Recovery page copy", () => {
     expect(recoveryHero.secondaryHref).toBe("/pricing")
   })
 
-  it("states Guided and Managed with locked Early Access prices", () => {
+  it("states Guided and Managed with locked published prices", () => {
     const guided = pricingGroups[0].items[0]
     const managed = pricingGroups[0].items[1]
     expect(recoveryModels.guided.price).toBe(guided.price)
@@ -54,7 +54,7 @@ describe("Profile Recovery page copy", () => {
     ]))
     expect(recoveryProcess.steps).toHaveLength(6)
     expect(recoveryProcess.steps[5].title).toMatch(/Google makes the final platform decision/)
-    expect(recoveryTrustStrip).toContain("Early Access pricing")
+    expect(recoveryTrustStrip).toContain("Pricing")
     const questions = recoveryFaqs.map((item) => item.q).join(" ")
     expect(questions).toMatch(/Why was my .* suspended/)
     expect(questions).toMatch(/exactly why Google/)

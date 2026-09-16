@@ -51,12 +51,14 @@ export function LegalPage({
   lead,
   currentPath,
   sections,
+  updated = legalIdentity.noticeUpdated,
 }: {
   eyebrow: string
   title: string
   lead: string
   currentPath: "/privacy" | "/terms" | "/disclaimer" | "/cookies"
   sections: LegalSection[]
+  updated?: string
 }) {
   return (
     <article className={styles.page}>
@@ -64,7 +66,7 @@ export function LegalPage({
         <p className={styles.eyebrow}>{eyebrow}</p>
         <h1>{title}</h1>
         <p className={styles.lead}>{lead}</p>
-        <p className={styles.meta}>Last updated {legalIdentity.noticeUpdated}</p>
+        <p className={styles.meta}>Last updated {updated}</p>
       </header>
 
       <nav className={styles.toc} aria-label="On this page">

@@ -56,6 +56,17 @@ export default async function GetHelpPage({
               </p>
               <p className={styles.routeTitle}>{getHelpRoutes.future.title}</p>
               <p>{getHelpRoutes.future.copy}</p>
+              <p className={styles.soonNote} id="get-help-google-connection-note">
+                {getHelpRoutes.future.note}
+              </p>
+              <button
+                type="button"
+                className={styles.connectDisabled}
+                disabled
+                aria-describedby="get-help-google-connection-note"
+              >
+                Connect Google
+              </button>
             </article>
           </div>
         </div>

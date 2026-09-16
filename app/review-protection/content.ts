@@ -1,4 +1,4 @@
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const reviewGroup = pricingGroups[1]
 const guided = reviewGroup.items[0]
@@ -29,7 +29,7 @@ export const reviewTrustStrip = [
   "Human-reviewed assessment",
   "Evidence-led review analysis",
   "Guided or Managed support",
-  earlyAccessLabel,
+  pricingLabel,
 ] as const
 
 export const reviewSituations = {
@@ -223,7 +223,7 @@ export const reviewProcess = {
 } as const
 
 export const reviewPricing = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingLabel,
   title: "Clear fees for Review Protection.",
   lead: "Guided is payment for preparation. Managed is a success-fee model.",
   items: [

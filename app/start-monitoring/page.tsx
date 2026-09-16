@@ -2,8 +2,8 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { StartMonitoringForm } from "@/components/start-monitoring-form"
 import { pageTitle } from "@/lib/brand"
+import { guardPrice } from "@/lib/guard-offer"
 import { isMonitoringPersistenceEnabled } from "@/lib/monitoring/persistence-config"
-import { pricingGroups } from "@/lib/pricing"
 import styles from "./start-monitoring.module.css"
 
 const title = pageTitle("Start Relaunch Guard Monitoring")
@@ -17,10 +17,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-const guardPrice = pricingGroups.find((group) => group.id === "relaunch-guard")?.items[0]
-const priceLine = guardPrice
-  ? `${guardPrice.price}/month per location — Early Access`
-  : "£9.99/month per location — Early Access"
+const priceLine = `${guardPrice} per month, per location`
 
 const trustItems = [
   "No current problem required",
@@ -38,11 +35,11 @@ export default function StartMonitoringPage() {
           <p className={styles.eyebrow}>Relaunch Guard</p>
           <h1 id="start-monitoring-title">Start your monitoring setup</h1>
           <p className={styles.lead}>
-            Tell us which Google Business Profile you want to protect. You do not need to have a current problem.
+            Tell us which Google Business Profile you would like us to monitor. You do not need an existing problem or a previous case.
           </p>
           <p className={styles.price}>{priceLine}</p>
           <p className={styles.heroNote}>
-            Submitting this form starts the setup process. Monitoring is not active until the required setup steps have been completed.
+            Sending this request does not take payment or start monitoring. We confirm access and complete an initial check before arranging payment and confirming activation.
           </p>
         </div>
       </section>
@@ -63,7 +60,7 @@ export default function StartMonitoringPage() {
           <section className={styles.panel} aria-labelledby="next-title">
             <h2 id="next-title">What happens next</h2>
             <p>
-              A ProfileRelaunch specialist will review the setup details. If we need clarification, we will contact you by email before any further step.
+              We review your details and contact you by email. We then confirm your permission, explain how to add us as a Manager and check access to each profile. Before payment, we confirm the locations and total monthly cost.
             </p>
           </section>
           <section className={styles.panel} aria-labelledby="active-title">

@@ -1,14 +1,13 @@
 import { brandDescriptor, brandName } from "@/lib/brand"
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { guardPrice } from "@/lib/guard-offer"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const profileRecovery = pricingGroups[0]
 const reviewProtection = pricingGroups[1]
-const relaunchGuard = pricingGroups[2]
 const guidedRelaunch = profileRecovery.items[0]
 const managedRelaunch = profileRecovery.items[1]
 const guidedReview = reviewProtection.items[0]
 const managedReview = reviewProtection.items[1]
-const guardPlan = relaunchGuard.items[0]
 
 export const homepageSeo = {
   titlePage: "Google Business Profile Recovery & Review Protection",
@@ -20,11 +19,11 @@ export const homepageHero = {
   eyebrow: brandDescriptor,
   titleLines: ["Restore your Google visibility.", "Protect your reputation."] as const,
   lead:
-    "When your Google Business Profile is suspended, inaccessible or stuck — or a suspicious review is damaging trust — ProfileRelaunch helps you understand the issue, prepare the right evidence and take the strongest appropriate next step.",
+    "A suspended profile or a suspicious review can leave you unsure what to do next. We help you understand the problem and prepare your next step. If your profile is running smoothly, Relaunch Guard helps you keep an eye on it.",
   primaryCta: "Start your assessment",
   primaryHref: "/get-help",
-  secondaryCta: "View how it works",
-  secondaryHref: "/how-it-works",
+  secondaryCta: "Explore monitoring",
+  secondaryHref: "/relaunch-guard",
   supportLine: "Human-reviewed • Evidence-led • Clear next steps",
 } as const
 
@@ -54,9 +53,9 @@ export const homepageProblems = {
 
 export const homepageServices = {
   eyebrow: "What we do",
-  title: "Two specialist services. One goal: protect how customers find and trust your business.",
+  title: "Help with profile problems, reviews and everyday monitoring.",
   lead:
-    "Profile Recovery and Review Protection are different problems with different evidence and routes. The assessment is there to identify which applies — and what not to do next.",
+    "Need help with an existing problem? Start with Profile Recovery or Review Protection. If you want us to check a profile that is running normally, explore Relaunch Guard below.",
   profile: {
     kicker: "Service 01",
     title: "Profile Recovery",
@@ -133,7 +132,7 @@ export const homepageProcess = {
 } as const
 
 export const homepagePricingPreview = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingLabel,
   title: "Clear support. Clear pricing.",
   lead:
     "Fees are stated before you decide. Managed work is £0 today; a success fee is due only if the defined successful outcome is achieved.",
@@ -154,9 +153,9 @@ export const homepagePricingPreview = {
       detail: "Success fee only when the defined successful outcome is achieved.",
     },
     {
-      label: relaunchGuard.title,
-      figure: `${guardPlan.price}/month/location`,
-      detail: guardPlan.name,
+      label: "Relaunch Guard",
+      figure: `${guardPrice}/month`,
+      detail: "Per location. Two manual checks a day.",
     },
   ],
   note: pricingNote,
@@ -167,17 +166,20 @@ export const homepagePricingPreview = {
 } as const
 
 export const homepageGuard = {
-  eyebrow: relaunchGuard.title,
-  title: "Profile + Review monitoring, once the immediate issue is in hand.",
+  eyebrow: "Relaunch Guard",
+  title: "Your profile is running smoothly. Let’s help you keep an eye on it.",
   lead:
-    "Relaunch Guard is Early Access Profile + Review monitoring for a location. We monitor relevant changes in Google Business Profile health and review activity and confirm the monitoring coverage before activation. Early Access monitoring is currently delivered as a managed service rather than through a self-serve dashboard.",
+    "We manually check your Google Business Profile and reviews each morning and evening, UK time, including weekends and bank holidays. If we spot a concerning change, we review it and email you with what we found and what to do next.",
   points: [
-    "Google Business Profile health and status changes",
-    "Review activity on the listing",
+    "Two manual checks a day",
+    "Email alerts after a human review",
+    "Available without a recovery or review case",
   ],
-  price: `${guardPlan.price} ${guardPlan.cadence}`,
-  cta: "View Relaunch Guard pricing",
-  href: "/pricing",
+  price: `${guardPrice} per month, per location`,
+  boundary:
+    "Monitoring does not prevent suspensions or guarantee instant detection. Help with an appeal or review challenge is a separate service, with any fee agreed before work starts.",
+  cta: "Explore Relaunch Guard",
+  href: "/relaunch-guard",
 } as const
 
 export const homepageWhy = {
@@ -204,7 +206,7 @@ export const homepageWhy = {
     },
     {
       title: "Transparent pricing",
-      copy: `${earlyAccessLabel} is published. You see the fee and the model before any paid work begins.`,
+      copy: "You can see our prices before getting in touch. We explain the work and the fee before you decide.",
     },
   ],
 } as const
@@ -232,7 +234,11 @@ export const homepageFaqs = [
   },
   {
     q: "How much does support cost?",
-    a: `${earlyAccessLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard is ${guardPlan.price} ${guardPlan.cadence}. Google makes final platform decisions.`,
+    a: `${pricingLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard costs ${guardPrice} per month, per location. Google makes final platform decisions.`,
+  },
+  {
+    q: "Can I use Relaunch Guard without a recovery case?",
+    a: "Yes. Relaunch Guard is available for a profile that is running normally, even if you have never used our other services. Before monitoring starts, we confirm your permission, verify Manager access and check the profile’s starting condition. We then arrange payment and confirm activation. Sending a setup request does not start monitoring or take payment.",
   },
 ] as const
 

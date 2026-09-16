@@ -14,15 +14,19 @@ Verified in this repository:
 
 - Public pages use the ProfileRelaunch trading name.
 - Canonical / Open Graph / structured-data / sitemap URLs use `https://profilerelaunch.com`.
-- Approved Early Access prices are sourced from `lib/pricing.ts` and match Terms.
+- Approved published prices are sourced from `lib/pricing.ts` and match Terms: Guided Relaunch £99, Managed Relaunch £299, Guided Review £59, Managed Review £149, and Relaunch Guard £9.99 per month, per location.
 - Enquiry API requires `RESEND_API_KEY`, `ENQUIRY_FROM_EMAIL` and `ENQUIRY_TO_EMAIL`. Production does not simulate success when they are missing.
-- Customer acknowledgement stays off unless `ENQUIRY_SEND_CUSTOMER_ACK=true`.
+- Ordinary enquiry customer acknowledgements stay off unless `ENQUIRY_SEND_CUSTOMER_ACK=true`. Monitoring setup receipts are a separate path and are **not** controlled by that flag.
+- When monitoring intake runs, the request is persisted before email delivery is attempted. A failed email does not mean the saved request was lost.
 - Email **display** brand is ProfileRelaunch (`From` name and subjects). The mailbox **domain** is unchanged until a later migration is verified.
+- `MONITORING_PERSISTENCE_ENABLED` is server-only. Only the exact value `true` enables monitoring intake. False or unset keeps setup unavailable and Guard actions pointing to Contact. This document does not change the deployed value.
+- Case and monitoring database code exists in this repository. Whether those paths are enabled in Production or Preview is deployed configuration, not a fact inferred from source.
 - Optional GA4 loads only after explicit consent, sends pathname-only page views, and uses host-only cookies (`cookie_domain: "none"`).
 - Optional Search Console HTML verification reads `GOOGLE_SITE_VERIFICATION` and emits nothing when unset.
 - The site works with `NEXT_PUBLIC_GA_MEASUREMENT_ID` and `GOOGLE_SITE_VERIFICATION` unset: no analytics banner, no GA script, no analytics cookies, no fake verification token.
 - Preview / non-production remains noindex; production sitemap is emitted only when `VERCEL_ENV=production`.
-- Connect Google remains Coming Soon. Tell us what happened is the live route.
+- Connect Google is not available. How It Works shows a native disabled Connect Google control. The working manual enquiry route is Tell us what happened / Get Help.
+- A controlled Preview test of monitoring intake was previously reported successful. This documentation update does not repeat that test.
 - Tests never send live email. No measurement ID or verification token is committed.
 
 ### GA cookie decision
@@ -61,7 +65,7 @@ Production must continue to fail safely rather than simulate success if mail con
 
 The currently verified `reputedefend.com` sending/receiving addresses may be used for this smoke test. Changing them to `@profilerelaunch.com` is **not** a true launch blocker (see below).
 
-Do not enable `ENQUIRY_SEND_CUSTOMER_ACK` merely because launch is approaching.
+Do not enable `ENQUIRY_SEND_CUSTOMER_ACK` merely because launch is approaching. That flag does not control Relaunch Guard monitoring receipts.
 
 ---
 
@@ -144,10 +148,27 @@ Then submit `https://profilerelaunch.com/sitemap.xml`.
 Useful after public launch; not required to go live:
 
 - Distributed / serverless enquiry rate limiting
-- Customer acknowledgement, if product later wants receipts
+- Ordinary enquiry customer acknowledgement, if product later wants those receipts (`ENQUIRY_SEND_CUSTOMER_ACK`; not the monitoring receipt path)
 - Safe conversion events (only after a privacy review; Stage 9/10 send page views only)
 - Enforcing CSP (currently Report-Only) after a full production pass
-- Shared case database, evidence storage, payments, customer portal — out of scope
+- Evidence storage, payments and a customer portal remain later work
+- Case and monitoring persistence exist as implemented code paths; enabling them in an environment is configuration, not “entirely out of scope”
+
+---
+
+## Before activating paid Guard monitoring
+
+These are **operational prerequisites for service activation**, not evidence of implemented automation. Do not mark them complete from database tables or passing unit tests alone. A controlled Preview test of monitoring intake was previously reported successful; that test is not repeated here.
+
+- [ ] A responsible operator and backup cover morning/evening checks, including weekends and bank holidays.
+- [ ] Manager permission, verified access and the initial profile check are recorded before payment.
+- [ ] Payment arrangements and activation confirmation are ready.
+- [ ] Check results, failures, retries and customer alerts can be recorded and followed up.
+- [ ] Lost access and an unusable alert channel have a defined service/billing pause procedure.
+- [ ] Cancellation, unused-period refunds and price-change acceptance can be handled.
+- [ ] The optional 30-day period and eligible Managed-service discount can be administered as advertised.
+- [ ] Replies to monitoring receipt emails reach a monitored mailbox.
+- [ ] Monitoring requests can be found even when an internal notification email fails.
 
 ---
 
@@ -161,14 +182,17 @@ Never commit secret values. Placeholders in `.env.example` are not production cr
 | `ENQUIRY_FROM_EMAIL` | Verified sending address (From mailbox) | For live delivery | **True launch blocker** for live mail | Same if Preview sends | No (address) | Not ready; production fails safely |
 | `ENQUIRY_TO_EMAIL` | Internal inbox for notifications | For live delivery | **True launch blocker** for live mail | Same if Preview sends | No (address) | Not ready; production fails safely |
 | `ENQUIRY_REPLY_TO_EMAIL` | Extra Reply-To besides the customer | Optional | Optional | Optional | No | Customer email remains Reply-To |
-| `ENQUIRY_SEND_CUSTOMER_ACK` | Send a customer receipt | Optional; leave unset | Leave unset/false unless explicitly approved | Leave unset | No | Internal delivery only (preferred for launch) |
-| `CASE_PERSISTENCE_ENABLED` | DB-backed Get Help case intake | Optional; exact `true` only | **Keep false/unset** until production Supabase is ready | May be `true` in Preview after the migration is applied | No | Get Help stays on today's email-only path |
-| `SUPABASE_URL` | Server Supabase project URL | Only when persistence is enabled | Not for this launch until production Supabase exists | Required in Preview to test persistence | No | Persist path fails safely; legacy enquiry still works while the flag is false |
-| `SUPABASE_SECRET_KEY` | Server Supabase privileged key | Only when persistence is enabled | Not for this launch until production Supabase exists | Required in Preview to test persistence | Yes | Persist path fails safely; never prefix with `NEXT_PUBLIC_` |
+| `ENQUIRY_SEND_CUSTOMER_ACK` | Send an ordinary enquiry customer acknowledgement | Optional; leave unset | Leave unset/false unless explicitly approved | Leave unset | No | Internal enquiry delivery only (preferred for launch). Does **not** control monitoring receipts |
+| `CASE_PERSISTENCE_ENABLED` | DB-backed Get Help case intake | Optional; exact `true` only | Exact `true` enables persistent case intake. Deployed value is an operational choice; this document does not change it | May be `true` in Preview after the relevant migration is applied | No | Get Help stays on the email-only path |
+| `MONITORING_PERSISTENCE_ENABLED` | Enables `/start-monitoring` and `/api/monitoring` intake | Optional; exact `true` only | Exact `true` enables monitoring intake. False/unset keeps setup unavailable and Guard actions pointing to Contact. Do not change the deployed value from this task | Same rule; Preview may already have been used for a controlled test | No | Guard sales page remains public; setup CTAs go to Contact |
+| `SUPABASE_URL` | Server Supabase project URL | Only when a persistence path runs | Required when the corresponding persistence path is enabled | Required where Preview persistence is enabled | No | If that flag is enabled without this, intake cannot persist and must fail rather than succeed |
+| `SUPABASE_SECRET_KEY` | Server Supabase privileged key | Only when a persistence path runs | Required when the corresponding persistence path is enabled | Required where Preview persistence is enabled | Yes | If that flag is enabled without this, intake cannot persist and must fail rather than succeed. Never prefix with `NEXT_PUBLIC_` |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional GA4 web stream ID | **Optional / non-blocking** | Only after the GA4 stream is configured | Usually unset | No, but do not invent an ID | No banner, no script, no analytics cookies. Site launches normally. |
 | `GOOGLE_SITE_VERIFICATION` | Optional HTML-tag Search Console token | **Optional / non-blocking** | Only if using URL-prefix HTML verification | Usually unset | No | No verification meta tag. Site launches normally. |
 
 Display name on sent mail is `ProfileRelaunch <ENQUIRY_FROM_EMAIL>`. Changing that name does not change the mailbox domain.
+
+When a persistence flag is enabled but required Supabase configuration is missing, that intake cannot persist and must report failure rather than success. With case persistence disabled, Get Help uses its existing email-only route. With monitoring persistence disabled, monitoring setup is unavailable and Guard actions lead to Contact.
 
 If Preview currently has live Resend variables in Vercel, that is an operational choice. This PR does not silently disable Preview mail.
 
@@ -182,10 +206,11 @@ If Preview currently has live Resend variables in Vercel, that is an operational
 | `ENQUIRY_FROM_EMAIL` | Verified From address | **Yes** for live enquiry delivery | Production | Same verified domain (may still be `reputedefend.com`) |
 | `ENQUIRY_TO_EMAIL` | Monitored internal inbox | **Yes** for live enquiry delivery | Production | Working mailbox |
 | `ENQUIRY_REPLY_TO_EMAIL` | Unset unless needed | No | Optional | — |
-| `ENQUIRY_SEND_CUSTOMER_ACK` | Unset / not `true` | No | Production | Explicit product decision |
-| `CASE_PERSISTENCE_ENABLED` | Unset / not `true` | No | Production | Production Supabase is not part of this launch |
-| `SUPABASE_URL` | Unset until a production project exists | No | Production later | Production Supabase project |
-| `SUPABASE_SECRET_KEY` | Unset until a production project exists | No | Production later | Production Supabase secret |
+| `ENQUIRY_SEND_CUSTOMER_ACK` | Unset / not `true` | No | Production | Explicit product decision for ordinary enquiry acknowledgements only. Does not control monitoring receipts |
+| `CASE_PERSISTENCE_ENABLED` | Exact `true` only if persistent case intake should run | No | Production | Deployed value is an operational choice; this document does not change it |
+| `MONITORING_PERSISTENCE_ENABLED` | Exact `true` only if monitoring intake should run; otherwise unset/false | No | Production | Server-only. Do not change the deployed value from this task. Paid Guard activation still needs the operational checklist in “Before activating paid Guard monitoring” |
+| `SUPABASE_URL` | Set when the corresponding persistence path is enabled | **Yes, when that persistence path is enabled** | Production / Preview as configured | Required for the enabled path; not a launch blocker when the matching flag is unset |
+| `SUPABASE_SECRET_KEY` | Set when the corresponding persistence path is enabled | **Yes, when that persistence path is enabled** | Production / Preview as configured | Required for the enabled path; never in git |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Unset is a valid launch state | **No** | Production after optional GA setup | GA4 stream + Enhanced Measurement off |
 | `GOOGLE_SITE_VERIFICATION` | Unset is a valid launch state | **No** | Production if using HTML-tag verification | Search Console token |
 

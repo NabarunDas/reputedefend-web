@@ -138,7 +138,7 @@ export function HowStart() {
           <HelpLink>{howStart.live.cta}</HelpLink>
         </article>
         <article className={s.intakeSoon}>
-          <p className={s.statusSoon} role="status">
+          <p className={s.statusSoon}>
             {howStart.future.status}
           </p>
           <h3>{howStart.future.title}</h3>
@@ -148,7 +148,19 @@ export function HowStart() {
               <li key={item}>{item}</li>
             ))}
           </ul>
-          <p className={s.soonNote}>{howStart.future.note}</p>
+          <div className={s.soonFooter}>
+            <p className={s.soonNote} id="google-connection-note">
+              {howStart.future.note}
+            </p>
+            <button
+              type="button"
+              className={s.connectDisabled}
+              disabled
+              aria-describedby="google-connection-note"
+            >
+              Connect Google
+            </button>
+          </div>
         </article>
       </div>
     </section>
@@ -435,6 +447,10 @@ export function HowGuard() {
         <h2 id="guard-title">{howGuard.title}</h2>
         <p>{howGuard.lead}</p>
         <p className={s.guardModel}>{howGuard.model}</p>
+        <Link className={s.primaryButton} href={howGuard.href}>
+          {howGuard.cta}
+          <ArrowRight size={18} aria-hidden="true" />
+        </Link>
       </div>
       <p className={s.guardPrice}>
         <strong>{howGuard.figure}</strong>

@@ -690,6 +690,11 @@
   max-width: 40rem;
 }
 
+.guardCopy > p.guardBoundary {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .guardMeta {
   background: var(--surface);
   border: 1px solid var(--home-border);

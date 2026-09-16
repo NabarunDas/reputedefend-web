@@ -1,6 +1,10 @@
-export const primaryNav = [
+export const serviceNav = [
   { label: "Profile Recovery", href: "/business-profile-recovery" },
   { label: "Review Protection", href: "/review-protection" },
+  { label: "Relaunch Guard", href: "/relaunch-guard" },
+] as const
+
+export const primaryNav = [
   { label: "How It Works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
   { label: "About", href: "/about" },
@@ -19,6 +23,7 @@ export const sitemapPaths = [
   "/",
   "/business-profile-recovery",
   "/review-protection",
+  "/relaunch-guard",
   "/how-it-works",
   "/pricing",
   "/about",

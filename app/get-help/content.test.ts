@@ -30,11 +30,14 @@ describe("Get Help page copy", () => {
     expect(getHelpSeo.description.toLowerCase()).not.toMatch(/uk-only|uk businesses/)
   })
 
-  it("marks Tell us what happened as live and Connect Google as Coming Soon only", () => {
+  it("marks Tell us what happened as live and Connect Google as not available yet", () => {
     expect(getHelpRoutes.live.status).toBe("Available now")
     expect(getHelpRoutes.live.title).toBe("Tell us what happened")
-    expect(getHelpRoutes.future.status).toBe("Coming soon")
-    expect(getHelpRoutes.future.title).toBe("Connect Google")
+    expect(getHelpRoutes.future.status).toBe("Not available yet")
+    expect(getHelpRoutes.future.title).toBe("Connect your Google Business Profile")
+    expect(getHelpRoutes.future.copy).toContain("Google connection is not available yet")
+    expect(getHelpRoutes.future.note).toContain("There is no confirmed date for Google connection")
+    expect(copy.toLowerCase()).not.toMatch(/\bcoming soon\b/)
     expect(copy.toLowerCase()).not.toMatch(/\bconnect now\b/)
     expect(copy.toLowerCase()).not.toMatch(/oauth|retrieved account/)
   })

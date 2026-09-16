@@ -36,9 +36,9 @@ export default function Home() {
       <HomeTrustStrip />
       <HomeSituations />
       <HomeServices />
+      <HomeGuard />
       <HomeProcess />
       <HomePricing />
-      <HomeGuard />
       <HomeWhy />
       <HomeFaq />
       <HomeConversion />

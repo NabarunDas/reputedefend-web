@@ -1,4 +1,4 @@
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const profileRecovery = pricingGroups[0]
 const guided = profileRecovery.items[0]
@@ -29,7 +29,7 @@ export const recoveryTrustStrip = [
   "Human-reviewed assessment",
   "Evidence-led recovery route",
   "Guided or Managed support",
-  earlyAccessLabel,
+  pricingLabel,
 ] as const
 
 export const recoverySituations = {
@@ -175,7 +175,7 @@ export const recoveryModels = {
 } as const
 
 export const recoveryPricing = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingLabel,
   title: "Clear fees for Profile Recovery.",
   lead: "Guided is payment for preparation. Managed is a success-fee model.",
   items: [

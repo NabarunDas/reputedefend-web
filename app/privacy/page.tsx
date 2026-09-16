@@ -12,9 +12,11 @@ import {
   privacyHero,
   privacyHomepageFields,
   privacyMarketing,
+  privacyMonitoringFields,
   privacyNoPayment,
   privacyNoUpload,
   privacySeo,
+  privacyUpdated,
   privacyUses,
 } from "./content"
 
@@ -44,7 +46,7 @@ const sections: LegalSection[] = [
     title: "Information you may submit",
     content: (
       <>
-        <p>We do not ask you to create an account. Information reaches us only if you choose to send a form. What we receive depends on which form you use.</p>
+        <p>You do not need to create an account to use our forms. The details you send depend on which form you use. Technical information is described separately below.</p>
         <h3>Homepage enquiry</h3>
         <p>The short homepage form may include {privacyHomepageFields.join(", ")}.</p>
         <h3>Contact form</h3>
@@ -54,8 +56,14 @@ const sections: LegalSection[] = [
         <ul>
           {privacyCaseFields.map((item) => <li key={item}>{item}</li>)}
         </ul>
+        <h3>Relaunch Guard setup</h3>
+        <p>When online monitoring setup is available, the form asks for:</p>
+        <ul>
+          {privacyMonitoringFields.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+        <p>Sending a setup request does not give us access to your Google account or start monitoring. If Manager access is needed, we explain how to grant it separately.</p>
         <p>{privacyNoUpload}</p>
-        <p>We also record which form you used, so that a general question and a case submission can be handled appropriately.</p>
+        <p>We also record which form you used so we can handle an enquiry, case submission or monitoring setup request appropriately.</p>
         <h3>Technical information</h3>
         <p>The systems used to operate this website may automatically record ordinary request-level technical details as part of running the site securely and reducing abuse. That can include information such as IP address, browser type and the time of a request where the hosting or security systems provide it. We do not list fields a hosting platform has not been confirmed to record.</p>
       </>
@@ -122,15 +130,15 @@ const sections: LegalSection[] = [
     title: "Service providers",
     content: (
       <>
-        <p>{legalIdentity.tradingName} reviews submissions. Enquiry messages are delivered by email using Resend so that we can receive and review them. Resend processes that information only to provide that email delivery service. This notice does not describe Resend’s hosting locations, retention rules or other contractual terms.</p>
+        <p>ProfileRelaunch reviews the information you submit. We use Resend to send service emails, including internal notifications and customer confirmations where enabled.</p>
+        <p>When monitoring setup is available, we store setup requests and related customer, business and location details in Supabase. We also keep records of request activity and email delivery attempts so we can follow up and handle delivery problems.</p>
         <p>If Google Analytics is configured and you have accepted analytics, Google processes usage and technical information as the analytics provider. This notice does not invent processor contractual clauses.</p>
-        {hasLegalValue(legalIdentity.enquiryProcessorName) || hasLegalValue(legalIdentity.hostingProvider) ? (
-          <ul>
-            {hasLegalValue(legalIdentity.hostingProvider) ? <li>Website hosting: {legalIdentity.hostingProvider}</li> : null}
-            {hasLegalValue(legalIdentity.enquiryProcessorName) ? <li>Enquiry email delivery: {legalIdentity.enquiryProcessorName}</li> : null}
-            <li>Optional website analytics: Google Analytics 4, only if configured and accepted</li>
-          </ul>
-        ) : null}
+        <ul>
+          {hasLegalValue(legalIdentity.hostingProvider) ? <li>Website hosting: {legalIdentity.hostingProvider}</li> : null}
+          {hasLegalValue(legalIdentity.enquiryProcessorName) ? <li>Enquiry email delivery: {legalIdentity.enquiryProcessorName}</li> : null}
+          <li>Monitoring setup records: Supabase</li>
+          <li>Optional website analytics: Google Analytics 4, only if configured and accepted</li>
+        </ul>
       </>
     ),
   },
@@ -140,9 +148,9 @@ const sections: LegalSection[] = [
     content: (
       <>
         {hasLegalValue(legalIdentity.retentionPeriod) ? (
-          <p>Enquiry information is kept for {legalIdentity.retentionPeriod}, unless a longer period is required to complete a request you have made or to meet a legal obligation.</p>
+          <p>Enquiry, case-submission and monitoring-setup information is kept for {legalIdentity.retentionPeriod}, unless a longer period is required to complete a request you have made or to meet a legal obligation.</p>
         ) : (
-          <p>We keep enquiry information only for as long as it is needed to respond, assess the situation, communicate about requested support and meet any legal obligations that apply. There is no single published retention period that applies to every submission.</p>
+          <p>We keep enquiry, case-submission and monitoring-setup information, including related activity and communication records, only for as long as needed to handle your request, provide agreed support and meet applicable legal obligations. The period depends on the type of record and why we need it.</p>
         )}
         <p>We do not publish a Google Analytics retention duration. Any such period is determined by the configured Google property and is not established in this notice.</p>
       </>
@@ -206,7 +214,7 @@ const sections: LegalSection[] = [
     title: "Changes to this notice",
     content: (
       <>
-        <p>We may update this notice when the website or our handling of information changes. The date at the top of this page shows when it was last revised.</p>
+        <p>We may update this notice when the website or our handling of information changes. The privacy notice revision date shows when this notice was last updated.</p>
       </>
     ),
   },
@@ -220,6 +228,7 @@ export default function PrivacyPage() {
       lead={privacyHero.lead}
       currentPath="/privacy"
       sections={sections}
+      updated={privacyUpdated}
     />
   )
 }

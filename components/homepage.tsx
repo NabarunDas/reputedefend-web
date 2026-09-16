@@ -262,6 +262,7 @@ export function HomeGuard() {
         <Eyebrow>{homepageGuard.eyebrow}</Eyebrow>
         <h2 id="guard-title">{homepageGuard.title}</h2>
         <p>{homepageGuard.lead}</p>
+        <p className={styles.guardBoundary}>{homepageGuard.boundary}</p>
         <Link className={styles.textLink} href={homepageGuard.href}>
           {homepageGuard.cta}
           <ArrowRight aria-hidden="true" size={18} />

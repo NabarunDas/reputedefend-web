@@ -1,4 +1,4 @@
-export const earlyAccessLabel = "Early Access pricing"
+export const pricingLabel = "Pricing"
 
 export const pricingIntro =
   "Clear fees for Google Business Profile recovery, review protection and monitoring."

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { brandName, brandSiteUrl } from "@/lib/brand"
 import { organizationSchema, serviceSchema } from "@/lib/organization-schema"
-import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
-import { primaryNav, informationNav, sitemapPaths } from "@/lib/site-nav"
+import { pricingGroups, pricingLabel } from "@/lib/pricing"
+import { primaryNav, informationNav, serviceNav, sitemapPaths } from "@/lib/site-nav"
 
 describe("organization schema", () => {
   it("identifies ProfileRelaunch on profilerelaunch.com without invented claims", () => {
@@ -38,8 +38,8 @@ describe("organization schema", () => {
 })
 
 describe("pricing", () => {
-  it("publishes the approved Early Access fees only", () => {
-    expect(earlyAccessLabel).toBe("Early Access pricing")
+  it("publishes the approved fees only", () => {
+    expect(pricingLabel).toBe("Pricing")
     const prices = pricingGroups.flatMap((group) => group.items.map((item) => `${item.name}:${item.price}`))
     expect(prices).toEqual([
       "Guided Relaunch:£99",
@@ -54,9 +54,12 @@ describe("pricing", () => {
 
 describe("navigation", () => {
   it("keeps Pricing in the primary nav and Cookies in information links and sitemap", () => {
-    expect(primaryNav.map((item) => item.href)).toEqual([
+    expect(serviceNav.map((item) => item.href)).toEqual([
       "/business-profile-recovery",
       "/review-protection",
+      "/relaunch-guard",
+    ])
+    expect(primaryNav.map((item) => item.href)).toEqual([
       "/how-it-works",
       "/pricing",
       "/about",

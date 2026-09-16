@@ -1,3 +1,5 @@
+> **Approved scope update:** Admin access is now limited to the single account `admin@profilerelaunch.com`, with no staff levels or role-management UI. See `single-admin-auth.md` for the implemented identity, session and setup contract. References below to multiple owners, staff roles and staff invitations are superseded by this decision. Future sensitive financial actions still require fresh verification and audit.
+
 # ProfileRelaunch Admin Portal
 Detailed implementation plan
 Version 1.0 | 16 September 2026

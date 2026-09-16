@@ -1,11 +1,13 @@
 import "server-only"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import { sessionCookie } from "./auth/config"
+import { sessionFromToken } from "./auth/backend"
 
-/**
- * Fail closed until verified OTP sessions and active staff memberships exist.
- * Do not replace this with a cookie-presence or environment-variable bypass.
- * Every future page, command, API and download must enforce its own capability.
- */
-export function requireStaff(): never {
-  redirect("/login")
+/** Every protected page and command must call this independently of the proxy. */
+export async function requireStaff() {
+  const token = (await cookies()).get(sessionCookie)?.value
+  const session = await sessionFromToken(token)
+  if (!session) redirect("/login")
+  return session
 }

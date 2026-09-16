@@ -1,5 +1,7 @@
 import {
   MONITORING_INTAKE_SOURCE,
+  MONITORING_LOCATIONS_MAX,
+  MONITORING_LOCATIONS_MIN,
   type MonitoringIntakeSource,
 } from "@/lib/monitoring/domain"
 
@@ -51,8 +53,10 @@ function asOptionalString(value: unknown) {
   return typeof value === "string" ? value : ""
 }
 
-function asPositiveInteger(value: unknown) {
-  return typeof value === "number" && Number.isInteger(value) ? value : null
+function asLocationCount(value: unknown) {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null
+  if (value < MONITORING_LOCATIONS_MIN || value > MONITORING_LOCATIONS_MAX) return null
+  return value
 }
 
 /**
@@ -68,9 +72,10 @@ export function parseMonitoringIntakeSnapshot(value: unknown): MonitoringIntakeS
   const businessName = asTrimmedString(raw.businessName)
   const country = asTrimmedString(raw.country)
   const businessProfileUrl = asTrimmedString(raw.businessProfileUrl)
-  const numberOfLocations = asPositiveInteger(raw.numberOfLocations)
+  const numberOfLocations = asLocationCount(raw.numberOfLocations)
   if (!fullName || !email || !businessName || !country || !businessProfileUrl) return null
   if (numberOfLocations == null) return null
+  if (raw.termsAccepted !== true) return null
   if (raw.source !== MONITORING_INTAKE_SOURCE) return null
 
   return {
@@ -82,7 +87,7 @@ export function parseMonitoringIntakeSnapshot(value: unknown): MonitoringIntakeS
     websiteUrl: asOptionalString(raw.websiteUrl),
     businessProfileUrl,
     numberOfLocations,
-    termsAccepted: raw.termsAccepted === true,
+    termsAccepted: true,
     source: MONITORING_INTAKE_SOURCE,
   }
 }

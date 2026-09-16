@@ -42,13 +42,12 @@ The From **display name** is ProfileRelaunch. Reply-To on the internal notificat
 
 ### Pending mailbox / domain migration
 
-Customer-facing pages use the ProfileRelaunch trading name and `https://profilerelaunch.com`. Operational mailboxes have **not** been migrated in code because Workspace/Resend for `profilerelaunch.com` has not been verified here.
+Customer-facing pages use the ProfileRelaunch trading name, `https://profilerelaunch.com`, and public contact `contact@profilerelaunch.com`. Enquiry From/To addresses remain on the currently verified sending domain until Workspace/Resend for `profilerelaunch.com` is confirmed.
 
-Until that migration is confirmed:
+Until that sending-domain migration is confirmed:
 
-- public contact remains `contact@reputedefend.com`
+- public contact is `contact@profilerelaunch.com`
 - enquiry From/To addresses stay on the verified `reputedefend.com` domain
-- do not invent a `@profilerelaunch.com` mailbox in source
 - customer acknowledgement stays disabled
 
 ### Resend setup

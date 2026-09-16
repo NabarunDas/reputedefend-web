@@ -11,7 +11,7 @@ describe("organization schema", () => {
     expect(schema.url).toBe(brandSiteUrl)
     expect(schema.logo).toBe(`${brandSiteUrl}/icon.png`)
     expect(schema.legalName).toBe("Saswati Das")
-    expect(schema.email).toBe("contact@reputedefend.com")
+    expect(schema.email).toBe("contact@profilerelaunch.com")
     expect(schema.address).toEqual({
       "@type": "PostalAddress",
       streetAddress: "6 Bradford Road, Old Town",

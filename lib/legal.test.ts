@@ -21,8 +21,8 @@ describe("legal identity", () => {
     expect(feeWording).toMatch(/fees will be explained clearly before you decide how to proceed/)
   })
 
-  it("publishes the confirmed correspondence address and keeps the existing contact mailbox", () => {
-    expect(legalIdentity.contactEmail).toBe("contact@reputedefend.com")
+  it("publishes the confirmed correspondence address and ProfileRelaunch contact mailbox", () => {
+    expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
     expect(legalIdentity.postalAddress).toContain("6 Bradford Road")
     expect(legalIdentity.postalAddress).toContain("Old Town")
     expect(legalIdentity.postalAddress).toContain("Swindon")

@@ -18,7 +18,7 @@ Verified in this repository:
 - Enquiry API requires `RESEND_API_KEY`, `ENQUIRY_FROM_EMAIL` and `ENQUIRY_TO_EMAIL`. Production does not simulate success when they are missing.
 - Ordinary enquiry customer acknowledgements stay off unless `ENQUIRY_SEND_CUSTOMER_ACK=true`. Monitoring setup receipts are a separate path and are **not** controlled by that flag.
 - When monitoring intake runs, the request is persisted before email delivery is attempted. A failed email does not mean the saved request was lost.
-- Email **display** brand is ProfileRelaunch (`From` name and subjects). The mailbox **domain** is unchanged until a later migration is verified.
+- Email **display** brand is ProfileRelaunch (`From` name and subjects). Public contact is `contact@profilerelaunch.com`. Enquiry From/To mailboxes stay on the currently verified sending domain until that migration is confirmed.
 - `MONITORING_PERSISTENCE_ENABLED` is server-only. Only the exact value `true` enables monitoring intake. False or unset keeps setup unavailable and Guard actions pointing to Contact. This document does not change the deployed value.
 - Case and monitoring database code exists in this repository. Whether those paths are enabled in Production or Preview is deployed configuration, not a fact inferred from source.
 - Optional GA4 loads only after explicit consent, sends pathname-only page views, and uses host-only cookies (`cookie_domain: "none"`).
@@ -73,7 +73,7 @@ Do not enable `ENQUIRY_SEND_CUSTOMER_ACK` merely because launch is approaching. 
 
 ### ProfileRelaunch email-domain migration
 
-Current temporary public/operational addresses may remain on `reputedefend.com` while they are the verified working addresses.
+Current public contact is `contact@profilerelaunch.com`. Enquiry From/To addresses may remain on `reputedefend.com` while they are the verified working sending/receiving addresses.
 
 This is **not** technically mandatory for launch if those verified addresses are working.
 
@@ -93,11 +93,10 @@ However, before **broad public marketing** it is strongly recommended to migrate
 
 Until then:
 
-- public contact remains `contact@reputedefend.com`
+- public contact is `contact@profilerelaunch.com`
 - enquiry From/To stay on the verified `reputedefend.com` domain
-- do not invent a `@profilerelaunch.com` mailbox in source
 
-`legalIdentity.contactEmail` was not changed in Stage 10 because `contact@profilerelaunch.com` has not been verified here as a working public mailbox.
+`legalIdentity.contactEmail` is `contact@profilerelaunch.com`.
 
 ---
 

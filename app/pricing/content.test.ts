@@ -175,7 +175,7 @@ describe("Pricing page copy", () => {
 
     expect(faq("How do I cancel Guard?").a).toBe(guardSourceAnswer("How do I cancel?"))
     expect(faq("Can my monthly price change?").q).toBe("Can my monthly price change?")
-    expect(faq("Can my monthly price change?").a).toBe(guardSourceAnswer("Can the introductory price change?"))
+    expect(faq("Can my monthly price change?").a).toBe(guardSourceAnswer("Can my monthly price change?"))
     expect(faq("Can my monthly price change?").a).toContain("at least 30 days")
     expect(faq("Can my monthly price change?").a).toContain("accept the change before charging the higher price")
     expect(faq("Can my monthly price change?").a).toContain("subscription ends before that renewal")

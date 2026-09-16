@@ -1,4 +1,4 @@
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const recovery = pricingGroups[0]
 const review = pricingGroups[1]
@@ -58,7 +58,7 @@ export const howTrustStrip = [
   "Human-reviewed assessment",
   "Evidence-led recommendation",
   "Guided or Managed if you want support",
-  earlyAccessLabel,
+  pricingLabel,
 ] as const
 
 export const howStart = {
@@ -290,7 +290,7 @@ export const howReviewPath = {
 } as const
 
 export const howPricing = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingLabel,
   title: "Clear fees before you choose.",
   lead: "Detailed terms live on Pricing and in the service terms. This is the commercial summary.",
   groups: [
@@ -333,13 +333,13 @@ export const howPricing = {
 } as const
 
 export const howGuard = {
-  eyebrow: "After the immediate case",
-  title: "Optional monitoring once the situation is stable.",
+  eyebrow: "Relaunch Guard",
+  title: "Keep an eye on your profile, with or without a case.",
   lead:
-    "Once the immediate problem is resolved or stabilised, Relaunch Guard can provide ongoing Profile + Review monitoring so relevant changes are easier to notice and act on.",
+    "You can choose monitoring for a profile that is running normally, even if you have never used our recovery or review services.",
   figure: guardPlan.price,
   cadence: guardPlan.cadence,
-  model: "Early Access managed monitoring. It is not a self-service dashboard, and it does not claim impossible real-time Google suspension detection.",
+  model: "Our team checks your profile and reviews each morning and evening, UK time, including weekends and bank holidays. We review concerning changes and email you with the details. Checks are scheduled, not continuous.",
 } as const
 
 export const howTimeline = {
@@ -352,7 +352,7 @@ export const howTimeline = {
     { n: "04", title: "Choose how you want us to help", body: "Guided: we prepare it, you submit it. Managed: you authorise us, we manage the case." },
     { n: "05", title: "Prepare or manage the case", body: "Paid support organises evidence, wording and the agreed next stage." },
     { n: "06", title: "Google makes the relevant platform decision", body: "Reinstatement, review removal and similar outcomes remain Google's to decide." },
-    { n: "07", title: "Optional ongoing monitoring", body: "Relaunch Guard can watch Profile + Review changes after the immediate case." },
+    { n: "07", title: "Optional ongoing monitoring", body: "You can add Relaunch Guard after recovery. It is also available on its own, without a recovery or review case." },
   ],
 } as const
 

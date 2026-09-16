@@ -1,6 +1,6 @@
 import { guardFaqs } from "@/app/relaunch-guard/content"
 import { guardOffer, guardPrice } from "@/lib/guard-offer"
-import { pricingGroups, pricingNote } from "@/lib/pricing"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const recovery = pricingGroups[0]
 const review = pricingGroups[1]
@@ -8,8 +8,6 @@ const guidedRecovery = recovery.items[0]
 const managedRecovery = recovery.items[1]
 const guidedReview = review.items[0]
 const managedReview = review.items[1]
-
-const pricingPageLabel = "Pricing"
 
 function requiredGuardFaqAnswer(question: string) {
   const faq = guardFaqs.find((item) => item.q === question)
@@ -33,7 +31,7 @@ export const pricingSeo = {
 } as const
 
 export const pricingHero = {
-  eyebrow: pricingPageLabel,
+  eyebrow: pricingLabel,
   titleLines: ["Clear pricing.", "Choose how much help you want."] as const,
   lead:
     "For a profile or review problem, start with an assessment. We explain the work and fee before you choose Guided or Managed support. If your profile is running normally, you can choose Relaunch Guard monitoring on its own.",
@@ -45,7 +43,7 @@ export const pricingHero = {
 } as const
 
 export const pricingVisual = {
-  chrome: ["Commercial model", pricingPageLabel] as const,
+  chrome: ["Commercial model", pricingLabel] as const,
   ariaLabel: "Prices for Profile Recovery, Review Protection and Relaunch Guard",
   assessment: {
     label: "For profile and review problems",
@@ -378,7 +376,7 @@ export const pricingFaqs = [
   },
   {
     q: "Can my monthly price change?",
-    a: requiredGuardFaqAnswer("Can the introductory price change?"),
+    a: requiredGuardFaqAnswer("Can my monthly price change?"),
   },
 ] as const
 

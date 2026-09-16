@@ -1,6 +1,6 @@
 import { brandDescriptor, brandName } from "@/lib/brand"
 import { guardPrice } from "@/lib/guard-offer"
-import { earlyAccessLabel, pricingGroups, pricingNote } from "@/lib/pricing"
+import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const profileRecovery = pricingGroups[0]
 const reviewProtection = pricingGroups[1]
@@ -132,7 +132,7 @@ export const homepageProcess = {
 } as const
 
 export const homepagePricingPreview = {
-  eyebrow: earlyAccessLabel,
+  eyebrow: pricingLabel,
   title: "Clear support. Clear pricing.",
   lead:
     "Fees are stated before you decide. Managed work is £0 today; a success fee is due only if the defined successful outcome is achieved.",
@@ -155,7 +155,7 @@ export const homepagePricingPreview = {
     {
       label: "Relaunch Guard",
       figure: `${guardPrice}/month`,
-      detail: "Per location. Limited introductory price. Two manual checks a day.",
+      detail: "Per location. Two manual checks a day.",
     },
   ],
   note: pricingNote,
@@ -176,7 +176,6 @@ export const homepageGuard = {
     "Available without a recovery or review case",
   ],
   price: `${guardPrice} per month, per location`,
-  priceNote: "Limited introductory price.",
   boundary:
     "Monitoring does not prevent suspensions or guarantee instant detection. Help with an appeal or review challenge is a separate service, with any fee agreed before work starts.",
   cta: "Explore Relaunch Guard",
@@ -207,7 +206,7 @@ export const homepageWhy = {
     },
     {
       title: "Transparent pricing",
-      copy: `${earlyAccessLabel} is published. You see the fee and the model before any paid work begins.`,
+      copy: "You can see our prices before getting in touch. We explain the work and the fee before you decide.",
     },
   ],
 } as const
@@ -235,7 +234,7 @@ export const homepageFaqs = [
   },
   {
     q: "How much does support cost?",
-    a: `${earlyAccessLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard starts at ${guardPrice} per month, per location, at a limited introductory price. Google makes final platform decisions.`,
+    a: `${pricingLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard costs ${guardPrice} per month, per location. Google makes final platform decisions.`,
   },
   {
     q: "Can I use Relaunch Guard without a recovery case?",

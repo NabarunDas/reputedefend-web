@@ -15,7 +15,7 @@ import {
   homepageWhy,
 } from "@/lib/homepage-content"
 import { guardPrice } from "@/lib/guard-offer"
-import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
+import { pricingGroups, pricingLabel } from "@/lib/pricing"
 
 const pageSource = readFileSync(fileURLToPath(new URL("../app/page.tsx", import.meta.url)), "utf8")
 const homepageSource = readFileSync(fileURLToPath(new URL("../components/homepage.tsx", import.meta.url)), "utf8")
@@ -59,15 +59,16 @@ describe("homepage commercial copy", () => {
     expect(copy.toLowerCase()).not.toContain("further support may be available")
   })
 
-  it("shows Early Access prices from the shared pricing module", () => {
-    expect(homepagePricingPreview.eyebrow).toBe(earlyAccessLabel)
+  it("shows shared prices from the pricing module", () => {
+    expect(homepagePricingPreview.eyebrow).toBe(pricingLabel)
+    expect(homepagePricingPreview.eyebrow).toBe("Pricing")
     expect(homepagePricingPreview.items[0].figure).toBe(`From ${pricingGroups[0].items[0].price}`)
     expect(homepagePricingPreview.items[1].figure).toBe(`From ${pricingGroups[1].items[0].price}`)
     expect(homepagePricingPreview.items[2].figure).toBe("£0 today")
     expect(homepagePricingPreview.items[3].label).toBe("Relaunch Guard")
     expect(homepagePricingPreview.items[3].figure).toBe(`${guardPrice}/month`)
     expect(homepagePricingPreview.items[3].figure).toBe("£9.99/month")
-    expect(homepagePricingPreview.items[3].detail).toBe("Per location. Limited introductory price. Two manual checks a day.")
+    expect(homepagePricingPreview.items[3].detail).toBe("Per location. Two manual checks a day.")
     expect(copy).not.toContain("£399")
     expect(copy).not.toContain("£17.99")
     expect(copy.toLowerCase()).not.toMatch(/was £|save £|crossed/)
@@ -83,7 +84,8 @@ describe("homepage commercial copy", () => {
     expect(questions).toMatch(/How much does support cost/)
     expect(questions).toMatch(/without a recovery case/)
     const cost = homepageFaqs.find((item) => item.q === "How much does support cost?")?.a
-    expect(cost).toContain(`Relaunch Guard starts at ${guardPrice} per month, per location, at a limited introductory price.`)
+    expect(cost).toMatch(/^Pricing:/)
+    expect(cost).toContain(`Relaunch Guard costs ${guardPrice} per month, per location.`)
     expect(cost).toContain("Google makes final platform decisions.")
     const direct = homepageFaqs.find((item) => item.q === "Can I use Relaunch Guard without a recovery case?")
     expect(direct?.a).toContain("Sending a setup request does not start monitoring or take payment.")
@@ -102,7 +104,7 @@ describe("homepage commercial copy", () => {
     expect(homepageServices.review.limit.toLowerCase()).toContain("google decides")
     expect(homepageGuard.eyebrow).toBe("Relaunch Guard")
     expect(homepageGuard.price).toBe(`${guardPrice} per month, per location`)
-    expect(homepageGuard.priceNote).toBe("Limited introductory price.")
+    expect(homepageGuard).not.toHaveProperty("priceNote")
     expect(homepageGuard.boundary).toContain("does not prevent suspensions or guarantee instant detection")
     expect(homepageGuard.cta).toBe("Explore Relaunch Guard")
     expect(homepageGuard.href).toBe("/relaunch-guard")
@@ -115,7 +117,7 @@ describe("homepage commercial copy", () => {
     expect(pageSource.match(/<HomeGuard \/>/g)).toEqual(["<HomeGuard />"])
     expect(pageSource).toContain("homepageFaqs.map(({ q, a }) => ({ q, a }))")
     expect(homepageSource).toContain("homepageGuard.boundary")
-    expect(homepageSource).toContain("homepageGuard.priceNote")
+    expect(homepageSource).not.toContain("homepageGuard.priceNote")
     expect(homepageProblems.eyebrow).toBe("Common profile & review issues")
     expect(homepageProblems.title).toBe("Has your Google presence suddenly changed?")
     expect(homepageTrustStrip).toHaveLength(4)
@@ -126,6 +128,9 @@ describe("homepage commercial copy", () => {
       "Guided or Managed support",
       "Transparent pricing",
     ])
+    expect(homepageWhy.principles.find((item) => item.title === "Transparent pricing")?.copy).toBe(
+      "You can see our prices before getting in touch. We explain the work and the fee before you decide.",
+    )
   })
 
   it("keeps homepage metadata on recovery, suspension help and review protection", () => {

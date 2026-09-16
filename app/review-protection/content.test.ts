@@ -58,7 +58,7 @@ describe("Review Protection page copy", () => {
     expect(copy.toLowerCase()).not.toMatch(/guaranteed removal|100% success|google partner/)
     expect(JSON.stringify(reviewFaqs).toLowerCase()).toContain("google decides")
     expect(reviewFaqs.some((item) => item.q.includes("guarantee review removal"))).toBe(true)
-    expect(reviewTrustStrip).toContain("Early Access pricing")
+    expect(reviewTrustStrip).toContain("Pricing")
   })
 
   it("keeps Review Protection SEO geographically neutral", () => {

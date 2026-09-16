@@ -4,7 +4,7 @@ import { brandName, brandSiteUrl } from "@/lib/brand"
 import { formattedFromAddress } from "@/lib/enquiry-config"
 import { customerAcknowledgementSubject, enquiryEmailSubject } from "@/lib/enquiry-email"
 import { legalIdentity } from "@/lib/legal"
-import { earlyAccessLabel, pricingGroups } from "@/lib/pricing"
+import { pricingGroups, pricingLabel } from "@/lib/pricing"
 import { informationNav, primaryNav, serviceNav, sitemapPaths } from "@/lib/site-nav"
 import { homepageFaqs } from "@/lib/homepage-content"
 import { recoveryFaqs } from "@/app/business-profile-recovery/content"
@@ -86,8 +86,8 @@ describe("launch readiness", () => {
     expect(primaryNav.map((item) => item.href)).not.toContain("/relaunch-guard")
   })
 
-  it("locks current Early Access prices and does not commit a fake GA id", () => {
-    expect(earlyAccessLabel).toBe("Early Access pricing")
+  it("locks current published prices and does not commit a fake GA id", () => {
+    expect(pricingLabel).toBe("Pricing")
     const prices = pricingGroups.flatMap((group) => group.items.map((item) => item.price))
     expect(prices).toEqual(["£99", "£299", "£59", "£149", "£9.99"])
     expect(termsPricing.items.join(" ")).toContain("£99")

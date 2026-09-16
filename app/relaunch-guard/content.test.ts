@@ -18,7 +18,7 @@ describe("Relaunch Guard sales copy", () => {
     expect(guardSeo.titlePage).toBe("Relaunch Guard | Google Business Profile Monitoring")
     expect(guardSeo.canonical).toBe("/relaunch-guard")
     expect(guardHero.price).toBe(`${guardPrice} per month, per location`)
-    expect(guardHero.priceLabel).toBe("Introductory pricing")
+    expect(guardHero.priceLabel).toBe("Monthly monitoring")
     expect(guardIncluded.followUp).toContain(`${guardPrice} per month`)
   })
 
@@ -27,7 +27,7 @@ describe("Relaunch Guard sales copy", () => {
     expect(guardOffer.timezone).toBe("Europe/London")
     expect(guardOffer.deliveryMethod).toBe("manual")
     expect(guardHero.lead).toContain("twice a day")
-    expect(guardSchedule.body).toContain("twice a day, UK time")
+    expect(guardSchedule.body).toContain("each morning and evening, UK time")
     expect(guardSchedule.body).toContain("weekends and bank holidays")
     expect(guardSchedule.body).toContain("carried out manually")
     expect(guardCoverage.cards).toHaveLength(3)
@@ -60,5 +60,14 @@ describe("Relaunch Guard sales copy", () => {
     ])
     const cancelFaq = guardFaqs.find((item) => item.q === "How do I cancel?")
     expect(cancelFaq).toMatchObject({ contactLink: true })
+    const automatedFaq = guardFaqs.find((item) => item.q === "Is monitoring automated?")
+    expect(automatedFaq?.a[0]).toBe(
+      "No. Our team currently carries out the checks manually. We plan to add supported Google integrations after approval and testing, but there is no confirmed date for that change.",
+    )
+    const priceChangeFaq = guardFaqs.find((item) => item.q === "Can my monthly price change?")
+    expect(priceChangeFaq?.a[0]).toContain("at least 30 days")
+    expect(priceChangeFaq?.a[0]).toContain("accept the change before charging the higher price")
+    expect(priceChangeFaq?.a[0]).toContain("subscription ends before that renewal")
+    expect(guardFaqs.some((item) => item.q.includes("introductory"))).toBe(false)
   })
 })

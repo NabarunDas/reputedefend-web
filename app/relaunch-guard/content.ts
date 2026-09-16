@@ -12,7 +12,7 @@ export const guardHero = {
   title: "Keep an eye on your Google Business Profile.",
   lead: "We check your profile and reviews twice a day. If we spot a concerning change, we’ll review it and email you with what we found and what to do next.",
   price: `${guardPrice} per month, per location`,
-  priceLabel: "Introductory pricing",
+  priceLabel: "Monthly monitoring",
   supporting: "You don’t need an existing problem to use Guard. Start with monitoring, or add it after recovery.",
   secondaryCta: "How monitoring works",
   secondaryHref: "#how-monitoring-works",
@@ -39,7 +39,7 @@ export const guardCoverage = {
 
 export const guardSchedule = {
   title: "Morning and evening. Every day.",
-  body: "We check twice a day, UK time, including weekends and bank holidays. During Early Access, these checks are carried out manually.",
+  body: "Our team checks your profile and reviews each morning and evening, UK time, including weekends and bank holidays. These checks are carried out manually.",
   followUp: "If we find something concerning, we review it and email you with the details and our recommended next step.",
   supporting: "Checks are scheduled, not continuous. Changes can happen between checks.",
 } as const
@@ -103,7 +103,7 @@ export const guardFaqs = [
   {
     q: "Is monitoring automated?",
     a: [
-      "During Early Access, checks are manual. We plan to add supported Google integrations after approval and testing. There is no confirmed date for that change.",
+      "No. Our team currently carries out the checks manually. We plan to add supported Google integrations after approval and testing, but there is no confirmed date for that change.",
     ],
   },
   {
@@ -151,7 +151,7 @@ export const guardFaqs = [
     contactLink: true,
   },
   {
-    q: "Can the introductory price change?",
+    q: "Can my monthly price change?",
     a: [
       "Yes. We give you at least 30 days’ notice of the new price and the renewal date it would apply from. We ask you to accept the change before charging the higher price. If you don’t accept, your subscription ends before that renewal.",
     ],

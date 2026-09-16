@@ -270,7 +270,6 @@ export function HomeGuard() {
       </div>
       <div className={styles.guardMeta}>
         <p className={styles.guardPrice}>{homepageGuard.price}</p>
-        <p className={styles.guardPriceNote}>{homepageGuard.priceNote}</p>
         <ul>
           {homepageGuard.points.map((point) => (
             <li key={point}>

@@ -12,6 +12,7 @@ describe("/start-monitoring page", () => {
   it("is gated by the server-only flag and is not indexed", () => {
     expect(page).toContain("isMonitoringPersistenceEnabled")
     expect(page).toContain("notFound()")
+    expect(page).toContain("force-dynamic")
     expect(page).toMatch(/robots:\s*\{\s*index:\s*false,\s*follow:\s*true/)
     expect(page).toContain("Start your monitoring setup")
     expect(page).toContain("You do not need to have a current problem")

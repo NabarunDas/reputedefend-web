@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 }
 
+export const dynamic = "force-dynamic"
+
 const guardPrice = pricingGroups.find((group) => group.id === "relaunch-guard")?.items[0]
 const priceLine = guardPrice
   ? `${guardPrice.price}/month per location — Early Access`

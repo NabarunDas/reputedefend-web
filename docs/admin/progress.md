@@ -6,7 +6,7 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | --- | --- | --- |
 | 1 | Baseline and architecture contract | Repository reviewed; provider inventory pending access |
 | 2 | Admin application and domain shell | Implemented on codex/admin-foundation; Vercel/DNS setup pending |
-| 3 | Staff schema and OTP access | Next |
+| 3 | Single admin account and email OTP | Implemented; dev migration applied and verified; account binding, SMTP and delivery acceptance pending |
 | 4 | Authorisation and audit foundation | Planned |
 | 5 | Shared records and client workspace | Planned |
 | 6 | Persistent enquiries and triage | Planned |
@@ -29,4 +29,4 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | 23 | End to end acceptance and security | Planned |
 | 24 | Production cutover and signoff | Planned |
 
-Next PR must implement real OTP and staff membership; it must not simply open the bootstrap boundary or introduce a demo session. The customer portal remains a separate application with shared records and independently verified customer membership.
+The approved account is admin@profilerelaunch.com only, with no staff levels. Step 3 adds real OTP and opaque server sessions; live activation must follow single-admin-auth.md. The customer portal remains a separate application with shared records and independently verified customer membership.

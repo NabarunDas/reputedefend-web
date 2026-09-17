@@ -11,7 +11,7 @@ const origin = `http://127.0.0.1:${port}`
 const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
   cwd: fileURLToPath(new URL("../apps/admin", import.meta.url)),
   stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+  env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", ADMIN_AUTH_ENABLED: "false" },
 })
 let serverLog = ""
 server.stdout.on("data", chunk => { serverLog += chunk })

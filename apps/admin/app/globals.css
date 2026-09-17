@@ -18,3 +18,12 @@ button { background: #173e61; color: white; border: 0; border-radius: .4rem; pad
 .skip-link { position: absolute; left: 1rem; top: -5rem; padding: .75rem; background: #fff; z-index: 10; }
 .skip-link:focus { top: .5rem; }
 @media (max-width: 480px) { .masthead { padding: 1rem; flex-wrap: wrap; } main { margin-top: 2rem; } .panel { padding: 1.5rem; } }
+label { display: block; margin: 1rem 0 .5rem; font-weight: 700; }
+input { display: block; width: 100%; max-width: 18rem; padding: .85rem; border: 1px solid #8292a3; border-radius: .4rem; font: inherit; font-size: 1.2rem; letter-spacing: .2em; }
+form button { margin: 1rem 0; }
+button:disabled { opacity: .65; cursor: not-allowed; }
+.secondary { background: #edf3f7; color: #173e61; border: 1px solid #8292a3; }
+.sign-out { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.5rem; }
+.sign-out p { width: 100%; }
+.sessions { padding-left: 1.2rem; }
+.sessions li { padding: .65rem 0; line-height: 1.6; }

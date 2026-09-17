@@ -1,29 +1,21 @@
 # ProfileRelaunch Admin
 
-Separate Next.js application for `admin.profilerelaunch.com`. The marketing app stays at the repository root. There is no marketing navigation link to admin.
+Separate Next.js application for `admin.profilerelaunch.com`. Marketing stays at the repository root with no admin navigation link.
 
 ## Current stage
 
-This is the application foundation from implementation steps 1–2. No customer data or operational dashboard is exposed. Sign-in is explicitly unavailable until step 3 implements verified email OTP, active staff membership and secure sessions. There is no fake form, demo login, permissive flag or mock authentication.
+The application foundation and single-account email OTP are implemented. Only `admin@profilerelaunch.com`, bound to its exact Supabase Auth user ID, can sign in. There are no staff levels, invitations, signup or password forms. No client, enquiry or payment dashboard is implemented yet.
 
-All page requests except login, robots and static assets redirect to `/login`. All APIs and non-read requests return 401. The home page and catch-all API independently deny access as defence in depth. These bootstrap guards must be replaced with real server-side authorisation in step 3, not simply removed. Proxy alone will never be sufficient authorisation for staff commands or downloads.
+Authentication uses Supabase OTP and private PostgreSQL-backed opaque sessions. No provider tokens reach browser code. Protected pages must call `requireStaff()` independently of proxy. Future APIs and commands must perform the equivalent server-side session check themselves; the catch-all API continues to deny access.
 
-## Local commands
+## Commands
 
-Run `npm ci` from the repository root. Then:
+From the repository root, run `npm ci`, then `npm run dev:admin`, `npm run test:admin`, `npm run typecheck:admin`, `npm run build:admin` or `npm run smoke:admin`.
 
-```sh
-npm run dev:admin
-npm run test:admin
-npm run typecheck:admin
-npm run build:admin
-npm run smoke:admin
-```
+Port 3001 is used for admin. Marketing scripts remain independent. Admin tests include PostgreSQL migration and permission tests using PGlite with a minimal Auth fixture; no live credentials or emails are used.
 
-Development and start default to port 3001. Marketing commands (`npm run dev`, `build`, `test`, `typecheck`) retain their existing role. Root lint covers both apps. Each app owns its TypeScript and test configuration; marketing cannot import admin routes through its `@/` alias.
+## Activation
 
-No environment variables or database credentials are needed for this stage. Do not copy marketing production secrets into the admin project. The OTP stage will specify its own server-only configuration and staging setup.
+See `docs/admin/single-admin-auth.md` for the migration, account binding, SMTP/template settings, environment variables, acceptance checks and recovery procedure. Without complete configuration the app remains closed. No migration runs automatically.
 
-## Deployment
-
-See `docs/admin/deployment.md`. A second Vercel project and the admin DNS record are external setup tasks. Committing this app does not create either. No production migration or intake flag change is part of this PR.
+See `docs/admin/deployment.md` for the separate Vercel project and DNS setup. A successful marketing preview does not deploy the admin application.

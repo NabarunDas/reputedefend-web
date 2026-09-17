@@ -1,4 +1,4 @@
-/** Bootstrap policy only: no staff sessions exist until the OTP stage is built. */
+/** Only these reads bypass authentication. Auth POST routes enforce their own boundary. */
 export function isPublicRead(pathname: string, method: string): boolean {
   if (method !== "GET" && method !== "HEAD") return false
   return pathname === "/login" || pathname === "/robots.txt" || pathname.startsWith("/_next/static/")

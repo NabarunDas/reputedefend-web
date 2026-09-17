@@ -44,3 +44,19 @@ summary { cursor: pointer; }
 .pagination { margin-top: 1.5rem; }
 .session-action { margin-top: .75rem; }
 .session-action p:empty { margin: 0; }
+.record-tabs { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.record-tabs [aria-current] { font-weight: bold; }
+.record-section { margin-top: 2rem; border-top: 1px solid #dce2e8; padding-top: 1.5rem; }
+.record-section > summary { font-size: 1.1rem; font-weight: bold; }
+.record-form { max-width: 40rem; }
+.record-form input, .filters input, input[name="right"] { font-size: 1rem; letter-spacing: normal; max-width: 100%; }
+.record-form textarea { display: block; width: 100%; font: inherit; padding: .8rem; border: 1px solid #8292a3; border-radius: .4rem; }
+.record-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.record-form .checkbox { display: flex; align-items: start; gap: .7rem; }
+.record-form .checkbox input { width: auto; margin-top: .2rem; }
+.record-form label > .muted { display: block; font-weight: normal; }
+.relationship { padding: 1rem; border: 1px solid #dce2e8; border-radius: .4rem; margin-top: 1rem; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.button-link { display: inline-block; background: #173e61; color: #fff; border-radius: .4rem; padding: .8rem 1.1rem; }
+.comparison { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 2rem; }
+@media(max-width:600px) { .comparison { grid-template-columns: 1fr; } }

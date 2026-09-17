@@ -392,6 +392,8 @@ Deliver: staff membership/roles, secure application sessions, first-Owner bootst
 Acceptance: unknown email, expired/wrong code, resend limits, disabled staff, customer-only account and session expiry are tested. No public staff signup. Depends on 2.
 
 ## Step 4 Authorisation and audit foundation
+Current implementation: see `audit-foundation.md`. The single-account decision supersedes last-Owner and role-management requirements: there is no identity disable/delete/rebind command in the portal. Fresh OTP is enforced using the server-recorded sign-in time; new sensitive domain commands must adopt the same database check.
+
 Deliver: capability checks, RLS/grants, scoped server commands, audit writer, optimistic concurrency, CSRF protection and security tests. Add last-Owner protection and fresh-OTP confirmation for sensitive actions.
 
 Acceptance: direct API, forged payload, cross-record access and revoked-session tests fail closed. Audit survives rejected/failed actions appropriately. Depends on 3.

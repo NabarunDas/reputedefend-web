@@ -25,7 +25,7 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Admin production server did not become ready")
-  for (const path of ["/login", "/", "/clients/private?email=hidden@example.com", "/api/clients", "/robots.txt"]) {
+  for (const path of ["/login", "/", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/api/sessions/revoke", "/robots.txt"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
@@ -48,6 +48,7 @@ try {
     }
   }
   assert.equal((await fetch(`${origin}/login`, { method: "POST" })).status, 401)
+  assert.equal((await fetch(`${origin}/api/sessions/revoke`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify({ sessionId: "33333333-3333-4333-8333-333333333333" }) })).status, 401)
   console.log("Admin production HTTP smoke checks passed")
 } finally {
   if (server.exitCode === null) {

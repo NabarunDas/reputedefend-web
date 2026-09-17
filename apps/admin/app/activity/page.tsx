@@ -15,7 +15,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   if (filters.outcome) next.set("outcome", filters.outcome)
   if (visible.length) next.set("before", visible[visible.length - 1].id)
   return <section className="panel workspace"><AdminNav current="activity" />
-    <h1>Activity</h1><p>Sign-ins, sign-outs and session changes for the admin account. Times are shown in UK time.</p>
+    <h1>Activity</h1><p>Sign-ins, session changes and client record activity. Times are shown in UK time.</p>
     <form className="filters" action="/activity" method="get">
       <div><label htmlFor="action">Action</label><select id="action" name="action" defaultValue={filters.action || ""}><option value="">All actions</option>{Object.entries(actions).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
       <div><label htmlFor="outcome">Result</label><select id="outcome" name="outcome" defaultValue={filters.outcome || ""}><option value="">All results</option>{Object.entries(outcomes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
@@ -23,7 +23,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     </form>
     {!visible.length ? <p className="notice">No activity matches these filters.</p> : <div className="table-scroll" role="region" aria-label="Activity history" tabIndex={0}><table>
       <caption>Admin account activity — newest recorded first</caption><thead><tr><th scope="col">Time (UK)</th><th scope="col">Action</th><th scope="col">Result</th><th scope="col">Details</th></tr></thead>
-      <tbody>{visible.map(event => <tr key={event.id}><td><time dateTime={event.createdAt}>{ukDate(event.createdAt)}</time></td><td>{actions[event.action]}</td><td>{outcomes[event.outcome]}</td><td><details><summary>Reference {event.id}</summary><p className="reference">Request: {event.requestId}</p>{event.targetId && <p className="reference">Session: {event.targetId}</p>}</details></td></tr>)}</tbody>
+      <tbody>{visible.map(event => <tr key={event.id}><td><time dateTime={event.createdAt}>{ukDate(event.createdAt)}</time></td><td>{actions[event.action]}</td><td>{outcomes[event.outcome]}</td><td><details><summary>Reference {event.id}</summary><p className="reference">Request: {event.requestId}</p>{event.targetId && <p className="reference">{event.entity || "Session"}: {event.targetId}</p>}{event.reason && <p className="preserve-lines">{event.reason}</p>}{event.details && Object.keys(event.details).length > 0 && <pre className="reference">{JSON.stringify(event.details, null, 2)}</pre>}</details></td></tr>)}</tbody>
     </table></div>}
     <div className="pagination">{filters.before && <Link href={`/activity?${new URLSearchParams({ ...(filters.action ? { action: filters.action } : {}), ...(filters.outcome ? { outcome: filters.outcome } : {}) })}`}>Back to newest</Link>}{rows.length > 50 && <Link href={`/activity?${next}`}>Older activity</Link>}</div>
   </section>

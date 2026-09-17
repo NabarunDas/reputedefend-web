@@ -22,7 +22,7 @@ This slice implements real authentication, a signed-in landing page, active sess
 ## Activation steps — staging first
 
 1. Keep `ADMIN_AUTH_ENABLED=false`. Verify the correct Supabase project and existing migration history. Do not replay the core, case-intake or Guard baseline migrations.
-2. Apply only `supabase/migrations/20260917000000_single_admin_auth_v1.sql` once. It creates private authentication tables and server RPCs; it does not change customer RLS or create an Auth user.
+2. Apply only `supabase/migrations/20260917080553_single_admin_auth_v1.sql` once. It creates private authentication tables and server RPCs; it does not change customer RLS or create an Auth user.
 3. In Supabase Authentication, provision the account `admin@profilerelaunch.com` through the project owner's trusted administration process. Confirm the mailbox belongs to you and that the Auth user is confirmed and not banned. No application password is needed or shown. If the provider's creation flow requires a password, use an independently generated random value and never use it in this app.
 4. Run `scripts/admin/bind-admin.sql` once in the same project's SQL Editor. It requires exactly one existing confirmed account and refuses to replace an existing binding. It does not create an account or mark an unconfirmed address as confirmed.
 5. Configure **Supabase Auth custom SMTP**. Existing Resend API integration for enquiries does not configure Auth email. Use a verified sending domain, an appropriate sender such as `notifications@profilerelaunch.com`, and the SMTP credentials from your email provider. Store credentials in Supabase settings only.

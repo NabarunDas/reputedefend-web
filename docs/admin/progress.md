@@ -6,7 +6,7 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | --- | --- | --- |
 | 1 | Baseline and architecture contract | Repository reviewed; provider inventory pending access |
 | 2 | Admin application and domain shell | Implemented on codex/admin-foundation; Vercel/DNS setup pending |
-| 3 | Single admin account and email OTP | Implemented; live migration, account binding, SMTP and delivery acceptance pending |
+| 3 | Single admin account and email OTP | Implemented; dev migration applied and verified; account binding, SMTP and delivery acceptance pending |
 | 4 | Authorisation and audit foundation | Planned |
 | 5 | Shared records and client workspace | Planned |
 | 6 | Persistent enquiries and triage | Planned |

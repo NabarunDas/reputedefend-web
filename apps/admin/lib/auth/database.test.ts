@@ -20,7 +20,7 @@ beforeAll(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
     create schema auth;
     create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
-  await db.exec(readFileSync(new URL("../../../../supabase/migrations/20260917000000_single_admin_auth_v1.sql", import.meta.url), "utf8"))
+  await db.exec(readFileSync(new URL("../../../../supabase/migrations/20260917080553_single_admin_auth_v1.sql", import.meta.url), "utf8"))
 }, 30000)
 afterAll(async () => { await db.close() })
 beforeEach(async () => {

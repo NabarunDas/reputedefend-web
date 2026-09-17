@@ -14,7 +14,7 @@ Implemented on `codex/admin-email-otp`, based on the foundation in PR #85. This 
 
 ## Not yet verified live
 
-No live Supabase migration, account provisioning/binding, SMTP change or Vercel admin-project configuration was performed. No real OTP email was sent. PGlite does not replace staging verification against the deployed Supabase Auth schema and API.
+The migration was subsequently applied to profilerelaunch-dev on 17 September 2026 as version 20260917080553. Live table/RPC permissions and fail-closed checks passed; see supabase-activation-status.md. Account provisioning/binding, SMTP configuration and real email delivery remain pending. PGlite does not replace final end-to-end staging acceptance.
 
 Interactive browser/mobile testing and real mailbox delivery remain activation gates. Follow single-admin-auth.md. The marketing preview deployment does not prove that the separate admin application is deployed.
 

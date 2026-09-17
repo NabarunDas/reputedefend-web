@@ -1,7 +1,7 @@
 {
   "name": "v0-project",
   "version": "1.0.0",
-  "description": "ProfileRelaunch web application – Google Business Profile recovery and review protection",
+  "description": "ProfileRelaunch web application \u2013 Google Business Profile recovery and review protection",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
@@ -9,7 +9,14 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:admin": "npm run dev --workspace=@profilerelaunch/admin",
+    "build:admin": "npm run build --workspace=@profilerelaunch/admin",
+    "start:admin": "npm run start --workspace=@profilerelaunch/admin",
+    "typecheck:admin": "npm run typecheck --workspace=@profilerelaunch/admin",
+    "test:admin": "npm run test --workspace=@profilerelaunch/admin",
+    "check:admin": "npm run test:admin && npm run typecheck:admin",
+    "smoke:admin": "node scripts/smoke-admin.mjs"
   },
   "repository": {
     "type": "git",
@@ -45,5 +52,9 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.2",
     "vitest": "^5.0.0"
-  }
+  },
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ]
 }

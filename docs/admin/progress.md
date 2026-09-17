@@ -5,9 +5,9 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | Step | Deliverable | Status |
 | --- | --- | --- |
 | 1 | Baseline and architecture contract | Repository reviewed; provider inventory pending access |
-| 2 | Admin application and domain shell | Implemented on codex/admin-foundation; Vercel/DNS setup pending |
-| 3 | Single admin account and email OTP | Implemented; dev migration applied and verified; account binding, SMTP and delivery acceptance pending |
-| 4 | Authorisation and audit foundation | Planned |
+| 2 | Admin application and domain shell | Merged; user confirms the deployed admin login works |
+| 3 | Single admin account and email OTP | Merged; dev account binding verified; user confirms email OTP login works |
+| 4 | Authorisation and audit foundation | Implemented for current account/session operations; activity log and audited single-session revocation. See audit-foundation.md for scope and verification |
 | 5 | Shared records and client workspace | Planned |
 | 6 | Persistent enquiries and triage | Planned |
 | 7 | Workflow engine, tasks and cases | Planned |

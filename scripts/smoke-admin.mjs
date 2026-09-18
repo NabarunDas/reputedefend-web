@@ -25,7 +25,7 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Admin production server did not become ready")
-  for (const path of ["/login", "/", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/cases", "/tasks", "/api/cases/command", "/enquiries", "/enquiries/new", "/api/enquiries/options", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt"]) {
+  for (const path of ["/login", "/", "/security", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/cases", "/tasks", "/api/cases/command", "/enquiries", "/enquiries/new", "/api/enquiries/options", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt", "/brand/profile-relaunch-logo.png"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
@@ -36,6 +36,10 @@ try {
       assert.equal(response.status, 200)
       assert.match(html, /Sign-in is not available yet/)
       assert.doesNotMatch(html, /googletagmanager|google-analytics|<form/)
+      assert.doesNotMatch(html, /admin@profilerelaunch\.com/)
+      assert.match(html, /Admin Portal/)
+    } else if (path.startsWith("/brand/")) {
+      assert.equal(response.status, 200)
     } else if (path.startsWith("/api")) {
       assert.equal(response.status, 401)
       assert.deepEqual(await response.json(), { error: "Staff sign-in is required." })

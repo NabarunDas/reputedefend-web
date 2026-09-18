@@ -1,32 +1,70 @@
-import { cookies } from "next/headers"
+import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
-import { backend, ListedSession, tokenHash } from "@/lib/auth/backend"
-import { sessionCookie } from "@/lib/auth/config"
-import { SignOut } from "./sign-out"
-import { AdminNav } from "./admin-nav"
-import { RevokeSession } from "./revoke-session"
-import { redirect } from "next/navigation"
+import { enquiryFilters } from "@/lib/enquiries/model"
+import { listEnquiries } from "@/lib/enquiries/queries"
+import { filters } from "@/lib/cases/model"
+import { listCases, listTasks } from "@/lib/cases/queries"
+import { ukDate } from "@/lib/admin/activity"
+import { Badge, EmptyState, PageHeader, queueCountLabel } from "./ui"
 
-const date = (value: string) => new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date(value))
+export const metadata = { title: "Today" }
+
 export default async function AdminHome() {
   await requireStaff()
-  const token = (await cookies()).get(sessionCookie)!.value
-  const sessions = await backend().rpc<ListedSession[] | null>("admin_list_sessions_v1", { p_token: tokenHash(token) })
-  if (sessions === null) redirect("/login")
-  return <section className="panel">
-    <AdminNav current="sessions" />
-    <p className="eyebrow">ProfileRelaunch Admin</p>
-    <h1>Account &amp; sessions</h1>
-    <p>Signed in as <strong>admin@profilerelaunch.com</strong>.</p>
-    <p>Review your recent activity or sign out a session you no longer need.</p>
-    <h2>Active sessions</h2>
-    <p className="muted">Times are shown in UK time. Sessions end after 30 minutes of inactivity or 12 hours after sign-in.</p>
-    <ul className="sessions">{sessions?.map(session => <li key={session.id}>
-      <strong>{session.current ? "This session" : "Another session"}</strong><br />
-      Signed in {date(session.createdAt)}<br />Last active {date(session.lastSeenAt)}
-      {!session.current && <RevokeSession id={session.id} label={date(session.createdAt)} />}
-    </li>)}</ul>
-    <p className="muted">Ending another session requires a sign-in from the last five minutes. If asked, sign out and use a new email code.</p>
-    <SignOut />
+  const enquiryFilter = enquiryFilters({})
+  const caseFilter = filters({})
+  const taskFilter = filters({}, true)
+  const overdueFilter = filters({ filter: "overdue" }, true)
+  if (!enquiryFilter || !caseFilter || !taskFilter || !overdueFilter) {
+    return <section className="page"><PageHeader title="Today" /><section className="panel"><EmptyState>Queue filters are unavailable. Open the existing lists from the sidebar.</EmptyState></section></section>
+  }
+  const [enquiries, cases, tasks, overdueTasks] = await Promise.all([
+    listEnquiries(enquiryFilter),
+    listCases(caseFilter),
+    listTasks(taskFilter),
+    listTasks(overdueFilter),
+  ])
+  const overduePreview = overdueTasks.slice(0, 5)
+  return <section className="page">
+    <PageHeader title="Today" description="Queues that already exist in this workspace. Counts are taken from the current list page, so a value of 50+ means there is at least one further page." />
+    <div className="summary-grid">
+      <Link className="panel summary-card" href="/enquiries">
+        <p className="label">Open enquiries</p>
+        <p className="count">{queueCountLabel(enquiries)}</p>
+        <p className="hint">Active enquiry queue</p>
+        <p className="action">View enquiries</p>
+      </Link>
+      <Link className="panel summary-card" href="/cases">
+        <p className="label">Open cases</p>
+        <p className="count">{queueCountLabel(cases)}</p>
+        <p className="hint">Open case queue</p>
+        <p className="action">View cases</p>
+      </Link>
+      <Link className="panel summary-card" href="/tasks">
+        <p className="label">Open tasks</p>
+        <p className="count">{queueCountLabel(tasks)}</p>
+        <p className="hint">Open task queue</p>
+        <p className="action">View tasks</p>
+      </Link>
+      <Link className="panel summary-card" href="/tasks?filter=overdue">
+        <p className="label">Overdue tasks</p>
+        <p className="count">{queueCountLabel(overdueTasks)}</p>
+        <p className="hint">Overdue task queue</p>
+        <p className="action">View overdue tasks</p>
+      </Link>
+    </div>
+    <section className="panel">
+      <h2>Needs attention</h2>
+      {!overduePreview.length ? <EmptyState>No overdue tasks in the current queue. Review enquiries and cases from the cards above.</EmptyState> : <>
+        <p className="muted">Earliest overdue tasks from the existing task queue.</p>
+        <ul className="attention-list">{overduePreview.map(task => <li key={task.id}>
+          <div>
+            <Link href={`/cases/${task.caseId}`}>{task.reference}: {task.title}</Link>
+            <p className="muted">{task.owner === "ADMIN" ? "Admin" : "Customer"} · {ukDate(task.due)}</p>
+          </div>
+          <Badge tone="danger">{task.status}</Badge>
+        </li>)}</ul>
+      </>}
+    </section>
   </section>
 }

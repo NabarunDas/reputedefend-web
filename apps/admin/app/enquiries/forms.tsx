@@ -15,7 +15,7 @@ export function TriageForm({enquiry:e}:{enquiry:EnquiryDetail}){
  const [status,setStatus]=useState(e.status)
  return <CommandForm endpoint="triage" actionUrl="/api/enquiries/triage" payload={f=>({id:e.id,version:e.version,status:f.get("status"),assigned:f.get("assigned")==="on",nextAction:f.get("nextAction"),due:iso(f.get("due")),note:f.get("note")})}>
   <label>Status<select name="status" value={status} onChange={event=>setStatus(event.target.value as typeof status)}>{Object.entries(enquiryStates).filter(([key])=>key!=="converted").map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-  <label className="checkbox"><input name="assigned" type="checkbox" defaultChecked={e.assigned}/>Assigned to admin@profilerelaunch.com</label>
+  <label className="checkbox"><input name="assigned" type="checkbox" defaultChecked={e.assigned}/>Assigned to ProfileRelaunch Administrator</label>
   <label>Next action<textarea name="nextAction" maxLength={1000} defaultValue={e.nextAction} required={status==="waiting"}/></label>
   <label>Follow-up date and time (UTC)<input name="due" type="datetime-local" defaultValue={e.nextActionAt?new Date(e.nextActionAt).toISOString().slice(0,16):""} required={status==="waiting"}/></label>
   <Reason name="note" label="What changed?"/>

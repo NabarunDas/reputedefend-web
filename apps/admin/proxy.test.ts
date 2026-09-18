@@ -4,7 +4,7 @@ import { proxy } from "./proxy"
 import { GET, POST } from "./app/api/[[...path]]/route"
 
 describe("admin access boundary", () => {
-  it.each(["/", "/today", "/clients/customer-id", "/documents/private.pdf", "/exports/data.csv", "/login/extra", "/_next/image"])("blocks %s without leaking the destination", async path => {
+  it.each(["/", "/today", "/security", "/clients/customer-id", "/documents/private.pdf", "/exports/data.csv", "/login/extra", "/_next/image", "/brand/secret.png"])("blocks %s without leaking the destination", async path => {
     const result = await proxy(new NextRequest(`https://admin.profilerelaunch.com${path}?email=private@example.com&next=https://example.com`, {
       headers: { cookie: "staff=true; role=OWNER", "x-staff-role": "OWNER" },
     }))
@@ -17,7 +17,7 @@ describe("admin access boundary", () => {
     expect(result.status).toBe(401)
     expect(await result.json()).toEqual({ error: "Staff sign-in is required." })
   })
-  it.each(["/login", "/robots.txt", "/_next/static/chunks/app.js"])("allows public read %s with noindex", async path => {
+  it.each(["/login", "/robots.txt", "/_next/static/chunks/app.js", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"])("allows public read %s with noindex", async path => {
     const result = await proxy(new NextRequest(`https://admin.profilerelaunch.com${path}`))
     expect(result.headers.get("x-middleware-next")).toBe("1")
     expect(result.headers.get("x-robots-tag")).toContain("noindex")

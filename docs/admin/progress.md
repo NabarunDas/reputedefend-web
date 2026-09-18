@@ -8,8 +8,8 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | 2 | Admin application and domain shell | Merged; user confirms the deployed admin login works |
 | 3 | Single admin account and email OTP | Merged; dev account binding verified; user confirms email OTP login works |
 | 4 | Authorisation and audit foundation | Merged in PR #87; activity log and audited session commands. See audit-foundation.md |
-| 5 | Shared records and client workspace | Implemented: directories, record editing, manual contact verification, verified relationships, private customer projections and read-only duplicate comparison. See client-workspace.md; live browser acceptance pending |
-| 6 | Persistent enquiries and triage | Planned |
+| 5 | Shared records and client workspace | Merged in PR #88: directories, record editing, manual contact verification, verified relationships, private customer projections and read-only duplicate comparison. See client-workspace.md; live browser acceptance pending |
+| 6 | Persistent enquiries and triage | Implemented; migration applied to connected dev project. Queue, phone intake, follow-ups, notification outcomes and audited conversion. See enquiry-triage.md; authenticated browser acceptance pending |
 | 7 | Workflow engine, tasks and cases | Planned |
 | 8 | Evidence storage and review | Planned |
 | 9 | Agreements and customer actions | Planned |

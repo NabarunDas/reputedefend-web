@@ -1,0 +1,18 @@
+import { describe,expect,it,vi,afterEach } from "vitest"
+import { persistGeneralEnquiry,type GeneralIntakeOptions } from "./intake"
+import type { EnquiryInput } from "@/lib/enquiry"
+const data:EnquiryInput={fullName:"Alex",email:"alex@example.com",phone:"",businessName:"Bakery",country:"",service:"general",subject:"general-question",details:"Please explain the service.",websiteUrl:"",businessProfileUrl:"",reviewUrl:"",source:"contact",informationAccurate:false,privacyAccepted:false}
+const key="22222222-2222-4222-8222-222222222222",id="33333333-3333-4333-8333-333333333333"
+const config={apiKey:"test",fromEmail:"hello@example.com",toEmail:"cases@example.com",ready:true,sendCustomerAck:false}
+afterEach(()=>{vi.unstubAllEnvs();vi.useRealTimers()})
+function setup(){const create=vi.fn().mockResolvedValue({status:"created",id,attempt:key,sendAck:false}),finish=vi.fn().mockResolvedValue(undefined),send=vi.fn().mockResolvedValue({ok:true,id:"email-id"});return {create,finish,send,options:{create,finish,provider:{send},config,nodeEnv:"test"} satisfies GeneralIntakeOptions}}
+describe("durable general intake",()=>{
+ it("commits before sending and honours a disabled acknowledgement",async()=>{const s=setup();await persistGeneralEnquiry(data,key,s.options);expect(s.create.mock.invocationCallOrder[0]).toBeLessThan(s.send.mock.invocationCallOrder[0]);expect(s.send).toHaveBeenCalledTimes(1);expect(s.finish).toHaveBeenCalledWith(id,key,"SENT","SKIPPED")})
+ it("returns success when internal email fails after persistence",async()=>{const s=setup();s.send.mockResolvedValue({ok:false,reason:"rejected"});expect(await persistGeneralEnquiry(data,key,s.options)).toMatchObject({ok:true,persisted:true});expect(s.finish).toHaveBeenCalledWith(id,key,"FAILED","SKIPPED")})
+ it("does not send on a duplicate or expose its record ID",async()=>{const s=setup();s.create.mockResolvedValue({status:"existing"});expect(await persistGeneralEnquiry(data,key,s.options)).toEqual({ok:true,persisted:true,message:"Your enquiry has been received."});expect(s.send).not.toHaveBeenCalled()})
+ it("does not send if saving fails or the payload conflicts",async()=>{const s=setup();s.create.mockRejectedValue(new Error("private database error"));expect((await persistGeneralEnquiry(data,key,s.options)).ok).toBe(false);expect(s.send).not.toHaveBeenCalled();s.create.mockResolvedValue({status:"conflict"});expect((await persistGeneralEnquiry(data,key,s.options)).ok).toBe(false)})
+ it("keeps the enquiry received even if outcome recording fails",async()=>{const s=setup();s.finish.mockRejectedValue(new Error("ledger unavailable"));expect((await persistGeneralEnquiry(data,key,s.options)).ok).toBe(true)})
+ it("sends acknowledgement only when requested in the saved policy",async()=>{const s=setup();s.create.mockResolvedValue({status:"created",id,attempt:key,sendAck:true});await persistGeneralEnquiry(data,key,{...s.options,config:{...config,sendCustomerAck:true}});expect(s.send).toHaveBeenCalledTimes(2);expect(s.finish).toHaveBeenCalledWith(id,key,"SENT","SENT")})
+ it("bounds uncertain provider calls and records unknown rather than retrying",async()=>{vi.useFakeTimers();const s=setup();s.send.mockImplementation(()=>new Promise(()=>{}));const pending=persistGeneralEnquiry(data,key,s.options);await vi.advanceTimersByTimeAsync(8001);expect((await pending).ok).toBe(true);expect(s.finish).toHaveBeenCalledWith(id,key,"UNKNOWN","SKIPPED")})
+ it("fails closed in production without storage",async()=>{vi.stubEnv("SUPABASE_URL","");vi.stubEnv("SUPABASE_SECRET_KEY","");expect((await persistGeneralEnquiry(data,key,{nodeEnv:"production"})).ok).toBe(false)})
+})

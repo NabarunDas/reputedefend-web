@@ -56,7 +56,7 @@ describe("POST /api/enquiry persistence branch", () => {
     expect(json.caseRef).toBeUndefined()
   })
 
-  it("does not persist homepage or contact even when the flag is true", async () => {
+  it("does not turn homepage or contact into formal cases", async () => {
     vi.stubEnv("CASE_PERSISTENCE_ENABLED", "true")
     const { POST } = await import("@/app/api/enquiry/route")
     for (const payload of [
@@ -80,7 +80,7 @@ describe("POST /api/enquiry persistence branch", () => {
       const response = await POST(new Request("http://localhost/api/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, submissionKey: SUBMISSION_KEY }),
       }))
       const json = await response.json() as { persisted?: boolean; caseRef?: string }
       expect(persistGetHelpCase).not.toHaveBeenCalled()

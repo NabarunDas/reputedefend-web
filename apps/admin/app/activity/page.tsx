@@ -15,7 +15,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   if (filters.outcome) next.set("outcome", filters.outcome)
   if (visible.length) next.set("before", visible[visible.length - 1].id)
   return <section className="panel workspace"><AdminNav current="activity" />
-    <h1>Activity</h1><p>Sign-ins, session changes and client record activity. Times are shown in UK time.</p>
+    <h1>Activity</h1><p>Sign-ins, session changes, client records and enquiry activity. Times are shown in UK time.</p>
     <form className="filters" action="/activity" method="get">
       <div><label htmlFor="action">Action</label><select id="action" name="action" defaultValue={filters.action || ""}><option value="">All actions</option>{Object.entries(actions).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
       <div><label htmlFor="outcome">Result</label><select id="outcome" name="outcome" defaultValue={filters.outcome || ""}><option value="">All results</option>{Object.entries(outcomes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>

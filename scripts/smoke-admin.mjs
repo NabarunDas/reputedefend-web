@@ -25,7 +25,7 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Admin production server did not become ready")
-  for (const path of ["/login", "/", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt"]) {
+  for (const path of ["/login", "/", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/enquiries", "/enquiries/new", "/api/enquiries/options", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)

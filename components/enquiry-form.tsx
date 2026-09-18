@@ -22,6 +22,7 @@ type EnquiryFormProps = {
 export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel }: EnquiryFormProps) {
   const buttonLabel = submitLabel ?? (caseMode ? "Get help with a case" : "Send enquiry")
   const formId = useId()
+  const submission = useRef<{ signature: string; key: string } | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
@@ -44,6 +45,8 @@ export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel
       return
     }
 
+    const signature = JSON.stringify(checked.data)
+    if (!submission.current || submission.current.signature !== signature) submission.current = { signature, key: crypto.randomUUID() }
     setStatus("loading")
     setDeliveryError(false)
     setErrors({})
@@ -53,7 +56,7 @@ export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel
       const res = await fetch("/api/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, submissionKey: submission.current.key }),
       })
       const json = await res.json() as { ok?: boolean; simulated?: boolean; errors?: EnquiryFieldErrors; message?: string }
 
@@ -97,7 +100,7 @@ export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel
           <>
             <p className={styles.simulated}>Development simulation</p>
             <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>This is not a live enquiry.</h2>
-            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the enquiry has actually been sent.</p>
+            <p>The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after your enquiry has been saved for us to review.</p>
           </>
         ) : (
           <>

@@ -2,7 +2,7 @@
 import { useState, useRef, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { recordPath, type Entity, type Membership, type RecordItem } from "@/lib/records/model"
-function CommandForm({ endpoint, payload, children, destination }: { endpoint: string; payload: (form: FormData) => unknown; children: ReactNode; destination?: (id: string) => string }) {
+export function CommandForm({ endpoint, payload, children, destination, actionUrl }: { endpoint: string; payload: (form: FormData) => unknown; children: ReactNode; destination?: (id: string) => string; actionUrl?: string }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("")
   const [uncertain, setUncertain] = useState(false)
   const [completed, setCompleted] = useState(false)
@@ -15,7 +15,7 @@ function CommandForm({ endpoint, payload, children, destination }: { endpoint: s
     commandKey.current ||= crypto.randomUUID()
     setBusy(true); setMessage("")
     try {
-      const response = await fetch(`/api/records/${endpoint}`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": commandKey.current }, body: JSON.stringify(payload(form)) })
+      const response = await fetch(actionUrl ?? `/api/records/${endpoint}`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": commandKey.current }, body: JSON.stringify(payload(form)) })
       const result = await response.json()
       setMessage(result.message)
       if (response.ok) { setCompleted(true); if (destination && result.id) router.push(destination(result.id)); router.refresh() }
@@ -26,7 +26,7 @@ function CommandForm({ endpoint, payload, children, destination }: { endpoint: s
   }
   return <form className="record-form" onSubmit={submit}><fieldset disabled={busy || uncertain || completed}>{children}<button type="submit">{busy ? "Saving…" : "Save"}</button></fieldset><p role="status">{message}</p>{(uncertain || completed) && <button type="button" className="secondary" onClick={() => window.location.reload()}>Reload record</button>}</form>
 }
-function Reason({ label = "Reason for this change", name = "reason" }: { label?: string; name?: string }) {
+export function Reason({ label = "Reason for this change", name = "reason" }: { label?: string; name?: string }) {
   return <label>{label}<textarea name={name} required minLength={10} maxLength={1000} rows={3} /><span className="muted">Use a brief factual note. Don’t include passwords, codes or sensitive document contents.</span></label>
 }
 export function RecordForm({ entity, record, businessId }: { entity: Entity; record?: RecordItem; businessId?: string }) {

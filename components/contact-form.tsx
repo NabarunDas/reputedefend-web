@@ -22,7 +22,7 @@ export const SIMULATED_COPY = {
   kicker: "Development simulation",
   title: "This is not a live message.",
   body:
-    "The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after the message has actually been sent.",
+    "The form worked, but nothing was delivered to a production inbox or CRM. In production, this confirmation will only appear after your message has been saved for us to review.",
 } as const
 
 export const SEND_ERROR =
@@ -35,6 +35,7 @@ const CONTACT_FIELDS: EnquiryField[] = ["fullName", "email", "businessName", "su
 
 export function ContactForm() {
   const formId = useId()
+  const submission = useRef<{ signature: string; key: string } | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
@@ -66,6 +67,8 @@ export function ContactForm() {
       return
     }
 
+    const signature = JSON.stringify(checked.data)
+    if (!submission.current || submission.current.signature !== signature) submission.current = { signature, key: crypto.randomUUID() }
     setStatus("loading")
     setDeliveryError(false)
     setErrors({})
@@ -75,7 +78,7 @@ export function ContactForm() {
       const res = await fetch("/api/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, submissionKey: submission.current.key }),
       })
       const json = await res.json() as { ok?: boolean; simulated?: boolean; errors?: EnquiryFieldErrors }
 

@@ -112,6 +112,19 @@ describe("evidence commands without proxy", () => {
     }))
     expect(mocks.rpc.mock.calls[0][1].p_token).not.toBe("a".repeat(64))
   })
+  it("returns conflict rather than 503 when linking a closed evidence request", async () => {
+    const store = storage()
+    mocks.rpc.mockResolvedValue({ status: "conflict" })
+    const response = await runEvidenceCommand(req({ ...beginBody, evidenceRequestId: "88888888-8888-4888-8888-888888888888" }), store)
+    const payload = await response.json()
+    expect(response.status).toBe(409)
+    expect(payload).toMatchObject({ message: "That case or document is not available." })
+    expect(JSON.stringify(payload)).not.toMatch(/exception|open request|503/i)
+    expect(store.createUpload).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_begin_v1", expect.objectContaining({
+      p_evidence_request: "88888888-8888-4888-8888-888888888888", p_case: caseId,
+    }))
+  })
   it("rejects invalid Admin sessions at the database", async () => {
     mocks.rpc.mockResolvedValue({ status: "unauthorized" })
     expect((await runEvidenceCommand(req(), storage())).status).toBe(401)

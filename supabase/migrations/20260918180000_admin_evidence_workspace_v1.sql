@@ -29,6 +29,60 @@ CREATE TRIGGER case_documents_open_request_link
   FOR EACH ROW EXECUTE FUNCTION admin_private.enforce_open_evidence_request_link_v1();
 REVOKE ALL ON FUNCTION admin_private.enforce_open_evidence_request_link_v1() FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE OR REPLACE FUNCTION public.admin_evidence_begin_v1(
+  p_token text, p_request uuid, p_case uuid, p_document uuid, p_filename text, p_content_type text,
+  p_size bigint, p_title text, p_bucket text, p_evidence_request uuid
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE s jsonb; c public.cases; d public.case_documents; req public.evidence_requests;
+  actor uuid; fp text; cached jsonb; result jsonb; version_id uuid; version_no integer; object_key text;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF p_request IS NULL OR p_case IS NULL OR p_filename IS NULL OR p_content_type IS NULL OR p_size IS NULL OR p_title IS NULL OR p_bucket IS NULL
+    OR length(btrim(p_title)) NOT BETWEEN 1 AND 200 OR length(p_bucket) NOT BETWEEN 3 AND 63
+    OR p_size < 1 OR p_size > 10485760
+    OR NOT admin_private.evidence_extension_ok_v1(p_filename, p_content_type)
+    THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  fp := md5(jsonb_build_array(p_case, p_document, p_filename, p_content_type, p_size, p_title, p_bucket, p_evidence_request)::text);
+  cached := admin_private.evidence_receipt_v1(actor, p_request, fp, NULL);
+  IF cached IS NOT NULL THEN RETURN cached; END IF;
+  SELECT * INTO c FROM public.cases WHERE id = p_case FOR UPDATE;
+  IF c.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF p_evidence_request IS NOT NULL THEN
+    SELECT * INTO req FROM public.evidence_requests WHERE id = p_evidence_request AND case_id = c.id AND status = 'OPEN';
+    IF req.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  END IF;
+  IF p_document IS NULL THEN
+    INSERT INTO public.case_documents(case_id, evidence_request_id, title, created_by)
+    VALUES (c.id, p_evidence_request, btrim(p_title), actor) RETURNING * INTO d;
+    version_no := 1;
+  ELSE
+    SELECT * INTO d FROM public.case_documents WHERE id = p_document FOR UPDATE;
+    IF d.id IS NULL OR d.case_id <> c.id THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    SELECT coalesce(max(version_number), 0) + 1 INTO version_no FROM public.case_document_versions WHERE document_id = d.id;
+    UPDATE public.case_documents SET title = btrim(p_title) WHERE id = d.id;
+  END IF;
+  version_id := gen_random_uuid();
+  object_key := 'cases/' || c.id::text || '/documents/' || d.id::text || '/versions/' || version_id::text;
+  INSERT INTO public.case_document_versions(
+    id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+    storage_provider, storage_bucket, storage_key, created_by
+  ) VALUES (
+    version_id, d.id, version_no, btrim(p_filename), p_content_type, p_size, 'S3', p_bucket, object_key, actor
+  );
+  INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
+  VALUES (c.id, d.id, version_id, actor, 'UPLOAD_BEGUN', jsonb_build_object('versionNumber', version_no, 'contentType', p_content_type, 'sizeBytes', p_size));
+  PERFORM admin_private.write_record_audit_v1(actor, 'EVIDENCE_CHANGED', 'success', c.id, p_request, 'case', 'Evidence upload started', jsonb_build_object('documentId', d.id, 'versionId', version_id, 'operation', 'begin'));
+  result := jsonb_build_object(
+    'status', 'success', 'caseId', c.id, 'documentId', d.id, 'versionId', version_id,
+    'versionNumber', version_no, 'storageKey', object_key, 'storageBucket', p_bucket,
+    'contentType', p_content_type, 'maxBytes', 10485760
+  );
+  INSERT INTO admin_private.evidence_command_receipts VALUES (p_request, actor, fp, result, now());
+  RETURN result;
+END; $$;
+
 ALTER TABLE public.case_document_events DROP CONSTRAINT case_document_events_event_check;
 ALTER TABLE public.case_document_events ADD CONSTRAINT case_document_events_event_check CHECK (event IN (
   'UPLOAD_BEGUN','UPLOAD_FINALIZED','UPLOAD_FAILED','SCAN_REFRESHED',

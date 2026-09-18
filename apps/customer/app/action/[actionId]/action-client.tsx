@@ -29,16 +29,19 @@ export function ActionClient({ actionId }: { actionId: string }) {
     const hash = window.location.hash
     const secret = hash.startsWith("#t=") ? hash.slice(3) : ""
     history.replaceState(null, "", window.location.pathname + window.location.search)
-    if (!secret) { setPhase("unavailable"); return }
-    void fetch("/api/action/exchange", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ actionId, secret }),
-    }).then(async response => {
-      const result = await response.json() as { status?: string; maskedEmail?: string }
-      if (!response.ok || result.status !== "ok") { setPhase("unavailable"); return }
-      setMaskedEmail(result.maskedEmail || "")
-      setPhase("otp")
-    }).catch(() => setPhase("unavailable"))
+    const timer = window.setTimeout(() => {
+      if (!secret) { setPhase("unavailable"); return }
+      void fetch("/api/action/exchange", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actionId, secret }),
+      }).then(async response => {
+        const result = await response.json() as { status?: string; maskedEmail?: string }
+        if (!response.ok || result.status !== "ok") { setPhase("unavailable"); return }
+        setMaskedEmail(result.maskedEmail || "")
+        setPhase("otp")
+      }).catch(() => setPhase("unavailable"))
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [actionId])
 
   async function sendOtp(event: FormEvent) {

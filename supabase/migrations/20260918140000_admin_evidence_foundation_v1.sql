@@ -248,7 +248,7 @@ CREATE FUNCTION public.admin_evidence_refresh_scan_v1(
   p_token text, p_request uuid, p_case uuid, p_version uuid, p_scan text, p_validation text, p_validation_error text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE s jsonb; c public.cases; d public.case_documents; v public.case_document_versions;
-  actor uuid; fp text; cached jsonb; result jsonb; validated_at timestamptz;
+  actor uuid; fp text; cached jsonb; result jsonb; new_validated_at timestamptz;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -270,11 +270,11 @@ BEGIN
   IF d.id IS NULL OR d.case_id <> p_case THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
   SELECT * INTO c FROM public.cases WHERE id = d.case_id;
   IF v.upload_status <> 'UPLOADED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-  validated_at := CASE WHEN p_validation IN ('VALID','INVALID','ERROR') THEN now() ELSE NULL END;
+  new_validated_at := CASE WHEN p_validation IN ('VALID','INVALID','ERROR') THEN now() ELSE NULL END;
   UPDATE public.case_document_versions
     SET scan_status = p_scan, scan_checked_at = now(), validation_status = p_validation,
         validation_error = CASE WHEN p_validation IN ('INVALID','ERROR') THEN btrim(p_validation_error) ELSE NULL END,
-        validated_at = coalesce(validated_at, case_document_versions.validated_at)
+        validated_at = coalesce(new_validated_at, case_document_versions.validated_at)
     WHERE id = v.id;
   INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
   VALUES (c.id, d.id, v.id, actor, 'SCAN_REFRESHED', jsonb_build_object('scanStatus', p_scan, 'validationStatus', p_validation));

@@ -388,5 +388,29 @@ describe("secure evidence access", () => {
     expect(response.status).toBe(503)
     expect(text).not.toMatch(/OIDC|123456789012|AdminEvidenceTestRole|https:\/\//)
   })
+  it.each([
+    ["https://s3.example/object?X-Amz-Expires=60", 200],
+    ["https://s3.example/object?X-Amz-Expires=1", 200],
+    ["https://s3.example/object?X-Amz-Expires=61", 503],
+    ["https://s3.example/object", 503],
+    ["https://s3.example/object?X-Amz-Expires=abc", 503],
+    ["https://s3.example/object?X-Amz-Expires=0", 503],
+  ] as const)("fail-closes read URLs unless X-Amz-Expires is 1..60 (%s)", async (url, status) => {
+    mocks.rpc.mockResolvedValueOnce(cleanVersion).mockResolvedValueOnce({ status: "success", action: "view" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      createReadUrl: vi.fn(async () => url),
+    })
+    const response = await runEvidenceCommand(req(viewBody), store)
+    const text = await response.text()
+    expect(response.status).toBe(status)
+    if (status === 503) {
+      expect(text).not.toContain(url)
+      expect(text).not.toMatch(/X-Amz-Expires|s3\.example/)
+      expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_evidence_access_v1")).toBe(false)
+    } else {
+      expect(JSON.parse(text).url).toBe(url)
+    }
+  })
 })
 

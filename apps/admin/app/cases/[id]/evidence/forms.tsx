@@ -50,6 +50,12 @@ export function AccessButtons({ caseId, versionId, actions }: { caseId: string; 
   const [message, setMessage] = useState("")
   async function open(operation: "view" | "download") {
     setMessage("")
+    const tab = window.open("about:blank", "_blank")
+    if (!tab) {
+      setMessage("Your browser blocked the new tab. Allow pop-ups for the Admin Portal and try again.")
+      return
+    }
+    try { tab.opener = null } catch { /* Ignore browsers that already severed opener. */ }
     try {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -57,9 +63,15 @@ export function AccessButtons({ caseId, versionId, actions }: { caseId: string; 
         body: JSON.stringify({ operation, caseId, versionId }),
       })
       const result = await response.json() as { message?: string; url?: string }
-      setMessage(result.message || "")
-      if (response.ok && typeof result.url === "string") window.open(result.url, "_blank", "noopener,noreferrer")
+      if (response.ok && typeof result.url === "string" && result.url.startsWith("https://")) {
+        tab.location.replace(result.url)
+        setMessage(result.message || "")
+        return
+      }
+      tab.close()
+      setMessage(result.message || "That file cannot be opened.")
     } catch {
+      tab.close()
       setMessage("We couldn’t open that file. Reload the case before trying again.")
     }
   }

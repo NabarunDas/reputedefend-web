@@ -12,6 +12,23 @@ REVOKE ALL ON FUNCTION admin_private.bump_case_document_version_record_v1() FROM
 CREATE INDEX case_document_events_version_idx ON public.case_document_events(version_id);
 CREATE UNIQUE INDEX case_document_versions_one_visible_idx ON public.case_document_versions(document_id) WHERE customer_visible;
 
+CREATE FUNCTION admin_private.enforce_open_evidence_request_link_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE req public.evidence_requests;
+BEGIN
+  IF NEW.evidence_request_id IS NULL THEN RETURN NEW; END IF;
+  SELECT * INTO req FROM public.evidence_requests WHERE id = NEW.evidence_request_id;
+  IF req.id IS NULL OR req.case_id <> NEW.case_id OR req.status <> 'OPEN' THEN
+    RAISE EXCEPTION 'Evidence request is not an open request for this case';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER case_documents_open_request_link
+  BEFORE INSERT OR UPDATE OF evidence_request_id, case_id ON public.case_documents
+  FOR EACH ROW EXECUTE FUNCTION admin_private.enforce_open_evidence_request_link_v1();
+REVOKE ALL ON FUNCTION admin_private.enforce_open_evidence_request_link_v1() FROM PUBLIC, anon, authenticated, service_role;
+
 ALTER TABLE public.case_document_events DROP CONSTRAINT case_document_events_event_check;
 ALTER TABLE public.case_document_events ADD CONSTRAINT case_document_events_event_check CHECK (event IN (
   'UPLOAD_BEGUN','UPLOAD_FINALIZED','UPLOAD_FAILED','SCAN_REFRESHED',

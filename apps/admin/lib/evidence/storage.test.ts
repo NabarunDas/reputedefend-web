@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { evidenceAwsConfig } from "./config"
-import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError, contentDisposition, readObjectInput, signedUrlExpiresSeconds } from "./storage"
+import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError, contentDisposition, readObjectInput, signedUrlExpiresSeconds, isAllowedReadExpiry } from "./storage"
 import { MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus, usesConfiguredEvidenceBucket } from "./model"
 
 const caseId = "55555555-5555-4555-8555-555555555555"
@@ -109,5 +109,12 @@ describe("evidence storage policy", () => {
     expect(input.ResponseContentDisposition.startsWith("inline;")).toBe(true)
     expect(signedUrlExpiresSeconds("https://s3.example/object?X-Amz-Expires=60")).toBe(60)
     expect(signedUrlExpiresSeconds("https://s3.example/object?X-Amz-Expires=61")).toBeGreaterThan(READ_EXPIRES_SECONDS)
+    expect(isAllowedReadExpiry(60)).toBe(true)
+    expect(isAllowedReadExpiry(1)).toBe(true)
+    expect(isAllowedReadExpiry(61)).toBe(false)
+    expect(isAllowedReadExpiry(null)).toBe(false)
+    expect(isAllowedReadExpiry(0)).toBe(false)
+    expect(isAllowedReadExpiry(signedUrlExpiresSeconds("https://s3.example/object"))).toBe(false)
+    expect(isAllowedReadExpiry(signedUrlExpiresSeconds("https://s3.example/object?X-Amz-Expires=abc"))).toBe(false)
   })
 })

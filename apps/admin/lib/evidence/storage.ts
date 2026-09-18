@@ -73,6 +73,10 @@ export function signedUrlExpiresSeconds(url: string): number | null {
   }
 }
 
+export function isAllowedReadExpiry(expires: number | null): boolean {
+  return expires !== null && Number.isInteger(expires) && expires >= 1 && expires <= READ_EXPIRES_SECONDS
+}
+
 export function readObjectInput(key: string, contentType: string, filename: string, disposition: ReadDisposition) {
   return {
     Key: key,

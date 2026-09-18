@@ -30,6 +30,13 @@ const version = {
 
 const fetchMock = vi.fn()
 const open = vi.fn()
+function tab() {
+  return {
+    opener: {} as Window | null,
+    close: vi.fn(),
+    location: { href: "about:blank", replace: vi.fn() },
+  }
+}
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   vi.stubGlobal("open", open)
@@ -40,6 +47,11 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
+
+const enabledAccess = {
+  refresh: false, view: true, download: true, accept: false, reject: false, visibility: false,
+  threatBlocked: false, validationFailed: false, viewHint: null, statusLabel: null,
+}
 
 describe("evidence forms", () => {
   it("states that creating a request does not send email", () => {
@@ -66,17 +78,51 @@ describe("evidence forms", () => {
     expect(screen.getByText(/No customer portal currently exposes this file/)).toBeTruthy()
     expect((screen.getByRole("checkbox", { name: /visibility change/ }) as HTMLInputElement).required).toBe(true)
   })
-  it("opens a returned view URL in a new tab instead of downloading through the page", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "Open the file in the new tab.", url: "https://s3.example/object?X-Amz-Expires=60" }) })
-    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={{
-      refresh: false, view: true, download: true, accept: false, reject: false, visibility: false,
-      threatBlocked: false, validationFailed: false, viewHint: null, statusLabel: null,
-    }} />)
+  it("opens a blank tab synchronously and navigates it after a successful View", async () => {
+    let resolveFetch: (value: { ok: boolean; status: number; json: () => Promise<{ message: string; url: string }> }) => void = () => { /* pending */ }
+    fetchMock.mockImplementation(() => new Promise(resolve => { resolveFetch = resolve }))
+    const opened = tab()
+    open.mockReturnValue(opened)
+    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={enabledAccess} />)
     fireEvent.click(screen.getByRole("button", { name: "View" }))
-    await waitFor(() => expect(open).toHaveBeenCalledWith("https://s3.example/object?X-Amz-Expires=60", "_blank", "noopener,noreferrer"))
+    expect(open).toHaveBeenCalledWith("about:blank", "_blank")
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(opened.opener).toBeNull()
+    expect(opened.location.replace).not.toHaveBeenCalled()
+    resolveFetch({ ok: true, status: 200, json: async () => ({ message: "Open the file in the new tab.", url: "https://s3.example/object?X-Amz-Expires=60" }) })
+    await waitFor(() => expect(opened.location.replace).toHaveBeenCalledWith("https://s3.example/object?X-Amz-Expires=60"))
+    expect(opened.close).not.toHaveBeenCalled()
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       operation: "view", caseId: "55555555-5555-4555-8555-555555555555", versionId: version.id,
     })
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("storageKey")
+    expect(window.localStorage.length).toBe(0)
+    expect(window.sessionStorage.length).toBe(0)
+  })
+  it("closes the temporary tab when View is denied", async () => {
+    const opened = tab()
+    open.mockReturnValue(opened)
+    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({ message: "That file cannot be opened." }) })
+    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={enabledAccess} />)
+    fireEvent.click(screen.getByRole("button", { name: "View" }))
+    await waitFor(() => expect(opened.close).toHaveBeenCalled())
+    expect(opened.location.replace).not.toHaveBeenCalled()
+    expect(screen.getByRole("status").textContent).toContain("That file cannot be opened.")
+  })
+  it("explains when the browser blocks the new tab", async () => {
+    open.mockReturnValue(null)
+    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={enabledAccess} />)
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+    expect(await screen.findByRole("status")).toHaveTextContent("Your browser blocked the new tab. Allow pop-ups for the Admin Portal and try again.")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+  it("keeps DOCX View disabled", () => {
+    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={{
+      ...enabledAccess, view: false, viewHint: "Preview not available for this file type",
+    }} />)
+    expect(screen.getByRole("button", { name: "View" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Download" })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "View" }))
+    expect(open).not.toHaveBeenCalled()
   })
 })

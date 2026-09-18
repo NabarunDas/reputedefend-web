@@ -7,9 +7,9 @@ import { isUuid } from "../records/model"
 import {
   evidenceArgs, isBeginArgs, isRequestCreateArgs, isRequestUpdateArgs, isReviewArgs, isVersionArgs,
 } from "./validation"
-import { createEvidenceStorage, signedUrlExpiresSeconds, type EvidenceStorage } from "./storage"
+import { createEvidenceStorage, isAllowedReadExpiry, signedUrlExpiresSeconds, type EvidenceStorage } from "./storage"
 import {
-  MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime,
+  MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime,
   isOpaqueEvidenceKey, isPreviewableMime, mayRetrieveBytes, needsEvidenceStorage, usesConfiguredEvidenceBucket,
   type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus,
 } from "./model"
@@ -151,7 +151,7 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
         disposition: operation === "view" ? "inline" : "attachment",
       })
       const expires = signedUrlExpiresSeconds(url)
-      if (expires !== null && expires > READ_EXPIRES_SECONDS) return reply("We couldn’t create a safe download. Please try again shortly.", 503)
+      if (!isAllowedReadExpiry(expires)) return reply("We couldn’t create a safe download. Please try again shortly.", 503)
       const result = await backend().rpc<{ status: string }>("admin_evidence_access_v1", {
         p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_version: args.versionId, p_action: operation,
       })

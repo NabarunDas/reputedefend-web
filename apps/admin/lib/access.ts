@@ -1,7 +1,15 @@
 /** Only these reads bypass authentication. Auth POST routes enforce their own boundary. */
+const publicBrandAssets = new Set([
+  "/brand/profile-relaunch-logo.png",
+  "/brand/profile-relaunch-logo-light.png",
+])
+
 export function isPublicRead(pathname: string, method: string): boolean {
   if (method !== "GET" && method !== "HEAD") return false
-  return pathname === "/login" || pathname === "/robots.txt" || pathname.startsWith("/_next/static/")
+  return pathname === "/login"
+    || pathname === "/robots.txt"
+    || pathname.startsWith("/_next/static/")
+    || publicBrandAssets.has(pathname)
 }
 
 export const privateResponseHeaders = {

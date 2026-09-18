@@ -4,10 +4,17 @@ import { authConfig, sessionCookie } from "@/lib/auth/config"
 import { sessionFromToken } from "@/lib/auth/backend"
 import { LoginForm } from "./login-form"
 
+export const metadata = { title: "Admin sign in" }
+
 export default async function StaffLogin() {
   if (await sessionFromToken((await cookies()).get(sessionCookie)?.value)) redirect("/")
-  return <section className="panel" aria-labelledby="login-title">
-    <p className="eyebrow">ProfileRelaunch Admin</p>
+  return <section className="login-panel" aria-labelledby="login-title">
+    <div className="login-brand">
+      {/* Static public file so sign-in works without the authenticated image optimizer. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/profile-relaunch-logo.png" alt="ProfileRelaunch" width={1932} height={446} />
+      <span>Admin Portal</span>
+    </div>
     <h1 id="login-title">Admin sign in</h1>
     {authConfig() ? <LoginForm /> : <div className="notice" role="status">
       <h2>Sign-in is not available yet</h2>

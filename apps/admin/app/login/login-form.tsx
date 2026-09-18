@@ -28,13 +28,18 @@ export function LoginForm() {
         window.location.assign("/")
         return
       }
-      if (response.ok && action === "send") { setSent(true); setCode(""); setCooldown(60) }
+      if (response.ok && action === "send") {
+        setSent(true)
+        setCode("")
+        setCooldown(60)
+        setMessage("A sign-in code has been sent to the registered admin email.")
+      }
       if (response.status === 429 && action === "send") setCooldown(60)
     } catch { setMessage("We couldn’t reach the server. Check your connection and try again.") }
     finally { setBusy(false) }
   }
   return <>
-    <p>We’ll send a sign-in code to <strong>admin@profilerelaunch.com</strong>.</p>
+    <p>We’ll send a sign-in code to the registered admin email.</p>
     {sent && <form onSubmit={event => { event.preventDefault(); void submit("verify") }}>
       <label htmlFor="code">Six-digit code</label>
       <input ref={codeInput} id="code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ""))} required aria-describedby="code-help" />

@@ -1,5 +1,14 @@
 import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
-import { AdminNav } from "../../admin-nav"
 import { PhoneEnquiryForm } from "../forms"
-export default async function NewEnquiry(){await requireStaff();return <section className="panel"><AdminNav current="enquiries"/><Link href="/enquiries">Back to enquiries</Link><h1>Record a phone enquiry</h1><PhoneEnquiryForm/></section>}
+import { PageHeader } from "../../ui"
+
+export const metadata = { title: "Record a phone enquiry" }
+export default async function NewEnquiry() {
+  await requireStaff()
+  return <section className="page">
+    <Link className="back-link" href="/enquiries">Back to enquiries</Link>
+    <PageHeader title="Record a phone enquiry" description="This form does not send email or create a client account." />
+    <section className="panel"><PhoneEnquiryForm /></section>
+  </section>
+}

@@ -1,17 +1,19 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
+import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { stages, tracks, outcomes } from "@/lib/cases/model"
 import { ukDate } from "@/lib/admin/activity"
 import { safeWebUrl } from "@/lib/records/model"
 import { PlanForm, TransitionForm, NoteForm, TaskForm, ResolveTask, SubmissionForm, ResolveSubmission, CloseForm } from "../forms"
+import { AuthorizationPanel } from "./authorization-forms"
 import { Badge, PageHeader } from "../../ui"
 
 export const metadata = { title: "Case" }
 export default async function CasePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ before?: string | string[] }> }) {
   const { id } = await params, { before } = await searchParams
   if (Array.isArray(before)) notFound()
-  const c = await getCase(id, before), closed = ["CLOSED", "CANCELLED"].includes(c.status), events = c.events.slice(0, 50), last = events.at(-1), url = safeWebUrl(c.reviewUrl)
+  const c = await getCase(id, before), authz = await getCaseAuthorization(id), closed = ["CLOSED", "CANCELLED"].includes(c.status), events = c.events.slice(0, 50), last = events.at(-1), url = safeWebUrl(c.reviewUrl)
   return <section className="page">
     <Link className="back-link" href="/cases">Back to cases</Link>
     <PageHeader title={c.reference} description={<>{stages[c.stage]} · {tracks[c.track]} · {c.priority}</>} />
@@ -36,6 +38,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       <p>Upload files, refresh malware scan status, review versions and record future customer visibility. Files stay in private storage. This does not send an email or open a customer portal.</p>
       <p><Link className="button-link" href={`/cases/${c.id}/evidence`}>Open evidence workspace</Link></p>
     </section>
+    {!closed && <AuthorizationPanel caseId={c.id} data={authz} />}
     <section className="panel">
       <h2>Tasks</h2>
       {!c.tasks.length && <p>No tasks recorded.</p>}

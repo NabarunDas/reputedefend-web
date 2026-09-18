@@ -9,7 +9,16 @@ export function authConfig() {
     const supabase = new URL(SUPABASE_URL)
     if (origin.origin !== ADMIN_ORIGIN || origin.username || origin.password || supabase.protocol !== "https:") return null
     if (origin.protocol !== "https:" && !(process.env.NODE_ENV === "development" && ["localhost", "127.0.0.1"].includes(origin.hostname))) return null
-    return { origin: origin.origin, url: supabase.origin, secret: SUPABASE_SECRET_KEY, publishable: SUPABASE_PUBLISHABLE_KEY }
+    return { origin: origin.origin, url: supabase.origin, secret: SUPABASE_SECRET_KEY, publishable: SUPABASE_PUBLISHABLE_KEY, customerOrigin: parseOrigin(process.env.CUSTOMER_ORIGIN) }
+  } catch { return null }
+}
+function parseOrigin(value: string | undefined): string | null {
+  if (!value) return null
+  try {
+    const origin = new URL(value)
+    if (origin.origin !== value || origin.username || origin.password) return null
+    if (origin.protocol !== "https:" && !(process.env.NODE_ENV === "development" && ["localhost", "127.0.0.1"].includes(origin.hostname))) return null
+    return origin.origin
   } catch { return null }
 }
 export const sessionCookie = process.env.NODE_ENV === "production" ? "__Host-pr-admin" : "pr-admin-dev"

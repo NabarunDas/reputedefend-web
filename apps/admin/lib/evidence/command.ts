@@ -6,7 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { evidenceArgs } from "./validation"
 import { createEvidenceStorage, type EvidenceStorage } from "./storage"
-import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime, isOpaqueEvidenceKey, mayRetrieveBytes, type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus } from "./model"
+import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime, isOpaqueEvidenceKey, mayRetrieveBytes, usesConfiguredEvidenceBucket, type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus } from "./model"
 import { validateEvidenceBytes } from "./content"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
@@ -90,6 +90,7 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
     const version = await versionRecord(token, args.caseId, args.versionId)
     if (version === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
     if (version === "missing") return reply("That document is not available.", 409)
+    if (!usesConfiguredEvidenceBucket(version, store.bucket)) return reply("We couldn’t confirm the change. Reload the case before trying again.", 503)
     if (operation === "finalize") {
       const probe = await store.probeObject(version.storageKey)
       if (!probe.exists) return reply("The uploaded file was not found. Ask for a new upload link and try again.", 409)
@@ -131,6 +132,6 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
 }
 
 export async function retrieveCleanEvidence(storage: EvidenceStorage, version: EvidenceVersion): Promise<Uint8Array | null> {
-  if (!mayRetrieveBytes(version.scanStatus, version.validationStatus)) return null
+  if (!mayRetrieveBytes(version.scanStatus, version.validationStatus) || !usesConfiguredEvidenceBucket(version, storage.bucket)) return null
   return storage.readScannedObject(version.storageKey)
 }

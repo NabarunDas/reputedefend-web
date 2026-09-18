@@ -14,6 +14,27 @@ export type EvidenceStorage = {
   readScannedObject(key: string): Promise<Uint8Array | null>
 }
 
+const missingObjectCodes = new Set(["NoSuchKey", "NotFound"])
+
+function s3ErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const value = error as { name?: unknown; Code?: unknown; code?: unknown }
+  for (const field of ["name", "Code", "code"] as const) {
+    if (typeof value[field] === "string" && value[field] && value[field] !== "Error") return value[field]
+  }
+  return undefined
+}
+
+export function isMissingS3Object(error: unknown): boolean {
+  const code = s3ErrorCode(error)
+  return !!code && missingObjectCodes.has(code)
+}
+
+export function probeFromTaggingError(error: unknown): ObjectProbe {
+  if (isMissingS3Object(error)) return { exists: false, scan: "PENDING" }
+  throw error
+}
+
 export function presignedPostInput(key: string, contentType: string) {
   return {
     Key: key,
@@ -46,8 +67,8 @@ export function createEvidenceStorage(): EvidenceStorage | null {
         const result = await client.send(new GetObjectTaggingCommand({ Bucket: config.bucket, Key: key }))
         const tag = result.TagSet?.find(item => item.Key === GUARDDUTY_TAG)?.Value
         return { exists: true, scan: mapGuardDutyStatus(tag) }
-      } catch {
-        return { exists: false, scan: "PENDING" }
+      } catch (error) {
+        return probeFromTaggingError(error)
       }
     },
     async readScannedObject(key) {

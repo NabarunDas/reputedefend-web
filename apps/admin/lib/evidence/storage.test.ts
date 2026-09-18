@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { evidenceAwsConfig } from "./config"
-import { createEvidenceStorage, presignedPostInput } from "./storage"
-import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus } from "./model"
+import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError } from "./storage"
+import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus, usesConfiguredEvidenceBucket } from "./model"
 
 const caseId = "55555555-5555-4555-8555-555555555555"
 const documentId = "66666666-6666-4666-8666-666666666666"
@@ -62,6 +62,18 @@ describe("evidence storage policy", () => {
     delete process.env.AWS_EVIDENCE_ROLE_ARN
     expect(evidenceAwsConfig()).toBeNull()
     expect(createEvidenceStorage()).toBeNull()
+  })
+
+  it("treats only NoSuchKey and NotFound as a missing object", () => {
+    expect(isMissingS3Object(Object.assign(new Error("missing"), { name: "NoSuchKey", Code: "NoSuchKey" }))).toBe(true)
+    expect(isMissingS3Object(Object.assign(new Error("missing"), { name: "NotFound" }))).toBe(true)
+    expect(probeFromTaggingError(Object.assign(new Error("missing"), { name: "NoSuchKey" }))).toEqual({ exists: false, scan: "PENDING" })
+    const denied = Object.assign(new Error("AccessDenied on arn:aws:s3:::secret-bucket"), { name: "AccessDenied", Code: "AccessDenied" })
+    expect(isMissingS3Object(denied)).toBe(false)
+    expect(() => probeFromTaggingError(denied)).toThrow(denied)
+    expect(() => probeFromTaggingError(new Error("OIDC token exchange failed for arn:aws:iam::123456789012:role/AdminEvidenceTestRole"))).toThrow(/OIDC token exchange failed/)
+    expect(usesConfiguredEvidenceBucket({ storageBucket: "evidence-test-bucket-01" }, "evidence-test-bucket-01")).toBe(true)
+    expect(usesConfiguredEvidenceBucket({ storageBucket: "evidence-test-bucket-01" }, "prod-evidence-bucket")).toBe(false)
   })
 
   it("maps only documented GuardDuty tags and treats unknown values as failed", () => {

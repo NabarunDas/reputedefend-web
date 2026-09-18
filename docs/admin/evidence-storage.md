@@ -91,7 +91,9 @@ Keep these independent:
 | Type/size rejected | 400; no object key minted |
 | Missing AWS configuration or static keys | 503; fail closed |
 | Presigned POST expired or unused | Finalize probe fails; version remains `PENDING_UPLOAD` |
-| Object missing at finalize | 409; upload is not marked complete |
+| Object missing at finalize | 409; upload is not marked complete. Only S3 `NoSuchKey` / `NotFound` count as missing |
+| S3 AccessDenied, OIDC/credential, throttle or network failure | 503 generic operational error; not treated as a missing object; provider details are not returned |
+| Stored `storage_bucket` differs from `AWS_EVIDENCE_BUCKET` | 503; no S3 request. Neither bucket name is returned |
 | Scanner not finished | Refresh leaves `PENDING` |
 | Scanner blocked/failed | Status stored; bytes not read |
 | Signature mismatch after clean scan | `validation_status=INVALID` |

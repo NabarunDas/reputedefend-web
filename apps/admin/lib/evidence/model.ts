@@ -59,6 +59,10 @@ export function mayRetrieveBytes(scan: ScanStatus, validation: ValidationStatus)
   return scan === "NO_THREATS_FOUND" && validation === "VALID"
 }
 
+export function usesConfiguredEvidenceBucket(version: Pick<EvidenceVersion, "storageBucket">, bucket: string): boolean {
+  return version.storageBucket === bucket
+}
+
 export type EvidenceVersion = {
   documentId: string
   versionId: string

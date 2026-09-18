@@ -29,6 +29,7 @@ Vercel recognises npm workspaces from the root lockfile. Enable inclusion of sou
 - Bind only admin@profilerelaunch.com to its confirmed Auth UUID. There are no staff levels. Follow single-admin-auth.md.
 - Keep Preview off production databases, mailboxes and payment accounts.
 - Store secrets only in provider settings; never paste values into a PR or report.
+- Evidence storage (already configured on Admin Production; do not add static AWS keys): `AWS_REGION`, `AWS_EVIDENCE_BUCKET`, `AWS_EVIDENCE_ROLE_ARN`. Preview must not reuse production OIDC. See `evidence-storage.md`.
 
 ## Rollback
 

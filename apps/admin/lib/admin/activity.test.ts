@@ -6,6 +6,7 @@ describe("activity filters", () => {
   })
   it("preserves bigint cursor precision", () => {
     expect(parseActivityFilters({ before: "9223372036854775807", action: "SIGNED_IN", outcome: "success" })).toEqual({ before: "9223372036854775807", action: "SIGNED_IN", outcome: "success" })
+    expect(parseActivityFilters({ action: "EVIDENCE_CHANGED" })).toEqual({ before: null, action: "EVIDENCE_CHANGED", outcome: null })
   })
   it("accepts cleared filters", () => {
     expect(parseActivityFilters({ action: "", outcome: "" })).toEqual({ before: null, action: null, outcome: null })

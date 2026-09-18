@@ -18,6 +18,7 @@ CREATE TABLE public.case_prepared_packs (
 );
 CREATE INDEX case_prepared_packs_case_idx ON public.case_prepared_packs(case_id, pack_number DESC);
 CREATE UNIQUE INDEX case_prepared_packs_one_approved_idx ON public.case_prepared_packs(case_id) WHERE status = 'APPROVED';
+CREATE UNIQUE INDEX case_prepared_packs_one_draft_idx ON public.case_prepared_packs(case_id) WHERE status = 'DRAFT';
 
 CREATE TABLE public.case_prepared_pack_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -217,6 +218,9 @@ BEGIN
 
   IF p_operation = 'create' THEN
     IF p_pack IS NOT NULL OR p_version IS NOT NULL OR data <> '{}'::jsonb THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    IF EXISTS (SELECT 1 FROM public.case_prepared_packs WHERE case_id = c.id AND status = 'DRAFT') THEN
+      RETURN jsonb_build_object('status', 'conflict');
+    END IF;
     SELECT coalesce(max(pack_number), 0) + 1 INTO next_no FROM public.case_prepared_packs WHERE case_id = c.id;
     INSERT INTO public.case_prepared_packs(case_id, pack_number, status, created_by)
     VALUES (c.id, next_no, 'DRAFT', actor) RETURNING * INTO p;

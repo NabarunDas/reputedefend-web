@@ -11,7 +11,7 @@ public.cases
         ├── optional evidence_requests
         └── public.case_document_versions (unique document_id + version_number)
               └── storage_key unique, opaque S3 object
-  └── public.case_prepared_packs (unique case_id + pack_number; at most one APPROVED)
+  └── public.case_prepared_packs (unique case_id + pack_number; at most one DRAFT and one APPROVED)
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
 public.case_document_events  (append-only lifecycle)
 public.case_prepared_pack_events  (append-only pack lifecycle)
@@ -102,7 +102,7 @@ Step 8B:
 
 ## public.case_prepared_packs
 
-Immutable-after-approval manifest for a case. Status: `DRAFT`, `APPROVED`, `STALE`, `SUPERSEDED`. `UNIQUE (case_id, pack_number)`. Partial unique index: at most one `APPROVED` pack per case. Optimistic `record_version`. Approval note 10–2000 characters when `APPROVED`.
+Immutable-after-approval manifest for a case. Status: `DRAFT`, `APPROVED`, `STALE`, `SUPERSEDED`. `UNIQUE (case_id, pack_number)`. Partial unique indexes: at most one `DRAFT` and at most one `APPROVED` pack per case. Optimistic `record_version`. Approval note 10–2000 characters when `APPROVED`. Historical `STALE` / `SUPERSEDED` packs do not occupy those slots.
 
 ## public.case_prepared_pack_items
 

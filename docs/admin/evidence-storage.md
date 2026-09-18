@@ -113,7 +113,7 @@ Maximum 10,485,760 bytes. Types: PDF, JPEG, PNG, WebP, DOCX. Previewable: PDF/JP
 
 Packs live on the case evidence page only. Approval means: the Admin has approved this exact selection of evidence versions as the prepared document pack. It does not mean payment received, customer agreement, authority granted, ready to submit, submitted to Google, or customer portal access.
 
-- `create` / `add_item` / `remove_item` / `move_item` / `approve` go through `admin_prepared_pack_command_v1`.
+- `create` / `add_item` / `remove_item` / `move_item` / `approve` go through `admin_prepared_pack_command_v1`. A case may have at most one `DRAFT` and at most one `APPROVED` pack. A second independent `create` while a draft exists returns conflict; a matching idempotent retry still replays.
 - Items are allowed only when the pack is `DRAFT` and the version is `UPLOADED` + `NO_THREATS_FOUND` + `VALID` + `ACCEPTED` for the same case. PostgreSQL overwrites snapshot title/filename/type/size from the version row.
 - Approving requires at least one item, a 10–2000 character note and an explicit confirmation. A previous `APPROVED` pack for the case becomes `SUPERSEDED`.
 - If included evidence later fails those checks, that `APPROVED` pack becomes `STALE`. The pack is not rebuilt.

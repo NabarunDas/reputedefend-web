@@ -48,6 +48,7 @@ No ZIP, merged PDF, extra S3 pack object, customer download link or third-party 
 
 ## Operational implications
 
+- At most one DRAFT pack per case (`case_prepared_packs_one_draft_idx`). A second independent `create` returns conflict; a matching idempotent retry still replays. Historical `STALE` / `SUPERSEDED` packs do not occupy that slot. After a DRAFT is APPROVED, a new DRAFT may be created.
 - At most one APPROVED pack per case. Approving a newer pack SUPERSEDES the previous APPROVED pack.
 - Pack approval does not change `cases.work_stage`, `cases.status` or `service_track`.
 - The 8C migration is additive and must be applied once after review. It was not applied remotely in this change.

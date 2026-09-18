@@ -438,7 +438,7 @@ CREATE FUNCTION public.admin_authorization_command_v1(
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   s jsonb; actor uuid; cs public.cases; c public.customers; loc public.locations; fp text; cached jsonb; result jsonb;
-  data jsonb; kind text; title text; body text; scope text; expires timestamptz; next_no integer;
+  data jsonb; p_kind text; title text; body text; scope text; expires timestamptz; next_no integer;
   v public.agreement_versions; a public.customer_actions; auth public.authorization_records; note text; secret text;
 BEGIN
   s := public.admin_session_v1(p_token);
@@ -462,12 +462,12 @@ BEGIN
   IF cs.status IN ('CLOSED','CANCELLED') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   SELECT * INTO c FROM public.customers WHERE id = cs.customer_id;
   IF p_operation = 'create_agreement_action' THEN
-    kind := data->>'kind';
+    p_kind := data->>'kind';
     title := btrim(coalesce(data->>'title', ''));
     body := btrim(coalesce(data->>'bodyText', ''));
     scope := btrim(coalesce(data->>'scopeText', ''));
     BEGIN expires := (data->>'expiresAt')::timestamptz; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
-    IF kind IS NULL OR kind NOT IN ('SERVICE_AGREEMENT','CASE_MANAGEMENT_PERMISSION')
+    IF p_kind IS NULL OR p_kind NOT IN ('SERVICE_AGREEMENT','CASE_MANAGEMENT_PERMISSION')
       OR length(title) NOT BETWEEN 1 AND 200 OR length(body) NOT BETWEEN 20 AND 50000 OR length(scope) NOT BETWEEN 10 AND 5000
       OR expires IS NULL OR expires <= now() + interval '15 minutes' OR expires > now() + interval '7 days'
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
@@ -484,20 +484,20 @@ BEGIN
     IF EXISTS (
       SELECT 1 FROM public.customer_actions x
       WHERE x.case_id = cs.id AND x.kind = 'AGREEMENT_ACCEPTANCE' AND x.status = 'OPEN'
-        AND x.agreement_version_id IN (SELECT id FROM public.agreement_versions WHERE case_id = cs.id AND agreement_kind = kind)
+        AND x.agreement_version_id IN (SELECT id FROM public.agreement_versions WHERE case_id = cs.id AND agreement_kind = p_kind)
     ) THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-    SELECT coalesce(max(version_number), 0) + 1 INTO next_no FROM public.agreement_versions WHERE case_id = cs.id AND agreement_kind = kind;
+    SELECT coalesce(max(version_number), 0) + 1 INTO next_no FROM public.agreement_versions WHERE case_id = cs.id AND agreement_kind = p_kind;
     INSERT INTO public.agreement_versions(case_id, customer_id, business_id, location_id, agreement_kind, version_number, title, body_text, scope_text, content_hash, created_by)
-    VALUES (cs.id, cs.customer_id, cs.business_id, cs.location_id, kind, next_no, title, body, scope,
-      md5(jsonb_build_array(kind, title, body, scope)::text), actor)
+    VALUES (cs.id, cs.customer_id, cs.business_id, cs.location_id, p_kind, next_no, title, body, scope,
+      md5(jsonb_build_array(p_kind, title, body, scope)::text), actor)
     RETURNING * INTO v;
     INSERT INTO public.customer_actions(customer_id, business_id, location_id, case_id, agreement_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
     VALUES (cs.customer_id, cs.business_id, cs.location_id, cs.id, v.id, 'AGREEMENT_ACCEPTANCE', secret, lower(c.email), expires, actor)
     RETURNING * INTO a;
     INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, cs.id, actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'agreementKind', kind, 'versionNumber', v.version_number));
+    VALUES (a.id, cs.id, actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'agreementKind', p_kind, 'versionNumber', v.version_number));
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Customer agreement action created',
-      jsonb_build_object('operation', p_operation, 'actionId', a.id, 'agreementVersionId', v.id, 'kind', kind));
+      jsonb_build_object('operation', p_operation, 'actionId', a.id, 'agreementVersionId', v.id, 'kind', p_kind));
     result := jsonb_build_object('status', 'success', 'id', a.id, 'agreementVersionId', v.id, 'versionNumber', v.version_number, 'expiresAt', a.expires_at);
     INSERT INTO admin_private.authorization_command_receipts VALUES (p_request, actor, fp, result, now());
     RETURN result || jsonb_build_object('replay', false);

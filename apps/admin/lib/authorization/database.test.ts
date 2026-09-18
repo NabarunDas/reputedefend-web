@@ -77,12 +77,16 @@ beforeEach(async () => {
     alter table public.authorization_events disable trigger authorization_events_immutable;
     alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
     alter table public.agreement_versions disable trigger agreement_versions_immutable;
+    alter table public.case_document_events disable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events disable trigger case_prepared_pack_events_immutable;
     truncate public.customer_action_events,public.customer_actions,public.authorization_events,public.authorization_records,public.agreement_versions,public.location_manager_access_events,public.location_manager_access,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.authorization_command_receipts,admin_private.customer_action_command_receipts,public.case_prepared_pack_events,public.case_prepared_pack_items,public.case_prepared_packs,admin_private.pack_command_receipts,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,admin_private.evidence_command_receipts,public.case_tasks,public.case_work_events,public.case_submissions,public.case_submission_results,admin_private.case_command_receipts,public.enquiries,public.enquiry_events,public.admin_audit_events,public.admin_auth_events,public.admin_sessions,public.admin_identity,public.business_memberships,public.customer_contact_verifications,public.customers,public.businesses,public.locations,auth.users cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
     alter table public.authorization_events enable trigger authorization_events_immutable;
     alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
     alter table public.agreement_versions enable trigger agreement_versions_immutable;
+    alter table public.case_document_events enable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events enable trigger case_prepared_pack_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${customerAuth}','alex@example.com',now(),null,null);
     insert into auth.users values('${otherAuth}','sam@example.com',now(),null,null);
@@ -140,10 +144,10 @@ describe("customer action SQL", () => {
 
   it("returns a raw secret only at HTTP layer and stores only the hash", async () => {
     await verify()
-    const raw = secret(), hash = secretHash(raw), request = key()
-    const created = await createAction({ secretHash: hash }, request)
+    const raw = secret(), hash = secretHash(raw), request = key(), expiresAt = expires()
+    const created = await createAction({ secretHash: hash, expiresAt }, request)
     expect(created).toMatchObject({ status: "success", replay: false })
-    const replay = await createAction({ secretHash: secretHash(secret()) }, request)
+    const replay = await createAction({ secretHash: secretHash(secret()), expiresAt }, request)
     expect(replay).toMatchObject({ status: "success", id: created?.id, replay: true })
     const rows = await db.query<{ secret_hash: string }>("select secret_hash from public.customer_actions")
     expect(rows.rows[0].secret_hash).toBe(hash)
@@ -226,7 +230,7 @@ describe("customer action SQL", () => {
       serviceAgreementAccepted: true, caseManagementPermissionActive: false,
     })
     expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [created?.id])).rows[0].status).toBe("COMPLETED")
-    await db.query("update public.business_memberships set status='revoked', evidence=$1", ["Authority withdrawn after a live check."])
+    await db.query("update public.business_memberships set status='revoked', verified_at=null, verified_by=null, evidence=$1", ["Authority withdrawn after a live check."])
     expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [permission?.id])).rows[0].status).toBe("REVOKED")
     await verify()
     const later = await createAction({ title: "A later owner-approved snapshot" })

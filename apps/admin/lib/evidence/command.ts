@@ -97,7 +97,7 @@ export async function evidenceCommand(request: NextRequest, storage: EvidenceSto
     }
     const probe = await store.probeObject(version.storageKey)
     if (!probe.exists) return reply("The uploaded file was not found.", 409)
-    let scan: ScanStatus = probe.scan
+    const scan: ScanStatus = probe.scan
     let validation: ValidationStatus = "PENDING"
     let validationError: string | null = null
     if (scan === "NO_THREATS_FOUND") {

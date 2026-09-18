@@ -1,4 +1,4 @@
-# Admin non-functional requirements — evidence (Steps 8A and 8B)
+# Admin non-functional requirements — evidence (Steps 8A, 8B and 8C)
 
 Recorded from the implemented foundation and workspace. These are not customer-facing promises.
 
@@ -19,3 +19,6 @@ Recorded from the implemented foundation and workspace. These are not customer-f
 | Browser transit (upload) | Direct browser → S3 POST; Admin runtime does not proxy the file |
 | Queue page size | Maximum 50 rows plus one look-ahead row for pagination |
 | Customer publication | Visibility flag only; no customer portal or download route in this step |
+| Prepared pack | Metadata manifest of exact version IDs; no ZIP/PDF bundle or extra S3 object |
+| Historical packs returned | Latest 20 packs per case |
+| Pack approval meaning | Selected evidence versions only; not payment, permission or Google submission |

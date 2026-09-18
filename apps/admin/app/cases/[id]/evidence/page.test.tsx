@@ -8,8 +8,10 @@ import type { EvidenceCase } from "@/lib/evidence/model"
 
 const getCase = vi.fn()
 const getEvidenceCase = vi.fn()
+const getPreparedPackCase = vi.fn()
 vi.mock("@/lib/cases/queries", () => ({ getCase: (...args: unknown[]) => getCase(...args) }))
 vi.mock("@/lib/evidence/queries", () => ({ getEvidenceCase: (...args: unknown[]) => getEvidenceCase(...args) }))
+vi.mock("@/lib/packs/queries", () => ({ getPreparedPackCase: (...args: unknown[]) => getPreparedPackCase(...args) }))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -30,6 +32,19 @@ vi.mock("./forms", () => ({
   ScanRefreshForm: () => <button type="button">Refresh scan status</button>,
   UploadEvidenceForm: () => <p>Accepted: .pdf .jpg .jpeg .png .webp .docx. Maximum file size 10 MB.</p>,
   VisibilityForm: () => <p>Customer visibility is recorded for future customer access. No customer portal currently exposes this file.</p>,
+  PreparedPackPanel: ({ packs }: { packs: { packs: { status: string; packNumber: number }[]; eligible: { documentTitle: string }[] } }) => (
+    <section>
+      <h2>Prepared submission pack</h2>
+      <p>Pack approval confirms the selected evidence only. It does not confirm payment, customer authority or permission to submit, and it does not submit anything to Google.</p>
+      {packs.packs.some(pack => pack.status === "STALE") && <p>Pack stale — included evidence has changed. Do not use this pack for submission. Create a new prepared pack.</p>}
+      {packs.eligible.map(row => <p key={row.documentTitle}>Eligible: {row.documentTitle}</p>)}
+      {packs.packs.length > 0 && <>
+        <button type="button">View</button>
+        <button type="button">Download</button>
+        <p>I confirm this exact evidence selection is the prepared pack. This does not confirm payment, customer authority, or submission to Google.</p>
+      </>}
+    </section>
+  ),
 }))
 
 import EvidencePage from "./page"
@@ -64,6 +79,7 @@ afterEach(() => cleanup())
 beforeEach(() => {
   getCase.mockReset().mockResolvedValue(c)
   getEvidenceCase.mockReset()
+  getPreparedPackCase.mockReset().mockResolvedValue({ caseId, packs: [], eligible: [] })
 })
 
 describe("case evidence workspace", () => {
@@ -84,6 +100,24 @@ describe("case evidence workspace", () => {
     expect(screen.getByText("Preview not available for this file type")).toBeTruthy()
     expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
     expect(document.body.textContent).not.toMatch(/Google Docs Viewer|Microsoft Office Viewer|mailto:/i)
+    expect(screen.getByRole("heading", { name: "Prepared submission pack" })).toBeTruthy()
+    expect(screen.getByText(/does not confirm payment, customer authority or permission to submit/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Submit to Google|customer portal|Mark as paid|permission granted/i)
+  })
+  it("shows eligible evidence, reused View/Download and a stale warning", async () => {
+    getEvidenceCase.mockResolvedValue({ caseId, reference: "PR-1", requests: [], documents: [] } as EvidenceCase)
+    getPreparedPackCase.mockResolvedValue({
+      caseId,
+      packs: [{ status: "STALE", packNumber: 1 }],
+      eligible: [{ documentTitle: "Accepted invoice" }],
+    })
+    render(await EvidencePage({ params: Promise.resolve({ id: caseId }) }))
+    expect(screen.getByText(/Pack stale — included evidence has changed/)).toBeTruthy()
+    expect(screen.getByText("Eligible: Accepted invoice")).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "View" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: /submit to google/i })).toBeNull()
+    expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
   })
   it("disables unsafe actions while a scan is pending", async () => {
     getEvidenceCase.mockResolvedValue({

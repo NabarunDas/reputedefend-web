@@ -2,10 +2,15 @@
 import { useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { CommandForm, Reason } from "../../../records/forms"
+import { Badge } from "../../../ui"
 import {
-  MAX_EVIDENCE_BYTES, allowedFileAccept, mimeFromFilename, type EvidenceActionState, type EvidenceDocument,
+  MAX_EVIDENCE_BYTES, allowedFileAccept, evidenceActions, fileTypeLabel, formatBytes, mimeFromFilename, type EvidenceActionState, type EvidenceDocument,
   type EvidenceRequest, type EvidenceVersionRow,
 } from "@/lib/evidence/model"
+import {
+  PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_STALE_WARNING, packStatusTone,
+  type EligiblePackVersion, type PreparedPack, type PreparedPackCase,
+} from "@/lib/packs/model"
 
 const endpoint = "/api/evidence/command"
 const time = (form: FormData, name: string) => form.get(name) ? new Date(`${form.get(name)}:00Z`).toISOString() : null
@@ -212,4 +217,94 @@ export function UploadEvidenceForm({ caseId, documents, openRequests }: { caseId
     </fieldset>
     <p role="status">{message}</p>
   </form>
+}
+
+const packEndpoint = "/api/packs/command"
+
+export function CreateDraftPackForm({ caseId }: { caseId: string }) {
+  return <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Create new draft pack" payload={() => ({
+    operation: "create", caseId,
+  })}>
+    <p>{PACK_APPROVAL_WARNING}</p>
+  </CommandForm>
+}
+
+function PackItemActions({ caseId, pack, item, index, last }: { caseId: string; pack: PreparedPack; item: PreparedPack["items"][number]; index: number; last: boolean }) {
+  const actions = evidenceActions({
+    uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", reviewStatus: "ACCEPTED",
+    contentType: item.contentType,
+  })
+  return <div className="evidence-actions">
+    <AccessButtons caseId={caseId} versionId={item.versionId} actions={actions} />
+    {pack.status === "DRAFT" && <>
+      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Remove" payload={() => ({
+        operation: "remove_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: item.versionId,
+      })} />
+      {index > 0 && <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Move up" payload={() => ({
+        operation: "move_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: item.versionId, direction: "up",
+      })} />}
+      {!last && <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Move down" payload={() => ({
+        operation: "move_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: item.versionId, direction: "down",
+      })} />}
+    </>}
+  </div>
+}
+
+function EligibleVersionRow({ caseId, pack, version }: { caseId: string; pack: PreparedPack; version: EligiblePackVersion }) {
+  const actions = evidenceActions({
+    uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", reviewStatus: "ACCEPTED",
+    contentType: version.contentType,
+  })
+  return <li>
+    <strong>{version.documentTitle}</strong> · {version.originalFilename} · {fileTypeLabel(version.contentType)} · {formatBytes(version.sizeBytes)} · version {version.versionNumber}
+    <div className="evidence-actions">
+      <AccessButtons caseId={caseId} versionId={version.versionId} actions={actions} />
+      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={() => ({
+        operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
+      })} />
+    </div>
+  </li>
+}
+
+export function ApprovePackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
+  return <details><summary>Approve pack</summary>
+    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Approve prepared pack" payload={form => ({
+      operation: "approve", caseId, packId: pack.id, recordVersion: pack.recordVersion, note: form.get("note"), confirmed: form.get("confirmed") === "true",
+    })}>
+      <p>{PACK_APPROVAL_WARNING}</p>
+      <Reason name="note" label="Approval note" maxLength={2000} />
+      <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />{PACK_CONFIRMATION}</label>
+    </CommandForm>
+  </details>
+}
+
+export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: PreparedPackCase }) {
+  const draft = packs.packs.find(pack => pack.status === "DRAFT")
+  const inDraft = new Set(draft?.items.map(item => item.versionId) ?? [])
+  const eligible = packs.eligible.filter(version => !inDraft.has(version.versionId))
+  return <section className="panel">
+    <h2>Prepared submission pack</h2>
+    <p>{PACK_APPROVAL_WARNING}</p>
+    {!packs.packs.length && <p className="muted">No prepared packs recorded.</p>}
+    {packs.packs.map(pack => <article key={pack.id} className="evidence-document">
+      <h3>Pack #{pack.packNumber} · {pack.status}</h3>
+      <p className="badge-row"><Badge tone={packStatusTone(pack.status)}>{pack.status}</Badge></p>
+      {pack.status === "STALE" && <p className="notice-danger">{PACK_STALE_WARNING}</p>}
+      {pack.status === "SUPERSEDED" && <p className="muted">This pack was replaced by a later approved pack. It is read-only history.</p>}
+      {pack.status === "APPROVED" && <p className="muted">This pack is a read-only snapshot of the approved evidence versions. It does not confirm payment, permission or submission to Google.</p>}
+      {pack.approvalNote && <p className="preserve-lines">Approval note: {pack.approvalNote}</p>}
+      {!pack.items.length && <p className="muted">This draft is empty. Add accepted evidence below.</p>}
+      <ol className="task-list">{pack.items.map((item, index) => <li key={item.id}>
+        <strong>{item.documentTitle}</strong> · {item.originalFilename} · {fileTypeLabel(item.contentType)} · {formatBytes(item.sizeBytes)} · version {item.versionNumber}
+        <PackItemActions caseId={caseId} pack={pack} item={item} index={index} last={index === pack.items.length - 1} />
+      </li>)}</ol>
+      {pack.status === "DRAFT" && <>
+        <h4>Eligible accepted evidence</h4>
+        {!eligible.length && <p className="muted">No further accepted, clean and valid versions are available to add.</p>}
+        <ul className="task-list">{eligible.map(version => <EligibleVersionRow key={version.versionId} caseId={caseId} pack={pack} version={version} />)}</ul>
+        {pack.items.length > 0 && <ApprovePackForm caseId={caseId} pack={pack} />}
+      </>}
+    </article>)}
+    {!draft && <CreateDraftPackForm caseId={caseId} />}
+  </section>
 }

@@ -3,7 +3,8 @@ import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { AccessButtons, CreateRequestForm, ReviewForms, UploadEvidenceForm, VisibilityForm } from "./forms"
+import { AccessButtons, ApprovePackForm, CreateDraftPackForm, CreateRequestForm, ReviewForms, UploadEvidenceForm, VisibilityForm } from "./forms"
+import { PACK_APPROVAL_WARNING, PACK_CONFIRMATION } from "@/lib/packs/model"
 import type { EvidenceVersionRow } from "@/lib/evidence/model"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
@@ -124,5 +125,21 @@ describe("evidence forms", () => {
     expect(screen.getByRole("button", { name: "Download" })).not.toBeDisabled()
     fireEvent.click(screen.getByRole("button", { name: "View" }))
     expect(open).not.toHaveBeenCalled()
+  })
+  it("states that pack approval does not confirm payment, permission or Google submission", () => {
+    render(<CreateDraftPackForm caseId="55555555-5555-4555-8555-555555555555" />)
+    expect(screen.getByText(PACK_APPROVAL_WARNING)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Create new draft pack" })).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Submit to Google|customer portal|payment received/i)
+  })
+  it("requires an approval note and explicit confirmation", () => {
+    render(<ApprovePackForm caseId="55555555-5555-4555-8555-555555555555" pack={{
+      id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "DRAFT", approvalNote: "",
+      createdAt: "2026-09-18T10:00:00.000Z", approvedAt: null, recordVersion: 2, items: [],
+    }} />)
+    fireEvent.click(screen.getByText("Approve pack"))
+    expect(screen.getByText("Approval note")).toBeTruthy()
+    expect((screen.getByRole("checkbox", { name: PACK_CONFIRMATION }) as HTMLInputElement).required).toBe(true)
+    expect(screen.queryByRole("button", { name: /submit to google/i })).toBeNull()
   })
 })

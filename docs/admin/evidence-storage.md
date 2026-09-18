@@ -1,6 +1,8 @@
-# Evidence storage — Steps 8A and 8B
+# Evidence storage — Steps 8A, 8B and 8C
 
-Step 8A is the private upload/scan foundation. Step 8B adds the Admin evidence workspace: requests, review, visibility recording, and short-lived View/Download. This is not a customer portal and does not complete prepared submission packs (Step 8C).
+Step 8A is the private upload/scan foundation. Step 8B adds the Admin evidence workspace: requests, review, visibility recording, and short-lived View/Download. Step 8C adds prepared submission packs as immutable metadata manifests of exact accepted versions. This is not a customer portal, does not generate ZIP/PDF bundles, and does not submit anything to Google.
+
+On 18 September 2026 the owner confirmed the deployed Step 8B Admin evidence flow worked end-to-end, including upload, malware scan/status refresh, View/Download and review.
 
 ## Responsibility split
 
@@ -55,6 +57,8 @@ IDs are server-generated UUIDs. Replacement uploads insert a new version row and
 
 Unchanged from Step 8A: `begin` → browser POST to S3 → `finalize` → `refresh_scan` (manual). There is still no polling job, EventBridge handler or cron.
 
+After `admin_evidence_begin_v1` returns a version ID, the command loads that version through `admin_evidence_version_v1`. A presigned POST is minted only when `upload_status = PENDING_UPLOAD`. Retrying `begin` before finalisation may mint a new short-lived URL for the same pending transaction. After `FINALIZE` / `UPLOADED` (or `FAILED` / any other non-pending status) the application returns a conflict and does not mint another URL for that version or storage key. A replacement file is a new document version.
+
 ## View / Download sequence (Step 8B)
 
 1. Admin POST `/api/evidence/command` with `operation: "view"` or `"download"`, a UUID idempotency key, live session and exact Origin. The browser does not send bucket, key, role or S3 action.
@@ -105,6 +109,17 @@ Keep these independent:
 
 Maximum 10,485,760 bytes. Types: PDF, JPEG, PNG, WebP, DOCX. Previewable: PDF/JPEG/PNG/WebP. DOCX View is disabled with “Preview not available for this file type”; DOCX Download remains available when clean + valid.
 
-## Future Step 8C
+## Prepared packs (Step 8C)
 
-Prepared submission packs, pack approval and any customer-facing publication remain out of scope.
+Packs live on the case evidence page only. Approval means: the Admin has approved this exact selection of evidence versions as the prepared document pack. It does not mean payment received, customer agreement, authority granted, ready to submit, submitted to Google, or customer portal access.
+
+- `create` / `add_item` / `remove_item` / `move_item` / `approve` go through `admin_prepared_pack_command_v1`.
+- Items are allowed only when the pack is `DRAFT` and the version is `UPLOADED` + `NO_THREATS_FOUND` + `VALID` + `ACCEPTED` for the same case. PostgreSQL overwrites snapshot title/filename/type/size from the version row.
+- Approving requires at least one item, a 10–2000 character note and an explicit confirmation. A previous `APPROVED` pack for the case becomes `SUPERSEDED`.
+- If included evidence later fails those checks, that `APPROVED` pack becomes `STALE`. The pack is not rebuilt.
+- View/Download reuse `/api/evidence/command`. No ZIP, merged PDF, extra S3 pack object or new access route.
+- `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT`. Pack approval does not change case stage, status or service track.
+
+## Future work
+
+Customer publication, payment/permission gates and Google submission remain later stages. Do not mark all of Step 8 complete until Step 8C is reviewed, merged, migrated and live accepted.

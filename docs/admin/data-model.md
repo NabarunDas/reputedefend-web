@@ -2,6 +2,8 @@
 
 This documents the Step 8A evidence tables, the Step 8B additive workspace migration and the Step 8C prepared-pack migration. It does not replace earlier intake, enquiry or workflow models.
 
+Evidence migration filenames match the versions recorded on `profilerelaunch-dev`: `20260918143424` (8A), `20260918153627` (8B), `20260918163150` (8C). Step 8C SQL is unchanged from the merged file; only the filename was reconciled after apply. Database/RLS/RPC/advisor verification for 8C completed. The 8C migration produced no new warning-level Supabase advisor issue attributable to prepared packs. Live browser acceptance of prepared packs is still pending.
+
 ## Relationships
 
 ```
@@ -119,4 +121,4 @@ Step 8C RPCs:
 
 An AFTER UPDATE trigger on version upload/scan/validation/review marks affected `APPROVED` packs `STALE` when included evidence is no longer eligible. The pack is not rebuilt.
 
-RLS is enabled with no direct policies on evidence or pack tables. That is intentional: browser/table access is denied and service access is through these RPCs. Do not add broad policies only to silence the advisor. The Step 8B migration adds the `version_id` covering index requested by the performance advisor.
+RLS is enabled with no direct policies on evidence or pack tables. That is intentional: browser/table access is denied and service access is through these RPCs. Do not add broad policies only to silence the advisor. The Step 8B migration adds the `version_id` covering index requested by the performance advisor. Step 8C did not add a new warning-level advisor finding attributable to prepared packs.

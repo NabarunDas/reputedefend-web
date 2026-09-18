@@ -96,7 +96,7 @@ describe("prepared pack SQL", () => {
     expect(names).toEqual([
       "20260918143424_admin_evidence_foundation_v1.sql",
       "20260918153627_admin_evidence_workspace_v1.sql",
-      "20260918155409_admin_prepared_packs_v1.sql",
+      "20260918163150_admin_prepared_packs_v1.sql",
     ])
   })
 

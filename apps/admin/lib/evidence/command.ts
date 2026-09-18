@@ -44,7 +44,11 @@ async function versionRecord(token: string, caseId: string, versionId: string): 
   return result
 }
 
-export async function evidenceCommand(request: NextRequest, storage: EvidenceStorage | null | undefined = undefined) {
+export async function evidenceCommand(request: NextRequest) {
+  return runEvidenceCommand(request, createEvidenceStorage())
+}
+
+export async function runEvidenceCommand(request: NextRequest, storage: EvidenceStorage | null) {
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
   if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return reply("Reload this page and try again.", 403)
@@ -62,8 +66,8 @@ export async function evidenceCommand(request: NextRequest, storage: EvidenceSto
     const operation = (body as { operation: EvidenceOperation }).operation
     const args = evidenceArgs(operation, body)
     if (!args) return reply("Check the file type, size and case before saving.", 400)
-    const store = storage === undefined ? createEvidenceStorage() : storage
-    if (!store) return reply("Evidence storage is not configured for this environment.", 503)
+    if (!storage) return reply("Evidence storage is not configured for this environment.", 503)
+    const store = storage
     if (operation === "begin" && "filename" in args) {
       const result = await backend().rpc<{
         status: string; documentId?: string; versionId?: string; versionNumber?: number; storageKey?: string; contentType?: string

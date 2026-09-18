@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
 import { POST } from "@/app/api/evidence/command/route"
-import { evidenceCommand, retrieveCleanEvidence } from "./command"
+import { runEvidenceCommand, retrieveCleanEvidence } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
 import { declaredUpload, evidenceArgs } from "./validation"
 import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, isOpaqueEvidenceKey, mayRetrieveBytes } from "./model"
@@ -103,7 +103,7 @@ describe("evidence commands without proxy", () => {
   })
   it("rejects unknown cases after session checks", async () => {
     mocks.rpc.mockResolvedValue({ status: "conflict" })
-    const response = await evidenceCommand(req(), storage())
+    const response = await runEvidenceCommand(req(), storage())
     expect(response.status).toBe(409)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_begin_v1", expect.objectContaining({
       p_case: caseId, p_token: expect.stringMatching(/^[a-f0-9]{64}$/), p_request: key, p_bucket: "test-evidence",
@@ -112,7 +112,7 @@ describe("evidence commands without proxy", () => {
   })
   it("rejects invalid Admin sessions at the database", async () => {
     mocks.rpc.mockResolvedValue({ status: "unauthorized" })
-    expect((await evidenceCommand(req(), storage())).status).toBe(401)
+    expect((await runEvidenceCommand(req(), storage())).status).toBe(401)
   })
   it.each([
     ["file >10 MB", { ...beginBody, size: MAX_EVIDENCE_BYTES + 1 }],
@@ -124,13 +124,13 @@ describe("evidence commands without proxy", () => {
     ["forged actor", { ...beginBody, actor: "admin" }],
     ["forged operation", { ...beginBody, operation: "__proto__" }],
   ])("rejects %s", async (_label, body) => {
-    expect((await evidenceCommand(req(body), storage())).status).toBe(400)
+    expect((await runEvidenceCommand(req(body), storage())).status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it("returns a five-minute presigned POST bound to the opaque key and declared type", async () => {
     const store = storage()
     mocks.rpc.mockResolvedValue({ status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
-    const response = await evidenceCommand(req(), store)
+    const response = await runEvidenceCommand(req(), store)
     const payload = await response.json()
     expect(response.status).toBe(200)
     expect(isOpaqueEvidenceKey(payload.storageKey, beginBody.filename)).toBe(true)
@@ -150,14 +150,14 @@ describe("evidence commands without proxy", () => {
   it("replays a committed begin without minting a second version", async () => {
     const store = storage()
     mocks.rpc.mockResolvedValue({ status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
-    expect((await evidenceCommand(req(), store)).status).toBe(200)
-    expect((await evidenceCommand(req(), store)).status).toBe(200)
+    expect((await runEvidenceCommand(req(), store)).status).toBe(200)
+    expect((await runEvidenceCommand(req(), store)).status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledTimes(2)
     expect(store.createUpload).toHaveBeenCalledTimes(2)
   })
   it("rejects cross-case document access without exposing metadata", async () => {
     mocks.rpc.mockResolvedValue({ missing: true })
-    const response = await evidenceCommand(req({ ...versionBody, caseId: otherCase }), storage())
+    const response = await runEvidenceCommand(req({ ...versionBody, caseId: otherCase }), storage())
     expect(response.status).toBe(409)
     expect(await response.text()).not.toContain(storageKey)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_version_v1", expect.objectContaining({ p_case: otherCase, p_version: versionId }))
@@ -166,14 +166,14 @@ describe("evidence commands without proxy", () => {
   it("rejects finalize when the object is unknown", async () => {
     mocks.rpc.mockResolvedValue(version)
     const store = storage({ probeObject: vi.fn(async () => ({ exists: false, scan: "PENDING" as const }) ) })
-    const response = await evidenceCommand(req(versionBody), store)
+    const response = await runEvidenceCommand(req(versionBody), store)
     expect(response.status).toBe(409)
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1"])
   })
   it("finalizes only after GetObjectTagging confirms the key", async () => {
     mocks.rpc.mockResolvedValueOnce(version).mockResolvedValueOnce({ status: "success", uploadStatus: "UPLOADED", scanStatus: "PENDING", validationStatus: "PENDING" })
     const store = storage()
-    const payload = await (await evidenceCommand(req(versionBody), store)).json()
+    const payload = await (await runEvidenceCommand(req(versionBody), store)).json()
     expect(store.probeObject).toHaveBeenCalledWith(storageKey)
     expect(store.readScannedObject).not.toHaveBeenCalled()
     expect(payload).toMatchObject({ uploadStatus: "UPLOADED", scanStatus: "PENDING", validationStatus: "PENDING" })
@@ -181,7 +181,7 @@ describe("evidence commands without proxy", () => {
   it("keeps scan PENDING when GuardDuty has not tagged the object", async () => {
     mocks.rpc.mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" }).mockResolvedValueOnce({ status: "success", scanStatus: "PENDING", validationStatus: "PENDING" })
     const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "PENDING" as const })) })
-    const payload = await (await evidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
     expect(store.readScannedObject).not.toHaveBeenCalled()
     expect(mocks.rpc.mock.calls[1]).toEqual(["admin_evidence_refresh_scan_v1", expect.objectContaining({ p_scan: "PENDING", p_validation: "PENDING", p_validation_error: null })])
     expect(payload).toMatchObject({ scanStatus: "PENDING", validationStatus: "PENDING" })
@@ -189,7 +189,7 @@ describe("evidence commands without proxy", () => {
   it.each(["THREATS_FOUND", "FAILED", "UNSUPPORTED", "ACCESS_DENIED"] as const)("keeps %s blocked and never reads bytes", async (scan) => {
     mocks.rpc.mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" }).mockResolvedValueOnce({ status: "success", scanStatus: scan, validationStatus: "PENDING" })
     const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan })) })
-    const payload = await (await evidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
     expect(store.readScannedObject).not.toHaveBeenCalled()
     expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_scan: scan, p_validation: "PENDING" })
     expect(payload.scanStatus).toBe(scan)
@@ -198,7 +198,7 @@ describe("evidence commands without proxy", () => {
   it("maps NO_THREATS_FOUND and validates bytes only after a clean scan", async () => {
     mocks.rpc.mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" }).mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID" })
     const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
-    const payload = await (await evidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
     expect(store.readScannedObject).toHaveBeenCalledWith(storageKey)
     expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_scan: "NO_THREATS_FOUND", p_validation: "VALID", p_validation_error: null })
     expect(payload).toMatchObject({ scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID" })
@@ -212,7 +212,7 @@ describe("evidence commands without proxy", () => {
   })
   it("hides raw provider details", async () => {
     mocks.rpc.mockRejectedValue(new Error("oidc token"))
-    const response = await evidenceCommand(req(), storage())
+    const response = await runEvidenceCommand(req(), storage())
     expect(response.status).toBe(503)
     expect(await response.text()).not.toContain("oidc token")
   })

@@ -1,6 +1,6 @@
 # Admin data model — evidence workspace
 
-This documents the Step 8A evidence tables plus the Step 8B additive workspace migration. It does not replace earlier intake, enquiry or workflow models.
+This documents the Step 8A evidence tables, the Step 8B additive workspace migration and the Step 8C prepared-pack migration. It does not replace earlier intake, enquiry or workflow models.
 
 ## Relationships
 
@@ -11,8 +11,12 @@ public.cases
         ├── optional evidence_requests
         └── public.case_document_versions (unique document_id + version_number)
               └── storage_key unique, opaque S3 object
+  └── public.case_prepared_packs (unique case_id + pack_number; at most one DRAFT and one APPROVED)
+        └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
 public.case_document_events  (append-only lifecycle)
-admin_private.evidence_command_receipts  (idempotent commands)
+public.case_prepared_pack_events  (append-only pack lifecycle)
+admin_private.evidence_command_receipts
+admin_private.pack_command_receipts
 ```
 
 Foreign keys to `cases` and `evidence_requests` use `ON DELETE RESTRICT`. Versions never overwrite a previous `storage_key`. At most one version per document may have `customer_visible = true`.
@@ -96,4 +100,23 @@ Step 8B:
 
 `admin_audit_list_v1` accepts `EVIDENCE_CHANGED` alongside existing Admin actions.
 
-RLS is enabled with no direct policies on evidence tables. That is intentional: browser/table access is denied and service access is through these RPCs. Do not add broad policies only to silence the advisor. The Step 8B migration adds the `version_id` covering index requested by the performance advisor.
+## public.case_prepared_packs
+
+Immutable-after-approval manifest for a case. Status: `DRAFT`, `APPROVED`, `STALE`, `SUPERSEDED`. `UNIQUE (case_id, pack_number)`. Partial unique indexes: at most one `DRAFT` and at most one `APPROVED` pack per case. Optimistic `record_version`. Approval note 10–2000 characters when `APPROVED`. Historical `STALE` / `SUPERSEDED` packs do not occupy those slots.
+
+## public.case_prepared_pack_items
+
+Exact version membership. Snapshot columns (`document_title`, `original_filename`, `content_type`, `size_bytes`) are filled by a BEFORE trigger from the document/version row. Never stores bucket, key, URL, OIDC token or credentials. Insert/update/delete allowed only while the pack is `DRAFT` and the version is uploaded, clean, valid and `ACCEPTED`.
+
+## public.case_prepared_pack_events
+
+Append-only. Events: `PACK_CREATED`, `ITEM_ADDED`, `ITEM_REMOVED`, `ITEM_MOVED`, `PACK_APPROVED`, `PACK_STALE`, `PACK_SUPERSEDED`. Details are bounded JSON without file bytes, storage coordinates, tokens or URLs.
+
+Step 8C RPCs:
+
+- `admin_prepared_pack_command_v1` — create / add_item / remove_item / move_item / approve
+- `admin_prepared_pack_case_v1` — UI-safe packs (latest 20) plus eligible accepted versions; no bucket/key/URLs
+
+An AFTER UPDATE trigger on version upload/scan/validation/review marks affected `APPROVED` packs `STALE` when included evidence is no longer eligible. The pack is not rebuilt.
+
+RLS is enabled with no direct policies on evidence or pack tables. That is intentional: browser/table access is denied and service access is through these RPCs. Do not add broad policies only to silence the advisor. The Step 8B migration adds the `version_id` covering index requested by the performance advisor.

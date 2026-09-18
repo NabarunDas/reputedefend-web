@@ -144,7 +144,9 @@ describe("evidence commands without proxy", () => {
   })
   it("returns a five-minute presigned POST bound to the opaque key and declared type", async () => {
     const store = storage()
-    mocks.rpc.mockResolvedValue({ status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
+    mocks.rpc.mockImplementation(async (name: string) => name === "admin_evidence_version_v1"
+      ? version
+      : { status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
     const response = await runEvidenceCommand(req(), store)
     const payload = await response.json()
     expect(response.status).toBe(200)
@@ -164,11 +166,36 @@ describe("evidence commands without proxy", () => {
   })
   it("replays a committed begin without minting a second version", async () => {
     const store = storage()
-    mocks.rpc.mockResolvedValue({ status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
+    mocks.rpc.mockImplementation(async (name: string) => name === "admin_evidence_version_v1"
+      ? version
+      : { status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
     expect((await runEvidenceCommand(req(), store)).status).toBe(200)
     expect((await runEvidenceCommand(req(), store)).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "admin_evidence_begin_v1", "admin_evidence_version_v1", "admin_evidence_begin_v1", "admin_evidence_version_v1",
+    ])
     expect(store.createUpload).toHaveBeenCalledTimes(2)
+  })
+  it("refuses a second upload URL after the version has been finalised", async () => {
+    const store = storage()
+    mocks.rpc.mockImplementation(async (name: string) => name === "admin_evidence_version_v1"
+      ? { ...version, uploadStatus: "UPLOADED" }
+      : { status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
+    const response = await runEvidenceCommand(req(), store)
+    const payload = await response.json()
+    expect(response.status).toBe(409)
+    expect(payload).toMatchObject({ message: "This upload has already been finalised. Start a new document version instead." })
+    expect(JSON.stringify(payload)).not.toMatch(/test-evidence|storageKey|arn:aws|oidc|cases\//)
+    expect(store.createUpload).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_begin_v1", "admin_evidence_version_v1"])
+  })
+  it.each(["FAILED", "UPLOADED"] as const)("does not mint a presigned POST when upload_status is %s", async (uploadStatus) => {
+    const store = storage()
+    mocks.rpc.mockImplementation(async (name: string) => name === "admin_evidence_version_v1"
+      ? { ...version, uploadStatus }
+      : { status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
+    expect((await runEvidenceCommand(req(), store)).status).toBe(409)
+    expect(store.createUpload).not.toHaveBeenCalled()
   })
   it("rejects cross-case document access without exposing metadata", async () => {
     mocks.rpc.mockResolvedValue({ missing: true })

@@ -124,11 +124,19 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
       if (result.status !== "success" || !result.storageKey || !result.contentType || !result.documentId || !result.versionId) {
         return reply(result.status === "conflict" ? "That case or document is not available." : result.status === "unauthorized" ? "Your session has ended. Please sign in again." : "Check the file type, size and case before saving.", mapStatus(result.status))
       }
-      if (!isOpaqueEvidenceKey(result.storageKey, args.filename)) return reply("We couldn’t create a safe upload. Please try again shortly.", 503)
-      const upload = await store.createUpload({ key: result.storageKey, contentType: result.contentType })
+      const loaded = await versionRecord(token, args.caseId, result.versionId)
+      if (loaded === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
+      if (loaded === "missing") return reply("That document is not available.", 409)
+      if (loaded.uploadStatus !== "PENDING_UPLOAD") {
+        return reply("This upload has already been finalised. Start a new document version instead.", 409)
+      }
+      if (!isOpaqueEvidenceKey(loaded.storageKey, args.filename) || !usesConfiguredEvidenceBucket(loaded, store.bucket)) {
+        return reply("We couldn’t create a safe upload. Please try again shortly.", 503)
+      }
+      const upload = await store.createUpload({ key: loaded.storageKey, contentType: loaded.contentType })
       if (upload.expiresSeconds > UPLOAD_EXPIRES_SECONDS) return reply("We couldn’t create a safe upload. Please try again shortly.", 503)
       return reply("Upload the file directly using the provided fields.", 200, {
-        documentId: result.documentId, versionId: result.versionId, versionNumber: result.versionNumber, storageKey: result.storageKey,
+        documentId: result.documentId, versionId: result.versionId, versionNumber: result.versionNumber, storageKey: loaded.storageKey,
         maxBytes: MAX_EVIDENCE_BYTES, upload: { url: upload.url, fields: upload.fields, expiresSeconds: upload.expiresSeconds },
       })
     }

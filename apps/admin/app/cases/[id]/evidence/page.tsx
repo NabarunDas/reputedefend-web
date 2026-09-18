@@ -2,13 +2,14 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { getEvidenceCase } from "@/lib/evidence/queries"
+import { getPreparedPackCase } from "@/lib/packs/queries"
 import { ukDate } from "@/lib/admin/activity"
 import {
   evidenceActions, fileTypeLabel, formatBytes, type EvidenceVersionRow,
 } from "@/lib/evidence/model"
 import { Badge, PageHeader } from "../../../ui"
 import {
-  AccessButtons, CreateRequestForm, RequestStatusForm, ReviewForms, ScanRefreshForm, UploadEvidenceForm, VisibilityForm,
+  AccessButtons, CreateRequestForm, PreparedPackPanel, RequestStatusForm, ReviewForms, ScanRefreshForm, UploadEvidenceForm, VisibilityForm,
 } from "./forms"
 
 export const metadata = { title: "Evidence & Documents" }
@@ -49,8 +50,8 @@ function VersionCard({ caseId, documentTitle, version }: { caseId: string; docum
 
 export default async function EvidencePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [c, evidence] = await Promise.all([getCase(id), getEvidenceCase(id)])
-  if (!c || !evidence) notFound()
+  const [c, evidence, packs] = await Promise.all([getCase(id), getEvidenceCase(id), getPreparedPackCase(id)])
+  if (!c || !evidence || !packs) notFound()
   const openRequests = evidence.requests.filter(request => request.status === "OPEN")
   return <section className="page">
     <Link className="back-link" href={`/cases/${c.id}`}>Back to case {c.reference}</Link>
@@ -74,6 +75,8 @@ export default async function EvidencePage({ params }: { params: Promise<{ id: s
       <p>Accepted types: PDF, JPG, JPEG, PNG, WebP and DOCX. Maximum file size 10 MB. The browser uploads directly to private storage. After upload, refresh scan status manually — this page does not poll GuardDuty.</p>
       <UploadEvidenceForm caseId={c.id} documents={evidence.documents} openRequests={openRequests} />
     </section>
+
+    <PreparedPackPanel caseId={c.id} packs={packs} />
 
     <section className="panel">
       <h2>Documents and versions</h2>

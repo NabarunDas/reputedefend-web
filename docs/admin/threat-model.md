@@ -1,6 +1,6 @@
 # Admin threat model — evidence workspace
 
-This extends the Admin security model for Step 8A uploads and Step 8B review/access. Mitigations listed here are implemented unless marked as later work.
+This extends the Admin security model for Step 8A uploads, Step 8B review/access and Step 8C prepared packs. Mitigations listed here are implemented unless marked as later work.
 
 | Threat | Mitigation |
 | --- | --- |
@@ -22,5 +22,9 @@ This extends the Admin security model for Step 8A uploads and Step 8B review/acc
 | Customer visibility leakage | `customer_visible` defaults false; SQL forbids true unless clean + valid + `ACCEPTED`; accept does not set visibility; at most one visible version per document; no customer evidence pages or download endpoint |
 | Review replay / lost update | `record_version` on versions with a bump trigger; commands require the expected version |
 | Direct table access | Grants revoked; RLS enabled with no browser policies; SECURITY DEFINER RPCs only |
+| Replay of a finalised upload | After `admin_evidence_begin_v1`, the command reloads the version; a presigned POST is minted only while `PENDING_UPLOAD`. Finalised/failed versions return a conflict and do not reveal bucket, key or role |
+| Ineligible evidence in a pack | Pack-item trigger requires draft pack + same case + `UPLOADED` + `NO_THREATS_FOUND` + `VALID` + `ACCEPTED`; snapshots are overwritten from the version row |
+| Stale approved pack used as current | Included evidence changes mark that APPROVED pack `STALE`; STALE/SUPERSEDED packs cannot be edited or re-approved |
+| Pack approval treated as submission authority | Approval copy and command success text state that payment, permission and Google submission are not confirmed; `PREPARATION` / `READY_TO_SUBMIT` remain `prerequisite` |
 
 Related controls from earlier steps remain in force: exact-origin CSRF, opaque Admin session cookies, hashed token RPCs, revoked anon/authenticated table grants, append-only Admin audit, no localStorage/sessionStorage for evidence or auth state.

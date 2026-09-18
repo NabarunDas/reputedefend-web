@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { evidenceAwsConfig } from "./config"
-import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError } from "./storage"
-import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus, usesConfiguredEvidenceBucket } from "./model"
+import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError, contentDisposition, readObjectInput, signedUrlExpiresSeconds } from "./storage"
+import { MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus, usesConfiguredEvidenceBucket } from "./model"
 
 const caseId = "55555555-5555-4555-8555-555555555555"
 const documentId = "66666666-6666-4666-8666-666666666666"
@@ -96,5 +96,18 @@ describe("evidence storage policy", () => {
     expect(source).toContain("awsCredentialsProvider")
     expect(source).toContain("roleArn")
     expect(source).toContain("AWS_ACCESS_KEY_ID")
+    expect(source).toContain("@aws-sdk/s3-request-presigner")
+    expect(source).toContain("expiresIn: READ_EXPIRES_SECONDS")
+  })
+
+  it("builds RFC-safe content disposition and 60-second read inputs", () => {
+    expect(READ_EXPIRES_SECONDS).toBe(60)
+    expect(contentDisposition("invoice.pdf", "inline")).toBe("inline; filename=\"invoice.pdf\"; filename*=UTF-8''invoice.pdf")
+    expect(contentDisposition("quote\r\nLocation: https://evil.example", "attachment")).not.toMatch(/[\r\n]/)
+    expect(contentDisposition("quote\r\nLocation: https://evil.example", "attachment")).not.toContain("Location:")
+    const input = readObjectInput("cases/a/documents/b/versions/c", "application/pdf", "invoice.pdf", "inline")
+    expect(input.ResponseContentDisposition.startsWith("inline;")).toBe(true)
+    expect(signedUrlExpiresSeconds("https://s3.example/object?X-Amz-Expires=60")).toBe(60)
+    expect(signedUrlExpiresSeconds("https://s3.example/object?X-Amz-Expires=61")).toBeGreaterThan(READ_EXPIRES_SECONDS)
   })
 })

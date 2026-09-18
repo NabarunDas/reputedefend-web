@@ -35,9 +35,10 @@ describe("admin shell", () => {
     expect(screen.getByRole("navigation", { name: "Admin workspace" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Today" })).toHaveAttribute("href", "/")
     expect(screen.getByRole("link", { name: "Security" })).toHaveAttribute("href", "/security")
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute("href", "/documents")
     expect(container.textContent).not.toContain("admin@profilerelaunch.com")
     expect(container.textContent).toContain("ProfileRelaunch Administrator")
-    expect(container.textContent).not.toMatch(/Documents|Payments|Communications|Reports/)
+    expect(container.textContent).not.toMatch(/Payments|Communications|Reports/)
   })
 
   it("opens and closes the mobile navigation without leaving a horizontal menu", () => {

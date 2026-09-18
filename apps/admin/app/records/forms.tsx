@@ -2,7 +2,7 @@
 import { useState, useRef, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { recordPath, type Entity, type Membership, type RecordItem } from "@/lib/records/model"
-export function CommandForm({ endpoint, payload, children, destination, actionUrl }: { endpoint: string; payload: (form: FormData) => unknown; children: ReactNode; destination?: (id: string) => string; actionUrl?: string }) {
+export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save" }: { endpoint: string; payload: (form: FormData) => unknown; children: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("")
   const [uncertain, setUncertain] = useState(false)
   const [completed, setCompleted] = useState(false)
@@ -24,10 +24,10 @@ export function CommandForm({ endpoint, payload, children, destination, actionUr
     } catch { setMessage("We couldn’t confirm the change. Reload the record before trying again."); setUncertain(true) }
     finally { setBusy(false) }
   }
-  return <form className="record-form" onSubmit={submit}><fieldset disabled={busy || uncertain || completed}>{children}<button type="submit">{busy ? "Saving…" : "Save"}</button></fieldset><p role="status">{message}</p>{(uncertain || completed) && <button type="button" className="secondary" onClick={() => window.location.reload()}>Reload record</button>}</form>
+  return <form className="record-form" onSubmit={submit}><fieldset disabled={busy || uncertain || completed}>{children}<button type="submit">{busy ? "Saving…" : submitLabel}</button></fieldset><p role="status">{message}</p>{(uncertain || completed) && <button type="button" className="secondary" onClick={() => window.location.reload()}>Reload record</button>}</form>
 }
-export function Reason({ label = "Reason for this change", name = "reason" }: { label?: string; name?: string }) {
-  return <label>{label}<textarea name={name} required minLength={10} maxLength={1000} rows={3} /><span className="muted">Use a brief factual note. Don’t include passwords, codes or sensitive document contents.</span></label>
+export function Reason({ label = "Reason for this change", name = "reason", maxLength = 1000 }: { label?: string; name?: string; maxLength?: number }) {
+  return <label>{label}<textarea name={name} required minLength={10} maxLength={maxLength} rows={3} /><span className="muted">Use a brief factual note. Don’t include passwords, codes or sensitive document contents.</span></label>
 }
 export function RecordForm({ entity, record, businessId }: { entity: Entity; record?: RecordItem; businessId?: string }) {
   return <CommandForm endpoint="save" destination={id => recordPath(entity, id)} payload={form => ({ entity, id: record?.id || null, version: record?.version || 0, reason: form.get("reason"), data: entity === "client" ? { name: form.get("name"), email: form.get("email"), phone: form.get("phone") } : entity === "business" ? { name: form.get("name"), website: form.get("website") } : { name: form.get("name"), country: form.get("country"), profileUrl: form.get("profileUrl"), businessId: record?.businessId || businessId } })}>

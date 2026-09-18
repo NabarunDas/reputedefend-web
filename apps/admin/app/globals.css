@@ -427,6 +427,44 @@ summary { cursor: pointer; }
 }
 .back-link { display: inline-block; margin-bottom: .75rem; font-size: .92rem; }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.badge-row { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .75rem; }
+.evidence-document { margin: 1.15rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+.evidence-version {
+  margin: .85rem 0 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  background: var(--paper);
+}
+.evidence-actions, .evidence-access, .evidence-review, .evidence-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1rem;
+  align-items: start;
+  margin: .5rem 0;
+}
+.evidence-actions form button, .evidence-access button, .evidence-review form button { margin: .35rem 0; }
+.notice-danger {
+  background: #f4d4d1;
+  color: var(--danger);
+  border-left: 3px solid var(--danger);
+  padding: .9rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 0 .4rem .4rem 0;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .admin-shell {
     display: block;

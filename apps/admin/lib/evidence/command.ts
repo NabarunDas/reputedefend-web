@@ -4,9 +4,15 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { evidenceArgs } from "./validation"
-import { createEvidenceStorage, type EvidenceStorage } from "./storage"
-import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime, isOpaqueEvidenceKey, mayRetrieveBytes, usesConfiguredEvidenceBucket, type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus } from "./model"
+import {
+  evidenceArgs, isBeginArgs, isRequestCreateArgs, isRequestUpdateArgs, isReviewArgs, isVersionArgs,
+} from "./validation"
+import { createEvidenceStorage, signedUrlExpiresSeconds, type EvidenceStorage } from "./storage"
+import {
+  MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceOperations, isAllowedMime,
+  isOpaqueEvidenceKey, isPreviewableMime, mayRetrieveBytes, needsEvidenceStorage, usesConfiguredEvidenceBucket,
+  type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus,
+} from "./model"
 import { validateEvidenceBytes } from "./content"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
@@ -44,6 +50,14 @@ async function versionRecord(token: string, caseId: string, versionId: string): 
   return result
 }
 
+function commandMessage(status: string | undefined, fallback: string): string {
+  if (status === "unauthorized") return "Your session has ended. Please sign in again."
+  if (status === "conflict") return "That record is not available. Reload the case before trying again."
+  if (status === "denied") return "That action is not allowed for this document."
+  if (status === "invalid") return "Check the fields before saving."
+  return fallback
+}
+
 export async function evidenceCommand(request: NextRequest) {
   return runEvidenceCommand(request, createEvidenceStorage())
 }
@@ -66,9 +80,41 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
     const operation = (body as { operation: EvidenceOperation }).operation
     const args = evidenceArgs(operation, body)
     if (!args) return reply("Check the file type, size and case before saving.", 400)
-    if (!storage) return reply("Evidence storage is not configured for this environment.", 503)
+    if (isRequestCreateArgs(args) && operation === "create_request") {
+      const result = await backend().rpc<{ status: string; id?: string; version?: number; requestStatus?: string }>("admin_evidence_request_v1", {
+        p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_id: null, p_version: null,
+        p_operation: "create", p_title: args.title, p_text: args.requestText, p_due: args.dueAt, p_note: null,
+      })
+      if (result.status !== "success") return reply(commandMessage(result.status, "The evidence request could not be saved."), mapStatus(result.status))
+      return reply("The evidence request has been recorded. No email was sent.", 200, { id: result.id, version: result.version, requestStatus: result.requestStatus })
+    }
+    if (isRequestUpdateArgs(args) && (operation === "fulfill_request" || operation === "cancel_request")) {
+      const result = await backend().rpc<{ status: string; id?: string; version?: number; requestStatus?: string }>("admin_evidence_request_v1", {
+        p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_id: args.requestId, p_version: args.version,
+        p_operation: operation === "fulfill_request" ? "fulfill" : "cancel", p_title: null, p_text: null, p_due: null, p_note: args.note,
+      })
+      if (result.status !== "success") return reply(commandMessage(result.status, "The evidence request could not be updated."), mapStatus(result.status))
+      return reply(operation === "fulfill_request" ? "The evidence request has been marked fulfilled." : "The evidence request has been cancelled.", 200, { id: result.id, version: result.version, requestStatus: result.requestStatus })
+    }
+    if (isReviewArgs(args) && (operation === "accept" || operation === "reject" || operation === "set_visibility")) {
+      const result = await backend().rpc<{ status: string; id?: string; reviewStatus?: string; customerVisible?: boolean; recordVersion?: number }>("admin_evidence_review_v1", {
+        p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_version: args.versionId, p_expected: args.recordVersion,
+        p_operation: operation, p_note: args.note, p_visible: args.customerVisible,
+      })
+      if (result.status !== "success") return reply(commandMessage(result.status, "The review could not be saved."), mapStatus(result.status))
+      return reply(
+        operation === "accept" ? "The document version has been accepted. Customer visibility was not changed."
+          : operation === "reject" ? "The document version has been rejected."
+          : args.customerVisible ? "Future customer visibility has been recorded. No customer portal currently exposes this file."
+          : "Customer visibility has been turned off.",
+        200,
+        { id: result.id, reviewStatus: result.reviewStatus, customerVisible: result.customerVisible, recordVersion: result.recordVersion },
+      )
+    }
+    if (needsEvidenceStorage(operation) && !storage) return reply("Evidence storage is not configured for this environment.", 503)
     const store = storage
-    if (operation === "begin" && "filename" in args) {
+    if (!store) return reply("Evidence storage is not configured for this environment.", 503)
+    if (operation === "begin" && isBeginArgs(args)) {
       const result = await backend().rpc<{
         status: string; documentId?: string; versionId?: string; versionNumber?: number; storageKey?: string; contentType?: string
       }>("admin_evidence_begin_v1", {
@@ -86,11 +132,32 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
         maxBytes: MAX_EVIDENCE_BYTES, upload: { url: upload.url, fields: upload.fields, expiresSeconds: upload.expiresSeconds },
       })
     }
-    if (!("versionId" in args)) return reply("Check the fields before saving.", 400)
+    if (!isVersionArgs(args)) return reply("Check the fields before saving.", 400)
     const version = await versionRecord(token, args.caseId, args.versionId)
     if (version === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
     if (version === "missing") return reply("That document is not available.", 409)
     if (!usesConfiguredEvidenceBucket(version, store.bucket)) return reply("We couldn’t confirm the change. Reload the case before trying again.", 503)
+    if (operation === "view" || operation === "download") {
+      if (version.uploadStatus !== "UPLOADED" || !mayRetrieveBytes(version.scanStatus, version.validationStatus)) {
+        return reply("That file cannot be opened.", 403)
+      }
+      if (operation === "view" && !isPreviewableMime(version.contentType)) return reply("Preview not available for this file type.", 403)
+      const probe = await store.probeObject(version.storageKey)
+      if (!probe.exists || probe.scan !== "NO_THREATS_FOUND") return reply("That file cannot be opened.", 403)
+      const url = await store.createReadUrl({
+        key: version.storageKey,
+        contentType: version.contentType,
+        filename: version.originalFilename,
+        disposition: operation === "view" ? "inline" : "attachment",
+      })
+      const expires = signedUrlExpiresSeconds(url)
+      if (expires !== null && expires > READ_EXPIRES_SECONDS) return reply("We couldn’t create a safe download. Please try again shortly.", 503)
+      const result = await backend().rpc<{ status: string }>("admin_evidence_access_v1", {
+        p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_version: args.versionId, p_action: operation,
+      })
+      if (result.status !== "success") return reply(commandMessage(result.status, "That file cannot be opened."), mapStatus(result.status))
+      return reply(operation === "view" ? "Open the file in the new tab." : "Download the file.", 200, { url })
+    }
     if (operation === "finalize") {
       const probe = await store.probeObject(version.storageKey)
       if (!probe.exists) return reply("The uploaded file was not found. Ask for a new upload link and try again.", 409)

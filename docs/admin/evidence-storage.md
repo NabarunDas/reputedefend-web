@@ -1,6 +1,6 @@
-# Evidence storage — Step 8A technical design
+# Evidence storage — Steps 8A and 8B
 
-Step 8A only. This document is the as-built contract for private evidence bytes and metadata. It does not describe a Documents UI, customer publication, prepared packs or download routes. Those belong to Step 8B.
+Step 8A is the private upload/scan foundation. Step 8B adds the Admin evidence workspace: requests, review, visibility recording, and short-lived View/Download. This is not a customer portal and does not complete prepared submission packs (Step 8C).
 
 ## Responsibility split
 
@@ -11,6 +11,7 @@ Step 8A only. This document is the as-built contract for private evidence bytes 
 | Metadata, versions, review and visibility | Supabase PostgreSQL |
 | Admin session, CSRF/origin, command API | Admin app on Vercel |
 | AWS authentication | Vercel OIDC federation assuming `AWS_EVIDENCE_ROLE_ARN` |
+| Admin preview/download | Short-lived S3 presigned GET URLs (≤60 seconds). Bytes are not proxied through Vercel |
 
 Supabase never stores file bytes. S3 never stores customer names, emails, original filenames or case references in the object key. The Admin role cannot read an object until `GuardDutyMalwareScanStatus = NO_THREATS_FOUND`. The application never changes GuardDuty tags.
 
@@ -19,12 +20,16 @@ Supabase never stores file bytes. S3 never stores customer names, emails, origin
 ```
 Admin browser
   → Admin Next.js on Vercel (session cookie, exact Origin)
-    → Supabase (metadata / workflow RPCs)
-    → Vercel OIDC → AWS IAM role → S3 (presigned POST, GetObjectTagging, clean GetObject)
+    → Supabase (metadata / workflow RPCs; no storage keys in browser-facing case/queue queries)
+    → Vercel OIDC → AWS IAM role → S3
+         presigned POST (upload)
+         GetObjectTagging (finalize / refresh / live re-check before read)
+         GetObject (server-side validation after a clean scan only)
+         presigned GET ≤60s (Admin View/Download after DB + live tag checks)
       → GuardDuty Malware Protection (object tags)
 ```
 
-The browser uploads bytes directly to S3. Vercel does not proxy the 10 MB object.
+The browser uploads bytes directly to S3. View/Download also go directly to S3 with a server-minted URL. Vercel does not proxy the 10 MB object.
 
 ## Environment variables
 
@@ -36,7 +41,7 @@ Required in the Admin Production Vercel project only:
 
 Do not set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`. Production fails closed if a required variable is missing or if static keys are present. Preview and local environments must not silently use the production role: `VERCEL_ENV` other than `production` disables the adapter, and tests inject a mock S3 adapter.
 
-This PR does not create or modify AWS infrastructure or Vercel project settings. The existing production OIDC trust is already restricted to `owner:clientcove:project:profilerelaunch-admin:environment:production`.
+This PR does not create or modify AWS infrastructure or Vercel project settings.
 
 ## Object-key model
 
@@ -48,26 +53,40 @@ IDs are server-generated UUIDs. Replacement uploads insert a new version row and
 
 ## Upload sequence
 
-1. Admin POST `/api/evidence/command` with `operation: "begin"`, bounded JSON, a UUID idempotency key, a live Admin session and the configured Origin.
-2. The server validates extension, declared MIME and size (`1..10_485_760` bytes).
-3. `admin_evidence_begin_v1` creates `case_documents` / `case_document_versions` / an append-only event / an audit row / an idempotency receipt.
-4. The server creates a presigned POST (maximum 5 minutes) constrained to the exact key, exact `Content-Type` and `content-length-range` 1..10485760.
-5. The browser POSTs the file to S3.
-6. Admin POST `operation: "finalize"`. The server uses GetObjectTagging only (GetObject/HeadObject are blocked before a clean scan). On success: `upload_status=UPLOADED`, `scan_status=PENDING`, `validation_status=PENDING`.
+Unchanged from Step 8A: `begin` → browser POST to S3 → `finalize` → `refresh_scan` (manual). There is still no polling job, EventBridge handler or cron.
 
-## GuardDuty sequence
+## View / Download sequence (Step 8B)
 
-There is no polling job, EventBridge handler or cron in this PR. Step 10 will add durable jobs later.
+1. Admin POST `/api/evidence/command` with `operation: "view"` or `"download"`, a UUID idempotency key, live session and exact Origin. The browser does not send bucket, key, role or S3 action.
+2. Server loads the version through `admin_evidence_version_v1` (case-scoped). Cross-case IDs return missing/conflict without metadata.
+3. Stored `storage_bucket` must equal `AWS_EVIDENCE_BUCKET`. Mismatch → 503, no S3 call, no URL.
+4. Require `upload_status=UPLOADED`, `scan_status=NO_THREATS_FOUND`, `validation_status=VALID`.
+5. Re-read the live GuardDuty object tag. Missing or non-clean tags → no URL.
+6. `view` is allowed only for PDF/JPEG/PNG/WebP (inline Content-Disposition). DOCX view is rejected server-side.
+7. `download` is allowed for every currently accepted type, including DOCX (attachment Content-Disposition).
+8. Mint a presigned GET with expiry ≤ 60 seconds. Filenames are sanitised for RFC Content-Disposition; CR/LF/control characters are not placed in headers.
+9. Record `ACCESS_VIEWED` / `ACCESS_DOWNLOADED` and Admin audit **without** storing the URL.
+10. Return the URL in the HTTP response only. It is never written to the database, audit, events or logs.
 
-1. Admin POST `operation: "refresh_scan"`.
-2. GetObjectTagging reads `GuardDutyMalwareScanStatus`.
-3. Missing tag → remain `PENDING`.
-4. Documented non-clean values (`THREATS_FOUND`, `UNSUPPORTED`, `ACCESS_DENIED`, `FAILED`) stay blocked. GetObject is not attempted. Validation stays `PENDING`.
-5. Unknown tag values map to `FAILED` and are not treated as safe.
-6. `NO_THREATS_FOUND` permits GetObject under the existing clean-only IAM permission. The server then checks the actual file signature (PDF/JPEG/PNG/WebP) or DOCX ZIP structure via `fflate`.
-7. Content success → `validation_status=VALID`. Otherwise `INVALID` or `ERROR`.
+## Review sequence
 
-View/Download (Step 8B) may be offered only when `scan_status=NO_THREATS_FOUND` AND `validation_status=VALID`. A clean file is not accepted evidence. `customer_visible` defaults to false and is not set by these commands.
+`accept` / `reject` / `set_visibility` require a live Admin session, exact case ownership, a supporting note and the expected `record_version`.
+
+- Accept is allowed only for uploaded + clean + valid files. Accepting a newer version supersedes other `ACCEPTED` versions of the same logical document, clears their `customer_visible` flag, and writes `VERSION_SUPERSEDED`. The newly accepted version is **not** made customer visible.
+- Reject is allowed for the same clean+valid files. Rejecting a previously accepted version requires an explicit UI confirmation. Rejected versions are not customer visible.
+- `SUPERSEDED` is terminal.
+- `set_visibility=true` requires clean + valid + `ACCEPTED`. `false` may be applied to an existing non-superseded version. At most one version per document may be `customer_visible`. Visibility is recorded for **future** customer access; no customer download endpoint exists.
+
+## Evidence requests
+
+Internal operational records only. `create` / `fulfill` / `cancel` write Admin audit. Creating a request does not send an email.
+
+## Browser-facing queries
+
+- `admin_evidence_case_v1` — requests, documents and versions for one case. No `storage_bucket`, `storage_key`, AWS role, OIDC or presigned URLs.
+- `admin_evidence_queue_v1` — bounded global queue (default `needs_review`, maximum 50+1 rows, cursor). No storage keys.
+
+`admin_evidence_version_v1` remains a **server-only** lookup used by upload/access commands and still includes storage coordinates. It is not used to render the Documents or case evidence pages.
 
 ## State model
 
@@ -80,30 +99,12 @@ Keep these independent:
 | Content validation | `PENDING`, `VALID`, `INVALID`, `ERROR` |
 | Business review | `UNREVIEWED`, `ACCEPTED`, `REJECTED`, `SUPERSEDED` |
 
-`VALID` requires `NO_THREATS_FOUND`. Customer visibility requires a clean scan, valid content and `ACCEPTED` review. Step 8A never sets review or customer visibility.
-
-## Failure behaviour
-
-| Failure | Behaviour |
-| --- | --- |
-| Missing Admin session / wrong Origin | 401 / 403, no DB write, no presigned POST |
-| Unknown case or cross-case IDs | Conflict/missing; no metadata leakage |
-| Type/size rejected | 400; no object key minted |
-| Missing AWS configuration or static keys | 503; fail closed |
-| Presigned POST expired or unused | Finalize probe fails; version remains `PENDING_UPLOAD` |
-| Object missing at finalize | 409; upload is not marked complete. Only S3 `NoSuchKey` / `NotFound` count as missing |
-| S3 AccessDenied, OIDC/credential, throttle or network failure | 503 generic operational error; not treated as a missing object; provider details are not returned |
-| Stored `storage_bucket` differs from `AWS_EVIDENCE_BUCKET` | 503; no S3 request. Neither bucket name is returned |
-| Scanner not finished | Refresh leaves `PENDING` |
-| Scanner blocked/failed | Status stored; bytes not read |
-| Signature mismatch after clean scan | `validation_status=INVALID` |
-| Audit insert failure | Transaction rolls back documents, versions and events |
-| Idempotent retry | Same fingerprint returns the committed result; a new five-minute POST may be minted for `begin` |
+`VALID` requires `NO_THREATS_FOUND`. Customer visibility requires a clean scan, valid content and `ACCEPTED` review. View/Download require the same clean+valid pair **and** a live `NO_THREATS_FOUND` tag.
 
 ## Allowed files
 
-Maximum 10,485,760 bytes. Types: PDF, JPEG, PNG, WebP, DOCX. Rejected initially include `.doc`, `.docm`, `.xls`, `.xlsx`, `.zip`, `.rar`, `.7z`, `.svg`, `.html`, `.js`, `.exe`. Extension, declared MIME and post-scan signature must agree. Filename extension alone is not trusted.
+Maximum 10,485,760 bytes. Types: PDF, JPEG, PNG, WebP, DOCX. Previewable: PDF/JPEG/PNG/WebP. DOCX View is disabled with “Preview not available for this file type”; DOCX Download remains available when clean + valid.
 
-## Future Step 8B dependency
+## Future Step 8C
 
-Step 8B may add Documents navigation, review controls, clean-object preview/download and customer publication. It must reuse this command/storage contract, the clean-only IAM permission and `retrieveCleanEvidence`. It must not add a download route that bypasses `NO_THREATS_FOUND` + `VALID`, and it must not make uploads customer-visible by default.
+Prepared submission packs, pack approval and any customer-facing publication remain out of scope.

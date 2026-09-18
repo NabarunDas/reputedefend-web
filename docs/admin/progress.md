@@ -11,7 +11,7 @@ The approved plan defines scope, dependencies and acceptance criteria. A code-co
 | 5 | Shared records and client workspace | Merged in PR #88: directories, record editing, manual contact verification, verified relationships, private customer projections and read-only duplicate comparison. See client-workspace.md; live browser acceptance pending |
 | 6 | Persistent enquiries and triage | Merged in PR #89; migration applied to connected dev project. Queue, phone intake, follow-ups, notification outcomes and audited conversion. See enquiry-triage.md; authenticated browser acceptance pending |
 | 7 | Workflow engine, tasks and cases | Implemented: controlled transitions, Guided/Managed tracks, tasks, notes, external submission records, closure/reopen and customer preview. Later payment/permission/pack gates remain disabled. See case-workflows.md; authenticated browser acceptance pending |
-| 8 | Evidence storage and review | Step 8A evidence foundation implemented / awaiting review. Step 8B UI/review/publication not started. See evidence-storage.md |
+| 8 | Evidence storage and review | Step 8A complete (foundation merged, migration applied to profilerelaunch-dev). Step 8B implemented / awaiting review: Admin evidence workspace, requests, review, visibility recording, secure View/Download. Step 8C prepared-pack controls still pending. See evidence-storage.md |
 | 9 | Agreements and customer actions | Planned |
 | 10 | Jobs, outbox and operational health | Planned |
 | 11 | Outgoing communications | Planned |

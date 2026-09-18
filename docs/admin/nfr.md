@@ -1,4 +1,4 @@
-# Admin non-functional requirements — evidence (Steps 8A, 8B and 8C)
+# Admin non-functional requirements — evidence (Steps 8A, 8B and 8C) and customer actions (Step 9A)
 
 Recorded from the implemented foundation and workspace. These are not customer-facing promises.
 
@@ -22,3 +22,24 @@ Recorded from the implemented foundation and workspace. These are not customer-f
 | Prepared pack | Metadata manifest of exact version IDs; no ZIP/PDF bundle or extra S3 object |
 | Historical packs returned | Latest 20 packs per case |
 | Pack approval meaning | Selected evidence versions only; not payment, permission or Google submission |
+
+## Customer actions (Step 9A)
+
+These are internal security controls, not customer service promises.
+
+| Requirement | Implemented value |
+| --- | --- |
+| Action secret entropy | 256 bits (`randomBytes(32)` hex) |
+| Secret storage | SHA-256 hex only; never raw secret, never full action URL |
+| Action link | `/action/{id}#t={secret}` against `CUSTOMER_ORIGIN`; fragment exchanged then removed |
+| Pending cookie lifetime | 10 minutes after secret exchange |
+| OTP challenge lifetime | 10 minutes |
+| OTP resend delay | 60 seconds |
+| Failed OTP attempts | Maximum 5 per challenge |
+| Action session lifetime | 15 minutes after successful OTP; not refreshed into a login |
+| Action expiry | Default 48 hours; minimum 15 minutes; maximum 7 days |
+| Cookies | Host-only, HttpOnly, Secure in production, SameSite=Strict, `__Host-` prefix in production, no Domain attribute |
+| Masked email | `n***@example.com` before OTP; full address never rendered |
+| Agreement body | 20–50,000 characters of owner-supplied wording |
+| Manager evidence | 10–1,000 characters; no Google password or OTP field |
+| Admin reauth window | 5 minutes for emergency revocation and Manager verify/revoke |

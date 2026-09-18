@@ -4,7 +4,7 @@ Step 8A is the private upload/scan foundation. Step 8B adds the Admin evidence w
 
 On 18 September 2026 the owner confirmed the deployed Step 8B Admin evidence flow worked end-to-end, including upload, malware scan/status refresh, View/Download and review.
 
-Step 8C is merged. The prepared-pack migration `20260918163150_admin_prepared_packs_v1.sql` is applied to `profilerelaunch-dev` as version `20260918163150`. Database, RLS, RPC and advisor verification completed; the migration produced no new warning-level Supabase advisor issue attributable to the prepared-pack implementation. Live browser acceptance of prepared packs is still pending. Do not mark all of Step 8 complete.
+Step 8C is merged and live-accepted. The prepared-pack migration `20260918163150_admin_prepared_packs_v1.sql` is applied to `profilerelaunch-dev` as version `20260918163150`. On 18 September 2026 the owner confirmed Step 8 end-to-end, including prepared-pack creation, multiple accepted items, pack approval, read-only approved packs, a new DRAFT after approval, automatic APPROVED → STALE, and PREPARATION / READY_TO_SUBMIT remaining blocked. Step 8 is complete.
 
 ## Responsibility split
 
@@ -124,4 +124,4 @@ Packs live on the case evidence page only. Approval means: the Admin has approve
 
 ## Future work
 
-Customer publication, payment/permission gates and Google submission remain later stages. Step 8C is merged and migrated on profilerelaunch-dev; live prepared-pack browser acceptance is still pending. Do not mark all of Step 8 complete until that live acceptance is confirmed.
+Customer publication of evidence, payment/permission workflow gates and Google submission remain later stages. Step 8 is complete. Step 9A adds secure customer agreement actions; Step 9B will reuse that session for customer evidence and approved-pack viewing. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.

@@ -423,6 +423,8 @@ Acceptance: unauthorised/oversized/malicious uploads rejected; scanner failure q
 ## Step 9 Agreements and secure customer actions
 Deliver: versioned quotes/permissions acceptance records, verified customer OTP action pages, business authority checks, Manager-access verification and revocation flow. These are reusable customer-portal foundations.
 
+As built in Step 9A: immutable `agreement_versions`, OTP customer actions in `apps/customer`, existing verified memberships reused, Manager access separately verified by Admin. Quotes/payments and customer evidence/pack access remain later. `PREPARATION` / `READY_TO_SUBMIT` stay prerequisite-blocked.
+
 Acceptance: another customer cannot accept/upload/view using a guessed ID; expired actions fail; old agreement snapshots remain intact; setup-form consent cannot satisfy Managed authorisation. Depends on 5, 7–8.
 
 

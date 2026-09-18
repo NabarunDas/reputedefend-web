@@ -2,7 +2,9 @@
 
 This documents the Step 8A evidence tables, the Step 8B additive workspace migration and the Step 8C prepared-pack migration. It does not replace earlier intake, enquiry or workflow models.
 
-Evidence migration filenames match the versions recorded on `profilerelaunch-dev`: `20260918143424` (8A), `20260918153627` (8B), `20260918163150` (8C). Step 8C SQL is unchanged from the merged file; only the filename was reconciled after apply. Database/RLS/RPC/advisor verification for 8C completed. The 8C migration produced no new warning-level Supabase advisor issue attributable to prepared packs. Live browser acceptance of prepared packs is still pending.
+Evidence migration filenames match the versions recorded on `profilerelaunch-dev`: `20260918143424` (8A), `20260918153627` (8B), `20260918163150` (8C). Step 8 is complete with live acceptance on 18 September 2026.
+
+Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, `location_manager_access` and private action session/challenge/receipt tables. See customer-actions.md. The 9A migration is source-only until applied after review.
 
 ## Relationships
 
@@ -15,6 +17,10 @@ public.cases
               └── storage_key unique, opaque S3 object
   └── public.case_prepared_packs (unique case_id + pack_number; at most one DRAFT and one APPROVED)
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
+  └── public.agreement_versions (immutable snapshots)
+  └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; secret_hash only)
+  └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)
 public.case_prepared_pack_events  (append-only pack lifecycle)
 admin_private.evidence_command_receipts
@@ -100,7 +106,18 @@ Step 8B:
 - `admin_evidence_review_v1` — accept / reject / set_visibility
 - `admin_evidence_access_v1` — records view/download; does not return a URL
 
-`admin_audit_list_v1` accepts `EVIDENCE_CHANGED` alongside existing Admin actions.
+`admin_audit_list_v1` accepts `EVIDENCE_CHANGED` and `AUTHORIZATION_CHANGED` alongside existing Admin actions.
+
+## Step 9A agreements, actions and Manager access
+
+Immutable `agreement_versions` snapshots, current `authorization_records` (`ACTIVE` / `REVIEW_REQUIRED` / `REVOKED`), `customer_actions` with `secret_hash` only, Admin-verified `location_manager_access`, and private `customer_action_sessions` / `customer_action_challenges` / command receipts. See customer-actions.md. The 9A migration is source-only until applied after review.
+
+Privileged RPCs:
+
+- `admin_case_authorization_v1` / `admin_case_authorization_readiness_v1`
+- `admin_authorization_command_v1` — create agreement action, revoke open action, issue customer revocation action, Admin emergency revoke
+- `admin_manager_access_command_v1` — verify / revoke
+- `customer_action_exchange_v1`, `customer_action_begin_otp_v1`, `customer_action_attempt_otp_v1`, `customer_action_finish_otp_v1`, `customer_action_session_v1`, `customer_action_command_v1`
 
 ## public.case_prepared_packs
 

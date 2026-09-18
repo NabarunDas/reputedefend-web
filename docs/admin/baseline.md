@@ -40,3 +40,14 @@ The shell contains no data access, so work can proceed without changing or infer
 ## Validation evidence
 
 Record actual baseline and PR checks in the PR description. A build/test result is not evidence of deployed provider configuration. The bootstrap route tests and production HTTP smoke test must pass before this stage is merged.
+
+## As-built Admin evidence architecture (Step 8A)
+
+Evidence bytes are not stored in Supabase. The live path is:
+
+```
+Admin → Vercel OIDC → AWS IAM Role → S3 → GuardDuty
+Admin → Supabase metadata
+```
+
+The Admin browser never receives AWS long-lived keys or OIDC tokens. Metadata, versions, review state and audit live in PostgreSQL. Object keys are opaque UUIDs. See `evidence-storage.md` and `adr/0001-s3-guardduty-evidence-storage.md`.

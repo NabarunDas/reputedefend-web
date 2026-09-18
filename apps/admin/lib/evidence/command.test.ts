@@ -6,8 +6,8 @@ import { POST } from "@/app/api/evidence/command/route"
 import { runEvidenceCommand, retrieveCleanEvidence } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
 import { declaredUpload, evidenceArgs } from "./validation"
-import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, isOpaqueEvidenceKey, mayRetrieveBytes } from "./model"
-import { presignedPostInput } from "./storage"
+import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, isOpaqueEvidenceKey, mayRetrieveBytes, READ_EXPIRES_SECONDS } from "./model"
+import { contentDisposition, presignedPostInput, signedUrlExpiresSeconds } from "./storage"
 import type { EvidenceStorage, ObjectProbe, PresignedUpload } from "./storage"
 import type { EvidenceVersion } from "./model"
 
@@ -33,6 +33,7 @@ const version: EvidenceVersion = {
   documentId, versionId, versionNumber: 1, storageKey, storageBucket: "test-evidence",
   uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING",
   contentType: "application/pdf", sizeBytes: 1024, customerVisible: false,
+  originalFilename: "invoice.pdf", recordVersion: 1, reviewStatus: "UNREVIEWED",
 }
 
 function upload(overrides: Partial<PresignedUpload> = {}): PresignedUpload {
@@ -52,6 +53,7 @@ function storage(overrides: Partial<EvidenceStorage> = {}): EvidenceStorage {
     createUpload: vi.fn(async () => upload()),
     probeObject: vi.fn(async (): Promise<ObjectProbe> => ({ exists: true, scan: "PENDING" })),
     readScannedObject: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])),
+    createReadUrl: vi.fn(async () => "https://s3.eu-west-2.amazonaws.com/test-evidence/object?X-Amz-Expires=60&X-Amz-Signature=sig"),
     ...overrides,
   }
 }
@@ -109,6 +111,19 @@ describe("evidence commands without proxy", () => {
       p_case: caseId, p_token: expect.stringMatching(/^[a-f0-9]{64}$/), p_request: key, p_bucket: "test-evidence",
     }))
     expect(mocks.rpc.mock.calls[0][1].p_token).not.toBe("a".repeat(64))
+  })
+  it("returns conflict rather than 503 when linking a closed evidence request", async () => {
+    const store = storage()
+    mocks.rpc.mockResolvedValue({ status: "conflict" })
+    const response = await runEvidenceCommand(req({ ...beginBody, evidenceRequestId: "88888888-8888-4888-8888-888888888888" }), store)
+    const payload = await response.json()
+    expect(response.status).toBe(409)
+    expect(payload).toMatchObject({ message: "That case or document is not available." })
+    expect(JSON.stringify(payload)).not.toMatch(/exception|open request|503/i)
+    expect(store.createUpload).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_begin_v1", expect.objectContaining({
+      p_evidence_request: "88888888-8888-4888-8888-888888888888", p_case: caseId,
+    }))
   })
   it("rejects invalid Admin sessions at the database", async () => {
     mocks.rpc.mockResolvedValue({ status: "unauthorized" })
@@ -262,3 +277,153 @@ describe("declared upload validation", () => {
     expect(evidenceArgs("begin", { ...beginBody, storageKey: "cases/x" })).toBeNull()
   })
 })
+
+const requestBody = { operation: "create_request" as const, caseId, title: "Bank statements", requestText: "Please upload the latest statements.", dueAt: null }
+const reviewBody = { operation: "accept" as const, caseId, versionId, recordVersion: 3, note: "Accepted after a clean scan." }
+const viewBody = { operation: "view" as const, caseId, versionId }
+const cleanVersion: EvidenceVersion = {
+  ...version, uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", recordVersion: 3,
+}
+
+describe("evidence requests and review without S3", () => {
+  it("creates an evidence request without AWS storage", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", id: "88888888-8888-4888-8888-888888888888", version: 1, requestStatus: "OPEN" })
+    const response = await runEvidenceCommand(req(requestBody), null)
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({ requestStatus: "OPEN" })
+    expect(JSON.stringify(payload)).not.toMatch(/smtp|resend/i)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_request_v1", expect.objectContaining({ p_operation: "create", p_case: caseId, p_title: "Bank statements" }))
+  })
+  it("replays a matching request create", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", id: "88888888-8888-4888-8888-888888888888", version: 1, requestStatus: "OPEN" })
+    expect((await runEvidenceCommand(req(requestBody), null)).status).toBe(200)
+    expect((await runEvidenceCommand(req(requestBody), null)).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+  it("maps version conflicts and cross-case denials without metadata", async () => {
+    mocks.rpc.mockResolvedValue({ status: "conflict" })
+    const response = await runEvidenceCommand(req({ operation: "fulfill_request", caseId: otherCase, requestId: "88888888-8888-4888-8888-888888888888", version: 1, note: "Completed from the other case files." }), null)
+    expect(response.status).toBe(409)
+    expect(await response.text()).not.toContain("storage")
+  })
+  it("accepts a clean version without calling S3", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", id: versionId, reviewStatus: "ACCEPTED", customerVisible: false, recordVersion: 4 })
+    const response = await runEvidenceCommand(req(reviewBody), null)
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_review_v1", expect.objectContaining({ p_operation: "accept", p_expected: 3, p_visible: null }))
+    expect(await response.json()).toMatchObject({ reviewStatus: "ACCEPTED", customerVisible: false })
+  })
+})
+
+describe("secure evidence access", () => {
+  it("blocks view when the database scan is still pending", async () => {
+    mocks.rpc.mockResolvedValue({ ...version, uploadStatus: "UPLOADED" })
+    const store = storage()
+    const response = await runEvidenceCommand(req(viewBody), store)
+    expect(response.status).toBe(403)
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+    expect(store.probeObject).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1"])
+  })
+  it.each(["THREATS_FOUND", "FAILED"] as const)("blocks %s before minting a URL", async (scan) => {
+    mocks.rpc.mockResolvedValue({ ...cleanVersion, scanStatus: scan, validationStatus: "PENDING" })
+    const store = storage()
+    expect((await runEvidenceCommand(req(viewBody), store)).status).toBe(403)
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+  })
+  it("blocks invalid content even after a clean scan", async () => {
+    mocks.rpc.mockResolvedValue({ ...cleanVersion, validationStatus: "INVALID" })
+    const store = storage()
+    expect((await runEvidenceCommand(req(viewBody), store)).status).toBe(403)
+    expect(store.probeObject).not.toHaveBeenCalled()
+  })
+  it("rechecks the live GuardDuty tag and blocks a missing tag", async () => {
+    mocks.rpc.mockResolvedValue(cleanVersion)
+    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "PENDING" as const })) })
+    const response = await runEvidenceCommand(req(viewBody), store)
+    expect(response.status).toBe(403)
+    expect(store.probeObject).toHaveBeenCalledWith(storageKey)
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_evidence_access_v1")).toBe(false)
+  })
+  it("fails closed on bucket mismatch without S3 reads or URLs", async () => {
+    mocks.rpc.mockResolvedValue({ ...cleanVersion, storageBucket: "other-evidence-bucket" })
+    const store = storage()
+    const text = await (await runEvidenceCommand(req(viewBody), store)).text()
+    expect(text).not.toMatch(/test-evidence|other-evidence-bucket|X-Amz/)
+    expect(store.probeObject).not.toHaveBeenCalled()
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+  })
+  it("returns a 60-second inline URL for a clean PDF after live tag confirmation", async () => {
+    mocks.rpc.mockResolvedValueOnce(cleanVersion).mockResolvedValueOnce({ status: "success", action: "view" })
+    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
+    const response = await runEvidenceCommand(req(viewBody), store)
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload.url).toContain("X-Amz-Expires=60")
+    expect(signedUrlExpiresSeconds(payload.url)).toBeLessThanOrEqual(READ_EXPIRES_SECONDS)
+    expect(store.createReadUrl).toHaveBeenCalledWith({ key: storageKey, contentType: "application/pdf", filename: "invoice.pdf", disposition: "inline" })
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(payload.url)
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/X-Amz-Signature/)
+  })
+  it("rejects DOCX view and allows DOCX download", async () => {
+    const docx = { ...cleanVersion, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const, originalFilename: "letter.docx" }
+    mocks.rpc.mockResolvedValue(docx)
+    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
+    expect((await runEvidenceCommand(req(viewBody), store)).status).toBe(403)
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+    mocks.rpc.mockResolvedValueOnce(docx).mockResolvedValueOnce({ status: "success", action: "download" })
+    const download = await runEvidenceCommand(req({ operation: "download", caseId, versionId }), store)
+    expect(download.status).toBe(200)
+    expect(store.createReadUrl).toHaveBeenCalledWith(expect.objectContaining({ disposition: "attachment", filename: "letter.docx" }))
+  })
+  it("sanitises CR/LF filenames before signing", async () => {
+    expect(contentDisposition("safe.pdf", "inline")).toContain("filename=\"safe.pdf\"")
+    expect(contentDisposition("evil\r\nLocation: https://evil.example\ninject.pdf", "attachment")).not.toMatch(/[\r\n]/)
+    expect(contentDisposition("evil\r\nLocation: https://evil.example\ninject.pdf", "attachment")).not.toContain("Location:")
+    mocks.rpc.mockResolvedValueOnce({ ...cleanVersion, originalFilename: "invoice\r\nSet-Cookie: a=b.pdf" }).mockResolvedValueOnce({ status: "success" })
+    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
+    const response = await runEvidenceCommand(req({ operation: "download", caseId, versionId }), store)
+    expect(response.status).toBe(200)
+    expect(store.createReadUrl).toHaveBeenCalledWith(expect.objectContaining({ filename: "invoice\r\nSet-Cookie: a=b.pdf", disposition: "attachment" }))
+    expect(contentDisposition("invoice\r\nSet-Cookie: a=b.pdf", "attachment")).toMatch(/^attachment;/)
+    expect(contentDisposition("invoice\r\nSet-Cookie: a=b.pdf", "attachment")).not.toMatch(/Set-Cookie/)
+  })
+  it("maps provider errors without returning a URL", async () => {
+    mocks.rpc.mockResolvedValue(cleanVersion)
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      createReadUrl: vi.fn(async () => { throw new Error("OIDC token exchange failed for arn:aws:iam::123456789012:role/AdminEvidenceTestRole") }),
+    })
+    const response = await runEvidenceCommand(req(viewBody), store)
+    const text = await response.text()
+    expect(response.status).toBe(503)
+    expect(text).not.toMatch(/OIDC|123456789012|AdminEvidenceTestRole|https:\/\//)
+  })
+  it.each([
+    ["https://s3.example/object?X-Amz-Expires=60", 200],
+    ["https://s3.example/object?X-Amz-Expires=1", 200],
+    ["https://s3.example/object?X-Amz-Expires=61", 503],
+    ["https://s3.example/object", 503],
+    ["https://s3.example/object?X-Amz-Expires=abc", 503],
+    ["https://s3.example/object?X-Amz-Expires=0", 503],
+  ] as const)("fail-closes read URLs unless X-Amz-Expires is 1..60 (%s)", async (url, status) => {
+    mocks.rpc.mockResolvedValueOnce(cleanVersion).mockResolvedValueOnce({ status: "success", action: "view" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      createReadUrl: vi.fn(async () => url),
+    })
+    const response = await runEvidenceCommand(req(viewBody), store)
+    const text = await response.text()
+    expect(response.status).toBe(status)
+    if (status === 503) {
+      expect(text).not.toContain(url)
+      expect(text).not.toMatch(/X-Amz-Expires|s3\.example/)
+      expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_evidence_access_v1")).toBe(false)
+    } else {
+      expect(JSON.parse(text).url).toBe(url)
+    }
+  })
+})
+

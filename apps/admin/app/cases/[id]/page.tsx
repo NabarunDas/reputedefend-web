@@ -32,6 +32,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       <details className="panel"><summary>Add a note</summary><NoteForm key={c.version} c={c} /></details>
     </>}
     <section className="panel">
+      <h2>Evidence & Documents</h2>
+      <p>Upload files, refresh malware scan status, review versions and record future customer visibility. Files stay in private storage. This does not send an email or open a customer portal.</p>
+      <p><Link className="button-link" href={`/cases/${c.id}/evidence`}>Open evidence workspace</Link></p>
+    </section>
+    <section className="panel">
       <h2>Tasks</h2>
       {!c.tasks.length && <p>No tasks recorded.</p>}
       <ul className="task-list">{c.tasks.map(t => <li key={t.id}><strong>{t.title}</strong> · <Badge tone={t.status === "OPEN" ? "info" : t.status === "DONE" ? "success" : "neutral"}>{t.status}</Badge><p>{t.owner === "ADMIN" ? "Admin" : "Customer"} · {ukDate(t.due)} · {t.kind}</p><p>Deadline source: {t.source} · Original timezone: {t.timezone}</p>{t.resolution && <p>{t.resolution}</p>}{!closed && t.status === "OPEN" && <details><summary>Resolve this task</summary><ResolveTask key={c.version} c={c} t={t} /></details>}</li>)}</ul>

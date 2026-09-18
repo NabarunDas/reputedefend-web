@@ -2,7 +2,7 @@
 import { useState, useRef, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { recordPath, type Entity, type Membership, type RecordItem } from "@/lib/records/model"
-export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save" }: { endpoint: string; payload: (form: FormData) => unknown; children: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string }) {
+export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save" }: { endpoint: string; payload: (form: FormData) => unknown; children?: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("")
   const [uncertain, setUncertain] = useState(false)
   const [completed, setCompleted] = useState(false)

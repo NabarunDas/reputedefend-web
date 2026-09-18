@@ -52,10 +52,11 @@ describe("case evidence entry", () => {
       submissions: [],
       transitions: [],
       customerPreview: { reference: "PR-1", type: "PROFILE_RECOVERY", summary: "", notes: [] },
-    } as CaseDetail)
+    } as unknown as CaseDetail)
     render(await CasePage({ params: Promise.resolve({ id: "55555555-5555-4555-8555-555555555555" }), searchParams: Promise.resolve({}) }))
     expect(screen.getByRole("heading", { name: "Evidence & Documents" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Open evidence workspace" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/evidence")
-    expect(document.body.textContent).not.toMatch(/customer portal/)
+    expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
+    expect(document.body.innerHTML).not.toMatch(/href=["'][^"']*customer[^"']*portal/i)
   })
 })

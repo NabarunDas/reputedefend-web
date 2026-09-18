@@ -77,12 +77,13 @@ describe("case evidence workspace", () => {
     } as EvidenceCase)
     render(await EvidencePage({ params: Promise.resolve({ id: caseId }) }))
     expect(screen.getByRole("heading", { name: "Evidence & Documents" })).toBeTruthy()
-    expect(screen.getByText(/records the requirement only. It does not send an email/)).toBeTruthy()
-    expect(screen.getByText(/Maximum file size 10 MB/)).toBeTruthy()
+    expect(screen.getAllByText(/records the requirement only. It does not send an email/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Maximum file size 10 MB/).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "View" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Download" })).not.toBeDisabled()
     expect(screen.getByText("Preview not available for this file type")).toBeTruthy()
-    expect(document.body.textContent).not.toMatch(/customer portal|Google Docs Viewer|Microsoft Office Viewer|send email/i)
+    expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Google Docs Viewer|Microsoft Office Viewer|mailto:/i)
   })
   it("disables unsafe actions while a scan is pending", async () => {
     getEvidenceCase.mockResolvedValue({

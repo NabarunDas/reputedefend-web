@@ -48,6 +48,12 @@ type RpcResult = {
   agreements?: unknown[]
   packs?: unknown[]
   authorizations?: Array<{ status: string; source: string; acceptedEmailMasked?: string }>
+  readiness?: {
+    serviceAgreementAccepted?: boolean
+    caseManagementPermissionActive?: boolean
+    authorizationReady?: boolean
+    managerAccessVerified?: boolean
+  }
 }
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
   return (await db.query<{ value: RpcResult | null }>(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(",")}) as value`, args)).rows[0].value
@@ -131,15 +137,15 @@ async function completeAccept(kind: "SERVICE_AGREEMENT" | "CASE_MANAGEMENT_PERMI
 
 describe("customer action SQL", () => {
   it("denies unverified email, pending or revoked membership, and mismatched relationships", async () => {
-    expect((await createAction()).status).toBe("denied")
+    expect((await createAction())?.status).toBe("denied")
     await db.query("insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values($1,'email',$2,$3,$4)", [customer, "alex@example.com", uid, "Verified from a live call with the customer."])
     await db.query("insert into public.business_memberships(customer_id,business_id,status,evidence) values($1,$2,'pending',$3)", [customer, business, "Awaiting a live authority check."])
-    expect((await createAction()).status).toBe("denied")
+    expect((await createAction())?.status).toBe("denied")
     await db.query("update public.business_memberships set status='revoked', evidence=$1", ["Authority withdrawn after a live check."])
-    expect((await createAction()).status).toBe("denied")
+    expect((await createAction())?.status).toBe("denied")
     await db.query("update public.business_memberships set status='verified', verified_at=now(), verified_by=$1, evidence=$2", [uid, "Companies House match discussed on a live call."])
-    expect((await createAction({ expiresAt: new Date(Date.now() + 8 * 24 * 3600 * 1000).toISOString() })).status).toBe("invalid")
-    expect((await createAction()).status).toBe("success")
+    expect((await createAction({ expiresAt: new Date(Date.now() + 8 * 24 * 3600 * 1000).toISOString() }))?.status).toBe("invalid")
+    expect((await createAction())?.status).toBe("success")
   })
 
   it("returns a raw secret only at HTTP layer and stores only the hash", async () => {

@@ -541,8 +541,95 @@ describe("customer action SQL", () => {
     })
     await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
-      managedTrack: false, authorizationReady: false, serviceAgreementAccepted: true,
+      managedTrack: false, authorizationReady: false, serviceAgreementAccepted: true, caseManagementPermissionActive: false,
     })
+  })
+
+  it("revokes open Managed-permission actions when the case leaves Managed and does not revive them", async () => {
+    await verify()
+    const permissionHash = secretHash(secret()), pending = secretHash(secret()), session = secretHash(secret())
+    const permission = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", secretHash: permissionHash })
+    expect(permission?.status).toBe("success")
+    const service = await createAction({ title: "Owner-approved service wording that must survive a track change" })
+    expect(service?.status).toBe("success")
+    expect(await rpc("customer_action_exchange_v1", [permission?.id, permissionHash, pending])).toMatchObject({ status: "ok" })
+    await requestOtp(pending)
+    expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_session_v1", [session])).toMatchObject({ actionId: permission?.id })
+    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
+    expect((await db.query<{ status: string; revoked_at: string | null }>("select status, revoked_at from public.customer_actions where id=$1", [permission?.id])).rows[0]).toMatchObject({
+      status: "REVOKED",
+    })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [service?.id])).rows[0].status).toBe("OPEN")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_challenges where action_id=$1", [permission?.id])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_sessions where action_id=$1", [permission?.id])).rows[0].n).toBe(0)
+    const revoked = await db.query<{ actor_type: string; actor_id: string | null; reason: string }>("select actor_type, actor_id, details->>'reason' as reason from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED'", [permission?.id])
+    expect(revoked.rows[0]).toMatchObject({ actor_type: "SYSTEM", actor_id: null, reason: "CASE_TRACK_CHANGED" })
+    expect(await rpc("customer_action_exchange_v1", [permission?.id, permissionHash, secretHash(secret())])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_session_v1", [session])).toBeNull()
+    await db.query("update public.cases set service_track='MANAGED' where id=$1", [caseId])
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [permission?.id])).rows[0].status).toBe("REVOKED")
+    expect(await rpc("customer_action_exchange_v1", [permission?.id, permissionHash, secretHash(secret())])).toEqual({ status: "unavailable" })
+    expect((await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", title: "Replacement case-management permission after the track returned to Managed" }))?.status).toBe("success")
+  })
+
+  it("treats an OPEN Managed-permission action on a Guided case as ineligible", async () => {
+    await verify()
+    const hash = secretHash(secret()), pending = secretHash(secret())
+    const created = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", secretHash: hash })
+    expect(await rpc("customer_action_exchange_v1", [created?.id, hash, pending])).toMatchObject({ status: "ok" })
+    expect((await db.query<{ ok: boolean }>("select admin_private.customer_action_eligible_v1(a) as ok from public.customer_actions a where id=$1", [created?.id])).rows[0].ok).toBe(true)
+    await db.exec("alter table public.cases disable trigger cases_managed_permission_on_track_change")
+    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
+    await db.exec("alter table public.cases enable trigger cases_managed_permission_on_track_change")
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [created?.id])).rows[0].status).toBe("OPEN")
+    expect((await db.query<{ ok: boolean }>("select admin_private.customer_action_eligible_v1(a) as ok from public.customer_actions a where id=$1", [created?.id])).rows[0].ok).toBe(false)
+    expect(await rpc("customer_action_begin_otp_v1", [pending])).toEqual({ status: "unavailable" })
+  })
+
+  it("moves ACTIVE Managed permission to REVIEW_REQUIRED on track exit without touching service agreements or Manager access", async () => {
+    await verify()
+    const service = await completeAccept("SERVICE_AGREEMENT")
+    const permission = await completeAccept("CASE_MANAGEMENT_PERMISSION")
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toMatchObject({ managerStatus: "VERIFIED" })
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
+      managedTrack: true, authorizationReady: true, caseManagementPermissionActive: true, serviceAgreementAccepted: true, managerAccessVerified: true,
+    })
+    const revokeHash = secretHash(secret())
+    const revokeAction = await rpc("admin_authorization_command_v1", [token, key(), caseId, "create_revocation_action", { authorizationId: permission.accepted?.authorizationId, expiresAt: expires(), secretHash: revokeHash }])
+    expect(revokeAction?.status).toBe("success")
+    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
+    expect((await db.query<{ status: string; revoked_at: string | null }>("select status, revoked_at from public.authorization_records where id=$1", [permission.accepted?.authorizationId])).rows[0]).toMatchObject({
+      status: "REVIEW_REQUIRED", revoked_at: null,
+    })
+    expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [service.accepted?.authorizationId])).rows[0].status).toBe("ACTIVE")
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [revokeAction?.id])).rows[0].status).toBe("REVOKED")
+    const events = await db.query<{ actor_type: string; actor_id: string | null; reason: string }>("select actor_type, actor_id, details->>'reason' as reason from public.authorization_events where authorization_id=$1 and event='AUTHORIZATION_REVIEW_REQUIRED'", [permission.accepted?.authorizationId])
+    expect(events.rows).toHaveLength(1)
+    expect(events.rows[0]).toMatchObject({ actor_type: "SYSTEM", actor_id: null, reason: "CASE_TRACK_CHANGED" })
+    expect((await db.query<{ status: string; evidence: string }>("select status, evidence from public.location_manager_access")).rows[0]).toMatchObject({
+      status: "VERIFIED", evidence: "Seen in Google Business Manager on a live screen share.",
+    })
+    await db.query("update public.cases set service_track='UNDECIDED' where id=$1", [caseId])
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_events where authorization_id=$1 and event='AUTHORIZATION_REVIEW_REQUIRED'", [permission.accepted?.authorizationId])).rows[0].n).toBe(1)
+    await db.query("update public.cases set service_track='MANAGED' where id=$1", [caseId])
+    expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [permission.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
+      managedTrack: true, authorizationReady: false, caseManagementPermissionActive: false, serviceAgreementAccepted: true, managerAccessVerified: true,
+    })
+    const detail = await rpc("admin_case_detail_v1", [token, caseId, null])
+    await caseCmd("plan", { track: "MANAGED", priority: "NORMAL", assigned: true, nextAction: "Review the request", due: null, firstResponseDue: null }, detail?.version ?? 1)
+    let current = await rpc("admin_case_detail_v1", [token, caseId, null])
+    await caseCmd("transition", { target: "ASSESSMENT_READY", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }, current?.version ?? 1)
+    current = await rpc("admin_case_detail_v1", [token, caseId, null])
+    await caseCmd("transition", { target: "SERVICE_SELECTION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }, current?.version ?? 1)
+    current = await rpc("admin_case_detail_v1", [token, caseId, null])
+    await caseCmd("transition", { target: "AUTHORIZATION_REQUIRED", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }, current?.version ?? 1)
+    current = await rpc("admin_case_detail_v1", [token, caseId, null])
+    expect(await caseCmd("transition", { target: "PREPARATION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }, current?.version ?? 1)).toEqual({ status: "prerequisite" })
+    await db.query("update public.cases set work_stage='PREPARATION' where id=$1", [caseId])
+    current = await rpc("admin_case_detail_v1", [token, caseId, null])
+    expect(await caseCmd("transition", { target: "READY_TO_SUBMIT", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }, current?.version ?? 1)).toEqual({ status: "prerequisite" })
   })
 
   it("requires an exact recordVersion for Admin authorisation revoke", async () => {

@@ -44,7 +44,7 @@ This extends the Admin security model for Step 8A uploads, Step 8B review/access
 | Unattributed audit events | Customer-action and authorisation events store `actor_type`; `ADMIN`/`CUSTOMER` require `actor_id`, and `PRE_AUTH`/`SYSTEM` require a null `actor_id` |
 | OTP send recorded before the provider succeeds | `OTP_REQUESTED` is written at begin; `OTP_SENT` is written only after `customer_action_confirm_otp_sent_v1` following a successful provider send. Verify requires `sent_at` |
 | Silent Manager-access overwrite | Current-state evidence may change; append-only events keep the evidence actually verified at that time |
-| Guided case treated as Managed | `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`; `authorizationReady` requires the Managed track |
+| Guided case treated as Managed | `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`; `authorizationReady` requires the Managed track. Leaving Managed revokes OPEN permission actions and moves ACTIVE permission to `REVIEW_REQUIRED`; those rows never auto-reactivate |
 | Workflow gates enabled early | `authorizationReady` is display-only. `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT` |
 | Direct table access | RLS enabled; grants revoked from PUBLIC/anon/authenticated/service_role; privileged RPCs are `SECURITY DEFINER` with empty `search_path` and `EXECUTE` for `service_role` only |
 

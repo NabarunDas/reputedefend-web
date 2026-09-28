@@ -17,7 +17,7 @@ These are not interchangeable:
 - marketing/setup consent
 - an approved prepared pack
 
-`authorizationReady` may be true only when the case is on the Managed track and the Step 9A conditions are all true: verified business authority, verified customer email, an ACTIVE service agreement, an ACTIVE case-management permission, and VERIFIED Manager access. It does not mean payment ready, quote accepted, ready to submit, or that `PREPARATION` / `READY_TO_SUBMIT` may proceed. Guided and undecided cases can never be authorisation-ready. `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`.
+`authorizationReady` may be true only when the case is on the Managed track and the Step 9A conditions are all true: verified business authority, verified customer email, an ACTIVE service agreement, an ACTIVE case-management permission, and VERIFIED Manager access. It does not mean payment ready, quote accepted, ready to submit, or that `PREPARATION` / `READY_TO_SUBMIT` may proceed. Guided and undecided cases can never be authorisation-ready. `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`. Leaving Managed revokes OPEN case-management permission (and matching revocation) actions with `CASE_TRACK_CHANGED` and moves an ACTIVE permission to `REVIEW_REQUIRED`. Switching back to Managed does not revive those rows; a new permission snapshot must be accepted. Service-agreement actions and `location_manager_access` are not changed by the track move. `customer_action_eligible_v1` also requires Managed for `CASE_MANAGEMENT_PERMISSION` acceptance.
 
 ## Action link
 

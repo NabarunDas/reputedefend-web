@@ -368,6 +368,12 @@ BEGIN
     IF p_action.location_id IS NOT NULL AND cs.location_id IS DISTINCT FROM p_action.location_id THEN RETURN false; END IF;
     IF cs.status IN ('CLOSED','CANCELLED') THEN RETURN false; END IF;
   END IF;
+  IF p_action.kind = 'AGREEMENT_ACCEPTANCE' AND EXISTS (
+    SELECT 1 FROM public.agreement_versions v
+    WHERE v.id = p_action.agreement_version_id AND v.agreement_kind = 'CASE_MANAGEMENT_PERMISSION'
+  ) AND (cs.id IS NULL OR cs.service_track IS DISTINCT FROM 'MANAGED') THEN
+    RETURN false;
+  END IF;
   RETURN true;
 END; $$;
 
@@ -392,7 +398,7 @@ CREATE FUNCTION admin_private.mark_authorizations_review_required_v1(p_customer 
 LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE r public.authorization_records;
 BEGIN
-  IF p_reason IS NULL OR p_reason NOT IN ('CUSTOMER_EMAIL_CHANGED','BUSINESS_AUTHORITY_CHANGED') THEN
+  IF p_reason IS NULL OR p_reason NOT IN ('CUSTOMER_EMAIL_CHANGED','BUSINESS_AUTHORITY_CHANGED','CASE_TRACK_CHANGED') THEN
     RAISE EXCEPTION 'Invalid review-required reason';
   END IF;
   FOR r IN
@@ -429,6 +435,48 @@ BEGIN
 END; $$;
 CREATE TRIGGER business_memberships_revoke_open_actions AFTER UPDATE ON public.business_memberships
 FOR EACH ROW EXECUTE FUNCTION admin_private.revoke_actions_on_membership_v1();
+
+CREATE FUNCTION admin_private.apply_case_track_change_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions; r public.authorization_records;
+BEGIN
+  IF OLD.service_track IS DISTINCT FROM 'MANAGED' OR NEW.service_track IS NOT DISTINCT FROM 'MANAGED' THEN
+    RETURN NEW;
+  END IF;
+  FOR a IN
+    SELECT ca.* FROM public.customer_actions ca
+    WHERE ca.case_id = NEW.id AND ca.status = 'OPEN'
+      AND (
+        (ca.kind = 'AGREEMENT_ACCEPTANCE' AND EXISTS (
+          SELECT 1 FROM public.agreement_versions v
+          WHERE v.id = ca.agreement_version_id AND v.agreement_kind = 'CASE_MANAGEMENT_PERMISSION'
+        ))
+        OR (ca.kind = 'AUTHORIZATION_REVOCATION' AND EXISTS (
+          SELECT 1 FROM public.authorization_records auth
+          WHERE auth.id = ca.authorization_id AND auth.authorization_kind = 'CASE_MANAGEMENT_PERMISSION'
+        ))
+      )
+    FOR UPDATE
+  LOOP
+    UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id;
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED', jsonb_build_object('reason', 'CASE_TRACK_CHANGED'));
+    DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
+    DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  END LOOP;
+  FOR r IN
+    SELECT * FROM public.authorization_records
+    WHERE case_id = NEW.id AND status = 'ACTIVE' AND authorization_kind = 'CASE_MANAGEMENT_PERMISSION'
+    FOR UPDATE
+  LOOP
+    UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
+    INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
+    VALUES (r.id, r.case_id, 'SYSTEM', NULL, 'AUTHORIZATION_REVIEW_REQUIRED', jsonb_build_object('reason', 'CASE_TRACK_CHANGED'));
+  END LOOP;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER cases_managed_permission_on_track_change AFTER UPDATE OF service_track ON public.cases
+FOR EACH ROW EXECUTE FUNCTION admin_private.apply_case_track_change_v1();
 
 CREATE FUNCTION admin_private.authz_receipt_v1(p_actor uuid, p_request uuid, p_fingerprint text) RETURNS jsonb
 LANGUAGE plpgsql SET search_path='' AS $$
@@ -1015,6 +1063,7 @@ REVOKE ALL ON FUNCTION admin_private.revoke_open_customer_actions_v1(uuid, uuid,
 REVOKE ALL ON FUNCTION admin_private.mark_authorizations_review_required_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_actions_on_customer_email_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_actions_on_membership_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.apply_case_track_change_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.authz_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_action_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.case_authorization_readiness_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;

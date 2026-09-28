@@ -64,13 +64,15 @@ Environment for the customer app: `CUSTOMER_AUTH_ENABLED`, `CUSTOMER_ORIGIN`, `S
 
 ## Step 9B1 case access and published packs
 
-`CASE_ACCESS` is a temporary access capability, not an agreement. It stays `OPEN` after OTP until expiry, Admin revoke, trusted-fact invalidation, or the case becomes ineligible. Every new session still requires OTP. At most one `OPEN` `CASE_ACCESS` action exists per case. The action must not reference `agreement_version_id` or `authorization_id`.
+`CASE_ACCESS` is a temporary access capability, not an agreement. It stays `OPEN` after OTP until expiry, Admin revoke, trusted-fact invalidation, or the case becomes ineligible. Every new session still requires OTP. At most one currently usable `OPEN` `CASE_ACCESS` action exists per case. The action must not reference `agreement_version_id` or `authorization_id`.
+
+Expiry makes the capability immediately unusable. Issuing a replacement terminalises the expired `OPEN` row as `REVOKED` with a SYSTEM `ACTION_REVOKED` event (`source=ACTION_EXPIRED`), deletes its challenges and sessions, and never reuses the old secret. Closing or cancelling a case terminalises every `OPEN` `CASE_ACCESS` for that case the same way (`source=CASE_CLOSED` or `CASE_CANCELLED`). Reopening does not revive the old action; Admin must issue a new link and the customer must complete OTP again.
 
 After OTP, the customer is sent to `/case`. That route and `POST /api/case/evidence/access` derive scope only from the 15-minute `__Host-pr-action` session. Browser payloads may contain only `operation` (`view` / `download`) and `versionId`.
 
 Pack publication is a separate axis from `DRAFT` / `APPROVED` / `STALE` / `SUPERSEDED`. Admin publishes through `admin_prepared_pack_command_v1` (`publish` / `unpublish`) with optimistic `record_version`. Only an `APPROVED` pack whose every item is uploaded, clean, valid, accepted and `customer_visible=true` can be published. STALE, SUPERSEDED, or visibility/eligibility loss ends publication immediately and does not auto-republish.
 
-Customer RPCs `customer_case_pack_v1`, `customer_case_pack_version_v1` and `customer_case_pack_access_v1` re-check the session and live publication facts. Storage coordinates never appear in the page projection. Presigned GET expiry is at most 60 seconds and is never persisted. Actor on file-access events is the customer Auth user with source `CUSTOMER_CASE_ACCESS`.
+Customer RPCs `customer_case_pack_v1`, `customer_case_pack_version_v1` and `customer_case_pack_access_v1` re-check the session and live publication facts, including `pack_publishable_v1` for the whole pack on every file lookup. If any included item is no longer uploaded, clean, valid, accepted and customer-visible, no file from that pack is returned. Storage coordinates never appear in the page projection. Presigned GET expiry is at most 60 seconds and is never persisted. Actor on file-access events is the customer Auth user with source `CUSTOMER_CASE_ACCESS`.
 
 ## Out of scope (Step 9B2+)
 

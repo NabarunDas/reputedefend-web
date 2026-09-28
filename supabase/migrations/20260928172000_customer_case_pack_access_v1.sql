@@ -199,6 +199,53 @@ BEGIN
 END; $$;
 REVOKE ALL ON FUNCTION admin_private.pack_publishable_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE FUNCTION admin_private.revoke_case_access_action_v1(p_action uuid, p_reason text, p_details jsonb)
+RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions; reason text; details jsonb;
+BEGIN
+  reason := btrim(coalesce(p_reason, ''));
+  IF p_action IS NULL OR length(reason) NOT BETWEEN 10 AND 2000 THEN RETURN false; END IF;
+  SELECT * INTO a FROM public.customer_actions
+    WHERE id = p_action AND kind = 'CASE_ACCESS' AND status = 'OPEN'
+    FOR UPDATE;
+  IF a.id IS NULL THEN RETURN false; END IF;
+  UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id RETURNING * INTO a;
+  details := coalesce(p_details, '{}'::jsonb) || jsonb_build_object('reason', left(reason, 200), 'kind', 'CASE_ACCESS');
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED', details);
+  DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
+  DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  RETURN true;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.revoke_case_access_action_v1(uuid, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.revoke_case_access_on_case_status_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions; reason text; source text;
+BEGIN
+  IF NEW.status = 'CANCELLED' THEN
+    source := 'CASE_CANCELLED';
+    reason := 'The case was cancelled.';
+  ELSE
+    source := 'CASE_CLOSED';
+    reason := 'The case was closed.';
+  END IF;
+  FOR a IN
+    SELECT * FROM public.customer_actions
+    WHERE case_id = NEW.id AND kind = 'CASE_ACCESS' AND status = 'OPEN'
+    FOR UPDATE
+  LOOP
+    PERFORM admin_private.revoke_case_access_action_v1(a.id, reason, jsonb_build_object('source', source));
+  END LOOP;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER cases_revoke_case_access
+  AFTER UPDATE OF status ON public.cases
+  FOR EACH ROW
+  WHEN (NEW.status IN ('CLOSED','CANCELLED') AND OLD.status IS DISTINCT FROM NEW.status)
+  EXECUTE FUNCTION admin_private.revoke_case_access_on_case_status_v1();
+REVOKE ALL ON FUNCTION admin_private.revoke_case_access_on_case_status_v1() FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION admin_private.end_pack_publication_v1(p_pack uuid, p_actor uuid, p_reason text, p_details jsonb)
 RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE p public.case_prepared_packs; reason text;
@@ -424,10 +471,17 @@ BEGIN
       SELECT * INTO loc FROM public.locations WHERE id = cs.location_id;
       IF loc.id IS NULL OR loc.business_id <> cs.business_id THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     END IF;
-    IF EXISTS (
-      SELECT 1 FROM public.customer_actions x
-      WHERE x.case_id = cs.id AND x.kind = 'CASE_ACCESS' AND x.status = 'OPEN'
-    ) THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    SELECT * INTO a FROM public.customer_actions
+      WHERE case_id = cs.id AND kind = 'CASE_ACCESS' AND status = 'OPEN'
+      FOR UPDATE;
+    IF a.id IS NOT NULL THEN
+      IF a.expires_at > now() THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+      IF NOT admin_private.revoke_case_access_action_v1(
+        a.id,
+        'The previous case-access capability expired.',
+        jsonb_build_object('source', 'ACTION_EXPIRED')
+      ) THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    END IF;
     INSERT INTO public.customer_actions(customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
     VALUES (cs.customer_id, cs.business_id, cs.location_id, cs.id, 'CASE_ACCESS', secret, lower(c.email), expires, actor)
     RETURNING * INTO a;
@@ -775,6 +829,7 @@ BEGIN
     AND v.validation_status = 'VALID'
     AND v.review_status = 'ACCEPTED'
     AND v.customer_visible IS TRUE
+    AND admin_private.pack_publishable_v1(p.id)
   LIMIT 1;
 END; $$;
 REVOKE ALL ON FUNCTION admin_private.customer_published_pack_item_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
@@ -839,7 +894,7 @@ BEGIN
   a := admin_private.customer_case_access_action_v1(p_token_hash);
   IF a.id IS NULL OR p_version IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO item FROM admin_private.customer_published_pack_item_v1(a.case_id, p_version);
-  IF item.version_id IS NULL THEN RETURN NULL; END IF;
+  IF item.version_id IS NULL OR NOT admin_private.pack_publishable_v1(item.pack_id) THEN RETURN NULL; END IF;
   RETURN jsonb_build_object(
     'versionId', item.version_id,
     'documentTitle', item.document_title,
@@ -866,6 +921,9 @@ BEGIN
   fp := md5(jsonb_build_array(a.id, p_version, p_action)::text);
   cached := admin_private.customer_pack_receipt_v1(sess.auth_user_id, p_request, fp);
   IF cached IS NOT NULL THEN RETURN cached; END IF;
+  SELECT * INTO item FROM admin_private.customer_published_pack_item_v1(a.case_id, p_version);
+  IF item.version_id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF NOT admin_private.pack_publishable_v1(item.pack_id) THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO item FROM admin_private.customer_published_pack_item_v1(a.case_id, p_version);
   IF item.version_id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO v FROM public.case_document_versions WHERE id = item.version_id;

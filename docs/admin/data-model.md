@@ -21,7 +21,7 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS; secret_hash only)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS; secret_hash only; expired OPEN CASE_ACCESS is terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS)
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)

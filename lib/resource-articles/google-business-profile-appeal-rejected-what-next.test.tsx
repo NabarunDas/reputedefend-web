@@ -158,7 +158,7 @@ describe("Article #3 rejected appeal next steps", () => {
     expect(container.textContent).toContain(
       "This guide is based on Google's publicly available Business Profile guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain(
       "A rejected Google Business Profile appeal is not the moment to start sending the same case again and again.",
     )

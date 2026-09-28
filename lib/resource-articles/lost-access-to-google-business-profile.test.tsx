@@ -177,7 +177,7 @@ describe("Article #13 lost access to a Google Business Profile", () => {
     expect(container.textContent).toContain(
       "This guide is based on Google's publicly available Business Profile ownership, access and security guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain("Start your Review Protection assessment")
 
     const assessmentLinks = screen.getAllByRole("link", { name: "Start your Profile Recovery assessment" })

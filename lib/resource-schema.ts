@@ -2,7 +2,12 @@ import type { Metadata } from "next"
 import { brandName, pageTitle } from "@/lib/brand"
 import { organizationUrl } from "@/lib/organization-schema"
 import { RESOURCES_INDEX_PATH, resourceCategoryLinkPath } from "@/lib/resource-category-links"
-import { isResourceCalendarDate, resourcePath, type ResourceRecord } from "@/lib/resources"
+import {
+  isResourceCalendarDate,
+  resourceLastModifiedDate,
+  resourcePath,
+  type ResourceRecord,
+} from "@/lib/resources"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
 /** Canonical metadata for a Resource topic hub. */
@@ -67,7 +72,7 @@ export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
   const description = resource.description
   const path = resourcePath(resource.slug)
   const publishedTime = resource.datePublished
-  const modifiedTime = resource.dateReviewed ?? resource.dateModified ?? resource.datePublished
+  const modifiedTime = resourceLastModifiedDate(resource) ?? resource.datePublished
 
   return {
     title: { absolute: title },
@@ -92,7 +97,7 @@ export function resourceArticleJsonLd(resource: ResourceRecord) {
   const url = organizationUrl()
   const pageUrl = `${url}${resourcePath(resource.slug)}`
   const datePublished = resource.datePublished
-  const dateModified = resource.dateReviewed
+  const dateModified = resourceLastModifiedDate(resource) ?? resource.datePublished
 
   return {
     "@context": "https://schema.org",

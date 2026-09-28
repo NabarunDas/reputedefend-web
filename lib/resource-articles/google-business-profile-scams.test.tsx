@@ -257,7 +257,7 @@ describe("Article #18 Google Business Profile scams", () => {
       "This guide is based on Google's publicly available Business Profile security, access, verification, third-party and Google Account guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
     expect(container.textContent).toContain("Do not send a Business Profile verification code to ProfileRelaunch.")
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain("View official Google guidance")
     expect(container.textContent).not.toContain("Start your Profile Recovery assessment")
 

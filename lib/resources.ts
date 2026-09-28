@@ -728,6 +728,16 @@ export function formatResourceLongDate(isoDate: string) {
   return `${day} ${longMonths[monthIndex]} ${year}`
 }
 
+/**
+ * The date SEO outputs should treat as the last meaningful change.
+ *
+ * `dateModified` wins because a substantive edit can land after the most
+ * recent review, so preferring `dateReviewed` would understate the change.
+ */
+export function resourceLastModifiedDate(resource: ResourceRecord): string | null {
+  return resource.dateModified ?? resource.dateReviewed ?? resource.datePublished
+}
+
 export function resourceShowsUpdated(resource: ResourceRecord) {
   return Boolean(
     resource.dateModified &&
@@ -742,7 +752,7 @@ export function publishedResourceSitemapEntries(
 ): MetadataRoute.Sitemap {
   return index.published().map((resource) => ({
     url: `${siteUrl}${resourcePath(resource.slug)}`,
-    lastModified: resource.dateReviewed ?? resource.dateModified ?? resource.datePublished ?? undefined,
+    lastModified: resourceLastModifiedDate(resource) ?? undefined,
   }))
 }
 

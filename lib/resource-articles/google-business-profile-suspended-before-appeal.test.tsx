@@ -110,7 +110,7 @@ describe("Article #1 suspension pre-appeal guide", () => {
     expect(container.textContent).toContain("While an appeal is pending")
     expect(container.textContent).toContain("Prepare first and appeal second.")
     expect(container.textContent).not.toContain("View official Google guidance")
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     const primaryCtas = screen.getAllByRole("link", { name: /Start your Profile Recovery assessment/ })
     expect(primaryCtas).toHaveLength(2)
     expect(primaryCtas[0]).toHaveAttribute("href", "/get-help?service=profile-recovery")

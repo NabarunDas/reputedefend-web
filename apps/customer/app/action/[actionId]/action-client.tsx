@@ -19,10 +19,13 @@ type Session = {
 
 export function ActionClient({ actionId }: { actionId: string }) {
   const [phase, setPhase] = useState<"start" | "otp" | "review" | "done" | "unavailable">("start")
+  const [otpSent, setOtpSent] = useState(false)
+  const [resendReady, setResendReady] = useState(false)
   const [message, setMessage] = useState("")
   const [maskedEmail, setMaskedEmail] = useState("")
   const [session, setSession] = useState<Session | null>(null)
   const exchanged = useRef(false)
+  const resendTimer = useRef<number | null>(null)
   useEffect(() => {
     if (exchanged.current) return
     exchanged.current = true
@@ -43,15 +46,29 @@ export function ActionClient({ actionId }: { actionId: string }) {
     }, 0)
     return () => window.clearTimeout(timer)
   }, [actionId])
+  useEffect(() => () => { if (resendTimer.current) window.clearTimeout(resendTimer.current) }, [])
+
+  function armResendWindow() {
+    setResendReady(false)
+    if (resendTimer.current) window.clearTimeout(resendTimer.current)
+    resendTimer.current = window.setTimeout(() => setResendReady(true), 60_000)
+  }
 
   async function sendOtp(event: FormEvent) {
     event.preventDefault()
     setMessage("")
     const response = await fetch("/api/action/otp", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
     const result = await response.json() as { message?: string; maskedEmail?: string }
-    if (!response.ok) { if (response.status === 429) setMessage(result.message || ACTION_UNAVAILABLE); else setPhase("unavailable"); return }
-    setMaskedEmail(result.maskedEmail || maskedEmail)
-    setMessage("Enter the six-digit code sent to the verified email.")
+    if (!response.ok) {
+      if (response.status === 429) { setMessage(result.message || ACTION_UNAVAILABLE); return }
+      setPhase("unavailable")
+      return
+    }
+    const nextMasked = result.maskedEmail || maskedEmail
+    setMaskedEmail(nextMasked)
+    setOtpSent(true)
+    setMessage("")
+    armResendWindow()
   }
   async function verify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -78,12 +95,18 @@ export function ActionClient({ actionId }: { actionId: string }) {
   if (phase === "start") return <section><h1>Secure action</h1><p className="muted">Checking this link…</p></section>
   if (phase === "otp") return <section>
     <h1>Confirm it is you</h1>
-    <p>A one-time code will be sent to {maskedEmail || "the verified email for this action"}.</p>
-    <form onSubmit={sendOtp}><button type="submit">Send code</button></form>
-    <form onSubmit={verify}>
-      <label>Six-digit code<input name="code" inputMode="numeric" pattern="\d{6}" maxLength={6} required autoComplete="one-time-code" /></label>
-      <button type="submit">Verify code</button>
-    </form>
+    {!otpSent && <>
+      <p>A one-time code will be sent to {maskedEmail || "the verified email for this action"}.</p>
+      <form onSubmit={sendOtp}><button type="submit">Send code</button></form>
+    </>}
+    {otpSent && <>
+      <p>We sent a six-digit code to {maskedEmail}.</p>
+      <form onSubmit={verify}>
+        <label>Six-digit code<input name="code" inputMode="numeric" pattern="\d{6}" maxLength={6} required autoComplete="one-time-code" /></label>
+        <button type="submit">Verify code</button>
+      </form>
+      {resendReady && <form onSubmit={sendOtp}><button type="submit">Resend code</button></form>}
+    </>}
     <p role="status">{message}</p>
   </section>
   if (phase === "done") return <section><h1>Secure action</h1><p>{message}</p></section>

@@ -7,6 +7,7 @@ import {
   type ResourceCategoryHub,
 } from "@/app/resources/category-hub-content"
 import { resourcesHowProduced } from "@/app/resources/content"
+import { resourceCategoryHubBreadcrumbJsonLd } from "@/lib/resource-schema"
 import { ResourceCard } from "./resource-card"
 import styles from "@/app/resources/resources.module.css"
 
@@ -23,9 +24,17 @@ export function ResourceCategoryHubView({
   resources: ResourceRecord[]
 }) {
   const category = getResourceCategory(hub.category)
+  const breadcrumbJsonLd = resourceCategoryHubBreadcrumbJsonLd({
+    title: category.title,
+    path: hub.path,
+  })
 
   return (
     <div className={styles.page}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       <section className={styles.heroBand} aria-labelledby="hub-title">
         <div className={styles.hero}>
           <nav className={styles.hubBreadcrumb} aria-label="Breadcrumb">

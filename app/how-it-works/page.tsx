@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { FaqStructuredData, HowToStructuredData } from "@/components/structured-data"
-import { howFaqs, howSeo, howTimeline } from "./content"
+import { FaqStructuredData } from "@/components/structured-data"
+import { howFaqs, howSeo } from "./content"
 import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
@@ -36,11 +36,6 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <div className={`${styles.page} font-sans`}>
-      <HowToStructuredData
-        name={howSeo.titlePage}
-        description={description}
-        steps={howTimeline.steps.map((step) => ({ name: step.title, text: step.body }))}
-      />
       <FaqStructuredData questions={howFaqs.map(({ q, a }) => ({ q, a }))} />
       <HowHero />
       <HowTrustStrip />

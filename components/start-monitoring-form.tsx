@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactElement } from "react"
+import { sendLeadConversion } from "@/lib/analytics"
 import { HoneypotField } from "@/components/honeypot-field"
 import {
   collectMonitoringErrors,
@@ -238,6 +239,9 @@ export function StartMonitoringForm() {
         setReceiptEmailSent(body.receiptEmailSent === true)
         setPhase("success")
         setStatusText("Your setup request has been received.")
+        // Only a confirmed persisted request counts; retries, rate limits and
+        // uncertain deliveries never reach here.
+        sendLeadConversion({ leadType: "guard_setup" })
         requestFocus("success")
         return
       }

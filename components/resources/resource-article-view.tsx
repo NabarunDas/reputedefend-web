@@ -182,10 +182,6 @@ export function ResourceArticleView({
               <dd className={styles.updated}>Updated: {formatResourceLongDate(resource.dateModified)}</dd>
             </div>
           ) : null}
-          <div>
-            <dt>Author</dt>
-            <dd>{resource.author}</dd>
-          </div>
         </dl>
       </header>
 

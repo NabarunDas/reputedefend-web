@@ -8,6 +8,7 @@ import {
   type EnquiryField,
   type EnquiryFieldErrors,
 } from "@/lib/enquiry"
+import { sendLeadConversion } from "@/lib/analytics"
 import { HoneypotField } from "@/components/honeypot-field"
 import styles from "./enquiry-form.module.css"
 
@@ -64,6 +65,10 @@ export function EnquiryForm({ source = "homepage", caseMode = false, submitLabel
         setSimulated(json.simulated === true)
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your enquiry has been received.")
+        // One event per genuine delivery. A development simulation is not a lead.
+        if (json.simulated !== true) {
+          sendLeadConversion({ leadType: "homepage_enquiry", serviceType: checked.data?.service })
+        }
         window.setTimeout(() => successRef.current?.focus(), 0)
         return
       }

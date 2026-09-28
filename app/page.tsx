@@ -12,7 +12,7 @@ import {
   HomeTrustStrip,
   HomeWhy,
 } from "@/components/homepage"
-import { FaqStructuredData } from "@/components/structured-data"
+import { FaqStructuredData, WebsiteStructuredData } from "@/components/structured-data"
 import { homepageFaqs, homepageSeo } from "@/lib/homepage-content"
 import { pageTitle } from "@/lib/brand"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
@@ -31,6 +31,7 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <Homepage>
+      <WebsiteStructuredData />
       <FaqStructuredData questions={homepageFaqs.map(({ q, a }) => ({ q, a }))} />
       <HomeHero />
       <HomeTrustStrip />

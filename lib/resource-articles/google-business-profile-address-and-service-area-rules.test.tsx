@@ -191,7 +191,7 @@ describe("Article #15 Google Business Profile address and service-area rules", (
     expect(container.textContent).toContain(
       "This guide is based on Google's publicly available Business Profile address, service-area, eligibility and verification guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain("Start your Review Protection assessment")
     expect(container.textContent).not.toContain("View official Google guidance")
 

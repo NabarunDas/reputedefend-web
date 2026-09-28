@@ -63,6 +63,31 @@ export const publishedResourceFixture: ResourceRecord = {
   author: resourceAuthor,
 }
 
+/**
+ * A guide edited after its last review, so dateModified is the newest date.
+ * SEO date-order coverage depends on these three dates staying distinct.
+ */
+export const modifiedAfterReviewFixture: ResourceRecord = {
+  ...publishedResourceFixture,
+  slug: "test-modified-after-review-guide",
+  title: "Guide modified after its last review",
+  seoTitle: "Guide modified after its last review",
+  featured: false,
+  datePublished: "2026-09-01",
+  dateReviewed: "2026-09-10",
+  dateModified: "2026-09-20",
+  relatedResourceSlugs: [],
+}
+
+/** Same guide with no recorded modification, so dateReviewed is the fallback. */
+export const reviewedOnlyFixture: ResourceRecord = {
+  ...modifiedAfterReviewFixture,
+  slug: "test-reviewed-only-guide",
+  title: "Guide reviewed but never modified",
+  seoTitle: "Guide reviewed but never modified",
+  dateModified: null,
+}
+
 export const publishedRelatedFixture: ResourceRecord = {
   ...publishedResourceFixture,
   slug: "test-related-published-guide",
@@ -111,7 +136,9 @@ export function fixtureBodyLookup(slug: string) {
   if (
     slug === publishedResourceFixture.slug ||
     slug === publishedRelatedFixture.slug ||
-    slug === publishedReviewFixture.slug
+    slug === publishedReviewFixture.slug ||
+    slug === modifiedAfterReviewFixture.slug ||
+    slug === reviewedOnlyFixture.slug
   ) {
     return { sourcesUsed: [fixtureOfficialSource] }
   }

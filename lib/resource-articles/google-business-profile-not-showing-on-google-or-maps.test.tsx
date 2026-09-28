@@ -269,7 +269,7 @@ describe("Article #19 Business Profile not showing", () => {
     expect(container.textContent).toContain(
       "This guide is based on Google's publicly available Business Profile visibility, verification, local-ranking and policy guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain("View official Google guidance")
     expect(container.textContent).not.toContain("Start your Review Protection assessment")
 

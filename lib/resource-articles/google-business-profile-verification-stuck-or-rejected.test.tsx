@@ -167,7 +167,7 @@ describe("Article #4 verification stuck or rejected", () => {
     expect(container.textContent).toContain(
       "This guide is based on Google's publicly available Business Profile guidance and was last reviewed on 14 September 2026. ProfileRelaunch is independent of Google.",
     )
-    expect(container.textContent).not.toContain("How these guides are produced")
+    expect(screen.queryByRole("heading", { name: "How these guides are produced" })).not.toBeInTheDocument()
 
     const jsonLd = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (node) => node.textContent ?? "",

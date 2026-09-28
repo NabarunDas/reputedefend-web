@@ -51,7 +51,11 @@ export function ResourcesHub({ published }: { published: ResourceRecord[] }) {
 
       <ResourcesExplorer resources={published} />
 
-      <section className={styles.how} aria-labelledby="how-produced-title">
+      <section
+        className={styles.how}
+        id="how-these-guides-are-produced"
+        aria-labelledby="how-produced-title"
+      >
         <p className={styles.eyebrow}>{resourcesHowProduced.eyebrow}</p>
         <h2 id="how-produced-title">{resourcesHowProduced.title}</h2>
         <p className={styles.howCopy}>{resourcesHowProduced.copy}</p>

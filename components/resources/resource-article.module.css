@@ -100,6 +100,19 @@
   align-items: center;
 }
 
+.editorialLine {
+  width: var(--wide);
+  margin-inline: auto;
+  margin-block: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.editorialLine a {
+  color: var(--green-dark);
+  font-weight: 650;
+}
+
 .breadcrumb [aria-current="page"] {
   color: var(--ink);
   font-weight: 700;

@@ -8,8 +8,22 @@ import {
   resourceCategoryHubContent,
   type ResourceCategoryHub,
 } from "@/app/resources/category-hub-content"
-import { getPublishedResources, resourcePath } from "@/lib/resources"
+import { brandSiteUrl } from "@/lib/brand"
+import { getPublishedResources, getResourceCategory, resourcePath } from "@/lib/resources"
 import { unpublishedRelatedFixture } from "@/lib/resource-test-fixtures"
+
+type BreadcrumbListJsonLd = {
+  "@type": string
+  itemListElement: Array<{ position: number; name: string; item: string }>
+}
+
+function breadcrumbJsonLd(container: HTMLElement): BreadcrumbListJsonLd {
+  const blocks = Array.from(container.querySelectorAll('script[type="application/ld+json"]'))
+    .map((node) => JSON.parse(node.textContent ?? "{}") as BreadcrumbListJsonLd)
+    .filter((schema) => schema["@type"] === "BreadcrumbList")
+  expect(blocks).toHaveLength(1)
+  return blocks[0]
+}
 
 vi.mock("next/link", () => ({
   default({ href, children }: { href: string; children: React.ReactNode }) {
@@ -63,6 +77,46 @@ describe("Resource category hub", () => {
       expect(guideHrefs).toEqual(published.map((resource) => resourcePath(resource.slug)))
       expect(guideHrefs).not.toContain(resourcePath(unpublishedRelatedFixture.slug))
       expect(guideHrefs).toHaveLength(new Set(guideHrefs).size)
+    },
+  )
+
+  it.each(hubs.map((hub) => [hub.path, hub] as const))(
+    "%s emits BreadcrumbList JSON-LD matching its visible breadcrumb",
+    (_path, hub) => {
+      const { container } = render(
+        <ResourceCategoryHubView hub={hub} resources={publishedFor(hub)} />,
+      )
+
+      const schema = breadcrumbJsonLd(container)
+      const visible = Array.from(
+        screen.getByRole("navigation", { name: "Breadcrumb" }).querySelectorAll("li"),
+      )
+      const categoryTitle = getResourceCategory(hub.category).title
+
+      expect(schema.itemListElement).toHaveLength(2)
+      expect(schema.itemListElement[0]).toEqual({
+        "@type": "ListItem",
+        position: 1,
+        name: "Resources",
+        item: `${brandSiteUrl}/resources`,
+      })
+      expect(schema.itemListElement[1]).toEqual({
+        "@type": "ListItem",
+        position: 2,
+        name: categoryTitle,
+        item: `${brandSiteUrl}${hub.path}`,
+      })
+
+      // The visible trail and the structured data must describe the same two
+      // steps, in the same order, pointing at the same URLs.
+      expect(visible).toHaveLength(2)
+      expect(visible[0].querySelector("a")).toHaveAttribute("href", "/resources")
+      expect(visible[0]).toHaveTextContent("Resources")
+      expect(visible[1]).toHaveTextContent(categoryTitle)
+      expect(schema.itemListElement.map((item) => item.item.replace(brandSiteUrl, ""))).toEqual([
+        "/resources",
+        hub.path,
+      ])
     },
   )
 

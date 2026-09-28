@@ -225,6 +225,33 @@ export const recoveryAppealed = {
   href: recoveryHelpHref,
 } as const
 
+export const recoveryGuides = {
+  eyebrow: "Resources",
+  title: "Helpful guides before your next step",
+  lead:
+    "If you want to understand the process before starting an assessment, these guides explain the most common recovery situations in more detail.",
+  links: [
+    {
+      label: "What to do before you appeal a suspension",
+      href: "/resources/google-business-profile-suspended-before-appeal",
+    },
+    {
+      label: "Google Business Profile appeal evidence checklist",
+      href: "/resources/google-business-profile-appeal-evidence-checklist",
+    },
+    {
+      label: "What to do after a rejected appeal",
+      href: "/resources/google-business-profile-appeal-rejected-what-next",
+    },
+    {
+      label: "Verification stuck or rejected",
+      href: "/resources/google-business-profile-verification-stuck-or-rejected",
+    },
+  ],
+  hubLabel: "Browse all Profile Recovery guides",
+  hubHref: "/resources/google-business-profile-recovery",
+} as const
+
 export const recoveryFaqs = [
   {
     q: "Why was my Google Business Profile suspended?",

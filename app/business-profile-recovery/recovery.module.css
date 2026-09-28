@@ -59,6 +59,7 @@
 .pricing,
 .process,
 .appealed,
+.guides,
 .faq,
 .closing {
   width: var(--wrap);
@@ -707,6 +708,62 @@
 
 .appealed li svg { color: var(--green); margin-top: 2px; }
 
+.guides {
+  padding-block: 0 80px;
+}
+
+.guidesIntro > p {
+  margin-top: 16px;
+  color: var(--muted-strong);
+  font-size: 16px;
+  max-width: 40rem;
+}
+
+.guidesList {
+  list-style: none;
+  margin: 32px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 40px;
+  border-top: 1px solid var(--edge);
+}
+
+.guidesList li {
+  min-width: 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.guidesList a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding-block: 16px;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.guidesList a:hover { color: var(--green-dark); }
+.guidesList a svg { color: var(--green); }
+
+.guidesHubLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 24px;
+  color: var(--green-dark);
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.guidesHubLink:hover { color: var(--ink); }
+
 .faq {
   display: grid;
   grid-template-columns: .78fr 1.22fr;
@@ -814,6 +871,7 @@
   .modelGrid,
   .faq,
   .appealed,
+  .guidesList,
   .processList { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -832,6 +890,7 @@
   .modelGuided,
   .modelManaged { padding: 28px; }
   .appealed { padding: 8px 0 56px; }
+  .guides { padding-block: 0 56px; }
   .faq { padding-block: 56px; gap: 28px; }
   .closing { padding: 32px 24px; }
   .processList li {

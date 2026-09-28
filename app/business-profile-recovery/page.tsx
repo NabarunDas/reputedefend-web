@@ -9,6 +9,7 @@ import {
   RecoveryClosing,
   RecoveryExpertise,
   RecoveryFaq,
+  RecoveryGuides,
   RecoveryHero,
   RecoveryModels,
   RecoveryPricing,
@@ -49,6 +50,7 @@ export default function BusinessProfileRecoveryPage() {
       <RecoveryPricing />
       <RecoveryProcess />
       <RecoveryAppealed />
+      <RecoveryGuides />
       <RecoveryFaq />
       <RecoveryClosing />
     </div>

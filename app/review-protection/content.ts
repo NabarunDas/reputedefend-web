@@ -245,6 +245,28 @@ export const reviewPricing = {
   secondaryHref: reviewHelpHref,
 } as const
 
+export const reviewGuides = {
+  eyebrow: "Resources",
+  title: "Understand the review before you challenge it",
+  lead:
+    "These guides explain Google's review-policy routes, what can and cannot qualify for removal, and what to consider before submitting another report or appeal.",
+  links: [
+    { label: "Can a Google review be removed?", href: "/resources/can-a-google-review-be-removed" },
+    {
+      label: "Fake review or genuine negative feedback?",
+      href: "/resources/fake-google-review-or-genuine-negative-feedback",
+    },
+    {
+      label: "Google rejected my review report — what next?",
+      href: "/resources/google-rejected-my-review-report",
+    },
+    { label: "Google review bombing", href: "/resources/google-review-bombing" },
+    { label: "Google review extortion", href: "/resources/google-review-extortion" },
+  ],
+  hubLabel: "Browse all Google Review guides",
+  hubHref: "/resources/google-reviews",
+} as const
+
 export const reviewFaqs = [
   {
     q: "Can you remove a fake Google review?",

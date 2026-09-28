@@ -6,6 +6,7 @@ import {
   recoveryClosing,
   recoveryExpertise,
   recoveryFaqs,
+  recoveryGuides,
   recoveryHero,
   recoveryHelpHref,
   recoveryModels,
@@ -318,6 +319,32 @@ export function RecoveryAppealed() {
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+export function RecoveryGuides() {
+  return (
+    <section className={`${s.guides} ${s.reveal}`} aria-labelledby="guides-title">
+      <div className={s.guidesIntro}>
+        <Eyebrow>{recoveryGuides.eyebrow}</Eyebrow>
+        <h2 id="guides-title">{recoveryGuides.title}</h2>
+        <p>{recoveryGuides.lead}</p>
+      </div>
+      <ul className={s.guidesList}>
+        {recoveryGuides.links.map((link) => (
+          <li key={link.href}>
+            <Link href={link.href}>
+              {link.label}
+              <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <Link className={s.guidesHubLink} href={recoveryGuides.hubHref}>
+        {recoveryGuides.hubLabel}
+        <ArrowRight size={16} aria-hidden="true" />
+      </Link>
     </section>
   )
 }

@@ -8,6 +8,7 @@ import {
   ReviewClosing,
   ReviewEvidence,
   ReviewFaq,
+  ReviewGuides,
   ReviewHero,
   ReviewJudgement,
   ReviewModels,
@@ -53,6 +54,7 @@ export default function ReviewProtectionPage() {
       <ReviewReported />
       <ReviewProcess />
       <ReviewPricing />
+      <ReviewGuides />
       <ReviewFaq />
       <ReviewClosing />
     </div>

@@ -1,8 +1,29 @@
 import type { Metadata } from "next"
-import { brandName } from "@/lib/brand"
+import { brandName, pageTitle } from "@/lib/brand"
 import { organizationUrl } from "@/lib/organization-schema"
+import { resourceCategoryLinkPath } from "@/lib/resource-category-links"
 import { isResourceCalendarDate, resourcePath, type ResourceRecord } from "@/lib/resources"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
+
+/** Canonical metadata for a Resource topic hub. */
+export function resourceCategoryHubMetadata({
+  seoTitle,
+  description,
+  path,
+}: {
+  seoTitle: string
+  description: string
+  path: string
+}): Metadata {
+  const title = pageTitle(seoTitle)
+  return {
+    title: { absolute: title },
+    description,
+    alternates: { canonical: path },
+    openGraph: socialOpenGraph({ title, description, path }),
+    twitter: socialTwitter({ title, description }),
+  }
+}
 
 export function resourceArticleMetadata(resource: ResourceRecord): Metadata {
   if (!isResourceCalendarDate(resource.datePublished) || !isResourceCalendarDate(resource.dateReviewed)) {
@@ -85,7 +106,7 @@ export function resourceBreadcrumbJsonLd(resource: ResourceRecord, categoryTitle
         "@type": "ListItem",
         position: 2,
         name: categoryTitle,
-        item: `${url}/resources#category-${resource.category}`,
+        item: `${url}${resourceCategoryLinkPath(resource.category)}`,
       },
       {
         "@type": "ListItem",

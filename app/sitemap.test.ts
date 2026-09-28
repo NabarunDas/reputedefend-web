@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import sitemap from "@/app/sitemap"
 import { brandSiteUrl } from "@/lib/brand"
+import { resourceCategoryHubPaths } from "@/lib/resource-category-links"
 import { resourceRegistry } from "@/lib/resources"
 import { approvedPublishedResourceSlugs } from "@/lib/resource-test-fixtures"
 import { sitemapPaths } from "@/lib/site-nav"
@@ -17,8 +18,15 @@ describe("sitemap resources", () => {
     // The hub is a fixed page; the article URLs must match the approved
     // publication allowlist exactly.
     expect(urls).toContain(`${brandSiteUrl}/resources`)
+    const hubUrls = resourceCategoryHubPaths.map((path) => `${brandSiteUrl}${path}`)
+    for (const url of hubUrls) {
+      expect(urls.filter((entry) => entry === url)).toHaveLength(1)
+    }
     const articleUrls = urls.filter(
-      (url) => url.startsWith(`${brandSiteUrl}/resources/`) && url !== `${brandSiteUrl}/resources`,
+      (url) =>
+        url.startsWith(`${brandSiteUrl}/resources/`) &&
+        url !== `${brandSiteUrl}/resources` &&
+        !hubUrls.includes(url),
     )
     expect(articleUrls).toEqual(
       approvedPublishedResourceSlugs.map((slug) => `${brandSiteUrl}/resources/${slug}`),

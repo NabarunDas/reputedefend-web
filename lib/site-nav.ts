@@ -1,3 +1,5 @@
+import { resourceCategoryHubPaths } from "@/lib/resource-category-links"
+
 export const serviceNav = [
   { label: "Profile Recovery", href: "/business-profile-recovery" },
   { label: "Review Protection", href: "/review-protection" },
@@ -7,6 +9,7 @@ export const serviceNav = [
 export const primaryNav = [
   { label: "How It Works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Resources", href: "/resources" },
   { label: "About", href: "/about" },
 ] as const
 
@@ -28,6 +31,7 @@ export const sitemapPaths = [
   "/pricing",
   "/about",
   "/resources",
+  ...resourceCategoryHubPaths,
   "/contact",
   "/get-help",
   "/privacy",
@@ -37,9 +41,7 @@ export const sitemapPaths = [
 ] as const
 
 /**
- * Footer-only destinations. Resources stays out of the primary header until
- * enough guides are published to justify a top-level nav item.
+ * Footer-only destinations. Resources now ships in primaryNav, which Footer
+ * already renders, so it must not be repeated here.
  */
-export const footerExploreExtra = [
-  { label: "Resources", href: "/resources" },
-] as const
+export const footerExploreExtra = [] as const

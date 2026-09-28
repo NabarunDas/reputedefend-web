@@ -27,8 +27,8 @@ describe("Footer explore navigation", () => {
       ["Relaunch Guard", "/relaunch-guard"],
       ["How It Works", "/how-it-works"],
       ["Pricing", "/pricing"],
-      ["About", "/about"],
       ["Resources", "/resources"],
+      ["About", "/about"],
     ])
     expect(new Set(hrefs.map(([, href]) => href)).size).toBe(hrefs.length)
   })

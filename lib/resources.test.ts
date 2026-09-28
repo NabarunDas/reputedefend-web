@@ -274,9 +274,10 @@ describe("resource conversion routes", () => {
 })
 
 describe("resources navigation", () => {
-  it("keeps Resources out of the primary header and in the footer only", () => {
-    expect(primaryNav.map((item) => item.href)).not.toContain("/resources")
-    expect(primaryNav.map((item) => item.label)).not.toContain("Resources")
-    expect(footerExploreExtra).toEqual([{ label: "Resources", href: "/resources" }])
+  it("promotes Resources into the primary nav without duplicating it in the footer", () => {
+    expect(primaryNav.map((item) => item.href)).toContain("/resources")
+    expect(primaryNav.map((item) => item.label)).toContain("Resources")
+    // Footer renders primaryNav, so a footer-only entry would render twice.
+    expect(footerExploreExtra).toEqual([])
   })
 })

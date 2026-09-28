@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo } from "react"
 import {
   getResourceCategory,
@@ -73,6 +74,8 @@ export function ResourceCategoryCard({
   emptyLabel,
   selected = false,
   onSelect,
+  hubHref,
+  hubLabel,
 }: {
   id: ResourceCategoryId
   title: string
@@ -82,9 +85,13 @@ export function ResourceCategoryCard({
   emptyLabel: string
   selected?: boolean
   onSelect?: (id: ResourceCategoryId) => void
+  /** Crawlable topic hub for this category, when one exists. */
+  hubHref?: string
+  hubLabel?: string
 }) {
   const selectable = count > 0 && Boolean(onSelect)
   const meta = count === 0 ? emptyLabel : count === 1 ? "1 published guide" : `${count} published guides`
+  const showHubLink = count > 0 && Boolean(hubHref && hubLabel)
 
   return (
     <article
@@ -109,6 +116,11 @@ export function ResourceCategoryCard({
       ) : (
         <p className={styles.categoryMeta}>{meta}</p>
       )}
+      {showHubLink ? (
+        <Link className={styles.categoryHubLink} href={hubHref!}>
+          {hubLabel}
+        </Link>
+      ) : null}
     </article>
   )
 }

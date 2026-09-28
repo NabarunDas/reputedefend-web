@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import { ResourceCategoryCard, ResourceLibrary } from "@/components/resources/resource-library"
+import { hasResourceCategoryHub } from "@/lib/resource-category-links"
 import { resourceCategories, type ResourceCategoryId, type ResourceRecord } from "@/lib/resources"
+import { resourceCategoryHubContent } from "@/app/resources/category-hub-content"
 import { resourcesBrowse, resourcesLibrary } from "@/app/resources/content"
 import styles from "@/app/resources/resources.module.css"
 
@@ -31,6 +33,9 @@ export function ResourcesExplorer({ resources }: { resources: ResourceRecord[] }
         <div className={styles.categoryGrid}>
           {resourceCategories.map((category) => {
             const count = resources.filter((item) => item.category === category.id).length
+            const hub = hasResourceCategoryHub(category.id)
+              ? resourceCategoryHubContent[category.id]
+              : undefined
             return (
               <ResourceCategoryCard
                 key={category.id}
@@ -42,6 +47,8 @@ export function ResourcesExplorer({ resources }: { resources: ResourceRecord[] }
                 emptyLabel={resourcesBrowse.emptyCount}
                 selected={filter === category.id}
                 onSelect={count > 0 ? selectCategory : undefined}
+                hubHref={hub?.path}
+                hubLabel={hub?.indexLinkLabel}
               />
             )
           })}

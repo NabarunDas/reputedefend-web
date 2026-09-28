@@ -41,7 +41,8 @@ This extends the Admin security model for Step 8A uploads, Step 8B review/access
 | Session reuse across apps or actions | Distinct host-only cookies (`__Host-pr-admin` vs `__Host-pr-action`); session row bound to one action; Admin cookie ignored by Customer and the reverse |
 | Lost copy-link response | Raw secret cannot be reconstructed. Admin revokes and issues a new action |
 | Missing customer origin | Link issuance fails closed with 503 and does not generate a secret or write an action |
-| Unattributed audit events | Customer-action and authorisation events store `actor_type`; pre-auth and trusted-fact events use `PRE_AUTH` / `SYSTEM` with a null `actor_id` |
+| Unattributed audit events | Customer-action and authorisation events store `actor_type`; `ADMIN`/`CUSTOMER` require `actor_id`, and `PRE_AUTH`/`SYSTEM` require a null `actor_id` |
+| OTP send recorded before the provider succeeds | `OTP_REQUESTED` is written at begin; `OTP_SENT` is written only after `customer_action_confirm_otp_sent_v1` following a successful provider send. Verify requires `sent_at` |
 | Silent Manager-access overwrite | Current-state evidence may change; append-only events keep the evidence actually verified at that time |
 | Guided case treated as Managed | `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`; `authorizationReady` requires the Managed track |
 | Workflow gates enabled early | `authorizationReady` is display-only. `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT` |

@@ -117,13 +117,22 @@ const createData = (overrides: Record<string, unknown> = {}, hash = secretHash(s
 })
 const createAction = (data: Record<string, unknown> = {}, request = key()) => rpc("admin_authorization_command_v1", [token, request, caseId, "create_agreement_action", createData(data)])
 const caseCmd = async (operation: string, data: Record<string, unknown>, version: number, request = key()) => rpc("admin_case_command_v1", [token, request, caseId, version, operation, { note, ...data }])
+async function requestOtp(pending: string) {
+  expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok", email: "alex@example.com" })
+  expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+}
+async function expireAction(id: string | undefined) {
+  await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+  await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [id])
+  await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+}
 
 async function completeAccept(kind: "SERVICE_AGREEMENT" | "CASE_MANAGEMENT_PERMISSION" = "SERVICE_AGREEMENT") {
   const raw = secret(), hash = secretHash(raw), pending = secretHash(secret()), session = secretHash(secret())
   const created = await createAction({ kind, secretHash: hash })
   expect(created?.status).toBe("success")
   expect(await rpc("customer_action_exchange_v1", [created?.id, hash, pending])).toMatchObject({ status: "ok" })
-  expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok", email: "alex@example.com" })
+  await requestOtp(pending)
   expect(await rpc("customer_action_attempt_otp_v1", [pending])).toMatchObject({ status: "ok" })
   expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
   const acceptKey = key()
@@ -178,8 +187,9 @@ describe("customer action SQL", () => {
     expect(await rpc("customer_action_exchange_v1", [created?.id, hash, pending])).toMatchObject({ status: "ok", maskedEmail: "a***@example.com" })
     expect((await rpc("customer_action_begin_otp_v1", [pending]))?.email).toBe("alex@example.com")
     expect((await rpc("customer_action_begin_otp_v1", [pending]))?.status).toBe("rate_limited")
-    await db.exec("update admin_private.customer_action_challenges set last_sent_at=now()-interval '61 seconds'")
+    await db.exec("update admin_private.customer_action_challenges set last_attempt_at=now()-interval '61 seconds'")
     expect((await rpc("customer_action_begin_otp_v1", [pending]))?.status).toBe("ok")
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
     for (let i = 0; i < 5; i++) expect((await rpc("customer_action_attempt_otp_v1", [pending]))?.status).toBe("ok")
     expect(await rpc("customer_action_attempt_otp_v1", [pending])).toEqual({ status: "unavailable" })
     await db.exec("update admin_private.customer_action_challenges set attempts=0, challenge_expires_at=now()-interval '1 minute'")
@@ -207,8 +217,7 @@ describe("customer action SQL", () => {
     const declined = await createAction({ kind: "SERVICE_AGREEMENT", title: "Replacement wording for a later snapshot" })
     const pending = secretHash(secret()), session = secretHash(secret()), hashRow = await db.query<{ secret_hash: string }>("select secret_hash from public.customer_actions where id=$1", [declined?.id])
     expect(await rpc("customer_action_exchange_v1", [declined?.id, hashRow.rows[0].secret_hash, pending])).toMatchObject({ status: "ok" })
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
     const declineKey = key()
     expect(await rpc("customer_action_command_v1", [session, declineKey, "decline", {}])).toMatchObject({ status: "success", actionStatus: "DECLINED" })
@@ -224,8 +233,7 @@ describe("customer action SQL", () => {
     const raw = secret(), hash = secretHash(raw), pending = secretHash(secret()), session = secretHash(secret())
     const created = await createAction({ secretHash: hash })
     await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     expect(await rpc("customer_action_finish_otp_v1", [pending, session, otherAuth, "sam@example.com"])).toEqual({ status: "unavailable" })
     expect(await rpc("customer_action_finish_otp_v1", [pending, session, uid, "alex@example.com"])).toEqual({ status: "unavailable" })
     expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
@@ -255,8 +263,7 @@ describe("customer action SQL", () => {
     const revokeAction = await rpc("admin_authorization_command_v1", [token, key(), caseId, "create_revocation_action", { authorizationId: authId, expiresAt: expires(), secretHash: hash }])
     expect(revokeAction?.status).toBe("success")
     await rpc("customer_action_exchange_v1", [revokeAction?.id, hash, pending])
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
     expect(await rpc("customer_action_command_v1", [session, key(), "revoke", { confirmed: true }])).toMatchObject({ status: "success", authorizationStatus: "REVOKED" })
     const row = await db.query<{ source: string; accepted_email_snapshot: string; status: string }>("select source, accepted_email_snapshot, status from public.authorization_records where id=$1", [authId])
@@ -274,7 +281,7 @@ describe("customer action SQL", () => {
     const expiredHash = secretHash(secret()), revokedHash = secretHash(secret()), pending = secretHash(secret())
     const expired = await createAction({ secretHash: expiredHash, title: "Expired owner-approved snapshot wording" })
     const revoked = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", secretHash: revokedHash })
-    await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [expired?.id])
+    await expireAction(expired?.id)
     expect(await rpc("customer_action_exchange_v1", [expired?.id, expiredHash, pending])).toEqual({ status: "unavailable" })
     expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "revoke_action", { actionId: revoked?.id, reason: "Operator withdrew this unused action after a live check.", confirmed: true }])).toMatchObject({ status: "success" })
     expect(await rpc("customer_action_exchange_v1", [revoked?.id, revokedHash, pending])).toEqual({ status: "unavailable" })
@@ -335,6 +342,9 @@ describe("customer action SQL", () => {
       "admin_authorization_command_v1(text,uuid,uuid,text,jsonb)",
       "admin_manager_access_command_v1(text,uuid,uuid,text,jsonb)",
       "customer_action_exchange_v1(uuid,text,text)",
+      "customer_action_begin_otp_v1(text)",
+      "customer_action_confirm_otp_sent_v1(text)",
+      "customer_action_attempt_otp_v1(text)",
       "customer_action_command_v1(text,uuid,text,jsonb)",
     ]) {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon',$1,'EXECUTE') as ok", [fn])).rows[0].ok).toBe(false)
@@ -376,11 +386,10 @@ describe("customer action SQL", () => {
     const created = await createAction({ secretHash: hash })
     expect(await rpc("customer_action_session_v1", [session])).toBeNull()
     await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
     expect(await rpc("customer_action_session_v1", [session])).toMatchObject({ actionId: created?.id, kind: "AGREEMENT_ACCEPTANCE" })
-    await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [created?.id])
+    await expireAction(created?.id)
     expect(await rpc("customer_action_session_v1", [session])).toBeNull()
     expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "revoke_action", { actionId: created?.id, reason: "Operator withdrew this unused action after a live check.", confirmed: true }])).toMatchObject({ status: "success" })
     expect(await rpc("customer_action_session_v1", [session])).toBeNull()
@@ -391,8 +400,7 @@ describe("customer action SQL", () => {
     const pending = secretHash(secret()), session = secretHash(secret()), hash = secretHash(secret())
     const created = await createAction({ secretHash: hash })
     await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
     const otherHash = secretHash(secret())
     const other = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", secretHash: otherHash, title: "Case-management permission snapshot for this case only" })
@@ -401,8 +409,7 @@ describe("customer action SQL", () => {
     expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [other?.id])).rows[0].status).toBe("OPEN")
     const laterPending = secretHash(secret()), laterSession = secretHash(secret())
     await rpc("customer_action_exchange_v1", [other?.id, otherHash, laterPending])
-    await rpc("customer_action_begin_otp_v1", [laterPending])
-    await rpc("customer_action_attempt_otp_v1", [laterPending])
+    await requestOtp(laterPending)
     await rpc("customer_action_finish_otp_v1", [laterPending, laterSession, customerAuth, "alex@example.com"])
     expect(await rpc("customer_action_session_v1", [laterSession])).toMatchObject({ actionId: other?.id })
     expect(await rpc("customer_action_session_v1", [session])).toBeNull()
@@ -412,8 +419,7 @@ describe("customer action SQL", () => {
     const membershipPending = secretHash(secret()), membershipSession = secretHash(secret()), membershipHash = secretHash(secret())
     const membershipAction = await createAction({ title: "Another owner-approved snapshot after the email was restored", secretHash: membershipHash })
     await rpc("customer_action_exchange_v1", [membershipAction?.id, membershipHash, membershipPending])
-    await rpc("customer_action_begin_otp_v1", [membershipPending])
-    await rpc("customer_action_attempt_otp_v1", [membershipPending])
+    await requestOtp(membershipPending)
     await rpc("customer_action_finish_otp_v1", [membershipPending, membershipSession, customerAuth, "alex@example.com"])
     await db.query("update public.business_memberships set status='pending', verified_at=null, verified_by=null, evidence=$1", ["Awaiting a live authority check."])
     expect(await rpc("customer_action_session_v1", [membershipSession])).toBeNull()
@@ -438,8 +444,11 @@ describe("customer action SQL", () => {
     const events = await db.query<{ event: string; actor_type: string; actor_id: string | null; reason: string }>("select event, actor_type, actor_id, details->>'reason' as reason from public.authorization_events where event='AUTHORIZATION_REVIEW_REQUIRED' order by id")
     expect(events.rows.every(row => row.event === "AUTHORIZATION_REVIEW_REQUIRED" && row.actor_type === "SYSTEM" && row.actor_id == null)).toBe(true)
     expect(events.rows.map(row => row.reason).sort()).toEqual([
-      "BUSINESS_AUTHORITY_CHANGED", "BUSINESS_AUTHORITY_CHANGED", "CUSTOMER_EMAIL_CHANGED", "CUSTOMER_EMAIL_CHANGED",
+      "CUSTOMER_EMAIL_CHANGED", "CUSTOMER_EMAIL_CHANGED",
     ])
+    expect(events.rows).toHaveLength(2)
+    await db.query("update public.customers set email='alex.changed.again@example.com' where id=$1", [customer])
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_events where event='AUTHORIZATION_REVIEW_REQUIRED'")).rows[0].n).toBe(2)
     await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_records where status='ACTIVE'")).rows[0].n).toBe(0)
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
@@ -454,7 +463,9 @@ describe("customer action SQL", () => {
       status: "REVIEW_REQUIRED", revoked_at: null,
     })
     const membershipEvents = await db.query<{ details: { reason?: string }; actor_type: string }>("select details, actor_type from public.authorization_events where authorization_id=$1 and event='AUTHORIZATION_REVIEW_REQUIRED'", [later.accepted?.authorizationId])
+    expect(membershipEvents.rows).toHaveLength(1)
     expect(membershipEvents.rows[0]).toMatchObject({ actor_type: "SYSTEM", details: { reason: "BUSINESS_AUTHORITY_CHANGED" } })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_events where authorization_id=$1 and event='AUTHORIZATION_REVIEW_REQUIRED'", [service.accepted?.authorizationId])).rows[0].n).toBe(1)
     await verify()
     expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [later.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))?.authorizationReady).toBe(false)
@@ -465,14 +476,14 @@ describe("customer action SQL", () => {
     const pending = secretHash(secret()), session = secretHash(secret()), hash = secretHash(secret())
     const created = await createAction({ secretHash: hash })
     await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
-    await rpc("customer_action_begin_otp_v1", [pending])
-    await rpc("customer_action_attempt_otp_v1", [pending])
+    await requestOtp(pending)
     await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
     await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
     const actionEvents = await db.query<{ event: string; actor_type: string; actor_id: string | null }>("select event, actor_type, actor_id from public.customer_action_events where action_id=$1 order by id", [created?.id])
     expect(actionEvents.rows).toEqual([
       { event: "ACTION_CREATED", actor_type: "ADMIN", actor_id: uid },
       { event: "ACTION_EXCHANGED", actor_type: "PRE_AUTH", actor_id: null },
+      { event: "OTP_REQUESTED", actor_type: "PRE_AUTH", actor_id: null },
       { event: "OTP_SENT", actor_type: "PRE_AUTH", actor_id: null },
       { event: "ACTION_COMPLETED", actor_type: "CUSTOMER", actor_id: customerAuth },
     ])
@@ -540,5 +551,122 @@ describe("customer action SQL", () => {
     expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "invalid" })
     expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 2 }])).toEqual({ status: "conflict" })
     expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 1 }])).toMatchObject({ status: "success" })
+  })
+
+  it("rejects direct SQL that retargets immutable customer-action scope", async () => {
+    await verify()
+    const created = await createAction()
+    const id = created?.id
+    await expect(db.query("update public.customer_actions set customer_id=$1 where id=$2", [otherCustomer, id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set case_id=$1 where id=$2", [crypto.randomUUID(), id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set business_id=$1 where id=$2", [otherBusiness, id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set location_id=$1 where id=$2", [otherLocation, id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set agreement_version_id=$1 where id=$2", [crypto.randomUUID(), id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set authorization_id=$1 where id=$2", [crypto.randomUUID(), id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set kind='AUTHORIZATION_REVOCATION' where id=$1", [id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set secret_hash=$1 where id=$2", [secretHash(secret()), id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set expected_email_snapshot='forged@example.com' where id=$1", [id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.customer_actions set expires_at=now()+interval '7 days' where id=$1", [id])).rejects.toThrow(/immutable/)
+    const version = (await db.query<{ record_version: number }>("select record_version from public.customer_actions where id=$1", [id])).rows[0].record_version
+    expect(version).toBe(1)
+  })
+
+  it("rejects reopening terminal customer actions", async () => {
+    await verify()
+    const completed = await completeAccept()
+    await expect(db.query("update public.customer_actions set status='OPEN', completed_at=null where id=$1", [completed.created?.id])).rejects.toThrow(/terminal/)
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [completed.created?.id])).rows[0].status).toBe("COMPLETED")
+    const declined = await createAction({ title: "Replacement wording for a later snapshot" })
+    const pending = secretHash(secret()), session = secretHash(secret()), hashRow = await db.query<{ secret_hash: string }>("select secret_hash from public.customer_actions where id=$1", [declined?.id])
+    expect(await rpc("customer_action_exchange_v1", [declined?.id, hashRow.rows[0].secret_hash, pending])).toMatchObject({ status: "ok" })
+    await requestOtp(pending)
+    await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
+    expect(await rpc("customer_action_command_v1", [session, key(), "decline", {}])).toMatchObject({ status: "success", actionStatus: "DECLINED" })
+    await expect(db.query("update public.customer_actions set status='OPEN', completed_at=null where id=$1", [declined?.id])).rejects.toThrow(/terminal/)
+    const open = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", title: "Case-management permission snapshot for this case only" })
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "revoke_action", { actionId: open?.id, reason: "Operator withdrew this unused action after a live check.", confirmed: true }])).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [open?.id])).rows[0].status).toBe("REVOKED")
+    await expect(db.query("update public.customer_actions set status='OPEN', revoked_at=null where id=$1", [open?.id])).rejects.toThrow(/terminal/)
+  })
+
+  it("rejects actions and authorisations whose scope does not match the referenced snapshot", async () => {
+    await verify()
+    const foreignHash = "b".repeat(64)
+    await db.query(
+      "insert into public.agreement_versions(case_id, customer_id, business_id, location_id, agreement_kind, version_number, title, body_text, scope_text, content_hash, created_by) values($1,$2,$3,$4,'SERVICE_AGREEMENT',1,$5,$6,$7,$8,$9)",
+      [caseId, otherCustomer, business, location, title, bodyText, scopeText, foreignHash, uid],
+    )
+    const foreignAgreement = (await db.query<{ id: string }>("select id from public.agreement_versions where content_hash=$1", [foreignHash])).rows[0].id
+    await expect(db.query(
+      "insert into public.customer_actions(customer_id, business_id, location_id, case_id, agreement_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by) values($1,$2,$3,$4,$5,'AGREEMENT_ACCEPTANCE',$6,'alex@example.com',now()+interval '1 day',$7)",
+      [customer, business, location, caseId, foreignAgreement, secretHash(secret()), uid],
+    )).rejects.toThrow(/does not match the referenced agreement/)
+    await expect(db.query(
+      "insert into public.customer_actions(customer_id, business_id, location_id, case_id, agreement_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by) values($1,$2,$3,$4,$5,'AGREEMENT_ACCEPTANCE',$6,'wrong@example.com',now()+interval '1 day',$7)",
+      [customer, business, location, caseId, foreignAgreement, secretHash(secret()), uid],
+    )).rejects.toThrow(/email snapshot/)
+    const created = await createAction()
+    const agreementId = (await db.query<{ agreement_version_id: string }>("select agreement_version_id from public.customer_actions where id=$1", [created?.id])).rows[0].agreement_version_id
+    await expect(db.query(
+      "insert into public.authorization_records(agreement_version_id, case_id, customer_id, business_id, location_id, authorization_kind, status, accepted_by_auth_user_id, accepted_email_snapshot, accepted_at, source) values($1,$2,$3,$4,$5,'SERVICE_AGREEMENT','ACTIVE',$6,'alex@example.com',now(),'CUSTOMER_OTP')",
+      [agreementId, caseId, otherCustomer, business, location, customerAuth],
+    )).rejects.toThrow(/does not match the referenced agreement/)
+    await expect(db.query(
+      "insert into public.authorization_records(agreement_version_id, case_id, customer_id, business_id, location_id, authorization_kind, status, accepted_by_auth_user_id, accepted_email_snapshot, accepted_at, source) values($1,$2,$3,$4,$5,'CASE_MANAGEMENT_PERMISSION','ACTIVE',$6,'alex@example.com',now(),'CUSTOMER_OTP')",
+      [agreementId, caseId, customer, business, location, customerAuth],
+    )).rejects.toThrow(/does not match the referenced agreement/)
+    await expect(db.query(
+      "insert into public.authorization_records(agreement_version_id, case_id, customer_id, business_id, location_id, authorization_kind, status, accepted_by_auth_user_id, accepted_email_snapshot, accepted_at, source) values($1,$2,$3,$4,$5,'SERVICE_AGREEMENT','ACTIVE',$6,'alex@example.com',now(),'CUSTOMER_OTP')",
+      [agreementId, caseId, customer, business, otherLocation, customerAuth],
+    )).rejects.toThrow(/does not match the referenced agreement/)
+  })
+
+  it("records OTP_REQUESTED before provider success and OTP_SENT only after confirm", async () => {
+    await verify()
+    const hash = secretHash(secret()), pending = secretHash(secret())
+    const created = await createAction({ secretHash: hash })
+    expect(await rpc("customer_action_exchange_v1", [created?.id, hash, pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_attempt_otp_v1", [pending])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok", email: "alex@example.com" })
+    const requested = await db.query<{ event: string }>("select event from public.customer_action_events where action_id=$1 and event in ('OTP_REQUESTED','OTP_SENT') order by id", [created?.id])
+    expect(requested.rows.map(row => row.event)).toEqual(["OTP_REQUESTED"])
+    expect((await db.query<{ sent_at: string | null }>("select sent_at from admin_private.customer_action_challenges where pending_hash=$1", [pending])).rows[0].sent_at).toBeNull()
+    expect(await rpc("customer_action_attempt_otp_v1", [pending])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+    const sent = await db.query<{ event: string }>("select event from public.customer_action_events where action_id=$1 and event in ('OTP_REQUESTED','OTP_SENT') order by id", [created?.id])
+    expect(sent.rows.map(row => row.event)).toEqual(["OTP_REQUESTED", "OTP_SENT"])
+    expect((await db.query<{ sent_at: string | null }>("select sent_at from admin_private.customer_action_challenges where pending_hash=$1", [pending])).rows[0].sent_at).toBeTruthy()
+    expect((await rpc("customer_action_begin_otp_v1", [pending]))?.status).toBe("rate_limited")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_action_events where action_id=$1 and event='OTP_SENT'", [created?.id])).rows[0].n).toBe(1)
+    await db.exec("update admin_private.customer_action_challenges set last_attempt_at=now()-interval '61 seconds'")
+    expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+    expect((await db.query<{ events: string[] }>("select array_agg(event order by id) as events from public.customer_action_events where action_id=$1 and event in ('OTP_REQUESTED','OTP_SENT')", [created?.id])).rows[0].events).toEqual([
+      "OTP_REQUESTED", "OTP_SENT", "OTP_REQUESTED", "OTP_SENT",
+    ])
+  })
+
+  it("rejects untruthful actor attribution on action and authorisation events", async () => {
+    await verify()
+    const accepted = await completeAccept()
+    const actionId = accepted.created?.id
+    const authId = accepted.accepted?.authorizationId
+    await expect(db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'ADMIN',null,'ACTION_CREATED')", [actionId, caseId])).rejects.toThrow()
+    await expect(db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'CUSTOMER',null,'ACTION_COMPLETED')", [actionId, caseId])).rejects.toThrow()
+    await expect(db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'SYSTEM',$3,'ACTION_REVOKED')", [actionId, caseId, uid])).rejects.toThrow()
+    await expect(db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'PRE_AUTH',$3,'OTP_SENT')", [actionId, caseId, uid])).rejects.toThrow()
+    await expect(db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'ADMIN',null,'AUTHORIZATION_REVOKED')", [authId, caseId])).rejects.toThrow()
+    await expect(db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'CUSTOMER',null,'AUTHORIZATION_ACCEPTED')", [authId, caseId])).rejects.toThrow()
+    await expect(db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'SYSTEM',$3,'AUTHORIZATION_REVIEW_REQUIRED')", [authId, caseId, uid])).rejects.toThrow()
+    await expect(db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'PRE_AUTH',$3,'AUTHORIZATION_ACCEPTED')", [authId, caseId, uid])).rejects.toThrow()
+    await db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'ADMIN',$3,'ACTION_CREATED')", [actionId, caseId, uid])
+    await db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'CUSTOMER',$3,'ACTION_COMPLETED')", [actionId, caseId, customerAuth])
+    await db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'SYSTEM',null,'ACTION_REVOKED')", [actionId, caseId])
+    await db.query("insert into public.customer_action_events(action_id, case_id, actor_type, actor_id, event) values($1,$2,'PRE_AUTH',null,'OTP_REQUESTED')", [actionId, caseId])
+    await db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'ADMIN',$3,'AUTHORIZATION_REVOKED')", [authId, caseId, uid])
+    await db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'CUSTOMER',$3,'AUTHORIZATION_ACCEPTED')", [authId, caseId, customerAuth])
+    await db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'SYSTEM',null,'AUTHORIZATION_REVIEW_REQUIRED')", [authId, caseId])
+    await db.query("insert into public.authorization_events(authorization_id, case_id, actor_type, actor_id, event) values($1,$2,'PRE_AUTH',null,'AUTHORIZATION_ACCEPTED')", [authId, caseId])
   })
 })

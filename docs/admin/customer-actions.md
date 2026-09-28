@@ -27,7 +27,9 @@ Secrets use 256 bits of cryptographic randomness. They must not appear in SQL, r
 
 ## OTP and session
 
-OTP is sent only after a valid, OPEN, unexpired, unrevoked action whose expected email still matches the customer's current verified email and whose business membership is still `verified`. The customer cannot type a destination email. The UI shows a masked address such as `n***@example.com`.
+OTP is requested only after a valid, OPEN, unexpired, unrevoked action whose expected email still matches the customer's current verified email and whose business membership is still `verified`. The customer cannot type a destination email. The UI shows a masked address such as `n***@example.com`.
+
+`customer_action_begin_otp_v1` writes `OTP_REQUESTED` and stamps `last_attempt_at` for the 60-second anti-abuse throttle before the provider is called. `OTP_SENT` is written only by `customer_action_confirm_otp_sent_v1` after `signInWithOtp` succeeds, and only once per send attempt (`sent_at`). Verification requires `sent_at`. A provider failure leaves truthful `OTP_REQUESTED` history and no `OTP_SENT`. If the session projection is unexpectedly NULL after OTP finish, the customer app does not set the action cookie.
 
 Resend delay 60 seconds, 5 failed attempts per challenge, 10-minute challenge, 15-minute action session after successful OTP. The session cookie is host-only, Secure, HttpOnly, SameSite=Strict, `__Host-` in production, bound to one action. No Domain=.profilerelaunch.com. Provider JWTs are discarded. This is not a long-lived customer login.
 
@@ -39,7 +41,9 @@ If the verified email has no Auth identity, the customer server may create it wi
 
 OPEN actions are revoked if the customer email changes or membership leaves `verified`. Affected ACTIVE authorisations become `REVIEW_REQUIRED` with an `AUTHORIZATION_REVIEW_REQUIRED` system event (`CUSTOMER_EMAIL_CHANGED` or `BUSINESS_AUTHORITY_CHANGED`). They never auto-reactivate; a new customer acceptance of a new snapshot is required. Changing the email back does not revive a revoked link or a `REVIEW_REQUIRED` record.
 
-Customer-action and authorisation events record `actor_type` (`ADMIN`, `CUSTOMER`, `SYSTEM`, `PRE_AUTH`). Pre-auth events (`ACTION_EXCHANGED`, `OTP_SENT`) and trusted-fact system events do not pretend an Admin performed them. `customer_action_session_v1` re-checks `customer_action_eligible_v1` before returning a projection; expired, revoked or stale-trust sessions return NULL. A completed command can still replay from its receipt with the same request ID.
+Customer-action and authorisation events record `actor_type` (`ADMIN`, `CUSTOMER`, `SYSTEM`, `PRE_AUTH`). `ADMIN`/`CUSTOMER` require `actor_id`; `SYSTEM`/`PRE_AUTH` require `actor_id` NULL. Pre-auth events (`ACTION_EXCHANGED`, `OTP_REQUESTED`, `OTP_SENT`) and trusted-fact system events do not pretend an Admin performed them. `customer_action_session_v1` re-checks `customer_action_eligible_v1` before returning a projection; expired, revoked or stale-trust sessions return NULL. A completed command can still replay from its receipt with the same request ID.
+
+Customer-action scope (`customer_id`, `business_id`, `location_id`, `case_id`, `agreement_version_id`, `authorization_id`, `kind`, `secret_hash`, `expected_email_snapshot`, `expires_at`, `created_by`, `created_at`) is immutable after insert. Status may move only `OPEN` → `COMPLETED` / `DECLINED` / `REVOKED`. Agreement-acceptance and revocation actions must match the referenced snapshot; authorisation inserts must match the referenced agreement.
 
 Manager-access current state may be overwritten on re-verification, but append-only events keep the evidence and access level that were verified at that time, and the revocation reason plus previous access level.
 

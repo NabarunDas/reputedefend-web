@@ -58,8 +58,21 @@ describe("customer action HTTP", () => {
     expect(response.status).toBe(200)
     expect(mocks.signInWithOtp).toHaveBeenCalledWith({ email: "alex@example.com", options: { shouldCreateUser: false } })
     expect(mocks.createUser).toHaveBeenCalledWith({ email: "alex@example.com", email_confirm: false })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_action_begin_otp_v1",
+      "customer_action_confirm_otp_sent_v1",
+    ])
     expect(JSON.stringify(await response.json())).not.toContain("alex@example.com")
     expect(mocks.signInWithOtp.mock.calls[0][0]).not.toHaveProperty("shouldCreateUser", true)
+  })
+  it("does not confirm OTP_SENT when the provider rejects the send", async () => {
+    mocks.rpc.mockResolvedValue({ status: "ok", email: "alex@example.com", maskedEmail: "a***@example.com" })
+    mocks.signInWithOtp.mockResolvedValue({ error: { message: "provider exploded with secrets" } })
+    const response = await otpPost(req("/api/action/otp", {}, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(503)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_begin_otp_v1"])
+    expect(JSON.stringify(payload)).not.toMatch(/provider exploded|secrets|alex@example.com/)
   })
   it("rejects extra OTP fields and never uses a caller-chosen email", async () => {
     const ignored = await otpPost(req("/api/action/otp", { email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
@@ -109,6 +122,32 @@ describe("customer action HTTP", () => {
     expect(mocks.signOut).toHaveBeenCalledWith("jwt-must-not-leak")
     expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak/)
     expect(response.cookies.get(sessionCookie)?.value).toBe("c".repeat(64))
+  })
+  it("does not set the action cookie when the session projection is unexpectedly null", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+      .mockResolvedValueOnce({ status: "ok" })
+      .mockResolvedValueOnce(null)
+    mocks.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak", refresh_token: "refresh-must-not-leak" },
+        user: { id: "66666666-6666-4666-8666-666666666666", email: "alex@example.com", email_confirmed_at: "2026-09-18T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "123456" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload.message).toMatch(/unavailable or has expired/)
+    expect(payload.session).toBeUndefined()
+    expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak|alex@example.com/)
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+    expect(response.cookies.get(pendingCookie)?.value).toBe("")
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_action_attempt_otp_v1",
+      "customer_action_finish_otp_v1",
+      "customer_action_session_v1",
+    ])
   })
   it("ignores an Admin cookie on customer commands", async () => {
     const response = await commandPost(req("/api/action/command", { operation: "accept", accepted: true }, {

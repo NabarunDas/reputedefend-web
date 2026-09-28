@@ -117,7 +117,7 @@ Privileged RPCs:
 - `admin_case_authorization_v1` / `admin_case_authorization_readiness_v1`
 - `admin_authorization_command_v1` — create agreement action, revoke open action, issue customer revocation action, Admin emergency revoke
 - `admin_manager_access_command_v1` — verify / revoke
-- `customer_action_exchange_v1`, `customer_action_begin_otp_v1`, `customer_action_attempt_otp_v1`, `customer_action_finish_otp_v1`, `customer_action_session_v1`, `customer_action_command_v1`
+- `customer_action_exchange_v1`, `customer_action_begin_otp_v1`, `customer_action_confirm_otp_sent_v1`, `customer_action_attempt_otp_v1`, `customer_action_finish_otp_v1`, `customer_action_session_v1`, `customer_action_command_v1`
 
 ## public.case_prepared_packs
 

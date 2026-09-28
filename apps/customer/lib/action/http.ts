@@ -72,6 +72,8 @@ export async function sendOtp(request: NextRequest) {
     if (created.error && !/already|registered|exists/i.test(created.error.message)) return reply({}, 503)
     const { error } = await service.identity.auth.signInWithOtp({ email: started.email, options: { shouldCreateUser: false } })
     if (error) return reply({}, 503)
+    const confirmed = await service.rpc<{ status?: string }>("customer_action_confirm_otp_sent_v1", { p_pending_hash: tokenHash(pending) })
+    if (confirmed.status !== "ok") return reply()
     return NextResponse.json({ status: "ok", maskedEmail: started.maskedEmail }, { headers: privateResponseHeaders })
   } catch { return reply() }
 }
@@ -95,6 +97,11 @@ export async function verifyOtp(request: NextRequest) {
     })
     if (finished.status !== "ok") return reply()
     const session = await service.rpc<Record<string, unknown> | null>("customer_action_session_v1", { p_token_hash: tokenHash(token) })
+    if (!session) {
+      const failed = reply()
+      failed.cookies.set(pendingCookie, "", { ...cookieOptions, maxAge: 0 })
+      return failed
+    }
     const response = NextResponse.json({ status: "ok", session }, { headers: privateResponseHeaders })
     response.cookies.set(sessionCookie, token, { ...cookieOptions, maxAge: 900 })
     response.cookies.set(pendingCookie, "", { ...cookieOptions, maxAge: 0 })

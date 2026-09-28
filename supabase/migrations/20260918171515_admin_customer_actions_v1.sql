@@ -55,7 +55,7 @@ CREATE TABLE public.authorization_events (
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (
     (actor_type IN ('ADMIN','CUSTOMER') AND actor_id IS NOT NULL)
-    OR (actor_type IN ('SYSTEM','PRE_AUTH'))
+    OR (actor_type IN ('SYSTEM','PRE_AUTH') AND actor_id IS NULL)
   )
 );
 CREATE INDEX authorization_events_auth_idx ON public.authorization_events(authorization_id, id DESC);
@@ -78,10 +78,14 @@ CREATE TABLE public.customer_actions (
   completed_at timestamptz,
   revoked_at timestamptz,
   record_version integer NOT NULL DEFAULT 1,
-  CHECK (kind <> 'AGREEMENT_ACCEPTANCE' OR agreement_version_id IS NOT NULL),
-  CHECK (kind <> 'AUTHORIZATION_REVOCATION' OR authorization_id IS NOT NULL),
-  CHECK (status <> 'COMPLETED' OR completed_at IS NOT NULL),
-  CHECK (status <> 'REVOKED' OR revoked_at IS NOT NULL)
+  CHECK (kind <> 'AGREEMENT_ACCEPTANCE' OR (agreement_version_id IS NOT NULL AND authorization_id IS NULL)),
+  CHECK (kind <> 'AUTHORIZATION_REVOCATION' OR (authorization_id IS NOT NULL AND agreement_version_id IS NULL)),
+  CHECK (
+    (status = 'OPEN' AND completed_at IS NULL AND revoked_at IS NULL)
+    OR (status = 'COMPLETED' AND completed_at IS NOT NULL AND revoked_at IS NULL)
+    OR (status = 'DECLINED' AND completed_at IS NOT NULL AND revoked_at IS NULL)
+    OR (status = 'REVOKED' AND revoked_at IS NOT NULL AND completed_at IS NULL)
+  )
 );
 CREATE INDEX customer_actions_case_idx ON public.customer_actions(case_id, created_at DESC);
 CREATE INDEX customer_actions_customer_idx ON public.customer_actions(customer_id, status);
@@ -96,13 +100,13 @@ CREATE TABLE public.customer_action_events (
   actor_type text NOT NULL CHECK (actor_type IN ('ADMIN','CUSTOMER','SYSTEM','PRE_AUTH')),
   actor_id uuid,
   event text NOT NULL CHECK (event IN (
-    'ACTION_CREATED','ACTION_EXCHANGED','OTP_SENT','ACTION_COMPLETED','ACTION_DECLINED','ACTION_REVOKED'
+    'ACTION_CREATED','ACTION_EXCHANGED','OTP_REQUESTED','OTP_SENT','ACTION_COMPLETED','ACTION_DECLINED','ACTION_REVOKED'
   )),
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (
     (actor_type IN ('ADMIN','CUSTOMER') AND actor_id IS NOT NULL)
-    OR (actor_type IN ('SYSTEM','PRE_AUTH'))
+    OR (actor_type IN ('SYSTEM','PRE_AUTH') AND actor_id IS NULL)
   )
 );
 CREATE INDEX customer_action_events_action_idx ON public.customer_action_events(action_id, id DESC);
@@ -147,7 +151,8 @@ CREATE INDEX customer_action_sessions_action_idx ON admin_private.customer_actio
 CREATE TABLE admin_private.customer_action_challenges (
   action_id uuid PRIMARY KEY REFERENCES public.customer_actions(id) ON DELETE RESTRICT,
   pending_hash text NOT NULL UNIQUE CHECK (pending_hash ~ '^[a-f0-9]{64}$'),
-  last_sent_at timestamptz,
+  last_attempt_at timestamptz,
+  sent_at timestamptz,
   attempts integer NOT NULL DEFAULT 0,
   challenge_expires_at timestamptz,
   pending_expires_at timestamptz NOT NULL,
@@ -233,11 +238,91 @@ END; $$;
 CREATE TRIGGER authorization_records_protect BEFORE UPDATE ON public.authorization_records
 FOR EACH ROW EXECUTE FUNCTION admin_private.protect_authorization_acceptance_v1();
 
-CREATE FUNCTION admin_private.bump_customer_action_version_v1() RETURNS trigger
+CREATE FUNCTION admin_private.protect_customer_action_scope_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
-BEGIN NEW.record_version := OLD.record_version + 1; RETURN NEW; END; $$;
-CREATE TRIGGER customer_actions_record_version BEFORE UPDATE ON public.customer_actions
-FOR EACH ROW EXECUTE FUNCTION admin_private.bump_customer_action_version_v1();
+BEGIN
+  IF NEW.customer_id IS DISTINCT FROM OLD.customer_id
+    OR NEW.business_id IS DISTINCT FROM OLD.business_id
+    OR NEW.location_id IS DISTINCT FROM OLD.location_id
+    OR NEW.case_id IS DISTINCT FROM OLD.case_id
+    OR NEW.agreement_version_id IS DISTINCT FROM OLD.agreement_version_id
+    OR NEW.authorization_id IS DISTINCT FROM OLD.authorization_id
+    OR NEW.kind IS DISTINCT FROM OLD.kind
+    OR NEW.secret_hash IS DISTINCT FROM OLD.secret_hash
+    OR NEW.expected_email_snapshot IS DISTINCT FROM OLD.expected_email_snapshot
+    OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+    OR NEW.created_by IS DISTINCT FROM OLD.created_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  THEN RAISE EXCEPTION 'Customer action scope fields are immutable'; END IF;
+  IF OLD.status = 'OPEN' THEN
+    IF NEW.status NOT IN ('OPEN','COMPLETED','DECLINED','REVOKED') THEN
+      RAISE EXCEPTION 'Invalid customer action status transition';
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'Customer action status is terminal';
+  END IF;
+  NEW.record_version := OLD.record_version + 1;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER customer_actions_protect BEFORE UPDATE ON public.customer_actions
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_customer_action_scope_v1();
+
+CREATE FUNCTION admin_private.validate_customer_action_scope_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE v public.agreement_versions; auth public.authorization_records; c public.customers;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT * INTO c FROM public.customers WHERE id = NEW.customer_id;
+    IF c.id IS NULL OR lower(NEW.expected_email_snapshot) IS DISTINCT FROM lower(c.email) THEN
+      RAISE EXCEPTION 'Customer action email snapshot does not match the current customer email';
+    END IF;
+  END IF;
+  IF NEW.kind = 'AGREEMENT_ACCEPTANCE' THEN
+    IF NEW.agreement_version_id IS NULL OR NEW.authorization_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Agreement acceptance actions require an agreement version and no authorisation';
+    END IF;
+    SELECT * INTO v FROM public.agreement_versions WHERE id = NEW.agreement_version_id;
+    IF v.id IS NULL
+      OR v.case_id IS DISTINCT FROM NEW.case_id
+      OR v.customer_id IS DISTINCT FROM NEW.customer_id
+      OR v.business_id IS DISTINCT FROM NEW.business_id
+      OR v.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Customer action does not match the referenced agreement'; END IF;
+  ELSIF NEW.kind = 'AUTHORIZATION_REVOCATION' THEN
+    IF NEW.authorization_id IS NULL OR NEW.agreement_version_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Authorisation revocation actions require an authorisation and no agreement version';
+    END IF;
+    SELECT * INTO auth FROM public.authorization_records WHERE id = NEW.authorization_id;
+    IF auth.id IS NULL
+      OR auth.case_id IS DISTINCT FROM NEW.case_id
+      OR auth.customer_id IS DISTINCT FROM NEW.customer_id
+      OR auth.business_id IS DISTINCT FROM NEW.business_id
+      OR auth.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Customer action does not match the referenced authorisation'; END IF;
+  ELSE
+    RAISE EXCEPTION 'Invalid customer action kind';
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER customer_actions_validate BEFORE INSERT OR UPDATE ON public.customer_actions
+FOR EACH ROW EXECUTE FUNCTION admin_private.validate_customer_action_scope_v1();
+
+CREATE FUNCTION admin_private.validate_authorization_agreement_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE v public.agreement_versions;
+BEGIN
+  SELECT * INTO v FROM public.agreement_versions WHERE id = NEW.agreement_version_id;
+  IF v.id IS NULL
+    OR NEW.authorization_kind IS DISTINCT FROM v.agreement_kind
+    OR NEW.case_id IS DISTINCT FROM v.case_id
+    OR NEW.customer_id IS DISTINCT FROM v.customer_id
+    OR NEW.business_id IS DISTINCT FROM v.business_id
+    OR NEW.location_id IS DISTINCT FROM v.location_id
+  THEN RAISE EXCEPTION 'Authorization scope does not match the referenced agreement'; END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER authorization_records_validate_agreement BEFORE INSERT ON public.authorization_records
+FOR EACH ROW EXECUTE FUNCTION admin_private.validate_authorization_agreement_v1();
 
 CREATE FUNCTION admin_private.bump_manager_access_version_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
@@ -312,12 +397,10 @@ BEGIN
   END IF;
   FOR r IN
     SELECT * FROM public.authorization_records
-    WHERE status IN ('ACTIVE','REVIEW_REQUIRED') AND customer_id = p_customer AND (p_business IS NULL OR business_id = p_business)
+    WHERE status = 'ACTIVE' AND customer_id = p_customer AND (p_business IS NULL OR business_id = p_business)
     FOR UPDATE
   LOOP
-    IF r.status = 'ACTIVE' THEN
-      UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
-    END IF;
+    UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
     INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
     VALUES (r.id, r.case_id, 'SYSTEM', NULL, 'AUTHORIZATION_REVIEW_REQUIRED', jsonb_build_object('reason', p_reason));
   END LOOP;
@@ -332,7 +415,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END; $$;
-CREATE TRIGGER customers_revoke_open_actions AFTER UPDATE ON public.customers
+CREATE TRIGGER customers_revoke_open_actions BEFORE UPDATE ON public.customers
 FOR EACH ROW EXECUTE FUNCTION admin_private.revoke_actions_on_customer_email_v1();
 
 CREATE FUNCTION admin_private.revoke_actions_on_membership_v1() RETURNS trigger
@@ -705,7 +788,7 @@ BEGIN
   INSERT INTO admin_private.customer_action_challenges(action_id, pending_hash, pending_expires_at)
   VALUES (a.id, p_pending_hash, now() + interval '10 minutes')
   ON CONFLICT (action_id) DO UPDATE SET pending_hash = EXCLUDED.pending_hash, pending_expires_at = EXCLUDED.pending_expires_at,
-    last_sent_at = NULL, attempts = 0, challenge_expires_at = NULL;
+    last_attempt_at = NULL, sent_at = NULL, attempts = 0, challenge_expires_at = NULL;
   INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
   VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'ACTION_EXCHANGED', jsonb_build_object('kind', a.kind));
   RETURN jsonb_build_object('status', 'ok', 'kind', a.kind, 'maskedEmail', admin_private.mask_email_v1(a.expected_email_snapshot));
@@ -720,13 +803,31 @@ BEGIN
   IF ch.action_id IS NULL OR ch.pending_expires_at <= now() THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO a FROM public.customer_actions WHERE id = ch.action_id FOR UPDATE;
   IF NOT admin_private.customer_action_eligible_v1(a) THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
-  IF ch.last_sent_at IS NOT NULL AND ch.last_sent_at > now() - interval '60 seconds' THEN RETURN jsonb_build_object('status', 'rate_limited'); END IF;
+  IF ch.last_attempt_at IS NOT NULL AND ch.last_attempt_at > now() - interval '60 seconds' THEN RETURN jsonb_build_object('status', 'rate_limited'); END IF;
   UPDATE admin_private.customer_action_challenges
-    SET last_sent_at = now(), attempts = 0, challenge_expires_at = now() + interval '10 minutes'
+    SET last_attempt_at = now(), sent_at = NULL, attempts = 0, challenge_expires_at = now() + interval '10 minutes'
     WHERE action_id = a.id;
   INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
-  VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'OTP_SENT', jsonb_build_object('kind', a.kind));
+  VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'OTP_REQUESTED', jsonb_build_object('kind', a.kind));
   RETURN jsonb_build_object('status', 'ok', 'email', a.expected_email_snapshot, 'maskedEmail', admin_private.mask_email_v1(a.expected_email_snapshot));
+END; $$;
+
+CREATE FUNCTION public.customer_action_confirm_otp_sent_v1(p_pending_hash text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE ch admin_private.customer_action_challenges; a public.customer_actions;
+BEGIN
+  IF p_pending_hash IS NULL OR p_pending_hash !~ '^[a-f0-9]{64}$' THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO ch FROM admin_private.customer_action_challenges WHERE pending_hash = p_pending_hash FOR UPDATE;
+  IF ch.action_id IS NULL OR ch.pending_expires_at <= now() OR ch.challenge_expires_at IS NULL OR ch.challenge_expires_at <= now()
+    OR ch.last_attempt_at IS NULL
+  THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO a FROM public.customer_actions WHERE id = ch.action_id FOR UPDATE;
+  IF NOT admin_private.customer_action_eligible_v1(a) THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF ch.sent_at IS NOT NULL THEN RETURN jsonb_build_object('status', 'ok'); END IF;
+  UPDATE admin_private.customer_action_challenges SET sent_at = now() WHERE action_id = a.id;
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'OTP_SENT', jsonb_build_object('kind', a.kind));
+  RETURN jsonb_build_object('status', 'ok');
 END; $$;
 
 CREATE FUNCTION public.customer_action_attempt_otp_v1(p_pending_hash text) RETURNS jsonb
@@ -736,6 +837,7 @@ BEGIN
   IF p_pending_hash IS NULL OR p_pending_hash !~ '^[a-f0-9]{64}$' THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO ch FROM admin_private.customer_action_challenges WHERE pending_hash = p_pending_hash FOR UPDATE;
   IF ch.action_id IS NULL OR ch.pending_expires_at <= now() OR ch.challenge_expires_at IS NULL OR ch.challenge_expires_at <= now()
+    OR ch.sent_at IS NULL
   THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO a FROM public.customer_actions WHERE id = ch.action_id FOR UPDATE;
   IF NOT admin_private.customer_action_eligible_v1(a) THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
@@ -755,6 +857,7 @@ BEGIN
   IF lower(p_email) = 'admin@profilerelaunch.com' THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO ch FROM admin_private.customer_action_challenges WHERE pending_hash = p_pending_hash FOR UPDATE;
   IF ch.action_id IS NULL OR ch.pending_expires_at <= now() OR ch.challenge_expires_at IS NULL OR ch.challenge_expires_at <= now()
+    OR ch.sent_at IS NULL
   THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO a FROM public.customer_actions WHERE id = ch.action_id FOR UPDATE;
   IF NOT admin_private.customer_action_eligible_v1(a) OR lower(p_email) IS DISTINCT FROM lower(a.expected_email_snapshot)
@@ -901,7 +1004,9 @@ REVOKE ALL ON FUNCTION admin_private.reject_authz_event_change_v1() FROM PUBLIC,
 REVOKE ALL ON FUNCTION admin_private.reject_action_event_change_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.reject_manager_event_change_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_authorization_acceptance_v1() FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin_private.bump_customer_action_version_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.protect_customer_action_scope_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.validate_customer_action_scope_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.validate_authorization_agreement_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.bump_manager_access_version_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.mask_email_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.agreement_content_hash_v1(text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
@@ -919,6 +1024,7 @@ REVOKE ALL ON FUNCTION public.admin_authorization_command_v1(text, uuid, uuid, t
 REVOKE ALL ON FUNCTION public.admin_manager_access_command_v1(text, uuid, uuid, text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.customer_action_exchange_v1(uuid, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.customer_action_begin_otp_v1(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.customer_action_confirm_otp_sent_v1(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.customer_action_attempt_otp_v1(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.customer_action_finish_otp_v1(text, text, uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.customer_action_session_v1(text) FROM PUBLIC, anon, authenticated;
@@ -930,6 +1036,7 @@ GRANT EXECUTE ON FUNCTION public.admin_authorization_command_v1(text, uuid, uuid
 GRANT EXECUTE ON FUNCTION public.admin_manager_access_command_v1(text, uuid, uuid, text, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_exchange_v1(uuid, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_begin_otp_v1(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.customer_action_confirm_otp_sent_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_attempt_otp_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_finish_otp_v1(text, text, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_session_v1(text) TO service_role;

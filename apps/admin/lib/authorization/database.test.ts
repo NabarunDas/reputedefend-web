@@ -45,14 +45,15 @@ type RpcResult = {
   recordVersion?: number
   version?: number
   stage?: string
-  agreements?: unknown[]
+  agreements?: Array<{ contentHash?: string; body?: string; title?: string; kind?: string }>
   packs?: unknown[]
-  authorizations?: Array<{ status: string; source: string; acceptedEmailMasked?: string }>
+  authorizations?: Array<{ status: string; source: string; acceptedEmailMasked?: string; id?: string }>
   readiness?: {
     serviceAgreementAccepted?: boolean
     caseManagementPermissionActive?: boolean
     authorizationReady?: boolean
     managerAccessVerified?: boolean
+    managedTrack?: boolean
   }
 }
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -62,7 +63,7 @@ async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null
 beforeAll(async () => {
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const dir = new URL("../../../../supabase/migrations/", import.meta.url), read = (name: string) => readFileSync(new URL(name, dir), "utf8")
-  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)';"))
+  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)'; CREATE FUNCTION extensions.digest(data bytea, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$SELECT decode(md5(encode(data,'hex')) || md5(coalesce(algo,'sha256') || encode(data,'hex')),'hex')$$; CREATE FUNCTION extensions.digest(data text, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$SELECT extensions.digest(convert_to(data,'UTF8'), algo)$$;"))
   for (const name of [
     "20260916000000_relaunch_guard_data_foundation_v1.sql",
     "20260917080553_single_admin_auth_v1.sql",
@@ -104,7 +105,7 @@ beforeEach(async () => {
     insert into public.businesses(id,display_name) values('${otherBusiness}','Cafe');
     insert into public.locations(id,business_id,country) values('${location}','${business}','UK');
     insert into public.locations(id,business_id,country) values('${otherLocation}','${otherBusiness}','UK');
-    insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now());`)
+    insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'MANAGED');`)
 })
 
 async function verify(id = customer, biz = business, email = "alex@example.com") {
@@ -284,15 +285,15 @@ describe("customer action SQL", () => {
     await completeAccept("SERVICE_AGREEMENT")
     await completeAccept("CASE_MANAGEMENT_PERMISSION")
     await db.query("update public.locations set business_id=$1 where id=$2", [otherBusiness, location])
-    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true }])).toEqual({ status: "denied" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "denied" })
     await db.query("update public.locations set business_id=$1 where id=$2", [business, location])
-    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "short", confirmed: true }])).toEqual({ status: "invalid" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "short", confirmed: true, recordVersion: 0 }])).toEqual({ status: "invalid" })
     await db.exec(`update public.admin_sessions set created_at=now()-interval '6 minutes' where token_hash='${token}'`)
-    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true }])).toEqual({ status: "reauth_required" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "reauth_required" })
     await db.exec(`update public.admin_sessions set created_at=now() where token_hash='${token}'`)
-    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))?.authorizationReady).toBe(true)
-    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", { reason: "Access removed after a live Google check.", confirmed: true }])).toMatchObject({ managerStatus: "REVOKED" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", { reason: "Access removed after a live Google check.", confirmed: true, recordVersion: 1 }])).toMatchObject({ managerStatus: "REVOKED" })
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({ managerAccessVerified: false, authorizationReady: false })
   })
 
@@ -300,7 +301,7 @@ describe("customer action SQL", () => {
     await verify()
     await completeAccept("SERVICE_AGREEMENT")
     await completeAccept("CASE_MANAGEMENT_PERMISSION")
-    await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "OWNER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true }])
+    await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "OWNER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))?.authorizationReady).toBe(true)
     const detail = await rpc("admin_case_detail_v1", [token, caseId, null])
     await caseCmd("plan", { track: "MANAGED", priority: "NORMAL", assigned: true, nextAction: "Review the request", due: null, firstResponseDue: null }, detail?.version ?? 1)
@@ -341,5 +342,200 @@ describe("customer action SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role',$1,'EXECUTE') as ok", [fn])).rows[0].ok).toBe(true)
     }
     expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role','admin_private.mask_email_v1(text)','EXECUTE') as ok")).rows[0].ok).toBe(false)
+  })
+
+  it("stores a 64-hex SHA-256 agreement content hash that changes with the snapshot", async () => {
+    await verify()
+    const first = await completeAccept()
+    const hash1 = (await db.query<{ content_hash: string }>("select content_hash from public.agreement_versions where id=(select agreement_version_id from public.customer_actions where id=$1)", [first.created?.id])).rows[0].content_hash
+    expect(hash1).toMatch(/^[a-f0-9]{64}$/)
+    expect(hash1).toBe((await db.query<{ h: string }>("select admin_private.agreement_content_hash_v1($1,$2,$3,$4) as h", ["SERVICE_AGREEMENT", title, bodyText, scopeText])).rows[0].h)
+    const listed = await rpc("admin_case_authorization_v1", [token, caseId])
+    expect(listed?.agreements?.[0]?.contentHash).toBe(hash1)
+    expect(listed?.agreements?.[0]?.body).toBe(bodyText)
+    const same = await createAction({ title, bodyText, scopeText })
+    const hashSame = (await db.query<{ content_hash: string }>("select content_hash from public.agreement_versions where id=(select agreement_version_id from public.customer_actions where id=$1)", [same?.id])).rows[0].content_hash
+    expect(hashSame).toBe(hash1)
+    const changed = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", title: "Different owner-approved permission title" })
+    const hashChanged = (await db.query<{ content_hash: string }>("select content_hash from public.agreement_versions where id=(select agreement_version_id from public.customer_actions where id=$1)", [changed?.id])).rows[0].content_hash
+    expect(hashChanged).toMatch(/^[a-f0-9]{64}$/)
+    expect(hashChanged).not.toBe(hash1)
+  })
+
+  it("keeps accepted location_id immutable", async () => {
+    await verify()
+    const accepted = await completeAccept()
+    await expect(db.query("update public.authorization_records set location_id=$1 where id=$2", [otherLocation, accepted.accepted?.authorizationId])).rejects.toThrow(/immutable/)
+    const row = await db.query<{ location_id: string; accepted_email_snapshot: string }>("select location_id, accepted_email_snapshot from public.authorization_records where id=$1", [accepted.accepted?.authorizationId])
+    expect(row.rows[0]).toMatchObject({ location_id: location, accepted_email_snapshot: "alex@example.com" })
+  })
+
+  it("returns no action session projection once eligibility is lost", async () => {
+    await verify()
+    const raw = secret(), hash = secretHash(raw), pending = secretHash(secret()), session = secretHash(secret())
+    const created = await createAction({ secretHash: hash })
+    expect(await rpc("customer_action_session_v1", [session])).toBeNull()
+    await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
+    await rpc("customer_action_begin_otp_v1", [pending])
+    await rpc("customer_action_attempt_otp_v1", [pending])
+    expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_session_v1", [session])).toMatchObject({ actionId: created?.id, kind: "AGREEMENT_ACCEPTANCE" })
+    await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [created?.id])
+    expect(await rpc("customer_action_session_v1", [session])).toBeNull()
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "revoke_action", { actionId: created?.id, reason: "Operator withdrew this unused action after a live check.", confirmed: true }])).toMatchObject({ status: "success" })
+    expect(await rpc("customer_action_session_v1", [session])).toBeNull()
+  })
+
+  it("nulls the session projection after email or membership changes and keeps another action isolated", async () => {
+    await verify()
+    const pending = secretHash(secret()), session = secretHash(secret()), hash = secretHash(secret())
+    const created = await createAction({ secretHash: hash })
+    await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
+    await rpc("customer_action_begin_otp_v1", [pending])
+    await rpc("customer_action_attempt_otp_v1", [pending])
+    await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
+    const otherHash = secretHash(secret())
+    const other = await createAction({ kind: "CASE_MANAGEMENT_PERMISSION", secretHash: otherHash, title: "Case-management permission snapshot for this case only" })
+    expect(await rpc("customer_action_session_v1", [session])).toMatchObject({ actionId: created?.id })
+    expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [other?.id])).rows[0].status).toBe("OPEN")
+    const laterPending = secretHash(secret()), laterSession = secretHash(secret())
+    await rpc("customer_action_exchange_v1", [other?.id, otherHash, laterPending])
+    await rpc("customer_action_begin_otp_v1", [laterPending])
+    await rpc("customer_action_attempt_otp_v1", [laterPending])
+    await rpc("customer_action_finish_otp_v1", [laterPending, laterSession, customerAuth, "alex@example.com"])
+    expect(await rpc("customer_action_session_v1", [laterSession])).toMatchObject({ actionId: other?.id })
+    expect(await rpc("customer_action_session_v1", [session])).toBeNull()
+    await db.query("update public.customers set email='alex.changed@example.com' where id=$1", [customer])
+    expect(await rpc("customer_action_session_v1", [laterSession])).toBeNull()
+    await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
+    const membershipPending = secretHash(secret()), membershipSession = secretHash(secret()), membershipHash = secretHash(secret())
+    const membershipAction = await createAction({ title: "Another owner-approved snapshot after the email was restored", secretHash: membershipHash })
+    await rpc("customer_action_exchange_v1", [membershipAction?.id, membershipHash, membershipPending])
+    await rpc("customer_action_begin_otp_v1", [membershipPending])
+    await rpc("customer_action_attempt_otp_v1", [membershipPending])
+    await rpc("customer_action_finish_otp_v1", [membershipPending, membershipSession, customerAuth, "alex@example.com"])
+    await db.query("update public.business_memberships set status='pending', verified_at=null, verified_by=null, evidence=$1", ["Awaiting a live authority check."])
+    expect(await rpc("customer_action_session_v1", [membershipSession])).toBeNull()
+  })
+
+  it("replays a successful customer command after the action is completed even though the session projection is gone", async () => {
+    await verify()
+    const accepted = await completeAccept()
+    expect(await rpc("customer_action_session_v1", [accepted.session])).toBeNull()
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [accepted.created?.id])).rows[0].status).toBe("COMPLETED")
+  })
+
+  it("moves ACTIVE authorisations to REVIEW_REQUIRED on trusted-fact changes and never auto-reactivates them", async () => {
+    await verify()
+    const service = await completeAccept("SERVICE_AGREEMENT")
+    const permission = await completeAccept("CASE_MANAGEMENT_PERMISSION")
+    await db.query("update public.customers set email='alex.changed@example.com' where id=$1", [customer])
+    expect((await db.query<{ status: string; accepted_email_snapshot: string; revoked_at: string | null }>("select status, accepted_email_snapshot, revoked_at from public.authorization_records where id=$1", [service.accepted?.authorizationId])).rows[0]).toMatchObject({
+      status: "REVIEW_REQUIRED", accepted_email_snapshot: "alex@example.com", revoked_at: null,
+    })
+    expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [permission.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
+    const events = await db.query<{ event: string; actor_type: string; actor_id: string | null; details: { reason?: string } }>("select event, actor_type, actor_id, details from public.authorization_events where event='AUTHORIZATION_REVIEW_REQUIRED' order by id")
+    expect(events.rows).toHaveLength(2)
+    expect(events.rows.every(row => row.actor_type === "SYSTEM" && row.actor_id === null && row.details.reason === "CUSTOMER_EMAIL_CHANGED")).toBe(true)
+    await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_records where status='ACTIVE'")).rows[0].n).toBe(0)
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
+      serviceAgreementAccepted: false, caseManagementPermissionActive: false, authorizationReady: false,
+    })
+    await verify()
+    const later = await completeAccept("SERVICE_AGREEMENT")
+    expect(later.accepted?.authorizationId).not.toBe(service.accepted?.authorizationId)
+    expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [service.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
+    await db.query("update public.business_memberships set status='revoked', verified_at=null, verified_by=null, evidence=$1", ["Authority withdrawn after a live check."])
+    expect((await db.query<{ status: string; revoked_at: string | null }>("select status, revoked_at from public.authorization_records where id=$1", [later.accepted?.authorizationId])).rows[0]).toMatchObject({
+      status: "REVIEW_REQUIRED", revoked_at: null,
+    })
+    const membershipEvents = await db.query<{ details: { reason?: string }; actor_type: string }>("select details, actor_type from public.authorization_events where authorization_id=$1 and event='AUTHORIZATION_REVIEW_REQUIRED'", [later.accepted?.authorizationId])
+    expect(membershipEvents.rows[0]).toMatchObject({ actor_type: "SYSTEM", details: { reason: "BUSINESS_AUTHORITY_CHANGED" } })
+    await verify()
+    expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [later.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))?.authorizationReady).toBe(false)
+  })
+
+  it("attributes customer-action and authorisation events to the truthful actor type", async () => {
+    await verify()
+    const pending = secretHash(secret()), session = secretHash(secret()), hash = secretHash(secret())
+    const created = await createAction({ secretHash: hash })
+    await rpc("customer_action_exchange_v1", [created?.id, hash, pending])
+    await rpc("customer_action_begin_otp_v1", [pending])
+    await rpc("customer_action_attempt_otp_v1", [pending])
+    await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
+    await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+    const actionEvents = await db.query<{ event: string; actor_type: string; actor_id: string | null }>("select event, actor_type, actor_id from public.customer_action_events where action_id=$1 order by id", [created?.id])
+    expect(actionEvents.rows).toEqual([
+      { event: "ACTION_CREATED", actor_type: "ADMIN", actor_id: uid },
+      { event: "ACTION_EXCHANGED", actor_type: "PRE_AUTH", actor_id: null },
+      { event: "OTP_SENT", actor_type: "PRE_AUTH", actor_id: null },
+      { event: "ACTION_COMPLETED", actor_type: "CUSTOMER", actor_id: customerAuth },
+    ])
+    const authEvents = await db.query<{ event: string; actor_type: string; actor_id: string | null }>("select event, actor_type, actor_id from public.authorization_events order by id")
+    expect(authEvents.rows[0]).toMatchObject({ event: "AUTHORIZATION_ACCEPTED", actor_type: "CUSTOMER", actor_id: customerAuth })
+    const later = await createAction({ title: "A later owner-approved snapshot" })
+    await db.query("update public.customers set email='alex.changed@example.com' where id=$1", [customer])
+    const revoked = await db.query<{ event: string; actor_type: string; actor_id: string | null }>("select event, actor_type, actor_id from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED'", [later?.id])
+    expect(revoked.rows[0]).toMatchObject({ actor_type: "SYSTEM", actor_id: null })
+  })
+
+  it("preserves Manager-access evidence in append-only events", async () => {
+    await verify()
+    const firstEvidence = "Seen in Google Business Manager on a live screen share."
+    const secondEvidence = "Re-checked owner access on a later live screen share."
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: firstEvidence, confirmed: true, recordVersion: 0 }])).toMatchObject({ status: "success", recordVersion: 1 })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "OWNER", evidence: firstEvidence, confirmed: true, recordVersion: 0 }])).toEqual({ status: "conflict" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "OWNER", evidence: secondEvidence, confirmed: true, recordVersion: 1 }])).toMatchObject({ status: "success", recordVersion: 2 })
+    const current = await db.query<{ evidence: string; access_level: string }>("select evidence, access_level from public.location_manager_access")
+    expect(current.rows[0]).toEqual({ evidence: secondEvidence, access_level: "OWNER" })
+    const events = await db.query<{ event: string; details: { accessLevel?: string; evidence?: string; reason?: string; previousAccessLevel?: string } }>("select event, details from public.location_manager_access_events order by id")
+    expect(events.rows[0]).toMatchObject({ event: "MANAGER_ACCESS_VERIFIED", details: { accessLevel: "MANAGER", evidence: firstEvidence } })
+    expect(events.rows[1]).toMatchObject({ event: "MANAGER_ACCESS_VERIFIED", details: { accessLevel: "OWNER", evidence: secondEvidence } })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", { reason: "Access removed after a live Google check.", confirmed: true, recordVersion: 1 }])).toEqual({ status: "conflict" })
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", { reason: "Access removed after a live Google check.", confirmed: true, recordVersion: 2 }])).toMatchObject({ managerStatus: "REVOKED" })
+    const after = await db.query<{ event: string; details: { reason?: string; previousAccessLevel?: string } }>("select event, details from public.location_manager_access_events where event='MANAGER_ACCESS_REVOKED'")
+    expect(after.rows[0].details).toMatchObject({ reason: "Access removed after a live Google check.", previousAccessLevel: "OWNER" })
+    expect(JSON.stringify(events.rows)).not.toMatch(/password|otp/i)
+    await expect(db.query("update public.location_manager_access_events set details='{}'::jsonb")).rejects.toThrow(/append-only/)
+    await expect(db.query("delete from public.location_manager_access_events")).rejects.toThrow(/append-only/)
+  })
+
+  it("issues CASE_MANAGEMENT_PERMISSION and Manager access only for Managed cases", async () => {
+    await verify()
+    await db.query("update public.cases set service_track='UNDECIDED' where id=$1", [caseId])
+    expect((await createAction({ kind: "CASE_MANAGEMENT_PERMISSION" }))?.status).toBe("denied")
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "denied" })
+    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
+    expect((await createAction({ kind: "CASE_MANAGEMENT_PERMISSION" }))?.status).toBe("denied")
+    expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "denied" })
+    expect((await createAction())?.status).toBe("success")
+    await db.query("update public.cases set service_track='MANAGED' where id=$1", [caseId])
+    expect((await createAction({ kind: "CASE_MANAGEMENT_PERMISSION" }))?.status).toBe("success")
+  })
+
+  it("never marks Guided cases authorizationReady even when Managed facts exist", async () => {
+    await verify()
+    await completeAccept("SERVICE_AGREEMENT")
+    await completeAccept("CASE_MANAGEMENT_PERMISSION")
+    await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", { accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0 }])
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
+      managedTrack: true, authorizationReady: true,
+    })
+    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
+      managedTrack: false, authorizationReady: false, serviceAgreementAccepted: true,
+    })
+  })
+
+  it("requires an exact recordVersion for Admin authorisation revoke", async () => {
+    await verify()
+    const accepted = await completeAccept()
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true }])).toEqual({ status: "invalid" })
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 0 }])).toEqual({ status: "invalid" })
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 2 }])).toEqual({ status: "conflict" })
+    expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", { authorizationId: accepted.accepted?.authorizationId, reason: "Customer asked for an emergency stop after a live call.", confirmed: true, recordVersion: 1 }])).toMatchObject({ status: "success" })
   })
 })

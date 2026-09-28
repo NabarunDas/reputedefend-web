@@ -17,11 +17,11 @@ These are not interchangeable:
 - marketing/setup consent
 - an approved prepared pack
 
-`authorizationReady` may be true only when the Step 9A conditions are all true. It does not mean payment ready, quote accepted, ready to submit, or that `PREPARATION` / `READY_TO_SUBMIT` may proceed.
+`authorizationReady` may be true only when the case is on the Managed track and the Step 9A conditions are all true: verified business authority, verified customer email, an ACTIVE service agreement, an ACTIVE case-management permission, and VERIFIED Manager access. It does not mean payment ready, quote accepted, ready to submit, or that `PREPARATION` / `READY_TO_SUBMIT` may proceed. Guided and undecided cases can never be authorisation-ready. `CASE_MANAGEMENT_PERMISSION` and Manager-access commands are denied unless `service_track = MANAGED`.
 
 ## Action link
 
-Admin issues `/action/{id}#t={secret}` against `CUSTOMER_ORIGIN`. The fragment is not sent in the HTTP request. The customer app exchanges `actionId` + secret for an opaque pending cookie, then removes the fragment with `history.replaceState`. Raw secrets are never stored: the database keeps SHA-256 only. A lost copy-link response cannot be reconstructed; Admin must revoke and issue a new action.
+Admin issues `/action/{id}#t={secret}` against a valid absolute `CUSTOMER_ORIGIN`. Link issuance (`create_agreement_action`, `create_revocation_action`) fails closed with a generic 503 if `CUSTOMER_ORIGIN` is missing or invalid, and does not generate a raw secret or call the database RPC. There is no relative `/action/{id}` fallback. Other Admin operations do not require `CUSTOMER_ORIGIN`. The fragment is not sent in the HTTP request. The customer app exchanges `actionId` + secret for an opaque pending cookie, then removes the fragment with `history.replaceState`. Raw secrets are never stored: the database keeps SHA-256 only. A lost copy-link response cannot be reconstructed; Admin must revoke and issue a new action.
 
 Secrets use 256 bits of cryptographic randomness. They must not appear in SQL, receipts, events, audit, logs, analytics, error trackers or page metadata.
 
@@ -35,9 +35,13 @@ If the verified email has no Auth identity, the customer server may create it wi
 
 ## Agreements
 
-`agreement_versions` rows are immutable snapshots of owner-approved wording supplied by Admin. The application does not invent legal or success-fee text. `authorization_records` store the current ACTIVE/REVIEW_REQUIRED/REVOKED state from an accepted snapshot. Acceptance source is `CUSTOMER_OTP` and is never overwritten. Admin emergency revocation requires a fresh sign-in within five minutes and records `ADMIN_RECORDED_REVOCATION` on the event, not by rewriting acceptance.
+`agreement_versions` rows are immutable snapshots of owner-approved wording supplied by Admin. `content_hash` is SHA-256 (64 lowercase hex) over `agreement_kind`, `title`, `body_text` and `scope_text`. The application does not invent legal or success-fee text. `authorization_records` store the current ACTIVE/REVIEW_REQUIRED/REVOKED state from an accepted snapshot. Acceptance source is `CUSTOMER_OTP` and those accepted-scope fields (including `location_id`) are never overwritten. Admin emergency revocation requires a fresh sign-in within five minutes, the current `recordVersion`, and records `ADMIN_RECORDED_REVOCATION` on the event, not by rewriting acceptance.
 
-OPEN actions are revoked if the customer email changes or membership leaves `verified`. Changing the email back does not revive a revoked link.
+OPEN actions are revoked if the customer email changes or membership leaves `verified`. Affected ACTIVE authorisations become `REVIEW_REQUIRED` with an `AUTHORIZATION_REVIEW_REQUIRED` system event (`CUSTOMER_EMAIL_CHANGED` or `BUSINESS_AUTHORITY_CHANGED`). They never auto-reactivate; a new customer acceptance of a new snapshot is required. Changing the email back does not revive a revoked link or a `REVIEW_REQUIRED` record.
+
+Customer-action and authorisation events record `actor_type` (`ADMIN`, `CUSTOMER`, `SYSTEM`, `PRE_AUTH`). Pre-auth events (`ACTION_EXCHANGED`, `OTP_SENT`) and trusted-fact system events do not pretend an Admin performed them. `customer_action_session_v1` re-checks `customer_action_eligible_v1` before returning a projection; expired, revoked or stale-trust sessions return NULL. A completed command can still replay from its receipt with the same request ID.
+
+Manager-access current state may be overwritten on re-verification, but append-only events keep the evidence and access level that were verified at that time, and the revocation reason plus previous access level.
 
 ## Manager access
 

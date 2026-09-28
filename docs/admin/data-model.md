@@ -110,7 +110,7 @@ Step 8B:
 
 ## Step 9A agreements, actions and Manager access
 
-Immutable `agreement_versions` snapshots, current `authorization_records` (`ACTIVE` / `REVIEW_REQUIRED` / `REVOKED`), `customer_actions` with `secret_hash` only, Admin-verified `location_manager_access`, and private `customer_action_sessions` / `customer_action_challenges` / command receipts. See customer-actions.md. The 9A migration is source-only until applied after review.
+Immutable `agreement_versions` snapshots (`content_hash` is SHA-256 / 64 lowercase hex), current `authorization_records` (`ACTIVE` / `REVIEW_REQUIRED` / `REVOKED`) with an immutable accepted scope including `location_id`, `customer_actions` with `secret_hash` only, Admin-verified `location_manager_access`, append-only events with `actor_type`, and private `customer_action_sessions` / `customer_action_challenges` / command receipts. See customer-actions.md. The 9A migration is source-only until applied after review.
 
 Privileged RPCs:
 

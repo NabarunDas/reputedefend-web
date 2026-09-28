@@ -19,7 +19,7 @@ function CopyOnceLink({ url }: { url: string }) {
   </p>
 }
 
-function IssueActionForm({ caseId, operation, extra }: { caseId: string; operation: "create_agreement_action" | "create_revocation_action"; extra?: Record<string, string> }) {
+function IssueActionForm({ caseId, operation, extra, allowPermission = false }: { caseId: string; operation: "create_agreement_action" | "create_revocation_action"; extra?: Record<string, string>; allowPermission?: boolean }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [link, setLink] = useState<string | null>(null)
   const commandKey = useRef<string | null>(null)
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -52,7 +52,7 @@ function IssueActionForm({ caseId, operation, extra }: { caseId: string; operati
         <label>Agreement kind
           <select name="kind" required>
             <option value="SERVICE_AGREEMENT">Service agreement</option>
-            <option value="CASE_MANAGEMENT_PERMISSION">Case-management permission</option>
+            {allowPermission && <option value="CASE_MANAGEMENT_PERMISSION">Case-management permission</option>}
           </select>
         </label>
         <label>Title<input name="title" required minLength={1} maxLength={200} /></label>
@@ -70,6 +70,7 @@ function IssueActionForm({ caseId, operation, extra }: { caseId: string; operati
 
 export function AuthorizationPanel({ caseId, data }: { caseId: string; data: CaseAuthorization }) {
   const ready = data.readiness
+  const managed = data.track === "MANAGED"
   return <section className="panel">
     <h2>Agreements & permissions</h2>
     <p>{AUTHORIZATION_READINESS_NOTE}</p>
@@ -79,9 +80,20 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
       <Badge tone={ready.serviceAgreementAccepted ? "success" : "neutral"}>Service agreement · {ready.serviceAgreementAccepted ? "accepted" : "not accepted"}</Badge>
       <Badge tone={ready.caseManagementPermissionActive ? "success" : "neutral"}>Case-management permission · {ready.caseManagementPermissionActive ? "active" : "not active"}</Badge>
       <Badge tone={ready.managerAccessVerified ? "success" : "neutral"}>Manager access · {ready.managerAccessVerified ? "verified" : "not verified"}</Badge>
-      <Badge tone={ready.authorizationReady ? "success" : "warning"}>Overall authorisation readiness · {ready.authorizationReady ? "ready" : "not ready"}</Badge>
+      <Badge tone={ready.managedTrack ? "success" : "neutral"}>Managed track · {ready.managedTrack ? "yes" : "not applicable"}</Badge>
+      <Badge tone={ready.authorizationReady ? "success" : "warning"}>Managed authorisation readiness · {ready.authorizationReady ? "ready" : "not ready"}</Badge>
     </p>
     <p className="muted">Marketing or setup consent cannot satisfy case-management permission. An approved pack is not permission.</p>
+    {data.agreements.length > 0 && <div>
+      <h3>Issued agreement snapshots</h3>
+      {data.agreements.map(row => <details key={row.id}>
+        <summary>{row.kind} · version {row.versionNumber} · {row.title}</summary>
+        <p>Created {row.createdAt}</p>
+        <p className="preserve-lines">{row.body}</p>
+        <p className="preserve-lines">{row.scope}</p>
+        <p>SHA-256 {row.contentHash}</p>
+      </details>)}
+    </div>}
     {data.authorizations.map(row => <article key={row.id} className="evidence-document">
       <h3>{row.kind} · {row.status}</h3>
       <p>Accepted {row.acceptedAt} · {row.acceptedEmailMasked} · source {row.source}</p>
@@ -101,8 +113,8 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
         </details>
       </>}
     </article>)}
-    <details><summary>Create service agreement or case-management permission action</summary>
-      <IssueActionForm caseId={caseId} operation="create_agreement_action" />
+    <details><summary>{managed ? "Create service agreement or case-management permission action" : "Create service agreement action"}</summary>
+      <IssueActionForm caseId={caseId} operation="create_agreement_action" allowPermission={managed} />
     </details>
     {data.actions.filter(action => action.status === "OPEN").map(action => <details key={action.id}>
       <summary>Revoke open action {action.id.slice(0, 8)} · {action.kind}</summary>
@@ -115,25 +127,29 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
       </CommandForm>
     </details>)}
     <h3>Google Manager access</h3>
-    <p className="notice-danger">{MANAGER_PASSWORD_WARNING}</p>
-    {data.managerAccess && <p>Current: {data.managerAccess.status} · {data.managerAccess.accessLevel}</p>}
-    <details><summary>Record Manager access verified</summary>
-      <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Record Manager access" payload={form => ({
-        operation: "verify", caseId, accessLevel: form.get("accessLevel"), evidence: form.get("reason"), confirmed: form.get("confirmed") === "true",
-      })}>
-        <p>Requires a fresh Admin sign-in within five minutes. This is not accepted by the customer through an agreement checkbox.</p>
-        <label>Access level<select name="accessLevel" required><option value="MANAGER">Manager</option><option value="OWNER">Owner</option></select></label>
-        <Reason label="Verification evidence" />
-        <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm Manager access was verified without collecting a Google password or one-time code.</label>
-      </CommandForm>
-    </details>
-    {data.managerAccess?.status === "VERIFIED" && <details><summary>Revoke Manager access</summary>
-      <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Revoke Manager access" payload={form => ({
-        operation: "revoke", caseId, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
-      })}>
-        <Reason />
-        <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm Manager access should be revoked.</label>
-      </CommandForm>
-    </details>}
+    {managed ? <>
+      <p className="notice-danger">{MANAGER_PASSWORD_WARNING}</p>
+      {data.managerAccess && <p>Current: {data.managerAccess.status} · {data.managerAccess.accessLevel}</p>}
+      <details><summary>Record Manager access verified</summary>
+        <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Record Manager access" payload={form => ({
+          operation: "verify", caseId, accessLevel: form.get("accessLevel"), evidence: form.get("reason"), confirmed: form.get("confirmed") === "true",
+          recordVersion: data.managerAccess?.recordVersion ?? 0,
+        })}>
+          <p>Requires a fresh Admin sign-in within five minutes. This is not accepted by the customer through an agreement checkbox.</p>
+          <label>Access level<select name="accessLevel" required><option value="MANAGER">Manager</option><option value="OWNER">Owner</option></select></label>
+          <Reason label="Verification evidence" />
+          <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm Manager access was verified without collecting a Google password or one-time code.</label>
+        </CommandForm>
+      </details>
+      {data.managerAccess?.status === "VERIFIED" && <details><summary>Revoke Manager access</summary>
+        <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Revoke Manager access" payload={form => ({
+          operation: "revoke", caseId, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
+          recordVersion: data.managerAccess!.recordVersion,
+        })}>
+          <Reason />
+          <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm Manager access should be revoked.</label>
+        </CommandForm>
+      </details>}
+    </> : <p>Case-management permission and Google Manager access apply to Managed cases only. They are not applicable on this {data.track === "GUIDED" ? "Guided" : "undecided"} case.</p>}
   </section>
 }

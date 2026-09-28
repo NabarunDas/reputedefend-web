@@ -45,9 +45,12 @@ function commandMessage(status: string | undefined): string {
   return "The authorisation record could not be updated."
 }
 
-function actionLink(id: string, secret: string): string | null {
-  const origin = authConfig()?.customerOrigin
-  return origin ? `${origin}/action/${id}#t=${secret}` : `/action/${id}#t=${secret}`
+function issuesCustomerLink(operation: AuthorizationOperation) {
+  return operation === "create_agreement_action" || operation === "create_revocation_action"
+}
+
+function actionLink(origin: string, id: string, secret: string) {
+  return `${origin}/action/${id}#t=${secret}`
 }
 
 export async function authorizationCommand(request: NextRequest) {
@@ -69,7 +72,9 @@ export async function authorizationCommand(request: NextRequest) {
     const operation = (body as { operation: AuthorizationOperation }).operation
     const args = authorizationArgs(operation, body)
     if (!args) return reply("Check the fields before saving.", 400)
-    const secret = newToken()
+    const customerOrigin = issuesCustomerLink(operation) ? config.customerOrigin : null
+    if (issuesCustomerLink(operation) && !customerOrigin) return reply("The workspace is unavailable. Please try again shortly.", 503)
+    const secret = issuesCustomerLink(operation) ? newToken() : ""
     const payload = operation === "create_agreement_action" && "bodyText" in args ? {
       kind: args.kind, title: args.title, bodyText: args.bodyText, scopeText: args.scopeText, expiresAt: args.expiresAt, secretHash: tokenHash(secret),
     } : operation === "revoke_action" && "actionId" in args && "reason" in args && !("authorizationId" in args) ? {
@@ -86,13 +91,13 @@ export async function authorizationCommand(request: NextRequest) {
       p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_operation: operation, p_data: payload,
     })
     if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
-    const issued = (operation === "create_agreement_action" || operation === "create_revocation_action") && result.replay !== true && result.id
+    const issued = issuesCustomerLink(operation) && result.replay !== true && result.id && customerOrigin
     return reply(
-      issued ? `The secure customer action is ready. ${LOST_LINK_NOTE}` : operation === "create_agreement_action" || operation === "create_revocation_action"
+      issued ? `The secure customer action is ready. ${LOST_LINK_NOTE}` : issuesCustomerLink(operation)
         ? "This action was already created. The secret cannot be shown again. Revoke it and create a new action if the link was lost."
         : "The authorisation record has been updated. This does not change the case stage or take payment.",
       200,
-      issued ? { id: result.id, actionUrl: actionLink(result.id!, secret), expiresAt: result.expiresAt, versionNumber: result.versionNumber } : { id: result.id, actionStatus: result.actionStatus, authorizationStatus: result.authorizationStatus, recordVersion: result.recordVersion },
+      issued ? { id: result.id, actionUrl: actionLink(customerOrigin!, result.id!, secret), expiresAt: result.expiresAt, versionNumber: result.versionNumber } : { id: result.id, actionStatus: result.actionStatus, authorizationStatus: result.authorizationStatus, recordVersion: result.recordVersion },
     )
   } catch {
     return reply("We couldn’t confirm the change. Reload the case before trying again.", 503)
@@ -119,8 +124,8 @@ export async function managerAccessCommand(request: NextRequest) {
     const args = managerArgs(operation, body)
     if (!args) return reply("Check the fields before saving.", 400)
     const payload = operation === "verify" && "accessLevel" in args
-      ? { accessLevel: args.accessLevel, evidence: args.evidence, confirmed: true }
-      : { reason: "reason" in args ? args.reason : "", confirmed: true }
+      ? { accessLevel: args.accessLevel, evidence: args.evidence, confirmed: true, recordVersion: args.recordVersion }
+      : { reason: "reason" in args ? args.reason : "", confirmed: true, recordVersion: args.recordVersion }
     const result = await backend().rpc<{ status: string; id?: string; managerStatus?: string; recordVersion?: number }>("admin_manager_access_command_v1", {
       p_token: tokenHash(token), p_request: key, p_case: args.caseId, p_operation: operation, p_data: payload,
     })

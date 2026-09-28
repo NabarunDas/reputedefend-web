@@ -61,15 +61,35 @@ describe("customer action HTTP", () => {
     expect(JSON.stringify(await response.json())).not.toContain("alex@example.com")
     expect(mocks.signInWithOtp.mock.calls[0][0]).not.toHaveProperty("shouldCreateUser", true)
   })
-  it("ignores an Admin cookie and caller-chosen email, and binds OTP to the action email", async () => {
-    mocks.rpc.mockResolvedValue({ status: "ok", email: "alex@example.com", maskedEmail: "a***@example.com" })
-    const ignored = await otpPost(req("/api/action/otp", { email: "sam@example.com" }, { cookie: `pr-admin-dev=${"c".repeat(64)}` }))
+  it("rejects extra OTP fields and never uses a caller-chosen email", async () => {
+    const ignored = await otpPost(req("/api/action/otp", { email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
     expect(ignored.status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.signInWithOtp).not.toHaveBeenCalled()
-    const response = await otpPost(req("/api/action/otp", { email: "sam@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
-    expect(response.status).toBe(200)
-    expect(mocks.signInWithOtp).toHaveBeenCalledWith({ email: "alex@example.com", options: { shouldCreateUser: false } })
-    expect(JSON.stringify(await response.json())).not.toContain("sam@example.com")
+    expect(mocks.createUser).not.toHaveBeenCalled()
+    const noType = await otpPost(req("/api/action/otp", {}, { cookie: `${pendingCookie}=${"c".repeat(64)}`, "content-type": "text/plain" }))
+    expect(noType.status).toBe(401)
+    expect(mocks.signInWithOtp).not.toHaveBeenCalled()
+  })
+  it("rejects extra command fields", async () => {
+    const extra = await commandPost(req("/api/action/command", { operation: "accept", accepted: true, email: "attacker@example.com" }, {
+      cookie: `${sessionCookie}=${"c".repeat(64)}`,
+      "idempotency-key": "33333333-3333-4333-8333-333333333333",
+    }))
+    expect(extra.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    const declineExtra = await commandPost(req("/api/action/command", { operation: "decline", confirmed: true }, {
+      cookie: `${sessionCookie}=${"c".repeat(64)}`,
+      "idempotency-key": "33333333-3333-4333-8333-333333333333",
+    }))
+    expect(declineExtra.status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("rejects extra verify fields", async () => {
+    const response = await verifyPost(req("/api/action/verify", { code: "123456", email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    expect(response.status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.verifyOtp).not.toHaveBeenCalled()
   })
   it("discards provider tokens and sets only the opaque action cookie", async () => {
     mocks.rpc

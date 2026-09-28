@@ -26,7 +26,7 @@ const data = {
   membershipStatus: "verified",
   readiness: {
     businessAuthorityVerified: true, customerEmailVerified: true, serviceAgreementAccepted: false,
-    caseManagementPermissionActive: false, managerAccessVerified: false, authorizationReady: false,
+    caseManagementPermissionActive: false, managerAccessVerified: false, managedTrack: true, authorizationReady: false,
   },
   readinessNote: "not payment",
   agreements: [],
@@ -44,5 +44,35 @@ describe("authorization panel", () => {
     expect(document.querySelector("input[type=password], input[autocomplete=one-time-code], input[name=password], input[name=otp]")).toBeNull()
     expect(screen.queryByPlaceholderText(/password|one-time|otp/i)).toBeNull()
     expect(document.body.textContent).not.toMatch(/Customer accepted|Mark as paid|Submit to Google/i)
+    expect(screen.getByText(/Managed authorisation readiness/)).toBeTruthy()
+  })
+  it("shows the exact issued snapshot for Admin review", () => {
+    render(<AuthorizationPanel caseId={data.caseId} data={{
+      ...data,
+      agreements: [{
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        kind: "SERVICE_AGREEMENT",
+        versionNumber: 1,
+        title: "Managed recovery service agreement",
+        body: "Exact owner-approved body for this snapshot.",
+        scope: "Restore the listed Google Business Profile for this case only.",
+        contentHash: "ab".repeat(32),
+        createdAt: "2026-09-18T12:00:00.000Z",
+      }],
+    }} />)
+    expect(screen.getByText("Exact owner-approved body for this snapshot.")).toBeTruthy()
+    expect(screen.getByText(/SHA-256/)).toBeTruthy()
+    expect(screen.getByText("ab".repeat(32))).toBeTruthy()
+  })
+  it("marks Managed permission and Manager access as not applicable on Guided cases", () => {
+    render(<AuthorizationPanel caseId={data.caseId} data={{
+      ...data,
+      track: "GUIDED",
+      readiness: { ...data.readiness, managedTrack: false, authorizationReady: false },
+    }} />)
+    expect(screen.getByText(/not applicable on this Guided case/)).toBeTruthy()
+    expect(screen.queryByText(/Record Manager access verified/)).toBeNull()
+    expect(screen.queryByRole("option", { name: "Case-management permission" })).toBeNull()
+    expect(screen.getByText(/Create service agreement action/)).toBeTruthy()
   })
 })

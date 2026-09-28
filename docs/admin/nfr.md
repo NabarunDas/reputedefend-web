@@ -31,7 +31,7 @@ These are internal security controls, not customer service promises.
 | --- | --- |
 | Action secret entropy | 256 bits (`randomBytes(32)` hex) |
 | Secret storage | SHA-256 hex only; never raw secret, never full action URL |
-| Action link | `/action/{id}#t={secret}` against `CUSTOMER_ORIGIN`; fragment exchanged then removed |
+| Action link | `/action/{id}#t={secret}` against a valid absolute `CUSTOMER_ORIGIN` only; missing or malformed origin fails closed (503) before secret generation or RPC |
 | Pending cookie lifetime | 10 minutes after secret exchange |
 | OTP challenge lifetime | 10 minutes |
 | OTP resend delay | 60 seconds |

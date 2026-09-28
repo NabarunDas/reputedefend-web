@@ -31,6 +31,16 @@ try {
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
     assert.equal(response.headers.get("x-frame-options"), "DENY")
     assert.equal(response.headers.get("referrer-policy"), "no-referrer")
+    const csp = response.headers.get("content-security-policy") ?? ""
+    assert.match(csp, /default-src 'self'/)
+    assert.match(csp, /script-src 'self'/)
+    assert.match(csp, /connect-src 'self'/)
+    assert.match(csp, /frame-src 'none'/)
+    assert.match(csp, /frame-ancestors 'none'/)
+    assert.match(csp, /base-uri 'self'/)
+    assert.match(csp, /object-src 'none'/)
+    assert.match(csp, /form-action 'self'/)
+    assert.doesNotMatch(csp, /googletagmanager|google-analytics|fonts\.googleapis|unsafe-eval/)
     if (path === "/robots.txt") {
       assert.match(await response.text(), /Disallow: \//)
     } else if (path.startsWith("/api")) {

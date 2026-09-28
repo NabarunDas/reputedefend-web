@@ -19,8 +19,8 @@ export type RevokeActionArgs = { caseId: string; actionId: string; reason: strin
 export type CreateRevocationArgs = { caseId: string; authorizationId: string; expiresAt: string }
 export type AdminRevokeArgs = { caseId: string; authorizationId: string; reason: string; confirmed: true; recordVersion: number }
 export type AuthorizationArgs = CreateAgreementArgs | RevokeActionArgs | CreateRevocationArgs | AdminRevokeArgs
-export type ManagerVerifyArgs = { caseId: string; accessLevel: ManagerLevel; evidence: string; confirmed: true }
-export type ManagerRevokeArgs = { caseId: string; reason: string; confirmed: true }
+export type ManagerVerifyArgs = { caseId: string; accessLevel: ManagerLevel; evidence: string; confirmed: true; recordVersion: number }
+export type ManagerRevokeArgs = { caseId: string; reason: string; confirmed: true; recordVersion: number }
 export type ManagerArgs = ManagerVerifyArgs | ManagerRevokeArgs
 
 function expiresAt(value: unknown): string | null {
@@ -64,12 +64,14 @@ export function managerArgs(operation: ManagerOperation, raw: unknown): ManagerA
   const body = asRecord(raw)
   if (!body || body.operation !== operation || !managerOperations.includes(operation) || !isUuid(body.caseId) || body.confirmed !== true) return null
   if (operation === "verify") {
-    if (!onlyKeys(body, ["operation", "caseId", "accessLevel", "evidence", "confirmed"])) return null
+    if (!onlyKeys(body, ["operation", "caseId", "accessLevel", "evidence", "confirmed", "recordVersion"])) return null
     if (typeof body.accessLevel !== "string" || !managerLevels.includes(body.accessLevel as ManagerLevel)) return null
+    if (!Number.isSafeInteger(body.recordVersion) || (body.recordVersion as number) < 0) return null
     const evidence = note(body.evidence, 10, 1000)
-    return evidence ? { caseId: body.caseId, accessLevel: body.accessLevel as ManagerLevel, evidence, confirmed: true } : null
+    return evidence ? { caseId: body.caseId, accessLevel: body.accessLevel as ManagerLevel, evidence, confirmed: true, recordVersion: body.recordVersion as number } : null
   }
-  if (!onlyKeys(body, ["operation", "caseId", "reason", "confirmed"])) return null
+  if (!onlyKeys(body, ["operation", "caseId", "reason", "confirmed", "recordVersion"])) return null
+  if (!Number.isSafeInteger(body.recordVersion) || (body.recordVersion as number) < 1) return null
   const reason = note(body.reason)
-  return reason ? { caseId: body.caseId, reason, confirmed: true } : null
+  return reason ? { caseId: body.caseId, reason, confirmed: true, recordVersion: body.recordVersion as number } : null
 }

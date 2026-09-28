@@ -11,7 +11,7 @@ CREATE TABLE public.agreement_versions (
   title text NOT NULL CHECK (length(btrim(title)) BETWEEN 1 AND 200),
   body_text text NOT NULL CHECK (length(btrim(body_text)) BETWEEN 20 AND 50000),
   scope_text text NOT NULL CHECK (length(btrim(scope_text)) BETWEEN 10 AND 5000),
-  content_hash text NOT NULL CHECK (content_hash ~ '^[a-f0-9]{32}$'),
+  content_hash text NOT NULL CHECK (content_hash ~ '^[a-f0-9]{64}$'),
   created_by uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -48,10 +48,15 @@ CREATE TABLE public.authorization_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   authorization_id uuid NOT NULL REFERENCES public.authorization_records(id) ON DELETE RESTRICT,
   case_id uuid REFERENCES public.cases(id) ON DELETE RESTRICT,
-  actor_id uuid NOT NULL,
-  event text NOT NULL CHECK (event IN ('AUTHORIZATION_ACCEPTED','AUTHORIZATION_REVOKED')),
+  actor_type text NOT NULL CHECK (actor_type IN ('ADMIN','CUSTOMER','SYSTEM','PRE_AUTH')),
+  actor_id uuid,
+  event text NOT NULL CHECK (event IN ('AUTHORIZATION_ACCEPTED','AUTHORIZATION_REVOKED','AUTHORIZATION_REVIEW_REQUIRED')),
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (actor_type IN ('ADMIN','CUSTOMER') AND actor_id IS NOT NULL)
+    OR (actor_type IN ('SYSTEM','PRE_AUTH'))
+  )
 );
 CREATE INDEX authorization_events_auth_idx ON public.authorization_events(authorization_id, id DESC);
 
@@ -88,12 +93,17 @@ CREATE TABLE public.customer_action_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   action_id uuid NOT NULL REFERENCES public.customer_actions(id) ON DELETE RESTRICT,
   case_id uuid REFERENCES public.cases(id) ON DELETE RESTRICT,
-  actor_id uuid NOT NULL,
+  actor_type text NOT NULL CHECK (actor_type IN ('ADMIN','CUSTOMER','SYSTEM','PRE_AUTH')),
+  actor_id uuid,
   event text NOT NULL CHECK (event IN (
     'ACTION_CREATED','ACTION_EXCHANGED','OTP_SENT','ACTION_COMPLETED','ACTION_DECLINED','ACTION_REVOKED'
   )),
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (actor_type IN ('ADMIN','CUSTOMER') AND actor_id IS NOT NULL)
+    OR (actor_type IN ('SYSTEM','PRE_AUTH'))
+  )
 );
 CREATE INDEX customer_action_events_action_idx ON public.customer_action_events(action_id, id DESC);
 
@@ -213,6 +223,7 @@ BEGIN
     OR NEW.source IS DISTINCT FROM OLD.source
     OR NEW.customer_id IS DISTINCT FROM OLD.customer_id
     OR NEW.business_id IS DISTINCT FROM OLD.business_id
+    OR NEW.location_id IS DISTINCT FROM OLD.location_id
     OR NEW.authorization_kind IS DISTINCT FROM OLD.authorization_kind
     OR NEW.case_id IS DISTINCT FROM OLD.case_id
   THEN RAISE EXCEPTION 'Authorization acceptance fields are immutable'; END IF;
@@ -240,6 +251,11 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
     WHEN p_email IS NULL OR position('@' IN p_email) < 2 THEN '***'
     ELSE substr(split_part(lower(p_email), '@', 1), 1, 1) || '***@' || split_part(lower(p_email), '@', 2)
   END;
+$$;
+
+CREATE FUNCTION admin_private.agreement_content_hash_v1(p_kind text, p_title text, p_body text, p_scope text) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT encode(extensions.digest(convert_to(jsonb_build_array(p_kind, p_title, p_body, p_scope)::text, 'UTF8'), 'sha256'), 'hex');
 $$;
 
 CREATE FUNCTION admin_private.customer_action_eligible_v1(p_action public.customer_actions) RETURNS boolean
@@ -280,10 +296,28 @@ BEGIN
     FOR UPDATE
   LOOP
     UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id;
-    INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, a.case_id, a.created_by, 'ACTION_REVOKED', jsonb_build_object('source', 'TRUSTED_FACT_CHANGED', 'reason', left(p_reason, 200)));
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED', jsonb_build_object('source', 'TRUSTED_FACT_CHANGED', 'reason', left(p_reason, 200)));
     DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
     DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  END LOOP;
+END; $$;
+
+CREATE FUNCTION admin_private.mark_authorizations_review_required_v1(p_customer uuid, p_business uuid, p_reason text) RETURNS void
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE r public.authorization_records;
+BEGIN
+  IF p_reason IS NULL OR p_reason NOT IN ('CUSTOMER_EMAIL_CHANGED','BUSINESS_AUTHORITY_CHANGED') THEN
+    RAISE EXCEPTION 'Invalid review-required reason';
+  END IF;
+  FOR r IN
+    SELECT * FROM public.authorization_records
+    WHERE status = 'ACTIVE' AND customer_id = p_customer AND (p_business IS NULL OR business_id = p_business)
+    FOR UPDATE
+  LOOP
+    UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
+    INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
+    VALUES (r.id, r.case_id, 'SYSTEM', NULL, 'AUTHORIZATION_REVIEW_REQUIRED', jsonb_build_object('reason', p_reason));
   END LOOP;
 END; $$;
 
@@ -292,6 +326,7 @@ LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF lower(OLD.email) IS DISTINCT FROM lower(NEW.email) THEN
     PERFORM admin_private.revoke_open_customer_actions_v1(NEW.id, NULL, 'Customer email changed.');
+    PERFORM admin_private.mark_authorizations_review_required_v1(NEW.id, NULL, 'CUSTOMER_EMAIL_CHANGED');
   END IF;
   RETURN NEW;
 END; $$;
@@ -303,6 +338,7 @@ LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF NEW.status IS DISTINCT FROM 'verified' THEN
     PERFORM admin_private.revoke_open_customer_actions_v1(NEW.customer_id, NEW.business_id, 'Business authority is no longer verified.');
+    PERFORM admin_private.mark_authorizations_review_required_v1(NEW.customer_id, NEW.business_id, 'BUSINESS_AUTHORITY_CHANGED');
   END IF;
   RETURN NEW;
 END; $$;
@@ -339,10 +375,11 @@ CREATE FUNCTION admin_private.case_authorization_readiness_v1(p_case uuid) RETUR
 LANGUAGE plpgsql STABLE SET search_path='' AS $$
 DECLARE cs public.cases;
   business_ok boolean := false; email_ok boolean := false; service_ok boolean := false;
-  permission_ok boolean := false; manager_ok boolean := false;
+  permission_ok boolean := false; manager_ok boolean := false; managed boolean := false;
 BEGIN
   SELECT * INTO cs FROM public.cases WHERE id = p_case;
   IF cs.id IS NULL THEN RETURN jsonb_build_object('missing', true); END IF;
+  managed := cs.service_track = 'MANAGED';
   business_ok := EXISTS (
     SELECT 1 FROM public.business_memberships m
     WHERE m.customer_id = cs.customer_id AND m.business_id = cs.business_id AND m.status = 'verified'
@@ -366,7 +403,8 @@ BEGIN
     'serviceAgreementAccepted', service_ok,
     'caseManagementPermissionActive', permission_ok,
     'managerAccessVerified', manager_ok,
-    'authorizationReady', business_ok AND email_ok AND service_ok AND permission_ok AND manager_ok
+    'managedTrack', managed,
+    'authorizationReady', managed AND business_ok AND email_ok AND service_ok AND permission_ok AND manager_ok
   );
 END; $$;
 
@@ -401,7 +439,7 @@ BEGIN
     'agreements', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
         'id', v.id, 'kind', v.agreement_kind, 'versionNumber', v.version_number, 'title', v.title,
-        'scope', v.scope_text, 'contentHash', v.content_hash, 'createdAt', v.created_at
+        'body', v.body_text, 'scope', v.scope_text, 'contentHash', v.content_hash, 'createdAt', v.created_at
       ) ORDER BY v.agreement_kind, v.version_number DESC)
       FROM public.agreement_versions v WHERE v.case_id = cs.id
     ), '[]'::jsonb),
@@ -471,6 +509,9 @@ BEGIN
       OR length(title) NOT BETWEEN 1 AND 200 OR length(body) NOT BETWEEN 20 AND 50000 OR length(scope) NOT BETWEEN 10 AND 5000
       OR expires IS NULL OR expires <= now() + interval '15 minutes' OR expires > now() + interval '7 days'
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    IF p_kind = 'CASE_MANAGEMENT_PERMISSION' AND cs.service_track IS DISTINCT FROM 'MANAGED' THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
     IF secret IS NULL OR secret !~ '^[a-f0-9]{64}$' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     IF NOT admin_private.contact_verified_v1(cs.customer_id, 'email') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     IF NOT EXISTS (
@@ -489,13 +530,13 @@ BEGIN
     SELECT coalesce(max(version_number), 0) + 1 INTO next_no FROM public.agreement_versions WHERE case_id = cs.id AND agreement_kind = p_kind;
     INSERT INTO public.agreement_versions(case_id, customer_id, business_id, location_id, agreement_kind, version_number, title, body_text, scope_text, content_hash, created_by)
     VALUES (cs.id, cs.customer_id, cs.business_id, cs.location_id, p_kind, next_no, title, body, scope,
-      md5(jsonb_build_array(p_kind, title, body, scope)::text), actor)
+      admin_private.agreement_content_hash_v1(p_kind, title, body, scope), actor)
     RETURNING * INTO v;
     INSERT INTO public.customer_actions(customer_id, business_id, location_id, case_id, agreement_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
     VALUES (cs.customer_id, cs.business_id, cs.location_id, cs.id, v.id, 'AGREEMENT_ACCEPTANCE', secret, lower(c.email), expires, actor)
     RETURNING * INTO a;
-    INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, cs.id, actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'agreementKind', p_kind, 'versionNumber', v.version_number));
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, cs.id, 'ADMIN', actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'agreementKind', p_kind, 'versionNumber', v.version_number));
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Customer agreement action created',
       jsonb_build_object('operation', p_operation, 'actionId', a.id, 'agreementVersionId', v.id, 'kind', p_kind));
     result := jsonb_build_object('status', 'success', 'id', a.id, 'agreementVersionId', v.id, 'versionNumber', v.version_number, 'expiresAt', a.expires_at);
@@ -512,8 +553,8 @@ BEGIN
     IF a.id IS NULL OR a.case_id IS DISTINCT FROM cs.id THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF a.status <> 'OPEN' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id RETURNING * INTO a;
-    INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, cs.id, actor, 'ACTION_REVOKED', jsonb_build_object('source', 'ADMIN', 'reason', left(note, 200)));
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, cs.id, 'ADMIN', actor, 'ACTION_REVOKED', jsonb_build_object('source', 'ADMIN', 'reason', left(note, 200)));
     DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
     DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Customer action revoked',
@@ -538,8 +579,8 @@ BEGIN
     INSERT INTO public.customer_actions(customer_id, business_id, location_id, case_id, authorization_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
     VALUES (cs.customer_id, cs.business_id, cs.location_id, cs.id, auth.id, 'AUTHORIZATION_REVOCATION', secret, lower(c.email), expires, actor)
     RETURNING * INTO a;
-    INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, cs.id, actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'authorizationId', auth.id));
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, cs.id, 'ADMIN', actor, 'ACTION_CREATED', jsonb_build_object('kind', a.kind, 'authorizationId', auth.id));
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Authorization revocation action created',
       jsonb_build_object('operation', p_operation, 'actionId', a.id, 'authorizationId', auth.id));
     result := jsonb_build_object('status', 'success', 'id', a.id, 'expiresAt', a.expires_at);
@@ -552,18 +593,21 @@ BEGIN
     IF jsonb_typeof(data->'authorizationId') <> 'string' OR data->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     note := btrim(coalesce(data->>'reason', ''));
     IF length(note) NOT BETWEEN 10 AND 2000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    IF jsonb_typeof(data->'recordVersion') <> 'number' OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 1 THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
     BEGIN SELECT * INTO auth FROM public.authorization_records WHERE id = (data->>'authorizationId')::uuid FOR UPDATE;
     EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
     IF auth.id IS NULL OR auth.case_id IS DISTINCT FROM cs.id THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-    IF jsonb_typeof(data->'recordVersion') = 'number' AND (data->>'recordVersion')::integer IS DISTINCT FROM auth.record_version THEN
+    IF (data->>'recordVersion')::integer IS DISTINCT FROM auth.record_version THEN
       RETURN jsonb_build_object('status', 'conflict');
     END IF;
     IF auth.status <> 'ACTIVE' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.authorization_records
       SET status = 'REVOKED', revoked_at = now(), revoked_by = actor, revocation_reason = note
       WHERE id = auth.id RETURNING * INTO auth;
-    INSERT INTO public.authorization_events(authorization_id, case_id, actor_id, event, details)
-    VALUES (auth.id, cs.id, actor, 'AUTHORIZATION_REVOKED', jsonb_build_object('source', 'ADMIN_RECORDED_REVOCATION'));
+    INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
+    VALUES (auth.id, cs.id, 'ADMIN', actor, 'AUTHORIZATION_REVOKED', jsonb_build_object('source', 'ADMIN_RECORDED_REVOCATION'));
     PERFORM admin_private.revoke_open_customer_actions_v1(cs.customer_id, cs.business_id, 'Related authorization was revoked.');
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Authorization revoked by Admin',
       jsonb_build_object('operation', p_operation, 'authorizationId', auth.id));
@@ -595,9 +639,12 @@ BEGIN
   IF (s->>'createdAt')::timestamptz < now() - interval '5 minutes' THEN RETURN jsonb_build_object('status', 'reauth_required'); END IF;
   SELECT * INTO cs FROM public.cases WHERE id = p_case FOR UPDATE;
   IF cs.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-  IF cs.location_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF cs.service_track IS DISTINCT FROM 'MANAGED' OR cs.location_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   SELECT * INTO loc FROM public.locations WHERE id = cs.location_id;
   IF loc.id IS NULL OR loc.business_id <> cs.business_id THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF jsonb_typeof(data->'recordVersion') <> 'number' OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 0 THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
   IF p_operation = 'verify' THEN
     IF data->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     level := data->>'accessLevel';
@@ -605,16 +652,18 @@ BEGIN
     IF level IS NULL OR level NOT IN ('MANAGER','OWNER') OR length(evidence) NOT BETWEEN 10 AND 1000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     SELECT * INTO row FROM public.location_manager_access WHERE location_id = loc.id FOR UPDATE;
     IF row.id IS NULL THEN
+      IF (data->>'recordVersion')::integer IS DISTINCT FROM 0 THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
       INSERT INTO public.location_manager_access(business_id, location_id, status, access_level, verified_at, verified_by, evidence)
       VALUES (cs.business_id, loc.id, 'VERIFIED', level, now(), actor, evidence) RETURNING * INTO row;
     ELSE
+      IF (data->>'recordVersion')::integer IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
       UPDATE public.location_manager_access
         SET status = 'VERIFIED', access_level = level, verified_at = now(), verified_by = actor, evidence = evidence,
             revoked_at = NULL, revoked_by = NULL, revocation_reason = ''
         WHERE id = row.id RETURNING * INTO row;
     END IF;
     INSERT INTO public.location_manager_access_events(manager_access_id, location_id, actor_id, event, details)
-    VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_VERIFIED', jsonb_build_object('accessLevel', level));
+    VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_VERIFIED', jsonb_build_object('accessLevel', level, 'evidence', evidence));
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Google Manager access verified',
       jsonb_build_object('operation', p_operation, 'locationId', loc.id, 'accessLevel', level));
     result := jsonb_build_object('status', 'success', 'id', row.id, 'managerStatus', row.status, 'recordVersion', row.record_version);
@@ -626,11 +675,12 @@ BEGIN
   IF length(note) NOT BETWEEN 10 AND 2000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   SELECT * INTO row FROM public.location_manager_access WHERE location_id = loc.id FOR UPDATE;
   IF row.id IS NULL OR row.status <> 'VERIFIED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF (data->>'recordVersion')::integer IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
   UPDATE public.location_manager_access
     SET status = 'REVOKED', revoked_at = now(), revoked_by = actor, revocation_reason = note
     WHERE id = row.id RETURNING * INTO row;
   INSERT INTO public.location_manager_access_events(manager_access_id, location_id, actor_id, event, details)
-  VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_REVOKED', jsonb_build_object('reason', left(note, 200)));
+  VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_REVOKED', jsonb_build_object('reason', left(note, 200), 'previousAccessLevel', row.access_level));
   PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Google Manager access revoked',
     jsonb_build_object('operation', p_operation, 'locationId', loc.id));
   result := jsonb_build_object('status', 'success', 'id', row.id, 'managerStatus', row.status, 'recordVersion', row.record_version);
@@ -652,8 +702,8 @@ BEGIN
   VALUES (a.id, p_pending_hash, now() + interval '10 minutes')
   ON CONFLICT (action_id) DO UPDATE SET pending_hash = EXCLUDED.pending_hash, pending_expires_at = EXCLUDED.pending_expires_at,
     last_sent_at = NULL, attempts = 0, challenge_expires_at = NULL;
-  INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-  VALUES (a.id, a.case_id, a.created_by, 'ACTION_EXCHANGED', jsonb_build_object('kind', a.kind));
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'ACTION_EXCHANGED', jsonb_build_object('kind', a.kind));
   RETURN jsonb_build_object('status', 'ok', 'kind', a.kind, 'maskedEmail', admin_private.mask_email_v1(a.expected_email_snapshot));
 END; $$;
 
@@ -670,8 +720,8 @@ BEGIN
   UPDATE admin_private.customer_action_challenges
     SET last_sent_at = now(), attempts = 0, challenge_expires_at = now() + interval '10 minutes'
     WHERE action_id = a.id;
-  INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-  VALUES (a.id, a.case_id, a.created_by, 'OTP_SENT', jsonb_build_object('kind', a.kind));
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'PRE_AUTH', NULL, 'OTP_SENT', jsonb_build_object('kind', a.kind));
   RETURN jsonb_build_object('status', 'ok', 'email', a.expected_email_snapshot, 'maskedEmail', admin_private.mask_email_v1(a.expected_email_snapshot));
 END; $$;
 
@@ -724,7 +774,7 @@ BEGIN
   SELECT * INTO sess FROM admin_private.customer_action_sessions WHERE token_hash = p_token_hash AND expires_at > now();
   IF sess.token_hash IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO a FROM public.customer_actions WHERE id = sess.action_id;
-  IF a.id IS NULL THEN RETURN NULL; END IF;
+  IF a.id IS NULL OR NOT admin_private.customer_action_eligible_v1(a) THEN RETURN NULL; END IF;
   SELECT * INTO cs FROM public.cases WHERE id = a.case_id;
   SELECT * INTO b FROM public.businesses WHERE id = a.business_id;
   SELECT * INTO loc FROM public.locations WHERE id = a.location_id;
@@ -771,8 +821,8 @@ BEGIN
     IF v.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
     IF p_operation = 'decline' THEN
       UPDATE public.customer_actions SET status = 'DECLINED', completed_at = now() WHERE id = a.id RETURNING * INTO a;
-      INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-      VALUES (a.id, a.case_id, sess.auth_user_id, 'ACTION_DECLINED', jsonb_build_object('kind', v.agreement_kind));
+      INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+      VALUES (a.id, a.case_id, 'CUSTOMER', sess.auth_user_id, 'ACTION_DECLINED', jsonb_build_object('kind', v.agreement_kind));
       PERFORM admin_private.write_record_audit_v1(sess.auth_user_id, 'AUTHORIZATION_CHANGED', 'success', a.case_id, p_request, 'case', 'Customer declined an agreement action',
         jsonb_build_object('operation', p_operation, 'actionId', a.id, 'agreementVersionId', v.id));
       result := jsonb_build_object('status', 'success', 'actionStatus', a.status);
@@ -792,10 +842,10 @@ BEGIN
       sess.auth_user_id, a.expected_email_snapshot, now(), 'CUSTOMER_OTP'
     ) RETURNING * INTO auth;
     UPDATE public.customer_actions SET status = 'COMPLETED', completed_at = now() WHERE id = a.id RETURNING * INTO a;
-    INSERT INTO public.authorization_events(authorization_id, case_id, actor_id, event, details)
-    VALUES (auth.id, a.case_id, sess.auth_user_id, 'AUTHORIZATION_ACCEPTED', jsonb_build_object('source', 'CUSTOMER_OTP', 'actionId', a.id));
-    INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-    VALUES (a.id, a.case_id, sess.auth_user_id, 'ACTION_COMPLETED', jsonb_build_object('authorizationId', auth.id));
+    INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
+    VALUES (auth.id, a.case_id, 'CUSTOMER', sess.auth_user_id, 'AUTHORIZATION_ACCEPTED', jsonb_build_object('source', 'CUSTOMER_OTP', 'actionId', a.id));
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, a.case_id, 'CUSTOMER', sess.auth_user_id, 'ACTION_COMPLETED', jsonb_build_object('authorizationId', auth.id));
     PERFORM admin_private.write_record_audit_v1(sess.auth_user_id, 'AUTHORIZATION_CHANGED', 'success', a.case_id, p_request, 'case', 'Customer accepted an agreement',
       jsonb_build_object('operation', p_operation, 'actionId', a.id, 'authorizationId', auth.id, 'kind', v.agreement_kind));
     result := jsonb_build_object('status', 'success', 'actionStatus', a.status, 'authorizationId', auth.id, 'authorizationStatus', auth.status);
@@ -811,10 +861,10 @@ BEGIN
         revocation_reason = 'Customer revoked this authorisation through a verified action.'
     WHERE id = auth.id RETURNING * INTO auth;
   UPDATE public.customer_actions SET status = 'COMPLETED', completed_at = now() WHERE id = a.id RETURNING * INTO a;
-  INSERT INTO public.authorization_events(authorization_id, case_id, actor_id, event, details)
-  VALUES (auth.id, a.case_id, sess.auth_user_id, 'AUTHORIZATION_REVOKED', jsonb_build_object('source', 'CUSTOMER_OTP', 'actionId', a.id));
-  INSERT INTO public.customer_action_events(action_id, case_id, actor_id, event, details)
-  VALUES (a.id, a.case_id, sess.auth_user_id, 'ACTION_COMPLETED', jsonb_build_object('authorizationId', auth.id));
+  INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
+  VALUES (auth.id, a.case_id, 'CUSTOMER', sess.auth_user_id, 'AUTHORIZATION_REVOKED', jsonb_build_object('source', 'CUSTOMER_OTP', 'actionId', a.id));
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'CUSTOMER', sess.auth_user_id, 'ACTION_COMPLETED', jsonb_build_object('authorizationId', auth.id));
   PERFORM admin_private.write_record_audit_v1(sess.auth_user_id, 'AUTHORIZATION_CHANGED', 'success', a.case_id, p_request, 'case', 'Customer revoked an authorisation',
     jsonb_build_object('operation', p_operation, 'actionId', a.id, 'authorizationId', auth.id));
   result := jsonb_build_object('status', 'success', 'actionStatus', a.status, 'authorizationStatus', auth.status);
@@ -850,8 +900,10 @@ REVOKE ALL ON FUNCTION admin_private.protect_authorization_acceptance_v1() FROM 
 REVOKE ALL ON FUNCTION admin_private.bump_customer_action_version_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.bump_manager_access_version_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.mask_email_v1(text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.agreement_content_hash_v1(text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_action_eligible_v1(public.customer_actions) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_open_customer_actions_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.mark_authorizations_review_required_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_actions_on_customer_email_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_actions_on_membership_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.authz_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;

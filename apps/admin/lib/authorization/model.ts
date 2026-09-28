@@ -29,6 +29,7 @@ export type AuthorizationReadiness = {
   serviceAgreementAccepted: boolean
   caseManagementPermissionActive: boolean
   managerAccessVerified: boolean
+  managedTrack: boolean
   authorizationReady: boolean
 }
 
@@ -44,7 +45,7 @@ export type CaseAuthorization = {
   membershipStatus: string
   readiness: AuthorizationReadiness
   readinessNote: string
-  agreements: Array<{ id: string; kind: string; versionNumber: number; title: string; scope: string; contentHash: string; createdAt: string }>
+  agreements: Array<{ id: string; kind: string; versionNumber: number; title: string; body: string; scope: string; contentHash: string; createdAt: string }>
   authorizations: Array<{
     id: string; kind: string; status: string; acceptedAt: string; acceptedEmailMasked: string
     source: string; agreementVersionId: string; recordVersion: number; revokedAt: string | null

@@ -27,6 +27,15 @@ function originOk(request: NextRequest) {
   return !!config && request.headers.get("origin") === config.origin && request.nextUrl.origin === config.origin
 }
 
+function jsonRequest(request: NextRequest) {
+  return request.headers.get("content-type")?.split(";")[0] === "application/json"
+}
+
+function exactKeys(body: Record<string, unknown>, allowed: string[]) {
+  const keys = Object.keys(body)
+  return keys.length === allowed.length && allowed.every(key => keys.includes(key))
+}
+
 export async function exchange(request: NextRequest) {
   const config = customerConfig()
   if (!config || !originOk(request) || request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply()
@@ -49,7 +58,9 @@ export async function exchange(request: NextRequest) {
 
 export async function sendOtp(request: NextRequest) {
   const config = customerConfig()
-  if (!config || !originOk(request)) return reply()
+  if (!config || !originOk(request) || !jsonRequest(request)) return reply()
+  const body = await readJson(request, 256)
+  if (!body || !exactKeys(body, [])) return reply()
   const pending = request.cookies.get(pendingCookie)?.value
   if (!validToken(pending)) return reply()
   try {
@@ -67,10 +78,10 @@ export async function sendOtp(request: NextRequest) {
 
 export async function verifyOtp(request: NextRequest) {
   const config = customerConfig()
-  if (!config || !originOk(request) || request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply()
+  if (!config || !originOk(request) || !jsonRequest(request)) return reply()
   const pending = request.cookies.get(pendingCookie)?.value
   const body = await readJson(request, 1024)
-  if (!validToken(pending) || !body || typeof body.code !== "string" || !/^\d{6}$/.test(body.code) || Object.keys(body).some(key => key !== "code")) return reply()
+  if (!validToken(pending) || !body || !exactKeys(body, ["code"]) || typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) return reply()
   try {
     const allowed = await backend().rpc<{ status?: string; email?: string }>("customer_action_attempt_otp_v1", { p_pending_hash: tokenHash(pending) })
     if (allowed.status !== "ok" || !allowed.email) return reply()
@@ -93,13 +104,19 @@ export async function verifyOtp(request: NextRequest) {
 
 export async function command(request: NextRequest) {
   const config = customerConfig()
-  if (!config || !originOk(request) || request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply()
+  if (!config || !originOk(request) || !jsonRequest(request)) return reply()
   const token = request.cookies.get(sessionCookie)?.value, key = request.headers.get("idempotency-key")
   const body = await readJson(request, 2048)
   if (!validToken(token) || !isUuid(key) || !body || typeof body.operation !== "string" || !["accept", "decline", "revoke"].includes(body.operation)) return reply()
   const operation = body.operation
-  const data = operation === "accept" ? { accepted: body.accepted === true } : operation === "revoke" ? { confirmed: body.confirmed === true } : {}
-  if (operation === "accept" && body.accepted !== true) return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+  if (operation === "accept" && (!exactKeys(body, ["operation", "accepted"]) || body.accepted !== true)) {
+    return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+  }
+  if (operation === "decline" && !exactKeys(body, ["operation"])) return reply()
+  if (operation === "revoke" && (!exactKeys(body, ["operation", "confirmed"]) || body.confirmed !== true)) {
+    return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+  }
+  const data = operation === "accept" ? { accepted: true } : operation === "revoke" ? { confirmed: true } : {}
   try {
     const result = await backend().rpc<{ status?: string }>("customer_action_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,

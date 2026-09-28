@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
-vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks, newToken: () => "b".repeat(64), tokenHash: (value: string) => `hash-${value.slice(0, 8)}` }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), newToken: vi.fn(() => "b".repeat(64)) }))
+vi.mock("@/lib/auth/backend", async original => ({
+  ...await original<typeof import("@/lib/auth/backend")>(),
+  backend: () => mocks,
+  newToken: () => mocks.newToken(),
+  tokenHash: (value: string) => `hash-${value.slice(0, 8)}`,
+}))
 import { POST as authzPost } from "@/app/api/authorization/command/route"
 import { POST as managerPost } from "@/app/api/manager-access/command/route"
 import { authorizationCommand } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
-import { authorizationArgs } from "./validation"
+import { authorizationArgs, managerArgs } from "./validation"
 
 const origin = "https://admin.profilerelaunch.com"
 const caseId = "55555555-5555-4555-8555-555555555555"
@@ -35,6 +40,7 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_SECRET_KEY", "test")
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
   mocks.rpc.mockReset()
+  mocks.newToken.mockClear()
 })
 afterEach(() => vi.unstubAllEnvs())
 
@@ -43,6 +49,8 @@ describe("authorization commands", () => {
     expect((await authzPost(req(createBody, { cookie: "" }))).status).toBe(401)
     expect((await authzPost(req(createBody, { origin: "https://evil.example" }))).status).toBe(403)
     expect(authorizationArgs("create_agreement_action", { ...createBody, expiresAt: new Date(Date.now() + 8 * 24 * 3600 * 1000).toISOString() })).toBeNull()
+    expect(managerArgs("verify", { operation: "verify", caseId, accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true })).toBeNull()
+    expect(managerArgs("revoke", { operation: "revoke", caseId, reason: "Access removed after a live Google check.", confirmed: true })).toBeNull()
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it("returns the action URL once and never sends a customer-accepted shortcut", async () => {
@@ -68,9 +76,47 @@ describe("authorization commands", () => {
   it("maps reauth and does not log secrets", async () => {
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const denied = await managerPost(req({
-      operation: "verify", caseId, accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true,
+      operation: "verify", caseId, accessLevel: "MANAGER", evidence: "Seen in Google Business Manager on a live screen share.", confirmed: true, recordVersion: 0,
     }, {}, `${origin}/api/manager-access/command`))
     expect(denied.status).toBe(403)
     expect(await denied.text()).not.toMatch(/#[tT]=|password/)
+  })
+  it("fails closed when CUSTOMER_ORIGIN is missing or malformed and does not issue a secret", async () => {
+    vi.stubEnv("CUSTOMER_ORIGIN", "")
+    expect((await authorizationCommand(req())).status).toBe(503)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.newToken).not.toHaveBeenCalled()
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com/extra")
+    expect((await authorizationCommand(req())).status).toBe(503)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.newToken).not.toHaveBeenCalled()
+    vi.stubEnv("CUSTOMER_ORIGIN", "not-a-url")
+    expect((await authorizationCommand(req({
+      operation: "create_revocation_action", caseId,
+      authorizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expiresAt: createBody.expiresAt,
+    }))).status).toBe(503)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.newToken).not.toHaveBeenCalled()
+  })
+  it("still allows Admin revoke and open-action revoke without CUSTOMER_ORIGIN", async () => {
+    vi.stubEnv("CUSTOMER_ORIGIN", "")
+    mocks.rpc.mockResolvedValue({ status: "success", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", authorizationStatus: "REVOKED", recordVersion: 2 })
+    const response = await authorizationCommand(req({
+      operation: "admin_revoke_authorization", caseId,
+      authorizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      reason: "Customer asked for an emergency stop after a live call.",
+      confirmed: true, recordVersion: 1,
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_authorization_command_v1", expect.objectContaining({ p_operation: "admin_revoke_authorization" }))
+    expect(mocks.newToken).not.toHaveBeenCalled()
+    mocks.rpc.mockResolvedValue({ status: "success", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", actionStatus: "REVOKED" })
+    const revoked = await authorizationCommand(req({
+      operation: "revoke_action", caseId, actionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      reason: "Operator withdrew this unused action after a live check.", confirmed: true,
+    }))
+    expect(revoked.status).toBe(200)
+    expect(mocks.newToken).not.toHaveBeenCalled()
   })
 })

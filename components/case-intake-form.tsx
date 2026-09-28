@@ -16,6 +16,7 @@ import {
   type EnquiryFieldErrors,
   type EnquiryInput,
 } from "@/lib/enquiry"
+import { sendLeadConversion } from "@/lib/analytics"
 import { HoneypotField } from "@/components/honeypot-field"
 import { brandName } from "@/lib/brand"
 import styles from "./case-intake.module.css"
@@ -261,6 +262,10 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         setReceiptEmailSent(json.receiptEmailSent === true)
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your case has been received.")
+        // Validated service enum only. The case reference is never sent.
+        if (json.simulated !== true) {
+          sendLeadConversion({ leadType: "assessment", serviceType: values.service || undefined })
+        }
         requestFocus("success")
         return
       }

@@ -9,6 +9,7 @@ import {
   type EnquiryField,
   type EnquiryFieldErrors,
 } from "@/lib/enquiry"
+import { sendLeadConversion } from "@/lib/analytics"
 import { HoneypotField } from "@/components/honeypot-field"
 import styles from "./contact-form.module.css"
 
@@ -86,6 +87,8 @@ export function ContactForm() {
         setSimulated(json.simulated === true)
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your message has been received.")
+        // Contact carries no service value, and the subject is never sent.
+        if (json.simulated !== true) sendLeadConversion({ leadType: "contact" })
         return
       }
 

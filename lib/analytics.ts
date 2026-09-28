@@ -3,6 +3,8 @@
  * Do not load gtag, send page views, or grant ad consent before that choice.
  */
 
+import { CASE_SERVICES, GENERAL_SERVICE_OPTIONS } from "@/lib/enquiry"
+
 export const ANALYTICS_CONSENT_KEY = "profilerelaunch:analytics-consent:v1"
 export const COOKIE_SETTINGS_EVENT = "profilerelaunch:cookie-settings"
 export const ANALYTICS_CONSENT_EVENT = "profilerelaunch:analytics-consent-change"
@@ -151,6 +153,64 @@ export function sendSanitizedPageView(origin: string, pathname: string) {
   if (typeof window === "undefined" || typeof window.gtag !== "function") return false
   if (readStoredConsent() !== "accepted") return false
   window.gtag("event", "page_view", pageViewPayload(origin, pathname))
+  return true
+}
+
+export const LEAD_CONVERSION_EVENT = "generate_lead"
+
+export const LEAD_TYPES = ["homepage_enquiry", "contact", "assessment", "guard_setup"] as const
+
+export type LeadType = (typeof LEAD_TYPES)[number]
+
+/**
+ * Only the fixed service enums may travel with a conversion. Derived from the
+ * form option lists so an unexpected or free-text value cannot be forwarded.
+ */
+const APPROVED_SERVICE_TYPES: ReadonlySet<string> = new Set<string>([
+  ...CASE_SERVICES.map((service) => service.value),
+  ...GENERAL_SERVICE_OPTIONS.map((option) => option.value),
+])
+
+export type LeadConversionPayload = {
+  lead_type: LeadType
+  service_type?: string
+}
+
+/**
+ * The complete set of parameters a conversion may carry. Nothing a visitor
+ * typed, and no contact, case or submission identifier, belongs here.
+ */
+export function leadConversionPayload({
+  leadType,
+  serviceType,
+}: {
+  leadType: LeadType
+  serviceType?: string
+}): LeadConversionPayload {
+  const payload: LeadConversionPayload = { lead_type: leadType }
+  if (serviceType && APPROVED_SERVICE_TYPES.has(serviceType)) payload.service_type = serviceType
+  return payload
+}
+
+/**
+ * Records a successful lead submission as a GA4 `generate_lead` event.
+ *
+ * Sends nothing unless analytics is already running with accepted consent:
+ * this never initialises gtag and never bypasses the GoogleAnalytics
+ * component. Callers must only invoke it after a genuine, non-simulated
+ * success, since one call emits one event.
+ */
+export function sendLeadConversion({
+  leadType,
+  serviceType,
+}: {
+  leadType: LeadType
+  serviceType?: string
+}) {
+  if (typeof window === "undefined" || typeof window.gtag !== "function") return false
+  if (readStoredConsent() !== "accepted") return false
+  if (!LEAD_TYPES.includes(leadType)) return false
+  window.gtag("event", LEAD_CONVERSION_EVENT, leadConversionPayload({ leadType, serviceType }))
   return true
 }
 

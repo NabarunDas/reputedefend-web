@@ -91,7 +91,6 @@ export function ResourceCategoryCard({
 }) {
   const selectable = count > 0 && Boolean(onSelect)
   const meta = count === 0 ? emptyLabel : count === 1 ? "1 published guide" : `${count} published guides`
-  const showHubLink = count > 0 && Boolean(hubHref && hubLabel)
 
   return (
     <article
@@ -116,8 +115,8 @@ export function ResourceCategoryCard({
       ) : (
         <p className={styles.categoryMeta}>{meta}</p>
       )}
-      {showHubLink ? (
-        <Link className={styles.categoryHubLink} href={hubHref!}>
+      {count > 0 && hubHref && hubLabel ? (
+        <Link className={styles.categoryHubLink} href={hubHref}>
           {hubLabel}
         </Link>
       ) : null}

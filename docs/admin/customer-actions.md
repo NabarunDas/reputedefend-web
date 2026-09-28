@@ -2,7 +2,9 @@
 
 Step 9A is the secure customer-action foundation. It is not a customer dashboard and not Step 9B (evidence upload / pack viewing).
 
-Step 8 is complete, with live acceptance confirmed on 18 September 2026.
+Step 8 is complete, with live acceptance confirmed on 18 September 2026. Step 9A is merged. The migration `20260928094817_admin_customer_actions_v1.sql` is applied to `profilerelaunch-dev` as version `20260928094817`, matching the repository filename. RLS, direct grants, RPC execution and trigger verification completed. Supabase advisors were run. Live customer-action browser acceptance is still pending. Step 9B is pending. Do not mark all of Step 9 complete.
+
+Current Supabase advisor baseline still contains historical security findings for `public.rls_auto_enable()`, `public.set_case_public_ref`, and leaked-password protection. Step 9A introduced missing-FK-index performance recommendations; those are not security or correctness blockers and are deferred to the performance/production-readiness cleanup.
 
 ## Separate facts
 

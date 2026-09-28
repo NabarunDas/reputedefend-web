@@ -4,7 +4,7 @@ This documents the Step 8A evidence tables, the Step 8B additive workspace migra
 
 Evidence migration filenames match the versions recorded on `profilerelaunch-dev`: `20260918143424` (8A), `20260918153627` (8B), `20260918163150` (8C). Step 8 is complete with live acceptance on 18 September 2026.
 
-Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, `location_manager_access` and private action session/challenge/receipt tables. See customer-actions.md. The 9A migration is source-only until applied after review.
+Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, `location_manager_access` and private action session/challenge/receipt tables. See customer-actions.md. The 9A migration filename matches the version recorded on `profilerelaunch-dev`: `20260928094817`.
 
 ## Relationships
 
@@ -110,7 +110,7 @@ Step 8B:
 
 ## Step 9A agreements, actions and Manager access
 
-Immutable `agreement_versions` snapshots (`content_hash` is SHA-256 / 64 lowercase hex), current `authorization_records` (`ACTIVE` / `REVIEW_REQUIRED` / `REVOKED`) with an immutable accepted scope including `location_id`, `customer_actions` with `secret_hash` only, Admin-verified `location_manager_access`, append-only events with `actor_type`, and private `customer_action_sessions` / `customer_action_challenges` / command receipts. See customer-actions.md. The 9A migration is source-only until applied after review.
+Immutable `agreement_versions` snapshots (`content_hash` is SHA-256 / 64 lowercase hex), current `authorization_records` (`ACTIVE` / `REVIEW_REQUIRED` / `REVOKED`) with an immutable accepted scope including `location_id`, `customer_actions` with `secret_hash` only, Admin-verified `location_manager_access`, append-only events with `actor_type`, and private `customer_action_sessions` / `customer_action_challenges` / command receipts. See customer-actions.md. The 9A migration filename matches `profilerelaunch-dev` version `20260928094817`.
 
 Privileged RPCs:
 

@@ -90,13 +90,14 @@ const caseCmd = async (operation: string, data: Record<string, unknown>, version
 }
 
 describe("prepared pack SQL", () => {
-  it("sorts evidence migrations as foundation then workspace then prepared packs", () => {
+  it("sorts evidence and customer-action migrations to match profilerelaunch-dev history", () => {
     const dir = new URL("../../../../supabase/migrations/", import.meta.url)
-    const names = readdirSync(dir).filter(name => /admin_evidence_foundation_v1|admin_evidence_workspace_v1|admin_prepared_packs_v1/.test(name)).sort()
+    const names = readdirSync(dir).filter(name => /admin_evidence_foundation_v1|admin_evidence_workspace_v1|admin_prepared_packs_v1|admin_customer_actions_v1/.test(name)).sort()
     expect(names).toEqual([
       "20260918143424_admin_evidence_foundation_v1.sql",
       "20260918153627_admin_evidence_workspace_v1.sql",
       "20260918163150_admin_prepared_packs_v1.sql",
+      "20260928094817_admin_customer_actions_v1.sql",
     ])
   })
 

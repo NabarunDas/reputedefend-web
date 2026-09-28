@@ -16,7 +16,13 @@
     "typecheck:admin": "npm run typecheck --workspace=@profilerelaunch/admin",
     "test:admin": "npm run test --workspace=@profilerelaunch/admin",
     "check:admin": "npm run test:admin && npm run typecheck:admin",
-    "smoke:admin": "node scripts/smoke-admin.mjs"
+    "smoke:admin": "node scripts/smoke-admin.mjs",
+    "dev:customer": "npm run dev --workspace=@profilerelaunch/customer",
+    "build:customer": "npm run build --workspace=@profilerelaunch/customer",
+    "start:customer": "npm run start --workspace=@profilerelaunch/customer",
+    "typecheck:customer": "npm run typecheck --workspace=@profilerelaunch/customer",
+    "test:customer": "npm run test --workspace=@profilerelaunch/customer",
+    "smoke:customer": "node scripts/smoke-customer.mjs"
   },
   "repository": {
     "type": "git",

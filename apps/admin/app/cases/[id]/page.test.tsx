@@ -6,7 +6,9 @@ import "@testing-library/jest-dom/vitest"
 import type { CaseDetail } from "@/lib/cases/model"
 
 const getCase = vi.fn()
+const getCaseAuthorization = vi.fn()
 vi.mock("@/lib/cases/queries", () => ({ getCase: (...args: unknown[]) => getCase(...args) }))
+vi.mock("@/lib/authorization/queries", () => ({ getCaseAuthorization: (...args: unknown[]) => getCaseAuthorization(...args) }))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -16,11 +18,20 @@ vi.mock("../forms", () => ({
   PlanForm: () => null, TransitionForm: () => null, NoteForm: () => null, TaskForm: () => null,
   ResolveTask: () => null, SubmissionForm: () => null, ResolveSubmission: () => null, CloseForm: () => null,
 }))
+vi.mock("./authorization-forms", () => ({
+  AuthorizationPanel: () => <section><h2>Agreements & permissions</h2></section>,
+}))
 
 import CasePage from "./page"
 
 afterEach(() => cleanup())
-beforeEach(() => getCase.mockReset())
+beforeEach(() => {
+  getCase.mockReset()
+  getCaseAuthorization.mockReset().mockResolvedValue({
+    caseId: "55555555-5555-4555-8555-555555555555",
+    readiness: { authorizationReady: false },
+  })
+})
 
 describe("case evidence entry", () => {
   it("links the case to the evidence workspace", async () => {
@@ -56,6 +67,7 @@ describe("case evidence entry", () => {
     render(await CasePage({ params: Promise.resolve({ id: "55555555-5555-4555-8555-555555555555" }), searchParams: Promise.resolve({}) }))
     expect(screen.getByRole("heading", { name: "Evidence & Documents" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Open evidence workspace" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/evidence")
+    expect(screen.getByRole("heading", { name: "Agreements & permissions" })).toBeTruthy()
     expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
     expect(document.body.innerHTML).not.toMatch(/href=["'][^"']*customer[^"']*portal/i)
   })

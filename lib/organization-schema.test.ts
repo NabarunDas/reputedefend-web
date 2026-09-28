@@ -62,6 +62,7 @@ describe("navigation", () => {
     expect(primaryNav.map((item) => item.href)).toEqual([
       "/how-it-works",
       "/pricing",
+      "/resources",
       "/about",
     ])
     expect(informationNav.map((item) => item.href)).toEqual([

@@ -88,17 +88,17 @@ describe("/relaunch-guard page", () => {
       "https://profilerelaunch.com/relaunch-guard",
     )
     expect(metadata.title).toEqual({
-      absolute: "Relaunch Guard | Google Business Profile Monitoring | ProfileRelaunch",
+      absolute: "Google Business Profile Monitoring | Relaunch Guard | ProfileRelaunch",
     })
     expect(metadata.description).toBe(guardSeo.description)
     expect(metadata.openGraph).toMatchObject({
-      title: "Relaunch Guard | Google Business Profile Monitoring | ProfileRelaunch",
+      title: "Google Business Profile Monitoring | Relaunch Guard | ProfileRelaunch",
       description: guardSeo.description,
       url: "/relaunch-guard",
     })
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
-      title: "Relaunch Guard | Google Business Profile Monitoring | ProfileRelaunch",
+      title: "Google Business Profile Monitoring | Relaunch Guard | ProfileRelaunch",
       description: guardSeo.description,
     })
     expect(sitemapPaths).toContain("/relaunch-guard")

@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   reviewFaqs,
+  reviewGuides,
   reviewHelpHref,
   reviewHero,
   reviewJudgement,
@@ -11,6 +14,10 @@ import {
   reviewTrustStrip,
 } from "./content"
 import { pricingGroups } from "@/lib/pricing"
+import { resourceCategoryHubs } from "@/lib/resource-category-links"
+import { getPublishedResources, resourcePath } from "@/lib/resources"
+
+const pageSource = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8")
 
 const copy = JSON.stringify({
   reviewFaqs,
@@ -25,7 +32,14 @@ const copy = JSON.stringify({
 describe("Review Protection page copy", () => {
   it("keeps the review hero, intake route and support line", () => {
     expect(reviewHero.eyebrow).toBe("Google Review Protection")
-    expect(reviewHero.titleLines[1]).toContain("rushed response")
+    expect(reviewHero.titleLines).toEqual([
+      "Google Review Removal Support",
+      "for Fake or Policy-Violating Reviews",
+    ])
+    // The lead must keep Google as the decision-maker directly under the H1.
+    expect(reviewHero.lead).toBe(
+      "Google makes the final removal decision. ProfileRelaunch assesses whether the review may breach Google's policies and helps prepare the appropriate challenge, report or professional response.",
+    )
     expect(reviewHero.primaryCta).toBe("Start your assessment")
     expect(reviewHero.primaryHref).toBe("/get-help?service=review")
     expect(reviewHelpHref).toBe("/get-help?service=review")
@@ -61,9 +75,33 @@ describe("Review Protection page copy", () => {
     expect(reviewTrustStrip).toContain("Pricing")
   })
 
+  it("links the review page to published guides and the Google Reviews hub", () => {
+    expect(reviewGuides.title).toBe("Understand the review before you challenge it")
+    expect(reviewGuides.links).toEqual([
+      { label: "Can a Google review be removed?", href: "/resources/can-a-google-review-be-removed" },
+      {
+        label: "Fake review or genuine negative feedback?",
+        href: "/resources/fake-google-review-or-genuine-negative-feedback",
+      },
+      {
+        label: "Google rejected my review report — what next?",
+        href: "/resources/google-rejected-my-review-report",
+      },
+      { label: "Google review bombing", href: "/resources/google-review-bombing" },
+      { label: "Google review extortion", href: "/resources/google-review-extortion" },
+    ])
+    expect(reviewGuides.hubLabel).toBe("Browse all Google Review guides")
+    expect(reviewGuides.hubHref).toBe(resourceCategoryHubs["reviews-reputation"])
+    const published = new Set(getPublishedResources().map((resource) => resourcePath(resource.slug)))
+    for (const link of reviewGuides.links) {
+      expect(published, link.href).toContain(link.href)
+    }
+    expect(pageSource).toMatch(/<ReviewGuides \/>\s*<ReviewFaq \/>/)
+  })
+
   it("keeps Review Protection SEO geographically neutral", () => {
-    expect(reviewSeo.titlePage).toMatch(/Google Review Protection/)
-    expect(reviewSeo.description.toLowerCase()).toContain("google review protection")
+    expect(reviewSeo.titlePage).toBe("Google Review Removal & Challenge Support")
+    expect(reviewSeo.description.toLowerCase()).toContain("google review removal")
     expect(reviewSeo.description.toLowerCase()).toContain("challenge")
     expect(reviewSeo.description.toLowerCase()).toMatch(/suspicious|policy/)
     expect(copy.toLowerCase()).not.toMatch(/uk businesses|uk-only|uk google review/)

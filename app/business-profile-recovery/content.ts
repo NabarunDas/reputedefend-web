@@ -8,16 +8,16 @@ export const recoveryHelpHref = "/get-help?service=profile-recovery"
 export const recoveryPricingHref = "/pricing"
 
 export const recoverySeo = {
-  titlePage: "Google Business Profile Recovery & Suspension Help",
+  titlePage: "Google Business Profile Suspension & Reinstatement Help",
   description:
-    "Google Business Profile recovery help when a listing is suspended, inaccessible or stuck in verification. Human-reviewed, evidence-led reinstatement preparation — Guided or Managed.",
+    "Human-reviewed Google Business Profile suspension and reinstatement help for suspended, disabled, inaccessible or verification-stuck profiles, including appeal and evidence preparation.",
 } as const
 
 export const recoveryHero = {
   eyebrow: "Google Business Profile Recovery",
-  titleLines: ["Your profile is down.", "Your recovery plan shouldn't be guesswork."] as const,
+  titleLines: ["Google Business Profile Suspension", "& Reinstatement Help"] as const,
   lead:
-    "When a Google Business Profile is suspended, inaccessible or stuck in verification, the wrong changes or repeated unsupported appeals can make an already difficult situation harder. ProfileRelaunch helps you understand what changed, organise the evidence that matters and prepare the strongest appropriate recovery route.",
+    "Your profile is down. Your recovery plan shouldn't be guesswork. When a Google Business Profile is suspended, inaccessible or stuck in verification, the wrong changes or repeated unsupported appeals can make an already difficult situation harder. ProfileRelaunch helps you understand what changed, organise the evidence that matters and prepare the strongest appropriate recovery route.",
   primaryCta: "Start your assessment",
   primaryHref: recoveryHelpHref,
   secondaryCta: "View recovery pricing",
@@ -223,6 +223,33 @@ export const recoveryAppealed = {
   ],
   cta: "Start your assessment",
   href: recoveryHelpHref,
+} as const
+
+export const recoveryGuides = {
+  eyebrow: "Resources",
+  title: "Helpful guides before your next step",
+  lead:
+    "If you want to understand the process before starting an assessment, these guides explain the most common recovery situations in more detail.",
+  links: [
+    {
+      label: "What to do before you appeal a suspension",
+      href: "/resources/google-business-profile-suspended-before-appeal",
+    },
+    {
+      label: "Google Business Profile appeal evidence checklist",
+      href: "/resources/google-business-profile-appeal-evidence-checklist",
+    },
+    {
+      label: "What to do after a rejected appeal",
+      href: "/resources/google-business-profile-appeal-rejected-what-next",
+    },
+    {
+      label: "Verification stuck or rejected",
+      href: "/resources/google-business-profile-verification-stuck-or-rejected",
+    },
+  ],
+  hubLabel: "Browse all Profile Recovery guides",
+  hubHref: "/resources/google-business-profile-recovery",
 } as const
 
 export const recoveryFaqs = [

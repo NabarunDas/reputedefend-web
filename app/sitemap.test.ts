@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import sitemap from "@/app/sitemap"
 import { brandSiteUrl } from "@/lib/brand"
+import { resourceCategoryHubPaths } from "@/lib/resource-category-links"
 import { resourceRegistry } from "@/lib/resources"
 import { approvedPublishedResourceSlugs } from "@/lib/resource-test-fixtures"
 import { sitemapPaths } from "@/lib/site-nav"
@@ -12,13 +13,21 @@ describe("sitemap resources", () => {
 
   it("includes the Resources hub and published articles, never unpublished drafts", () => {
     vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SITE_LAUNCHED", "true")
     const entries = sitemap()
     const urls = entries.map((entry) => entry.url)
     // The hub is a fixed page; the article URLs must match the approved
     // publication allowlist exactly.
     expect(urls).toContain(`${brandSiteUrl}/resources`)
+    const hubUrls = resourceCategoryHubPaths.map((path) => `${brandSiteUrl}${path}`)
+    for (const url of hubUrls) {
+      expect(urls.filter((entry) => entry === url)).toHaveLength(1)
+    }
     const articleUrls = urls.filter(
-      (url) => url.startsWith(`${brandSiteUrl}/resources/`) && url !== `${brandSiteUrl}/resources`,
+      (url) =>
+        url.startsWith(`${brandSiteUrl}/resources/`) &&
+        url !== `${brandSiteUrl}/resources` &&
+        !hubUrls.includes(url),
     )
     expect(articleUrls).toEqual(
       approvedPublishedResourceSlugs.map((slug) => `${brandSiteUrl}/resources/${slug}`),
@@ -42,10 +51,19 @@ describe("sitemap resources", () => {
     expect(entries.find((entry) => entry.url === guardUrl)).toEqual({ url: guardUrl })
   })
 
-  it("emits no sitemap outside production", () => {
+  it("emits no sitemap outside production, even when the launch flag is set", () => {
+    vi.stubEnv("SITE_LAUNCHED", "true")
     vi.stubEnv("VERCEL_ENV", "preview")
     expect(sitemap()).toEqual([])
     vi.stubEnv("VERCEL_ENV", "development")
+    expect(sitemap()).toEqual([])
+  })
+
+  it("emits no sitemap in production before launch", () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SITE_LAUNCHED", "false")
+    expect(sitemap()).toEqual([])
+    vi.stubEnv("SITE_LAUNCHED", "")
     expect(sitemap()).toEqual([])
   })
 })

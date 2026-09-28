@@ -5,6 +5,7 @@ import {
   reviewClosing,
   reviewEvidence,
   reviewFaqs,
+  reviewGuides,
   reviewHelpHref,
   reviewHero,
   reviewJudgement,
@@ -380,6 +381,32 @@ export function ReviewPricing() {
         </Link>
         <HelpLink className={s.ghostButton}>{reviewPricing.secondaryCta}</HelpLink>
       </div>
+    </section>
+  )
+}
+
+export function ReviewGuides() {
+  return (
+    <section className={`${s.guides} ${s.reveal}`} aria-labelledby="guides-title">
+      <div className={s.guidesIntro}>
+        <Eyebrow>{reviewGuides.eyebrow}</Eyebrow>
+        <h2 id="guides-title">{reviewGuides.title}</h2>
+        <p>{reviewGuides.lead}</p>
+      </div>
+      <ul className={s.guidesList}>
+        {reviewGuides.links.map((link) => (
+          <li key={link.href}>
+            <Link href={link.href}>
+              {link.label}
+              <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <Link className={s.guidesHubLink} href={reviewGuides.hubHref}>
+        {reviewGuides.hubLabel}
+        <ArrowRight size={16} aria-hidden="true" />
+      </Link>
     </section>
   )
 }

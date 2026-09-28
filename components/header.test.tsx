@@ -186,6 +186,7 @@ describe("Header navigation", () => {
       ["Relaunch Guard", "/relaunch-guard"],
       ["How It Works", "/how-it-works"],
       ["Pricing", "/pricing"],
+      ["Resources", "/resources"],
       ["About", "/about"],
       ["Contact", "/contact"],
       ["Get Help", "/get-help"],

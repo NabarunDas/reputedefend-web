@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   recoveryFaqs,
+  recoveryGuides,
   recoveryHelpHref,
   recoveryHero,
   recoveryModels,
@@ -11,6 +14,10 @@ import {
   recoveryTrustStrip,
 } from "./content"
 import { pricingGroups } from "@/lib/pricing"
+import { resourceCategoryHubs } from "@/lib/resource-category-links"
+import { getPublishedResources, resourcePath } from "@/lib/resources"
+
+const pageSource = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8")
 
 const copy = JSON.stringify({
   recoveryFaqs,
@@ -24,7 +31,14 @@ const copy = JSON.stringify({
 describe("Profile Recovery page copy", () => {
   it("keeps the recovery hero, CTAs and intake preselection", () => {
     expect(recoveryHero.eyebrow).toBe("Google Business Profile Recovery")
-    expect(recoveryHero.titleLines[0]).toContain("Your profile is down")
+    expect(recoveryHero.titleLines).toEqual([
+      "Google Business Profile Suspension",
+      "& Reinstatement Help",
+    ])
+    // The old H1 line stays visible as supporting copy rather than the heading.
+    expect(recoveryHero.lead).toMatch(
+      /^Your profile is down\. Your recovery plan shouldn't be guesswork\./,
+    )
     expect(recoveryHero.primaryCta).toBe("Start your assessment")
     expect(recoveryHero.primaryHref).toBe("/get-help?service=profile-recovery")
     expect(recoveryHelpHref).toBe("/get-help?service=profile-recovery")
@@ -68,8 +82,38 @@ describe("Profile Recovery page copy", () => {
     expect(JSON.stringify(recoveryFaqs)).not.toContain("ReputeDefend")
   })
 
+  it("links the recovery page to published guides and the Profile Recovery hub", () => {
+    expect(recoveryGuides.title).toBe("Helpful guides before your next step")
+    expect(recoveryGuides.links).toEqual([
+      {
+        label: "What to do before you appeal a suspension",
+        href: "/resources/google-business-profile-suspended-before-appeal",
+      },
+      {
+        label: "Google Business Profile appeal evidence checklist",
+        href: "/resources/google-business-profile-appeal-evidence-checklist",
+      },
+      {
+        label: "What to do after a rejected appeal",
+        href: "/resources/google-business-profile-appeal-rejected-what-next",
+      },
+      {
+        label: "Verification stuck or rejected",
+        href: "/resources/google-business-profile-verification-stuck-or-rejected",
+      },
+    ])
+    expect(recoveryGuides.hubLabel).toBe("Browse all Profile Recovery guides")
+    expect(recoveryGuides.hubHref).toBe(resourceCategoryHubs["profile-recovery"])
+    // Every anchor must reach a live published article, not a draft or 404.
+    const published = new Set(getPublishedResources().map((resource) => resourcePath(resource.slug)))
+    for (const link of recoveryGuides.links) {
+      expect(published, link.href).toContain(link.href)
+    }
+    expect(pageSource).toMatch(/<RecoveryAppealed \/>\s*<RecoveryGuides \/>\s*<RecoveryFaq \/>/)
+  })
+
   it("keeps recovery metadata geographically neutral and on the recovery intent", () => {
-    expect(recoverySeo.titlePage).toContain("Google Business Profile Recovery")
+    expect(recoverySeo.titlePage).toBe("Google Business Profile Suspension & Reinstatement Help")
     expect(recoverySeo.description.toLowerCase()).toContain("suspended")
     expect(recoverySeo.description.toLowerCase()).toContain("verification")
     expect(recoverySeo.description.toLowerCase()).toContain("reinstatement")

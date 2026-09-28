@@ -9,6 +9,7 @@ import {
   RecoveryClosing,
   RecoveryExpertise,
   RecoveryFaq,
+  RecoveryGuides,
   RecoveryHero,
   RecoveryModels,
   RecoveryPricing,
@@ -34,7 +35,7 @@ export default function BusinessProfileRecoveryPage() {
   return (
     <div className={`${styles.page} font-sans`}>
       <ServiceStructuredData
-        name="Google Business Profile Recovery & Suspension Help"
+        name="Google Business Profile Suspension & Reinstatement Help"
         description={description}
         path="/business-profile-recovery"
       />
@@ -49,6 +50,7 @@ export default function BusinessProfileRecoveryPage() {
       <RecoveryPricing />
       <RecoveryProcess />
       <RecoveryAppealed />
+      <RecoveryGuides />
       <RecoveryFaq />
       <RecoveryClosing />
     </div>

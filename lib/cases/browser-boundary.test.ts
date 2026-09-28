@@ -23,6 +23,13 @@ describe("browser modules", () => {
       expect(source, relative).not.toMatch(/persistMonitoringRequest|create_monitoring_request_v1/)
       expect(source, relative).not.toMatch(/MONITORING_PERSISTENCE_ENABLED|RESEND_API_KEY/)
       expect(source, relative).not.toMatch(/NEXT_PUBLIC_SUPABASE/)
+      expect(source, relative).not.toMatch(/SITE_LAUNCHED|isSitePublic/)
     }
+  })
+
+  it("keep the pre-launch indexing gate server-only", () => {
+    const source = readFileSync(fileURLToPath(new URL("../site-visibility.ts", import.meta.url)), "utf8")
+    expect(source).toMatch(/^import "server-only"/m)
+    expect(source).not.toMatch(/NEXT_PUBLIC_SITE_LAUNCHED/)
   })
 })

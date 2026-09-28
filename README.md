@@ -67,8 +67,8 @@ If required configuration is missing, or Resend does not accept the message, the
 ## Environment and deployment
 
 - Resend credentials are server-only and must not be prefixed with `NEXT_PUBLIC_`.
-- `VERCEL_ENV=production` enables the production sitemap, indexing and canonical behavior.
-- Preview and development environments are noindex and excluded from the sitemap.
+- Indexing requires both `VERCEL_ENV=production` and `SITE_LAUNCHED=true`. `SITE_LAUNCHED=false` (or unset) is pre-launch mode: a Production deployment may exist, but it stays noindex, `robots.txt` disallows everything and the sitemap is empty. `SITE_LAUNCHED` is server-side only; never use `NEXT_PUBLIC_SITE_LAUNCHED`.
+- Preview and development environments are noindex and excluded from the sitemap regardless of `SITE_LAUNCHED`.
 - Production canonical URLs resolve to `https://profilerelaunch.com`.
 - `NEXT_PUBLIC_GA_MEASUREMENT_ID` and `GOOGLE_SITE_VERIFICATION` are optional. Do not invent values.
 

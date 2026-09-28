@@ -174,8 +174,8 @@ describe("Article #1 suspension pre-appeal guide", () => {
     }
   })
 
-  it("keeps Resources out of the primary header", () => {
-    expect(primaryNav.map((item) => item.href)).not.toContain("/resources")
-    expect(primaryNav.map((item) => item.label)).not.toContain("Resources")
+  it("reaches the article through Resources in the primary header", () => {
+    expect(primaryNav.map((item) => item.href)).toContain("/resources")
+    expect(primaryNav.map((item) => item.label)).toContain("Resources")
   })
 })

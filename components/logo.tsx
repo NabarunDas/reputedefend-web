@@ -11,7 +11,16 @@ type LogoProps = {
    */
   decorative?: boolean
   priority?: boolean
+  /**
+   * Override only when the lockup is rendered wider than the header/footer
+   * sizes; the defaults stop a 1932px source being requested for a ~200px slot.
+   */
+  sizes?: string
 }
+
+/** Header and footer cap the lockup near 230px; mobile scales with the viewport. */
+const LOGO_SIZES = "(max-width: 640px) 50vw, 240px"
+const MARK_SIZES = "(max-width: 640px) 48px, 64px"
 
 /**
  * Approved ProfileRelaunch lockup / mark.
@@ -24,6 +33,7 @@ export function BrandMark({
   className,
   decorative = false,
   priority = false,
+  sizes = MARK_SIZES,
 }: Omit<LogoProps, "markOnly">) {
   return (
     <Image
@@ -32,7 +42,7 @@ export function BrandMark({
       width={markSize.width}
       height={markSize.height}
       className={className}
-      unoptimized
+      sizes={sizes}
       priority={priority}
     />
   )
@@ -44,6 +54,7 @@ export function BrandLogo({
   className,
   decorative = false,
   priority = false,
+  sizes,
 }: LogoProps) {
   if (markOnly) {
     return (
@@ -52,6 +63,7 @@ export function BrandLogo({
         className={className}
         decorative={decorative}
         priority={priority}
+        sizes={sizes}
       />
     )
   }
@@ -63,7 +75,7 @@ export function BrandLogo({
       width={logoSize.width}
       height={logoSize.height}
       className={className}
-      unoptimized
+      sizes={sizes ?? LOGO_SIZES}
       priority={priority}
     />
   )

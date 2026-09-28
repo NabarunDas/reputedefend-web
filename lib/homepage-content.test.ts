@@ -14,6 +14,7 @@ import {
   homepageTrustStrip,
   homepageWhy,
 } from "@/lib/homepage-content"
+import { brandTagline } from "@/lib/brand"
 import { guardPrice } from "@/lib/guard-offer"
 import { pricingGroups, pricingLabel } from "@/lib/pricing"
 
@@ -34,10 +35,11 @@ const copy = JSON.stringify({
 
 describe("homepage commercial copy", () => {
   it("keeps the locked hero meaning, CTAs and support line", () => {
-    expect(homepageHero.eyebrow).toBe("Google Business Profile Recovery & Review Protection")
+    expect(homepageHero.eyebrow).toBe(brandTagline)
+    expect(homepageHero.eyebrow).toBe("Restore visibility. Protect your reputation.")
     expect(homepageHero.titleLines).toEqual([
-      "Restore your Google visibility.",
-      "Protect your reputation.",
+      "Google Business Profile Recovery",
+      "& Review Support",
     ])
     expect(homepageHero.primaryCta).toBe("Start your assessment")
     expect(homepageHero.primaryHref).toBe("/get-help")
@@ -133,12 +135,14 @@ describe("homepage commercial copy", () => {
     )
   })
 
-  it("keeps homepage metadata on recovery, suspension help and review protection", () => {
-    expect(homepageSeo.titlePage).toContain("Google Business Profile Recovery")
-    expect(homepageSeo.titlePage).toContain("Review Protection")
-    expect(homepageSeo.description.toLowerCase()).toContain("google business profile recovery")
-    expect(homepageSeo.description.toLowerCase()).toContain("review protection")
-    expect(homepageSeo.description.toLowerCase()).toContain("suspended")
+  it("keeps homepage metadata on recovery, suspension help and review support", () => {
+    expect(homepageSeo.titlePage).toBe("Google Business Profile Recovery & Review Support")
+    expect(homepageSeo.description).toBe(
+      "Human-reviewed help with Google Business Profile suspensions, reinstatement, verification, access and suspicious reviews. UK-based support for businesses internationally.",
+    )
+    expect(homepageSeo.description.toLowerCase()).toContain("google business profile suspensions")
+    expect(homepageSeo.description.toLowerCase()).toContain("reinstatement")
+    expect(homepageSeo.description.toLowerCase()).toContain("verification")
     expect(homepageSeo.description.toLowerCase()).toContain("review")
     expect(homepageSeo.description.toLowerCase()).not.toMatch(/uk businesses|uk-only/)
     expect(homepageTrustStrip).toContain("UK-based independent service")

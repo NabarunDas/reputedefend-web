@@ -60,6 +60,10 @@ describe("launch readiness", () => {
       "/pricing",
       "/about",
       "/resources",
+      "/resources/google-business-profile-recovery",
+      "/resources/google-business-profile-verification-access",
+      "/resources/google-reviews",
+      "/resources/google-review-abuse-scams",
       "/contact",
       "/get-help",
       "/privacy",
@@ -80,6 +84,7 @@ describe("launch readiness", () => {
     expect(primaryNav.map((item) => item.label)).toEqual([
       "How It Works",
       "Pricing",
+      "Resources",
       "About",
     ])
     expect(informationNav.map((item) => item.label)).toContain("Cookies")

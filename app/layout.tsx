@@ -14,6 +14,7 @@ import {
   titleTemplate,
 } from "@/lib/brand"
 import { googleSiteVerification } from "@/lib/site-verification"
+import { isSitePublic } from "@/lib/site-visibility"
 import { socialTwitter } from "@/lib/social-metadata"
 
 const bodyFont = Inter({ subsets: ["latin"], variable: "--font-body" })
@@ -42,7 +43,7 @@ export const metadata: Metadata = {
     url: "/",
   },
   twitter: socialTwitter({ title: defaultTitle, description: brandDescription }),
-  robots: process.env.VERCEL_ENV === "production"
+  robots: isSitePublic()
     ? { index: true, follow: true }
     : { index: false, follow: false },
   ...(googleVerification ? { verification: { google: googleVerification } } : {}),

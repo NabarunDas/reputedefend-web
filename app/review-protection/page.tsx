@@ -8,6 +8,7 @@ import {
   ReviewClosing,
   ReviewEvidence,
   ReviewFaq,
+  ReviewGuides,
   ReviewHero,
   ReviewJudgement,
   ReviewModels,
@@ -36,7 +37,7 @@ export default function ReviewProtectionPage() {
   return (
     <div className={`${styles.page} font-sans`}>
       <ServiceStructuredData
-        name="Google Review Protection"
+        name="Google Review Removal & Challenge Support"
         description={description}
         path="/review-protection"
       />
@@ -53,6 +54,7 @@ export default function ReviewProtectionPage() {
       <ReviewReported />
       <ReviewProcess />
       <ReviewPricing />
+      <ReviewGuides />
       <ReviewFaq />
       <ReviewClosing />
     </div>

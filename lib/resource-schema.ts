@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { brandName, pageTitle } from "@/lib/brand"
 import { organizationUrl } from "@/lib/organization-schema"
-import { resourceCategoryLinkPath } from "@/lib/resource-category-links"
+import { RESOURCES_INDEX_PATH, resourceCategoryLinkPath } from "@/lib/resource-category-links"
 import { isResourceCalendarDate, resourcePath, type ResourceRecord } from "@/lib/resources"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 
@@ -22,6 +22,39 @@ export function resourceCategoryHubMetadata({
     alternates: { canonical: path },
     openGraph: socialOpenGraph({ title, description, path }),
     twitter: socialTwitter({ title, description }),
+  }
+}
+
+/**
+ * BreadcrumbList for a Resource topic hub. `title` must be the label the hub
+ * shows as its current breadcrumb step so the markup matches what a visitor
+ * can see.
+ */
+export function resourceCategoryHubBreadcrumbJsonLd({
+  title,
+  path,
+}: {
+  title: string
+  path: string
+}) {
+  const url = organizationUrl()
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Resources",
+        item: `${url}${RESOURCES_INDEX_PATH}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: title,
+        item: `${url}${path}`,
+      },
+    ],
   }
 }
 

@@ -1,7 +1,13 @@
 import { organizationSchema, serviceSchema } from "@/lib/organization-schema"
+import { websiteSchema } from "@/lib/website-schema"
 
 export function OrganizationStructuredData() {
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema()) }} />
+}
+
+/** Homepage only. Rendering this site-wide would duplicate WebSite on every page. */
+export function WebsiteStructuredData() {
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema()) }} />
 }
 
 export function ServiceStructuredData({

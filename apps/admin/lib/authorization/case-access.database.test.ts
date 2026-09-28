@@ -37,6 +37,7 @@ type RpcResult = {
   businessName?: string
   locationName?: string | null
   pack?: { packNumber?: number; publishedAt?: string; items?: Array<{ versionId: string; position: number; documentTitle?: string }> } | null
+  packs?: Array<{ id: string; recordVersion: number }>
   agreement?: unknown
   authorization?: unknown
   versionId?: string
@@ -157,7 +158,7 @@ async function publishVisiblePack(filename = "invoice.pdf", type = "application/
   const approved = await packCmd("approve", { note: packNote, confirmed: true }, pack?.id ?? null, 2)
   const published = await packCmd("publish", { note: publishNote, confirmed: true }, approved?.id ?? null, approved?.recordVersion ?? null)
   expect(published).toMatchObject({ status: "success", published: true })
-  return { created, pack: published }
+  return { created, packId: published?.id, recordVersion: published?.recordVersion }
 }
 
 describe("CASE_ACCESS SQL", () => {
@@ -256,7 +257,7 @@ describe("customer published pack SQL", () => {
     expect(event.rows[0].details.source).toBe("CUSTOMER_CASE_ACCESS")
     expect(JSON.stringify(event.rows[0])).not.toMatch(/otp|secret|#t=|X-Amz|presigned/i)
     const listed = await rpc("admin_prepared_pack_case_v1", [token, caseId])
-    await packCmd("unpublish", { reason: "Withdraw this pack from customer case access.", confirmed: true }, published.pack.id ?? null, listed?.packs?.find(pack => pack.id === published.pack.id)?.recordVersion ?? published.pack.recordVersion ?? null)
+    await packCmd("unpublish", { reason: "Withdraw this pack from customer case access.", confirmed: true }, published.packId ?? null, listed?.packs?.find(pack => pack.id === published.packId)?.recordVersion ?? published.recordVersion ?? null)
     expect(await rpc("customer_case_pack_version_v1", [session, published.created?.versionId])).toBeNull()
     expect(await rpc("customer_case_pack_access_v1", [session, key(), published.created?.versionId, "download"])).toEqual({ status: "unavailable" })
     expect((await rpc("customer_case_pack_v1", [session]))?.pack).toBeNull()

@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
 import { ACTION_UNAVAILABLE } from "@/lib/access"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
@@ -18,6 +19,7 @@ type Session = {
 }
 
 export function ActionClient({ actionId }: { actionId: string }) {
+  const router = useRouter()
   const [phase, setPhase] = useState<"start" | "otp" | "review" | "done" | "unavailable">("start")
   const [otpSent, setOtpSent] = useState(false)
   const [resendReady, setResendReady] = useState(false)
@@ -78,7 +80,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
     const result = await response.json() as { message?: string; session?: Session }
     if (!response.ok || !result.session) { setPhase("unavailable"); return }
     if (result.session.kind === "CASE_ACCESS") {
-      window.location.assign("/case")
+      router.push("/case")
       return
     }
     setSession(result.session)

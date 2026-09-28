@@ -46,7 +46,7 @@ function commandMessage(status: string | undefined): string {
 }
 
 function issuesCustomerLink(operation: AuthorizationOperation) {
-  return operation === "create_agreement_action" || operation === "create_revocation_action"
+  return operation === "create_agreement_action" || operation === "create_revocation_action" || operation === "create_case_access_action"
 }
 
 function actionLink(origin: string, id: string, secret: string) {
@@ -81,6 +81,8 @@ export async function authorizationCommand(request: NextRequest) {
       actionId: args.actionId, reason: args.reason, confirmed: true,
     } : operation === "create_revocation_action" && "authorizationId" in args && "expiresAt" in args ? {
       authorizationId: args.authorizationId, expiresAt: args.expiresAt, secretHash: tokenHash(secret),
+    } : operation === "create_case_access_action" && "expiresAt" in args && !("authorizationId" in args) && !("bodyText" in args) ? {
+      expiresAt: args.expiresAt, secretHash: tokenHash(secret),
     } : "authorizationId" in args && "recordVersion" in args ? {
       authorizationId: args.authorizationId, reason: args.reason, confirmed: true, recordVersion: args.recordVersion,
     } : {}

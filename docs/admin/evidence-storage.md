@@ -115,13 +115,17 @@ Maximum 10,485,760 bytes. Types: PDF, JPEG, PNG, WebP, DOCX. Previewable: PDF/JP
 
 Packs live on the case evidence page only. Approval means: the Admin has approved this exact selection of evidence versions as the prepared document pack. It does not mean payment received, customer agreement, authority granted, ready to submit, submitted to Google, or customer portal access.
 
-- `create` / `add_item` / `remove_item` / `move_item` / `approve` go through `admin_prepared_pack_command_v1`. A case may have at most one `DRAFT` and at most one `APPROVED` pack. A second independent `create` while a draft exists returns conflict; a matching idempotent retry still replays.
+- `create` / `add_item` / `remove_item` / `move_item` / `approve` / `publish` / `unpublish` go through `admin_prepared_pack_command_v1`. A case may have at most one `DRAFT` and at most one `APPROVED` pack. A second independent `create` while a draft exists returns conflict; a matching idempotent retry still replays. Publication is a separate axis: at most one currently published pack per case.
 - Items are allowed only when the pack is `DRAFT` and the version is `UPLOADED` + `NO_THREATS_FOUND` + `VALID` + `ACCEPTED` for the same case. PostgreSQL overwrites snapshot title/filename/type/size from the version row.
 - Approving requires at least one item, a 10–2000 character note and an explicit confirmation. A previous `APPROVED` pack for the case becomes `SUPERSEDED`.
-- If included evidence later fails those checks, that `APPROVED` pack becomes `STALE`. The pack is not rebuilt.
-- View/Download reuse `/api/evidence/command`. No ZIP, merged PDF, extra S3 pack object or new access route.
-- `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT`. Pack approval does not change case stage, status or service track.
+- If included evidence later fails those checks, that `APPROVED` pack becomes `STALE`. The pack is not rebuilt. Active publication ends at the same time.
+- Admin View/Download reuse `/api/evidence/command`. Customer View/Download of a published pack uses `/api/case/evidence/access` with a `CASE_ACCESS` session and `AWS_CUSTOMER_EVIDENCE_ROLE_ARN`. No ZIP, merged PDF or extra S3 pack object.
+- `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT`. Pack approval or publication does not change case stage, status or service track.
+
+## Step 9B1 customer publication
+
+Source-implemented, not remotely applied, and the customer AWS role is not configured. Admin must publish explicitly. `customer_visible=true` is required on every included version. Losing eligibility or visibility unpublishes automatically and never auto-republishes. Step 9B2 customer upload is still pending. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
 
 ## Future work
 
-Customer publication of evidence, payment/permission workflow gates and Google submission remain later stages. Step 8 is complete. Step 9A adds secure customer agreement actions; Step 9B will reuse that session for customer evidence and approved-pack viewing. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+Payment/permission workflow gates, Google submission and customer upload remain later stages. Step 8 is complete. Step 9A live Service Agreement acceptance has succeeded. Step 9B1 is source-only until the migration and customer IAM role are applied.

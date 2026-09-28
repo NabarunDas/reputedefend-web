@@ -74,4 +74,22 @@ describe("authorization panel", () => {
     expect(screen.queryByRole("option", { name: "Case-management permission" })).toBeNull()
     expect(screen.getByText(/Create service agreement action/)).toBeTruthy()
   })
+  it("offers a customer case-access link without inventing a dashboard", () => {
+    render(<AuthorizationPanel caseId={data.caseId} data={{
+      ...data,
+      actions: [{
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        kind: "CASE_ACCESS",
+        status: "OPEN",
+        expiresAt: "2026-09-30T12:00:00.000Z",
+        createdAt: "2026-09-28T12:00:00.000Z",
+        agreementVersionId: null,
+        authorizationId: null,
+        recordVersion: 1,
+      }],
+    }} />)
+    expect(screen.getByText("Issue customer case-access link")).toBeTruthy()
+    expect(screen.getByText(/An open case-access action already exists/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/dashboard|billing|upload evidence/i)
+  })
 })

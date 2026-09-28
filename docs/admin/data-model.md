@@ -6,6 +6,8 @@ Evidence migration filenames match the versions recorded on `profilerelaunch-dev
 
 Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, `location_manager_access` and private action session/challenge/receipt tables. See customer-actions.md. The 9A migration filename matches the version recorded on `profilerelaunch-dev`: `20260928094817`.
 
+Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `case_prepared_packs`, `PACK_PUBLISHED` / `PACK_UNPUBLISHED` events, and customer pack RPCs. The additive migration is `20260928172000_customer_case_pack_access_v1.sql`. It is not remotely applied.
+
 ## Relationships
 
 ```
@@ -19,12 +21,14 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; secret_hash only)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS; secret_hash only)
+  └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)
 public.case_prepared_pack_events  (append-only pack lifecycle)
 admin_private.evidence_command_receipts
 admin_private.pack_command_receipts
+admin_private.customer_pack_access_receipts
 ```
 
 Foreign keys to `cases` and `evidence_requests` use `ON DELETE RESTRICT`. Versions never overwrite a previous `storage_key`. At most one version per document may have `customer_visible = true`.
@@ -115,13 +119,16 @@ Immutable `agreement_versions` snapshots (`content_hash` is SHA-256 / 64 lowerca
 Privileged RPCs:
 
 - `admin_case_authorization_v1` / `admin_case_authorization_readiness_v1`
-- `admin_authorization_command_v1` — create agreement action, revoke open action, issue customer revocation action, Admin emergency revoke
+- `admin_authorization_command_v1` — create agreement action, revoke open action, issue customer revocation action, Admin emergency revoke, create case-access action
 - `admin_manager_access_command_v1` — verify / revoke
 - `customer_action_exchange_v1`, `customer_action_begin_otp_v1`, `customer_action_confirm_otp_sent_v1`, `customer_action_attempt_otp_v1`, `customer_action_finish_otp_v1`, `customer_action_session_v1`, `customer_action_command_v1`
+- `customer_case_pack_v1` — customer-safe published pack projection
+- `customer_case_pack_version_v1` — server-only published-pack version including storage coordinates
+- `customer_case_pack_access_v1` — records customer View/Download; does not return a URL
 
 ## public.case_prepared_packs
 
-Immutable-after-approval manifest for a case. Status: `DRAFT`, `APPROVED`, `STALE`, `SUPERSEDED`. `UNIQUE (case_id, pack_number)`. Partial unique indexes: at most one `DRAFT` and at most one `APPROVED` pack per case. Optimistic `record_version`. Approval note 10–2000 characters when `APPROVED`. Historical `STALE` / `SUPERSEDED` packs do not occupy those slots.
+Immutable-after-approval manifest for a case. Status: `DRAFT`, `APPROVED`, `STALE`, `SUPERSEDED`. Publication is separate: `published_at`, `published_by`, `publication_note`, `unpublished_at`, `unpublished_by`, `unpublished_reason`. Currently published means `published_at IS NOT NULL AND unpublished_at IS NULL` and status remains `APPROVED`. `UNIQUE (case_id, pack_number)`. Partial unique indexes: at most one `DRAFT`, one `APPROVED`, and one currently published pack per case. Optimistic `record_version`. Approval note 10–2000 characters when `APPROVED`. Historical `STALE` / `SUPERSEDED` packs do not occupy those slots.
 
 ## public.case_prepared_pack_items
 
@@ -129,11 +136,11 @@ Exact version membership. Snapshot columns (`document_title`, `original_filename
 
 ## public.case_prepared_pack_events
 
-Append-only. Events: `PACK_CREATED`, `ITEM_ADDED`, `ITEM_REMOVED`, `ITEM_MOVED`, `PACK_APPROVED`, `PACK_STALE`, `PACK_SUPERSEDED`. Details are bounded JSON without file bytes, storage coordinates, tokens or URLs.
+Append-only. Events: `PACK_CREATED`, `ITEM_ADDED`, `ITEM_REMOVED`, `ITEM_MOVED`, `PACK_APPROVED`, `PACK_STALE`, `PACK_SUPERSEDED`, `PACK_PUBLISHED`, `PACK_UNPUBLISHED`. Details are bounded JSON without file bytes, storage coordinates, tokens or URLs.
 
-Step 8C RPCs:
+Step 8C / 9B1 RPCs:
 
-- `admin_prepared_pack_command_v1` — create / add_item / remove_item / move_item / approve
+- `admin_prepared_pack_command_v1` — create / add_item / remove_item / move_item / approve / publish / unpublish
 - `admin_prepared_pack_case_v1` — UI-safe packs (latest 20) plus eligible accepted versions; no bucket/key/URLs
 
 An AFTER UPDATE trigger on version upload/scan/validation/review marks affected `APPROVED` packs `STALE` when included evidence is no longer eligible. The pack is not rebuilt.

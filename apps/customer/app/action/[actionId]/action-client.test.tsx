@@ -108,6 +108,24 @@ describe("customer action page", () => {
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
   })
 
+  it("redirects CASE_ACCESS verification to the case documents page", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    const assign = vi.fn()
+    vi.stubGlobal("location", { ...window.location, assign, hash: "", pathname: `/action/${actionId}` })
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: { ...session, kind: "CASE_ACCESS", agreement: null },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/case"))
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
+  })
+
   it("does not claim a code was sent when the provider fails", async () => {
     await renderAfterExchange()
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }) })

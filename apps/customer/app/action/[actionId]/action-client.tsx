@@ -77,6 +77,10 @@ export function ActionClient({ actionId }: { actionId: string }) {
     const response = await fetch("/api/action/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) })
     const result = await response.json() as { message?: string; session?: Session }
     if (!response.ok || !result.session) { setPhase("unavailable"); return }
+    if (result.session.kind === "CASE_ACCESS") {
+      window.location.assign("/case")
+      return
+    }
     setSession(result.session)
     setPhase("review")
   }

@@ -1,7 +1,7 @@
 export const packStatuses = ["DRAFT", "APPROVED", "STALE", "SUPERSEDED"] as const
 export type PackStatus = (typeof packStatuses)[number]
 
-export const packOperations = ["create", "add_item", "remove_item", "move_item", "approve"] as const
+export const packOperations = ["create", "add_item", "remove_item", "move_item", "approve", "publish", "unpublish"] as const
 export type PackOperation = (typeof packOperations)[number]
 
 export const PACK_APPROVAL_WARNING =
@@ -13,6 +13,12 @@ export const PACK_STALE_WARNING =
 export const PACK_CONFIRMATION =
   "I confirm this exact evidence selection is the prepared pack. This does not confirm payment, customer authority, or submission to Google."
 
+export const PACK_PUBLISH_WARNING =
+  "Publishing makes this approved pack visible to the customer through a secure case-access link. It does not confirm payment, permission, Manager access, or submission to Google."
+
+export const PACK_PUBLISH_CONFIRMATION =
+  "I confirm this approved pack should be published for customer case access. This does not move the case stage or submit anything to Google."
+
 export type PreparedPackItem = {
   id: string
   documentId: string
@@ -23,6 +29,7 @@ export type PreparedPackItem = {
   contentType: string
   sizeBytes: number
   versionNumber: number
+  customerVisible?: boolean
 }
 
 export type PreparedPack = {
@@ -33,6 +40,11 @@ export type PreparedPack = {
   createdAt: string
   approvedAt: string | null
   recordVersion: number
+  published?: boolean
+  publishedAt?: string | null
+  publicationNote?: string
+  unpublishedAt?: string | null
+  unpublishedReason?: string
   items: PreparedPackItem[]
 }
 

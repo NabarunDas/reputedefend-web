@@ -35,3 +35,6 @@ input, textarea { display: block; width: 100%; padding: .7rem .75rem; border: 1p
 form button { margin: 1rem 0; }
 .notice-danger { background: #f4d4d1; color: var(--danger); border-left: 3px solid var(--danger); padding: .9rem 1rem; margin: 0 0 1rem; }
 .button-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+button.secondary { background: transparent; color: var(--green-dark); border: 1px solid var(--green-dark); }
+.document-list { padding-left: 1.2rem; }
+.document-list li { margin: 1rem 0; }

@@ -1,8 +1,10 @@
-# Customer actions — Step 9A
+# Customer actions — Step 9A and 9B1
 
-Step 9A is the secure customer-action foundation. It is not a customer dashboard and not Step 9B (evidence upload / pack viewing).
+Step 9A is the secure customer-action foundation. Step 9B1 adds case-scoped published-pack viewing. It is not a customer dashboard and not Step 9B2 (customer evidence upload).
 
-Step 8 is complete, with live acceptance confirmed on 18 September 2026. Step 9A is merged. The migration `20260928094817_admin_customer_actions_v1.sql` is applied to `profilerelaunch-dev` as version `20260928094817`, matching the repository filename. RLS, direct grants, RPC execution and trigger verification completed. Supabase advisors were run. Live customer-action browser acceptance is still pending. Step 9B is pending. Do not mark all of Step 9 complete.
+Step 8 is complete, with live acceptance confirmed on 18 September 2026. Step 9A is merged. The live Service Agreement acceptance flow has succeeded. Case-management permission live acceptance is still pending unless separately confirmed. The 9A migration `20260928094817_admin_customer_actions_v1.sql` is applied to `profilerelaunch-dev` as version `20260928094817`.
+
+Step 9B1 source implementation adds `CASE_ACCESS` and explicit pack publication. The additive migration is `20260928172000_customer_case_pack_access_v1.sql`. It is not remotely applied. The customer AWS read role is not configured. Step 9B2 remains pending. Do not mark all of Step 9 complete. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
 Current Supabase advisor baseline still contains historical security findings for `public.rls_auto_enable()`, `public.set_case_public_ref`, and leaked-password protection. Step 9A introduced missing-FK-index performance recommendations; those are not security or correctness blockers and are deferred to the performance/production-readiness cleanup.
 
@@ -23,7 +25,7 @@ These are not interchangeable:
 
 ## Action link
 
-Admin issues `/action/{id}#t={secret}` against a valid absolute `CUSTOMER_ORIGIN`. Link issuance (`create_agreement_action`, `create_revocation_action`) fails closed with a generic 503 if `CUSTOMER_ORIGIN` is missing or invalid, and does not generate a raw secret or call the database RPC. There is no relative `/action/{id}` fallback. Other Admin operations do not require `CUSTOMER_ORIGIN`. The fragment is not sent in the HTTP request. The customer app exchanges `actionId` + secret for an opaque pending cookie, then removes the fragment with `history.replaceState`. Raw secrets are never stored: the database keeps SHA-256 only. A lost copy-link response cannot be reconstructed; Admin must revoke and issue a new action.
+Admin issues `/action/{id}#t={secret}` against a valid absolute `CUSTOMER_ORIGIN`. Link issuance (`create_agreement_action`, `create_revocation_action`, `create_case_access_action`) fails closed with a generic 503 if `CUSTOMER_ORIGIN` is missing or invalid, and does not generate a raw secret or call the database RPC. There is no relative `/action/{id}` fallback. Other Admin operations do not require `CUSTOMER_ORIGIN`. The fragment is not sent in the HTTP request. The customer app exchanges `actionId` + secret for an opaque pending cookie, then removes the fragment with `history.replaceState`. Raw secrets are never stored: the database keeps SHA-256 only. A lost copy-link response cannot be reconstructed; Admin must revoke and issue a new action.
 
 Secrets use 256 bits of cryptographic randomness. They must not appear in SQL, receipts, events, audit, logs, analytics, error trackers or page metadata.
 
@@ -55,11 +57,21 @@ Manager-access current state may be overwritten on re-verification, but append-o
 
 ## Apps
 
-- Admin: `/cases/[id]` panel “Agreements & permissions”
-- Customer: `apps/customer` routes `/action/[actionId]` plus `/api/action/exchange|otp|verify|command`
+- Admin: `/cases/[id]` panel “Agreements & permissions”, including **Issue customer case-access link**
+- Customer: `apps/customer` routes `/action/[actionId]`, `/case`, plus `/api/action/exchange|otp|verify|command` and `/api/case/evidence/access`
 
-Environment for the customer app: `CUSTOMER_AUTH_ENABLED`, `CUSTOMER_ORIGIN`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. The secret key is server-only. Do not enable public signup. Do not change AWS or existing Vercel projects in this step. Deploying the customer app later needs a new Vercel project, `CUSTOMER_ORIGIN`, and Admin `CUSTOMER_ORIGIN` so copy-link URLs are absolute.
+Environment for the customer app: `CUSTOMER_AUTH_ENABLED`, `CUSTOMER_ORIGIN`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Production file access also needs `AWS_REGION`, `AWS_EVIDENCE_BUCKET`, and `AWS_CUSTOMER_EVIDENCE_ROLE_ARN` (read-only GetObject / GetObjectTagging). The secret key is server-only. Do not enable public signup. Do not put static AWS keys in Vercel. The actual customer IAM role is configured later, after review.
 
-## Out of scope (Step 9B+)
+## Step 9B1 case access and published packs
 
-Customer evidence upload, pack View/Download, task responses, payments, Stripe, Resend/outgoing agreement email, quotes, and a full dashboard.
+`CASE_ACCESS` is a temporary access capability, not an agreement. It stays `OPEN` after OTP until expiry, Admin revoke, trusted-fact invalidation, or the case becomes ineligible. Every new session still requires OTP. At most one `OPEN` `CASE_ACCESS` action exists per case. The action must not reference `agreement_version_id` or `authorization_id`.
+
+After OTP, the customer is sent to `/case`. That route and `POST /api/case/evidence/access` derive scope only from the 15-minute `__Host-pr-action` session. Browser payloads may contain only `operation` (`view` / `download`) and `versionId`.
+
+Pack publication is a separate axis from `DRAFT` / `APPROVED` / `STALE` / `SUPERSEDED`. Admin publishes through `admin_prepared_pack_command_v1` (`publish` / `unpublish`) with optimistic `record_version`. Only an `APPROVED` pack whose every item is uploaded, clean, valid, accepted and `customer_visible=true` can be published. STALE, SUPERSEDED, or visibility/eligibility loss ends publication immediately and does not auto-republish.
+
+Customer RPCs `customer_case_pack_v1`, `customer_case_pack_version_v1` and `customer_case_pack_access_v1` re-check the session and live publication facts. Storage coordinates never appear in the page projection. Presigned GET expiry is at most 60 seconds and is never persisted. Actor on file-access events is the customer Auth user with source `CUSTOMER_CASE_ACCESS`.
+
+## Out of scope (Step 9B2+)
+
+Customer evidence upload, evidence-request response, presigned POST, PutObject, replacement upload, customer scan refresh, customer acceptance/visibility, deletion, task responses, payments, Stripe, Resend/outgoing email, quotes, and a full dashboard.

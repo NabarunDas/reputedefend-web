@@ -19,7 +19,7 @@ function CopyOnceLink({ url }: { url: string }) {
   </p>
 }
 
-function IssueActionForm({ caseId, operation, extra, allowPermission = false }: { caseId: string; operation: "create_agreement_action" | "create_revocation_action"; extra?: Record<string, string>; allowPermission?: boolean }) {
+function IssueActionForm({ caseId, operation, extra, allowPermission = false }: { caseId: string; operation: "create_agreement_action" | "create_revocation_action" | "create_case_access_action"; extra?: Record<string, string>; allowPermission?: boolean }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [link, setLink] = useState<string | null>(null)
   const commandKey = useRef<string | null>(null)
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -33,7 +33,8 @@ function IssueActionForm({ caseId, operation, extra, allowPermission = false }: 
       const payload = operation === "create_agreement_action" ? {
         operation, caseId, kind: form.get("kind"), title: form.get("title"), bodyText: form.get("bodyText"),
         scopeText: form.get("scopeText"), expiresAt,
-      } : { operation, caseId, authorizationId: extra?.authorizationId, expiresAt }
+      } : operation === "create_case_access_action" ? { operation, caseId, expiresAt }
+        : { operation, caseId, authorizationId: extra?.authorizationId, expiresAt }
       const response = await fetch(authEndpoint, {
         method: "POST", headers: { "content-type": "application/json", "idempotency-key": commandKey.current },
         body: JSON.stringify(payload),
@@ -61,7 +62,7 @@ function IssueActionForm({ caseId, operation, extra, allowPermission = false }: 
       </>}
       <label>Link expiry<input name="expiresAt" type="datetime-local" required defaultValue={defaultExpiryIso().slice(0, 16)} /></label>
       <p className="muted">Internal security control. Maximum 7 days. Default 48 hours. This is not a customer service promise.</p>
-      <button type="submit">{busy ? "Saving…" : operation === "create_agreement_action" ? "Create customer action" : "Issue revocation action"}</button>
+      <button type="submit">{busy ? "Saving…" : operation === "create_agreement_action" ? "Create customer action" : operation === "create_case_access_action" ? "Issue customer case-access link" : "Issue revocation action"}</button>
     </fieldset>
     <p role="status">{message}</p>
     {link && <CopyOnceLink url={link} />}
@@ -115,6 +116,12 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
     </article>)}
     <details><summary>{managed ? "Create service agreement or case-management permission action" : "Create service agreement action"}</summary>
       <IssueActionForm caseId={caseId} operation="create_agreement_action" allowPermission={managed} />
+    </details>
+    <details><summary>Issue customer case-access link</summary>
+      <p>The customer can view only an explicitly published approved pack after email OTP. This is not a long-lived login and does not allow uploads.</p>
+      {data.actions.some(action => action.status === "OPEN" && action.kind === "CASE_ACCESS")
+        ? <p className="muted">An open case-access action already exists. Revoke it below before issuing a new link.</p>
+        : <IssueActionForm caseId={caseId} operation="create_case_access_action" />}
     </details>
     {data.actions.filter(action => action.status === "OPEN").map(action => <details key={action.id}>
       <summary>Revoke open action {action.id.slice(0, 8)} · {action.kind}</summary>

@@ -8,7 +8,7 @@ import {
   type EvidenceRequest, type EvidenceVersionRow,
 } from "@/lib/evidence/model"
 import {
-  PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_STALE_WARNING, packStatusTone,
+  PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_PUBLISH_CONFIRMATION, PACK_PUBLISH_WARNING, PACK_STALE_WARNING, packStatusTone,
   type EligiblePackVersion, type PreparedPack, type PreparedPackCase,
 } from "@/lib/packs/model"
 
@@ -114,7 +114,7 @@ export function VisibilityForm({ caseId, version }: { caseId: string; version: E
       operation: "set_visibility", caseId, versionId: version.id, recordVersion: version.recordVersion,
       note: form.get("note"), customerVisible: form.get("customerVisible") === "true",
     })}>
-      <p>Customer visibility is recorded for future customer access. No customer portal currently exposes this file.</p>
+      <p>Customer visibility is required before a pack containing this file can be published. It does not publish the file by itself.</p>
       <label>Future customer visibility
         <select name="customerVisible" defaultValue={version.customerVisible ? "true" : "false"}>
           <option value="false">Not visible</option>
@@ -278,6 +278,35 @@ export function ApprovePackForm({ caseId, pack }: { caseId: string; pack: Prepar
   </details>
 }
 
+function packPublishable(pack: PreparedPack) {
+  return pack.status === "APPROVED" && pack.items.length > 0 && pack.items.every(item => item.customerVisible !== false)
+}
+
+export function PublishPackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
+  return <details><summary>Publish pack for customer case access</summary>
+    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Publish pack" payload={form => ({
+      operation: "publish", caseId, packId: pack.id, recordVersion: pack.recordVersion, note: form.get("note"), confirmed: form.get("confirmed") === "true",
+    })}>
+      <p>{PACK_PUBLISH_WARNING}</p>
+      {!packPublishable(pack) && <p className="notice-danger">Every included version must be accepted, clean, valid and customer-visible before publication.</p>}
+      <Reason name="note" label="Publication note" maxLength={2000} />
+      <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />{PACK_PUBLISH_CONFIRMATION}</label>
+    </CommandForm>
+  </details>
+}
+
+export function UnpublishPackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
+  return <details><summary>Unpublish pack</summary>
+    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Unpublish pack" payload={form => ({
+      operation: "unpublish", caseId, packId: pack.id, recordVersion: pack.recordVersion, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
+    })}>
+      <p>The customer will lose access immediately. Publishing again later requires a new explicit publish.</p>
+      <Reason name="reason" label="Reason for unpublishing" maxLength={2000} />
+      <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm this pack should no longer be published.</label>
+    </CommandForm>
+  </details>
+}
+
 export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: PreparedPackCase }) {
   const draft = packs.packs.find(pack => pack.status === "DRAFT")
   const inDraft = new Set(draft?.items.map(item => item.versionId) ?? [])
@@ -292,7 +321,9 @@ export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: Pr
       {pack.status === "STALE" && <p className="notice-danger">{PACK_STALE_WARNING}</p>}
       {pack.status === "SUPERSEDED" && <p className="muted">This pack was replaced by a later approved pack. It is read-only history.</p>}
       {pack.status === "APPROVED" && <p className="muted">This pack is a read-only snapshot of the approved evidence versions. It does not confirm payment, permission or submission to Google.</p>}
+      {pack.published && <p className="badge-row"><Badge tone="success">Published for customer case access</Badge></p>}
       {pack.approvalNote && <p className="preserve-lines">Approval note: {pack.approvalNote}</p>}
+      {pack.publicationNote && <p className="preserve-lines">Publication note: {pack.publicationNote}</p>}
       {!pack.items.length && <p className="muted">This draft is empty. Add accepted evidence below.</p>}
       <ol className="task-list">{pack.items.map((item, index) => <li key={item.id}>
         <strong>{item.documentTitle}</strong> · {item.originalFilename} · {fileTypeLabel(item.contentType)} · {formatBytes(item.sizeBytes)} · version {item.versionNumber}
@@ -304,6 +335,8 @@ export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: Pr
         <ul className="task-list">{eligible.map(version => <EligibleVersionRow key={version.versionId} caseId={caseId} pack={pack} version={version} />)}</ul>
         {pack.items.length > 0 && <ApprovePackForm caseId={caseId} pack={pack} />}
       </>}
+      {pack.status === "APPROVED" && !pack.published && <PublishPackForm caseId={caseId} pack={pack} />}
+      {pack.published && <UnpublishPackForm caseId={caseId} pack={pack} />}
     </article>)}
     {!draft && <CreateDraftPackForm caseId={caseId} />}
   </section>

@@ -119,4 +119,21 @@ describe("authorization commands", () => {
     expect(revoked.status).toBe(200)
     expect(mocks.newToken).not.toHaveBeenCalled()
   })
+  it("issues a case-access link once and rejects invented email or case fields", async () => {
+    expect(authorizationArgs("create_case_access_action", {
+      operation: "create_case_access_action", caseId, expiresAt: createBody.expiresAt, email: "attacker@example.com",
+    })).toBeNull()
+    mocks.rpc.mockResolvedValue({ status: "success", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", replay: false, expiresAt: createBody.expiresAt })
+    const response = await authorizationCommand(req({
+      operation: "create_case_access_action", caseId, expiresAt: createBody.expiresAt,
+    }))
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload.actionUrl).toMatch(/^https:\/\/customer\.profilerelaunch\.com\/action\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#t=/)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_authorization_command_v1", expect.objectContaining({
+      p_operation: "create_case_access_action",
+      p_data: expect.objectContaining({ secretHash: expect.stringMatching(/^hash-/), expiresAt: createBody.expiresAt }),
+    }))
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1].p_data)).not.toMatch(/email|caseId/)
+  })
 })

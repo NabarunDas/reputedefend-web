@@ -25,7 +25,7 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Customer production server did not become ready")
-  for (const path of ["/", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command", "/robots.txt"]) {
+  for (const path of ["/", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/case", "/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command", "/api/case/evidence/access", "/robots.txt"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
@@ -47,6 +47,8 @@ try {
       assert.equal(response.status, 401)
       const payload = await response.json()
       assert.match(payload.message, /unavailable or has expired/)
+    } else if (path === "/case") {
+      assert.equal(response.status, 303)
     } else {
       assert.equal(response.status, 200)
       const html = await response.text()

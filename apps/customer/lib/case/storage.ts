@@ -1,0 +1,90 @@
+import "server-only"
+import { GetObjectCommand, GetObjectTaggingCommand, S3Client } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider"
+import { customerEvidenceAwsConfig } from "./config"
+import { GUARDDUTY_TAG, READ_EXPIRES_SECONDS, mapGuardDutyStatus, type ScanStatus } from "./model"
+
+export type ObjectProbe = { exists: boolean; scan: ScanStatus }
+export type ReadDisposition = "inline" | "attachment"
+export type CustomerEvidenceStorage = {
+  bucket: string
+  probeObject(key: string): Promise<ObjectProbe>
+  createReadUrl(input: { key: string; contentType: string; filename: string; disposition: ReadDisposition }): Promise<string>
+}
+
+const missingObjectCodes = new Set(["NoSuchKey", "NotFound"])
+
+function s3ErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const value = error as { name?: unknown; Code?: unknown; code?: unknown }
+  for (const field of ["name", "Code", "code"] as const) {
+    if (typeof value[field] === "string" && value[field] && value[field] !== "Error") return value[field]
+  }
+  return undefined
+}
+
+export function isMissingS3Object(error: unknown): boolean {
+  const code = s3ErrorCode(error)
+  return !!code && missingObjectCodes.has(code)
+}
+
+export function probeFromTaggingError(error: unknown): ObjectProbe {
+  if (isMissingS3Object(error)) return { exists: false, scan: "PENDING" }
+  throw error
+}
+
+export function contentDisposition(filename: string, disposition: ReadDisposition): string {
+  if (disposition !== "inline" && disposition !== "attachment") throw new Error("invalid disposition")
+  const unsafe = /[\u0000-\u001f\u007f]/.test(filename)
+  const cleaned = unsafe ? "download" : (filename.replace(/["\\;]/g, "_").trim() || "download")
+  const ascii = cleaned.replace(/[^\x20-\x7E]/g, "_").slice(0, 150) || "download"
+  const encoded = encodeURIComponent(cleaned)
+  const header = `${disposition}; filename="${ascii}"; filename*=UTF-8''${encoded}`
+  if (/[\r\n\u0000-\u001f\u007f]/.test(header)) return `${disposition}; filename="download"`
+  return header
+}
+
+export function signedUrlExpiresSeconds(url: string): number | null {
+  try {
+    const value = new URL(url).searchParams.get("X-Amz-Expires")
+    if (!value || !/^\d+$/.test(value)) return null
+    return Number(value)
+  } catch {
+    return null
+  }
+}
+
+export function isAllowedReadExpiry(expires: number | null): boolean {
+  return expires !== null && Number.isInteger(expires) && expires >= 1 && expires <= READ_EXPIRES_SECONDS
+}
+
+export function createCustomerEvidenceStorage(): CustomerEvidenceStorage | null {
+  const config = customerEvidenceAwsConfig()
+  if (!config) return null
+  const client = new S3Client({
+    region: config.region,
+    credentials: awsCredentialsProvider({ roleArn: config.roleArn, clientConfig: { region: config.region } }),
+  })
+  return {
+    bucket: config.bucket,
+    async probeObject(key) {
+      try {
+        const result = await client.send(new GetObjectTaggingCommand({ Bucket: config.bucket, Key: key }))
+        const tag = result.TagSet?.find(item => item.Key === GUARDDUTY_TAG)?.Value
+        return { exists: true, scan: mapGuardDutyStatus(tag) }
+      } catch (error) {
+        return probeFromTaggingError(error)
+      }
+    },
+    async createReadUrl({ key, contentType, filename, disposition }) {
+      const command = new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        ResponseContentType: contentType,
+        ResponseContentDisposition: contentDisposition(filename, disposition),
+      })
+      return getSignedUrl(client, command, { expiresIn: READ_EXPIRES_SECONDS })
+    },
+  }
+}

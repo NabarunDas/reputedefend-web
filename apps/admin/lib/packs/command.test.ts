@@ -75,6 +75,19 @@ describe("prepared pack commands", () => {
       p_operation: "approve", p_data: { note: "This exact evidence selection is the prepared pack.", confirmed: true },
     }))
   })
+  it("requires confirmation and a publication note to publish or unpublish", async () => {
+    expect(packArgs("publish", { operation: "publish", caseId, packId, recordVersion: 3, note: "too short", confirmed: true })).toBeNull()
+    expect(packArgs("unpublish", { operation: "unpublish", caseId, packId, recordVersion: 3, reason: "Withdraw this pack from customer case access.", confirmed: false })).toBeNull()
+    mocks.rpc.mockResolvedValue({ status: "success", id: packId, packStatus: "APPROVED", recordVersion: 4, published: true })
+    const response = await packCommand(req({
+      operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ message: expect.stringMatching(/published for customer case access/) })
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_prepared_pack_command_v1", expect.objectContaining({
+      p_operation: "publish", p_data: { note: "Publish this pack for the customer case-access view.", confirmed: true },
+    }))
+  })
   it("maps denied and conflict without leaking storage", async () => {
     mocks.rpc.mockResolvedValue({ status: "denied" })
     const denied = await packCommand(req({ operation: "add_item", caseId, packId, recordVersion: 1, versionId }))

@@ -24,7 +24,8 @@ type RpcResult = {
   version?: number
   stage?: string
   missing?: boolean
-  packs?: Array<{ id: string; status: string; recordVersion: number; items: Array<{ versionId: string; position: number }> }>
+  packs?: Array<{ id: string; status: string; recordVersion: number; published?: boolean; items: Array<{ versionId: string; position: number; customerVisible?: boolean }> }>
+  published?: boolean
 }
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
   return (await db.query<{ value: RpcResult | null }>(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(",")}) as value`, args)).rows[0].value
@@ -33,7 +34,7 @@ async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null
 beforeAll(async () => {
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const dir = new URL("../../../../supabase/migrations/", import.meta.url), read = (name: string) => readFileSync(new URL(name, dir), "utf8")
-  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)';"))
+  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)'; CREATE FUNCTION extensions.digest(data bytea, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT decode(md5(encode(data,''hex'')) || md5(coalesce(algo,''sha256'') || encode(data,''hex'')),''hex'')'; CREATE FUNCTION extensions.digest(data text, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT extensions.digest(convert_to(data,''UTF8''), algo)';"))
   for (const name of [
     "20260916000000_relaunch_guard_data_foundation_v1.sql",
     "20260917080553_single_admin_auth_v1.sql",
@@ -44,6 +45,8 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_admin_evidence_foundation_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_admin_evidence_workspace_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_admin_prepared_packs_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_admin_customer_actions_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_customer_case_pack_access_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 30000)
 afterAll(async () => { await db.close() })
@@ -51,10 +54,18 @@ beforeEach(async () => {
   await db.exec(`alter table public.admin_audit_events disable trigger admin_audit_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
     alter table public.case_prepared_pack_events disable trigger case_prepared_pack_events_immutable;
-    truncate public.case_prepared_pack_events,public.case_prepared_pack_items,public.case_prepared_packs,admin_private.pack_command_receipts,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,admin_private.evidence_command_receipts,public.case_tasks,public.case_work_events,public.case_submissions,public.case_submission_results,admin_private.case_command_receipts,public.enquiries,public.enquiry_events,public.admin_audit_events,public.admin_auth_events,public.admin_sessions,public.admin_identity,public.customers,public.businesses,public.locations,auth.users cascade;
+    alter table public.customer_action_events disable trigger customer_action_events_immutable;
+    alter table public.authorization_events disable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
+    alter table public.agreement_versions disable trigger agreement_versions_immutable;
+    truncate public.case_prepared_pack_events,public.case_prepared_pack_items,public.case_prepared_packs,admin_private.pack_command_receipts,admin_private.customer_pack_access_receipts,public.customer_action_events,public.customer_actions,public.authorization_events,public.authorization_records,public.agreement_versions,public.location_manager_access_events,public.location_manager_access,admin_private.customer_action_sessions,admin_private.customer_action_challenges,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,admin_private.evidence_command_receipts,public.case_tasks,public.case_work_events,public.case_submissions,public.case_submission_results,admin_private.case_command_receipts,public.enquiries,public.enquiry_events,public.admin_audit_events,public.admin_auth_events,public.admin_sessions,public.admin_identity,public.customers,public.businesses,public.locations,auth.users cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;
     alter table public.case_prepared_pack_events enable trigger case_prepared_pack_events_immutable;
+    alter table public.customer_action_events enable trigger customer_action_events_immutable;
+    alter table public.authorization_events enable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
+    alter table public.agreement_versions enable trigger agreement_versions_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into public.admin_identity(singleton,auth_user_id,enabled) values(true,'${uid}',true);
     insert into public.admin_sessions(token_hash,auth_user_id) values('${token}','${uid}');
@@ -92,12 +103,13 @@ const caseCmd = async (operation: string, data: Record<string, unknown>, version
 describe("prepared pack SQL", () => {
   it("sorts evidence and customer-action migrations to match profilerelaunch-dev history", () => {
     const dir = new URL("../../../../supabase/migrations/", import.meta.url)
-    const names = readdirSync(dir).filter(name => /admin_evidence_foundation_v1|admin_evidence_workspace_v1|admin_prepared_packs_v1|admin_customer_actions_v1/.test(name)).sort()
+    const names = readdirSync(dir).filter(name => /admin_evidence_foundation_v1|admin_evidence_workspace_v1|admin_prepared_packs_v1|admin_customer_actions_v1|customer_case_pack_access_v1/.test(name)).sort()
     expect(names).toEqual([
       "20260918143424_admin_evidence_foundation_v1.sql",
       "20260918153627_admin_evidence_workspace_v1.sql",
       "20260918163150_admin_prepared_packs_v1.sql",
       "20260928094817_admin_customer_actions_v1.sql",
+      "20260928172000_customer_case_pack_access_v1.sql",
     ])
   })
 
@@ -325,5 +337,81 @@ describe("prepared pack SQL", () => {
     }
     await packCmd("create")
     await expect(db.query("update public.case_prepared_pack_events set event='PACK_STALE'")).rejects.toThrow(/append-only/i)
+  })
+
+  async function visibleAccepted(filename = "invoice.pdf") {
+    const created = await accepted(filename)
+    const meta = await rpc("admin_evidence_version_v1", [token, caseId, created.versionId])
+    expect(await rpc("admin_evidence_review_v1", [token, key(), caseId, created.versionId, meta?.recordVersion, "set_visibility", "Customer may see this accepted file.", true])).toMatchObject({ status: "success" })
+    return created
+  }
+
+  async function approvedPack(filename = "invoice.pdf") {
+    const created = await visibleAccepted(filename)
+    const pack = await packCmd("create")
+    await packCmd("add_item", { versionId: created.versionId }, pack.id, pack.recordVersion)
+    const approved = await packCmd("approve", { note: packNote, confirmed: true }, pack.id, 2)
+    expect(approved).toMatchObject({ status: "success", packStatus: "APPROVED" })
+    return { created, pack: { ...approved, id: approved.id!, recordVersion: approved.recordVersion! } }
+  }
+
+  it("denies publish for an approved pack with zero items", async () => {
+    const empty = await db.query<{ id: string; record_version: number }>(
+      "insert into public.case_prepared_packs(case_id, pack_number, status, created_by, approved_by, approved_at, approval_note) values($1, 20, 'APPROVED', $2, $2, now(), $3) returning id, record_version",
+      [caseId, uid, packNote],
+    )
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, empty.rows[0].id, empty.rows[0].record_version)).status).toBe("denied")
+  })
+
+  it("publishes only an approved visible pack and stays unpublished after eligibility returns", async () => {
+    const hidden = await accepted("hidden.pdf")
+    const draft = await packCmd("create")
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, draft.id, draft.recordVersion)).status).toBe("denied")
+    await packCmd("add_item", { versionId: hidden.versionId }, draft.id, draft.recordVersion)
+    const hiddenApproved = await packCmd("approve", { note: packNote, confirmed: true }, draft.id, 2)
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, hiddenApproved.id, hiddenApproved.recordVersion)).status).toBe("denied")
+    const first = await approvedPack("one.pdf")
+    expect((await packCmd("publish", { note: "short", confirmed: true }, first.pack.id, first.pack.recordVersion)).status).toBe("invalid")
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: false }, first.pack.id, first.pack.recordVersion)).status).toBe("invalid")
+    const request = key()
+    const published = await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, first.pack.id, first.pack.recordVersion, request)
+    expect(published).toMatchObject({ status: "success", published: true })
+    expect(await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, first.pack.id, first.pack.recordVersion, request)).toEqual(published)
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, first.pack.id, (published.recordVersion ?? 0) + 1)).status).toBe("conflict")
+    const listed = await rpc("admin_prepared_pack_case_v1", [token, caseId])
+    expect(listed?.packs?.find(pack => pack.id === first.pack.id)?.published).toBe(true)
+    expect(JSON.stringify(listed)).not.toMatch(/storageKey|storageBucket|arn:aws|presigned/)
+    const unpublished = await packCmd("unpublish", { reason: "Withdraw this pack from customer case access.", confirmed: true }, first.pack.id, published.recordVersion)
+    expect(unpublished).toMatchObject({ status: "success", published: false })
+    const afterHide = await rpc("admin_evidence_version_v1", [token, caseId, first.created.versionId])
+    await rpc("admin_evidence_review_v1", [token, key(), caseId, first.created.versionId, afterHide?.recordVersion, "set_visibility", "Turn customer visibility off again.", false])
+    expect((await rpc("admin_prepared_pack_case_v1", [token, caseId]))?.packs?.find(pack => pack.id === first.pack.id)?.published).toBe(false)
+    const restored = await rpc("admin_evidence_version_v1", [token, caseId, first.created.versionId])
+    await rpc("admin_evidence_review_v1", [token, key(), caseId, first.created.versionId, restored?.recordVersion, "set_visibility", "Restore customer visibility after unpublish.", true])
+    const afterRestore = await rpc("admin_prepared_pack_case_v1", [token, caseId])
+    expect(afterRestore?.packs?.find(pack => pack.id === first.pack.id)?.published).toBe(false)
+    const events = await db.query<{ event: string }>("select event from public.case_prepared_pack_events where pack_id=$1 order by id", [first.pack.id])
+    expect(events.rows.map(row => row.event)).toEqual(["PACK_CREATED", "ITEM_ADDED", "PACK_APPROVED", "PACK_PUBLISHED", "PACK_UNPUBLISHED"])
+  })
+
+  it("ends publication automatically when a pack becomes stale or superseded", async () => {
+    const first = await approvedPack("keep.pdf")
+    expect(await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, first.pack.id, first.pack.recordVersion)).toMatchObject({ published: true })
+    const includedMeta = await rpc("admin_evidence_version_v1", [token, caseId, first.created.versionId])
+    await rpc("admin_evidence_review_v1", [token, key(), caseId, first.created.versionId, includedMeta?.recordVersion, "reject", "This version should no longer be in a pack.", null])
+    const stale = await rpc("admin_prepared_pack_case_v1", [token, caseId])
+    expect(stale?.packs?.find(pack => pack.id === first.pack.id)).toMatchObject({ status: "STALE", published: false })
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, first.pack.id, stale?.packs?.find(pack => pack.id === first.pack.id)?.recordVersion)).status).toBe("denied")
+    const replacement = await approvedPack("next.pdf")
+    const published = await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, replacement.pack.id, replacement.pack.recordVersion)
+    expect(published).toMatchObject({ published: true })
+    const later = await visibleAccepted("later.pdf")
+    const nextDraft = await packCmd("create")
+    await packCmd("add_item", { versionId: later.versionId }, nextDraft.id, nextDraft.recordVersion)
+    expect(await packCmd("approve", { note: packNote, confirmed: true }, nextDraft.id, 2)).toMatchObject({ packStatus: "APPROVED" })
+    const listed = await rpc("admin_prepared_pack_case_v1", [token, caseId])
+    expect(listed?.packs?.find(pack => pack.id === replacement.pack.id)).toMatchObject({ status: "SUPERSEDED", published: false })
+    expect(listed?.packs?.find(pack => pack.id === nextDraft.id)?.published).toBeFalsy()
+    expect((await packCmd("publish", { note: "Publish this pack for the customer case-access view.", confirmed: true }, replacement.pack.id, listed?.packs?.find(pack => pack.id === replacement.pack.id)?.recordVersion)).status).toBe("denied")
   })
 })

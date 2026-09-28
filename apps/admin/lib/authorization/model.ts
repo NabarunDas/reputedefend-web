@@ -2,6 +2,7 @@ export const agreementKinds = ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"
 export type AgreementKind = (typeof agreementKinds)[number]
 export const authorizationOperations = [
   "create_agreement_action", "revoke_action", "create_revocation_action", "admin_revoke_authorization",
+  "create_case_access_action",
 ] as const
 export type AuthorizationOperation = (typeof authorizationOperations)[number]
 export const managerOperations = ["verify", "revoke"] as const

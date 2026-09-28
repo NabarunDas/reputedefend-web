@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ActionClient } from "./action-client"
 
+const router = vi.hoisted(() => ({ push: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => router }))
+
 const fetchMock = vi.fn()
 const actionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const session = {
@@ -25,6 +28,7 @@ const session = {
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
+  router.push.mockReset()
   window.localStorage.clear()
   window.sessionStorage.clear()
 })
@@ -105,6 +109,22 @@ describe("customer action page", () => {
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
     expect(screen.queryByLabelText("Six-digit code")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
+  })
+
+  it("redirects CASE_ACCESS verification to the case documents page", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: { ...session, kind: "CASE_ACCESS", agreement: null },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/case"))
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
   })
 

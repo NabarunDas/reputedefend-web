@@ -5,7 +5,9 @@ export type PackCreateArgs = { caseId: string }
 export type PackItemArgs = { caseId: string; packId: string; recordVersion: number; versionId: string }
 export type PackMoveArgs = PackItemArgs & { direction: "up" | "down" }
 export type PackApproveArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
-export type PackArgs = PackCreateArgs | PackItemArgs | PackMoveArgs | PackApproveArgs
+export type PackPublishArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
+export type PackUnpublishArgs = { caseId: string; packId: string; recordVersion: number; reason: string; confirmed: true }
+export type PackArgs = PackCreateArgs | PackItemArgs | PackMoveArgs | PackApproveArgs | PackPublishArgs | PackUnpublishArgs
 
 function asRecord(raw: unknown): Record<string, unknown> | null {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null
@@ -27,11 +29,17 @@ export function packArgs(operation: PackOperation, raw: unknown): PackArgs | nul
     return { caseId: body.caseId }
   }
   if (!isUuid(body.caseId) || !isUuid(body.packId) || !Number.isSafeInteger(body.recordVersion) || (body.recordVersion as number) < 1) return null
-  if (operation === "approve") {
+  if (operation === "approve" || operation === "publish") {
     if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "note", "confirmed"])) return null
     const supporting = note(body.note)
     if (!supporting || body.confirmed !== true) return null
     return { caseId: body.caseId, packId: body.packId, recordVersion: body.recordVersion as number, note: supporting, confirmed: true }
+  }
+  if (operation === "unpublish") {
+    if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "reason", "confirmed"])) return null
+    const reason = note(body.reason)
+    if (!reason || body.confirmed !== true) return null
+    return { caseId: body.caseId, packId: body.packId, recordVersion: body.recordVersion as number, reason, confirmed: true }
   }
   if (!isUuid(body.versionId)) return null
   if (operation === "move_item") {
@@ -47,7 +55,13 @@ export function isPackCreateArgs(args: PackArgs): args is PackCreateArgs {
   return !("packId" in args)
 }
 export function isPackApproveArgs(args: PackArgs): args is PackApproveArgs {
-  return "confirmed" in args
+  return "confirmed" in args && "note" in args
+}
+export function isPackPublishArgs(args: PackArgs): args is PackPublishArgs {
+  return "confirmed" in args && "note" in args
+}
+export function isPackUnpublishArgs(args: PackArgs): args is PackUnpublishArgs {
+  return "confirmed" in args && "reason" in args
 }
 export function isPackMoveArgs(args: PackArgs): args is PackMoveArgs {
   return "direction" in args

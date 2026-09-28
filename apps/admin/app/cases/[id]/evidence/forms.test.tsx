@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { AccessButtons, ApprovePackForm, CreateDraftPackForm, CreateRequestForm, PreparedPackPanel, ReviewForms, UploadEvidenceForm, VisibilityForm } from "./forms"
-import { PACK_APPROVAL_WARNING, PACK_CONFIRMATION, type PreparedPack } from "@/lib/packs/model"
+import { PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_PUBLISH_CONFIRMATION, PACK_PUBLISH_WARNING, type PreparedPack } from "@/lib/packs/model"
 import type { EvidenceVersionRow } from "@/lib/evidence/model"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
@@ -76,7 +76,7 @@ describe("evidence forms", () => {
     fireEvent.click(screen.getByText("Reject"))
     expect((screen.getByRole("checkbox", { name: /reject a previously accepted version/ }) as HTMLInputElement).required).toBe(true)
     fireEvent.click(screen.getByText("Customer visibility"))
-    expect(screen.getByText(/No customer portal currently exposes this file/)).toBeTruthy()
+    expect(screen.getByText(/required before a pack containing this file can be published/)).toBeTruthy()
     expect((screen.getByRole("checkbox", { name: /visibility change/ }) as HTMLInputElement).required).toBe(true)
   })
   it("opens a blank tab synchronously and navigates it after a successful View", async () => {
@@ -154,5 +154,29 @@ describe("evidence forms", () => {
     expect(screen.getByText("Approval note")).toBeTruthy()
     expect((screen.getByRole("checkbox", { name: PACK_CONFIRMATION }) as HTMLInputElement).required).toBe(true)
     expect(screen.queryByRole("button", { name: /submit to google/i })).toBeNull()
+  })
+  it("offers publish and unpublish without changing workflow copy", () => {
+    const caseId = "55555555-5555-4555-8555-555555555555"
+    const item = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", documentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      versionId: version.id, position: 1, documentTitle: "Supporting invoice", originalFilename: "invoice.pdf",
+      contentType: "application/pdf", sizeBytes: 1024, versionNumber: 1, customerVisible: true,
+    }
+    const approved: PreparedPack = {
+      id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "APPROVED",
+      approvalNote: "This exact evidence selection is the prepared pack for internal use.",
+      createdAt: "2026-09-18T10:00:00.000Z", approvedAt: "2026-09-18T11:00:00.000Z", recordVersion: 3,
+      published: false, items: [item],
+    }
+    render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [approved], eligible: [] }} />)
+    fireEvent.click(screen.getByText("Publish pack for customer case access"))
+    expect(screen.getByText(PACK_PUBLISH_WARNING)).toBeTruthy()
+    expect((screen.getByRole("checkbox", { name: PACK_PUBLISH_CONFIRMATION }) as HTMLInputElement).required).toBe(true)
+    expect(document.body.textContent).not.toMatch(/Submit to Google|Mark as paid|customer upload/i)
+    cleanup()
+    render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [{ ...approved, published: true, publicationNote: "Publish this pack for the customer case-access view." }], eligible: [] }} />)
+    expect(screen.getByText("Published for customer case access")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Unpublish pack" })).toBeTruthy()
+    expect(screen.queryByText("Publish pack for customer case access")).toBeNull()
   })
 })

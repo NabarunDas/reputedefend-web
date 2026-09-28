@@ -17,8 +17,9 @@ function note(value: unknown, min = 10, max = 2000): string | null {
 export type CreateAgreementArgs = { caseId: string; kind: AgreementKind; title: string; bodyText: string; scopeText: string; expiresAt: string }
 export type RevokeActionArgs = { caseId: string; actionId: string; reason: string; confirmed: true }
 export type CreateRevocationArgs = { caseId: string; authorizationId: string; expiresAt: string }
+export type CreateCaseAccessArgs = { caseId: string; expiresAt: string }
 export type AdminRevokeArgs = { caseId: string; authorizationId: string; reason: string; confirmed: true; recordVersion: number }
-export type AuthorizationArgs = CreateAgreementArgs | RevokeActionArgs | CreateRevocationArgs | AdminRevokeArgs
+export type AuthorizationArgs = CreateAgreementArgs | RevokeActionArgs | CreateRevocationArgs | CreateCaseAccessArgs | AdminRevokeArgs
 export type ManagerVerifyArgs = { caseId: string; accessLevel: ManagerLevel; evidence: string; confirmed: true; recordVersion: number }
 export type ManagerRevokeArgs = { caseId: string; reason: string; confirmed: true; recordVersion: number }
 export type ManagerArgs = ManagerVerifyArgs | ManagerRevokeArgs
@@ -53,6 +54,11 @@ export function authorizationArgs(operation: AuthorizationOperation, raw: unknow
     if (!onlyKeys(body, ["operation", "caseId", "authorizationId", "expiresAt"]) || !isUuid(body.authorizationId)) return null
     const expires = expiresAt(body.expiresAt)
     return expires ? { caseId: body.caseId, authorizationId: body.authorizationId, expiresAt: expires } : null
+  }
+  if (operation === "create_case_access_action") {
+    if (!onlyKeys(body, ["operation", "caseId", "expiresAt"])) return null
+    const expires = expiresAt(body.expiresAt)
+    return expires ? { caseId: body.caseId, expiresAt: expires } : null
   }
   if (!onlyKeys(body, ["operation", "caseId", "authorizationId", "reason", "confirmed", "recordVersion"]) || !isUuid(body.authorizationId) || body.confirmed !== true) return null
   if (!Number.isSafeInteger(body.recordVersion) || (body.recordVersion as number) < 1) return null

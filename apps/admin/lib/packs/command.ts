@@ -4,7 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { packArgs, isPackApproveArgs, isPackMoveArgs } from "./validation"
+import { packArgs, isPackApproveArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
 import { packOperations, type PackOperation } from "./model"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
@@ -49,6 +49,8 @@ const successMessage: Record<PackOperation, string> = {
   remove_item: "The evidence version has been removed from the pack.",
   move_item: "The pack order has been updated.",
   approve: "The prepared pack has been approved. This does not confirm payment, permission or submission to Google.",
+  publish: "The approved pack is now published for customer case access. This does not confirm payment, permission or submission to Google.",
+  unpublish: "The pack is no longer published. The customer cannot view these files until it is published again.",
 }
 
 export async function packCommand(request: NextRequest) {
@@ -70,7 +72,8 @@ export async function packCommand(request: NextRequest) {
     const args = packArgs(operation, body)
     if (!args) return reply("Check the fields before saving.", 400)
     const payload = operation === "create" ? {}
-      : operation === "approve" && isPackApproveArgs(args) ? { note: args.note, confirmed: true as const }
+      : (operation === "approve" || operation === "publish") && isPackApproveArgs(args) ? { note: args.note, confirmed: true as const }
+      : operation === "unpublish" && isPackUnpublishArgs(args) ? { reason: args.reason, confirmed: true as const }
       : operation === "move_item" && isPackMoveArgs(args) ? { versionId: args.versionId, direction: args.direction }
       : "versionId" in args ? { versionId: args.versionId }
       : {}

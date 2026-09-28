@@ -13,6 +13,7 @@ describe("sitemap resources", () => {
 
   it("includes the Resources hub and published articles, never unpublished drafts", () => {
     vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SITE_LAUNCHED", "true")
     const entries = sitemap()
     const urls = entries.map((entry) => entry.url)
     // The hub is a fixed page; the article URLs must match the approved
@@ -50,10 +51,19 @@ describe("sitemap resources", () => {
     expect(entries.find((entry) => entry.url === guardUrl)).toEqual({ url: guardUrl })
   })
 
-  it("emits no sitemap outside production", () => {
+  it("emits no sitemap outside production, even when the launch flag is set", () => {
+    vi.stubEnv("SITE_LAUNCHED", "true")
     vi.stubEnv("VERCEL_ENV", "preview")
     expect(sitemap()).toEqual([])
     vi.stubEnv("VERCEL_ENV", "development")
+    expect(sitemap()).toEqual([])
+  })
+
+  it("emits no sitemap in production before launch", () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SITE_LAUNCHED", "false")
+    expect(sitemap()).toEqual([])
+    vi.stubEnv("SITE_LAUNCHED", "")
     expect(sitemap()).toEqual([])
   })
 })

@@ -20,8 +20,13 @@ import { resourceBreadcrumbJsonLd } from "@/lib/resource-schema"
 import { getPublishedResources, resourcePath, resourceRegistry } from "@/lib/resources"
 import { publishedResourceFixture } from "@/lib/resource-test-fixtures"
 
-function productionSitemapUrls() {
+function launchedProduction() {
   vi.stubEnv("VERCEL_ENV", "production")
+  vi.stubEnv("SITE_LAUNCHED", "true")
+}
+
+function productionSitemapUrls() {
+  launchedProduction()
   return sitemap().map((entry) => entry.url)
 }
 
@@ -68,6 +73,7 @@ describe("production sitemap coverage", () => {
   })
 
   it("keeps the sitemap empty outside production", () => {
+    vi.stubEnv("SITE_LAUNCHED", "true")
     vi.stubEnv("VERCEL_ENV", "preview")
     expect(sitemap()).toEqual([])
     vi.stubEnv("VERCEL_ENV", "development")
@@ -78,18 +84,19 @@ describe("production sitemap coverage", () => {
 })
 
 describe("robots", () => {
-  it("allows public crawling in production but keeps /api/ out", () => {
-    vi.stubEnv("VERCEL_ENV", "production")
+  it("allows public crawling once launched in production but keeps /api/ out", () => {
+    launchedProduction()
     const rules = robots()
     expect(rules.rules).toEqual({ userAgent: "*", allow: "/", disallow: ["/api/"] })
     expect(rules.sitemap).toBe(`${brandSiteUrl}/sitemap.xml`)
   })
 
   it("keeps preview and development environments non-indexable", () => {
+    vi.stubEnv("SITE_LAUNCHED", "true")
     for (const env of ["preview", "development"]) {
       vi.stubEnv("VERCEL_ENV", env)
       const rules = robots()
-      expect(rules.rules, env).toEqual({ userAgent: "*", allow: "/", disallow: ["/"] })
+      expect(rules.rules, env).toEqual({ userAgent: "*", disallow: "/" })
       expect(rules.sitemap, env).toBeUndefined()
     }
   })

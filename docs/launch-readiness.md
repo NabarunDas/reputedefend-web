@@ -24,7 +24,7 @@ Verified in this repository:
 - Optional GA4 loads only after explicit consent, sends pathname-only page views, and uses host-only cookies (`cookie_domain: "none"`).
 - Optional Search Console HTML verification reads `GOOGLE_SITE_VERIFICATION` and emits nothing when unset.
 - The site works with `NEXT_PUBLIC_GA_MEASUREMENT_ID` and `GOOGLE_SITE_VERIFICATION` unset: no analytics banner, no GA script, no analytics cookies, no fake verification token.
-- Preview / non-production remains noindex; production sitemap is emitted only when `VERCEL_ENV=production`.
+- Preview / non-production remains noindex. Indexing, the `robots.txt` allow rule, the advertised sitemap location and the sitemap itself require both `VERCEL_ENV=production` and the server-only `SITE_LAUNCHED=true`. Pre-launch (`SITE_LAUNCHED` false or unset) a Production deployment may exist while staying fully non-indexable. This document does not change the deployed value.
 - Connect Google is not available. How It Works shows a native disabled Connect Google control. The working manual enquiry route is Tell us what happened / Get Help.
 - A controlled Preview test of monitoring intake was previously reported successful. This documentation update does not repeat that test.
 - Tests never send live email. No measurement ID or verification token is committed.

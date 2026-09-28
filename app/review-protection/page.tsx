@@ -37,7 +37,7 @@ export default function ReviewProtectionPage() {
   return (
     <div className={`${styles.page} font-sans`}>
       <ServiceStructuredData
-        name="Google Review Protection"
+        name="Google Review Removal & Challenge Support"
         description={description}
         path="/review-protection"
       />

@@ -312,10 +312,12 @@ BEGIN
   END IF;
   FOR r IN
     SELECT * FROM public.authorization_records
-    WHERE status = 'ACTIVE' AND customer_id = p_customer AND (p_business IS NULL OR business_id = p_business)
+    WHERE status IN ('ACTIVE','REVIEW_REQUIRED') AND customer_id = p_customer AND (p_business IS NULL OR business_id = p_business)
     FOR UPDATE
   LOOP
-    UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
+    IF r.status = 'ACTIVE' THEN
+      UPDATE public.authorization_records SET status = 'REVIEW_REQUIRED' WHERE id = r.id;
+    END IF;
     INSERT INTO public.authorization_events(authorization_id, case_id, actor_type, actor_id, event, details)
     VALUES (r.id, r.case_id, 'SYSTEM', NULL, 'AUTHORIZATION_REVIEW_REQUIRED', jsonb_build_object('reason', p_reason));
   END LOOP;
@@ -593,7 +595,8 @@ BEGIN
     IF jsonb_typeof(data->'authorizationId') <> 'string' OR data->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     note := btrim(coalesce(data->>'reason', ''));
     IF length(note) NOT BETWEEN 10 AND 2000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-    IF jsonb_typeof(data->'recordVersion') <> 'number' OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 1 THEN
+    IF NOT (data ? 'recordVersion') OR jsonb_typeof(data->'recordVersion') <> 'number'
+      OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 1 THEN
       RETURN jsonb_build_object('status', 'invalid');
     END IF;
     BEGIN SELECT * INTO auth FROM public.authorization_records WHERE id = (data->>'authorizationId')::uuid FOR UPDATE;
@@ -624,7 +627,7 @@ CREATE FUNCTION public.admin_manager_access_command_v1(
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   s jsonb; actor uuid; cs public.cases; loc public.locations; fp text; cached jsonb; result jsonb; data jsonb;
-  evidence text; note text; level text; row public.location_manager_access;
+  p_evidence text; note text; p_level text; row public.location_manager_access;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -642,30 +645,31 @@ BEGIN
   IF cs.service_track IS DISTINCT FROM 'MANAGED' OR cs.location_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   SELECT * INTO loc FROM public.locations WHERE id = cs.location_id;
   IF loc.id IS NULL OR loc.business_id <> cs.business_id THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-  IF jsonb_typeof(data->'recordVersion') <> 'number' OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 0 THEN
+  IF NOT (data ? 'recordVersion') OR jsonb_typeof(data->'recordVersion') <> 'number'
+    OR (data->>'recordVersion') ~ '\.' OR (data->>'recordVersion')::integer < 0 THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
   IF p_operation = 'verify' THEN
     IF data->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-    level := data->>'accessLevel';
-    evidence := btrim(coalesce(data->>'evidence', ''));
-    IF level IS NULL OR level NOT IN ('MANAGER','OWNER') OR length(evidence) NOT BETWEEN 10 AND 1000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    p_level := data->>'accessLevel';
+    p_evidence := btrim(coalesce(data->>'evidence', ''));
+    IF p_level IS NULL OR p_level NOT IN ('MANAGER','OWNER') OR length(p_evidence) NOT BETWEEN 10 AND 1000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     SELECT * INTO row FROM public.location_manager_access WHERE location_id = loc.id FOR UPDATE;
     IF row.id IS NULL THEN
       IF (data->>'recordVersion')::integer IS DISTINCT FROM 0 THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
       INSERT INTO public.location_manager_access(business_id, location_id, status, access_level, verified_at, verified_by, evidence)
-      VALUES (cs.business_id, loc.id, 'VERIFIED', level, now(), actor, evidence) RETURNING * INTO row;
+      VALUES (cs.business_id, loc.id, 'VERIFIED', p_level, now(), actor, p_evidence) RETURNING * INTO row;
     ELSE
       IF (data->>'recordVersion')::integer IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
       UPDATE public.location_manager_access
-        SET status = 'VERIFIED', access_level = level, verified_at = now(), verified_by = actor, evidence = evidence,
+        SET status = 'VERIFIED', access_level = p_level, verified_at = now(), verified_by = actor, evidence = p_evidence,
             revoked_at = NULL, revoked_by = NULL, revocation_reason = ''
         WHERE id = row.id RETURNING * INTO row;
     END IF;
     INSERT INTO public.location_manager_access_events(manager_access_id, location_id, actor_id, event, details)
-    VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_VERIFIED', jsonb_build_object('accessLevel', level, 'evidence', evidence));
+    VALUES (row.id, loc.id, actor, 'MANAGER_ACCESS_VERIFIED', jsonb_build_object('accessLevel', p_level, 'evidence', p_evidence));
     PERFORM admin_private.write_record_audit_v1(actor, 'AUTHORIZATION_CHANGED', 'success', cs.id, p_request, 'case', 'Google Manager access verified',
-      jsonb_build_object('operation', p_operation, 'locationId', loc.id, 'accessLevel', level));
+      jsonb_build_object('operation', p_operation, 'locationId', loc.id, 'accessLevel', p_level));
     result := jsonb_build_object('status', 'success', 'id', row.id, 'managerStatus', row.status, 'recordVersion', row.record_version);
     INSERT INTO admin_private.authorization_command_receipts VALUES (p_request, actor, fp, result, now());
     RETURN result;

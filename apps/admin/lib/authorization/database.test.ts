@@ -63,7 +63,7 @@ async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null
 beforeAll(async () => {
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const dir = new URL("../../../../supabase/migrations/", import.meta.url), read = (name: string) => readFileSync(new URL(name, dir), "utf8")
-  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)'; CREATE FUNCTION extensions.digest(data bytea, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$SELECT decode(md5(encode(data,'hex')) || md5(coalesce(algo,'sha256') || encode(data,'hex')),'hex')$$; CREATE FUNCTION extensions.digest(data text, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$SELECT extensions.digest(convert_to(data,'UTF8'), algo)$$;"))
+  await db.exec(read("20260915120000_core_data_foundation_v1.sql").replace("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;", "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'; CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)'; CREATE FUNCTION extensions.digest(data bytea, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT decode(md5(encode(data,''hex'')) || md5(coalesce(algo,''sha256'') || encode(data,''hex'')),''hex'')'; CREATE FUNCTION extensions.digest(data text, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT extensions.digest(convert_to(data,''UTF8''), algo)';"))
   for (const name of [
     "20260916000000_relaunch_guard_data_foundation_v1.sql",
     "20260917080553_single_admin_auth_v1.sql",
@@ -435,9 +435,11 @@ describe("customer action SQL", () => {
       status: "REVIEW_REQUIRED", accepted_email_snapshot: "alex@example.com", revoked_at: null,
     })
     expect((await db.query<{ status: string }>("select status from public.authorization_records where id=$1", [permission.accepted?.authorizationId])).rows[0].status).toBe("REVIEW_REQUIRED")
-    const events = await db.query<{ event: string; actor_type: string; actor_id: string | null; details: { reason?: string } }>("select event, actor_type, actor_id, details from public.authorization_events where event='AUTHORIZATION_REVIEW_REQUIRED' order by id")
-    expect(events.rows).toHaveLength(2)
-    expect(events.rows.every(row => row.actor_type === "SYSTEM" && row.actor_id === null && row.details.reason === "CUSTOMER_EMAIL_CHANGED")).toBe(true)
+    const events = await db.query<{ event: string; actor_type: string; actor_id: string | null; reason: string }>("select event, actor_type, actor_id, details->>'reason' as reason from public.authorization_events where event='AUTHORIZATION_REVIEW_REQUIRED' order by id")
+    expect(events.rows.every(row => row.event === "AUTHORIZATION_REVIEW_REQUIRED" && row.actor_type === "SYSTEM" && row.actor_id == null)).toBe(true)
+    expect(events.rows.map(row => row.reason).sort()).toEqual([
+      "BUSINESS_AUTHORITY_CHANGED", "BUSINESS_AUTHORITY_CHANGED", "CUSTOMER_EMAIL_CHANGED", "CUSTOMER_EMAIL_CHANGED",
+    ])
     await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.authorization_records where status='ACTIVE'")).rows[0].n).toBe(0)
     expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId]))).toMatchObject({
@@ -479,7 +481,8 @@ describe("customer action SQL", () => {
     const later = await createAction({ title: "A later owner-approved snapshot" })
     await db.query("update public.customers set email='alex.changed@example.com' where id=$1", [customer])
     const revoked = await db.query<{ event: string; actor_type: string; actor_id: string | null }>("select event, actor_type, actor_id from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED'", [later?.id])
-    expect(revoked.rows[0]).toMatchObject({ actor_type: "SYSTEM", actor_id: null })
+    expect(revoked.rows[0].actor_type).toBe("SYSTEM")
+    expect(revoked.rows[0].actor_id == null).toBe(true)
   })
 
   it("preserves Manager-access evidence in append-only events", async () => {

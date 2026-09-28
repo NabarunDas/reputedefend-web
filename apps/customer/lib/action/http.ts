@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
 import { cookieOptions, customerConfig, pendingCookie, sessionCookie } from "@/lib/config"
+import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "./identity"
 import { isUuid } from "../uuid"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
@@ -66,10 +67,9 @@ export async function sendOtp(request: NextRequest) {
   try {
     const started = await backend().rpc<{ status?: string; email?: string; maskedEmail?: string }>("customer_action_begin_otp_v1", { p_pending_hash: tokenHash(pending) })
     if (started.status === "rate_limited") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 429, headers: privateResponseHeaders })
-    if (started.status !== "ok" || !started.email || started.email.toLowerCase() === "admin@profilerelaunch.com") return reply()
+    if (started.status !== "ok" || !started.email || started.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return reply()
     const service = backend()
-    const created = await service.database.auth.admin.createUser({ email: started.email, email_confirm: false })
-    if (created.error && !/already|registered|exists/i.test(created.error.message)) return reply({}, 503)
+    if (!await ensureCustomerAuthIdentity(service.database.auth.admin, started.email)) return reply({}, 503)
     const { error } = await service.identity.auth.signInWithOtp({ email: started.email, options: { shouldCreateUser: false } })
     if (error) return reply({}, 503)
     const confirmed = await service.rpc<{ status?: string }>("customer_action_confirm_otp_sent_v1", { p_pending_hash: tokenHash(pending) })

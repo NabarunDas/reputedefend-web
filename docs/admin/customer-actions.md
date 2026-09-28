@@ -35,7 +35,7 @@ OTP is requested only after a valid, OPEN, unexpired, unrevoked action whose exp
 
 Resend delay 60 seconds, 5 failed attempts per challenge, 10-minute challenge, 15-minute action session after successful OTP. The session cookie is host-only, Secure, HttpOnly, SameSite=Strict, `__Host-` in production, bound to one action. No Domain=.profilerelaunch.com. Provider JWTs are discarded. This is not a long-lived customer login.
 
-If the verified email has no Auth identity, the customer server may create it with the Admin API only after a valid action secret. Public signup stays disabled. `shouldCreateUser` is false on OTP send. Customer identities cannot use Admin (`admin@profilerelaunch.com` only).
+If the verified email has no Auth identity, the customer server may create it with the Admin API only after a valid action secret, as `email_confirm: true`, because public signup is disabled and an unconfirmed passwordless identity cannot receive OTP. An existing unconfirmed identity for that exact email is confirmed the same way, then reused. Public signup stays disabled. `shouldCreateUser` is false on OTP send. Supabase `email_confirmed_at` is not customer-action authentication; the six-digit OTP is still required. Customer identities cannot use Admin (`admin@profilerelaunch.com` only).
 
 ## Agreements
 

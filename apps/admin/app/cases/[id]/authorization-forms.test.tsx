@@ -61,8 +61,7 @@ describe("authorization panel", () => {
       }],
     }} />)
     expect(screen.getByText("Exact owner-approved body for this snapshot.")).toBeTruthy()
-    expect(screen.getByText(/SHA-256/)).toBeTruthy()
-    expect(screen.getByText("ab".repeat(32))).toBeTruthy()
+    expect(screen.getByText(new RegExp(`SHA-256 ${"ab".repeat(32)}`))).toBeTruthy()
   })
   it("marks Managed permission and Manager access as not applicable on Guided cases", () => {
     render(<AuthorizationPanel caseId={data.caseId} data={{

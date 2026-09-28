@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { howFaqs } from "./content"
+import { howFaqs, howTimeline } from "./content"
 import HowItWorksPage from "./page"
 import { HowGuard, HowStart } from "./how-sections"
 
@@ -32,6 +32,31 @@ function faqSchema() {
     mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }>
   }
 }
+
+describe("How It Works page semantics", () => {
+  it("emits no HowTo structured data while keeping the FAQ schema and visible timeline", () => {
+    expect(pageSource).not.toContain("HowToStructuredData")
+    expect(pageSource).toContain("FaqStructuredData")
+    render(<HowItWorksPage />)
+    const types = [...document.querySelectorAll('script[type="application/ld+json"]')].map(
+      (node) => (JSON.parse(node.textContent || "{}") as { "@type"?: string })["@type"],
+    )
+    expect(types).toContain("FAQPage")
+    expect(types).not.toContain("HowTo")
+    expect(document.body.textContent).not.toContain("HowToStep")
+    // The visible process content must survive the schema removal.
+    expect(document.body.textContent).toContain(howTimeline.title)
+    for (const step of howTimeline.steps) {
+      expect(document.body.textContent, step.title).toContain(step.title)
+    }
+  })
+
+  it("no longer ships a HowTo structured-data component", () => {
+    const structuredData = readFileSync(join(process.cwd(), "components/structured-data.tsx"), "utf8")
+    expect(structuredData).not.toContain("HowTo")
+    expect(structuredData).toContain("export function FaqStructuredData")
+  })
+})
 
 describe("How It Works Google connection and Guard action", () => {
   it("keeps FAQ structured data matching the visible Google-connection answer", () => {

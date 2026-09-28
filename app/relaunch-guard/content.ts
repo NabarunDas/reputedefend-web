@@ -1,15 +1,15 @@
 import { guardOffer, guardPrice } from "@/lib/guard-offer"
 
 export const guardSeo = {
-  titlePage: "Relaunch Guard | Google Business Profile Monitoring",
+  titlePage: "Google Business Profile Monitoring | Relaunch Guard",
   description:
-    "Twice-daily Google Business Profile and review checks, with email alerts when something needs attention. Explore Relaunch Guard monitoring.",
+    "Google Business Profile monitoring with twice-daily manual profile and review checks, human-reviewed alerts and clear next-step guidance when something needs attention.",
   canonical: "/relaunch-guard",
 } as const
 
 export const guardHero = {
   eyebrow: "Relaunch Guard",
-  title: "Keep an eye on your Google Business Profile.",
+  title: "Google Business Profile Monitoring with Human-Reviewed Alerts",
   lead: "We check your profile and reviews twice a day. If we spot a concerning change, we’ll review it and email you with what we found and what to do next.",
   price: `${guardPrice} per month, per location`,
   priceLabel: "Monthly monitoring",

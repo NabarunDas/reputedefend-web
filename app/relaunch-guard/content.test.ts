@@ -15,8 +15,9 @@ import { guardOffer, guardPrice } from "@/lib/guard-offer"
 
 describe("Relaunch Guard sales copy", () => {
   it("uses the shared price and canonical metadata", () => {
-    expect(guardSeo.titlePage).toBe("Relaunch Guard | Google Business Profile Monitoring")
+    expect(guardSeo.titlePage).toBe("Google Business Profile Monitoring | Relaunch Guard")
     expect(guardSeo.canonical).toBe("/relaunch-guard")
+    expect(guardHero.title).toBe("Google Business Profile Monitoring with Human-Reviewed Alerts")
     expect(guardHero.price).toBe(`${guardPrice} per month, per location`)
     expect(guardHero.priceLabel).toBe("Monthly monitoring")
     expect(guardIncluded.followUp).toContain(`${guardPrice} per month`)

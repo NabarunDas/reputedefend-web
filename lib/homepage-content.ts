@@ -1,4 +1,4 @@
-import { brandDescriptor, brandName } from "@/lib/brand"
+import { brandName, brandTagline } from "@/lib/brand"
 import { guardPrice } from "@/lib/guard-offer"
 import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
@@ -10,14 +10,14 @@ const guidedReview = reviewProtection.items[0]
 const managedReview = reviewProtection.items[1]
 
 export const homepageSeo = {
-  titlePage: "Google Business Profile Recovery & Review Protection",
+  titlePage: "Google Business Profile Recovery & Review Support",
   description:
-    "Google Business Profile recovery and review protection for businesses. Human-reviewed help when a profile is suspended, inaccessible or stuck — or a suspicious review is damaging trust.",
+    "Human-reviewed help with Google Business Profile suspensions, reinstatement, verification, access and suspicious reviews. UK-based support for businesses internationally.",
 } as const
 
 export const homepageHero = {
-  eyebrow: brandDescriptor,
-  titleLines: ["Restore your Google visibility.", "Protect your reputation."] as const,
+  eyebrow: brandTagline,
+  titleLines: ["Google Business Profile Recovery", "& Review Support"] as const,
   lead:
     "A suspended profile or a suspicious review can leave you unsure what to do next. We help you understand the problem and prepare your next step. If your profile is running smoothly, Relaunch Guard helps you keep an eye on it.",
   primaryCta: "Start your assessment",

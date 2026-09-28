@@ -24,7 +24,14 @@ const copy = JSON.stringify({
 describe("Profile Recovery page copy", () => {
   it("keeps the recovery hero, CTAs and intake preselection", () => {
     expect(recoveryHero.eyebrow).toBe("Google Business Profile Recovery")
-    expect(recoveryHero.titleLines[0]).toContain("Your profile is down")
+    expect(recoveryHero.titleLines).toEqual([
+      "Google Business Profile Suspension",
+      "& Reinstatement Help",
+    ])
+    // The old H1 line stays visible as supporting copy rather than the heading.
+    expect(recoveryHero.lead).toMatch(
+      /^Your profile is down\. Your recovery plan shouldn't be guesswork\./,
+    )
     expect(recoveryHero.primaryCta).toBe("Start your assessment")
     expect(recoveryHero.primaryHref).toBe("/get-help?service=profile-recovery")
     expect(recoveryHelpHref).toBe("/get-help?service=profile-recovery")
@@ -69,7 +76,7 @@ describe("Profile Recovery page copy", () => {
   })
 
   it("keeps recovery metadata geographically neutral and on the recovery intent", () => {
-    expect(recoverySeo.titlePage).toContain("Google Business Profile Recovery")
+    expect(recoverySeo.titlePage).toBe("Google Business Profile Suspension & Reinstatement Help")
     expect(recoverySeo.description.toLowerCase()).toContain("suspended")
     expect(recoverySeo.description.toLowerCase()).toContain("verification")
     expect(recoverySeo.description.toLowerCase()).toContain("reinstatement")

@@ -25,7 +25,14 @@ const copy = JSON.stringify({
 describe("Review Protection page copy", () => {
   it("keeps the review hero, intake route and support line", () => {
     expect(reviewHero.eyebrow).toBe("Google Review Protection")
-    expect(reviewHero.titleLines[1]).toContain("rushed response")
+    expect(reviewHero.titleLines).toEqual([
+      "Google Review Removal Support",
+      "for Fake or Policy-Violating Reviews",
+    ])
+    // The lead must keep Google as the decision-maker directly under the H1.
+    expect(reviewHero.lead).toBe(
+      "Google makes the final removal decision. ProfileRelaunch assesses whether the review may breach Google's policies and helps prepare the appropriate challenge, report or professional response.",
+    )
     expect(reviewHero.primaryCta).toBe("Start your assessment")
     expect(reviewHero.primaryHref).toBe("/get-help?service=review")
     expect(reviewHelpHref).toBe("/get-help?service=review")
@@ -62,8 +69,8 @@ describe("Review Protection page copy", () => {
   })
 
   it("keeps Review Protection SEO geographically neutral", () => {
-    expect(reviewSeo.titlePage).toMatch(/Google Review Protection/)
-    expect(reviewSeo.description.toLowerCase()).toContain("google review protection")
+    expect(reviewSeo.titlePage).toBe("Google Review Removal & Challenge Support")
+    expect(reviewSeo.description.toLowerCase()).toContain("google review removal")
     expect(reviewSeo.description.toLowerCase()).toContain("challenge")
     expect(reviewSeo.description.toLowerCase()).toMatch(/suspicious|policy/)
     expect(copy.toLowerCase()).not.toMatch(/uk businesses|uk-only|uk google review/)

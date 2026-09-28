@@ -416,6 +416,7 @@ describe("customer action SQL", () => {
     await db.query("update public.customers set email='alex.changed@example.com' where id=$1", [customer])
     expect(await rpc("customer_action_session_v1", [laterSession])).toBeNull()
     await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
+    await verify()
     const membershipPending = secretHash(secret()), membershipSession = secretHash(secret()), membershipHash = secretHash(secret())
     const membershipAction = await createAction({ title: "Another owner-approved snapshot after the email was restored", secretHash: membershipHash })
     await rpc("customer_action_exchange_v1", [membershipAction?.id, membershipHash, membershipPending])

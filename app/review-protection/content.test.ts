@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   reviewFaqs,
+  reviewGuides,
   reviewHelpHref,
   reviewHero,
   reviewJudgement,
@@ -11,6 +14,10 @@ import {
   reviewTrustStrip,
 } from "./content"
 import { pricingGroups } from "@/lib/pricing"
+import { resourceCategoryHubs } from "@/lib/resource-category-links"
+import { getPublishedResources, resourcePath } from "@/lib/resources"
+
+const pageSource = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8")
 
 const copy = JSON.stringify({
   reviewFaqs,
@@ -66,6 +73,30 @@ describe("Review Protection page copy", () => {
     expect(JSON.stringify(reviewFaqs).toLowerCase()).toContain("google decides")
     expect(reviewFaqs.some((item) => item.q.includes("guarantee review removal"))).toBe(true)
     expect(reviewTrustStrip).toContain("Pricing")
+  })
+
+  it("links the review page to published guides and the Google Reviews hub", () => {
+    expect(reviewGuides.title).toBe("Understand the review before you challenge it")
+    expect(reviewGuides.links).toEqual([
+      { label: "Can a Google review be removed?", href: "/resources/can-a-google-review-be-removed" },
+      {
+        label: "Fake review or genuine negative feedback?",
+        href: "/resources/fake-google-review-or-genuine-negative-feedback",
+      },
+      {
+        label: "Google rejected my review report — what next?",
+        href: "/resources/google-rejected-my-review-report",
+      },
+      { label: "Google review bombing", href: "/resources/google-review-bombing" },
+      { label: "Google review extortion", href: "/resources/google-review-extortion" },
+    ])
+    expect(reviewGuides.hubLabel).toBe("Browse all Google Review guides")
+    expect(reviewGuides.hubHref).toBe(resourceCategoryHubs["reviews-reputation"])
+    const published = new Set(getPublishedResources().map((resource) => resourcePath(resource.slug)))
+    for (const link of reviewGuides.links) {
+      expect(published, link.href).toContain(link.href)
+    }
+    expect(pageSource).toMatch(/<ReviewGuides \/>\s*<ReviewFaq \/>/)
   })
 
   it("keeps Review Protection SEO geographically neutral", () => {

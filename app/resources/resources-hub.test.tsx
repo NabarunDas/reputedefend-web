@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { ResourcesHub } from "./resources-hub"
+import { resourceCategoryHubContent } from "./category-hub-content"
+import { resourceCategoryHubs } from "@/lib/resource-category-links"
 import { createResourceIndex, getPublishedResources } from "@/lib/resources"
 import {
   fixtureBodyLookup,
@@ -101,5 +103,24 @@ describe("Resources hub", () => {
     fireEvent.click(screen.getByRole("button", { name: "All published guides" }))
     expect(screen.getByRole("link", { name: /Test published review guide/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "All published guides" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("offers a crawlable hub link on populated categories and none for policy updates", () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    render(<ResourcesHub published={getPublishedResources()} />)
+
+    for (const [category, path] of Object.entries(resourceCategoryHubs)) {
+      const label = resourceCategoryHubContent[category as keyof typeof resourceCategoryHubContent]
+        .indexLinkLabel
+      expect(screen.getByRole("link", { name: label }), category).toHaveAttribute("href", path)
+    }
+
+    const policyCard = document.getElementById("category-policy-updates")
+    expect(policyCard).toBeTruthy()
+    expect(policyCard!.querySelectorAll("a")).toHaveLength(0)
+
+    // The interactive filters must survive alongside the new links.
+    expect(screen.getByRole("button", { name: "All published guides" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Profile Recovery" })).toBeInTheDocument()
   })
 })

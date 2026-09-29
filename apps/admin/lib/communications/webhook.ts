@@ -71,8 +71,9 @@ export async function handleResendWebhook(request: NextRequest, env: Record<stri
   try { parsed = JSON.parse(raw) as { type?: unknown; created_at?: unknown; data?: unknown } }
   catch { return reply({ status: "invalid" }, 400) }
   const eventType = typeof parsed.type === "string" ? parsed.type : ""
-  const data = parsed.data && typeof parsed.data === "object" ? parsed.data as { email_id?: unknown } : null
+  const data = parsed.data && typeof parsed.data === "object" ? parsed.data as { email_id?: unknown; message_id?: unknown } : null
   const messageId = typeof data?.email_id === "string" ? data.email_id : null
+  const rfcMessageId = typeof data?.message_id === "string" ? data.message_id.trim().slice(0, 300) : null
   const occurredAt = parseProviderOccurredAt(parsed.created_at)
   const bounceClass = parseBounceClassification(eventType, data)
   const result = await backend().rpc<{ status?: string; duplicate?: boolean; applied?: boolean }>("communication_apply_provider_event_v1", {
@@ -82,6 +83,7 @@ export async function handleResendWebhook(request: NextRequest, env: Record<stri
     p_provider_message_id: messageId,
     p_occurred_at: occurredAt,
     p_bounce_class: bounceClass,
+    p_rfc_message_id: rfcMessageId,
   })
   if (result?.status !== "success") return reply({ status: "error" }, 503)
   return reply({ status: "success", duplicate: result.duplicate === true })

@@ -8,7 +8,7 @@ export async function proxy(request: NextRequest) {
   let response: NextResponse
   const authPost = request.method === "POST" && /^\/auth\/(send|verify|logout|logout-all)$/.test(pathname)
   const cronRead = (request.method === "GET" || request.method === "HEAD") && pathname === "/api/internal/jobs/run"
-  const providerWebhook = request.method === "POST" && pathname === "/api/webhooks/resend"
+  const providerWebhook = request.method === "POST" && (pathname === "/api/webhooks/resend" || pathname === "/api/webhooks/resend/inbound")
   if (isPublicRead(pathname, request.method) || authPost || cronRead || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     response = NextResponse.next()
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {

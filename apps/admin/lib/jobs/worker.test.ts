@@ -39,6 +39,8 @@ describe("job worker handlers", () => {
     const preview = registeredJobHandlers({ JOB_PROVIDER_MODE: "production", VERCEL_ENV: "preview" })
     expect(preview.SYSTEM_HEALTH_PROBE).toEqual(expect.objectContaining({ jobType: "SYSTEM_HEALTH_PROBE" }))
     expect(preview.SEND_EMAIL).toEqual(expect.objectContaining({ jobType: "SEND_EMAIL" }))
+    expect(preview.IMPORT_INBOUND_EMAIL).toEqual(expect.objectContaining({ jobType: "IMPORT_INBOUND_EMAIL" }))
+    expect(preview.IMPORT_INBOUND_ATTACHMENT).toEqual(expect.objectContaining({ jobType: "IMPORT_INBOUND_ATTACHMENT" }))
     expect(registeredJobHandlers({ VERCEL_ENV: "production" }).SYSTEM_HEALTH_PROBE).toBeTruthy()
   })
 })

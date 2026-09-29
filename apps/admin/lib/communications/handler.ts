@@ -20,6 +20,9 @@ type LoadedSend = {
   lifecycle?: string
   contentLocked?: boolean
   senderAddress?: string | null
+  replyToAddress?: string | null
+  inReplyTo?: string | null
+  referencesHeader?: string | null
   linkKeyVersion?: number | null
 }
 
@@ -99,6 +102,9 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
         subject: loaded.subject,
         text,
         html,
+        replyTo: loaded.replyToAddress,
+        inReplyTo: loaded.inReplyTo,
+        referencesHeader: loaded.referencesHeader,
       })
       if (!sent.ok) {
         if (sent.acceptanceUnknown) {

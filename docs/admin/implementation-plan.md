@@ -446,6 +446,8 @@ Acceptance: business changes survive email failure; accepted is not displayed as
 ## Step 12 Incoming mail and conversations
 Deliver: configured inbound route, thread linking, unmatched inbox, safe attachment ingestion, assignment, replies, phone notes and contact-recovery tasks. Add a verified-mailbox operational test procedure.
 
+DATABASE APPLIED / LIVE INBOUND DISABLED. Additive `20260929221604_incoming_mail_conversations_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 11. Database-applied: conversation/thread model, inbound receipts, `IMPORT_INBOUND_EMAIL`, `IMPORT_INBOUND_ATTACHMENT`, attachment quarantine state, mailbox parsing, provider timestamps, RFC threading, unmatched inbox, Admin conversation commands, phone notes, contact recovery and Step 11 conversation-reply integration. Live inbound is not activated: Resend Receiving, inbound webhook secret, inbound subdomain/DNS and inbound AWS placeholders are not configured. No live inbound email has been received. Root-domain MX is unchanged. Outgoing Step 11 remains live-delivery-disabled. Cron remains daily. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+
 Acceptance: spoofed sender cannot change identity/permissions; duplicate imports and mail loops are blocked; unlinked email can be triaged without losing the original. Existing inbox keeps receiving mail during cutover. Depends on 8 and 11.
 
 ## Step 13 Catalogue quotes and service orders

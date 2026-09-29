@@ -109,7 +109,7 @@ describe("prepared pack SQL", () => {
       "20260918153627_admin_evidence_workspace_v1.sql",
       "20260918163150_admin_prepared_packs_v1.sql",
       "20260928094817_admin_customer_actions_v1.sql",
-      "20260928172000_customer_case_pack_access_v1.sql",
+      "20260928175738_customer_case_pack_access_v1.sql",
     ])
   })
 

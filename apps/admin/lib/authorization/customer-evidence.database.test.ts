@@ -221,7 +221,7 @@ describe("customer evidence upload SQL", () => {
 
   it("creates one customer document from the request title with server-side key and provenance", async () => {
     await verify()
-    const { created, session } = await finishAccess()
+    const { session } = await finishAccess()
     const request = await createRequest()
     const idem = key()
     const begun = await begin(session, request?.id ?? key(), "bill.pdf", "application/pdf", 2048, idem)

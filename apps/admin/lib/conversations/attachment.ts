@@ -85,42 +85,119 @@ export function resolveInboundAttachmentProvider(env: EnvMap = process.env, over
   return createResendInboundAttachmentProvider(apiKey)
 }
 
+export type InboundAttachmentFailureCode = "oversized" | "malformed" | "unavailable" | "retryable"
+
 export class InboundAttachmentError extends Error {
-  constructor(readonly code: "oversized" | "malformed") {
+  constructor(readonly code: InboundAttachmentFailureCode) {
     super(code)
     this.name = "InboundAttachmentError"
   }
 }
 
-export function createResendInboundAttachmentProvider(
-  apiKey: string,
-  client?: {
-    emails: {
-      receiving: {
-        attachments: {
-          get: (options: { emailId: string; id: string }) => Promise<{ data?: { id?: string; filename?: string | null; content_type?: string; size?: number; download_url?: string } | null }>
-        }
+export type ResendAttachmentError = { message?: string; statusCode?: number | null; name?: string }
+
+export function classifyResendAttachmentError(error: ResendAttachmentError | null | undefined): InboundAttachmentFailureCode {
+  const status = error?.statusCode
+  const name = (error?.name || "").toLowerCase()
+  const message = error?.message || ""
+  if (status === 429 || name === "rate_limit_exceeded" || name === "daily_quota_exceeded" || name === "monthly_quota_exceeded") {
+    return "retryable"
+  }
+  if ((typeof status === "number" && status >= 500 && status <= 599) || name === "internal_server_error" || name === "application_error") {
+    return "retryable"
+  }
+  if (/timeout|temporar|unavailable|unable to fetch|network|econnreset|etimedout|rate|429/i.test(message)) return "retryable"
+  if (status === 404 || name === "not_found") return "unavailable"
+  return "malformed"
+}
+
+export function classifyDownloadStatus(status: number): InboundAttachmentFailureCode | null {
+  if (status === 429 || status >= 500) return "retryable"
+  if (status === 404) return "unavailable"
+  if (status >= 400) return "malformed"
+  return null
+}
+
+export async function readBoundedAttachmentBytes(
+  response: Response,
+  maxBytes = MAX_INBOUND_ATTACHMENT_BYTES,
+): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length") || "")
+  if (Number.isFinite(declared) && declared > maxBytes) throw new InboundAttachmentError("oversized")
+  const reader = response.body?.getReader()
+  if (!reader) throw new InboundAttachmentError("malformed")
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel()
+        throw new InboundAttachmentError("oversized")
+      }
+      chunks.push(value)
+    }
+  } catch (error) {
+    if (error instanceof InboundAttachmentError) throw error
+    throw new InboundAttachmentError("retryable")
+  }
+  if (total < 1) throw new InboundAttachmentError("malformed")
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+type ResendAttachmentClient = {
+  emails: {
+    receiving: {
+      attachments: {
+        get: (options: { emailId: string; id: string }) => Promise<{
+          data?: { id?: string; filename?: string | null; content_type?: string; size?: number; download_url?: string } | null
+          error?: ResendAttachmentError | null
+        }>
       }
     }
-  },
+  }
+}
+
+export function createResendInboundAttachmentProvider(
+  apiKey: string,
+  client?: ResendAttachmentClient,
   fetchImpl: typeof fetch = fetch,
 ): InboundAttachmentProvider {
   return {
     async getReceivedAttachment(emailId, attachmentId) {
       const resend = client ?? new (await import("resend")).Resend(apiKey)
-      const { data } = await resend.emails.receiving.attachments.get({ emailId, id: attachmentId })
-      const url = data?.download_url
-      if (!data || !url || !/^https:\/\//i.test(url)) throw new InboundAttachmentError("malformed")
+      let result: Awaited<ReturnType<ResendAttachmentClient["emails"]["receiving"]["attachments"]["get"]>>
+      try {
+        result = await resend.emails.receiving.attachments.get({ emailId, id: attachmentId })
+      } catch {
+        throw new InboundAttachmentError("retryable")
+      }
+      if (result.error) throw new InboundAttachmentError(classifyResendAttachmentError(result.error))
+      const data = result.data
+      if (!data) throw new InboundAttachmentError("retryable")
+      const url = data.download_url
+      if (!url || !/^https:\/\//i.test(url)) throw new InboundAttachmentError("malformed")
       if (typeof data.size === "number" && data.size > MAX_INBOUND_ATTACHMENT_BYTES) {
         throw new InboundAttachmentError("oversized")
       }
-      const response = await fetchImpl(url)
-      if (!response.ok) throw new InboundAttachmentError("malformed")
-      const length = Number(response.headers.get("content-length") || 0)
-      if (Number.isFinite(length) && length > MAX_INBOUND_ATTACHMENT_BYTES) throw new InboundAttachmentError("oversized")
-      const raw = new Uint8Array(await response.arrayBuffer())
-      if (raw.byteLength < 1) throw new InboundAttachmentError("malformed")
-      if (raw.byteLength > MAX_INBOUND_ATTACHMENT_BYTES) throw new InboundAttachmentError("oversized")
+      let response: Response
+      try {
+        response = await fetchImpl(url)
+      } catch {
+        throw new InboundAttachmentError("retryable")
+      }
+      const downloadFailure = classifyDownloadStatus(response.status)
+      if (downloadFailure) throw new InboundAttachmentError(downloadFailure)
+      const raw = await readBoundedAttachmentBytes(response)
       return {
         id: data.id || attachmentId,
         filename: data.filename,
@@ -290,6 +367,9 @@ export function importInboundAttachmentHandler(
       try {
         downloaded = await inbound.getReceivedAttachment(emailId, providerAttachmentId)
       } catch (error) {
+        if (error instanceof InboundAttachmentError && error.code === "retryable") {
+          return { ok: false, retryable: true, error: "Inbound attachment download failed" }
+        }
         if (error instanceof InboundAttachmentError) {
           return applyResult(input.rpc, loaded.id, {
             operation: "mark_result",

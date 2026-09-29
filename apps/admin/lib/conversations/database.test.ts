@@ -9,7 +9,9 @@ import {
   createIdempotentInboundAttachmentProvider,
   createMemoryInboundStore,
   importInboundAttachmentHandler,
+  InboundAttachmentError,
   type InboundAttachmentBytes,
+  type InboundAttachmentProvider,
 } from "./attachment"
 
 const db = new PGlite()
@@ -166,6 +168,17 @@ async function runAttachmentJobs(
     handlers: { IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env, provider, objectStore) },
   })
   return { provider, store: objectStore }
+}
+
+async function runCustomAttachmentJob(provider: InboundAttachmentProvider) {
+  const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32) }
+  const store = createMemoryInboundStore()
+  await runJobWorker({
+    rpc: namedRpc(),
+    env,
+    handlers: { IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env, provider, store) },
+  })
+  return store
 }
 
 async function insertSecondCase() {
@@ -601,6 +614,106 @@ describe("incoming mail conversations SQL", () => {
     expect((await db.query<{ ingestion_status: string; validation_status: string }>(
       "select ingestion_status, validation_status from public.conversation_attachments",
     )).rows[0]).toEqual({ ingestion_status: "FAILED", validation_status: "ERROR" })
+  })
+
+  it("retries transient Resend attachment failures without terminalising the row", async () => {
+    await importEmail("email_attach_429_1", {
+      attachments: [{
+        providerAttachmentId: "att_retryable",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    })
+    await runCustomAttachmentJob({
+      async getReceivedAttachment() { throw new InboundAttachmentError("retryable") },
+    })
+    const after429 = (await db.query<{ ingestion_status: string; validation_status: string; scan_status: string }>(
+      "select ingestion_status, validation_status, scan_status from public.conversation_attachments",
+    )).rows[0]
+    expect(after429.ingestion_status).not.toMatch(/FAILED|UNSUPPORTED|CLEAN|MALWARE/)
+    expect(after429.validation_status).toBe("PENDING")
+    expect(after429.scan_status).toBe("PENDING")
+    expect((await db.query<{ status: string }>("select status from admin_private.jobs where job_type='IMPORT_INBOUND_ATTACHMENT'")).rows[0].status).toBe("RETRY")
+  })
+
+  it("retries simulated 500 and network attachment failures and leaves state non-terminal", async () => {
+    await importEmail("email_attach_500_1", {
+      attachments: [{
+        providerAttachmentId: "att_net_fail1",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    })
+    await runCustomAttachmentJob({
+      async getReceivedAttachment() { throw new Error("ECONNRESET") },
+    })
+    expect((await db.query<{ ingestion_status: string; validation_status: string }>(
+      "select ingestion_status, validation_status from public.conversation_attachments",
+    )).rows[0]).toMatchObject({ validation_status: "PENDING" })
+    expect(["METADATA_RECORDED", "STORAGE_PENDING"]).toContain((await db.query<{ ingestion_status: string }>(
+      "select ingestion_status from public.conversation_attachments",
+    )).rows[0].ingestion_status)
+  })
+
+  it("terminalises a permanent missing attachment and malformed provider metadata", async () => {
+    await importEmail("email_attach_404_1", {
+      attachments: [{
+        providerAttachmentId: "att_gone_001",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    })
+    await runCustomAttachmentJob({
+      async getReceivedAttachment() { throw new InboundAttachmentError("unavailable") },
+    })
+    expect((await db.query<{ ingestion_status: string; validation_status: string }>(
+      "select ingestion_status, validation_status from public.conversation_attachments",
+    )).rows[0]).toEqual({ ingestion_status: "FAILED", validation_status: "ERROR" })
+  })
+
+  it("keeps attachment event keys inside the existing 200-character Step 10 contract", async () => {
+    const shortKey = (await db.query<{ value: string }>(
+      "select admin_private.inbound_attachment_event_key_v1('email_short_1','att_12345678') as value",
+    )).rows[0].value
+    expect(shortKey).toBe("import-inbound-attachment:resend:email_short_1:att_12345678")
+    expect(shortKey.length).toBeLessThanOrEqual(200)
+    expect((await db.query<{ value: string }>(
+      "select admin_private.inbound_attachment_event_key_v1('email_short_1','att_12345678') as value",
+    )).rows[0].value).toBe(shortKey)
+    const longEmail = "e".repeat(120)
+    const longAttachment = "a".repeat(80)
+    const hashed = (await db.query<{ value: string }>(
+      "select admin_private.inbound_attachment_event_key_v1($1,$2) as value",
+      [longEmail, longAttachment],
+    )).rows[0].value
+    const hashedAgain = (await db.query<{ value: string }>(
+      "select admin_private.inbound_attachment_event_key_v1($1,$2) as value",
+      [longEmail, longAttachment],
+    )).rows[0].value
+    expect(hashed).toBe(hashedAgain)
+    expect(hashed.startsWith("import-inbound-attachment:resend:")).toBe(true)
+    expect(hashed.length).toBeLessThanOrEqual(200)
+    expect(hashed).not.toContain(longEmail)
+    expect(hashed).not.toContain(longAttachment)
+    const other = (await db.query<{ value: string }>(
+      "select admin_private.inbound_attachment_event_key_v1($1,$2) as value",
+      [longEmail, `${longAttachment}x`],
+    )).rows[0].value
+    expect(other).not.toBe(hashed)
+    expect(other.length).toBeLessThanOrEqual(200)
+    await expect(db.query(
+      "insert into admin_private.job_outbox(event_key, topic, payload) values($1,'IMPORT_INBOUND_ATTACHMENT','{}'::jsonb)",
+      ["x".repeat(201)],
+    )).rejects.toThrow()
+    await expect(db.query("select admin_private.enqueue_outbox_v1($1,'IMPORT_INBOUND_ATTACHMENT','conversation_attachment',null,'{}'::jsonb, now())", ["y".repeat(201)])).rejects.toThrow(/invalid outbox event/)
+    const accepted = await db.query<{ id: string }>(
+      "select admin_private.enqueue_outbox_v1($1,'IMPORT_INBOUND_ATTACHMENT','conversation_attachment',null,'{}'::jsonb, now()) as id",
+      ["import-inbound-attachment:resend:fit"],
+    )
+    expect(accepted.rows[0].id).toBeTruthy()
   })
 
   it("parses a formatted verified sender without granting authentication or permissions", async () => {

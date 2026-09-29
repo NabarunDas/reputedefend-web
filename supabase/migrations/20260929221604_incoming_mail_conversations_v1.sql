@@ -9,28 +9,19 @@ ALTER TABLE admin_private.job_outbox ADD CONSTRAINT job_outbox_topic_check
 ALTER TABLE admin_private.jobs DROP CONSTRAINT jobs_type_check;
 ALTER TABLE admin_private.jobs ADD CONSTRAINT jobs_type_check
   CHECK (job_type IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL', 'IMPORT_INBOUND_ATTACHMENT'));
-ALTER TABLE admin_private.job_outbox DROP CONSTRAINT job_outbox_event_key_check;
-ALTER TABLE admin_private.job_outbox ADD CONSTRAINT job_outbox_event_key_check
-  CHECK (length(btrim(event_key)) BETWEEN 8 AND 400);
-ALTER TABLE admin_private.jobs DROP CONSTRAINT jobs_idempotency_check;
-ALTER TABLE admin_private.jobs ADD CONSTRAINT jobs_idempotency_check
-  CHECK (length(btrim(idempotency_key)) BETWEEN 8 AND 400);
 
 CREATE OR REPLACE FUNCTION admin_private.enqueue_outbox_v1(
   p_event_key text, p_topic text, p_aggregate_type text, p_aggregate_id uuid, p_payload jsonb, p_available_at timestamptz DEFAULT now()
 ) RETURNS uuid LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE created admin_private.job_outbox;
 BEGIN
-  IF p_event_key IS NULL OR length(btrim(p_event_key)) NOT BETWEEN 8 AND 400
+  IF p_event_key IS NULL OR length(btrim(p_event_key)) NOT BETWEEN 8 AND 200
     OR p_topic IS NULL OR p_topic NOT IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL', 'IMPORT_INBOUND_ATTACHMENT')
     OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object'
   THEN RAISE EXCEPTION 'invalid outbox event'; END IF;
   INSERT INTO admin_private.job_outbox(event_key, topic, aggregate_type, aggregate_id, payload, available_at)
   VALUES (btrim(p_event_key), p_topic, nullif(btrim(coalesce(p_aggregate_type, '')), ''), p_aggregate_id, p_payload, coalesce(p_available_at, now()))
   RETURNING * INTO created;
-  RETURN created.id;
-EXCEPTION WHEN unique_violation THEN
-  SELECT * INTO created FROM admin_private.job_outbox WHERE event_key = btrim(p_event_key);
   RETURN created.id;
 END; $$;
 
@@ -358,7 +349,7 @@ REVOKE ALL ON FUNCTION admin_private.parse_mailbox_v1(text) FROM PUBLIC, anon, a
 CREATE FUNCTION admin_private.inbound_attachment_event_key_v1(p_email_id text, p_attachment_id text)
 RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   SELECT CASE
-    WHEN length('import-inbound-attachment:resend:' || p_email_id || ':' || p_attachment_id) <= 400
+    WHEN length('import-inbound-attachment:resend:' || p_email_id || ':' || p_attachment_id) <= 200
       THEN 'import-inbound-attachment:resend:' || p_email_id || ':' || p_attachment_id
     ELSE 'import-inbound-attachment:resend:' || encode(extensions.digest(p_email_id || ':' || p_attachment_id, 'sha256'), 'hex')
   END;

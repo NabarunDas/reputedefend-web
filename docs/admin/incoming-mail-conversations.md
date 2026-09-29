@@ -76,7 +76,7 @@ Validated webhook/provider occurrence time is stored on the inbound receipt and 
 
 The email-import transaction records attachment identities and enqueues one `IMPORT_INBOUND_ATTACHMENT` job per attachment. The webhook does not download files.
 
-The attachment worker retrieves bytes from Resend (`emails.receiving.attachments.get`), validates declared metadata without clamping oversized files, downloads bounded bytes, validates actual signatures against the Step 8 allow-list, uploads to a private inbound S3 prefix over OIDC, probes GuardDuty, and then marks the row clean or blocked.
+The attachment worker inspects the Resend `{ data, error }` result. Timeouts, 429s, 5xx and network failures stay retryable and do not terminalise the row. Permanent 404s, malformed metadata, invalid download URLs, oversized files and failed signatures become terminal. The download is streamed with a hard `10_485_760` byte cap. Attachment job keys stay within the Step 10 200-character contract, using a deterministic SHA-256 form when the readable key would be longer.
 
 Admin download/availability requires all of: a private object, matching storage identity, `NO_THREATS_FOUND`, and successful content validation. `validation_status` is not `VALID` merely because the declared MIME type is listed. A clean scan cannot make a row available with NULL storage bucket/key.
 

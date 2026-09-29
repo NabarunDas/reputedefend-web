@@ -123,7 +123,8 @@ function accessMaterial(actionId = crypto.randomUUID()) {
   const token = deriveCommunicationAccessToken(actionId, linkSecretValue)
   return { actionId, token, secretHash: communicationAccessTokenHash(token) }
 }
-function queueBody(communicationId: string, extra: Record<string, unknown> = {}) {
+function queueBody(communicationId: string | undefined, extra: Record<string, unknown> = {}) {
+  if (!communicationId) throw new Error("missing communication id")
   return { communicationId, sendEnabled: true, ...extra }
 }
 
@@ -145,14 +146,17 @@ async function openEvidence(withManualAccess = false) {
 }
 
 async function draft(extra: Record<string, unknown> = {}) {
-  const setup = extra.evidenceRequestId ? { ...accessMaterial(), ...extra } : { ...(await openEvidence()), ...extra }
+  const generated = extra.evidenceRequestId ? { evidenceRequestId: String(extra.evidenceRequestId), ...accessMaterial() } : await openEvidence()
+  const evidenceRequestId = String(extra.evidenceRequestId ?? generated.evidenceRequestId)
+  const actionId = String(extra.actionId ?? generated.actionId)
+  const secretHashValue = String(extra.secretHash ?? generated.secretHash)
   return rpc("admin_communication_command_v1", [token, key(), "draft", {
     templateKey: "EVIDENCE_REQUEST",
     caseId,
-    evidenceRequestId: setup.evidenceRequestId,
+    evidenceRequestId,
     customerOrigin: "https://customer.profilerelaunch.com",
-    actionId: setup.actionId,
-    secretHash: setup.secretHash,
+    actionId,
+    secretHash: secretHashValue,
     ...extra,
   }, null])
 }

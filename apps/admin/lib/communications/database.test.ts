@@ -468,6 +468,8 @@ describe("communications outgoing mail SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_load_send_v1(uuid,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_mark_acceptance_unknown_v1(uuid,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_begin_provider_attempt_v1(uuid,integer,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.protect_customer_action_scope_v1()','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.protect_communication_snapshot_v1()','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
     }
   })
 
@@ -684,5 +686,125 @@ describe("communications outgoing mail SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.email_suppressions")).rows[0].n).toBe(1)
     const dump = JSON.stringify((await db.query("select * from admin_private.communication_webhook_events")).rows)
     expect(dump).not.toMatch(/raw|payload|svix|whsec_/i)
+  })
+
+  it("rejects direct updates to COMMUNICATION_ACCESS evidence_request_id and link_key_version", async () => {
+    const created = await draft()
+    expect(created?.status).toBe("success")
+    const action = await db.query<{ id: string; evidence_request_id: string; link_key_version: number }>(
+      "select id, evidence_request_id, link_key_version from public.customer_actions where kind='COMMUNICATION_ACCESS'",
+    )
+    expect(action.rows[0].link_key_version).toBe(1)
+    const other = await db.query<{ id: string }>(
+      "insert into public.evidence_requests(case_id, title, request_text, created_by) values($1,'Other item','Please send something else.',$2) returning id",
+      [caseId, uid],
+    )
+    await expect(db.query("update public.customer_actions set evidence_request_id=$1 where id=$2", [other.rows[0].id, action.rows[0].id]))
+      .rejects.toThrow(/Customer action scope fields are immutable/)
+    await expect(db.query("update public.customer_actions set link_key_version=2 where id=$1", [action.rows[0].id]))
+      .rejects.toThrow(/Customer action scope fields are immutable/)
+    const stored = await db.query<{ evidence_request_id: string; link_key_version: number }>(
+      "select evidence_request_id, link_key_version from public.customer_actions where id=$1",
+      [action.rows[0].id],
+    )
+    expect(stored.rows[0]).toEqual({ evidence_request_id: action.rows[0].evidence_request_id, link_key_version: 1 })
+  })
+
+  it("terminalises an expired COMMUNICATION_ACCESS before issuing a replacement", async () => {
+    const first = await draft()
+    expect(first?.status).toBe("success")
+    const old = await db.query<{ id: string; evidence_request_id: string }>(
+      "select id, evidence_request_id from public.customer_actions where kind='COMMUNICATION_ACCESS' and status='OPEN'",
+    )
+    await db.query(
+      "insert into admin_private.customer_action_challenges(action_id, pending_hash, pending_expires_at) values($1,$2, now() + interval '10 minutes')",
+      [old.rows[0].id, secretHash()],
+    )
+    await db.query(
+      "insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at) values($1,$2,$3, now() + interval '15 minutes')",
+      [secretHash(), old.rows[0].id, customerAuth],
+    )
+    await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+    try {
+      await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [old.rows[0].id])
+    } finally {
+      await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+    }
+    const replacement = await draft({ evidenceRequestId: old.rows[0].evidence_request_id })
+    expect(replacement?.status).toBe("success")
+    expect(replacement?.id).not.toBe(first?.id)
+    const expired = await db.query<{ status: string; revoked_at: string | null }>(
+      "select status, revoked_at from public.customer_actions where id=$1",
+      [old.rows[0].id],
+    )
+    expect(expired.rows[0].status).toBe("REVOKED")
+    expect(expired.rows[0].revoked_at).toBeTruthy()
+    const event = await db.query<{ actor_type: string; details: { source?: string; kind?: string } }>(
+      "select actor_type, details from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED' order by id desc limit 1",
+      [old.rows[0].id],
+    )
+    expect(event.rows[0]).toMatchObject({ actor_type: "SYSTEM", details: expect.objectContaining({ source: "ACTION_EXPIRED", kind: "COMMUNICATION_ACCESS" }) })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where kind='COMMUNICATION_ACCESS' and status='OPEN' and evidence_request_id=$1", [old.rows[0].evidence_request_id])).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_challenges where action_id=$1", [old.rows[0].id])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_sessions where action_id=$1", [old.rows[0].id])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(2)
+  })
+
+  it("refuses a second unexpired COMMUNICATION_ACCESS for the same evidence request", async () => {
+    const first = await draft()
+    expect(first?.status).toBe("success")
+    const requestId = (await db.query<{ evidence_request_id: string }>("select evidence_request_id from public.communications where id=$1", [first!.id])).rows[0].evidence_request_id
+    const second = await draft({ evidenceRequestId: requestId })
+    expect(second).toEqual({ status: "denied" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where kind='COMMUNICATION_ACCESS'")).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.admin_audit_events where action='COMMUNICATION_CHANGED'")).rows[0].n).toBe(1)
+    expect(JSON.stringify(second)).not.toMatch(/unique|duplicate key|violates/i)
+  })
+
+  it("locks the reviewed communication snapshot while allowing operational delivery updates", async () => {
+    const row = await reviewed()
+    const stored = await db.query<{
+      sender_address: string
+      recipient: string
+      evidence_request_id: string
+      customer_action_id: string
+      link_key_version: number
+    }>("select sender_address, recipient, evidence_request_id, customer_action_id, link_key_version from public.communications where id=$1", [row.id])
+    expect(stored.rows[0].sender_address).toBe("ops@example.com")
+    await expect(db.query("update public.communications set recipient='other@example.com' where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set sender_address='other@example.com' where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set subject='Changed' where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set body_text='Changed body' where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set link_key_version=2 where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set customer_action_id=null where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set evidence_request_id=null where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    await expect(db.query("update public.communications set content_locked=false where id=$1", [row.id]))
+      .rejects.toThrow(/Reviewed communication snapshot is immutable/)
+    const queued = await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    expect(queued).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+    expect(await rpc("communication_mark_provider_accepted_v1", [row.id, "resend", "msg_lock", `send-email:${row.id}:v1`]))
+      .toMatchObject({ status: "success" })
+    const after = await db.query<{
+      sender_address: string
+      recipient: string
+      link_key_version: number
+      delivery_status: string
+      provider_message_id: string
+    }>("select sender_address, recipient, link_key_version, delivery_status, provider_message_id from public.communications where id=$1", [row.id])
+    expect(after.rows[0]).toMatchObject({
+      sender_address: stored.rows[0].sender_address,
+      recipient: stored.rows[0].recipient,
+      link_key_version: stored.rows[0].link_key_version,
+      delivery_status: "PROVIDER_ACCEPTED",
+      provider_message_id: "msg_lock",
+    })
   })
 })

@@ -40,6 +40,36 @@ CREATE UNIQUE INDEX customer_actions_one_open_communication_access_idx
   ON public.customer_actions (evidence_request_id)
   WHERE status = 'OPEN' AND kind = 'COMMUNICATION_ACCESS';
 
+CREATE OR REPLACE FUNCTION admin_private.protect_customer_action_scope_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  IF NEW.customer_id IS DISTINCT FROM OLD.customer_id
+    OR NEW.business_id IS DISTINCT FROM OLD.business_id
+    OR NEW.location_id IS DISTINCT FROM OLD.location_id
+    OR NEW.case_id IS DISTINCT FROM OLD.case_id
+    OR NEW.agreement_version_id IS DISTINCT FROM OLD.agreement_version_id
+    OR NEW.authorization_id IS DISTINCT FROM OLD.authorization_id
+    OR NEW.evidence_request_id IS DISTINCT FROM OLD.evidence_request_id
+    OR NEW.link_key_version IS DISTINCT FROM OLD.link_key_version
+    OR NEW.kind IS DISTINCT FROM OLD.kind
+    OR NEW.secret_hash IS DISTINCT FROM OLD.secret_hash
+    OR NEW.expected_email_snapshot IS DISTINCT FROM OLD.expected_email_snapshot
+    OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+    OR NEW.created_by IS DISTINCT FROM OLD.created_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  THEN RAISE EXCEPTION 'Customer action scope fields are immutable'; END IF;
+  IF OLD.status = 'OPEN' THEN
+    IF NEW.status NOT IN ('OPEN','COMPLETED','DECLINED','REVOKED') THEN
+      RAISE EXCEPTION 'Invalid customer action status transition';
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'Customer action status is terminal';
+  END IF;
+  NEW.record_version := OLD.record_version + 1;
+  RETURN NEW;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.protect_customer_action_scope_v1() FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION admin_private.validate_customer_action_scope_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE v public.agreement_versions; auth public.authorization_records; c public.customers; cs public.cases;
@@ -235,6 +265,40 @@ CREATE INDEX communications_delivery_idx ON public.communications (delivery_stat
 CREATE UNIQUE INDEX communications_provider_message_uidx
   ON public.communications (provider, provider_message_id)
   WHERE lifecycle IS NOT NULL AND provider_message_id IS NOT NULL;
+
+CREATE FUNCTION admin_private.protect_communication_snapshot_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  IF OLD.lifecycle IS NULL THEN RETURN NEW; END IF;
+  IF OLD.content_locked IS TRUE AND NEW.content_locked IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'Reviewed communication snapshot is immutable';
+  END IF;
+  IF OLD.content_locked IS TRUE THEN
+    IF NEW.case_id IS DISTINCT FROM OLD.case_id
+      OR NEW.customer_id IS DISTINCT FROM OLD.customer_id
+      OR NEW.business_id IS DISTINCT FROM OLD.business_id
+      OR NEW.evidence_request_id IS DISTINCT FROM OLD.evidence_request_id
+      OR NEW.customer_action_id IS DISTINCT FROM OLD.customer_action_id
+      OR NEW.communication_type IS DISTINCT FROM OLD.communication_type
+      OR NEW.direction IS DISTINCT FROM OLD.direction
+      OR NEW.recipient IS DISTINCT FROM OLD.recipient
+      OR NEW.subject IS DISTINCT FROM OLD.subject
+      OR NEW.body_text IS DISTINCT FROM OLD.body_text
+      OR NEW.body_html IS DISTINCT FROM OLD.body_html
+      OR NEW.template_key IS DISTINCT FROM OLD.template_key
+      OR NEW.template_version IS DISTINCT FROM OLD.template_version
+      OR NEW.content_version IS DISTINCT FROM OLD.content_version
+      OR NEW.sender_address IS DISTINCT FROM OLD.sender_address
+      OR NEW.link_key_version IS DISTINCT FROM OLD.link_key_version
+      OR NEW.author_id IS DISTINCT FROM OLD.author_id
+    THEN RAISE EXCEPTION 'Reviewed communication snapshot is immutable'; END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER communications_protect_snapshot
+  BEFORE UPDATE ON public.communications
+  FOR EACH ROW EXECUTE FUNCTION admin_private.protect_communication_snapshot_v1();
+REVOKE ALL ON FUNCTION admin_private.protect_communication_snapshot_v1() FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TABLE admin_private.communication_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -870,15 +934,30 @@ BEGIN
         OR cs.status IN ('CLOSED', 'CANCELLED')
         OR req.status <> 'OPEN'
       THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-      INSERT INTO public.customer_actions(
-        id, customer_id, business_id, location_id, case_id, evidence_request_id, link_key_version,
-        kind, secret_hash, expected_email_snapshot, expires_at, created_by
-      ) VALUES (
-        (p_payload->>'actionId')::uuid, cs.customer_id, cs.business_id, cs.location_id, cs.id, req.id,
-        (p_payload->>'linkKeyVersion')::integer,
-        'COMMUNICATION_ACCESS', p_payload->>'secretHash', admin_private.normalize_email_v1(verified),
-        now() + interval '14 days', actor
-      ) RETURNING * INTO action;
+      SELECT * INTO action FROM public.customer_actions
+        WHERE kind = 'COMMUNICATION_ACCESS' AND status = 'OPEN' AND evidence_request_id = req.id
+        FOR UPDATE;
+      IF action.id IS NOT NULL THEN
+        IF action.expires_at > now() THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+        IF NOT admin_private.revoke_case_access_action_v1(
+          action.id,
+          'The previous communication-access capability expired.',
+          jsonb_build_object('source', 'ACTION_EXPIRED')
+        ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      END IF;
+      BEGIN
+        INSERT INTO public.customer_actions(
+          id, customer_id, business_id, location_id, case_id, evidence_request_id, link_key_version,
+          kind, secret_hash, expected_email_snapshot, expires_at, created_by
+        ) VALUES (
+          (p_payload->>'actionId')::uuid, cs.customer_id, cs.business_id, cs.location_id, cs.id, req.id,
+          (p_payload->>'linkKeyVersion')::integer,
+          'COMMUNICATION_ACCESS', p_payload->>'secretHash', admin_private.normalize_email_v1(verified),
+          now() + interval '14 days', actor
+        ) RETURNING * INTO action;
+      EXCEPTION WHEN unique_violation THEN
+        RETURN jsonb_build_object('status', 'denied');
+      END;
       upload := origin || '/action/' || action.id::text;
       IF position('#t=' in upload) > 0 THEN RETURN jsonb_build_object('status', 'denied'); END IF;
       values := values || jsonb_build_object('specific_document', req.title, 'upload_url', upload);

@@ -134,7 +134,7 @@ This PR does not change the IAM role or Vercel environment variables. After sour
 
 `s3:PutObject` for `arn:aws:s3:::profilerelaunch-evidence-dev-01/cases/*`
 
-Do not add DeleteObject, ListBucket, PutObjectTagging, DeleteObjectTagging, s3:*, multipart or extra KMS/admin permissions. The 9B2 migration `20260928190000_customer_evidence_upload_v1.sql` is not remotely applied. Customer replacement after `UPLOADED` is not included. Incomplete `PENDING_UPLOAD` attempts may be abandoned and restarted on the same document with a new version UUID/key.
+Do not add DeleteObject, ListBucket, PutObjectTagging, DeleteObjectTagging, s3:*, multipart or extra KMS/admin permissions. The 9B2 migration is applied remotely as `20260929150057_customer_evidence_upload_v1.sql`. Customer replacement after `UPLOADED` is not included. Incomplete `PENDING_UPLOAD` attempts may be abandoned and restarted on the same document with a new version UUID/key.
 
 IAM `s3:PutObject` alone is not sufficient for live customer upload. Before 9B2 live testing, inspect and if needed update the existing evidence bucket CORS so the browser can POST from the customer origin. Required:
 

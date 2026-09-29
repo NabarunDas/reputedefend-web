@@ -432,7 +432,7 @@ Acceptance: another customer cannot accept/upload/view using a guessed ID; expir
 ## Step 10 Jobs outbox and operational health
 Deliver: transactional outbox, durable jobs, scheduled worker, leases, retries, dead-letter queue, heartbeat, replay controls and environment-safe provider adapters.
 
-As built in this source PR: `admin_private` outbox/jobs/attempts/heartbeats, `SYSTEM_HEALTH_PROBE` only, Admin `/operations/jobs`, fail-closed `GET /api/internal/jobs/run` (`CRON_SECRET`, production, `JOB_WORKER_ENABLED`), and a crash-after-provider idempotency test. The migration is not remotely applied. Cron env is not configured. No live email/payment/Google adapters. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+As built in this source PR: `admin_private` outbox/jobs/attempts/heartbeats, `SYSTEM_HEALTH_PROBE` only, Admin `/operations/jobs`, fail-closed `GET /api/internal/jobs/run` (`CRON_SECRET`, production, `JOB_WORKER_ENABLED`), crash-after-provider idempotency, expired-lease dead-letter without exceeding `max_attempts`, and cadence-aware heartbeat health (Hobby daily default). The migration is not remotely applied. Cron env is not configured. No live email/payment/Google adapters. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
 
 Acceptance: worker crash after provider call does not duplicate side effects; competing workers claim one job; exhausted work is visible; production credentials cannot be used by preview tests. Depends on 4 and 7.
 

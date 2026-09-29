@@ -1,5 +1,5 @@
 import { ukDate } from "@/lib/admin/activity"
-import { heartbeatLabel, jobStatusLabel } from "@/lib/jobs/model"
+import { heartbeatLabel, isDailyHobbyCadence, jobStatusLabel, workerCadenceLabel } from "@/lib/jobs/model"
 import { loadJobHealth } from "@/lib/jobs/queries"
 import { Badge, EmptyState, PageHeader } from "../../ui"
 import { EnqueueProbeForm, ReplayJobForm } from "./forms"
@@ -31,6 +31,8 @@ export default async function JobsPage() {
         {heartbeat.environment ? ` · ${heartbeat.environment}` : ""}
         {heartbeat.workerName ? ` · ${heartbeat.workerName}` : ""}
       </p>
+      <p>Expected worker cadence: {workerCadenceLabel(heartbeat.expectedIntervalSeconds)}</p>
+      {isDailyHobbyCadence(heartbeat.expectedIntervalSeconds) && <p className="muted">The current scheduler is configured for daily Hobby-compatible execution. Time-sensitive background work requires a more frequent production scheduler before customer communications, payments or monitoring are enabled.</p>}
       <p className="muted">
         Last started {heartbeat.lastStartedAt ? ukDate(heartbeat.lastStartedAt) : "never"}.
         Last completed {heartbeat.lastCompletedAt ? ukDate(heartbeat.lastCompletedAt) : "never"}.

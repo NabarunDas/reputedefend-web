@@ -28,7 +28,8 @@ type RpcResult = {
   idempotencyKey?: string
   replayCount?: number
   version?: number
-  heartbeat?: { status?: string; lastStartedAt?: string | null }
+  heartbeat?: { status?: string; lastStartedAt?: string | null; expectedIntervalSeconds?: number; lateAfterSeconds?: number }
+  deadLettered?: number
   counts?: { pending?: number; running?: number; retry?: number; succeeded?: number; deadLetter?: number }
 }
 
@@ -41,7 +42,7 @@ const signatures: Record<string, string[]> = {
   job_claim_batch_v1: ["p_limit", "p_worker", "p_lease_seconds", "p_deployment"],
   job_complete_v1: ["p_job", "p_lease"],
   job_fail_v1: ["p_job", "p_lease", "p_error", "p_retryable"],
-  job_heartbeat_v1: ["p_worker", "p_environment", "p_phase", "p_error", "p_deployment"],
+  job_heartbeat_v1: ["p_worker", "p_environment", "p_phase", "p_error", "p_deployment", "p_expected_interval", "p_late_after"],
   admin_enqueue_job_probe_v1: ["p_token", "p_request"],
 }
 
@@ -229,7 +230,7 @@ describe("jobs outbox SQL", () => {
     expect(await rpc("job_heartbeat_v1", ["admin-jobs", "production", "complete", null, "dpl_empty"])).toEqual({ status: "success" })
     expect(await rpc("job_heartbeat_v1", ["admin-jobs", "production", "success", null, "dpl_empty"])).toEqual({ status: "success" })
     const empty = await rpc("admin_job_health_v1", [token])
-    expect(empty?.heartbeat?.status).toBe("HEALTHY")
+    expect(empty?.heartbeat).toMatchObject({ status: "HEALTHY", expectedIntervalSeconds: 86400, lateAfterSeconds: 93600 })
     expect(empty?.counts).toMatchObject({ pending: 0, running: 0, retry: 0, deadLetter: 0 })
 
     await enqueueProbe()
@@ -274,6 +275,95 @@ describe("jobs outbox SQL", () => {
     expect(provider.calls).toBe(2)
     expect(provider.effects).toBe(1)
     expect((await db.query<{ status: string }>("select status from admin_private.jobs")).rows[0].status).toBe("SUCCEEDED")
+  })
+
+  it("dead-letters after repeated lease expiry without exceeding max_attempts", async () => {
+    await enqueueProbe()
+    await rpc("job_promote_outbox_v1", [20])
+    await db.exec("update admin_private.jobs set max_attempts=2")
+    const [first] = (await rpc("job_claim_batch_v1", [10, "worker-a", 120, null]))?.jobs ?? []
+    expect(first.attempts).toBe(1)
+    await db.query("update admin_private.jobs set lease_expires_at=now()-interval '1 second' where id=$1", [first.jobId])
+    const [second] = (await rpc("job_claim_batch_v1", [10, "worker-b", 120, null]))?.jobs ?? []
+    expect(second.attempts).toBe(2)
+    expect(second.leaseToken).not.toBe(first.leaseToken)
+    await db.query("update admin_private.jobs set lease_expires_at=now()-interval '1 second' where id=$1", [second.jobId])
+    const third = await rpc("job_claim_batch_v1", [10, "worker-c", 120, null])
+    expect(third?.jobs).toEqual([])
+    expect(third?.deadLettered).toBe(1)
+    const row = await db.query<{ status: string; attempts: number; last_error: string }>("select status, attempts, last_error from admin_private.jobs where id=$1", [first.jobId])
+    expect(row.rows[0]).toEqual({
+      status: "DEAD_LETTER",
+      attempts: 2,
+      last_error: "Maximum attempts exhausted after worker lease expiry",
+    })
+    const history = await db.query<{ attempt_number: number; outcome: string | null }>("select attempt_number, outcome from admin_private.job_attempts where job_id=$1 order by attempt_number", [first.jobId])
+    expect(history.rows).toEqual([
+      { attempt_number: 1, outcome: "LEASE_EXPIRED" },
+      { attempt_number: 2, outcome: "DEAD_LETTER" },
+    ])
+    expect(await rpc("job_complete_v1", [first.jobId, first.leaseToken])).toEqual({ status: "conflict" })
+    expect(await rpc("job_fail_v1", [second.jobId, second.leaseToken, "stale", true])).toEqual({ status: "conflict" })
+    await expect(db.query(
+      "update admin_private.jobs set attempts=3 where id=$1",
+      [first.jobId],
+    )).rejects.toThrow(/jobs_attempts_check|check constraint/i)
+    const health = await rpc("admin_job_health_v1", [token])
+    expect(health?.counts).toMatchObject({ deadLetter: 1, running: 0 })
+    expect(JSON.stringify(health)).toMatch(/DEAD_LETTER/)
+  })
+
+  it("dead-letters after two worker crashes without claiming a third attempt", async () => {
+    await enqueueProbe()
+    await rpc("job_promote_outbox_v1", [20])
+    await db.exec("update admin_private.jobs set max_attempts=2")
+    const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32) }
+    const handlers = {
+      SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE" as const, execute: async () => ({ ok: true as const }) },
+    }
+    await expect(runJobWorker({ rpc: namedRpc(), env, handlers, crashAfterProvider: true })).rejects.toBeInstanceOf(WorkerCrash)
+    expect((await db.query<{ attempts: number; status: string }>("select attempts, status from admin_private.jobs")).rows[0]).toEqual({
+      attempts: 1, status: "RUNNING",
+    })
+    await db.exec("update admin_private.jobs set lease_expires_at=now()-interval '1 second'")
+    await expect(runJobWorker({ rpc: namedRpc(), env, handlers, crashAfterProvider: true })).rejects.toBeInstanceOf(WorkerCrash)
+    expect((await db.query<{ attempts: number; status: string }>("select attempts, status from admin_private.jobs")).rows[0]).toEqual({
+      attempts: 2, status: "RUNNING",
+    })
+    await db.exec("update admin_private.jobs set lease_expires_at=now()-interval '1 second'")
+    const third = await runJobWorker({ rpc: namedRpc(), env, handlers })
+    expect(third).toEqual({
+      status: "success",
+      counts: { promoted: 0, claimed: 0, succeeded: 0, retried: 0, deadLettered: 1 },
+    })
+    const row = await db.query<{ status: string; attempts: number }>("select status, attempts from admin_private.jobs")
+    expect(row.rows[0]).toEqual({ status: "DEAD_LETTER", attempts: 2 })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_attempts")).rows[0].n).toBe(2)
+  })
+
+  it("dead-letters an expired first lease when max_attempts is 1", async () => {
+    await enqueueProbe()
+    await rpc("job_promote_outbox_v1", [20])
+    await db.exec("update admin_private.jobs set max_attempts=1")
+    const [first] = (await rpc("job_claim_batch_v1", [10, "worker-a", 120, null]))?.jobs ?? []
+    expect(first.attempts).toBe(1)
+    await db.query("update admin_private.jobs set lease_expires_at=now()-interval '1 second' where id=$1", [first.jobId])
+    const next = await rpc("job_claim_batch_v1", [10, "worker-b", 120, null])
+    expect(next?.jobs).toEqual([])
+    expect(next?.deadLettered).toBe(1)
+    const row = await db.query<{ status: string; attempts: number }>("select status, attempts from admin_private.jobs where id=$1", [first.jobId])
+    expect(row.rows[0]).toEqual({ status: "DEAD_LETTER", attempts: 1 })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_attempts where job_id=$1", [first.jobId])).rows[0].n).toBe(1)
+  })
+
+  it("classifies heartbeat health from the stored worker cadence, not a 10-minute window", async () => {
+    expect(await rpc("job_heartbeat_v1", ["admin-jobs", "production", "start", null, "dpl_empty", 86400, 93600])).toEqual({ status: "success" })
+    await db.exec("update admin_private.job_worker_heartbeats set last_started_at=now()-interval '11 minutes', updated_at=now()-interval '11 minutes'")
+    expect((await rpc("admin_job_health_v1", [token]))?.heartbeat).toMatchObject({
+      status: "HEALTHY", expectedIntervalSeconds: 86400, lateAfterSeconds: 93600,
+    })
+    await db.exec("update admin_private.job_worker_heartbeats set last_started_at=now()-interval '27 hours', updated_at=now()-interval '27 hours'")
+    expect((await rpc("admin_job_health_v1", [token]))?.heartbeat?.status).toBe("LATE")
   })
 
   it("revokes PUBLIC, anon and authenticated access to the queue tables and RPCs", async () => {

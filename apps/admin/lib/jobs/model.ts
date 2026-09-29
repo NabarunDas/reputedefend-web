@@ -51,6 +51,8 @@ export type JobHealth = {
     lastError: string | null
     deploymentId: string | null
     updatedAt: string | null
+    expectedIntervalSeconds: number
+    lateAfterSeconds: number
   }
   counts: {
     pending: number
@@ -91,4 +93,17 @@ export function heartbeatLabel(status: HeartbeatStatus): string {
   if (status === "HEALTHY") return "Healthy"
   if (status === "LATE") return "Late"
   return "Never run"
+}
+
+export function workerCadenceLabel(seconds: number | null | undefined): string {
+  if (!seconds || seconds === 86400) return "Daily"
+  if (seconds === 300) return "Every 5 minutes"
+  if (seconds % 86400 === 0) return `Every ${seconds / 86400} days`
+  if (seconds % 3600 === 0) return `Every ${seconds / 3600} hours`
+  if (seconds % 60 === 0) return `Every ${seconds / 60} minutes`
+  return `Every ${seconds} seconds`
+}
+
+export function isDailyHobbyCadence(seconds: number | null | undefined): boolean {
+  return !seconds || seconds >= 86400
 }

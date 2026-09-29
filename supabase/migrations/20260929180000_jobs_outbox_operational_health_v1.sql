@@ -48,7 +48,7 @@ CREATE TABLE admin_private.jobs (
   CONSTRAINT jobs_type_check CHECK (job_type IN ('SYSTEM_HEALTH_PROBE')),
   CONSTRAINT jobs_status_check CHECK (status IN ('PENDING', 'RUNNING', 'RETRY', 'SUCCEEDED', 'DEAD_LETTER')),
   CONSTRAINT jobs_payload_object_check CHECK (jsonb_typeof(payload) = 'object'),
-  CONSTRAINT jobs_attempts_check CHECK (attempts >= 0 AND max_attempts BETWEEN 1 AND 20 AND attempts <= max_attempts + 1),
+  CONSTRAINT jobs_attempts_check CHECK (attempts >= 0 AND max_attempts BETWEEN 1 AND 20 AND attempts <= max_attempts),
   CONSTRAINT jobs_replay_check CHECK (replay_count >= 0),
   CONSTRAINT jobs_error_len_check CHECK (last_error IS NULL OR length(last_error) <= 500),
   CONSTRAINT jobs_idempotency_check CHECK (length(btrim(idempotency_key)) BETWEEN 8 AND 200)
@@ -116,10 +116,16 @@ CREATE TABLE admin_private.job_worker_heartbeats (
   last_success_at timestamptz,
   last_error text,
   deployment_id text,
+  expected_interval_seconds integer NOT NULL DEFAULT 86400,
+  late_after_seconds integer NOT NULL DEFAULT 93600,
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT job_worker_heartbeats_name_check CHECK (length(btrim(worker_name)) BETWEEN 1 AND 80),
   CONSTRAINT job_worker_heartbeats_env_check CHECK (length(btrim(environment)) BETWEEN 1 AND 32),
   CONSTRAINT job_worker_heartbeats_error_len_check CHECK (last_error IS NULL OR length(last_error) <= 500),
+  CONSTRAINT job_worker_heartbeats_cadence_check CHECK (
+    expected_interval_seconds BETWEEN 60 AND 604800
+    AND late_after_seconds BETWEEN expected_interval_seconds AND 1209600
+  ),
   UNIQUE (worker_name, environment)
 );
 ALTER TABLE admin_private.job_worker_heartbeats ENABLE ROW LEVEL SECURITY;
@@ -227,7 +233,7 @@ END; $$;
 CREATE FUNCTION public.job_claim_batch_v1(
   p_limit integer DEFAULT 10, p_worker text DEFAULT 'admin-jobs', p_lease_seconds integer DEFAULT 120, p_deployment text DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row admin_private.jobs; claimed jsonb := '[]'::jsonb; batch integer; owner text; lease integer; token uuid; expired uuid; attempt_no integer;
+DECLARE row admin_private.jobs; claimed jsonb := '[]'::jsonb; batch integer; owner text; lease integer; token uuid; expired uuid; attempt_no integer; dead_lettered integer := 0;
 BEGIN
   owner := btrim(coalesce(p_worker, ''));
   IF length(owner) NOT BETWEEN 1 AND 80 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
@@ -245,7 +251,35 @@ BEGIN
   LOOP
     IF row.status = 'RUNNING' THEN
       expired := row.lease_token;
+      IF row.attempts >= row.max_attempts THEN
+        PERFORM admin_private.finish_job_attempt_v1(row.id, expired, 'DEAD_LETTER', 'Maximum attempts exhausted after worker lease expiry');
+        UPDATE admin_private.jobs
+          SET status = 'DEAD_LETTER',
+              dead_lettered_at = now(),
+              lease_expires_at = NULL,
+              lease_owner = NULL,
+              lease_token = NULL,
+              last_error = 'Maximum attempts exhausted after worker lease expiry',
+              updated_at = now(),
+              record_version = row.record_version + 1
+          WHERE id = row.id AND status = 'RUNNING';
+        dead_lettered := dead_lettered + 1;
+        CONTINUE;
+      END IF;
       PERFORM admin_private.finish_job_attempt_v1(row.id, expired, 'LEASE_EXPIRED', 'Lease expired before completion');
+    ELSIF row.attempts >= row.max_attempts THEN
+      UPDATE admin_private.jobs
+        SET status = 'DEAD_LETTER',
+            dead_lettered_at = now(),
+            lease_expires_at = NULL,
+            lease_owner = NULL,
+            lease_token = NULL,
+            last_error = 'Maximum attempts exhausted after worker lease expiry',
+            updated_at = now(),
+            record_version = row.record_version + 1
+        WHERE id = row.id AND status IN ('PENDING', 'RETRY');
+      dead_lettered := dead_lettered + 1;
+      CONTINUE;
     END IF;
     token := gen_random_uuid();
     SELECT coalesce(max(a.attempt_number), 0) + 1 INTO attempt_no FROM admin_private.job_attempts a WHERE a.job_id = row.id;
@@ -258,8 +292,9 @@ BEGIN
           attempts = row.attempts + 1,
           updated_at = now(),
           record_version = row.record_version + 1
-      WHERE id = row.id
+      WHERE id = row.id AND attempts < max_attempts
       RETURNING * INTO row;
+    IF NOT FOUND THEN CONTINUE; END IF;
     INSERT INTO admin_private.job_attempts(job_id, attempt_number, lease_owner, lease_token, deployment_id)
     VALUES (row.id, attempt_no, owner, token, nullif(left(btrim(coalesce(p_deployment, '')), 80), ''));
     claimed := claimed || jsonb_build_array(jsonb_build_object(
@@ -273,7 +308,7 @@ BEGIN
       'maxAttempts', row.max_attempts
     ));
   END LOOP;
-  RETURN jsonb_build_object('status', 'success', 'jobs', claimed);
+  RETURN jsonb_build_object('status', 'success', 'jobs', claimed, 'deadLettered', dead_lettered);
 END; $$;
 
 CREATE FUNCTION public.job_complete_v1(p_job uuid, p_lease uuid)
@@ -342,26 +377,34 @@ BEGIN
 END; $$;
 
 CREATE FUNCTION public.job_heartbeat_v1(
-  p_worker text, p_environment text, p_phase text, p_error text DEFAULT NULL, p_deployment text DEFAULT NULL
+  p_worker text, p_environment text, p_phase text, p_error text DEFAULT NULL, p_deployment text DEFAULT NULL,
+  p_expected_interval integer DEFAULT 86400, p_late_after integer DEFAULT 93600
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE owner text; env text; phase text; summary text; deploy text;
+DECLARE owner text; env text; phase text; summary text; deploy text; expected integer; late integer;
 BEGIN
   owner := btrim(coalesce(p_worker, ''));
   env := btrim(coalesce(p_environment, ''));
   phase := btrim(coalesce(p_phase, ''));
+  expected := coalesce(p_expected_interval, 86400);
+  late := coalesce(p_late_after, 93600);
   IF length(owner) NOT BETWEEN 1 AND 80 OR length(env) NOT BETWEEN 1 AND 32
     OR phase NOT IN ('start', 'complete', 'success', 'error')
+    OR expected < 60 OR expected > 604800
+    OR late < expected OR late > 1209600
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   summary := CASE WHEN p_error IS NULL THEN NULL ELSE admin_private.safe_job_error_v1(p_error) END;
   deploy := nullif(left(btrim(coalesce(p_deployment, '')), 80), '');
-  INSERT INTO admin_private.job_worker_heartbeats(worker_name, environment, last_started_at, last_completed_at, last_success_at, last_error, deployment_id, updated_at)
+  INSERT INTO admin_private.job_worker_heartbeats(
+    worker_name, environment, last_started_at, last_completed_at, last_success_at, last_error, deployment_id,
+    expected_interval_seconds, late_after_seconds, updated_at
+  )
   VALUES (
     owner, env,
     CASE WHEN phase = 'start' THEN now() ELSE NULL END,
     CASE WHEN phase = 'complete' THEN now() ELSE NULL END,
     CASE WHEN phase = 'success' THEN now() ELSE NULL END,
     CASE WHEN phase = 'error' THEN summary ELSE NULL END,
-    deploy, now()
+    deploy, expected, late, now()
   )
   ON CONFLICT (worker_name, environment) DO UPDATE SET
     last_started_at = CASE WHEN phase = 'start' THEN now() ELSE admin_private.job_worker_heartbeats.last_started_at END,
@@ -369,6 +412,8 @@ BEGIN
     last_success_at = CASE WHEN phase = 'success' THEN now() ELSE admin_private.job_worker_heartbeats.last_success_at END,
     last_error = CASE WHEN phase = 'error' THEN summary WHEN phase = 'success' THEN NULL ELSE admin_private.job_worker_heartbeats.last_error END,
     deployment_id = coalesce(deploy, admin_private.job_worker_heartbeats.deployment_id),
+    expected_interval_seconds = expected,
+    late_after_seconds = late,
     updated_at = now();
   RETURN jsonb_build_object('status', 'success');
 END; $$;
@@ -459,12 +504,14 @@ END; $$;
 
 CREATE FUNCTION public.admin_job_health_v1(p_token text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE hb admin_private.job_worker_heartbeats; counts jsonb; jobs jsonb; health text;
+DECLARE hb admin_private.job_worker_heartbeats; counts jsonb; jobs jsonb; health text; expected integer; late integer;
 BEGIN
   IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO hb FROM admin_private.job_worker_heartbeats ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1;
+  expected := coalesce(hb.expected_interval_seconds, 86400);
+  late := coalesce(hb.late_after_seconds, 93600);
   IF hb.id IS NULL THEN health := 'NEVER_RUN';
-  ELSIF coalesce(hb.last_started_at, hb.updated_at) >= now() - interval '10 minutes' THEN health := 'HEALTHY';
+  ELSIF coalesce(hb.last_started_at, hb.updated_at) >= now() - make_interval(secs => late) THEN health := 'HEALTHY';
   ELSE health := 'LATE';
   END IF;
   SELECT jsonb_build_object(
@@ -495,7 +542,8 @@ BEGIN
     'heartbeat', CASE WHEN hb.id IS NULL THEN jsonb_build_object(
       'status', health, 'workerName', NULL, 'environment', NULL,
       'lastStartedAt', NULL, 'lastCompletedAt', NULL, 'lastSuccessAt', NULL,
-      'lastError', NULL, 'deploymentId', NULL, 'updatedAt', NULL
+      'lastError', NULL, 'deploymentId', NULL, 'updatedAt', NULL,
+      'expectedIntervalSeconds', 86400, 'lateAfterSeconds', 93600
     ) ELSE jsonb_build_object(
       'status', health,
       'workerName', hb.worker_name,
@@ -505,7 +553,9 @@ BEGIN
       'lastSuccessAt', hb.last_success_at,
       'lastError', hb.last_error,
       'deploymentId', hb.deployment_id,
-      'updatedAt', hb.updated_at
+      'updatedAt', hb.updated_at,
+      'expectedIntervalSeconds', expected,
+      'lateAfterSeconds', late
     ) END,
     'counts', counts,
     'jobs', jobs
@@ -541,7 +591,7 @@ REVOKE ALL ON FUNCTION public.job_promote_outbox_v1(integer),
   public.job_claim_batch_v1(integer, text, integer, text),
   public.job_complete_v1(uuid, uuid),
   public.job_fail_v1(uuid, uuid, text, boolean),
-  public.job_heartbeat_v1(text, text, text, text, text),
+  public.job_heartbeat_v1(text, text, text, text, text, integer, integer),
   public.admin_enqueue_job_probe_v1(text, uuid),
   public.admin_job_replay_v1(text, uuid, uuid, text, boolean, integer),
   public.admin_job_health_v1(text)
@@ -550,7 +600,7 @@ GRANT EXECUTE ON FUNCTION public.job_promote_outbox_v1(integer),
   public.job_claim_batch_v1(integer, text, integer, text),
   public.job_complete_v1(uuid, uuid),
   public.job_fail_v1(uuid, uuid, text, boolean),
-  public.job_heartbeat_v1(text, text, text, text, text),
+  public.job_heartbeat_v1(text, text, text, text, text, integer, integer),
   public.admin_enqueue_job_probe_v1(text, uuid),
   public.admin_job_replay_v1(text, uuid, uuid, text, boolean, integer),
   public.admin_job_health_v1(text)

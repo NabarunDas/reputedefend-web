@@ -29,12 +29,14 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
       p_phase: "start",
       p_error: null,
       p_deployment: config.deploymentId,
+      p_expected_interval: config.cadenceSeconds,
+      p_late_after: config.lateAfterSeconds,
     })
     const promoted = await options.rpc.rpc<{ status?: string; promoted?: number }>("job_promote_outbox_v1", {
       p_limit: options.promoteLimit ?? 20,
     })
     counts.promoted = promoted.promoted ?? 0
-    const claimed = await options.rpc.rpc<{ status?: string; jobs?: ClaimedJob[] }>("job_claim_batch_v1", {
+    const claimed = await options.rpc.rpc<{ status?: string; jobs?: ClaimedJob[]; deadLettered?: number }>("job_claim_batch_v1", {
       p_limit: options.claimLimit ?? 10,
       p_worker: config.workerName,
       p_lease_seconds: 120,
@@ -42,6 +44,7 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
     })
     const jobs = claimed.jobs ?? []
     counts.claimed = jobs.length
+    counts.deadLettered = claimed.deadLettered ?? 0
     for (const job of jobs) {
       const outcome = await processClaimedJob(options.rpc, job, handlers, options.crashAfterProvider === true)
       if (outcome === "SUCCEEDED") counts.succeeded += 1
@@ -54,6 +57,8 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
       p_phase: "complete",
       p_error: null,
       p_deployment: config.deploymentId,
+      p_expected_interval: config.cadenceSeconds,
+      p_late_after: config.lateAfterSeconds,
     })
     await options.rpc.rpc("job_heartbeat_v1", {
       p_worker: config.workerName,
@@ -61,6 +66,8 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
       p_phase: "success",
       p_error: null,
       p_deployment: config.deploymentId,
+      p_expected_interval: config.cadenceSeconds,
+      p_late_after: config.lateAfterSeconds,
     })
     return { status: "success", counts }
   } catch (error) {
@@ -72,6 +79,8 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
         p_phase: "error",
         p_error: "Worker invocation failed",
         p_deployment: config.deploymentId,
+        p_expected_interval: config.cadenceSeconds,
+        p_late_after: config.lateAfterSeconds,
       })
     } catch { /* Heartbeat failures stay fail-closed and are not logged with secrets. */ }
     return { status: "error", counts }

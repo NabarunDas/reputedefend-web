@@ -10,7 +10,7 @@ Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `
 
 Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The applied additive migration is `20260929150057_customer_evidence_upload_v1.sql`. Step 9 is LIVE-TESTED COMPLETE.
 
-Step 10 adds `admin_private.job_outbox`, `admin_private.jobs`, `admin_private.job_attempts`, `admin_private.job_worker_heartbeats` and `admin_private.job_command_receipts`, plus service-role promote/claim/complete/fail/heartbeat RPCs and Admin probe/replay/health RPCs. The additive migration is `20260929180000_jobs_outbox_operational_health_v1.sql`. It is not remotely applied.
+Step 10 adds `admin_private.job_outbox`, `admin_private.jobs`, `admin_private.job_attempts`, `admin_private.job_worker_heartbeats` and `admin_private.job_command_receipts`, plus service-role promote/claim/complete/fail/heartbeat RPCs and Admin probe/replay/health RPCs. Jobs constrain `attempts <= max_attempts`. Heartbeats store `expected_interval_seconds` and `late_after_seconds` so Admin HEALTHY/LATE uses the worker cadence, not a 10-minute window. The additive migration is `20260929180000_jobs_outbox_operational_health_v1.sql`. It is not remotely applied.
 
 ## Relationships
 

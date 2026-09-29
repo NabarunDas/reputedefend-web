@@ -26,6 +26,8 @@ describe("operations jobs page", () => {
         lastError: null,
         deploymentId: "dpl_test",
         updatedAt: "2026-09-29T12:00:05.000Z",
+        expectedIntervalSeconds: 86400,
+        lateAfterSeconds: 93600,
       },
       counts: { pending: 1, running: 0, retry: 0, succeeded: 2, deadLetter: 1 },
       jobs: [{
@@ -48,6 +50,8 @@ describe("operations jobs page", () => {
     expect(screen.getByText("Healthy")).toBeTruthy()
     expect(screen.getByText(/Pending 1/)).toBeTruthy()
     expect(screen.getByText("Dead letter")).toBeTruthy()
+    expect(screen.getByText("Expected worker cadence: Daily")).toBeTruthy()
+    expect(screen.getByText(/daily Hobby-compatible execution/)).toBeTruthy()
     expect(screen.getByText("Queue health probe")).toBeTruthy()
     expect(screen.getByText("Replay job")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/CRON_SECRET|SUPABASE_SECRET|payload|secretHash|otp/i)

@@ -23,8 +23,9 @@ Later steps (outgoing email, payments, Google, monitoring) need a reusable backg
 3. The worker claims a bounded batch (`job_claim_batch_v1`), issuing a fresh `lease_token` (2 minutes).
 4. The adapter runs with the job’s stable `idempotency_key`.
 5. The worker completes or fails using that exact lease token.
-6. Retryable failures become `RETRY` with deterministic backoff (1m / 5m / 15m / 60m). Exhausted or permanent failures become `DEAD_LETTER`.
-7. Admin may replay only `DEAD_LETTER` jobs after a fresh 5-minute sign-in. Replay keeps the same job id and idempotency key.
+6. Retryable failures become `RETRY` with deterministic backoff (1m / 5m / 15m / 60m). Those timestamps are eligibility times. With the current once-daily scheduler, actual processing may happen later than `scheduled_at`. Do not rewrite retry delays to one day.
+7. An expired `RUNNING` lease is reclaimed only when `attempts < max_attempts`. If `attempts >= max_attempts`, the job becomes `DEAD_LETTER` without a phantom extra attempt. `attempts` never exceeds `max_attempts`.
+8. Admin may replay only `DEAD_LETTER` jobs after a fresh 5-minute sign-in. Replay keeps the same job id and idempotency key.
 
 A business rollback also rolls back the outbox insert.
 
@@ -38,9 +39,25 @@ Admin Root Directory is `apps/admin`, so `apps/admin/vercel.json` registers:
 
 `GET /api/internal/jobs/run`
 
-The source schedule is `0 4 * * *` (once daily). Vercel Hobby/preview rejects expressions that run more than once per day, so the 5-minute cadence cannot be stored in this file until the Admin project is on a plan that allows it. The intended production cadence remains every 5 minutes (`*/5 * * * *`).
+The source schedule is `0 4 * * *` (once daily). Vercel Hobby/preview rejects expressions that run more than once per day, so do not change this file to `*/5 * * * *` in this PR.
 
-The route requires `Authorization: Bearer ${CRON_SECRET}`. Missing `CRON_SECRET` fails closed. Preview/local never process jobs. Production processes jobs only when `JOB_WORKER_ENABLED=true`. The worker is fail-closed even if Cron invokes the route.
+Current Hobby-compatible test mode:
+
+- Vercel Cron = once daily
+- `JOB_WORKER_CADENCE_SECONDS` defaults to `86400`
+- heartbeat stores `expected_interval_seconds=86400` and `late_after_seconds=93600` (26 hours)
+- Admin health is HEALTHY until that stored late threshold, then LATE
+
+Future operational production mode, before time-sensitive Step 11+ services:
+
+- move the scheduler to a mechanism that can invoke about every five minutes
+- if using Vercel Pro: `*/5 * * * *`
+- set `JOB_WORKER_CADENCE_SECONDS=300`
+- health late threshold becomes approximately 10 minutes (`300 + 300`)
+
+Do not make that production-plan change now. Queue, lease, retry and dead-letter semantics stay the same whichever scheduler invokes the endpoint.
+
+The route requires `Authorization: Bearer ${CRON_SECRET}`. Missing `CRON_SECRET` fails closed. Preview/local never process jobs. Production processes jobs only when `JOB_WORKER_ENABLED=true`. `JOB_WORKER_CADENCE_SECONDS` is server-only, must be a bounded integer, and is never read by browser code.
 
 Do not set those environment variables from this PR. Do not activate production Cron from Cursor.
 
@@ -50,7 +67,7 @@ Do not set those environment variables from this PR. Do not activate production 
 
 ## Admin UI
 
-`/operations/jobs` shows heartbeat status (HEALTHY / LATE / NEVER_RUN), queue counts, recent jobs and dead-letter replay. Raw payloads are not shown.
+`/operations/jobs` shows heartbeat status (HEALTHY / LATE / NEVER_RUN), the configured worker cadence, queue counts, recent jobs and dead-letter replay. Raw payloads are not shown. For the current daily Hobby-compatible scheduler the page notes that time-sensitive background work needs a more frequent production scheduler before customer communications, payments or monitoring are enabled.
 
 ## Later work
 

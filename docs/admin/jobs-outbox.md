@@ -34,11 +34,13 @@ Step 10 registers only `SYSTEM_HEALTH_PROBE`. It has no external side effect. Ad
 
 ## Cron
 
-Admin Root Directory is `apps/admin`, so `apps/admin/vercel.json` schedules:
+Admin Root Directory is `apps/admin`, so `apps/admin/vercel.json` registers:
 
-`GET /api/internal/jobs/run` every 5 minutes.
+`GET /api/internal/jobs/run`
 
-The route requires `Authorization: Bearer ${CRON_SECRET}`. Missing `CRON_SECRET` fails closed. Preview/local never process jobs. Production processes jobs only when `JOB_WORKER_ENABLED=true`.
+The source schedule is `0 4 * * *` (once daily). Vercel Hobby/preview rejects expressions that run more than once per day, so the 5-minute cadence cannot be stored in this file until the Admin project is on a plan that allows it. The intended production cadence remains every 5 minutes (`*/5 * * * *`).
+
+The route requires `Authorization: Bearer ${CRON_SECRET}`. Missing `CRON_SECRET` fails closed. Preview/local never process jobs. Production processes jobs only when `JOB_WORKER_ENABLED=true`. The worker is fail-closed even if Cron invokes the route.
 
 Do not set those environment variables from this PR. Do not activate production Cron from Cursor.
 

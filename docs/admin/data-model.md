@@ -8,7 +8,7 @@ Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, 
 
 Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `case_prepared_packs`, `PACK_PUBLISHED` / `PACK_UNPUBLISHED` events, and customer pack RPCs. It is LIVE-TESTED COMPLETE. The applied migration is `20260928175738_customer_case_pack_access_v1.sql`.
 
-Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The additive migration is `20260928190000_customer_evidence_upload_v1.sql`. It is not remotely applied.
+Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The applied additive migration is `20260929150057_customer_evidence_upload_v1.sql`.
 
 ## Relationships
 

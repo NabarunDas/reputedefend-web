@@ -80,16 +80,24 @@ afterAll(async () => { await db.close() })
 beforeEach(async () => {
   await db.exec(`alter table public.admin_audit_events disable trigger admin_audit_immutable;
     alter table public.customer_action_events disable trigger customer_action_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,admin_private.case_command_receipts,public.monitoring_request_events,public.monitoring_requests cascade;
+    alter table public.case_document_events disable trigger case_document_events_immutable;
+    alter table public.quote_events disable trigger quote_events_immutable;
+    alter table public.price_version_events disable trigger price_version_events_immutable;
     alter table public.price_versions disable trigger price_versions_protect;
     alter table public.price_versions disable trigger price_versions_overlap;
-    delete from public.price_version_events where price_version_id not in (select id from public.price_versions where seed_key is not null);
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,admin_private.case_command_receipts,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null;
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
+    insert into public.price_version_events(price_version_id, actor_id, event, details)
+      select id, created_by, 'PRICE_APPROVED', jsonb_build_object('seed', true, 'reset', true)
+      from public.price_versions where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
     alter table public.price_versions enable trigger price_versions_overlap;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
+    alter table public.case_document_events enable trigger case_document_events_immutable;
+    alter table public.quote_events enable trigger quote_events_immutable;
+    alter table public.price_version_events enable trigger price_version_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${customerAuth}','alex@example.com',now(),null,null);
     insert into auth.users values('${otherAuth}','other@example.com',now(),null,null);
@@ -101,7 +109,9 @@ beforeEach(async () => {
     insert into public.locations(id,business_id,country,location_name) values('${location}','${business}','UK','High Street') on conflict (id) do nothing;
     insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'UNDECIDED') on conflict (id) do nothing;
     insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${reviewCase}','REVIEW_PROTECTION','${customer}','${business}','${location}','Review dispute','2026-01-01',now(),now(),'UNDECIDED') on conflict (id) do nothing;
-    update public.cases set service_track='UNDECIDED', status='RECEIVED' where id in ('${caseId}','${reviewCase}');`)
+    alter table public.cases disable trigger cases_workflow_version;
+    update public.cases set service_track='UNDECIDED', status='RECEIVED', work_stage='INITIAL_REVIEW', workflow_version=1, outcome=null, assigned=false, next_action='', next_action_at=null where id in ('${caseId}','${reviewCase}');
+    alter table public.cases enable trigger cases_workflow_version;`)
 })
 
 async function verify(id = customer, biz = business, email = "alex@example.com") {
@@ -156,6 +166,19 @@ async function completeOtp(actionId: string | undefined, hash: string, email = "
   return session
 }
 
+async function caseVersion(id = caseId) {
+  const row = (await db.query<{ workflow_version: number }>("select workflow_version from public.cases where id=$1", [id])).rows[0]
+  expect(Number.isInteger(row?.workflow_version)).toBe(true)
+  return row.workflow_version
+}
+
+async function caseCmd(operation: string, data: Record<string, unknown>, id = caseId) {
+  return rpc("admin_case_command_v1", [token, key(), id, await caseVersion(id), operation, {
+    note: "Reviewed the caller’s request and confirmed the details.",
+    ...data,
+  }])
+}
+
 async function qualify(serviceCode: string, extras: Record<string, unknown> = {}) {
   return rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
     serviceCode,
@@ -175,11 +198,11 @@ describe("catalogue quotes and orders SQL", () => {
   it("seeds the five published prices as integer pence", async () => {
     const list = await rpc("admin_catalogue_list_v1", [token])
     const seeded = list?.prices?.filter(row => row.seedKey)
-    expect(seeded?.map(row => [row.serviceCode, row.amountMinor, row.paymentModel, row.taxBehaviour, row.status])).toEqual(
-      catalogueSeed.map(item => [item.serviceCode, item.amountMinor, item.paymentModel, item.taxBehaviour, "APPROVED"]),
+    expect(seeded?.map(row => [row.serviceCode, row.amountMinor, row.paymentModel, row.taxBehaviour, row.status]).sort()).toEqual(
+      catalogueSeed.map(item => [item.serviceCode, item.amountMinor, item.paymentModel, item.taxBehaviour, "APPROVED"]).sort(),
     )
     expect(seeded?.every(row => Number.isInteger(row.amountMinor))).toBe(true)
-    expect(seeded?.map(row => row.amountMinor)).toEqual([9900, 29900, 5900, 14900, 999])
+    expect(seeded?.map(row => row.amountMinor).sort((a, b) => a - b)).toEqual([999, 5900, 9900, 14900, 29900])
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.price_versions where status='APPROVED' and service_code='GUIDED_RELAUNCH' and effective_to is null")).rows[0].n).toBe(1)
   })
 
@@ -242,8 +265,7 @@ describe("catalogue quotes and orders SQL", () => {
     await db.exec("alter table public.quote_versions disable trigger quote_versions_protect")
     await db.query("update public.quote_versions set valid_until=now()-interval '1 minute' where id=$1", [again?.quoteVersionId])
     await db.exec("alter table public.quote_versions enable trigger quote_versions_protect")
-    const session = await completeOtp(issued.result?.id, issued.hash)
-    expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_exchange_v1", [issued.result?.id, issued.hash, secretHash()])).toEqual({ status: "unavailable" })
     expect(await rpc("admin_quote_detail_v1", ["bad", again?.id])).toBeNull()
     expect(await rpc("customer_action_session_v1", [secretHash()])).toBeNull()
   })
@@ -342,39 +364,37 @@ describe("catalogue quotes and orders SQL", () => {
 
   it("creates no payment, invoice or monitoring side effects and keeps workflow gates blocked", async () => {
     await verify()
-    await db.query("update public.cases set service_track='GUIDED' where id=$1", [caseId])
     const draft = await createDraft()
-    await setTax(draft!.id!, draft!.version!)
-    await offer(draft!.id!, draft!.version! + 1)
+    expect(draft?.status).toBe("success")
+    expect(typeof draft?.version).toBe("number")
+    expect(draft?.id).toBeTruthy()
+    expect((await setTax(draft!.id!, draft!.version!))?.status).toBe("success")
+    expect((await offer(draft!.id!, draft!.version! + 1))?.status).toBe("success")
     const issued = await issue(draft!.id!)
     const session = await completeOtp(issued.result?.id, issued.hash)
     const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
     expect(accepted).toMatchObject({ paymentCreated: false, invoiceCreated: false, monitoringActivated: false })
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(0)
-    const detail = await rpc("admin_case_detail_v1", [token, caseId, null]) as { version: number; stage: string } | null
-    const note = "Reviewed the caller’s request and confirmed the details."
-    await rpc("admin_case_command_v1", [token, key(), caseId, detail?.version, "plan", { note, track: "GUIDED", priority: "NORMAL", assigned: true, nextAction: "Review the request", due: null, firstResponseDue: null }])
-    const afterPlan = await rpc("admin_case_detail_v1", [token, caseId, null]) as { version: number }
-    await rpc("admin_case_command_v1", [token, key(), caseId, afterPlan.version, "transition", { note, target: "ASSESSMENT_READY", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }])
-    const afterAssess = await rpc("admin_case_detail_v1", [token, caseId, null]) as { version: number }
-    await rpc("admin_case_command_v1", [token, key(), caseId, afterAssess.version, "transition", { note, target: "SERVICE_SELECTION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }])
-    const afterSelect = await rpc("admin_case_detail_v1", [token, caseId, null]) as { version: number }
-    await rpc("admin_case_command_v1", [token, key(), caseId, afterSelect.version, "transition", { note, target: "PAYMENT_REQUIRED", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }])
-    const payment = await rpc("admin_case_detail_v1", [token, caseId, null]) as { version: number; stage: string }
-    expect((await rpc("admin_case_command_v1", [token, key(), caseId, payment.version, "transition", { note, target: "PREPARATION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }]))).toEqual({ status: "prerequisite" })
-    expect((await rpc("admin_case_command_v1", [token, key(), caseId, payment.version, "transition", { note, target: "READY_TO_SUBMIT", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }]))?.status).toMatch(/denied|prerequisite/)
+    expect((await caseCmd("plan", { track: "GUIDED", priority: "NORMAL", assigned: true, nextAction: "Review the request", due: null, firstResponseDue: null }))?.status).toBe("success")
+    expect((await caseCmd("transition", { target: "ASSESSMENT_READY", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }))?.status).toBe("success")
+    expect((await caseCmd("transition", { target: "SERVICE_SELECTION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }))?.status).toBe("success")
+    expect((await caseCmd("transition", { target: "PAYMENT_REQUIRED", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }))?.status).toBe("success")
+    expect(await caseCmd("transition", { target: "PREPARATION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" })).toEqual({ status: "prerequisite" })
+    expect((await caseCmd("transition", { target: "READY_TO_SUBMIT", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }))?.status).toMatch(/denied|prerequisite/)
     const guard = await createDraft({ serviceCode: "RELAUNCH_GUARD", caseId: null, locationId: location })
     expect(guard?.status).toBe("success")
-    await setTax(guard!.id!, guard!.version!)
-    await offer(guard!.id!, guard!.version! + 1)
+    expect(guard?.id).toBeTruthy()
+    expect((await setTax(guard!.id!, guard!.version!))?.status).toBe("success")
+    expect((await offer(guard!.id!, guard!.version! + 1))?.status).toBe("success")
     const guardIssue = await issue(guard!.id!)
     const guardSession = await completeOtp(guardIssue.result?.id, guardIssue.hash)
     const guardAccepted = await rpc("customer_action_command_v1", [guardSession, key(), "accept", { accepted: true }])
     expect(guardAccepted).toMatchObject({ monitoringActivated: false, orderState: "ACCEPTED_RECURRING" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.monitoring_requests where status='ACTIVE'")).rows[0].n).toBe(0)
-    const managed = await createDraft({ serviceCode: "MANAGED_RELAUNCH" })
-    await setTax(managed!.id!, managed!.version!)
-    await offer(managed!.id!, managed!.version! + 1)
+    const managed = await createDraft({ serviceCode: "MANAGED_REVIEW", caseId: reviewCase })
+    expect(managed?.status).toBe("success")
+    expect((await setTax(managed!.id!, managed!.version!))?.status).toBe("success")
+    expect((await offer(managed!.id!, managed!.version! + 1))?.status).toBe("success")
     const managedIssue = await issue(managed!.id!)
     const managedSession = await completeOtp(managedIssue.result?.id, managedIssue.hash)
     expect(await rpc("customer_action_command_v1", [managedSession, key(), "accept", { accepted: true }])).toMatchObject({

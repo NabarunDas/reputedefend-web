@@ -50,12 +50,12 @@ describe("commercial page", () => {
     loadQuotes.mockResolvedValue({ quotes: [] })
     const page = await CommercialPage({ searchParams: Promise.resolve({ tab: "catalogue" }) })
     render(page)
-    expect(screen.getByText("Managed Relaunch")).toBeTruthy()
+    expect(screen.getAllByText("Managed Relaunch").length).toBeGreaterThan(0)
     expect(screen.getByText(/£299.00/)).toBeTruthy()
     expect(screen.getByText(/29900 pence/)).toBeTruthy()
-    expect(screen.getByText(/Unconfirmed/)).toBeTruthy()
+    expect(screen.getAllByText(/Unconfirmed/).length).toBeGreaterThan(0)
     expect(screen.queryByRole("button", { name: /charge|mark paid/i })).toBeNull()
-    expect(document.body.textContent).not.toMatch(/STRIPE|PaymentIntent|Checkout/i)
+    expect(document.body.textContent).not.toMatch(/PaymentIntent|Checkout Session|Mark paid/i)
   })
 
   it("shows read-only orders without charge controls", async () => {

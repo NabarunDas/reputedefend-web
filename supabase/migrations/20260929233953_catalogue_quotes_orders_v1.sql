@@ -1022,6 +1022,13 @@ BEGIN
     IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF p_version IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF row.status <> 'DRAFT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF EXISTS (
+      SELECT 1 FROM public.price_versions p
+      WHERE p.id IS DISTINCT FROM row.id
+        AND p.service_code = row.service_code
+        AND p.status = 'APPROVED'
+        AND tstzrange(p.effective_from, p.effective_to, '[)') && tstzrange(row.effective_from, row.effective_to, '[)')
+    ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.price_versions SET status = 'APPROVED', approved_at = now(), approved_by = actor
       WHERE id = row.id RETURNING * INTO row;
     INSERT INTO public.price_version_events(price_version_id, actor_id, event, details)
@@ -1107,7 +1114,7 @@ DECLARE
   qu public.quotes; qv public.quote_versions; price public.price_versions; snap public.quote_discount_snapshots;
   cs public.cases; mon public.monitoring_requests; c public.customers;
   service text; scope text; exclusions text; success text; valid_until timestamptz; expires timestamptz;
-  secret text; action public.customer_actions; apply_discount boolean; tax_behaviour text; tax_rate integer;
+  secret text; action public.customer_actions; apply_discount boolean; v_tax_behaviour text; v_tax_rate integer;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -1210,16 +1217,16 @@ BEGIN
     END IF;
     success := nullif(btrim(coalesce(data->>'successDefinition', '')), '');
     IF success IS NULL THEN success := admin_private.success_definition_v1(service); END IF;
-    tax_behaviour := coalesce(NULLIF(data->>'taxBehaviour',''), price.tax_behaviour);
-    tax_rate := coalesce(NULLIF(data->>'taxRateBps','')::integer, price.tax_rate_bps);
+    v_tax_behaviour := coalesce(NULLIF(data->>'taxBehaviour',''), price.tax_behaviour);
+    v_tax_rate := coalesce(NULLIF(data->>'taxRateBps','')::integer, price.tax_rate_bps);
     INSERT INTO public.quotes(public_ref, customer_id, business_id, location_id, case_id, monitoring_request_id, status, created_by)
     VALUES (
       admin_private.commerce_public_ref_v1('QT'), c.id, coalesce(cs.business_id, NULLIF(data->>'businessId','')::uuid),
       coalesce(cs.location_id, NULLIF(data->>'locationId','')::uuid), cs.id, mon.id, 'DRAFT', actor
     ) RETURNING * INTO qu;
     qv := admin_private.build_quote_version_v1(
-      qu, actor, service, price, snap, scope, exclusions, success, valid_until, tax_behaviour,
-      coalesce(NULLIF(data->>'taxJurisdiction',''), price.tax_jurisdiction), tax_rate, coalesce(NULLIF(data->>'taxCode',''), price.tax_code)
+      qu, actor, service, price, snap, scope, exclusions, success, valid_until, v_tax_behaviour,
+      coalesce(NULLIF(data->>'taxJurisdiction',''), price.tax_jurisdiction), v_tax_rate, coalesce(NULLIF(data->>'taxCode',''), price.tax_code)
     );
     UPDATE public.quotes SET current_version_id = qv.id, updated_at = now() WHERE id = qu.id RETURNING * INTO qu;
     INSERT INTO public.quote_events(quote_id, quote_version_id, actor_type, actor_id, event, details)
@@ -1274,28 +1281,29 @@ BEGIN
   ELSIF p_operation = 'set_draft_tax' THEN
     SELECT * INTO qv FROM public.quote_versions WHERE id = coalesce(NULLIF(data->>'quoteVersionId','')::uuid, qu.current_version_id) FOR UPDATE;
     IF qv.quote_id IS DISTINCT FROM qu.id OR qv.status <> 'DRAFT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    tax_behaviour := data->>'taxBehaviour';
-    tax_rate := NULLIF(data->>'taxRateBps','')::integer;
-    IF tax_behaviour IS NULL OR tax_behaviour NOT IN ('UNCONFIRMED','INCLUSIVE','EXCLUSIVE','NOT_APPLICABLE') THEN
+    v_tax_behaviour := data->>'taxBehaviour';
+    v_tax_rate := NULLIF(data->>'taxRateBps','')::integer;
+    IF v_tax_behaviour IS NULL OR v_tax_behaviour NOT IN ('UNCONFIRMED','INCLUSIVE','EXCLUSIVE','NOT_APPLICABLE') THEN
       RETURN jsonb_build_object('status', 'invalid');
     END IF;
-    IF tax_behaviour IN ('UNCONFIRMED','NOT_APPLICABLE') THEN tax_rate := NULL; END IF;
-    IF tax_behaviour IN ('INCLUSIVE','EXCLUSIVE') AND tax_rate IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    IF v_tax_behaviour IN ('UNCONFIRMED','NOT_APPLICABLE') THEN v_tax_rate := NULL; END IF;
+    IF v_tax_behaviour IN ('INCLUSIVE','EXCLUSIVE') AND v_tax_rate IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     UPDATE public.quote_versions SET
-      tax_behaviour = tax_behaviour,
+      tax_behaviour = v_tax_behaviour,
       tax_jurisdiction = NULLIF(data->>'taxJurisdiction',''),
-      tax_rate_bps = tax_rate,
+      tax_rate_bps = v_tax_rate,
       tax_code = NULLIF(data->>'taxCode',''),
-      tax_amount_minor = admin_private.money_tax_minor_v1(quoted_subtotal_minor, tax_behaviour, tax_rate),
+      tax_amount_minor = admin_private.money_tax_minor_v1(quote_versions.quoted_subtotal_minor, v_tax_behaviour, v_tax_rate),
       total_amount_minor = admin_private.money_total_minor_v1(
-        quoted_subtotal_minor, tax_behaviour, admin_private.money_tax_minor_v1(quoted_subtotal_minor, tax_behaviour, tax_rate)
+        quote_versions.quoted_subtotal_minor, v_tax_behaviour,
+        admin_private.money_tax_minor_v1(quote_versions.quoted_subtotal_minor, v_tax_behaviour, v_tax_rate)
       )
     WHERE id = qv.id RETURNING * INTO qv;
     UPDATE public.quotes SET record_version = record_version + 1, updated_at = now() WHERE id = qu.id RETURNING * INTO qu;
     INSERT INTO public.quote_events(quote_id, quote_version_id, actor_type, actor_id, event, details)
-    VALUES (qu.id, qv.id, 'ADMIN', actor, 'TAX_SET', jsonb_build_object('taxBehaviour', tax_behaviour));
+    VALUES (qu.id, qv.id, 'ADMIN', actor, 'TAX_SET', jsonb_build_object('taxBehaviour', v_tax_behaviour));
     PERFORM admin_private.write_record_audit_v1(actor, 'COMMERCE_CHANGED', 'success', qu.id, p_request, 'quote',
-      'Draft quote tax set', jsonb_build_object('taxBehaviour', tax_behaviour));
+      'Draft quote tax set', jsonb_build_object('taxBehaviour', v_tax_behaviour));
     result := jsonb_build_object('status', 'success', 'id', qu.id, 'quoteVersionId', qv.id, 'version', qu.record_version);
   ELSIF p_operation = 'offer' THEN
     SELECT * INTO qv FROM public.quote_versions WHERE id = coalesce(NULLIF(data->>'quoteVersionId','')::uuid, qu.current_version_id) FOR UPDATE;

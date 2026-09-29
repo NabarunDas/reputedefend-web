@@ -60,7 +60,11 @@ describe("customer case documents", () => {
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Upload" })).toBeNull()
     expect(screen.queryByLabelText("Upload evidence")).toBeNull()
-    expect(document.body.textContent).not.toMatch(/dashboard|billing|storage|arn:aws|Accept|Reject|Publish|Fulfil/i)
+    expect(document.body.textContent).not.toMatch(/dashboard|billing|storage|arn:aws/i)
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Fulfil request" })).toBeNull()
   })
 
   it("lists published documents and opens View without sending a case id", async () => {

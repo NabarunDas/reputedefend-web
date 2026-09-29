@@ -6,7 +6,7 @@ import { Resend } from "resend"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
 
-import { handleResendWebhook, parseProviderOccurredAt, verifyResendSignature } from "./webhook"
+import { handleResendWebhook, parseBounceClassification, parseProviderOccurredAt, verifyResendSignature } from "./webhook"
 
 const secret = "whsec_" + Buffer.from("webhook-secret-bytes").toString("base64")
 const origin = "https://admin.profilerelaunch.com"
@@ -83,7 +83,7 @@ describe("resend webhook", () => {
     const response = await handleResendWebhook(signed(JSON.stringify({ type: "email.delivered", created_at: createdAt, data: { email_id: "msg_1" } })), process.env)
     expect(response.status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledWith("communication_apply_provider_event_v1", expect.objectContaining({
-      p_provider: "resend", p_event_type: "email.delivered", p_provider_message_id: "msg_1", p_occurred_at: createdAt,
+      p_provider: "resend", p_event_type: "email.delivered", p_provider_message_id: "msg_1", p_occurred_at: createdAt, p_bounce_class: null,
     }))
     expect(JSON.stringify(await response.json())).not.toMatch(/whsec_|RESEND_WEBHOOK_SECRET/i)
   })
@@ -92,5 +92,25 @@ describe("resend webhook", () => {
     expect(parseProviderOccurredAt("not-a-date")).toBeNull()
     expect(parseProviderOccurredAt("1999-01-01T00:00:00.000Z")).toBeNull()
     expect(parseProviderOccurredAt("2099-01-01T00:00:00.000Z")).toBeNull()
+  })
+
+  it("extracts only a bounded bounce classification and never stores raw webhook JSON", async () => {
+    expect(parseBounceClassification("email.bounced", { bounce: { type: "Permanent" } })).toBe("permanent")
+    expect(parseBounceClassification("email.bounced", { bounce: { type: "Transient" } })).toBe("transient")
+    expect(parseBounceClassification("email.bounced", { bounce: { type: "Undetermined" } })).toBe("undetermined")
+    expect(parseBounceClassification("email.bounced", {})).toBe("undetermined")
+    expect(parseBounceClassification("email.delivered", { bounce: { type: "Permanent" } })).toBeNull()
+    mocks.rpc.mockResolvedValue({ status: "success", duplicate: false, applied: true })
+    const body = JSON.stringify({
+      type: "email.bounced",
+      created_at: "2026-09-29T12:00:00.000Z",
+      data: { email_id: "msg_bounce", bounce: { type: "Transient", message: "mailbox full" } },
+    })
+    const response = await handleResendWebhook(signed(body, "evt_bounce_class"), process.env)
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("communication_apply_provider_event_v1", expect.objectContaining({
+      p_event_type: "email.bounced", p_bounce_class: "transient", p_provider_message_id: "msg_bounce",
+    }))
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1])).not.toMatch(/mailbox full|raw|payload/i)
   })
 })

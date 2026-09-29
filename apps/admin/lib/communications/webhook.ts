@@ -7,6 +7,8 @@ import { privateResponseHeaders } from "../access"
 const reply = (body: Record<string, unknown>, status = 200) =>
   NextResponse.json(body, { status, headers: privateResponseHeaders })
 
+export type BounceClassification = "permanent" | "transient" | "undetermined"
+
 export function webhookSecret(env: Record<string, string | undefined> = process.env): string | null {
   const raw = env.RESEND_WEBHOOK_SECRET
   if (!raw || raw.length < 16) return null
@@ -20,6 +22,17 @@ export function parseProviderOccurredAt(value: unknown, receivedAt = Date.now())
   if (parsed > receivedAt + 60 * 60 * 1000) return null
   if (parsed < receivedAt - 30 * 24 * 60 * 60 * 1000) return null
   return new Date(parsed).toISOString()
+}
+
+export function parseBounceClassification(eventType: string, data: unknown): BounceClassification | null {
+  if (eventType !== "email.bounced") return null
+  const bounce = data && typeof data === "object" && "bounce" in data ? (data as { bounce?: unknown }).bounce : null
+  const raw = bounce && typeof bounce === "object" && bounce && "type" in bounce
+    ? String((bounce as { type?: unknown }).type || "").trim().toLowerCase()
+    : ""
+  if (raw === "permanent") return "permanent"
+  if (raw === "transient" || raw === "temporary") return "transient"
+  return "undetermined"
 }
 
 export function verifyResendSignature(rawBody: string, id: string, timestamp: string, signatureHeader: string, secret: string): boolean {
@@ -54,18 +67,21 @@ export async function handleResendWebhook(request: NextRequest, env: Record<stri
   const timestamp = request.headers.get("svix-timestamp") || ""
   const signature = request.headers.get("svix-signature") || ""
   if (!verifyResendSignature(raw, id, timestamp, signature, secret)) return reply({ status: "unauthorized" }, 401)
-  let parsed: { type?: unknown; created_at?: unknown; data?: { email_id?: unknown } }
-  try { parsed = JSON.parse(raw) as { type?: unknown; created_at?: unknown; data?: { email_id?: unknown } } }
+  let parsed: { type?: unknown; created_at?: unknown; data?: unknown }
+  try { parsed = JSON.parse(raw) as { type?: unknown; created_at?: unknown; data?: unknown } }
   catch { return reply({ status: "invalid" }, 400) }
   const eventType = typeof parsed.type === "string" ? parsed.type : ""
-  const messageId = typeof parsed.data?.email_id === "string" ? parsed.data.email_id : null
+  const data = parsed.data && typeof parsed.data === "object" ? parsed.data as { email_id?: unknown } : null
+  const messageId = typeof data?.email_id === "string" ? data.email_id : null
   const occurredAt = parseProviderOccurredAt(parsed.created_at)
+  const bounceClass = parseBounceClassification(eventType, data)
   const result = await backend().rpc<{ status?: string; duplicate?: boolean; applied?: boolean }>("communication_apply_provider_event_v1", {
     p_provider: "resend",
     p_provider_event_id: id,
     p_event_type: eventType || "unknown",
     p_provider_message_id: messageId,
     p_occurred_at: occurredAt,
+    p_bounce_class: bounceClass,
   })
   if (result?.status !== "success") return reply({ status: "error" }, 503)
   return reply({ status: "success", duplicate: result.duplicate === true })

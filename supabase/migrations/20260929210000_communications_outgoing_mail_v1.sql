@@ -8,6 +8,10 @@ ALTER TABLE public.customer_actions
   ADD CONSTRAINT customer_actions_kind_check
   CHECK (kind IN ('AGREEMENT_ACCEPTANCE','AUTHORIZATION_REVOCATION','CASE_ACCESS','COMMUNICATION_ACCESS'));
 
+ALTER TABLE public.customer_actions
+  ADD COLUMN evidence_request_id uuid REFERENCES public.evidence_requests(id) ON DELETE RESTRICT,
+  ADD COLUMN link_key_version integer;
+
 ALTER TABLE public.customer_actions DROP CONSTRAINT IF EXISTS customer_actions_case_access_scope_check;
 ALTER TABLE public.customer_actions
   ADD CONSTRAINT customer_actions_case_access_scope_check
@@ -21,10 +25,25 @@ ALTER TABLE public.customer_actions
       AND business_id IS NOT NULL
     )
   );
+ALTER TABLE public.customer_actions
+  ADD CONSTRAINT customer_actions_communication_access_scope_check
+  CHECK (
+    (kind = 'COMMUNICATION_ACCESS' AND evidence_request_id IS NOT NULL AND link_key_version >= 1)
+    OR (kind <> 'COMMUNICATION_ACCESS' AND evidence_request_id IS NULL AND link_key_version IS NULL)
+  );
+
+DROP INDEX IF EXISTS public.customer_actions_one_open_kind_idx;
+CREATE UNIQUE INDEX customer_actions_one_open_kind_idx
+  ON public.customer_actions (case_id, kind, coalesce(agreement_version_id, authorization_id, evidence_request_id))
+  WHERE status = 'OPEN' AND case_id IS NOT NULL;
+CREATE UNIQUE INDEX customer_actions_one_open_communication_access_idx
+  ON public.customer_actions (evidence_request_id)
+  WHERE status = 'OPEN' AND kind = 'COMMUNICATION_ACCESS';
 
 CREATE OR REPLACE FUNCTION admin_private.validate_customer_action_scope_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE v public.agreement_versions; auth public.authorization_records; c public.customers; cs public.cases;
+  req public.evidence_requests;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT * INTO c FROM public.customers WHERE id = NEW.customer_id;
@@ -66,6 +85,20 @@ BEGIN
     THEN RAISE EXCEPTION 'Customer action does not match the referenced case'; END IF;
     IF TG_OP = 'INSERT' AND cs.status IN ('CLOSED','CANCELLED') THEN
       RAISE EXCEPTION 'Case access cannot be created for a closed case';
+    END IF;
+    IF NEW.kind = 'CASE_ACCESS' AND NEW.evidence_request_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Case access actions cannot pin an evidence request';
+    END IF;
+    IF NEW.kind = 'COMMUNICATION_ACCESS' THEN
+      IF NEW.evidence_request_id IS NULL OR NEW.link_key_version IS NULL OR NEW.link_key_version < 1 THEN
+        RAISE EXCEPTION 'Communication access actions require an evidence request and link key version';
+      END IF;
+      SELECT * INTO req FROM public.evidence_requests WHERE id = NEW.evidence_request_id;
+      IF req.id IS NULL
+        OR req.case_id IS DISTINCT FROM NEW.case_id
+        OR req.case_id IS DISTINCT FROM cs.id
+        OR (TG_OP = 'INSERT' AND req.status <> 'OPEN')
+      THEN RAISE EXCEPTION 'Communication access does not match the referenced evidence request'; END IF;
     END IF;
   ELSE
     RAISE EXCEPTION 'Invalid customer action kind';
@@ -164,6 +197,8 @@ ALTER TABLE public.communications
   ADD COLUMN reviewed_at timestamptz,
   ADD COLUMN queued_at timestamptz,
   ADD COLUMN first_provider_attempt_at timestamptz,
+  ADD COLUMN sender_address text,
+  ADD COLUMN link_key_version integer,
   ADD COLUMN delivery_occurred_at timestamptz,
   ADD COLUMN provider_accepted_at timestamptz,
   ADD COLUMN delivered_at timestamptz,
@@ -178,14 +213,20 @@ ALTER TABLE public.communications
   ),
   ADD CONSTRAINT communications_delivery_check CHECK (
     delivery_status IS NULL OR delivery_status IN (
-      'NONE', 'ACCEPTANCE_UNKNOWN', 'PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
+      'NONE', 'ACCEPTANCE_UNKNOWN', 'PROVIDER_ACCEPTED', 'DELIVERED',
+      'BOUNCED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
     )
   ),
   ADD CONSTRAINT communications_template_check CHECK (
     (lifecycle IS NULL AND template_key IS NULL AND template_version IS NULL)
     OR (lifecycle IS NOT NULL AND template_key IN ('EVIDENCE_REQUEST', 'CASE_UPDATE') AND template_version >= 1)
   ),
-  ADD CONSTRAINT communications_content_version_check CHECK (content_version >= 1 AND record_version >= 1);
+  ADD CONSTRAINT communications_content_version_check CHECK (content_version >= 1 AND record_version >= 1),
+  ADD CONSTRAINT communications_sender_address_check CHECK (
+    sender_address IS NULL
+    OR (length(sender_address) BETWEEN 3 AND 254 AND sender_address ~ '^[^\s@]+@[^\s@]+\.[^\s@]+$')
+  ),
+  ADD CONSTRAINT communications_link_key_version_check CHECK (link_key_version IS NULL OR link_key_version >= 1);
 
 CREATE INDEX communications_lifecycle_idx ON public.communications (lifecycle, updated_at DESC, id DESC)
   WHERE lifecycle IS NOT NULL;
@@ -239,7 +280,8 @@ CREATE TABLE admin_private.communication_delivery_events (
   provider_message_id text,
   summary text NOT NULL,
   CONSTRAINT communication_delivery_events_type_check CHECK (event_type IN (
-    'QUEUED', 'PROVIDER_ACCEPTED', 'PROVIDER_ACCEPTANCE_UNKNOWN', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED',
+    'QUEUED', 'PROVIDER_ACCEPTED', 'PROVIDER_ACCEPTANCE_UNKNOWN', 'DELIVERED',
+    'BOUNCED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE', 'COMPLAINED', 'SUPPRESSED',
     'PROVIDER_REJECTED', 'RETRYABLE_FAILURE', 'PERMANENT_FAILURE'
   )),
   CONSTRAINT communication_delivery_events_summary_check CHECK (length(btrim(summary)) BETWEEN 1 AND 500)
@@ -259,7 +301,11 @@ CREATE TABLE admin_private.communication_webhook_events (
   applied boolean NOT NULL DEFAULT false,
   received_at timestamptz NOT NULL DEFAULT now(),
   provider_occurred_at timestamptz,
+  bounce_class text,
   CONSTRAINT communication_webhook_events_provider_check CHECK (provider IN ('resend')),
+  CONSTRAINT communication_webhook_events_bounce_class_check CHECK (
+    bounce_class IS NULL OR bounce_class IN ('permanent', 'transient', 'undetermined')
+  ),
   CONSTRAINT communication_webhook_events_id_check CHECK (length(btrim(provider_event_id)) BETWEEN 8 AND 200),
   CONSTRAINT communication_webhook_events_type_check CHECK (length(btrim(event_type)) BETWEEN 1 AND 80),
   UNIQUE (provider, provider_event_id)
@@ -370,7 +416,7 @@ BEGIN
   IF row.id IS NULL OR row.lifecycle IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   IF row.lifecycle <> 'QUEUED' OR row.content_locked IS NOT TRUE OR row.content_version <> p_content_version
     OR btrim(coalesce(row.recipient, '')) = '' OR btrim(coalesce(row.subject, '')) = ''
-    OR btrim(coalesce(row.body_text, '')) = ''
+    OR btrim(coalesce(row.body_text, '')) = '' OR btrim(coalesce(row.sender_address, '')) = ''
   THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   IF row.template_key = 'EVIDENCE_REQUEST' THEN
     upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/action/[0-9a-f-]{36}');
@@ -393,6 +439,8 @@ BEGIN
     'templateKey', row.template_key,
     'customerActionId', row.customer_action_id,
     'customerOrigin', origin,
+    'senderAddress', row.sender_address,
+    'linkKeyVersion', row.link_key_version,
     'firstProviderAttemptAt', row.first_provider_attempt_at,
     'suppressed', EXISTS (
       SELECT 1 FROM admin_private.email_suppressions s
@@ -401,29 +449,74 @@ BEGIN
   );
 END; $$;
 
+CREATE FUNCTION public.communication_begin_provider_attempt_v1(
+  p_communication uuid, p_content_version integer, p_idempotency_key text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE row public.communications; started timestamptz; permitted boolean;
+BEGIN
+  IF p_communication IS NULL OR p_content_version IS NULL OR p_content_version < 1 THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
+  IF row.id IS NULL OR row.lifecycle <> 'QUEUED' OR row.content_locked IS NOT TRUE
+    OR row.content_version <> p_content_version
+  THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF p_idempotency_key IS NULL
+    OR p_idempotency_key <> ('send-email:' || row.id::text || ':v' || row.content_version::text)
+  THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF row.delivery_status IN ('DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED')
+    OR EXISTS (
+      SELECT 1 FROM admin_private.email_suppressions s
+      WHERE s.address_normalized = admin_private.normalize_email_v1(row.recipient)
+    )
+  THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF row.delivery_status IN ('PROVIDER_ACCEPTED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN
+    RETURN jsonb_build_object(
+      'status', 'success',
+      'firstProviderAttemptAt', row.first_provider_attempt_at,
+      'providerCallPermitted', false
+    );
+  END IF;
+  UPDATE public.communications
+    SET first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
+        updated_at = now()
+    WHERE id = row.id
+    RETURNING first_provider_attempt_at INTO started;
+  permitted := started IS NOT NULL AND started > now() - interval '23 hours';
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'firstProviderAttemptAt', started,
+    'providerCallPermitted', permitted
+  );
+END; $$;
+
 CREATE FUNCTION admin_private.communication_apply_matched_event_v1(
-  p_communication uuid, p_event_name text, p_provider text, p_event_id text, p_message text, p_occurred_at timestamptz
+  p_communication uuid, p_event_name text, p_provider text, p_event_id text, p_message text, p_occurred_at timestamptz,
+  p_bounce_class text DEFAULT NULL
 ) RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE row public.communications; next_status text; summary text;
+DECLARE row public.communications; next_status text; summary text; bounce_class text; permanent_failure boolean;
 BEGIN
   IF p_occurred_at IS NULL THEN RETURN false; END IF;
   SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
   IF row.id IS NULL THEN RETURN false; END IF;
+  bounce_class := lower(btrim(coalesce(p_bounce_class, '')));
   next_status := CASE p_event_name
     WHEN 'email.delivered' THEN 'DELIVERED'
-    WHEN 'email.bounced' THEN 'BOUNCED'
     WHEN 'email.complained' THEN 'COMPLAINED'
     WHEN 'email.suppressed' THEN 'SUPPRESSED'
+    WHEN 'email.bounced' THEN CASE bounce_class
+      WHEN 'permanent' THEN 'BOUNCED'
+      WHEN 'transient' THEN 'TRANSIENT_BOUNCE'
+      ELSE 'UNDETERMINED_BOUNCE'
+    END
     ELSE NULL
   END;
   IF next_status IS NULL THEN RETURN false; END IF;
-  IF row.delivery_status IN ('DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
-    IF row.delivery_occurred_at IS NOT NULL AND p_occurred_at < row.delivery_occurred_at THEN
-      RETURN false;
-    END IF;
-    IF next_status = 'DELIVERED' AND row.delivery_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
-      RETURN false;
-    END IF;
+  IF row.delivery_occurred_at IS NOT NULL AND p_occurred_at < row.delivery_occurred_at
+    AND row.delivery_status IN ('DELIVERED', 'BOUNCED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE', 'COMPLAINED', 'SUPPRESSED', 'FAILED')
+  THEN RETURN false; END IF;
+  IF next_status = 'DELIVERED' AND row.delivery_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
+    RETURN false;
   END IF;
   IF next_status = 'DELIVERED' AND row.delivery_status = 'DELIVERED' THEN
     RETURN true;
@@ -431,7 +524,7 @@ BEGIN
   IF p_event_name = 'email.delivered' THEN
     UPDATE public.communications
       SET delivery_status = 'DELIVERED', delivered_at = coalesce(delivered_at, p_occurred_at),
-          delivery_occurred_at = p_occurred_at, error_message = NULL,
+          delivery_occurred_at = p_occurred_at, error_message = NULL, status = 'SENT',
           updated_at = now(), record_version = record_version + 1
       WHERE id = row.id AND delivery_status IS DISTINCT FROM 'DELIVERED';
     IF FOUND THEN
@@ -440,24 +533,29 @@ BEGIN
     RETURN true;
   END IF;
   summary := CASE next_status
-    WHEN 'BOUNCED' THEN 'Recipient address bounced'
+    WHEN 'BOUNCED' THEN 'Recipient address permanently bounced'
+    WHEN 'TRANSIENT_BOUNCE' THEN 'Recipient address bounced temporarily'
+    WHEN 'UNDETERMINED_BOUNCE' THEN 'Recipient address bounce classification is unknown'
     WHEN 'COMPLAINED' THEN 'Recipient marked the message as spam'
     ELSE 'Recipient is suppressed'
   END;
+  permanent_failure := next_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED');
   UPDATE public.communications
     SET delivery_status = next_status,
-        status = 'FAILED',
-        failed_at = coalesce(failed_at, p_occurred_at),
+        status = CASE WHEN permanent_failure THEN 'FAILED' ELSE status END,
+        failed_at = CASE WHEN permanent_failure THEN coalesce(failed_at, p_occurred_at) ELSE failed_at END,
         delivery_occurred_at = p_occurred_at,
         error_message = summary,
         updated_at = now(),
         record_version = record_version + 1
     WHERE id = row.id;
   PERFORM admin_private.append_delivery_event_v1(row.id, next_status, 'Provider reported ' || lower(next_status), p_provider, p_event_id, p_message, p_occurred_at);
-  PERFORM admin_private.suppress_email_v1(row.recipient, next_status, row.id);
+  IF permanent_failure THEN
+    PERFORM admin_private.suppress_email_v1(row.recipient, next_status, row.id);
+  END IF;
   RETURN true;
 END; $$;
-REVOKE ALL ON FUNCTION admin_private.communication_apply_matched_event_v1(uuid, text, text, text, text, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.communication_apply_matched_event_v1(uuid, text, text, text, text, timestamptz, text) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION admin_private.communication_reconcile_webhooks_v1(
   p_communication uuid, p_provider text, p_message text
@@ -474,7 +572,7 @@ BEGIN
       communication_webhook_events.received_at ASC, communication_webhook_events.id ASC
   LOOP
     applied_now := admin_private.communication_apply_matched_event_v1(
-      p_communication, ev.event_type, ev.provider, ev.provider_event_id, ev.provider_message_id, ev.provider_occurred_at
+      p_communication, ev.event_type, ev.provider, ev.provider_event_id, ev.provider_message_id, ev.provider_occurred_at, ev.bounce_class
     );
     UPDATE admin_private.communication_webhook_events
       SET communication_id = p_communication, applied = applied_now OR applied
@@ -590,15 +688,22 @@ END; $$;
 
 CREATE FUNCTION public.communication_apply_provider_event_v1(
   p_provider text, p_provider_event_id text, p_event_type text, p_provider_message_id text,
-  p_occurred_at timestamptz DEFAULT NULL
+  p_occurred_at timestamptz DEFAULT NULL, p_bounce_class text DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE existing admin_private.communication_webhook_events; row public.communications;
-  provider_name text; event_id text; event_name text; message text; apply boolean := false;
+  provider_name text; event_id text; event_name text; message text; bounce_class text; apply boolean := false;
 BEGIN
   provider_name := lower(btrim(coalesce(p_provider, '')));
   event_id := btrim(coalesce(p_provider_event_id, ''));
   event_name := btrim(coalesce(p_event_type, ''));
   message := nullif(left(btrim(coalesce(p_provider_message_id, '')), 200), '');
+  bounce_class := lower(btrim(coalesce(p_bounce_class, '')));
+  IF bounce_class = '' THEN bounce_class := NULL; END IF;
+  IF bounce_class IS NOT NULL AND bounce_class NOT IN ('permanent', 'transient', 'undetermined') THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF event_name = 'email.bounced' AND bounce_class IS NULL THEN bounce_class := 'undetermined'; END IF;
+  IF event_name <> 'email.bounced' THEN bounce_class := NULL; END IF;
   IF provider_name <> 'resend' OR length(event_id) NOT BETWEEN 8 AND 200 OR length(event_name) NOT BETWEEN 1 AND 80
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   SELECT * INTO existing FROM admin_private.communication_webhook_events
@@ -612,10 +717,10 @@ BEGIN
       FOR UPDATE;
   END IF;
   apply := row.id IS NOT NULL AND p_occurred_at IS NOT NULL
-    AND admin_private.communication_apply_matched_event_v1(row.id, event_name, provider_name, event_id, message, p_occurred_at);
+    AND admin_private.communication_apply_matched_event_v1(row.id, event_name, provider_name, event_id, message, p_occurred_at, bounce_class);
   INSERT INTO admin_private.communication_webhook_events(
-    provider, provider_event_id, event_type, provider_message_id, communication_id, applied, provider_occurred_at
-  ) VALUES (provider_name, event_id, event_name, message, row.id, apply, p_occurred_at);
+    provider, provider_event_id, event_type, provider_message_id, communication_id, applied, provider_occurred_at, bounce_class
+  ) VALUES (provider_name, event_id, event_name, message, row.id, apply, p_occurred_at, bounce_class);
   RETURN jsonb_build_object('status', 'success', 'duplicate', false, 'applied', apply);
 END; $$;
 
@@ -736,6 +841,7 @@ BEGIN
         'customerOrigin', p_payload->>'customerOrigin',
         'actionId', p_payload->>'actionId',
         'secretHash', p_payload->>'secretHash',
+        'linkKeyVersion', coalesce((p_payload->>'linkKeyVersion')::integer, row.link_key_version),
         'fact', p_payload->>'fact',
         'effect', p_payload->>'effect',
         'nextStep', p_payload->>'nextStep'
@@ -758,11 +864,18 @@ BEGIN
       IF origin !~ '^https://[A-Za-z0-9.-]+$'
         OR NULLIF(p_payload->>'actionId', '')::uuid IS NULL
         OR coalesce(p_payload->>'secretHash', '') !~ '^[a-f0-9]{64}$'
+        OR coalesce((p_payload->>'linkKeyVersion')::integer, 0) < 1
+      THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      IF req.case_id IS DISTINCT FROM cs.id
+        OR cs.status IN ('CLOSED', 'CANCELLED')
+        OR req.status <> 'OPEN'
       THEN RETURN jsonb_build_object('status', 'denied'); END IF;
       INSERT INTO public.customer_actions(
-        id, customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by
+        id, customer_id, business_id, location_id, case_id, evidence_request_id, link_key_version,
+        kind, secret_hash, expected_email_snapshot, expires_at, created_by
       ) VALUES (
-        (p_payload->>'actionId')::uuid, cs.customer_id, cs.business_id, cs.location_id, cs.id,
+        (p_payload->>'actionId')::uuid, cs.customer_id, cs.business_id, cs.location_id, cs.id, req.id,
+        (p_payload->>'linkKeyVersion')::integer,
         'COMMUNICATION_ACCESS', p_payload->>'secretHash', admin_private.normalize_email_v1(verified),
         now() + interval '14 days', actor
       ) RETURNING * INTO action;
@@ -791,12 +904,12 @@ BEGIN
       case_id, customer_id, business_id, evidence_request_id, customer_action_id,
       communication_type, direction, recipient, subject, body_text, body_html,
       status, lifecycle, delivery_status, template_key, template_version,
-      author_id, content_version, record_version, content_locked
+      author_id, content_version, record_version, content_locked, link_key_version
     ) VALUES (
       cs.id, cs.customer_id, cs.business_id, req.id, action.id,
       tpl.template_key, 'OUTBOUND', admin_private.normalize_email_v1(verified), subject, body, html,
       'PENDING', 'DRAFT', 'NONE', tpl.template_key, tpl.version,
-      actor, 1, 1, false
+      actor, 1, 1, false, action.link_key_version
     ) RETURNING * INTO row;
     IF op = 'resend_draft' THEN
       UPDATE public.communications SET superseded_by = row.id, updated_at = now(), record_version = record_version + 1
@@ -820,8 +933,12 @@ BEGIN
 
   IF op = 'review' THEN
     IF row.lifecycle <> 'DRAFT' OR row.content_locked THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF btrim(coalesce(p_payload->>'fromAddress', '')) !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$'
+      OR length(btrim(p_payload->>'fromAddress')) > 254
+    THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.communications
       SET lifecycle = 'REVIEWED', reviewer_id = actor, reviewed_at = now(), content_locked = true,
+          sender_address = lower(btrim(p_payload->>'fromAddress')),
           updated_at = now(), record_version = row.record_version + 1
       WHERE id = row.id AND lifecycle = 'DRAFT' AND record_version = p_version
       RETURNING * INTO row;
@@ -862,11 +979,15 @@ BEGIN
     SELECT 1 FROM admin_private.email_suppressions s
     WHERE s.address_normalized = admin_private.normalize_email_v1(row.recipient)
   ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF btrim(coalesce(row.sender_address, '')) = '' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   IF row.template_key = 'EVIDENCE_REQUEST' THEN
     SELECT * INTO action FROM public.customer_actions
-      WHERE id = row.customer_action_id AND kind = 'COMMUNICATION_ACCESS' AND status = 'OPEN' AND expires_at > now();
-    SELECT * INTO req FROM public.evidence_requests WHERE id = row.evidence_request_id AND status = 'OPEN';
-    IF action.id IS NULL OR req.id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      WHERE id = row.customer_action_id AND kind = 'COMMUNICATION_ACCESS' AND status = 'OPEN' AND expires_at > now()
+        AND evidence_request_id IS NOT DISTINCT FROM row.evidence_request_id;
+    SELECT * INTO req FROM public.evidence_requests WHERE id = row.evidence_request_id AND status = 'OPEN' AND case_id = row.case_id;
+    IF action.id IS NULL OR req.id IS NULL OR action.evidence_request_id IS DISTINCT FROM req.id THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
   END IF;
   UPDATE public.communications
     SET lifecycle = 'QUEUED', queued_at = now(), updated_at = now(), record_version = row.record_version + 1
@@ -979,21 +1100,300 @@ BEGIN
   RETURN result;
 END; $$;
 
+CREATE OR REPLACE FUNCTION admin_private.customer_action_may_use_evidence_request_v1(
+  p_action public.customer_actions, p_request public.evidence_requests, p_case public.cases
+) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  IF p_action.id IS NULL OR p_request.id IS NULL OR p_case.id IS NULL THEN RETURN false; END IF;
+  IF p_request.case_id IS DISTINCT FROM p_action.case_id OR p_request.case_id IS DISTINCT FROM p_case.id THEN RETURN false; END IF;
+  IF p_request.status <> 'OPEN' THEN RETURN false; END IF;
+  IF p_case.customer_id IS DISTINCT FROM p_action.customer_id
+    OR p_case.business_id IS DISTINCT FROM p_action.business_id
+    OR p_case.location_id IS DISTINCT FROM p_action.location_id
+  THEN RETURN false; END IF;
+  IF p_action.kind = 'CASE_ACCESS' THEN RETURN true; END IF;
+  IF p_action.kind = 'COMMUNICATION_ACCESS' THEN
+    RETURN p_action.evidence_request_id IS NOT NULL AND p_action.evidence_request_id = p_request.id;
+  END IF;
+  RETURN false;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.customer_action_may_use_evidence_request_v1(public.customer_actions, public.evidence_requests, public.cases)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION admin_private.customer_open_evidence_requests_v1(p_case uuid, p_action uuid)
+RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE result jsonb; a public.customer_actions; scoped uuid;
+BEGIN
+  IF p_case IS NULL THEN RETURN '[]'::jsonb; END IF;
+  IF p_action IS NOT NULL THEN
+    SELECT * INTO a FROM public.customer_actions WHERE id = p_action;
+    IF a.kind = 'COMMUNICATION_ACCESS' THEN
+      scoped := a.evidence_request_id;
+      IF scoped IS NULL THEN RETURN '[]'::jsonb; END IF;
+    END IF;
+  END IF;
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'requestId', r.id,
+    'title', r.title,
+    'requestText', r.request_text,
+    'dueAt', r.due_at,
+    'createdAt', r.created_at,
+    'submissionStatus', CASE
+      WHEN uploaded.id IS NOT NULL THEN 'AWAITING_REVIEW'
+      WHEN pending.id IS NOT NULL THEN 'UPLOAD_PENDING'
+      ELSE 'NOT_SUBMITTED'
+    END,
+    'filename', CASE
+      WHEN uploaded.id IS NOT NULL THEN uploaded.original_filename
+      WHEN pending.id IS NOT NULL THEN pending.original_filename
+      ELSE NULL
+    END,
+    'submittedAt', uploaded.uploaded_at
+  ) ORDER BY r.created_at, r.id), '[]') INTO result
+  FROM public.evidence_requests r
+  LEFT JOIN LATERAL (
+    SELECT cv.id, cv.original_filename, cv.uploaded_at
+    FROM public.case_document_versions cv
+    WHERE cv.customer_evidence_request_id = r.id
+      AND cv.submission_source = 'CUSTOMER'
+      AND cv.upload_status = 'UPLOADED'
+    ORDER BY cv.uploaded_at, cv.id
+    LIMIT 1
+  ) uploaded ON true
+  LEFT JOIN LATERAL (
+    SELECT cv.id, cv.original_filename
+    FROM public.case_document_versions cv
+    WHERE cv.customer_evidence_request_id = r.id
+      AND cv.submission_source = 'CUSTOMER'
+      AND cv.upload_status = 'PENDING_UPLOAD'
+      AND cv.customer_action_id = p_action
+    ORDER BY cv.created_at, cv.id
+    LIMIT 1
+  ) pending ON true
+  WHERE r.case_id = p_case AND r.status = 'OPEN' AND (scoped IS NULL OR r.id = scoped);
+  RETURN result;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.customer_open_evidence_requests_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.customer_evidence_begin_v1(
+  p_token_hash text, p_request uuid, p_evidence_request uuid,
+  p_filename text, p_content_type text, p_size bigint, p_bucket text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE a public.customer_actions; sess admin_private.customer_action_sessions;
+  cs public.cases; req public.evidence_requests; d public.case_documents; existing public.case_document_versions;
+  actor uuid; fp text; cached jsonb; result jsonb; version_id uuid; object_key text; version_no integer; abandoned uuid;
+BEGIN
+  a := admin_private.customer_case_access_action_v1(p_token_hash);
+  IF a.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO sess FROM admin_private.customer_action_sessions WHERE token_hash = p_token_hash AND expires_at > now();
+  IF sess.token_hash IS NULL OR sess.action_id <> a.id THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  actor := sess.auth_user_id;
+  IF p_request IS NULL OR p_evidence_request IS NULL OR p_filename IS NULL OR p_content_type IS NULL OR p_size IS NULL OR p_bucket IS NULL
+    OR length(p_bucket) NOT BETWEEN 3 AND 63
+    OR p_size < 1 OR p_size > 10485760
+    OR NOT admin_private.evidence_extension_ok_v1(p_filename, p_content_type)
+    THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  fp := md5(jsonb_build_array(p_evidence_request, btrim(p_filename), p_content_type, p_size, p_bucket, 'begin')::text);
+  cached := admin_private.customer_evidence_receipt_v1(actor, p_request, fp);
+  IF cached IS NOT NULL THEN RETURN cached; END IF;
+  SELECT * INTO cs FROM public.cases WHERE id = a.case_id FOR UPDATE;
+  IF cs.id IS NULL OR cs.status IN ('CLOSED', 'CANCELLED') THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO req FROM public.evidence_requests WHERE id = p_evidence_request FOR UPDATE;
+  IF NOT admin_private.customer_action_may_use_evidence_request_v1(a, req, cs) THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(req.id::text || ':customer-evidence', 0));
+  SELECT v.* INTO existing
+  FROM public.case_document_versions v
+  WHERE v.customer_evidence_request_id = req.id
+    AND v.submission_source = 'CUSTOMER'
+    AND v.upload_status IN ('PENDING_UPLOAD', 'UPLOADED')
+  ORDER BY v.created_at, v.id
+  LIMIT 1
+  FOR UPDATE;
+  IF existing.upload_status = 'UPLOADED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF existing.upload_status = 'PENDING_UPLOAD'
+    AND existing.customer_action_id = a.id
+    AND existing.original_filename = btrim(p_filename)
+    AND existing.declared_content_type = p_content_type
+    AND existing.declared_size_bytes = p_size
+    AND existing.storage_bucket = p_bucket
+  THEN
+    SELECT * INTO d FROM public.case_documents WHERE id = existing.document_id;
+    result := jsonb_build_object(
+      'status', 'success', 'documentId', d.id, 'versionId', existing.id, 'versionNumber', existing.version_number,
+      'storageKey', existing.storage_key, 'storageBucket', existing.storage_bucket,
+      'contentType', existing.declared_content_type, 'maxBytes', 10485760
+    );
+    INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+  IF existing.upload_status = 'PENDING_UPLOAD' THEN
+    UPDATE public.case_document_versions
+      SET upload_status = 'FAILED'
+      WHERE id = existing.id AND upload_status = 'PENDING_UPLOAD';
+    IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
+    VALUES (cs.id, existing.document_id, existing.id, actor, 'UPLOAD_FAILED', jsonb_build_object(
+      'versionNumber', existing.version_number, 'source', 'CUSTOMER_CASE_ACCESS', 'reason', 'RESTARTED_BEFORE_FINALIZE'
+    ));
+    abandoned := existing.id;
+    SELECT * INTO d FROM public.case_documents WHERE id = existing.document_id FOR UPDATE;
+  ELSE
+    SELECT doc.* INTO d
+    FROM public.case_documents doc
+    WHERE doc.evidence_request_id = req.id
+      AND EXISTS (
+        SELECT 1 FROM public.case_document_versions v
+        WHERE v.document_id = doc.id AND v.submission_source = 'CUSTOMER'
+      )
+    ORDER BY doc.created_at, doc.id
+    LIMIT 1
+    FOR UPDATE;
+    IF d.id IS NULL THEN
+      INSERT INTO public.case_documents(case_id, evidence_request_id, title, created_by)
+      VALUES (cs.id, req.id, req.title, actor) RETURNING * INTO d;
+    END IF;
+  END IF;
+  SELECT coalesce(max(version_number), 0) + 1 INTO version_no FROM public.case_document_versions WHERE document_id = d.id;
+  version_id := gen_random_uuid();
+  object_key := 'cases/' || cs.id::text || '/documents/' || d.id::text || '/versions/' || version_id::text;
+  INSERT INTO public.case_document_versions(
+    id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+    storage_provider, storage_bucket, storage_key, created_by,
+    submission_source, customer_action_id, customer_evidence_request_id
+  ) VALUES (
+    version_id, d.id, version_no, btrim(p_filename), p_content_type, p_size, 'S3', p_bucket, object_key, actor,
+    'CUSTOMER', a.id, req.id
+  );
+  INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
+  VALUES (cs.id, d.id, version_id, actor, 'UPLOAD_BEGUN', jsonb_build_object(
+    'versionNumber', version_no, 'contentType', p_content_type, 'sizeBytes', p_size, 'source', 'CUSTOMER_CASE_ACCESS'
+  ));
+  PERFORM admin_private.write_record_audit_v1(
+    actor, 'EVIDENCE_CHANGED', 'success', cs.id, p_request, 'case',
+    'Customer evidence upload started',
+    jsonb_build_object(
+      'operation', 'begin', 'source', 'CUSTOMER_CASE_ACCESS', 'documentId', d.id, 'versionId', version_id
+    ) || CASE WHEN abandoned IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('abandonedVersionId', abandoned) END
+  );
+  result := jsonb_build_object(
+    'status', 'success', 'documentId', d.id, 'versionId', version_id, 'versionNumber', version_no,
+    'storageKey', object_key, 'storageBucket', p_bucket, 'contentType', p_content_type, 'maxBytes', 10485760
+  );
+  INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
+  RETURN result;
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.customer_evidence_upload_version_v1(p_token_hash text, p_version uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE a public.customer_actions; d public.case_documents; v public.case_document_versions;
+  req public.evidence_requests; cs public.cases;
+BEGIN
+  a := admin_private.customer_case_access_action_v1(p_token_hash);
+  IF a.id IS NULL OR p_version IS NULL THEN RETURN NULL; END IF;
+  SELECT * INTO v FROM public.case_document_versions WHERE id = p_version;
+  IF v.id IS NULL OR v.submission_source <> 'CUSTOMER' OR v.customer_action_id IS DISTINCT FROM a.id THEN RETURN NULL; END IF;
+  IF v.upload_status NOT IN ('PENDING_UPLOAD', 'UPLOADED') THEN RETURN NULL; END IF;
+  SELECT * INTO d FROM public.case_documents WHERE id = v.document_id;
+  IF d.id IS NULL OR d.case_id <> a.case_id THEN RETURN NULL; END IF;
+  SELECT * INTO cs FROM public.cases WHERE id = a.case_id;
+  SELECT * INTO req FROM public.evidence_requests WHERE id = coalesce(v.customer_evidence_request_id, d.evidence_request_id);
+  IF NOT admin_private.customer_action_may_use_evidence_request_v1(a, req, cs) THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object(
+    'documentId', d.id,
+    'versionId', v.id,
+    'evidenceRequestId', req.id,
+    'storageBucket', v.storage_bucket,
+    'storageKey', v.storage_key,
+    'contentType', v.declared_content_type,
+    'sizeBytes', v.declared_size_bytes,
+    'uploadStatus', v.upload_status,
+    'submissionSource', v.submission_source
+  );
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.customer_evidence_finalize_v1(p_token_hash text, p_request uuid, p_version uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE a public.customer_actions; sess admin_private.customer_action_sessions;
+  cs public.cases; d public.case_documents; v public.case_document_versions; req public.evidence_requests;
+  actor uuid; fp text; cached jsonb; result jsonb;
+BEGIN
+  a := admin_private.customer_case_access_action_v1(p_token_hash);
+  IF a.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO sess FROM admin_private.customer_action_sessions WHERE token_hash = p_token_hash AND expires_at > now();
+  IF sess.token_hash IS NULL OR sess.action_id <> a.id THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  actor := sess.auth_user_id;
+  IF p_request IS NULL OR p_version IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  fp := md5(jsonb_build_array(p_version, 'finalize')::text);
+  cached := admin_private.customer_evidence_receipt_v1(actor, p_request, fp);
+  IF cached IS NOT NULL THEN RETURN cached; END IF;
+  SELECT * INTO cs FROM public.cases WHERE id = a.case_id FOR UPDATE;
+  IF cs.id IS NULL OR cs.status IN ('CLOSED', 'CANCELLED') THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO v FROM public.case_document_versions WHERE id = p_version FOR UPDATE;
+  IF v.id IS NULL OR v.submission_source <> 'CUSTOMER' OR v.customer_action_id IS DISTINCT FROM a.id THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  SELECT * INTO d FROM public.case_documents WHERE id = v.document_id FOR UPDATE;
+  IF d.id IS NULL OR d.case_id <> a.case_id THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO req FROM public.evidence_requests WHERE id = coalesce(v.customer_evidence_request_id, d.evidence_request_id) FOR UPDATE;
+  IF NOT admin_private.customer_action_may_use_evidence_request_v1(a, req, cs) THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  IF v.upload_status = 'UPLOADED' THEN
+    result := jsonb_build_object(
+      'status', 'success', 'documentId', d.id, 'versionId', v.id,
+      'uploadStatus', v.upload_status, 'scanStatus', v.scan_status, 'validationStatus', v.validation_status,
+      'reviewStatus', v.review_status, 'customerVisible', v.customer_visible
+    );
+    INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+  IF v.upload_status <> 'PENDING_UPLOAD' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  UPDATE public.case_document_versions
+    SET upload_status = 'UPLOADED', uploaded_at = now()
+    WHERE id = v.id
+      AND upload_status = 'PENDING_UPLOAD'
+      AND scan_status = 'PENDING'
+      AND validation_status = 'PENDING'
+      AND review_status = 'UNREVIEWED'
+      AND customer_visible IS FALSE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
+  VALUES (cs.id, d.id, v.id, actor, 'UPLOAD_FINALIZED', jsonb_build_object(
+    'versionNumber', v.version_number, 'source', 'CUSTOMER_CASE_ACCESS'
+  ));
+  PERFORM admin_private.write_record_audit_v1(
+    actor, 'EVIDENCE_CHANGED', 'success', cs.id, p_request, 'case',
+    'Customer evidence upload finalized',
+    jsonb_build_object('operation', 'finalize', 'source', 'CUSTOMER_CASE_ACCESS', 'documentId', d.id, 'versionId', v.id)
+  );
+  result := jsonb_build_object(
+    'status', 'success', 'documentId', d.id, 'versionId', v.id,
+    'uploadStatus', 'UPLOADED', 'scanStatus', 'PENDING', 'validationStatus', 'PENDING',
+    'reviewStatus', 'UNREVIEWED', 'customerVisible', false
+  );
+  INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
+  RETURN result;
+END; $$;
+
 REVOKE ALL ON FUNCTION public.communication_load_send_v1(uuid, integer),
+  public.communication_begin_provider_attempt_v1(uuid, integer, text),
   public.communication_mark_provider_accepted_v1(uuid, text, text, text),
   public.communication_mark_acceptance_unknown_v1(uuid, text),
   public.communication_mark_provider_rejected_v1(uuid, text, boolean, text),
-  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz),
+  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz, text),
   public.admin_communication_list_v1(text, uuid),
   public.admin_communication_command_v1(text, uuid, text, jsonb, integer),
   public.admin_job_health_v1(text),
   public.admin_audit_list_v1(text, bigint, text, text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.communication_load_send_v1(uuid, integer),
+  public.communication_begin_provider_attempt_v1(uuid, integer, text),
   public.communication_mark_provider_accepted_v1(uuid, text, text, text),
   public.communication_mark_acceptance_unknown_v1(uuid, text),
   public.communication_mark_provider_rejected_v1(uuid, text, boolean, text),
-  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz),
+  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz, text),
   public.admin_communication_list_v1(text, uuid),
   public.admin_communication_command_v1(text, uuid, text, jsonb, integer),
   public.admin_job_health_v1(text),

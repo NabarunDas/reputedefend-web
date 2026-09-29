@@ -3,7 +3,8 @@ export type TemplateKey = (typeof TEMPLATE_KEYS)[number]
 export const LIFECYCLES = ["DRAFT", "REVIEWED", "QUEUED", "CANCELLED"] as const
 export type CommunicationLifecycle = (typeof LIFECYCLES)[number]
 export const DELIVERY_STATUSES = [
-  "NONE", "ACCEPTANCE_UNKNOWN", "PROVIDER_ACCEPTED", "DELIVERED", "BOUNCED", "COMPLAINED", "SUPPRESSED", "FAILED",
+  "NONE", "ACCEPTANCE_UNKNOWN", "PROVIDER_ACCEPTED", "DELIVERED",
+  "BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "SUPPRESSED", "FAILED",
 ] as const
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number]
 
@@ -62,7 +63,9 @@ export function deliveryLabel(row: Pick<CommunicationRow, "deliveryStatus" | "le
   if (row.deliveryStatus === "DELIVERED") return "Delivered"
   if (row.deliveryStatus === "ACCEPTANCE_UNKNOWN") return "Provider acceptance unknown — check the email provider"
   if (row.deliveryStatus === "PROVIDER_ACCEPTED") return "Accepted by email provider"
-  if (row.deliveryStatus === "BOUNCED") return "Bounced"
+  if (row.deliveryStatus === "BOUNCED") return "Permanently bounced"
+  if (row.deliveryStatus === "TRANSIENT_BOUNCE") return "Temporarily bounced"
+  if (row.deliveryStatus === "UNDETERMINED_BOUNCE") return "Bounce classification unknown"
   if (row.deliveryStatus === "COMPLAINED") return "Complained"
   if (row.deliveryStatus === "SUPPRESSED") return "Suppressed"
   if (row.deliveryStatus === "FAILED") return "Failed"

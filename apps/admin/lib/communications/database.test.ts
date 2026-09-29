@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { createHash, randomBytes } from "node:crypto"
 import { sendEmailHandler } from "./handler"
 import { createIdempotentMailProvider } from "./mail"
-import { deriveCommunicationAccessToken, communicationAccessTokenHash } from "./link"
+import { deriveCommunicationAccessToken, communicationAccessTokenHash, deriveCommunicationActionId } from "./link"
 import { runJobWorker, WorkerCrash } from "../jobs/worker"
 
 const db = new PGlite()
@@ -42,6 +42,10 @@ type RpcResult = {
   recipient?: string
   subject?: string
   bodyText?: string
+  firstProviderAttemptAt?: string | null
+  providerCallPermitted?: boolean
+  kind?: string
+  evidenceRequests?: Array<{ requestId: string; title: string }>
 }
 
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -56,10 +60,11 @@ const signatures: Record<string, string[]> = {
   job_heartbeat_v1: ["p_worker", "p_environment", "p_phase", "p_error", "p_deployment", "p_expected_interval", "p_late_after"],
   admin_enqueue_job_probe_v1: ["p_token", "p_request"],
   communication_load_send_v1: ["p_communication", "p_content_version"],
+  communication_begin_provider_attempt_v1: ["p_communication", "p_content_version", "p_idempotency_key"],
   communication_mark_provider_accepted_v1: ["p_communication", "p_provider", "p_provider_message_id", "p_idempotency_key"],
   communication_mark_acceptance_unknown_v1: ["p_communication", "p_idempotency_key"],
   communication_mark_provider_rejected_v1: ["p_communication", "p_error", "p_retryable", "p_idempotency_key"],
-  communication_apply_provider_event_v1: ["p_provider", "p_provider_event_id", "p_event_type", "p_provider_message_id", "p_occurred_at"],
+  communication_apply_provider_event_v1: ["p_provider", "p_provider_event_id", "p_event_type", "p_provider_message_id", "p_occurred_at", "p_bounce_class"],
   admin_job_replay_v1: ["p_token", "p_request", "p_job", "p_reason", "p_confirmed", "p_version"],
 }
 
@@ -102,7 +107,7 @@ beforeEach(async () => {
   await db.exec(`alter table public.admin_audit_events disable trigger admin_audit_immutable;
     alter table public.customer_action_events disable trigger customer_action_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.job_attempts,admin_private.jobs,admin_private.job_outbox,admin_private.job_worker_heartbeats,admin_private.job_command_receipts,admin_private.communication_delivery_events,admin_private.communication_webhook_events,admin_private.email_suppressions,admin_private.communication_command_receipts,public.communications,public.customer_action_events,public.customer_actions,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,public.enquiry_events,public.enquiries,admin_private.case_command_receipts,admin_private.evidence_command_receipts cascade;
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.job_attempts,admin_private.jobs,admin_private.job_outbox,admin_private.job_worker_heartbeats,admin_private.job_command_receipts,admin_private.communication_delivery_events,admin_private.communication_webhook_events,admin_private.email_suppressions,admin_private.communication_command_receipts,admin_private.customer_evidence_upload_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,public.communications,public.customer_action_events,public.customer_actions,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,public.enquiry_events,public.enquiries,admin_private.case_command_receipts,admin_private.evidence_command_receipts cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;
@@ -157,6 +162,7 @@ async function draft(extra: Record<string, unknown> = {}) {
     customerOrigin: "https://customer.profilerelaunch.com",
     actionId,
     secretHash: secretHashValue,
+    linkKeyVersion: extra.linkKeyVersion ?? 1,
     ...extra,
   }, null])
 }
@@ -164,7 +170,9 @@ async function draft(extra: Record<string, unknown> = {}) {
 async function reviewed() {
   const created = await draft()
   expect(created?.status).toBe("success")
-  const result = await rpc("admin_communication_command_v1", [token, key(), "review", { communicationId: created!.id }, created!.version])
+  const result = await rpc("admin_communication_command_v1", [token, key(), "review", {
+    communicationId: created!.id, fromAddress: "ops@example.com",
+  }, created!.version])
   expect(result?.status).toBe("success")
   return result!
 }
@@ -272,9 +280,9 @@ describe("communications outgoing mail SQL", () => {
     const row = await reviewed()
     await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
     await rpc("communication_mark_provider_accepted_v1", [row.id, "resend", "msg_bounce", `send-email:${row.id}:v1`])
-    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_bounce_1", "email.bounced", "msg_bounce", "2026-09-29T12:12:00.000Z"])).toMatchObject({ applied: true })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_bounce_1", "email.bounced", "msg_bounce", "2026-09-29T12:12:00.000Z", "permanent"])).toMatchObject({ applied: true })
     const listed = await rpc("admin_communication_list_v1", [token, caseId])
-    expect(listed?.communications?.[0]).toMatchObject({ deliveryStatus: "BOUNCED", lastError: "Recipient address bounced" })
+    expect(listed?.communications?.[0]).toMatchObject({ deliveryStatus: "BOUNCED", lastError: "Recipient address permanently bounced" })
     expect(await rpc("admin_communication_command_v1", [token, key(), "resend_draft", {
       communicationId: row.id, caseId, customerOrigin: "https://customer.profilerelaunch.com",
     }, null])).toEqual({ status: "denied" })
@@ -459,6 +467,222 @@ describe("communications outgoing mail SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_command_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_load_send_v1(uuid,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_mark_acceptance_unknown_v1(uuid,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_begin_provider_attempt_v1(uuid,integer,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
     }
+  })
+
+  async function otpSession(actionId: string, hash: string, kind: string) {
+    const pending = secretHash()
+    const session = secretHash()
+    expect(await rpc("customer_action_exchange_v1", [actionId, hash, pending])).toMatchObject({ status: "ok", kind })
+    expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_attempt_otp_v1", [pending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok", kind })
+    return session
+  }
+
+  it("scopes COMMUNICATION_ACCESS to one evidence request and leaves CASE_ACCESS case-wide", async () => {
+    const photo = await db.query<{ id: string }>(
+      "insert into public.evidence_requests(case_id, title, request_text, created_by) values($1,'Photo ID','Please send a clear photo of the owner ID.',$2) returning id",
+      [caseId, uid],
+    )
+    const businessProof = await db.query<{ id: string }>(
+      "insert into public.evidence_requests(case_id, title, request_text, created_by) values($1,'Business proof','Please send proof of the business.',$2) returning id",
+      [caseId, uid],
+    )
+    const requestA = photo.rows[0].id
+    const requestB = businessProof.rows[0].id
+    const caseAccessHash = secretHash()
+    const caseAccess = await db.query<{ id: string }>(
+      `insert into public.customer_actions(customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
+       values($1,$2,$3,$4,'CASE_ACCESS',$5,'alex@example.com', now() + interval '2 days', $6) returning id`,
+      [customer, business, location, caseId, caseAccessHash, uid],
+    )
+    const created = await draft({ evidenceRequestId: requestA })
+    expect(created?.status).toBe("success")
+    const action = await db.query<{ id: string; evidence_request_id: string; secret_hash: string }>(
+      "select id, evidence_request_id, secret_hash from public.customer_actions where kind='COMMUNICATION_ACCESS' and case_id=$1",
+      [caseId],
+    )
+    expect(action.rows).toHaveLength(1)
+    expect(action.rows[0].evidence_request_id).toBe(requestA)
+    const commSession = await otpSession(action.rows[0].id, action.rows[0].secret_hash, "COMMUNICATION_ACCESS")
+    const scopedPack = await rpc("customer_case_pack_v1", [commSession])
+    expect(scopedPack?.evidenceRequests?.map(item => item.title)).toEqual(["Photo ID"])
+    expect(scopedPack?.evidenceRequests?.map(item => item.requestId)).toEqual([requestA])
+    expect(JSON.stringify(scopedPack)).not.toMatch(/Business proof/)
+    expect(await rpc("customer_evidence_begin_v1", [commSession, key(), requestA, "id.pdf", "application/pdf", 1024, "test-evidence"])).toMatchObject({ status: "success" })
+    expect(await rpc("customer_evidence_begin_v1", [commSession, key(), requestB, "proof.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+    await db.query("update public.evidence_requests set status='CANCELLED' where id=$1", [requestA])
+    expect(await rpc("customer_case_pack_v1", [commSession])).toMatchObject({ evidenceRequests: [] })
+    expect(await rpc("customer_evidence_begin_v1", [commSession, key(), requestA, "id-2.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+    await db.query("update public.evidence_requests set status='OPEN' where id=$1", [requestA])
+    const caseSession = await otpSession(caseAccess.rows[0].id, caseAccessHash, "CASE_ACCESS")
+    const widePack = await rpc("customer_case_pack_v1", [caseSession])
+    expect(widePack?.evidenceRequests?.map(item => item.title).sort()).toEqual(["Business proof", "Photo ID"])
+    expect(await rpc("customer_evidence_begin_v1", [caseSession, key(), requestB, "proof.pdf", "application/pdf", 1024, "test-evidence"])).toMatchObject({ status: "success" })
+  })
+
+  it("replays the same Admin request UUID into one communication and one COMMUNICATION_ACCESS action", async () => {
+    const request = key()
+    const setup = await openEvidence()
+    const payload = {
+      templateKey: "EVIDENCE_REQUEST",
+      caseId,
+      evidenceRequestId: setup.evidenceRequestId,
+      customerOrigin: "https://customer.profilerelaunch.com",
+      actionId: deriveCommunicationActionId(request),
+      secretHash: communicationAccessTokenHash(deriveCommunicationAccessToken(deriveCommunicationActionId(request), linkSecretValue, 1)),
+      linkKeyVersion: 1,
+    }
+    const first = await rpc("admin_communication_command_v1", [token, request, "draft", payload, null])
+    const second = await rpc("admin_communication_command_v1", [token, request, "draft", payload, null])
+    expect(first?.status).toBe("success")
+    expect(second).toEqual(first)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(1)
+    const actions = await db.query<{ id: string; secret_hash: string }>("select id, secret_hash from public.customer_actions where kind='COMMUNICATION_ACCESS'")
+    expect(actions.rows).toHaveLength(1)
+    expect(actions.rows[0].id).toBe(payload.actionId)
+    expect(actions.rows[0].secret_hash).toBe(payload.secretHash)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.admin_audit_events where action='COMMUNICATION_CHANGED'")).rows[0].n).toBe(1)
+    const conflict = await rpc("admin_communication_command_v1", [token, request, "draft", { ...payload, evidenceRequestId: key() }, null])
+    expect(conflict).toEqual({ status: "conflict" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(1)
+  })
+
+  it("persists the first provider attempt before Resend and does not call again after the safety window", async () => {
+    const row = await reviewed()
+    await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    const provider = createIdempotentMailProvider()
+    const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32), COMMUNICATIONS_LINK_SECRET: linkSecretValue }
+    await expect(runJobWorker({
+      rpc: namedRpc(),
+      env,
+      handlers: { SEND_EMAIL: sendEmailHandler(env, provider), SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE", execute: async () => ({ ok: true }) } },
+      crashAfterProvider: true,
+    })).rejects.toBeInstanceOf(WorkerCrash)
+    expect(provider.effects).toBe(1)
+    expect(provider.calls).toBe(1)
+    const begun = await db.query<{ first_provider_attempt_at: string | null; delivery_status: string }>(
+      "select first_provider_attempt_at, delivery_status from public.communications where id=$1",
+      [row.id],
+    )
+    expect(begun.rows[0].first_provider_attempt_at).toBeTruthy()
+    expect(begun.rows[0].delivery_status).toBe("NONE")
+    await db.query("update public.communications set first_provider_attempt_at=now()-interval '23 hours 5 minutes' where id=$1", [row.id])
+    await db.exec("update admin_private.jobs set lease_expires_at=now()-interval '1 second'")
+    const recovered = await runJobWorker({
+      rpc: namedRpc(),
+      env,
+      handlers: { SEND_EMAIL: sendEmailHandler(env, provider), SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE", execute: async () => ({ ok: true }) } },
+    })
+    expect(provider.calls).toBe(1)
+    expect(provider.effects).toBe(1)
+    expect(recovered.counts.deadLettered + recovered.counts.retried + recovered.counts.succeeded).toBeGreaterThanOrEqual(0)
+    const clock = await db.query<{ first_provider_attempt_at: string }>("select first_provider_attempt_at from public.communications where id=$1", [row.id])
+    const aged = new Date(clock.rows[0].first_provider_attempt_at).getTime()
+    expect(Date.now() - aged).toBeGreaterThan(23 * 60 * 60 * 1000)
+    const job = await db.query<{ id: string; record_version: number; status: string }>("select id, record_version, status from admin_private.jobs where job_type='SEND_EMAIL'")
+    if (job.rows[0]?.status !== "DEAD_LETTER") {
+      await db.query("update admin_private.jobs set status='DEAD_LETTER', record_version=record_version+1 where job_type='SEND_EMAIL'")
+    }
+    const dead = await db.query<{ id: string; record_version: number }>("select id, record_version from admin_private.jobs where job_type='SEND_EMAIL'")
+    await db.query("update public.admin_sessions set created_at=now() where token_hash=$1", [token])
+    await rpc("admin_job_replay_v1", [token, key(), dead.rows[0].id, "Need to retry after provider timeout reconciliation.", true, dead.rows[0].record_version])
+    await runJobWorker({
+      rpc: namedRpc(),
+      env,
+      handlers: { SEND_EMAIL: sendEmailHandler(env, provider), SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE", execute: async () => ({ ok: true }) } },
+    })
+    expect(provider.calls).toBe(1)
+    expect(String((await db.query<{ first_provider_attempt_at: string }>("select first_provider_attempt_at from public.communications where id=$1", [row.id])).rows[0].first_provider_attempt_at)).toBe(String(clock.rows[0].first_provider_attempt_at))
+  })
+
+  it("retries the exact original Resend payload after sender and link-key rotation", async () => {
+    const created = await draft({ linkKeyVersion: 1 })
+    expect(created?.status).toBe("success")
+    const reviewedRow = await rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: created!.id, fromAddress: "sender-a@example.com",
+    }, created!.version])
+    expect(reviewedRow?.status).toBe("success")
+    await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(reviewedRow!.id), reviewedRow!.version])
+    const provider = createIdempotentMailProvider()
+    const envV1 = {
+      JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32),
+      COMMUNICATIONS_FROM_EMAIL: "sender-a@example.com",
+      COMMUNICATIONS_LINK_SECRET: linkSecretValue,
+      COMMUNICATIONS_LINK_KEY_VERSION: "1",
+    }
+    await expect(runJobWorker({
+      rpc: namedRpc(),
+      env: envV1,
+      handlers: { SEND_EMAIL: sendEmailHandler(envV1, provider), SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE", execute: async () => ({ ok: true }) } },
+      crashAfterProvider: true,
+    })).rejects.toBeInstanceOf(WorkerCrash)
+    expect(provider.payloads).toHaveLength(1)
+    const original = provider.payloads[0]
+    expect(original.from).toBe("sender-a@example.com")
+    expect(original.text).toContain("#t=")
+    const envV2 = {
+      JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32),
+      COMMUNICATIONS_FROM_EMAIL: "sender-b@example.com",
+      COMMUNICATIONS_LINK_SECRET: "rotated-link-secret-for-version-two-32b",
+      COMMUNICATIONS_LINK_KEY_VERSION: "2",
+      COMMUNICATIONS_LINK_SECRET_V1: linkSecretValue,
+    }
+    await db.exec("update admin_private.jobs set lease_expires_at=now()-interval '1 second'")
+    await runJobWorker({
+      rpc: namedRpc(),
+      env: envV2,
+      handlers: { SEND_EMAIL: sendEmailHandler(envV2, provider), SYSTEM_HEALTH_PROBE: { jobType: "SYSTEM_HEALTH_PROBE", execute: async () => ({ ok: true }) } },
+    })
+    expect(provider.calls).toBe(2)
+    expect(provider.effects).toBe(1)
+    expect(provider.payloads[1]).toEqual(original)
+    expect(provider.payloads[1].from).not.toBe("sender-b@example.com")
+    expect(JSON.stringify(provider.payloads)).not.toMatch(/rotated-link-secret|sender-b@example.com/)
+  })
+
+  it("classifies permanent, transient and undetermined bounces without storing raw webhook JSON", async () => {
+    async function queued(label: string) {
+      const created = await draft()
+      const reviewedRow = await rpc("admin_communication_command_v1", [token, key(), "review", {
+        communicationId: created!.id, fromAddress: "ops@example.com",
+      }, created!.version])
+      await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(reviewedRow!.id), reviewedRow!.version])
+      await rpc("communication_mark_provider_accepted_v1", [reviewedRow!.id, "resend", `msg_${label}`, `send-email:${reviewedRow!.id}:v1`])
+      return reviewedRow!.id
+    }
+    const permanentId = await queued("perm")
+    const transientId = await queued("soft")
+    const unknownId = await queued("unk")
+    const complaintId = await queued("comp")
+    const suppressedId = await queued("sup")
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_perm_1", "email.bounced", "msg_perm", "2026-09-29T12:30:00.000Z", "permanent"])).toMatchObject({ applied: true, duplicate: false })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_perm_1", "email.bounced", "msg_perm", "2026-09-29T12:30:00.000Z", "permanent"])).toMatchObject({ duplicate: true })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_soft_1", "email.bounced", "msg_soft", "2026-09-29T12:31:00.000Z", "transient"])).toMatchObject({ applied: true })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_unk_1", "email.bounced", "msg_unk", "2026-09-29T12:32:00.000Z", null])).toMatchObject({ applied: true })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [permanentId])).rows[0].delivery_status).toBe("BOUNCED")
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [transientId])).rows[0].delivery_status).toBe("TRANSIENT_BOUNCE")
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [unknownId])).rows[0].delivery_status).toBe("UNDETERMINED_BOUNCE")
+    expect((await db.query<{ n: number; reason: string }>("select count(*)::int as n, min(reason) as reason from admin_private.email_suppressions")).rows[0]).toEqual({
+      n: 1, reason: "BOUNCED",
+    })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_comp_1", "email.complained", "msg_comp", "2026-09-29T12:33:00.000Z"])).toMatchObject({ applied: true })
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_sup_1", "email.suppressed", "msg_sup", "2026-09-29T12:34:00.000Z"])).toMatchObject({ applied: true })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [complaintId])).rows[0].delivery_status).toBe("COMPLAINED")
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [suppressedId])).rows[0].delivery_status).toBe("SUPPRESSED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.email_suppressions")).rows[0].n).toBe(1)
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_soft_delivered", "email.delivered", "msg_soft", "2026-09-29T12:40:00.000Z"])).toMatchObject({ applied: true })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [transientId])).rows[0].delivery_status).toBe("DELIVERED")
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_unk_delivered", "email.delivered", "msg_unk", "2026-09-29T12:41:00.000Z"])).toMatchObject({ applied: true })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [unknownId])).rows[0].delivery_status).toBe("DELIVERED")
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_perm_delivered", "email.delivered", "msg_perm", "2026-09-29T12:42:00.000Z"])).toMatchObject({ applied: false })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [permanentId])).rows[0].delivery_status).toBe("BOUNCED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.communication_delivery_events where communication_id=$1 and event_type='BOUNCED'", [permanentId])).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.email_suppressions")).rows[0].n).toBe(1)
+    const dump = JSON.stringify((await db.query("select * from admin_private.communication_webhook_events")).rows)
+    expect(dump).not.toMatch(/raw|payload|svix|whsec_/i)
   })
 })

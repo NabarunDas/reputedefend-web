@@ -10,7 +10,8 @@ export const metadata = { title: "Communications" }
 function deliveryTone(label: string): "success" | "warning" | "danger" | "neutral" {
   if (label === "Delivered") return "success"
   if (label.startsWith("Accepted by email provider")) return "warning"
-  if (label === "Bounced" || label === "Complained" || label === "Suppressed" || label.startsWith("Failed")) return "danger"
+  if (label === "Permanently bounced" || label === "Complained" || label === "Suppressed" || label.startsWith("Failed")) return "danger"
+  if (label === "Temporarily bounced" || label === "Bounce classification unknown") return "warning"
   return "neutral"
 }
 

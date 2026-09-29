@@ -3,6 +3,7 @@ import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "../jo
 
 export type OutgoingMailMessage = {
   idempotencyKey: string
+  from?: string
   to: string
   subject: string
   text: string
@@ -38,15 +39,29 @@ export type ResendMailClient = {
   }
 }
 
-export function createIdempotentMailProvider(): OutgoingMailProvider & { effects: number; calls: number } {
+export function createIdempotentMailProvider(): OutgoingMailProvider & {
+  effects: number
+  calls: number
+  payloads: OutgoingMailMessage[]
+} {
   const processed = new Map<string, string>()
+  const payloads: OutgoingMailMessage[] = []
   let effects = 0
   let calls = 0
   return {
     get effects() { return effects },
     get calls() { return calls },
+    payloads,
     async send(message) {
       calls += 1
+      payloads.push({
+        idempotencyKey: message.idempotencyKey,
+        from: message.from,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        html: message.html ?? null,
+      })
       const existing = processed.get(message.idempotencyKey)
       if (existing) return { ok: true, providerMessageId: existing, replay: true }
       const providerMessageId = crypto.randomUUID()
@@ -83,7 +98,7 @@ export function createResendMailProvider(
   return {
     async send(message) {
       const payload: ResendEmailPayload = {
-        from,
+        from: message.from || from,
         to: message.to,
         subject: message.subject,
         text: message.text,

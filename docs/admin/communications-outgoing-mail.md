@@ -1,8 +1,8 @@
 # Communications ledger and outgoing mail — Step 11
 
-Source-only. The additive migration is `20260929210000_communications_outgoing_mail_v1.sql`. It is not remotely applied. No Resend webhook is configured. `JOB_PROVIDER_MODE` remains `disabled`. `COMMUNICATIONS_SEND_ENABLED` is not set. No real customer email is sent from this PR.
+DATABASE APPLIED / LIVE DELIVERY DISABLED. The additive migration `20260929210000_communications_outgoing_mail_v1.sql` is applied to `profilerelaunch-dev` as `20260929210000 communications_outgoing_mail_v1`, exactly once after `20260929183214_jobs_outbox_operational_health_v1`. No Resend webhook is configured. `JOB_PROVIDER_MODE` remains `disabled`. `COMMUNICATIONS_SEND_ENABLED` is not set. Cron remains `0 4 * * *`. No real customer email is sent.
 
-**Live outgoing customer email is blocked until the production worker can run at an operationally acceptable cadence.**
+**Live outgoing customer email remains disabled.** Step 11 is not fully live: Resend sending is still gated off, the webhook is unconfigured, the scheduler is still daily, and no live outbound-email acceptance test has occurred.
 
 The current Admin Cron remains `0 4 * * *` (Hobby-compatible, once daily). Do not change it to five minutes in this step. Do not send email synchronously from the Admin browser request.
 
@@ -140,9 +140,9 @@ Step 11 communications have a unique `(provider, provider_message_id)` index whe
 
 `/communications` lists lifecycle, delivery, timestamps, provider reference and recent events. Draft → review → queue. Queue is hidden while live mail is disabled. No raw webhook JSON. No arbitrary browser HTML.
 
-## Not in this PR
+## Still disabled after this database apply
 
-- Remote application of the Step 11 migration
+- Live Resend sending
 - Resend webhook configuration
 - `JOB_PROVIDER_MODE=production`
 - `COMMUNICATIONS_SEND_ENABLED`

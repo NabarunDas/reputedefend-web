@@ -6,9 +6,9 @@ describe("job worker handlers", () => {
   it("fails closed for unknown job types and invalid payloads", async () => {
     const fail = vi.fn(async () => ({ jobStatus: "DEAD_LETTER" }))
     const rpc = {
-      rpc: vi.fn(async (name: string) => {
-        if (name === "job_heartbeat_v1") return { status: "success" }
-        if (name === "job_promote_outbox_v1") return { status: "success", promoted: 0 }
+      async rpc<T>(name: string): Promise<T> {
+        if (name === "job_heartbeat_v1") return { status: "success" } as T
+        if (name === "job_promote_outbox_v1") return { status: "success", promoted: 0 } as T
         if (name === "job_claim_batch_v1") return {
           status: "success",
           jobs: [{
@@ -21,10 +21,10 @@ describe("job worker handlers", () => {
             attempts: 1,
             maxAttempts: 5,
           }],
-        }
-        if (name === "job_fail_v1") return fail()
-        return {}
-      }),
+        } as T
+        if (name === "job_fail_v1") return fail() as T
+        return {} as T
+      },
     }
     const result = await runJobWorker({
       rpc,

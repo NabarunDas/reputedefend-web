@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto"
 import type { ProviderMode } from "./model"
 
+export type EnvMap = Record<string, string | undefined>
+
 export type JobWorkerConfig = {
   enabled: boolean
   environment: string
@@ -10,11 +12,11 @@ export type JobWorkerConfig = {
   workerName: string
 }
 
-export function productionProviderAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+export function productionProviderAllowed(env: EnvMap = process.env): boolean {
   return env.VERCEL_ENV === "production"
 }
 
-export function resolveProviderMode(env: NodeJS.ProcessEnv = process.env): ProviderMode {
+export function resolveProviderMode(env: EnvMap = process.env): ProviderMode {
   const requested = env.JOB_PROVIDER_MODE
   if (requested === "production") {
     if (!productionProviderAllowed(env)) return "disabled"
@@ -24,7 +26,7 @@ export function resolveProviderMode(env: NodeJS.ProcessEnv = process.env): Provi
   return "disabled"
 }
 
-export function jobWorkerConfig(env: NodeJS.ProcessEnv = process.env): JobWorkerConfig {
+export function jobWorkerConfig(env: EnvMap = process.env): JobWorkerConfig {
   const cronSecret = env.CRON_SECRET && env.CRON_SECRET.length >= 16 ? env.CRON_SECRET : null
   const environment = env.VERCEL_ENV || "local"
   const enabled = env.JOB_WORKER_ENABLED === "true"
@@ -53,6 +55,6 @@ export function cronAuthorized(header: string | null, secret: string | null): "m
   return timingSafeEqual(provided, expected) ? "ok" : "unauthorized"
 }
 
-export function canRegisterLiveProvider(mode: ProviderMode, env: NodeJS.ProcessEnv = process.env): boolean {
+export function canRegisterLiveProvider(mode: ProviderMode, env: EnvMap = process.env): boolean {
   return mode === "production" && productionProviderAllowed(env)
 }

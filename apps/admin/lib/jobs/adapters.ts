@@ -1,4 +1,4 @@
-import { canRegisterLiveProvider, resolveProviderMode } from "./config"
+import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "./config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult, JobType } from "./model"
 
 export function systemHealthProbeHandler(): JobHandler {
@@ -27,7 +27,7 @@ export function createIdempotentFakeProvider() {
   }
 }
 
-export function registeredJobHandlers(env: NodeJS.ProcessEnv = process.env): Partial<Record<JobType, JobHandler>> {
+export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record<JobType, JobHandler>> {
   const mode = resolveProviderMode(env)
   if (mode === "production" && !canRegisterLiveProvider(mode, env)) return {}
   return {

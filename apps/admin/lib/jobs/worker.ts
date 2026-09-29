@@ -1,5 +1,5 @@
 import { handlerFor, registeredJobHandlers } from "./adapters"
-import { jobWorkerConfig } from "./config"
+import { jobWorkerConfig, type EnvMap } from "./config"
 import type { ClaimedJob, JobHandler, JobType, WorkerCounts } from "./model"
 
 export type JobRpc = {
@@ -8,7 +8,7 @@ export type JobRpc = {
 
 export type WorkerRunOptions = {
   rpc: JobRpc
-  env?: NodeJS.ProcessEnv
+  env?: EnvMap
   handlers?: Partial<Record<JobType, JobHandler>>
   crashAfterProvider?: boolean
   promoteLimit?: number

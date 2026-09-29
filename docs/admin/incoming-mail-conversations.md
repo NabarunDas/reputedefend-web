@@ -1,10 +1,12 @@
 # Incoming mail and conversations — Step 12
 
-SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. The additive migration is `20260929221604_incoming_mail_conversations_v1.sql`. It is not remotely applied.
+DATABASE APPLIED / LIVE INBOUND DISABLED. The additive migration `20260929221604_incoming_mail_conversations_v1.sql` is applied to `profilerelaunch-dev` as `20260929221604 incoming_mail_conversations_v1`, exactly once after `20260929210000 communications_outgoing_mail_v1`. Live inbound customer mail remains disabled.
 
-This PR does not configure Resend Receiving, an inbound webhook secret, or an inbound subdomain/DNS. No live inbound email has been received. The root-domain MX for `profilerelaunch.com` is unchanged. Google Workspace continues to receive ordinary mail. Outgoing Step 11 remains DATABASE APPLIED / LIVE DELIVERY DISABLED. Cron remains `0 4 * * *`. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
+**Database-applied:** Step 12 schema and RPC foundation; conversation/thread model; inbound receipts; durable `IMPORT_INBOUND_EMAIL`; durable `IMPORT_INBOUND_ATTACHMENT`; attachment quarantine state model; mailbox parsing; provider timestamps; RFC threading; unmatched inbox foundation; Admin conversation commands; phone notes; contact-recovery workflow; Step 11 conversation-reply integration. There are currently no inbound or outbound mail jobs, and no inbound outbox work.
 
-Step 12 is not live and is not complete.
+**Still intentionally not activated:** Resend Receiving; inbound webhook production secret/configuration; `COMMUNICATIONS_INBOUND_ENABLED`; inbound subdomain/DNS; AWS inbound-mail bucket/role production configuration; live attachment download/quarantine; live inbound email test; live Step 11 outbound delivery.
+
+Step 12 is not fully LIVE and is not LIVE-TESTED. No live inbound email has been received. The root-domain MX for `profilerelaunch.com` is unchanged. Google Workspace continues to receive ordinary mail. Outgoing Step 11 remains DATABASE APPLIED / LIVE DELIVERY DISABLED. Cron remains `0 4 * * *` (worker cadence 86400 seconds). `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
 ## Purpose
 
@@ -35,7 +37,7 @@ Inbound mail is designed for a dedicated configurable subdomain such as `reply.p
 - `AWS_INBOUND_MAIL_BUCKET`
 - `AWS_INBOUND_MAIL_ROLE_ARN`
 
-None of these are set by this PR. Do not configure Resend Receiving, inbound DNS, or AWS. Do not create a webhook yet.
+None of these are set in production. Do not configure Resend Receiving, inbound DNS, or AWS. Do not create a webhook yet.
 
 Later conversational replies use an opaque per-conversation Reply-To on that inbound subdomain. Addresses such as `cases@profilerelaunch.com` stay on Google Workspace.
 
@@ -80,7 +82,7 @@ The attachment worker inspects the Resend `{ data, error }` result. Timeouts, 42
 
 Admin download/availability requires all of: a private object, matching storage identity, `NO_THREATS_FOUND`, and successful content validation. `validation_status` is not `VALID` merely because the declared MIME type is listed. A clean scan cannot make a row available with NULL storage bucket/key.
 
-Object keys are opaque `inbound/{conversation}/{message}/{attachment}` UUIDs. They do not contain filenames, email addresses, subjects, or customer names. Inbound storage uses `AWS_INBOUND_MAIL_BUCKET` / `AWS_INBOUND_MAIL_ROLE_ARN` placeholders, not the evidence `cases/*` role. Those values are not set by this PR.
+Object keys are opaque `inbound/{conversation}/{message}/{attachment}` UUIDs. They do not contain filenames, email addresses, subjects, or customer names. Inbound storage uses `AWS_INBOUND_MAIL_BUCKET` / `AWS_INBOUND_MAIL_ROLE_ARN` placeholders, not the evidence `cases/*` role. Those values are not set in production.
 
 They are not case evidence. An explicit Admin command may record them for evidence follow-up. That command does not accept the file and does not insert `case_documents`.
 
@@ -110,12 +112,13 @@ A later live pilot on the inbound subdomain only should cover:
 
 Do not execute that test in this PR.
 
-## Not in this PR
+## Not activated
 
-- Remote application of the Step 12 migration
 - Resend Receiving or inbound webhook configuration
 - Inbound subdomain/DNS
 - Root-domain MX change
+- AWS inbound-mail bucket/role production configuration
+- Live attachment download/quarantine
 - `JOB_PROVIDER_MODE=production`
 - `COMMUNICATIONS_SEND_ENABLED`
 - `COMMUNICATIONS_INBOUND_ENABLED`

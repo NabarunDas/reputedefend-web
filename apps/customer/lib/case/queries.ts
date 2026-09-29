@@ -13,7 +13,7 @@ export async function getCustomerCasePack(): Promise<CustomerCasePack | { unavai
   try {
     const pack = await backend().rpc<CustomerCasePack | null>("customer_case_pack_v1", { p_token_hash: tokenHash(token) })
     if (!pack || pack.kind !== "CASE_ACCESS") return { unavailable: true, message: ACTION_UNAVAILABLE }
-    return pack
+    return { ...pack, evidenceRequests: pack.evidenceRequests ?? [] }
   } catch {
     return { unavailable: true, message: ACTION_UNAVAILABLE }
   }

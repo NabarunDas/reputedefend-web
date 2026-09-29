@@ -252,6 +252,7 @@ export type EvidenceVersionRow = {
   validatedAt: string | null
   reviewedAt: string | null
   recordVersion: number
+  submissionSource?: "ADMIN" | "CUSTOMER"
 }
 
 export type EvidenceDocument = {

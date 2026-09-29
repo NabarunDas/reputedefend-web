@@ -1,10 +1,12 @@
-# Customer actions — Step 9A and 9B1
+# Customer actions — Step 9A, 9B1 and 9B2
 
-Step 9A is the secure customer-action foundation. Step 9B1 adds case-scoped published-pack viewing. It is not a customer dashboard and not Step 9B2 (customer evidence upload).
+Step 9A is the secure customer-action foundation. Step 9B1 adds case-scoped published-pack viewing. Step 9B2 adds request-driven customer evidence upload. This is not a customer dashboard.
 
 Step 8 is complete, with live acceptance confirmed on 18 September 2026. Step 9A is merged. The live Service Agreement acceptance flow has succeeded. Case-management permission live acceptance is still pending unless separately confirmed. The 9A migration `20260928094817_admin_customer_actions_v1.sql` is applied to `profilerelaunch-dev` as version `20260928094817`.
 
-Step 9B1 source implementation adds `CASE_ACCESS` and explicit pack publication. The additive migration is `20260928172000_customer_case_pack_access_v1.sql`. It is not remotely applied. The customer AWS read role is not configured. Step 9B2 remains pending. Do not mark all of Step 9 complete. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
+Step 9B1 is LIVE-TESTED COMPLETE after PR #103. Admin published Pack #1, the customer completed CASE_ACCESS email OTP, viewed the published PNG/PDF, downloaded the PDF, and the live customer AWS read-only role passed GuardDuty tag checks with `CUSTOMER_CASE_ACCESS` audit records. The applied 9B1 migration is `20260928175738_customer_case_pack_access_v1.sql`.
+
+Step 9B2 is source-only in this PR. The additive migration is `20260928190000_customer_evidence_upload_v1.sql`. It is not remotely applied. Customer IAM `s3:PutObject` is not configured. Customer replacement upload is not included. Do not mark all of Step 9 complete. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
 Current Supabase advisor baseline still contains historical security findings for `public.rls_auto_enable()`, `public.set_case_public_ref`, and leaked-password protection. Step 9A introduced missing-FK-index performance recommendations; those are not security or correctness blockers and are deferred to the performance/production-readiness cleanup.
 
@@ -57,10 +59,10 @@ Manager-access current state may be overwritten on re-verification, but append-o
 
 ## Apps
 
-- Admin: `/cases/[id]` panel “Agreements & permissions”, including **Issue customer case-access link**
-- Customer: `apps/customer` routes `/action/[actionId]`, `/case`, plus `/api/action/exchange|otp|verify|command` and `/api/case/evidence/access`
+- Admin: `/cases/[id]` panel “Agreements & permissions”, including **Issue customer case-access link**; Evidence & Documents shows a **Customer submitted** label on customer uploads
+- Customer: `apps/customer` routes `/action/[actionId]`, `/case`, plus `/api/action/exchange|otp|verify|command`, `/api/case/evidence/access` and `/api/case/evidence/upload`
 
-Environment for the customer app: `CUSTOMER_AUTH_ENABLED`, `CUSTOMER_ORIGIN`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Production file access also needs `AWS_REGION`, `AWS_EVIDENCE_BUCKET`, and `AWS_CUSTOMER_EVIDENCE_ROLE_ARN` (read-only GetObject / GetObjectTagging). The secret key is server-only. Do not enable public signup. Do not put static AWS keys in Vercel. The actual customer IAM role is configured later, after review.
+Environment for the customer app: `CUSTOMER_AUTH_ENABLED`, `CUSTOMER_ORIGIN`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Production file access also needs `AWS_REGION`, `AWS_EVIDENCE_BUCKET`, and `AWS_CUSTOMER_EVIDENCE_ROLE_ARN`. The live role currently has only `s3:GetObject` and `s3:GetObjectTagging`. After this source/migration is reviewed we will add only `s3:PutObject` for `arn:aws:s3:::profilerelaunch-evidence-dev-01/cases/*`. The role must not receive DeleteObject, ListBucket, PutObjectTagging, DeleteObjectTagging, s3:*, multipart or extra KMS/admin permissions. The secret key is server-only. Do not enable public signup. Do not put static AWS keys in Vercel. This PR does not change the IAM role or Vercel environment variables.
 
 ## Step 9B1 case access and published packs
 
@@ -74,6 +76,16 @@ Pack publication is a separate axis from `DRAFT` / `APPROVED` / `STALE` / `SUPER
 
 Customer RPCs `customer_case_pack_v1`, `customer_case_pack_version_v1` and `customer_case_pack_access_v1` re-check the session and live publication facts, including `pack_publishable_v1` for the whole pack on every file lookup. If any included item is no longer uploaded, clean, valid, accepted and customer-visible, no file from that pack is returned. Storage coordinates never appear in the page projection. Presigned GET expiry is at most 60 seconds and is never persisted. Actor on file-access events is the customer Auth user with source `CUSTOMER_CASE_ACCESS`.
 
-## Out of scope (Step 9B2+)
+## Step 9B2 customer evidence-request upload
 
-Customer evidence upload, evidence-request response, presigned POST, PutObject, replacement upload, customer scan refresh, customer acceptance/visibility, deletion, task responses, payments, Stripe, Resend/outgoing email, quotes, and a full dashboard.
+Source-only. A customer may upload only in response to an `OPEN` `evidence_requests` row for the exact CASE_ACCESS case. `/case` projects customer-safe OPEN requests (`requestId`, `title`, `requestText`, `dueAt`, `createdAt`, `submissionStatus`, `filename`, `submittedAt`) and never storage coordinates, Admin notes or review internals. Published-pack projection is unchanged.
+
+`POST /api/case/evidence/upload` accepts only `begin` and `finalize`. The browser may send `evidenceRequestId`, filename, declared MIME and size, or `versionId`. It must not send case/customer/business IDs, bucket, key, review, visibility, scan or validation fields. Scope comes from the HttpOnly CASE_ACCESS session.
+
+Begin (`customer_evidence_begin_v1`) creates the first customer document for that request. Title is the evidence-request title. Object key is `cases/{case}/documents/{document}/versions/{version}`. Version 1 starts `PENDING_UPLOAD` / `PENDING` / `PENDING` / `UNREVIEWED` / `customer_visible=false` with `submission_source=CUSTOMER` and `customer_action_id` set to the current CASE_ACCESS action. `created_by` is the customer Auth user. Events use `source=CUSTOMER_CASE_ACCESS`. The same idempotency key replays; a different payload on the same key conflicts.
+
+A `PENDING_UPLOAD` attempt is incomplete and may be abandoned. Same action + same file metadata resumes that version, including after a new OTP session on the still-OPEN action. A different file, or a new CASE_ACCESS action replacing a revoked/expired/invalidated one, marks the old version `FAILED` (`UPLOAD_FAILED`, `reason=RESTARTED_BEFORE_FINALIZE`), keeps its original key and provenance, and creates a new version on the same logical document. After `UPLOADED`, the customer cannot create a replacement in this slice.
+
+The customer Vercel server mints the same constrained presigned POST as Admin (exact bucket/key/Content-Type, content-length-range 1..10485760, 300 seconds). The browser uploads directly to S3. Finalize (`customer_evidence_finalize_v1`) requires the object to exist, then moves only `PENDING_UPLOAD` → `UPLOADED` and sets `uploaded_at`. Scan, validation, review and visibility stay pending/unreviewed/false. The evidence request stays `OPEN` until Admin fulfils it. The customer cannot accept/reject, set visibility, publish, refresh scan, or download the unreviewed upload.
+
+Customer IAM PutObject is not configured by this PR. The 9B2 migration is not remotely applied. Replacement upload, customer scan/validation, Google submission and a dashboard remain later work. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.

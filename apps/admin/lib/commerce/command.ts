@@ -56,18 +56,17 @@ async function guard(request: NextRequest) {
   return { config, token, key }
 }
 
-export async function catalogueCommand(request: NextRequest) {
+export async function catalogueCommand(request: NextRequest): Promise<NextResponse> {
   const gated = await guard(request)
-  if ("error" in gated) return gated.error
+  if ("error" in gated && gated.error) return gated.error
   try {
     const parsed = await readJson(request)
     if (parsed instanceof NextResponse) return parsed
     const body = parsed.body
-    if (!body || typeof body !== "object" || Array.isArray(body) || typeof (body as { operation?: unknown }).operation !== "string"
-      || !isCatalogueOperation((body as { operation: string }).operation)) {
+    const operation = body && typeof body === "object" && !Array.isArray(body) ? (body as { operation?: unknown }).operation : null
+    if (typeof operation !== "string" || !isCatalogueOperation(operation)) {
       return reply("Check the fields before saving.", 400)
     }
-    const operation = (body as { operation: string }).operation
     const args = catalogueArgs(operation, body as Record<string, unknown>)
     if (!args) return reply("Check the fields before saving.", 400)
     const version = "version" in args ? args.version : null
@@ -88,18 +87,17 @@ export async function catalogueCommand(request: NextRequest) {
   }
 }
 
-export async function quoteCommand(request: NextRequest) {
+export async function quoteCommand(request: NextRequest): Promise<NextResponse> {
   const gated = await guard(request)
-  if ("error" in gated) return gated.error
+  if ("error" in gated && gated.error) return gated.error
   try {
     const parsed = await readJson(request)
     if (parsed instanceof NextResponse) return parsed
     const body = parsed.body
-    if (!body || typeof body !== "object" || Array.isArray(body) || typeof (body as { operation?: unknown }).operation !== "string"
-      || !isQuoteOperation((body as { operation: string }).operation)) {
+    const operation = body && typeof body === "object" && !Array.isArray(body) ? (body as { operation?: unknown }).operation : null
+    if (typeof operation !== "string" || !isQuoteOperation(operation)) {
       return reply("Check the fields before saving.", 400)
     }
-    const operation = (body as { operation: string }).operation
     const args = quoteArgs(operation, body as Record<string, unknown>)
     if (!args) return reply("Check the fields before saving.", 400)
     const issuesLink = operation === "create_quote_acceptance_action"

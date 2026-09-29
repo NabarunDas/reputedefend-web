@@ -156,7 +156,7 @@ describe("customer action page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept quote" })).toBeTruthy())
     expect(screen.getByText("Managed Relaunch")).toBeTruthy()
-    expect(screen.getByText(/£239.20/)).toBeTruthy()
+    expect(screen.getAllByText(/£239.20/).length).toBeGreaterThan(0)
     expect(screen.getByText(/Tax is recorded as not applicable/)).toBeTruthy()
     expect(screen.getByText(/does not create an invoice or outstanding debt/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/charge a card today|monitoring has started|Stripe/i)

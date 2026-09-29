@@ -1,10 +1,8 @@
 import { handlerFor, registeredJobHandlers } from "./adapters"
 import { jobWorkerConfig, type EnvMap } from "./config"
-import type { ClaimedJob, JobHandler, JobType, WorkerCounts } from "./model"
+import type { ClaimedJob, JobHandler, JobRpc, JobType, WorkerCounts } from "./model"
 
-export type JobRpc = {
-  rpc<T>(name: string, args: Record<string, unknown>): Promise<T>
-}
+export type { JobRpc }
 
 export type WorkerRunOptions = {
   rpc: JobRpc
@@ -113,9 +111,17 @@ async function processClaimedJob(
     })
     return failed.jobStatus === "RETRY" ? "RETRY" : "DEAD_LETTER"
   }
-  const result = await handler.execute({ idempotencyKey: job.idempotencyKey, payload: job.payload })
+  const result = await handler.execute({ idempotencyKey: job.idempotencyKey, payload: job.payload, rpc })
   if (crashAfterProvider) throw new WorkerCrash()
   if (result.ok) {
+    if (result.providerAccepted) {
+      await rpc.rpc("communication_mark_provider_accepted_v1", {
+        p_communication: result.providerAccepted.communicationId,
+        p_provider: result.providerAccepted.provider,
+        p_provider_message_id: result.providerAccepted.providerMessageId,
+        p_idempotency_key: job.idempotencyKey,
+      })
+    }
     await rpc.rpc("job_complete_v1", { p_job: job.jobId, p_lease: job.leaseToken })
     return "SUCCEEDED"
   }

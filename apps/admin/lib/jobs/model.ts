@@ -1,4 +1,4 @@
-export const JOB_TYPES = ["SYSTEM_HEALTH_PROBE"] as const
+export const JOB_TYPES = ["SYSTEM_HEALTH_PROBE", "SEND_EMAIL"] as const
 export type JobType = (typeof JOB_TYPES)[number]
 export const JOB_STATUSES = ["PENDING", "RUNNING", "RETRY", "SUCCEEDED", "DEAD_LETTER"] as const
 export type JobStatus = (typeof JOB_STATUSES)[number]
@@ -19,12 +19,17 @@ export type ClaimedJob = {
 }
 
 export type JobHandlerResult =
-  | { ok: true }
+  | { ok: true; providerAccepted?: { communicationId: string; provider: string; providerMessageId: string } }
   | { ok: false; retryable: boolean; error: string }
+
+export type JobRpc = {
+  rpc<T>(name: string, args: Record<string, unknown>): Promise<T>
+}
 
 export type JobHandlerInput = {
   idempotencyKey: string
   payload: Record<string, unknown>
+  rpc?: JobRpc
 }
 
 export type JobHandler = {

@@ -13,7 +13,7 @@ describe("job worker handlers", () => {
           status: "success",
           jobs: [{
             jobId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            jobType: "SEND_EMAIL",
+            jobType: "CHARGE_STRIPE",
             idempotencyKey: "stable-key-1",
             payload: { to: "hidden@example.com" },
             leaseToken: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -32,13 +32,13 @@ describe("job worker handlers", () => {
     })
     expect(result.counts.deadLettered).toBe(1)
     expect(fail).toHaveBeenCalled()
-    expect(handlerFor("SEND_EMAIL")).toBeNull()
+    expect(handlerFor("CHARGE_STRIPE")).toBeNull()
   })
 
   it("does not register production adapters outside production", () => {
-    expect(registeredJobHandlers({ JOB_PROVIDER_MODE: "production", VERCEL_ENV: "preview" })).toEqual({
-      SYSTEM_HEALTH_PROBE: expect.objectContaining({ jobType: "SYSTEM_HEALTH_PROBE" }),
-    })
+    const preview = registeredJobHandlers({ JOB_PROVIDER_MODE: "production", VERCEL_ENV: "preview" })
+    expect(preview.SYSTEM_HEALTH_PROBE).toEqual(expect.objectContaining({ jobType: "SYSTEM_HEALTH_PROBE" }))
+    expect(preview.SEND_EMAIL).toEqual(expect.objectContaining({ jobType: "SEND_EMAIL" }))
     expect(registeredJobHandlers({ VERCEL_ENV: "production" }).SYSTEM_HEALTH_PROBE).toBeTruthy()
   })
 })

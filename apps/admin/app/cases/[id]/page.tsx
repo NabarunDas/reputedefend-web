@@ -34,6 +34,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       <details className="panel"><summary>Add a note</summary><NoteForm key={c.version} c={c} /></details>
     </>}
     <section className="panel">
+      <h2>Communications</h2>
+      <p>Draft, review and queue customer email from the communications workspace. Provider acceptance is not delivery. Live sending stays blocked on the current daily scheduler.</p>
+      <p><Link className="button-link" href={`/communications?case=${c.id}`}>Open case communications</Link></p>
+    </section>
+    <section className="panel">
       <h2>Evidence & Documents</h2>
       <p>Upload files, refresh malware scan status, review versions and record future customer visibility. Files stay in private storage. This does not send an email or open a customer portal.</p>
       <p><Link className="button-link" href={`/cases/${c.id}/evidence`}>Open evidence workspace</Link></p>

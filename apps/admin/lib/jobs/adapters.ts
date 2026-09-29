@@ -1,4 +1,5 @@
 import { sendEmailHandler } from "../communications/handler"
+import { importInboundAttachmentHandler } from "../conversations/attachment"
 import { importInboundEmailHandler } from "../conversations/import"
 import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "./config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult, JobType } from "./model"
@@ -36,6 +37,7 @@ export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record
     SYSTEM_HEALTH_PROBE: systemHealthProbeHandler(),
     SEND_EMAIL: sendEmailHandler(env),
     IMPORT_INBOUND_EMAIL: importInboundEmailHandler(env),
+    IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env),
   }
 }
 
@@ -43,5 +45,6 @@ export function handlerFor(jobType: string, handlers: Partial<Record<JobType, Jo
   if (jobType === "SYSTEM_HEALTH_PROBE") return handlers.SYSTEM_HEALTH_PROBE ?? null
   if (jobType === "SEND_EMAIL") return handlers.SEND_EMAIL ?? null
   if (jobType === "IMPORT_INBOUND_EMAIL") return handlers.IMPORT_INBOUND_EMAIL ?? null
+  if (jobType === "IMPORT_INBOUND_ATTACHMENT") return handlers.IMPORT_INBOUND_ATTACHMENT ?? null
   return null
 }

@@ -1,6 +1,7 @@
 import type { EnvMap } from "../jobs/config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 import { communicationsInboundEnabled, inboundMailDomain, inboundOwnedAddresses } from "./gate"
+import { parseMailbox, parseMailboxList } from "./mailbox"
 
 export type ReceivedEmailAttachment = {
   id: string
@@ -50,12 +51,7 @@ function headerValue(headers: ReceivedEmail["headers"], name: string): string | 
 }
 
 function addresses(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map(item => item.trim().toLowerCase())
-    .filter(item => item.includes("@") && item.length <= 254)
-    .slice(0, 20)
+  return parseMailboxList(value)
 }
 
 export function createDisabledInboundProvider(): InboundEmailProvider {
@@ -147,18 +143,26 @@ export function importInboundEmailHandler(env: EnvMap = process.env, provider?: 
       if (inbound === "disabled") return { ok: false, retryable: true, error: "Inbound mail is not enabled" }
       const email = await inbound.getReceivedEmail(emailId)
       if (!email) return { ok: false, retryable: true, error: "Received email is not available" }
-      const attachments = (email.attachments || []).slice(0, 10).map(item => ({
-        providerAttachmentId: item.id,
-        filename: (item.filename || "attachment").slice(0, 200),
-        mimeType: (item.content_type || "application/octet-stream").slice(0, 120),
-        sizeBytes: typeof item.size === "number" && item.size >= 0 ? Math.min(item.size, 10485760) : 0,
-      }))
+      const sender = parseMailbox(email.from)
+      const attachments = (email.attachments || []).slice(0, 10).map(item => {
+        const sizeBytes = typeof item.size === "number" && Number.isFinite(item.size) ? item.size : -1
+        return {
+          providerAttachmentId: item.id,
+          filename: (item.filename || "attachment").slice(0, 200),
+          mimeType: (item.content_type || "application/octet-stream").slice(0, 120),
+          sizeBytes,
+        }
+      })
+      if (attachments.some(item => item.sizeBytes < 0 || item.sizeBytes > 104857600)) {
+        return { ok: false, retryable: false, error: "Inbound attachment metadata is invalid" }
+      }
       const result = await input.rpc.rpc<{ status?: string }>("inbound_email_import_v1", {
         p_payload: {
           providerEmailId: emailId,
           providerEventId: eventId || loaded.providerEventId,
           rfcMessageId: email.message_id || headerValue(email.headers, "message-id"),
-          senderAddress: email.from,
+          senderAddress: sender?.address ?? null,
+          senderDisplay: sender?.display ?? null,
           subject: email.subject,
           bodyText: email.text || "",
           bodyHtml: email.html || "",

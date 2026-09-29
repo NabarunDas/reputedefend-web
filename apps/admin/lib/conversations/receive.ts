@@ -4,6 +4,7 @@ import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
 import { parseProviderOccurredAt, verifyResendSignature } from "../communications/webhook"
 import { inboundWebhookSecret } from "./gate"
+import { parseMailbox } from "./mailbox"
 
 const reply = (body: Record<string, unknown>, status = 200) =>
   NextResponse.json(body, { status, headers: privateResponseHeaders })
@@ -42,15 +43,18 @@ export async function handleResendInboundWebhook(request: NextRequest, env: Reco
     : null
   const emailId = typeof data?.email_id === "string" ? data.email_id : ""
   if (emailId.length < 8 || emailId.length > 200) return reply({ status: "invalid" }, 400)
-  parseProviderOccurredAt(parsed.created_at)
+  const occurredAt = parseProviderOccurredAt(parsed.created_at)
+  const sender = parseMailbox(data?.from)
   const result = await backend().rpc<{ status?: string; duplicate?: boolean }>("inbound_email_receive_event_v1", {
     p_provider: "resend",
     p_provider_event_id: id,
     p_event_type: "email.received",
     p_provider_email_id: emailId,
     p_rfc_message_id: boundedText(data?.message_id, 300),
-    p_sender_address: boundedText(data?.from, 254),
+    p_sender_address: sender?.address ?? null,
     p_subject: boundedText(data?.subject, 500),
+    p_provider_occurred_at: occurredAt,
+    p_sender_display: sender?.display ?? null,
   })
   if (result?.status !== "success") return reply({ status: "error" }, 503)
   return reply({ status: "success", duplicate: result.duplicate === true })

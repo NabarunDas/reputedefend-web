@@ -75,7 +75,7 @@ export function AssignForm({ conversationId, version, assigned }: { conversation
 
 export function CloseForm({ conversationId, version, state }: { conversationId: string; version: number; state: string }) {
   if (state === "CLOSED") return <ConversationForm operation="reopen" conversationId={conversationId} version={version} label="Reopen" />
-  if (state === "OPEN") return <ConversationForm operation="close" conversationId={conversationId} version={version} label="Close" />
+  if (state === "OPEN" || state === "UNMATCHED") return <ConversationForm operation="close" conversationId={conversationId} version={version} label="Close" />
   return null
 }
 

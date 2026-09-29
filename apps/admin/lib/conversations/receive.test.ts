@@ -59,10 +59,11 @@ describe("inbound resend webhook", () => {
 
   it("persists only bounded email.received fields and is idempotent", async () => {
     mocks.rpc.mockResolvedValue({ status: "success", duplicate: false })
+    const occurredAt = new Date().toISOString()
     const body = JSON.stringify({
       type: "email.received",
-      created_at: "2026-09-29T12:00:00.000Z",
-      data: { email_id: "email_abc", message_id: "<a@b>", from: "alex@example.com", subject: "Help", html: "<script>nope</script>" },
+      created_at: occurredAt,
+      data: { email_id: "email_abc", message_id: "<a@b>", from: "Alex Smith <alex@example.com>", subject: "Help", html: "<script>nope</script>" },
     })
     const first = await handleResendInboundWebhook(signed(body), process.env)
     mocks.rpc.mockResolvedValue({ status: "success", duplicate: true })
@@ -74,7 +75,25 @@ describe("inbound resend webhook", () => {
       p_event_type: "email.received",
       p_provider_email_id: "email_abc",
       p_rfc_message_id: "<a@b>",
+      p_sender_address: "alex@example.com",
+      p_sender_display: "Alex Smith",
+      p_provider_occurred_at: occurredAt,
     }))
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/<script>|RESEND_INBOUND_WEBHOOK_SECRET|html/i)
+  })
+
+  it("does not persist an absurd provider occurrence time", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", duplicate: false })
+    const body = JSON.stringify({
+      type: "email.received",
+      created_at: "2099-01-01T00:00:00.000Z",
+      data: { email_id: "email_future", from: "alex@example.com" },
+    })
+    const response = await handleResendInboundWebhook(signed(body, "evt_future_1"), process.env)
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("inbound_email_receive_event_v1", expect.objectContaining({
+      p_provider_email_id: "email_future",
+      p_provider_occurred_at: null,
+    }))
   })
 })

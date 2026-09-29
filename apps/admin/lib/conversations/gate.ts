@@ -35,3 +35,17 @@ export function communicationsInboundEnabled(env: EnvMap = process.env): boolean
 export function inboundDisabledReason(): string {
   return "Inbound customer mail is not enabled. The Google Workspace inbox on profilerelaunch.com is unchanged."
 }
+
+export type InboundStorageConfig = { region: string; bucket: string; roleArn: string }
+
+export function inboundStorageConfig(env: EnvMap = process.env): InboundStorageConfig | null {
+  if (env.AWS_ACCESS_KEY_ID || env.AWS_SECRET_ACCESS_KEY || env.AWS_SESSION_TOKEN) return null
+  if (env.VERCEL_ENV && env.VERCEL_ENV !== "production") return null
+  const region = env.AWS_REGION
+  const bucket = env.AWS_INBOUND_MAIL_BUCKET
+  const roleArn = env.AWS_INBOUND_MAIL_ROLE_ARN
+  if (!region || !bucket || !roleArn) return null
+  if (!/^arn:aws:iam::\d+:role\/[A-Za-z0-9+=,.@_-]+$/.test(roleArn)) return null
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) return null
+  return { region, bucket, roleArn }
+}

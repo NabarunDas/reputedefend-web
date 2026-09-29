@@ -12,9 +12,10 @@ Add a first-class conversation model for inbound mail:
 
 - signed `email.received` intake
 - durable `IMPORT_INBOUND_EMAIL` work on the Step 10 outbox
+- durable `IMPORT_INBOUND_ATTACHMENT` work per attachment
 - unmatched inbox
-- deterministic thread resolution
-- safe attachment quarantine
+- deterministic thread resolution that fails closed on RFC ambiguity
+- safe attachment quarantine in a dedicated inbound prefix
 - Admin replies through the existing Step 11 reviewed outgoing-mail path
 - append-only phone notes
 - contact-recovery tasks on the existing `public.case_tasks` model
@@ -31,8 +32,10 @@ Inbound mail is designed for a dedicated configurable subdomain such as `reply.p
 - `RESEND_INBOUND_WEBHOOK_SECRET`
 - `COMMUNICATIONS_INBOUND_ENABLED`
 - `INBOUND_OWNED_ADDRESSES`
+- `AWS_INBOUND_MAIL_BUCKET`
+- `AWS_INBOUND_MAIL_ROLE_ARN`
 
-None of these are set by this PR. Do not configure Resend Receiving or create a webhook yet.
+None of these are set by this PR. Do not configure Resend Receiving, inbound DNS, or AWS. Do not create a webhook yet.
 
 Later conversational replies use an opaque per-conversation Reply-To on that inbound subdomain. Addresses such as `cases@profilerelaunch.com` stay on Google Workspace.
 
@@ -54,16 +57,32 @@ The existing outbound route `POST /api/webhooks/resend` is unchanged except that
 
 ## Thread resolution
 
-1. Exact provider/RFC relationship from `In-Reply-To` or `References`.
-2. Opaque conversation Reply-To alias on the configured inbound domain.
+1. Exact provider/RFC relationship from `In-Reply-To` or `References`. Tokens are split on ordinary whitespace, including tabs and newlines. If those tokens identify exactly one conversation, use it. If they identify more than one, the RFC relationship is ambiguous and is not auto-linked. Sender email never breaks the tie.
+2. Opaque conversation Reply-To alias on the configured inbound domain, including formatted `Name <alias@domain>` mailboxes. The alias remains unique.
 3. Other ProfileRelaunch-owned RFC identifiers already stored on outbound communications.
-4. Otherwise create or retain an `UNMATCHED` conversation.
+4. Otherwise create or retain an `UNMATCHED` conversation. Ambiguous RFC relationships use the bounded reason `Ambiguous thread relationship`.
+
+Provider mailbox strings such as `Alex Smith <alex@example.com>` are parsed into a bounded address and display name. Malformed or ambiguous mailbox strings fail closed.
 
 `from email == customer email` is only a `MATCHES_VERIFIED_CONTACT` triage signal. It does not authenticate, verify, grant access, or auto-link a case.
 
+Validated webhook/provider occurrence time is stored on the inbound receipt and copied to `conversation_messages.provider_occurred_at`. It stays distinct from local receipt time. Absurd timestamps stay NULL. Webhook replay does not rewrite history.
+
+`UNMATCHED` and `OPEN` conversations may be closed. A closed conversation may have `case_id = NULL`. Reopen returns `OPEN` when a case remains linked and `UNMATCHED` otherwise. Original messages stay append-only.
+
+`link_case` only links an `UNMATCHED` conversation. Relinking requires an explicit unlink. Unlink is denied while any `CONVERSATION_REPLY` is `DRAFT`, `REVIEWED`, or `QUEUED`.
+
 ## Attachments
 
-Inbound files reuse Step 8 rules: private object, size/type bounds, GuardDuty scan, Admin-safe only after `NO_THREATS_FOUND` and an allowed MIME type. They are not case evidence. An explicit Admin command may record them for evidence follow-up. That command does not accept the file and does not insert `case_documents`.
+The email-import transaction records attachment identities and enqueues one `IMPORT_INBOUND_ATTACHMENT` job per attachment. The webhook does not download files.
+
+The attachment worker retrieves bytes from Resend (`emails.receiving.attachments.get`), validates declared metadata without clamping oversized files, downloads bounded bytes, validates actual signatures against the Step 8 allow-list, uploads to a private inbound S3 prefix over OIDC, probes GuardDuty, and then marks the row clean or blocked.
+
+Admin download/availability requires all of: a private object, matching storage identity, `NO_THREATS_FOUND`, and successful content validation. `validation_status` is not `VALID` merely because the declared MIME type is listed. A clean scan cannot make a row available with NULL storage bucket/key.
+
+Object keys are opaque `inbound/{conversation}/{message}/{attachment}` UUIDs. They do not contain filenames, email addresses, subjects, or customer names. Inbound storage uses `AWS_INBOUND_MAIL_BUCKET` / `AWS_INBOUND_MAIL_ROLE_ARN` placeholders, not the evidence `cases/*` role. Those values are not set by this PR.
+
+They are not case evidence. An explicit Admin command may record them for evidence follow-up. That command does not accept the file and does not insert `case_documents`.
 
 If inbound storage configuration is absent, retrieval fails closed.
 

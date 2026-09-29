@@ -5,6 +5,12 @@ import { sendEmailHandler } from "../communications/handler"
 import { createIdempotentMailProvider } from "../communications/mail"
 import { runJobWorker } from "../jobs/worker"
 import { importInboundEmailHandler, createIdempotentInboundProvider } from "./import"
+import {
+  createIdempotentInboundAttachmentProvider,
+  createMemoryInboundStore,
+  importInboundAttachmentHandler,
+  type InboundAttachmentBytes,
+} from "./attachment"
 
 const db = new PGlite()
 const uid = "11111111-1111-4111-8111-111111111111"
@@ -34,6 +40,7 @@ type RpcResult = {
   conversations?: Array<{ id: string; state: string; senderMatch: string }>
   jobs?: Array<{ jobId: string; jobType: string; idempotencyKey: string; payload: Record<string, unknown>; leaseToken: string }>
   promoted?: number
+  entries?: Array<{ attachments?: Array<{ id: string; available: boolean }> }>
 }
 
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -48,6 +55,8 @@ const signatures: Record<string, string[]> = {
   job_heartbeat_v1: ["p_worker", "p_environment", "p_phase", "p_error", "p_deployment", "p_expected_interval", "p_late_after"],
   inbound_email_load_import_v1: ["p_provider", "p_provider_email_id"],
   inbound_email_import_v1: ["p_payload"],
+  inbound_attachment_load_import_v1: ["p_attachment"],
+  inbound_attachment_apply_v1: ["p_payload"],
 }
 
 function namedRpc() {
@@ -109,6 +118,7 @@ async function receive(emailId: string, extra: Record<string, unknown> = {}) {
   return rpc("inbound_email_receive_event_v1", [
     "resend", extra.eventId ?? `evt_${emailId}`, "email.received", emailId,
     extra.rfcMessageId ?? null, extra.sender ?? "alex@example.com", extra.subject ?? "Help",
+    extra.occurredAt ?? null, extra.display ?? null,
   ])
 }
 
@@ -130,7 +140,41 @@ async function importEmail(emailId: string, extra: Record<string, unknown> = {})
     inboundDomain: extra.inboundDomain ?? "reply.profilerelaunch.com",
     ownedAddresses: extra.ownedAddresses ?? ["ops@reputedefend.com"],
     attachments: extra.attachments ?? [],
+    senderDisplay: extra.senderDisplay ?? null,
   }])
+}
+
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x34, 0x0a])
+const caseB = "77777777-7777-4777-8777-777777777777"
+
+function pdfAttachment(id: string, extra: Partial<InboundAttachmentBytes> = {}): InboundAttachmentBytes {
+  return { id, filename: "id-scan.pdf", contentType: "application/pdf", size: PDF_BYTES.byteLength, bytes: PDF_BYTES, ...extra }
+}
+
+type MemoryInboundStore = ReturnType<typeof createMemoryInboundStore>
+
+async function runAttachmentJobs(
+  files: Record<string, InboundAttachmentBytes> = {},
+  store?: MemoryInboundStore,
+) {
+  const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32) }
+  const provider = createIdempotentInboundAttachmentProvider(files)
+  const objectStore = store ?? createMemoryInboundStore()
+  await runJobWorker({
+    rpc: namedRpc(),
+    env,
+    handlers: { IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env, provider, objectStore) },
+  })
+  return { provider, store: objectStore }
+}
+
+async function insertSecondCase() {
+  await db.query(
+    `insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track)
+     values($1,'PROFILE_RECOVERY',$2,$3,$4,'Second case','2026-01-02',now(),now(),'MANAGED')
+     on conflict (id) do nothing`,
+    [caseB, customer, business, location],
+  )
 }
 
 describe("incoming mail conversations SQL", () => {
@@ -214,36 +258,44 @@ describe("incoming mail conversations SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications where lifecycle is not null")).rows[0].n).toBe(0)
   })
 
-  it("keeps attachments unavailable until a clean allowed scan and records provenance without creating evidence", async () => {
-    const imported = await importEmail("email_attach_1", {
+  it("records attachment metadata as pending and creates exactly one durable attachment job", async () => {
+    const imported = await importEmail("email_attach_job_1", {
       attachments: [{
         providerAttachmentId: "att_12345678",
         filename: "id-scan.pdf",
         mimeType: "application/pdf",
         sizeBytes: 1200,
-      }, {
-        providerAttachmentId: "att_unsafe_1",
-        filename: "payload.exe",
-        mimeType: "application/x-msdownload",
-        sizeBytes: 200,
       }],
     })
-    const rows = await db.query<{ id: string; scan_status: string; validation_status: string; original_filename: string }>(
-      "select id, scan_status, validation_status, original_filename from public.conversation_attachments order by original_filename",
+    expect(imported?.status).toBe("success")
+    const rows = await db.query<{ ingestion_status: string; validation_status: string; scan_status: string; size_bytes: number }>(
+      "select ingestion_status, validation_status, scan_status, size_bytes from public.conversation_attachments",
     )
-    expect(rows.rows).toHaveLength(2)
-    expect(rows.rows.find(row => row.original_filename === "id-scan.pdf")).toMatchObject({ scan_status: "PENDING", validation_status: "ALLOWED" })
-    expect(rows.rows.find(row => row.original_filename === "payload.exe")).toMatchObject({ validation_status: "BLOCKED" })
-    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_documents")).rows[0].n).toBe(0)
-    const pdf = rows.rows.find(row => row.original_filename === "id-scan.pdf")!
-    await rpc("inbound_attachment_mark_scan_v1", [pdf.id, "NO_THREATS_FOUND", "private-bucket", "conversations/a/b"])
-    const conversation = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
-    await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId }, conversation.record_version])
-    const linked = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
-    const promoted = await rpc("admin_conversation_command_v1", [token, key(), "promote_attachment", { conversationId: imported!.conversationId, attachmentId: pdf.id }, linked.record_version])
-    expect(promoted?.status).toBe("success")
-    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_documents")).rows[0].n).toBe(0)
-    expect((await db.query<{ promotion_state: string }>("select promotion_state from public.conversation_attachments where id=$1", [pdf.id])).rows[0].promotion_state).toBe("RECORDED")
+    expect(rows.rows).toEqual([{
+      ingestion_status: "METADATA_RECORDED",
+      validation_status: "PENDING",
+      scan_status: "PENDING",
+      size_bytes: 1200,
+    }])
+    const jobs = await db.query<{ event_key: string; topic: string }>(
+      "select event_key, topic from admin_private.job_outbox where topic='IMPORT_INBOUND_ATTACHMENT'",
+    )
+    expect(jobs.rows).toEqual([{
+      event_key: "import-inbound-attachment:resend:email_attach_job_1:att_12345678",
+      topic: "IMPORT_INBOUND_ATTACHMENT",
+    }])
+    expect((await importEmail("email_attach_job_1", {
+      attachments: [{
+        providerAttachmentId: "att_12345678",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    }))).toMatchObject({ status: "success", duplicate: true })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.conversation_attachments")).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic='IMPORT_INBOUND_ATTACHMENT'")).rows[0].n).toBe(1)
+    const detail = await rpc("admin_conversation_detail_v1", [token, imported!.conversationId])
+    expect(detail?.entries?.flatMap(entry => entry.attachments ?? [])[0]?.available).toBe(false)
   })
 
   it("records phone notes as append-only and creates an existing case task for contact recovery", async () => {
@@ -325,8 +377,10 @@ describe("incoming mail conversations SQL", () => {
       }
     }
     for (const fn of [
-      "inbound_email_receive_event_v1(text,text,text,text,text,text,text)",
+      "inbound_email_receive_event_v1(text,text,text,text,text,text,text,timestamptz,text)",
       "inbound_email_import_v1(jsonb)",
+      "inbound_attachment_load_import_v1(uuid)",
+      "inbound_attachment_apply_v1(jsonb)",
       "admin_conversation_command_v1(text,uuid,text,jsonb,integer)",
     ]) {
       expect((await db.query<{ n: boolean }>(`select has_function_privilege('anon','public.${fn}','execute') as n`)).rows[0].n).toBe(false)
@@ -361,5 +415,358 @@ describe("incoming mail conversations SQL", () => {
     })
     expect(provider.calls).toBe(1)
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.conversation_messages")).rows[0].n).toBe(1)
+  })
+
+  it("retrieves provider attachment bytes, stores them privately, and only then marks them available", async () => {
+    const imported = await importEmail("email_attach_clean_1", {
+      attachments: [{
+        providerAttachmentId: "att_clean_01",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: PDF_BYTES.byteLength,
+      }],
+    })
+    const attachment = (await db.query<{ id: string; conversation_id: string; message_id: string }>(
+      "select id, conversation_id, message_id from public.conversation_attachments",
+    )).rows[0]
+    const first = await runAttachmentJobs({
+      "email_attach_clean_1:att_clean_01": pdfAttachment("att_clean_01"),
+    })
+    expect(first.provider.calls).toBe(1)
+    expect(first.store.uploads).toBe(1)
+    expect(first.store.objects.has(`inbound/${attachment.conversation_id}/${attachment.message_id}/${attachment.id}`)).toBe(true)
+    const stored = (await db.query<{
+      ingestion_status: string; validation_status: string; scan_status: string; storage_bucket: string; storage_key: string
+    }>("select ingestion_status, validation_status, scan_status, storage_bucket, storage_key from public.conversation_attachments where id=$1", [attachment.id])).rows[0]
+    expect(stored).toMatchObject({
+      ingestion_status: "CLEAN",
+      validation_status: "VALID",
+      scan_status: "NO_THREATS_FOUND",
+      storage_bucket: "inbound-private-test",
+    })
+    expect(stored.storage_key).toBe(`inbound/${attachment.conversation_id}/${attachment.message_id}/${attachment.id}`)
+    expect(stored.storage_key).not.toMatch(/id-scan|alex@example|Help|Alex/i)
+    const detail = await rpc("admin_conversation_detail_v1", [token, imported!.conversationId])
+    expect(detail?.entries?.flatMap(entry => entry.attachments ?? [])[0]?.available).toBe(true)
+    const conversation = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
+    await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId }, conversation.record_version])
+    const linked = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
+    expect((await rpc("admin_conversation_command_v1", [token, key(), "promote_attachment", { conversationId: imported!.conversationId, attachmentId: attachment.id }, linked.record_version]))?.status).toBe("success")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_documents")).rows[0].n).toBe(0)
+    const retry = await runAttachmentJobs({
+      "email_attach_clean_1:att_clean_01": pdfAttachment("att_clean_01"),
+    }, first.store)
+    expect(retry.provider.calls).toBe(0)
+    expect(retry.store.uploads).toBe(1)
+  })
+
+  it("rejects a provider attachment larger than 10 MB without clamping the recorded size", async () => {
+    await importEmail("email_attach_big_1", {
+      attachments: [{
+        providerAttachmentId: "att_too_big1",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 20_971_520,
+      }],
+    })
+    expect((await db.query<{ size_bytes: number }>("select size_bytes from public.conversation_attachments")).rows[0].size_bytes).toBe(20_971_520)
+    const result = await runAttachmentJobs({
+      "email_attach_big_1:att_too_big1": pdfAttachment("att_too_big1", { size: 20_971_520, bytes: PDF_BYTES }),
+    })
+    expect(result.provider.calls).toBe(0)
+    expect(result.store.uploads).toBe(0)
+    expect((await db.query<{ ingestion_status: string; validation_status: string; size_bytes: number }>(
+      "select ingestion_status, validation_status, size_bytes from public.conversation_attachments",
+    )).rows[0]).toEqual({
+      ingestion_status: "UNSUPPORTED",
+      validation_status: "INVALID",
+      size_bytes: 20_971_520,
+    })
+  })
+
+  it("blocks invalid extensions and MIME types without treating declared allow-list membership as validation", async () => {
+    await importEmail("email_attach_mime_1", {
+      attachments: [{
+        providerAttachmentId: "att_plain_01",
+        filename: "note.txt",
+        mimeType: "text/plain",
+        sizeBytes: 12,
+      }, {
+        providerAttachmentId: "att_gif_0001",
+        filename: "photo.gif",
+        mimeType: "image/gif",
+        sizeBytes: 12,
+      }, {
+        providerAttachmentId: "att_exe_0001",
+        filename: "payload.exe",
+        mimeType: "application/pdf",
+        sizeBytes: 12,
+      }],
+    })
+    const result = await runAttachmentJobs()
+    expect(result.provider.calls).toBe(0)
+    const rows = await db.query<{ original_filename: string; ingestion_status: string; validation_status: string }>(
+      "select original_filename, ingestion_status, validation_status from public.conversation_attachments order by original_filename",
+    )
+    expect(rows.rows.every(row => row.ingestion_status === "UNSUPPORTED" && row.validation_status === "INVALID")).toBe(true)
+  })
+
+  it("blocks a valid declared MIME type when the downloaded bytes fail signature validation", async () => {
+    await importEmail("email_attach_sig_1", {
+      attachments: [{
+        providerAttachmentId: "att_bad_sig1",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 8,
+      }],
+    })
+    const result = await runAttachmentJobs({
+      "email_attach_sig_1:att_bad_sig1": {
+        id: "att_bad_sig1",
+        filename: "id-scan.pdf",
+        contentType: "application/pdf",
+        size: 8,
+        bytes: new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00]),
+      },
+    })
+    expect(result.provider.calls).toBe(1)
+    expect(result.store.uploads).toBe(0)
+    expect((await db.query<{ ingestion_status: string; validation_status: string }>(
+      "select ingestion_status, validation_status from public.conversation_attachments",
+    )).rows[0]).toEqual({ ingestion_status: "UNSUPPORTED", validation_status: "INVALID" })
+  })
+
+  it("cannot mark a clean scan available without private storage identity", async () => {
+    await importEmail("email_attach_nostore_1", {
+      attachments: [{
+        providerAttachmentId: "att_nostore1",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    })
+    const id = (await db.query<{ id: string }>("select id from public.conversation_attachments")).rows[0].id
+    expect(await rpc("inbound_attachment_mark_scan_v1", [id, "NO_THREATS_FOUND"])).toMatchObject({ status: "invalid" })
+    expect(await rpc("inbound_attachment_apply_v1", [{
+      operation: "mark_result",
+      attachmentId: id,
+      scanStatus: "NO_THREATS_FOUND",
+      validationStatus: "VALID",
+      ingestionStatus: "CLEAN",
+    }])).toMatchObject({ status: "invalid" })
+    expect((await db.query<{ ingestion_status: string; storage_bucket: string | null; storage_key: string | null }>(
+      "select ingestion_status, storage_bucket, storage_key from public.conversation_attachments where id=$1", [id],
+    )).rows[0]).toEqual({
+      ingestion_status: "METADATA_RECORDED",
+      storage_bucket: null,
+      storage_key: null,
+    })
+  })
+
+  it("does not download or upload again after the private object already exists", async () => {
+    await importEmail("email_attach_retry_1", {
+      attachments: [{
+        providerAttachmentId: "att_retry_01",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: PDF_BYTES.byteLength,
+      }],
+    })
+    const row = (await db.query<{ id: string; conversation_id: string; message_id: string }>(
+      "select id, conversation_id, message_id from public.conversation_attachments",
+    )).rows[0]
+    const store = createMemoryInboundStore()
+    const key = `inbound/${row.conversation_id}/${row.message_id}/${row.id}`
+    await store.putObject(key, PDF_BYTES, "application/pdf")
+    const result = await runAttachmentJobs({
+      "email_attach_retry_1:att_retry_01": pdfAttachment("att_retry_01"),
+    }, store)
+    expect(result.provider.calls).toBe(0)
+    expect(result.store.uploads).toBe(1)
+    expect((await db.query<{ ingestion_status: string }>("select ingestion_status from public.conversation_attachments where id=$1", [row.id])).rows[0].ingestion_status).toBe("CLEAN")
+  })
+
+  it("fails closed when the provider attachment download is malformed", async () => {
+    await importEmail("email_attach_bad_1", {
+      attachments: [{
+        providerAttachmentId: "att_missing1",
+        filename: "id-scan.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1200,
+      }],
+    })
+    const result = await runAttachmentJobs()
+    expect(result.provider.calls).toBe(1)
+    expect(result.store.uploads).toBe(0)
+    expect((await db.query<{ ingestion_status: string; validation_status: string }>(
+      "select ingestion_status, validation_status from public.conversation_attachments",
+    )).rows[0]).toEqual({ ingestion_status: "FAILED", validation_status: "ERROR" })
+  })
+
+  it("parses a formatted verified sender without granting authentication or permissions", async () => {
+    const imported = await importEmail("email_mbox_1", {
+      sender: "Alex Smith <alex@example.com>",
+      senderDisplay: "Alex Smith",
+    })
+    expect(imported).toMatchObject({ status: "success", senderMatch: "MATCHES_VERIFIED_CONTACT", state: "UNMATCHED" })
+    expect((await db.query<{ sender_address: string; sender_display: string }>(
+      "select sender_address, sender_display from public.conversation_messages where id=$1", [imported!.messageId],
+    )).rows[0]).toEqual({ sender_address: "alex@example.com", sender_display: "Alex Smith" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions")).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.conversations where case_id is not null")).rows[0].n).toBe(0)
+    expect(["denied", "prerequisite"]).toContain((await rpc("admin_case_command_v1", [token, key(), caseId, 1, "transition", { note: "Reviewed the caller’s request and confirmed the details.", target: "PREPARATION", nextAction: "Follow up with customer", due: "2026-12-01T12:00:00Z" }]))?.status)
+  })
+
+  it("detects a formatted owned sender as a loop", async () => {
+    const imported = await importEmail("email_mbox_owned_1", {
+      sender: "Ops Desk <ops@reputedefend.com>",
+      ownedAddresses: ["ops@reputedefend.com"],
+    })
+    expect(imported).toMatchObject({ status: "success", importStatus: "LOOP", loopClass: "OWNED_SENDER", senderMatch: "OWNED_ADDRESS" })
+    expect((await db.query<{ sender_address: string }>("select sender_address from public.conversation_messages")).rows[0].sender_address).toBe("ops@reputedefend.com")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic='SEND_EMAIL'")).rows[0].n).toBe(0)
+  })
+
+  it("threads a formatted opaque Reply-To alias and leaves malformed mailboxes unmatched", async () => {
+    const first = await importEmail("email_mbox_alias_1", { rfcMessageId: "<alias-root@example.com>" })
+    const alias = (await db.query<{ reply_alias: string }>("select reply_alias from public.conversations where id=$1", [first!.conversationId])).rows[0].reply_alias
+    const viaAlias = await importEmail("email_mbox_alias_2", {
+      rfcMessageId: "<alias-child@example.com>",
+      sender: "other@example.net",
+      toAddresses: [`Conversation Desk <${alias}@reply.profilerelaunch.com>`],
+    })
+    expect(viaAlias?.conversationId).toBe(first?.conversationId)
+    const malformed = await importEmail("email_mbox_alias_3", {
+      rfcMessageId: "<alias-bad@example.com>",
+      sender: "Not an address <not-an-email>",
+      toAddresses: [`Broken <${alias}@@reply.profilerelaunch.com>`, "??"],
+    })
+    expect(malformed?.conversationId).not.toBe(first?.conversationId)
+    expect(malformed?.state).toBe("UNMATCHED")
+  })
+
+  it("persists a valid provider occurrence time and rejects absurd or replayed values", async () => {
+    const when = new Date(Date.now() - 60_000).toISOString()
+    const first = await receive("email_time_1", { occurredAt: when, eventId: "evt_time_1" })
+    expect(first).toMatchObject({ status: "success", duplicate: false })
+    const stored = (await db.query<{ provider_occurred_at: string }>(
+      "select provider_occurred_at from admin_private.inbound_email_receipts where provider_email_id='email_time_1'",
+    )).rows[0].provider_occurred_at
+    expect(new Date(stored).toISOString()).toBe(new Date(when).toISOString())
+    await receive("email_time_1", { occurredAt: new Date(Date.now() - 120_000).toISOString(), eventId: "evt_time_1" })
+    expect(new Date((await db.query<{ provider_occurred_at: string }>(
+      "select provider_occurred_at from admin_private.inbound_email_receipts where provider_email_id='email_time_1'",
+    )).rows[0].provider_occurred_at).toISOString()).toBe(new Date(stored).toISOString())
+    const imported = await importEmail("email_time_1", { occurredAt: when, eventId: "evt_time_1" })
+    expect(new Date((await db.query<{ provider_occurred_at: string }>(
+      "select provider_occurred_at from public.conversation_messages where id=$1", [imported!.messageId],
+    )).rows[0].provider_occurred_at).toISOString()).toBe(new Date(when).toISOString())
+    await receive("email_time_2", { occurredAt: "2099-01-01T00:00:00.000Z" })
+    expect((await db.query<{ provider_occurred_at: string | null }>(
+      "select provider_occurred_at from admin_private.inbound_email_receipts where provider_email_id='email_time_2'",
+    )).rows[0].provider_occurred_at).toBeNull()
+  })
+
+  it("closes and reopens an unmatched conversation without inventing a case", async () => {
+    const imported = await importEmail("email_close_1")
+    const version = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0].record_version
+    const closed = await rpc("admin_conversation_command_v1", [token, key(), "close", { conversationId: imported!.conversationId }, version])
+    expect(closed).toMatchObject({ status: "success", state: "CLOSED" })
+    expect((await db.query<{ state: string; case_id: string | null }>("select state, case_id from public.conversations where id=$1", [imported!.conversationId])).rows[0]).toEqual({
+      state: "CLOSED",
+      case_id: null,
+    })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.conversation_messages where conversation_id=$1", [imported!.conversationId])).rows[0].n).toBe(1)
+    const reopened = await rpc("admin_conversation_command_v1", [token, key(), "reopen", { conversationId: imported!.conversationId }, closed!.version])
+    expect(reopened).toMatchObject({ status: "success", state: "UNMATCHED" })
+    expect((await db.query<{ state: string; case_id: string | null }>("select state, case_id from public.conversations where id=$1", [imported!.conversationId])).rows[0]).toEqual({
+      state: "UNMATCHED",
+      case_id: null,
+    })
+    const linkedImport = await importEmail("email_close_2")
+    const unmatchedVersion = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [linkedImport!.conversationId])).rows[0].record_version
+    await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: linkedImport!.conversationId, caseId }, unmatchedVersion])
+    const openVersion = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [linkedImport!.conversationId])).rows[0].record_version
+    const closedOpen = await rpc("admin_conversation_command_v1", [token, key(), "close", { conversationId: linkedImport!.conversationId }, openVersion])
+    expect(closedOpen).toMatchObject({ status: "success", state: "CLOSED" })
+    const reopenedOpen = await rpc("admin_conversation_command_v1", [token, key(), "reopen", { conversationId: linkedImport!.conversationId }, closedOpen!.version])
+    expect(reopenedOpen).toMatchObject({ status: "success", state: "OPEN" })
+    expect((await db.query<{ case_id: string }>("select case_id from public.conversations where id=$1", [linkedImport!.conversationId])).rows[0].case_id).toBe(caseId)
+  })
+
+  it("blocks unlink and relink while a DRAFT conversation reply exists", async () => {
+    await insertSecondCase()
+    const imported = await importEmail("email_relink_1", { rfcMessageId: "<relink-root@example.com>" })
+    const unmatched = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
+    await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId }, unmatched.record_version])
+    const linked = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
+    const drafted = await rpc("admin_conversation_command_v1", [token, key(), "draft_reply", {
+      conversationId: imported!.conversationId, bodyText: "Thanks, we will review this today.", inboundDomain: "reply.profilerelaunch.com",
+    }, linked.record_version])
+    expect(drafted?.status).toBe("success")
+    const afterDraft = (await db.query<{ record_version: number; case_id: string; state: string }>(
+      "select record_version, case_id, state from public.conversations where id=$1", [imported!.conversationId],
+    )).rows[0]
+    expect(await rpc("admin_conversation_command_v1", [token, key(), "unlink_case", { conversationId: imported!.conversationId }, afterDraft.record_version])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId: caseB }, afterDraft.record_version])).toMatchObject({ status: "denied" })
+    expect((await db.query<{ case_id: string; state: string }>("select case_id, state from public.conversations where id=$1", [imported!.conversationId])).rows[0]).toEqual({
+      case_id: caseId,
+      state: "OPEN",
+    })
+    expect((await db.query<{ case_id: string; lifecycle: string; conversation_id: string }>(
+      "select case_id, lifecycle, conversation_id from public.communications where id=$1", [drafted!.id],
+    )).rows[0]).toEqual({
+      case_id: caseId,
+      lifecycle: "DRAFT",
+      conversation_id: imported!.conversationId,
+    })
+  })
+
+  it("allows unlink and relink only when no active conversation reply exists", async () => {
+    await insertSecondCase()
+    const imported = await importEmail("email_relink_safe_1")
+    const unmatched = (await db.query<{ record_version: number }>("select record_version from public.conversations where id=$1", [imported!.conversationId])).rows[0]
+    const linked = await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId }, unmatched.record_version])
+    expect(linked?.status).toBe("success")
+    const unlinked = await rpc("admin_conversation_command_v1", [token, key(), "unlink_case", { conversationId: imported!.conversationId }, linked!.version])
+    expect(unlinked).toMatchObject({ status: "success", state: "UNMATCHED" })
+    expect((await rpc("admin_conversation_command_v1", [token, key(), "draft_reply", {
+      conversationId: imported!.conversationId, bodyText: "Thanks, we will review this today.", inboundDomain: "reply.profilerelaunch.com",
+    }, unlinked!.version]))?.status).toBe("denied")
+    const relinked = await rpc("admin_conversation_command_v1", [token, key(), "link_case", { conversationId: imported!.conversationId, caseId: caseB }, unlinked!.version])
+    expect(relinked).toMatchObject({ status: "success", state: "OPEN" })
+    expect((await db.query<{ case_id: string }>("select case_id from public.conversations where id=$1", [imported!.conversationId])).rows[0].case_id).toBe(caseB)
+  })
+
+  it("keeps an ambiguous RFC relationship unmatched instead of picking a conversation", async () => {
+    const first = await importEmail("email_ambig_1", { rfcMessageId: "<shared-rfc@example.com>" })
+    const second = await importEmail("email_ambig_2", { rfcMessageId: "<shared-rfc@example.com>" })
+    expect(first?.conversationId).not.toBe(second?.conversationId)
+    const child = await importEmail("email_ambig_3", {
+      rfcMessageId: "<shared-child@example.com>",
+      inReplyTo: "<shared-rfc@example.com>",
+      referencesHeader: "<shared-rfc@example.com>\t\n <other@example.com>",
+    })
+    expect(child?.state).toBe("UNMATCHED")
+    expect(child?.conversationId).not.toBe(first?.conversationId)
+    expect(child?.conversationId).not.toBe(second?.conversationId)
+    expect((await db.query<{ unmatched_reason: string }>("select unmatched_reason from public.conversations where id=$1", [child!.conversationId])).rows[0].unmatched_reason).toBe("Ambiguous thread relationship")
+    const unique = await importEmail("email_ambig_4", {
+      rfcMessageId: "<unique-child@example.com>",
+      referencesHeader: "<unique-root@example.com>\t\n<root-from-first@example.com>",
+    })
+    expect(unique?.conversationId).not.toBe(first?.conversationId)
+    const viaWhitespace = await importEmail("email_ws_1", {
+      rfcMessageId: "<ws-child@example.com>",
+      inReplyTo: "  <root-missing@example.com>  ",
+      referencesHeader: `<other@example.com>\t${first ? "" : ""}<${"shared-rfc@example.com"}>`,
+    })
+    expect(viaWhitespace?.state).toBe("UNMATCHED")
+    const single = await importEmail("email_ws_2", { rfcMessageId: "<one-root@example.com>" })
+    const spaced = await importEmail("email_ws_3", {
+      rfcMessageId: "<one-child@example.com>",
+      referencesHeader: "<one-root@example.com>\t\n<extra@example.com>",
+    })
+    expect(spaced?.conversationId).toBe(single?.conversationId)
   })
 })

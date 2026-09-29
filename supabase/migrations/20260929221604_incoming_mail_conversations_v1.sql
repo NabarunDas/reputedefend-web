@@ -5,23 +5,32 @@ BEGIN;
 
 ALTER TABLE admin_private.job_outbox DROP CONSTRAINT job_outbox_topic_check;
 ALTER TABLE admin_private.job_outbox ADD CONSTRAINT job_outbox_topic_check
-  CHECK (topic IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL'));
+  CHECK (topic IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL', 'IMPORT_INBOUND_ATTACHMENT'));
 ALTER TABLE admin_private.jobs DROP CONSTRAINT jobs_type_check;
 ALTER TABLE admin_private.jobs ADD CONSTRAINT jobs_type_check
-  CHECK (job_type IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL'));
+  CHECK (job_type IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL', 'IMPORT_INBOUND_ATTACHMENT'));
+ALTER TABLE admin_private.job_outbox DROP CONSTRAINT job_outbox_event_key_check;
+ALTER TABLE admin_private.job_outbox ADD CONSTRAINT job_outbox_event_key_check
+  CHECK (length(btrim(event_key)) BETWEEN 8 AND 400);
+ALTER TABLE admin_private.jobs DROP CONSTRAINT jobs_idempotency_check;
+ALTER TABLE admin_private.jobs ADD CONSTRAINT jobs_idempotency_check
+  CHECK (length(btrim(idempotency_key)) BETWEEN 8 AND 400);
 
 CREATE OR REPLACE FUNCTION admin_private.enqueue_outbox_v1(
   p_event_key text, p_topic text, p_aggregate_type text, p_aggregate_id uuid, p_payload jsonb, p_available_at timestamptz DEFAULT now()
 ) RETURNS uuid LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE created admin_private.job_outbox;
 BEGIN
-  IF p_event_key IS NULL OR length(btrim(p_event_key)) NOT BETWEEN 8 AND 200
-    OR p_topic IS NULL OR p_topic NOT IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL')
+  IF p_event_key IS NULL OR length(btrim(p_event_key)) NOT BETWEEN 8 AND 400
+    OR p_topic IS NULL OR p_topic NOT IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL', 'IMPORT_INBOUND_EMAIL', 'IMPORT_INBOUND_ATTACHMENT')
     OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object'
   THEN RAISE EXCEPTION 'invalid outbox event'; END IF;
   INSERT INTO admin_private.job_outbox(event_key, topic, aggregate_type, aggregate_id, payload, available_at)
   VALUES (btrim(p_event_key), p_topic, nullif(btrim(coalesce(p_aggregate_type, '')), ''), p_aggregate_id, p_payload, coalesce(p_available_at, now()))
   RETURNING * INTO created;
+  RETURN created.id;
+EXCEPTION WHEN unique_violation THEN
+  SELECT * INTO created FROM admin_private.job_outbox WHERE event_key = btrim(p_event_key);
   RETURN created.id;
 END; $$;
 
@@ -125,7 +134,8 @@ CREATE TABLE public.conversations (
   CONSTRAINT conversations_unmatched_reason_check CHECK (unmatched_reason IS NULL OR length(unmatched_reason) BETWEEN 3 AND 200),
   CONSTRAINT conversations_open_case_check CHECK (
     (state = 'UNMATCHED' AND case_id IS NULL)
-    OR (state IN ('OPEN', 'CLOSED') AND case_id IS NOT NULL)
+    OR (state = 'OPEN' AND case_id IS NOT NULL)
+    OR (state = 'CLOSED')
   ),
   UNIQUE (reply_alias)
 );
@@ -218,6 +228,7 @@ CREATE TABLE public.conversation_attachments (
   size_bytes integer NOT NULL,
   storage_bucket text,
   storage_key text,
+  ingestion_status text NOT NULL DEFAULT 'METADATA_RECORDED',
   scan_status text NOT NULL DEFAULT 'PENDING',
   validation_status text NOT NULL DEFAULT 'PENDING',
   promotion_state text NOT NULL DEFAULT 'NONE',
@@ -225,14 +236,26 @@ CREATE TABLE public.conversation_attachments (
   CONSTRAINT conversation_attachments_provider_id_check CHECK (length(provider_attachment_id) BETWEEN 8 AND 200),
   CONSTRAINT conversation_attachments_filename_check CHECK (length(original_filename) BETWEEN 1 AND 200),
   CONSTRAINT conversation_attachments_mime_check CHECK (length(declared_mime) BETWEEN 3 AND 120),
-  CONSTRAINT conversation_attachments_size_check CHECK (size_bytes >= 0 AND size_bytes <= 10485760),
+  CONSTRAINT conversation_attachments_size_check CHECK (size_bytes >= 0 AND size_bytes <= 104857600),
+  CONSTRAINT conversation_attachments_ingestion_check CHECK (
+    ingestion_status IN ('METADATA_RECORDED', 'STORAGE_PENDING', 'STORED', 'CLEAN', 'MALWARE', 'UNSUPPORTED', 'FAILED')
+  ),
   CONSTRAINT conversation_attachments_scan_check CHECK (
     scan_status IN ('PENDING', 'NO_THREATS_FOUND', 'THREATS_FOUND', 'UNSUPPORTED', 'ACCESS_DENIED', 'FAILED')
   ),
   CONSTRAINT conversation_attachments_validation_check CHECK (
-    validation_status IN ('PENDING', 'ALLOWED', 'BLOCKED')
+    validation_status IN ('PENDING', 'VALID', 'INVALID', 'ERROR')
   ),
   CONSTRAINT conversation_attachments_promotion_check CHECK (promotion_state IN ('NONE', 'RECORDED')),
+  CONSTRAINT conversation_attachments_clean_storage_check CHECK (
+    ingestion_status <> 'CLEAN'
+    OR (
+      storage_bucket IS NOT NULL AND length(storage_bucket) BETWEEN 3 AND 120
+      AND storage_key IS NOT NULL AND length(storage_key) BETWEEN 8 AND 500
+      AND scan_status = 'NO_THREATS_FOUND'
+      AND validation_status = 'VALID'
+    )
+  ),
   UNIQUE (message_id, provider_attachment_id)
 );
 CREATE INDEX conversation_attachments_message_idx ON public.conversation_attachments (message_id);
@@ -248,6 +271,8 @@ CREATE TABLE admin_private.inbound_email_receipts (
   rfc_message_id text,
   sender_address text,
   subject text,
+  sender_display text,
+  provider_occurred_at timestamptz,
   conversation_id uuid REFERENCES public.conversations(id) ON DELETE RESTRICT,
   message_id uuid REFERENCES public.conversation_messages(id) ON DELETE RESTRICT,
   import_status text NOT NULL DEFAULT 'RECEIVED',
@@ -305,58 +330,113 @@ REVOKE ALL ON FUNCTION admin_private.new_conversation_alias_v1() FROM PUBLIC, an
 CREATE FUNCTION admin_private.allowed_inbound_mime_v1(p_mime text)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   SELECT lower(btrim(coalesce(p_mime, ''))) IN (
-    'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-    'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    'application/pdf', 'image/jpeg', 'image/png', 'image/webp',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   );
 $$;
 REVOKE ALL ON FUNCTION admin_private.allowed_inbound_mime_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION admin_private.resolve_inbound_thread_v1(
-  p_in_reply_to text, p_references text, p_to jsonb, p_cc jsonb, p_inbound_domain text
-) RETURNS uuid LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE target uuid; token text; alias text; domain text;
+CREATE FUNCTION admin_private.parse_mailbox_v1(p_value text)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
+DECLARE raw text; display text; addr text;
 BEGIN
-  domain := lower(btrim(coalesce(p_inbound_domain, '')));
-  FOREACH token IN ARRAY string_to_array(btrim(coalesce(p_in_reply_to, '') || ' ' || coalesce(p_references, '')), ' ')
-  LOOP
-    token := admin_private.normalize_rfc_id_v1(token);
-    IF token IS NULL THEN CONTINUE; END IF;
-    SELECT conversation_id INTO target FROM public.conversation_messages
-      WHERE rfc_message_id = token LIMIT 1;
-    IF target IS NOT NULL THEN RETURN target; END IF;
-    SELECT conversation_id INTO target FROM public.communications
-      WHERE rfc_message_id = token AND conversation_id IS NOT NULL LIMIT 1;
-    IF target IS NOT NULL THEN RETURN target; END IF;
-  END LOOP;
-  IF domain <> '' AND domain ~ '^[a-z0-9.-]+\.[a-z]{2,}$' THEN
-    SELECT c.id INTO target
-      FROM public.conversations c
-      WHERE exists (
-        SELECT 1 FROM jsonb_array_elements_text(coalesce(p_to, '[]'::jsonb) || coalesce(p_cc, '[]'::jsonb)) addr
-        WHERE lower(btrim(addr)) = (c.reply_alias || '@' || domain)
-      )
-      LIMIT 1;
-    IF target IS NOT NULL THEN RETURN target; END IF;
+  raw := btrim(coalesce(p_value, ''));
+  IF raw = '' OR length(raw) > 320 THEN RETURN NULL; END IF;
+  IF raw ~ '^[^<>]{1,160}<[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}>$' THEN
+    display := nullif(left(btrim(btrim(substring(raw from '^([^<>]+)<')), ' "'), 120), '');
+    addr := lower(substring(raw from '<([^<>]+)>$'));
+    IF addr IS NULL OR length(addr) NOT BETWEEN 3 AND 254 THEN RETURN NULL; END IF;
+    RETURN jsonb_build_object('address', addr, 'display', display);
+  END IF;
+  IF raw ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' AND length(raw) BETWEEN 3 AND 254 THEN
+    RETURN jsonb_build_object('address', lower(raw), 'display', NULL);
   END IF;
   RETURN NULL;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.parse_mailbox_v1(text) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.inbound_attachment_event_key_v1(p_email_id text, p_attachment_id text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN length('import-inbound-attachment:resend:' || p_email_id || ':' || p_attachment_id) <= 400
+      THEN 'import-inbound-attachment:resend:' || p_email_id || ':' || p_attachment_id
+    ELSE 'import-inbound-attachment:resend:' || encode(extensions.digest(p_email_id || ':' || p_attachment_id, 'sha256'), 'hex')
+  END;
+$$;
+REVOKE ALL ON FUNCTION admin_private.inbound_attachment_event_key_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.resolve_inbound_thread_v1(
+  p_in_reply_to text, p_references text, p_to jsonb, p_cc jsonb, p_inbound_domain text
+) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE rfc_matches uuid[]; alias_matches uuid[]; tokens text[]; domain text; rfc_ids text[];
+BEGIN
+  tokens := regexp_split_to_array(
+    btrim(coalesce(p_in_reply_to, '') || E'\n' || coalesce(p_references, '')),
+    E'[ \\t\\n\\r,]+'
+  );
+  SELECT coalesce(array_agg(DISTINCT admin_private.normalize_rfc_id_v1(t)), ARRAY[]::text[])
+    INTO rfc_ids
+    FROM unnest(tokens) t
+    WHERE admin_private.normalize_rfc_id_v1(t) IS NOT NULL;
+  SELECT coalesce(array_agg(DISTINCT conversation_id), ARRAY[]::uuid[]) INTO rfc_matches
+  FROM (
+    SELECT m.conversation_id
+    FROM public.conversation_messages m
+    WHERE m.rfc_message_id IS NOT NULL AND m.rfc_message_id = ANY (rfc_ids)
+    UNION
+    SELECT c.conversation_id
+    FROM public.communications c
+    WHERE c.rfc_message_id IS NOT NULL AND c.conversation_id IS NOT NULL
+      AND c.rfc_message_id = ANY (rfc_ids)
+  ) found;
+  domain := lower(btrim(coalesce(p_inbound_domain, '')));
+  alias_matches := ARRAY[]::uuid[];
+  IF domain <> '' AND domain ~ '^[a-z0-9.-]+\.[a-z]{2,}$' THEN
+    SELECT coalesce(array_agg(DISTINCT c.id), ARRAY[]::uuid[]) INTO alias_matches
+      FROM public.conversations c
+      WHERE exists (
+        SELECT 1 FROM jsonb_array_elements_text(coalesce(p_to, '[]'::jsonb) || coalesce(p_cc, '[]'::jsonb)) raw
+        WHERE (admin_private.parse_mailbox_v1(raw)->>'address') = (c.reply_alias || '@' || domain)
+      );
+  END IF;
+  IF coalesce(array_length(rfc_matches, 1), 0) = 1 THEN
+    RETURN jsonb_build_object('status', 'matched', 'conversationId', rfc_matches[1]);
+  END IF;
+  IF coalesce(array_length(alias_matches, 1), 0) = 1 THEN
+    RETURN jsonb_build_object('status', 'matched', 'conversationId', alias_matches[1]);
+  END IF;
+  IF coalesce(array_length(rfc_matches, 1), 0) > 1
+    OR coalesce(array_length(alias_matches, 1), 0) > 1
+  THEN
+    RETURN jsonb_build_object('status', 'ambiguous');
+  END IF;
+  RETURN jsonb_build_object('status', 'none');
 END; $$;
 REVOKE ALL ON FUNCTION admin_private.resolve_inbound_thread_v1(text, text, jsonb, jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.inbound_email_receive_event_v1(
   p_provider text, p_provider_event_id text, p_event_type text, p_provider_email_id text,
-  p_rfc_message_id text DEFAULT NULL, p_sender_address text DEFAULT NULL, p_subject text DEFAULT NULL
+  p_rfc_message_id text DEFAULT NULL, p_sender_address text DEFAULT NULL, p_subject text DEFAULT NULL,
+  p_provider_occurred_at timestamptz DEFAULT NULL, p_sender_display text DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 #variable_conflict use_variable
 DECLARE existing admin_private.inbound_email_receipts;
   provider_name text; event_id text; event_name text; email_id text; rfc text; sender text; subject text;
+  parsed jsonb; display text;
 BEGIN
   provider_name := lower(btrim(coalesce(p_provider, '')));
   event_id := btrim(coalesce(p_provider_event_id, ''));
   event_name := btrim(coalesce(p_event_type, ''));
   email_id := btrim(coalesce(p_provider_email_id, ''));
   rfc := admin_private.normalize_rfc_id_v1(p_rfc_message_id);
-  sender := nullif(left(lower(btrim(coalesce(p_sender_address, ''))), 254), '');
+  parsed := admin_private.parse_mailbox_v1(p_sender_address);
+  sender := parsed->>'address';
+  display := coalesce(nullif(left(btrim(coalesce(p_sender_display, '')), 120), ''), parsed->>'display');
   subject := nullif(left(btrim(coalesce(p_subject, '')), 500), '');
+  IF p_provider_occurred_at IS NOT NULL AND (
+    p_provider_occurred_at > now() + interval '1 hour'
+    OR p_provider_occurred_at < now() - interval '30 days'
+  ) THEN p_provider_occurred_at := NULL; END IF;
   IF provider_name <> 'resend' OR event_name <> 'email.received'
     OR length(event_id) NOT BETWEEN 8 AND 200 OR length(email_id) NOT BETWEEN 8 AND 200
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
@@ -371,8 +451,8 @@ BEGIN
     RETURN jsonb_build_object('status', 'success', 'duplicate', true, 'providerEmailId', email_id);
   END IF;
   INSERT INTO admin_private.inbound_email_receipts(
-    provider, provider_event_id, provider_email_id, event_type, rfc_message_id, sender_address, subject
-  ) VALUES (provider_name, event_id, email_id, event_name, rfc, sender, subject);
+    provider, provider_event_id, provider_email_id, event_type, rfc_message_id, sender_address, sender_display, subject, provider_occurred_at
+  ) VALUES (provider_name, event_id, email_id, event_name, rfc, sender, display, subject, p_provider_occurred_at);
   PERFORM admin_private.enqueue_outbox_v1(
     'import-inbound-email:resend:' || email_id,
     'IMPORT_INBOUND_EMAIL',
@@ -420,8 +500,9 @@ DECLARE
   in_reply text; refs text; auto_sub text; inbound_domain text;
   body_text text; body_html text; to_addr jsonb; cc_addr jsonb; owned jsonb;
   attachments jsonb; item jsonb; attachment_count integer := 0;
-  matched uuid; sender_match text := 'NONE'; loop_class text := 'NONE'; import_status text := 'IMPORTED';
-  alias text; display text; i integer;
+  matched jsonb; sender_match text := 'NONE'; loop_class text := 'NONE'; import_status text := 'IMPORTED';
+  alias text; display text; i integer; parsed jsonb; unmatched text; att_row public.conversation_attachments;
+  event_key text; normalized_to jsonb := '[]'::jsonb; normalized_cc jsonb := '[]'::jsonb; raw_addr text;
 BEGIN
   IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
     RETURN jsonb_build_object('status', 'invalid');
@@ -438,8 +519,12 @@ BEGIN
     );
   END IF;
   rfc := coalesce(admin_private.normalize_rfc_id_v1(p_payload->>'rfcMessageId'), receipt.rfc_message_id);
-  sender := admin_private.normalize_email_v1(coalesce(p_payload->>'senderAddress', receipt.sender_address));
-  display := nullif(left(btrim(coalesce(p_payload->>'senderDisplay', '')), 120), '');
+  parsed := admin_private.parse_mailbox_v1(coalesce(p_payload->>'senderAddress', receipt.sender_address));
+  sender := coalesce(parsed->>'address', receipt.sender_address);
+  display := coalesce(
+    nullif(left(btrim(coalesce(p_payload->>'senderDisplay', receipt.sender_display, '')), 120), ''),
+    parsed->>'display'
+  );
   subject := nullif(left(btrim(coalesce(p_payload->>'subject', receipt.subject, '')), 500), '');
   in_reply := admin_private.normalize_rfc_id_v1(p_payload->>'inReplyTo');
   refs := nullif(left(btrim(coalesce(p_payload->>'referencesHeader', '')), 2000), '');
@@ -456,13 +541,23 @@ BEGIN
     OR jsonb_array_length(to_addr) > 20 OR jsonb_array_length(cc_addr) > 20
     OR jsonb_array_length(owned) > 20 OR jsonb_array_length(attachments) > 10
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  FOR raw_addr IN SELECT jsonb_array_elements_text(to_addr) LOOP
+    parsed := admin_private.parse_mailbox_v1(raw_addr);
+    IF parsed IS NOT NULL THEN normalized_to := normalized_to || jsonb_build_array(parsed->>'address'); END IF;
+  END LOOP;
+  FOR raw_addr IN SELECT jsonb_array_elements_text(cc_addr) LOOP
+    parsed := admin_private.parse_mailbox_v1(raw_addr);
+    IF parsed IS NOT NULL THEN normalized_cc := normalized_cc || jsonb_build_array(parsed->>'address'); END IF;
+  END LOOP;
+  to_addr := normalized_to;
+  cc_addr := normalized_cc;
   IF sender IS NOT NULL AND EXISTS (
     SELECT 1 FROM public.customer_contact_verifications v
     WHERE v.channel = 'email' AND admin_private.normalize_email_v1(v.verified_value) = sender
   ) THEN sender_match := 'MATCHES_VERIFIED_CONTACT'; END IF;
   IF sender IS NOT NULL AND EXISTS (
     SELECT 1 FROM jsonb_array_elements_text(owned) addr
-    WHERE admin_private.normalize_email_v1(addr) = sender
+    WHERE coalesce(admin_private.parse_mailbox_v1(addr)->>'address', admin_private.normalize_email_v1(addr)) = sender
   ) THEN
     sender_match := 'OWNED_ADDRESS';
     loop_class := 'OWNED_SENDER';
@@ -476,13 +571,14 @@ BEGIN
   END IF;
   IF loop_class <> 'NONE' THEN import_status := 'LOOP'; END IF;
   matched := admin_private.resolve_inbound_thread_v1(in_reply, refs, to_addr, cc_addr, inbound_domain);
-  IF matched IS NOT NULL THEN
-    SELECT * INTO conversation FROM public.conversations WHERE id = matched FOR UPDATE;
+  IF matched->>'status' = 'matched' THEN
+    SELECT * INTO conversation FROM public.conversations WHERE id = (matched->>'conversationId')::uuid FOR UPDATE;
   ELSE
+    unmatched := CASE WHEN matched->>'status' = 'ambiguous' THEN 'Ambiguous thread relationship' ELSE 'No trusted thread relationship' END;
     alias := admin_private.new_conversation_alias_v1();
     INSERT INTO public.conversations(state, reply_alias, subject, unmatched_reason, needs_attention)
     VALUES (
-      'UNMATCHED', alias, subject, 'No trusted thread relationship', true
+      'UNMATCHED', alias, subject, unmatched, true
     ) RETURNING * INTO conversation;
   END IF;
   INSERT INTO public.conversation_messages(
@@ -494,7 +590,7 @@ BEGIN
     conversation.id, 'INBOUND_EMAIL', import_status, 'resend', email_id, coalesce(nullif(event_id, ''), receipt.provider_event_id),
     rfc, in_reply, refs, sender, display, to_addr, cc_addr, subject, nullif(body_text, ''), body_html,
     coalesce((p_payload->>'receivedAt')::timestamptz, now()),
-    (p_payload->>'providerOccurredAt')::timestamptz,
+    receipt.provider_occurred_at,
     sender_match, auto_sub, loop_class
   ) RETURNING * INTO message;
   FOR i IN 0..jsonb_array_length(attachments) - 1 LOOP
@@ -502,21 +598,34 @@ BEGIN
     IF jsonb_typeof(item) <> 'object' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     IF length(btrim(coalesce(item->>'providerAttachmentId', ''))) NOT BETWEEN 8 AND 200
       OR length(btrim(coalesce(item->>'filename', ''))) NOT BETWEEN 1 AND 200
-      OR coalesce((item->>'sizeBytes')::integer, -1) NOT BETWEEN 0 AND 10485760
+      OR coalesce((item->>'sizeBytes')::bigint, -1) NOT BETWEEN 0 AND 104857600
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     attachment_count := attachment_count + 1;
     INSERT INTO public.conversation_attachments(
       message_id, conversation_id, provider_attachment_id, original_filename, declared_mime, size_bytes,
-      storage_bucket, storage_key, validation_status
+      ingestion_status, validation_status
     ) VALUES (
       message.id, conversation.id,
       btrim(item->>'providerAttachmentId'),
       left(btrim(item->>'filename'), 200),
       left(btrim(coalesce(item->>'mimeType', 'application/octet-stream')), 120),
       (item->>'sizeBytes')::integer,
-      nullif(left(btrim(coalesce(item->>'storageBucket', '')), 120), ''),
-      nullif(left(btrim(coalesce(item->>'storageKey', '')), 500), ''),
-      CASE WHEN admin_private.allowed_inbound_mime_v1(item->>'mimeType') THEN 'ALLOWED' ELSE 'BLOCKED' END
+      'METADATA_RECORDED',
+      'PENDING'
+    ) RETURNING * INTO att_row;
+    event_key := admin_private.inbound_attachment_event_key_v1(email_id, att_row.provider_attachment_id);
+    PERFORM admin_private.enqueue_outbox_v1(
+      event_key,
+      'IMPORT_INBOUND_ATTACHMENT',
+      'conversation_attachment',
+      att_row.id,
+      jsonb_build_object(
+        'provider', 'resend',
+        'providerEmailId', email_id,
+        'providerAttachmentId', att_row.provider_attachment_id,
+        'attachmentId', att_row.id
+      ),
+      now()
     );
   END LOOP;
   UPDATE public.conversations
@@ -537,21 +646,135 @@ BEGIN
   );
 END; $$;
 
+CREATE FUNCTION public.inbound_attachment_load_import_v1(p_attachment uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE row public.conversation_attachments;
+BEGIN
+  IF p_attachment IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO row FROM public.conversation_attachments WHERE id = p_attachment;
+  IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'alreadyImported', row.ingestion_status IN ('CLEAN', 'MALWARE', 'UNSUPPORTED', 'FAILED'),
+    'stored', row.storage_bucket IS NOT NULL AND row.storage_key IS NOT NULL,
+    'id', row.id,
+    'conversationId', row.conversation_id,
+    'messageId', row.message_id,
+    'providerAttachmentId', row.provider_attachment_id,
+    'filename', row.original_filename,
+    'mimeType', row.declared_mime,
+    'sizeBytes', row.size_bytes,
+    'ingestionStatus', row.ingestion_status,
+    'scanStatus', row.scan_status,
+    'validationStatus', row.validation_status,
+    'storageBucket', row.storage_bucket,
+    'storageKey', row.storage_key
+  );
+END; $$;
+
+CREATE FUNCTION public.inbound_attachment_apply_v1(p_payload jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+#variable_conflict use_variable
+DECLARE row public.conversation_attachments; op text; bucket text; object_key text;
+  scan text; validation text; ingestion text;
+BEGIN
+  IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' OR NULLIF(p_payload->>'attachmentId', '')::uuid IS NULL THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  op := btrim(coalesce(p_payload->>'operation', ''));
+  IF op NOT IN ('record_storage', 'mark_result', 'start_storage') THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  SELECT * INTO row FROM public.conversation_attachments WHERE id = (p_payload->>'attachmentId')::uuid FOR UPDATE;
+  IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF row.ingestion_status IN ('CLEAN', 'MALWARE', 'UNSUPPORTED', 'FAILED') THEN
+    RETURN jsonb_build_object(
+      'status', 'success', 'duplicate', true, 'id', row.id,
+      'ingestionStatus', row.ingestion_status, 'scanStatus', row.scan_status, 'validationStatus', row.validation_status
+    );
+  END IF;
+  IF op = 'start_storage' THEN
+    IF row.ingestion_status IN ('STORAGE_PENDING', 'STORED') THEN
+      RETURN jsonb_build_object('status', 'success', 'duplicate', true, 'id', row.id, 'ingestionStatus', row.ingestion_status);
+    END IF;
+    IF row.ingestion_status <> 'METADATA_RECORDED' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    UPDATE public.conversation_attachments
+      SET ingestion_status = 'STORAGE_PENDING'
+      WHERE id = row.id RETURNING * INTO row;
+    RETURN jsonb_build_object('status', 'success', 'duplicate', false, 'id', row.id, 'ingestionStatus', row.ingestion_status);
+  END IF;
+  IF op = 'record_storage' THEN
+    bucket := nullif(left(btrim(coalesce(p_payload->>'storageBucket', '')), 120), '');
+    object_key := nullif(left(btrim(coalesce(p_payload->>'storageKey', '')), 500), '');
+    IF bucket IS NULL OR object_key IS NULL OR object_key !~ '^inbound/[0-9a-f-]{36}/[0-9a-f-]{36}/[0-9a-f-]{36}$' THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF row.storage_bucket IS NOT NULL AND row.storage_key IS NOT NULL THEN
+      IF row.storage_bucket = bucket AND row.storage_key = object_key THEN
+        RETURN jsonb_build_object('status', 'success', 'duplicate', true, 'id', row.id, 'stored', true);
+      END IF;
+      RETURN jsonb_build_object('status', 'conflict');
+    END IF;
+    UPDATE public.conversation_attachments
+      SET storage_bucket = bucket, storage_key = object_key, ingestion_status = 'STORED'
+      WHERE id = row.id RETURNING * INTO row;
+    RETURN jsonb_build_object('status', 'success', 'duplicate', false, 'id', row.id, 'stored', true, 'ingestionStatus', row.ingestion_status);
+  END IF;
+  scan := btrim(coalesce(p_payload->>'scanStatus', row.scan_status));
+  validation := btrim(coalesce(p_payload->>'validationStatus', row.validation_status));
+  ingestion := btrim(coalesce(p_payload->>'ingestionStatus', ''));
+  IF scan NOT IN ('PENDING', 'NO_THREATS_FOUND', 'THREATS_FOUND', 'UNSUPPORTED', 'ACCESS_DENIED', 'FAILED')
+    OR validation NOT IN ('PENDING', 'VALID', 'INVALID', 'ERROR')
+    OR ingestion NOT IN ('STORED', 'CLEAN', 'MALWARE', 'UNSUPPORTED', 'FAILED')
+  THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  IF ingestion = 'CLEAN' AND (
+    row.storage_bucket IS NULL OR row.storage_key IS NULL
+    OR scan <> 'NO_THREATS_FOUND' OR validation <> 'VALID'
+  ) THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  UPDATE public.conversation_attachments
+    SET scan_status = scan, validation_status = validation, ingestion_status = ingestion
+    WHERE id = row.id RETURNING * INTO row;
+  RETURN jsonb_build_object(
+    'status', 'success', 'duplicate', false, 'id', row.id,
+    'ingestionStatus', row.ingestion_status, 'scanStatus', row.scan_status, 'validationStatus', row.validation_status,
+    'available', row.ingestion_status = 'CLEAN'
+  );
+END; $$;
+
 CREATE FUNCTION public.inbound_attachment_mark_scan_v1(
   p_attachment uuid, p_scan_status text, p_storage_bucket text DEFAULT NULL, p_storage_key text DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row public.conversation_attachments;
+DECLARE row public.conversation_attachments; stored jsonb;
 BEGIN
   IF p_attachment IS NULL OR p_scan_status NOT IN ('PENDING', 'NO_THREATS_FOUND', 'THREATS_FOUND', 'UNSUPPORTED', 'ACCESS_DENIED', 'FAILED')
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-  UPDATE public.conversation_attachments
-    SET scan_status = p_scan_status,
-        storage_bucket = coalesce(nullif(left(btrim(coalesce(p_storage_bucket, '')), 120), ''), storage_bucket),
-        storage_key = coalesce(nullif(left(btrim(coalesce(p_storage_key, '')), 500), ''), storage_key)
-    WHERE id = p_attachment
-    RETURNING * INTO row;
+  IF p_storage_bucket IS NOT NULL AND p_storage_key IS NOT NULL THEN
+    stored := public.inbound_attachment_apply_v1(jsonb_build_object(
+      'operation', 'record_storage', 'attachmentId', p_attachment,
+      'storageBucket', p_storage_bucket, 'storageKey', p_storage_key
+    ));
+    IF stored->>'status' <> 'success' THEN RETURN stored; END IF;
+  END IF;
+  SELECT * INTO row FROM public.conversation_attachments WHERE id = p_attachment;
   IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
-  RETURN jsonb_build_object('status', 'success', 'id', row.id, 'scanStatus', row.scan_status, 'validationStatus', row.validation_status);
+  IF p_scan_status = 'NO_THREATS_FOUND' AND (row.storage_bucket IS NULL OR row.storage_key IS NULL) THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  RETURN public.inbound_attachment_apply_v1(jsonb_build_object(
+    'operation', 'mark_result',
+    'attachmentId', p_attachment,
+    'scanStatus', p_scan_status,
+    'validationStatus', CASE
+      WHEN p_scan_status = 'NO_THREATS_FOUND' THEN 'VALID'
+      WHEN p_scan_status IN ('THREATS_FOUND', 'UNSUPPORTED') THEN 'INVALID'
+      WHEN p_scan_status IN ('ACCESS_DENIED', 'FAILED') THEN 'ERROR'
+      ELSE row.validation_status
+    END,
+    'ingestionStatus', CASE
+      WHEN p_scan_status = 'NO_THREATS_FOUND' THEN 'CLEAN'
+      WHEN p_scan_status = 'THREATS_FOUND' THEN 'MALWARE'
+      WHEN p_scan_status = 'UNSUPPORTED' THEN 'UNSUPPORTED'
+      ELSE 'FAILED'
+    END
+  ));
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.communication_load_send_v1(p_communication uuid, p_content_version integer)
@@ -738,7 +961,8 @@ BEGIN
           'sizeBytes', a.size_bytes,
           'scanStatus', a.scan_status,
           'validationStatus', a.validation_status,
-          'available', a.scan_status = 'NO_THREATS_FOUND' AND a.validation_status = 'ALLOWED',
+          'available', a.ingestion_status = 'CLEAN' AND a.scan_status = 'NO_THREATS_FOUND' AND a.validation_status = 'VALID'
+            AND a.storage_bucket IS NOT NULL AND a.storage_key IS NOT NULL,
           'promotionState', a.promotion_state
         ) ORDER BY a.created_at, a.id)
         FROM public.conversation_attachments a WHERE a.message_id = m.id
@@ -840,7 +1064,7 @@ BEGIN
   END IF;
 
   IF op = 'link_case' THEN
-    IF conversation.state = 'CLOSED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF conversation.state <> 'UNMATCHED' OR conversation.case_id IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     SELECT * INTO cs FROM public.cases WHERE id = NULLIF(p_payload->>'caseId', '')::uuid FOR UPDATE;
     IF cs.id IS NULL OR cs.status IN ('CLOSED', 'CANCELLED') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.conversations
@@ -861,7 +1085,12 @@ BEGIN
 
   IF op = 'unlink_case' THEN
     IF conversation.case_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    IF EXISTS (SELECT 1 FROM public.communications c WHERE c.conversation_id = conversation.id AND c.lifecycle IN ('REVIEWED', 'QUEUED')) THEN
+    IF EXISTS (
+      SELECT 1 FROM public.communications c
+      WHERE c.conversation_id = conversation.id
+        AND c.template_key = 'CONVERSATION_REPLY'
+        AND c.lifecycle IN ('DRAFT', 'REVIEWED', 'QUEUED')
+    ) THEN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
     UPDATE public.conversations
@@ -909,7 +1138,7 @@ BEGIN
   END IF;
 
   IF op = 'close' THEN
-    IF conversation.state <> 'OPEN' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF conversation.state NOT IN ('UNMATCHED', 'OPEN') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.conversations
       SET state = 'CLOSED', closed_at = now(), needs_attention = false, updated_at = now(), record_version = record_version + 1
       WHERE id = conversation.id AND record_version = p_version RETURNING * INTO conversation;
@@ -924,12 +1153,13 @@ BEGIN
   END IF;
 
   IF op = 'reopen' THEN
-    IF conversation.state <> 'CLOSED' OR conversation.case_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF conversation.state <> 'CLOSED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     UPDATE public.conversations
-      SET state = 'OPEN', closed_at = NULL, needs_attention = true, updated_at = now(), record_version = record_version + 1
+      SET state = CASE WHEN conversation.case_id IS NULL THEN 'UNMATCHED' ELSE 'OPEN' END,
+          closed_at = NULL, needs_attention = true, updated_at = now(), record_version = record_version + 1
       WHERE id = conversation.id AND record_version = p_version RETURNING * INTO conversation;
     IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-    result := jsonb_build_object('status', 'success', 'id', conversation.id, 'version', conversation.record_version, 'state', 'OPEN');
+    result := jsonb_build_object('status', 'success', 'id', conversation.id, 'version', conversation.record_version, 'state', conversation.state);
     PERFORM admin_private.write_record_audit_v1(
       actor, 'CONVERSATION_CHANGED', 'success', conversation.id, p_request, 'conversation',
       'Conversation reopened', jsonb_build_object('operation', op)
@@ -990,7 +1220,12 @@ BEGIN
       WHERE id = NULLIF(p_payload->>'attachmentId', '')::uuid AND conversation_id = conversation.id;
     IF attachment.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
     IF conversation.case_id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    IF attachment.scan_status <> 'NO_THREATS_FOUND' OR attachment.validation_status <> 'ALLOWED' THEN
+    IF attachment.ingestion_status <> 'CLEAN'
+      OR attachment.scan_status <> 'NO_THREATS_FOUND'
+      OR attachment.validation_status <> 'VALID'
+      OR attachment.storage_bucket IS NULL
+      OR attachment.storage_key IS NULL
+    THEN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
     UPDATE public.conversation_attachments SET promotion_state = 'RECORDED' WHERE id = attachment.id;
@@ -1098,9 +1333,11 @@ BEGIN
   RETURN result;
 END; $$;
 
-REVOKE ALL ON FUNCTION public.inbound_email_receive_event_v1(text, text, text, text, text, text, text),
+REVOKE ALL ON FUNCTION public.inbound_email_receive_event_v1(text, text, text, text, text, text, text, timestamptz, text),
   public.inbound_email_load_import_v1(text, text),
   public.inbound_email_import_v1(jsonb),
+  public.inbound_attachment_load_import_v1(uuid),
+  public.inbound_attachment_apply_v1(jsonb),
   public.inbound_attachment_mark_scan_v1(uuid, text, text, text),
   public.communication_record_rfc_message_id_v1(uuid, text),
   public.communication_apply_provider_event_v1(text, text, text, text, timestamptz, text, text),
@@ -1110,9 +1347,11 @@ REVOKE ALL ON FUNCTION public.inbound_email_receive_event_v1(text, text, text, t
   public.admin_conversation_command_v1(text, uuid, text, jsonb, integer),
   public.admin_audit_list_v1(text, bigint, text, text)
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.inbound_email_receive_event_v1(text, text, text, text, text, text, text),
+GRANT EXECUTE ON FUNCTION public.inbound_email_receive_event_v1(text, text, text, text, text, text, text, timestamptz, text),
   public.inbound_email_load_import_v1(text, text),
   public.inbound_email_import_v1(jsonb),
+  public.inbound_attachment_load_import_v1(uuid),
+  public.inbound_attachment_apply_v1(jsonb),
   public.inbound_attachment_mark_scan_v1(uuid, text, text, text),
   public.communication_record_rfc_message_id_v1(uuid, text),
   public.communication_apply_provider_event_v1(text, text, text, text, timestamptz, text, text),

@@ -25,7 +25,7 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Admin production server did not become ready")
-  for (const path of ["/login", "/", "/security", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/cases", "/documents", "/tasks", "/api/cases/command", "/api/evidence/command", "/api/packs/command", "/api/authorization/command", "/api/manager-access/command", "/enquiries", "/enquiries/new", "/api/enquiries/options", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt", "/brand/profile-relaunch-logo.png"]) {
+  for (const path of ["/login", "/", "/security", "/clients/private?email=hidden@example.com", "/api/clients", "/activity", "/cases", "/documents", "/tasks", "/operations/jobs", "/api/cases/command", "/api/evidence/command", "/api/packs/command", "/api/authorization/command", "/api/manager-access/command", "/api/operations/jobs", "/enquiries", "/enquiries/new", "/api/enquiries/options", "/records/client", "/records/business/new", "/records/location", "/api/records/save", "/api/sessions/revoke", "/robots.txt", "/brand/profile-relaunch-logo.png"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
@@ -51,6 +51,11 @@ try {
       assert.equal(new URL(response.headers.get("location"), origin).search, "")
     }
   }
+  const cron = await fetch(`${origin}/api/internal/jobs/run`, { redirect: "manual" })
+  assert.match(cron.headers.get("x-robots-tag") ?? "", /noindex/)
+  assert.match(cron.headers.get("cache-control") ?? "", /no-store/)
+  assert.equal(cron.status, 503)
+  assert.equal((await cron.json()).status, "disabled")
   assert.equal((await fetch(`${origin}/login`, { method: "POST" })).status, 401)
   assert.equal((await fetch(`${origin}/api/sessions/revoke`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify({ sessionId: "33333333-3333-4333-8333-333333333333" }) })).status, 401)
   console.log("Admin production HTTP smoke checks passed")

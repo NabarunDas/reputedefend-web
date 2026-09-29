@@ -6,6 +6,33 @@ import { ACTION_UNAVAILABLE } from "@/lib/access"
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
 
+type Quote = {
+  versionId: string
+  versionNumber: number
+  serviceCode: string
+  serviceName: string
+  paymentModel: string
+  scope: string
+  exclusions: string
+  successDefinition: string
+  standardAmountMinor: number
+  discountPolicyId: string
+  discountBps: number
+  discountAmountMinor: number
+  discountReason?: string | null
+  quotedSubtotalMinor: number
+  taxBehaviour: string
+  taxRateBps: number | null
+  taxAmountMinor: number
+  taxCode: string | null
+  taxJurisdiction: string | null
+  totalAmountMinor: number
+  currency: string
+  validUntil: string
+  paymentTiming: string
+  termsReference: string
+}
+
 type Session = {
   actionId: string
   kind: string
@@ -16,6 +43,19 @@ type Session = {
   locationName?: string | null
   agreement?: { title: string; body: string; scope: string; kind: string } | null
   authorization?: { id: string; kind: string; status: string } | null
+  quote?: Quote | null
+}
+
+function formatGbp(minor: number): string {
+  const absolute = Math.abs(minor)
+  return `${minor < 0 ? "-" : ""}£${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`
+}
+
+function taxTreatment(quote: Quote): string {
+  if (quote.taxBehaviour === "UNCONFIRMED") return "Tax treatment is unconfirmed. This quote cannot be accepted until tax is configured."
+  if (quote.taxBehaviour === "NOT_APPLICABLE") return "Tax is recorded as not applicable on this quote version."
+  if (quote.taxBehaviour === "INCLUSIVE") return `Tax is included in the quoted total${quote.taxRateBps !== null ? ` at ${quote.taxRateBps} basis points` : ""}.`
+  return `Tax is added on top of the quoted subtotal${quote.taxRateBps !== null ? ` at ${quote.taxRateBps} basis points` : ""}.`
 }
 
 export function ActionClient({ actionId }: { actionId: string }) {
@@ -117,7 +157,44 @@ export function ActionClient({ actionId }: { actionId: string }) {
   </section>
   if (phase === "done") return <section><h1>Secure action</h1><p>{message}</p></section>
   const agreement = session?.agreement
+  const quote = session?.quote
   const permission = agreement?.kind === "CASE_MANAGEMENT_PERMISSION"
+  if (session?.kind === "QUOTE_ACCEPTANCE" && quote) {
+    const canAccept = quote.taxBehaviour !== "UNCONFIRMED"
+    return <section>
+      <h1>Review this quote</h1>
+      <p>{session.caseReference} · {session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
+      <h2>{quote.serviceName}</h2>
+      <p>Version {quote.versionNumber}. Valid until {new Date(quote.validUntil).toLocaleString("en-GB", { timeZone: "Europe/London" })}.</p>
+      <h2>Scope</h2>
+      <p className="preserve-lines">{quote.scope}</p>
+      <h2>Exclusions</h2>
+      <p className="preserve-lines">{quote.exclusions}</p>
+      <h2>Success definition</h2>
+      <p className="preserve-lines">{quote.successDefinition}</p>
+      <h2>Price</h2>
+      <p>Standard {formatGbp(quote.standardAmountMinor)}</p>
+      {quote.discountAmountMinor > 0
+        ? <p>Discount {formatGbp(quote.discountAmountMinor)} ({quote.discountPolicyId}: {quote.discountReason}). Final {formatGbp(quote.totalAmountMinor)}.</p>
+        : <p>No discount. Final {formatGbp(quote.totalAmountMinor)}.</p>}
+      <h2>Tax treatment</h2>
+      <p>{taxTreatment(quote)}</p>
+      <p>Tax amount {formatGbp(quote.taxAmountMinor)}. Total {formatGbp(quote.totalAmountMinor)} {quote.currency}.</p>
+      <h2>Payment timing</h2>
+      <p>{quote.paymentTiming}</p>
+      <p>{quote.termsReference}</p>
+      {quote.serviceCode === "RELAUNCH_GUARD" && <p>Accepting this quote does not start monitoring.</p>}
+      {quote.paymentModel === "SUCCESS_FEE" && <p>Accepting this quote does not create an invoice or outstanding debt.</p>}
+      <div className="button-row">
+        {canAccept ? <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true" }) }}>
+          <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact quote version. This is not payment authorisation and does not charge a card.</label>
+          <button type="submit">Accept quote</button>
+        </form> : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+      </div>
+      <p role="status">{message}</p>
+    </section>
+  }
   return <section>
     <h1>{agreement?.title || "Review this action"}</h1>
     <p>{session?.caseReference} · {session?.businessName}{session?.locationName ? ` · ${session.locationName}` : ""}</p>

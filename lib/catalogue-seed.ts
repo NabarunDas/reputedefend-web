@@ -1,0 +1,55 @@
+export const catalogueSeed = [
+  {
+    serviceCode: "GUIDED_RELAUNCH",
+    displayName: "Guided Relaunch",
+    amountMinor: 9900,
+    currency: "GBP",
+    paymentModel: "UPFRONT",
+    billingCadence: "ONCE",
+    billingUnit: "SERVICE",
+    taxBehaviour: "UNCONFIRMED",
+  },
+  {
+    serviceCode: "MANAGED_RELAUNCH",
+    displayName: "Managed Relaunch",
+    amountMinor: 29900,
+    currency: "GBP",
+    paymentModel: "SUCCESS_FEE",
+    billingCadence: "ON_SUCCESS",
+    billingUnit: "SERVICE",
+    taxBehaviour: "UNCONFIRMED",
+  },
+  {
+    serviceCode: "GUIDED_REVIEW",
+    displayName: "Guided Review",
+    amountMinor: 5900,
+    currency: "GBP",
+    paymentModel: "UPFRONT",
+    billingCadence: "ONCE",
+    billingUnit: "SERVICE",
+    taxBehaviour: "UNCONFIRMED",
+  },
+  {
+    serviceCode: "MANAGED_REVIEW",
+    displayName: "Managed Review",
+    amountMinor: 14900,
+    currency: "GBP",
+    paymentModel: "SUCCESS_FEE",
+    billingCadence: "ON_SUCCESS",
+    billingUnit: "SERVICE",
+    taxBehaviour: "UNCONFIRMED",
+  },
+  {
+    serviceCode: "RELAUNCH_GUARD",
+    displayName: "Relaunch Guard",
+    amountMinor: 999,
+    currency: "GBP",
+    paymentModel: "RECURRING_MONTHLY",
+    billingCadence: "MONTHLY",
+    billingUnit: "LOCATION_MONTH",
+    taxBehaviour: "UNCONFIRMED",
+  },
+] as const
+
+export type CatalogueSeed = typeof catalogueSeed[number]
+export type CatalogueServiceCode = CatalogueSeed["serviceCode"]

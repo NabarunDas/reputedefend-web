@@ -112,6 +112,56 @@ describe("customer action page", () => {
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
   })
 
+  it("shows the immutable quote snapshot after verification", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "QUOTE_ACCEPTANCE",
+          agreement: null,
+          quote: {
+            versionId: actionId,
+            versionNumber: 1,
+            serviceCode: "MANAGED_RELAUNCH",
+            serviceName: "Managed Relaunch",
+            paymentModel: "SUCCESS_FEE",
+            scope: "Managed recovery for this location only.",
+            exclusions: "Google decisions and payment collection are excluded.",
+            successDefinition: "Success relates to the agreed successful restoration outcome.",
+            standardAmountMinor: 29900,
+            discountPolicyId: "PAID_GUARD_MANAGED_20",
+            discountBps: 2000,
+            discountAmountMinor: 5980,
+            discountReason: "QUALIFIED",
+            quotedSubtotalMinor: 23920,
+            taxBehaviour: "NOT_APPLICABLE",
+            taxRateBps: null,
+            taxAmountMinor: 0,
+            taxCode: null,
+            taxJurisdiction: null,
+            totalAmountMinor: 23920,
+            currency: "GBP",
+            validUntil: "2026-10-10T12:00:00.000Z",
+            paymentTiming: "No service fee is charged today. The quoted success fee becomes collectible only after the defined successful outcome.",
+            termsReference: "Service terms as published at quote time.",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept quote" })).toBeTruthy())
+    expect(screen.getByText("Managed Relaunch")).toBeTruthy()
+    expect(screen.getByText(/£239.20/)).toBeTruthy()
+    expect(screen.getByText(/Tax is recorded as not applicable/)).toBeTruthy()
+    expect(screen.getByText(/does not create an invoice or outstanding debt/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/charge a card today|monitoring has started|Stripe/i)
+  })
+
   it("redirects CASE_ACCESS verification to the case documents page", async () => {
     await renderAfterExchange()
     await sendCodeSuccessfully()

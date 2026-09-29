@@ -453,6 +453,8 @@ Acceptance: spoofed sender cannot change identity/permissions; duplicate imports
 ## Step 13 Catalogue quotes and service orders
 Deliver: approved price versions, immutable accepted quotes, service orders, discount qualification snapshots, tax configuration fields and quote acceptance pages. Use existing lib/pricing.ts values as the migration seed after review.
 
+SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. Additive `20260929233953_catalogue_quotes_orders_v1.sql` is source-only. As built: `price_versions` seeded from `lib/pricing.ts` (9900 / 29900 / 5900 / 14900 / 999 pence), immutable quote versions and acceptances, one service order per accepted version, `PAID_GUARD_MANAGED_20` snapshots that fail closed without explicit paid-coverage facts, tax behaviours including `UNCONFIRMED`, Admin `/commercial`, and Customer `QUOTE_ACCEPTANCE` on the Step 9 action/OTP flow. Marketing still uses `lib/pricing.ts`. No Stripe objects or charges. Live quote acceptance is not claimed. Step 11 live delivery and Step 12 live inbound stay disabled. Cron remains daily. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+
 Acceptance: pence arithmetic is correct; Guard discount yields £239.20/£119.20; ineligible/free-period locations cannot qualify; later price/cancellation changes do not rewrite accepted quotes. Depends on 9.
 
 ## Step 14 Stripe upfront and success-fee payments

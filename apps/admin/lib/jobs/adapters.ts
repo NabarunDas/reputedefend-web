@@ -1,3 +1,4 @@
+import { sendEmailHandler } from "../communications/handler"
 import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "./config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult, JobType } from "./model"
 
@@ -32,10 +33,12 @@ export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record
   if (mode === "production" && !canRegisterLiveProvider(mode, env)) return {}
   return {
     SYSTEM_HEALTH_PROBE: systemHealthProbeHandler(),
+    SEND_EMAIL: sendEmailHandler(env),
   }
 }
 
 export function handlerFor(jobType: string, handlers: Partial<Record<JobType, JobHandler>> = registeredJobHandlers()): JobHandler | null {
   if (jobType === "SYSTEM_HEALTH_PROBE") return handlers.SYSTEM_HEALTH_PROBE ?? null
+  if (jobType === "SEND_EMAIL") return handlers.SEND_EMAIL ?? null
   return null
 }

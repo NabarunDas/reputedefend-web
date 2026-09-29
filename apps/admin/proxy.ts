@@ -8,7 +8,8 @@ export async function proxy(request: NextRequest) {
   let response: NextResponse
   const authPost = request.method === "POST" && /^\/auth\/(send|verify|logout|logout-all)$/.test(pathname)
   const cronRead = (request.method === "GET" || request.method === "HEAD") && pathname === "/api/internal/jobs/run"
-  if (isPublicRead(pathname, request.method) || authPost || cronRead || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
+  const providerWebhook = request.method === "POST" && pathname === "/api/webhooks/resend"
+  if (isPublicRead(pathname, request.method) || authPost || cronRead || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     response = NextResponse.next()
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {
     response = NextResponse.json({ error: "Staff sign-in is required." }, { status: 401 })

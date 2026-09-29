@@ -85,15 +85,47 @@ export function resolveInboundProvider(env: EnvMap = process.env, override?: Inb
   return createResendInboundProvider(apiKey)
 }
 
+function asReceivedEmail(value: unknown): ReceivedEmail | null {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  const from = typeof row.from === "string" ? row.from
+    : row.from && typeof row.from === "object" && typeof (row.from as { email?: unknown }).email === "string"
+      ? String((row.from as { email: string }).email)
+      : undefined
+  return {
+    id: typeof row.id === "string" ? row.id : undefined,
+    from,
+    to: addresses(row.to),
+    cc: addresses(row.cc),
+    subject: typeof row.subject === "string" ? row.subject : null,
+    text: typeof row.text === "string" ? row.text : null,
+    html: typeof row.html === "string" ? row.html : null,
+    message_id: typeof row.message_id === "string" ? row.message_id : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : undefined,
+    headers: Array.isArray(row.headers) || (row.headers && typeof row.headers === "object")
+      ? row.headers as ReceivedEmail["headers"]
+      : undefined,
+    attachments: Array.isArray(row.attachments)
+      ? row.attachments.filter((item): item is ReceivedEmailAttachment => !!item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string")
+          .map(item => ({
+            id: item.id,
+            filename: typeof item.filename === "string" ? item.filename : undefined,
+            content_type: typeof item.content_type === "string" ? item.content_type : undefined,
+            size: typeof item.size === "number" ? item.size : undefined,
+          }))
+      : undefined,
+  }
+}
+
 export function createResendInboundProvider(
   apiKey: string,
-  client?: { emails: { receiving: { get: (id: string) => Promise<{ data?: ReceivedEmail | null }> } } },
+  client?: { emails: { receiving: { get: (id: string) => Promise<{ data?: unknown }> } } },
 ): InboundEmailProvider {
   return {
     async getReceivedEmail(emailId) {
       const resend = client ?? new (await import("resend")).Resend(apiKey)
       const { data } = await resend.emails.receiving.get(emailId)
-      return data ?? null
+      return asReceivedEmail(data)
     },
   }
 }

@@ -87,7 +87,7 @@ One immutable storage object per version.
 | record_version | Optimistic concurrency; bumped on every update |
 | created_by, created_at, uploaded_at, validated_at | |
 
-Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`. At most one `CUSTOMER` version per evidence request. Customer provenance columns are server-controlled and never accepted from the browser.
+Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`. At most one active `CUSTOMER` version per evidence request (`PENDING_UPLOAD` or `UPLOADED`). Historical `FAILED` customer attempts do not occupy that slot. Customer provenance columns are server-controlled and never accepted from the browser.
 
 ## public.case_document_events
 

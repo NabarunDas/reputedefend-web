@@ -147,4 +147,24 @@ describe("customer case documents", () => {
     expect(screen.queryByRole("button", { name: "View" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Download" })).toBeNull()
   })
+
+  it("lets a pending upload choose the same file again or another file", () => {
+    render(<CaseClient data={{
+      ...empty,
+      evidenceRequests: [{
+        requestId: "88888888-8888-4888-8888-888888888888",
+        title: "Utility bill",
+        requestText: "Please upload a recent utility bill.",
+        dueAt: null,
+        createdAt: "2026-09-28T12:00:00.000Z",
+        submissionStatus: "UPLOAD_PENDING",
+        filename: "bill.pdf",
+        submittedAt: null,
+      }],
+    }} />)
+    expect(screen.getByText("Upload pending · bill.pdf")).toBeTruthy()
+    expect(screen.getByText(/same file to resume/)).toBeTruthy()
+    expect(screen.getByLabelText("Upload evidence")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "View" })).toBeNull()
+  })
 })

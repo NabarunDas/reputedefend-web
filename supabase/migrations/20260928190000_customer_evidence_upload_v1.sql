@@ -16,7 +16,8 @@ ALTER TABLE public.case_document_versions
 
 CREATE UNIQUE INDEX case_document_versions_one_customer_request_idx
   ON public.case_document_versions (customer_evidence_request_id)
-  WHERE submission_source = 'CUSTOMER';
+  WHERE submission_source = 'CUSTOMER'
+    AND upload_status IN ('PENDING_UPLOAD', 'UPLOADED');
 CREATE INDEX case_document_versions_customer_action_idx
   ON public.case_document_versions (customer_action_id)
   WHERE customer_action_id IS NOT NULL;
@@ -46,7 +47,7 @@ BEGIN
 END; $$;
 REVOKE ALL ON FUNCTION admin_private.customer_evidence_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION admin_private.customer_open_evidence_requests_v1(p_case uuid)
+CREATE FUNCTION admin_private.customer_open_evidence_requests_v1(p_case uuid, p_action uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path='' AS $$
 DECLARE result jsonb;
 BEGIN
@@ -58,26 +59,41 @@ BEGIN
     'dueAt', r.due_at,
     'createdAt', r.created_at,
     'submissionStatus', CASE
-      WHEN v.id IS NULL THEN 'NOT_SUBMITTED'
-      WHEN v.upload_status = 'PENDING_UPLOAD' THEN 'UPLOAD_PENDING'
-      ELSE 'AWAITING_REVIEW'
+      WHEN uploaded.id IS NOT NULL THEN 'AWAITING_REVIEW'
+      WHEN pending.id IS NOT NULL THEN 'UPLOAD_PENDING'
+      ELSE 'NOT_SUBMITTED'
     END,
-    'filename', v.original_filename,
-    'submittedAt', v.uploaded_at
+    'filename', CASE
+      WHEN uploaded.id IS NOT NULL THEN uploaded.original_filename
+      WHEN pending.id IS NOT NULL THEN pending.original_filename
+      ELSE NULL
+    END,
+    'submittedAt', uploaded.uploaded_at
   ) ORDER BY r.created_at, r.id), '[]') INTO result
   FROM public.evidence_requests r
   LEFT JOIN LATERAL (
-    SELECT cv.id, cv.upload_status, cv.original_filename, cv.uploaded_at
+    SELECT cv.id, cv.original_filename, cv.uploaded_at
     FROM public.case_document_versions cv
     WHERE cv.customer_evidence_request_id = r.id
       AND cv.submission_source = 'CUSTOMER'
+      AND cv.upload_status = 'UPLOADED'
+    ORDER BY cv.uploaded_at, cv.id
+    LIMIT 1
+  ) uploaded ON true
+  LEFT JOIN LATERAL (
+    SELECT cv.id, cv.original_filename
+    FROM public.case_document_versions cv
+    WHERE cv.customer_evidence_request_id = r.id
+      AND cv.submission_source = 'CUSTOMER'
+      AND cv.upload_status = 'PENDING_UPLOAD'
+      AND cv.customer_action_id = p_action
     ORDER BY cv.created_at, cv.id
     LIMIT 1
-  ) v ON true
+  ) pending ON true
   WHERE r.case_id = p_case AND r.status = 'OPEN';
   RETURN result;
 END; $$;
-REVOKE ALL ON FUNCTION admin_private.customer_open_evidence_requests_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.customer_open_evidence_requests_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.customer_case_pack_v1(p_token_hash text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -89,7 +105,7 @@ BEGIN
   SELECT * INTO cs FROM public.cases WHERE id = a.case_id;
   SELECT * INTO b FROM public.businesses WHERE id = a.business_id;
   SELECT * INTO loc FROM public.locations WHERE id = a.location_id;
-  requests := admin_private.customer_open_evidence_requests_v1(a.case_id);
+  requests := admin_private.customer_open_evidence_requests_v1(a.case_id, a.id);
   SELECT * INTO p FROM public.case_prepared_packs
     WHERE case_id = a.case_id AND status = 'APPROVED' AND published_at IS NOT NULL AND unpublished_at IS NULL
     LIMIT 1;
@@ -141,7 +157,7 @@ CREATE FUNCTION public.customer_evidence_begin_v1(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE a public.customer_actions; sess admin_private.customer_action_sessions;
   cs public.cases; req public.evidence_requests; d public.case_documents; existing public.case_document_versions;
-  actor uuid; fp text; cached jsonb; result jsonb; version_id uuid; object_key text;
+  actor uuid; fp text; cached jsonb; result jsonb; version_id uuid; object_key text; version_no integer; abandoned uuid;
 BEGIN
   a := admin_private.customer_case_access_action_v1(p_token_hash);
   IF a.id IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
@@ -162,21 +178,23 @@ BEGIN
   IF req.id IS NULL OR req.case_id <> a.case_id OR req.status <> 'OPEN' THEN
     RETURN jsonb_build_object('status', 'unavailable');
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(req.id::text || ':customer-evidence', 0));
   SELECT v.* INTO existing
   FROM public.case_document_versions v
-  WHERE v.customer_evidence_request_id = req.id AND v.submission_source = 'CUSTOMER'
+  WHERE v.customer_evidence_request_id = req.id
+    AND v.submission_source = 'CUSTOMER'
+    AND v.upload_status IN ('PENDING_UPLOAD', 'UPLOADED')
   ORDER BY v.created_at, v.id
   LIMIT 1
   FOR UPDATE;
-  IF existing.id IS NOT NULL THEN
-    IF existing.upload_status = 'UPLOADED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-    IF existing.upload_status <> 'PENDING_UPLOAD'
-      OR existing.original_filename <> btrim(p_filename)
-      OR existing.declared_content_type <> p_content_type
-      OR existing.declared_size_bytes <> p_size
-      OR existing.storage_bucket <> p_bucket
-      OR existing.customer_action_id IS DISTINCT FROM a.id
-    THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF existing.upload_status = 'UPLOADED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF existing.upload_status = 'PENDING_UPLOAD'
+    AND existing.customer_action_id = a.id
+    AND existing.original_filename = btrim(p_filename)
+    AND existing.declared_content_type = p_content_type
+    AND existing.declared_size_bytes = p_size
+    AND existing.storage_bucket = p_bucket
+  THEN
     SELECT * INTO d FROM public.case_documents WHERE id = existing.document_id;
     result := jsonb_build_object(
       'status', 'success', 'documentId', d.id, 'versionId', existing.id, 'versionNumber', existing.version_number,
@@ -186,29 +204,57 @@ BEGIN
     INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
     RETURN result;
   END IF;
+  IF existing.upload_status = 'PENDING_UPLOAD' THEN
+    UPDATE public.case_document_versions
+      SET upload_status = 'FAILED'
+      WHERE id = existing.id AND upload_status = 'PENDING_UPLOAD';
+    IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
+    VALUES (cs.id, existing.document_id, existing.id, actor, 'UPLOAD_FAILED', jsonb_build_object(
+      'versionNumber', existing.version_number, 'source', 'CUSTOMER_CASE_ACCESS', 'reason', 'RESTARTED_BEFORE_FINALIZE'
+    ));
+    abandoned := existing.id;
+    SELECT * INTO d FROM public.case_documents WHERE id = existing.document_id FOR UPDATE;
+  ELSE
+    SELECT doc.* INTO d
+    FROM public.case_documents doc
+    WHERE doc.evidence_request_id = req.id
+      AND EXISTS (
+        SELECT 1 FROM public.case_document_versions v
+        WHERE v.document_id = doc.id AND v.submission_source = 'CUSTOMER'
+      )
+    ORDER BY doc.created_at, doc.id
+    LIMIT 1
+    FOR UPDATE;
+    IF d.id IS NULL THEN
+      INSERT INTO public.case_documents(case_id, evidence_request_id, title, created_by)
+      VALUES (cs.id, req.id, req.title, actor) RETURNING * INTO d;
+    END IF;
+  END IF;
+  SELECT coalesce(max(version_number), 0) + 1 INTO version_no FROM public.case_document_versions WHERE document_id = d.id;
   version_id := gen_random_uuid();
-  INSERT INTO public.case_documents(case_id, evidence_request_id, title, created_by)
-  VALUES (cs.id, req.id, req.title, actor) RETURNING * INTO d;
   object_key := 'cases/' || cs.id::text || '/documents/' || d.id::text || '/versions/' || version_id::text;
   INSERT INTO public.case_document_versions(
     id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
     storage_provider, storage_bucket, storage_key, created_by,
     submission_source, customer_action_id, customer_evidence_request_id
   ) VALUES (
-    version_id, d.id, 1, btrim(p_filename), p_content_type, p_size, 'S3', p_bucket, object_key, actor,
+    version_id, d.id, version_no, btrim(p_filename), p_content_type, p_size, 'S3', p_bucket, object_key, actor,
     'CUSTOMER', a.id, req.id
   );
   INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
   VALUES (cs.id, d.id, version_id, actor, 'UPLOAD_BEGUN', jsonb_build_object(
-    'versionNumber', 1, 'contentType', p_content_type, 'sizeBytes', p_size, 'source', 'CUSTOMER_CASE_ACCESS'
+    'versionNumber', version_no, 'contentType', p_content_type, 'sizeBytes', p_size, 'source', 'CUSTOMER_CASE_ACCESS'
   ));
   PERFORM admin_private.write_record_audit_v1(
     actor, 'EVIDENCE_CHANGED', 'success', cs.id, p_request, 'case',
     'Customer evidence upload started',
-    jsonb_build_object('operation', 'begin', 'source', 'CUSTOMER_CASE_ACCESS', 'documentId', d.id, 'versionId', version_id)
+    jsonb_build_object(
+      'operation', 'begin', 'source', 'CUSTOMER_CASE_ACCESS', 'documentId', d.id, 'versionId', version_id
+    ) || CASE WHEN abandoned IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('abandonedVersionId', abandoned) END
   );
   result := jsonb_build_object(
-    'status', 'success', 'documentId', d.id, 'versionId', version_id, 'versionNumber', 1,
+    'status', 'success', 'documentId', d.id, 'versionId', version_id, 'versionNumber', version_no,
     'storageKey', object_key, 'storageBucket', p_bucket, 'contentType', p_content_type, 'maxBytes', 10485760
   );
   INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());

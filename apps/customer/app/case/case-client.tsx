@@ -45,6 +45,7 @@ function EvidenceRequestRow({ request }: { request: CustomerEvidenceRequest }) {
     <p className="preserve-lines">{request.requestText}</p>
     {request.dueAt && <p className="muted">Due {formatDue(request.dueAt)}</p>}
     <p>{submissionLabel(status)}{filename ? ` · ${filename}` : ""}</p>
+    {status === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
     {!submitted && <UploadEvidence requestId={request.requestId} onUploaded={(name) => { setStatus("AWAITING_REVIEW"); setFilename(name); setMessage("Uploaded — awaiting security review") }} onMessage={setMessage} />}
     {message && <p role="status">{message}</p>}
   </li>

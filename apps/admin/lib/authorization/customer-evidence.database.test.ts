@@ -51,7 +51,8 @@ type RpcResult = {
     submittedAt: string | null
   }>
   pack?: unknown
-  documents?: Array<{ title: string; versions: Array<{ submissionSource?: string; originalFilename?: string }> }>
+  versionNumber?: number
+  documents?: Array<{ title: string; versions: Array<{ submissionSource?: string; originalFilename?: string; uploadStatus?: string }> }>
 }
 
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -132,7 +133,7 @@ async function finishAccess(id = caseId, auth = customerAuth, email = "alex@exam
   const created = await createAccess({ secretHash: hash }, key(), id)
   expect(created?.status).toBe("success")
   const session = await otpSession(created?.id, hash, secretHash(secret()), auth, email)
-  return { created, session }
+  return { created, session, hash }
 }
 
 const createRequest = (title = "Utility bill", text = "Please upload a recent utility bill.", id = caseId) =>
@@ -229,6 +230,24 @@ describe("customer evidence upload SQL", () => {
     expect(begun?.storageKey).not.toMatch(/bill\.pdf/i)
     expect(await begin(session, request?.id ?? key(), "bill.pdf", "application/pdf", 2048, idem)).toEqual(begun)
     expect(await begin(session, request?.id ?? key(), "other.pdf", "application/pdf", 2048, idem)).toEqual({ status: "conflict" })
+    const restarted = await begin(session, request?.id ?? key(), "other.pdf", "application/pdf", 2048)
+    expect(restarted).toMatchObject({ status: "success", documentId: begun?.documentId, versionNumber: 2 })
+    expect(restarted?.versionId).not.toBe(begun?.versionId)
+    expect(restarted?.storageKey).not.toBe(begun?.storageKey)
+    const abandoned = await db.query<{ upload_status: string; original_filename: string; storage_key: string }>("select upload_status, original_filename, storage_key from public.case_document_versions where id=$1", [begun?.versionId])
+    expect(abandoned.rows[0]).toEqual({ upload_status: "FAILED", original_filename: "bill.pdf", storage_key: begun?.storageKey })
+    const failedEvent = await db.query<{ details: { source?: string; reason?: string } }>("select details from public.case_document_events where version_id=$1 and event='UPLOAD_FAILED'", [begun?.versionId])
+    expect(failedEvent.rows[0].details).toMatchObject({ source: "CUSTOMER_CASE_ACCESS", reason: "RESTARTED_BEFORE_FINALIZE" })
+    const projection = await rpc("customer_case_pack_v1", [session])
+    expect(projection?.evidenceRequests?.[0]).toMatchObject({ submissionStatus: "UPLOAD_PENDING", filename: "other.pdf" })
+    expect(JSON.stringify(projection)).not.toMatch(/storageKey|storageBucket|test-evidence/)
+  })
+
+  it("keeps the original provenance row after the different-file restart assertion", async () => {
+    await verify()
+    const { created, session } = await finishAccess()
+    const request = await createRequest()
+    const begun = await begin(session, request?.id ?? key(), "bill.pdf", "application/pdf", 2048)
     const row = await db.query<{
       title: string; created_by: string; original_filename: string; upload_status: string; scan_status: string
       validation_status: string; review_status: string; customer_visible: boolean; submission_source: string
@@ -308,5 +327,115 @@ describe("customer evidence upload SQL", () => {
     expect(await rpc("admin_evidence_request_v1", [session, key(), caseId, request?.id, request?.version, "fulfill", null, null, null, "Trying to fulfil as the customer."])).toMatchObject({ status: "unauthorized" })
     const stillOpen = await db.query<{ status: string }>("select status from public.evidence_requests where id=$1", [request?.id])
     expect(stillOpen.rows[0].status).toBe("OPEN")
+  })
+
+  it("resumes the same pending version after a new OTP session on the same CASE_ACCESS action", async () => {
+    await verify()
+    const { created, session, hash } = await finishAccess()
+    const request = await createRequest()
+    const pending = await begin(session, request?.id ?? key())
+    expect(pending?.status).toBe("success")
+    await db.query("update admin_private.customer_action_sessions set expires_at=now()-interval '1 minute' where token_hash=$1", [session])
+    const nextSession = await otpSession(created?.id, hash ?? "")
+    const resumed = await begin(nextSession, request?.id ?? key())
+    expect(resumed).toMatchObject({ status: "success", versionId: pending?.versionId, documentId: pending?.documentId, storageKey: pending?.storageKey })
+    const versions = await db.query<{ n: number }>("select count(*)::int as n from public.case_document_versions where customer_evidence_request_id=$1", [request?.id])
+    expect(versions.rows[0].n).toBe(1)
+  })
+
+  it("lets a fresh CASE_ACCESS action replace an abandoned pending upload after revoke", async () => {
+    await verify()
+    const first = await finishAccess()
+    const request = await createRequest()
+    const old = await begin(first.session, request?.id ?? key())
+    await rpc("admin_authorization_command_v1", [token, key(), caseId, "revoke_action", { actionId: first.created?.id, reason: "Customer reported the link was lost.", confirmed: true }])
+    expect(await rpc("customer_evidence_finalize_v1", [first.session, key(), old?.versionId])).toEqual({ status: "unavailable" })
+    const next = await finishAccess()
+    const pack = await rpc("customer_case_pack_v1", [next.session])
+    expect(pack?.evidenceRequests?.[0]).toMatchObject({ submissionStatus: "NOT_SUBMITTED", filename: null })
+    const fresh = await begin(next.session, request?.id ?? key())
+    expect(fresh).toMatchObject({ status: "success", documentId: old?.documentId, versionNumber: 2 })
+    expect(fresh?.versionId).not.toBe(old?.versionId)
+    const abandoned = await db.query<{ upload_status: string }>("select upload_status from public.case_document_versions where id=$1", [old?.versionId])
+    expect(abandoned.rows[0].upload_status).toBe("FAILED")
+    expect(await rpc("customer_evidence_finalize_v1", [next.session, key(), old?.versionId])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_evidence_upload_version_v1", [next.session, old?.versionId])).toBeNull()
+    expect(await rpc("customer_evidence_finalize_v1", [next.session, key(), fresh?.versionId])).toMatchObject({ status: "success", uploadStatus: "UPLOADED" })
+    expect(await begin(next.session, request?.id ?? key(), "later.pdf")).toEqual({ status: "conflict" })
+  })
+
+  it("recovers after an expired CASE_ACCESS is replaced, a closed case is reopened, and trust is restored", async () => {
+    await verify()
+    const expired = await finishAccess()
+    const request = await createRequest()
+    const old = await begin(expired.session, request?.id ?? key(), "expired.pdf")
+    await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+    try {
+      await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [expired.created?.id])
+    } finally {
+      await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+    }
+    const replacement = await finishAccess()
+    const replaced = await begin(replacement.session, request?.id ?? key(), "replacement.pdf")
+    expect(replaced).toMatchObject({ status: "success", documentId: old?.documentId })
+    expect((await db.query<{ upload_status: string }>("select upload_status from public.case_document_versions where id=$1", [old?.versionId])).rows[0].upload_status).toBe("FAILED")
+    expect(await rpc("customer_evidence_finalize_v1", [replacement.session, key(), old?.versionId])).toEqual({ status: "unavailable" })
+
+    await db.query("update public.cases set status='CLOSED' where id=$1", [caseId])
+    expect(await begin(replacement.session, request?.id ?? key(), "closed.pdf")).toEqual({ status: "unavailable" })
+    await db.query("update public.cases set status='RECEIVED' where id=$1", [caseId])
+    const reopened = await finishAccess()
+    const afterClose = await begin(reopened.session, request?.id ?? key(), "reopened.pdf")
+    expect(afterClose).toMatchObject({ status: "success", documentId: old?.documentId })
+    expect((await db.query<{ upload_status: string }>("select upload_status from public.case_document_versions where id=$1", [replaced?.versionId])).rows[0].upload_status).toBe("FAILED")
+
+    await db.query("update public.customers set email='alex+changed@example.com' where id=$1", [customer])
+    expect(await begin(reopened.session, request?.id ?? key(), "trust.pdf")).toEqual({ status: "unavailable" })
+    await db.query("update public.customers set email='alex@example.com' where id=$1", [customer])
+    await verify()
+    const trusted = await finishAccess()
+    const afterTrust = await begin(trusted.session, request?.id ?? key(), "trusted.pdf")
+    expect(afterTrust).toMatchObject({ status: "success", documentId: old?.documentId })
+    expect((await rpc("customer_case_pack_v1", [trusted.session]))?.evidenceRequests?.[0]).toMatchObject({ submissionStatus: "UPLOAD_PENDING", filename: "trusted.pdf" })
+  })
+
+  it("recovers after membership trust is restored and keeps failed history visible to Admin", async () => {
+    await verify()
+    const first = await finishAccess()
+    const request = await createRequest()
+    const old = await begin(first.session, request?.id ?? key(), "member.pdf")
+    await db.query("update public.business_memberships set status='revoked', verified_at=null, verified_by=null where customer_id=$1 and business_id=$2", [customer, business])
+    expect(await begin(first.session, request?.id ?? key(), "member.pdf")).toEqual({ status: "unavailable" })
+    await verify()
+    const next = await finishAccess()
+    const fresh = await begin(next.session, request?.id ?? key(), "restored.pdf")
+    expect(fresh).toMatchObject({ status: "success", documentId: old?.documentId })
+    const adminCase = await rpc("admin_evidence_case_v1", [token, caseId])
+    const statuses = adminCase?.documents?.[0].versions.map(version => version.uploadStatus)
+    expect(statuses).toEqual(expect.arrayContaining(["FAILED", "PENDING_UPLOAD"]))
+    expect((await rpc("customer_case_pack_v1", [next.session]))?.evidenceRequests?.[0]).toMatchObject({ submissionStatus: "UPLOAD_PENDING", filename: "restored.pdf" })
+    expect(JSON.stringify(await rpc("customer_case_pack_v1", [next.session]))).not.toMatch(/AWAITING_REVIEW/)
+  })
+
+  it("cannot create two active customer versions for the same request", async () => {
+    await verify()
+    const { created, session } = await finishAccess()
+    const request = await createRequest()
+    const [first, second] = await Promise.all([
+      begin(session, request?.id ?? key(), "bill.pdf"),
+      begin(session, request?.id ?? key(), "bill.pdf"),
+    ])
+    expect(first).toMatchObject({ status: "success" })
+    expect(second).toMatchObject({ status: "success", versionId: first?.versionId })
+    const otherKey = `cases/${caseId}/documents/${first?.documentId}/versions/${crypto.randomUUID()}`
+    await expect(db.query(
+      `insert into public.case_document_versions(
+        id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+        storage_bucket, storage_key, created_by, submission_source, customer_action_id, customer_evidence_request_id
+      ) values (gen_random_uuid(), $1, 99, 'dup.pdf', 'application/pdf', 1024, 'test-evidence', $2, $3, 'CUSTOMER', $4, $5)`,
+      [first?.documentId, otherKey, customerAuth, created?.id, request?.id],
+    )).rejects.toThrow(/unique|one_customer|duplicate/i)
+    const active = await db.query<{ n: number }>("select count(*)::int as n from public.case_document_versions where customer_evidence_request_id=$1 and upload_status in ('PENDING_UPLOAD','UPLOADED')", [request?.id])
+    expect(active.rows[0].n).toBe(1)
   })
 })

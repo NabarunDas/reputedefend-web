@@ -3,7 +3,7 @@ export type TemplateKey = (typeof TEMPLATE_KEYS)[number]
 export const LIFECYCLES = ["DRAFT", "REVIEWED", "QUEUED", "CANCELLED"] as const
 export type CommunicationLifecycle = (typeof LIFECYCLES)[number]
 export const DELIVERY_STATUSES = [
-  "NONE", "PROVIDER_ACCEPTED", "DELIVERED", "BOUNCED", "COMPLAINED", "SUPPRESSED", "FAILED",
+  "NONE", "ACCEPTANCE_UNKNOWN", "PROVIDER_ACCEPTED", "DELIVERED", "BOUNCED", "COMPLAINED", "SUPPRESSED", "FAILED",
 ] as const
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number]
 
@@ -36,6 +36,7 @@ export type CommunicationRow = {
   draftedAt: string
   reviewedAt: string | null
   queuedAt: string | null
+  firstProviderAttemptAt: string | null
   providerAcceptedAt: string | null
   deliveredAt: string | null
   failedAt: string | null
@@ -59,6 +60,7 @@ export function lifecycleLabel(value: string | null): string {
 
 export function deliveryLabel(row: Pick<CommunicationRow, "deliveryStatus" | "legacyStatus">): string {
   if (row.deliveryStatus === "DELIVERED") return "Delivered"
+  if (row.deliveryStatus === "ACCEPTANCE_UNKNOWN") return "Provider acceptance unknown — check the email provider"
   if (row.deliveryStatus === "PROVIDER_ACCEPTED") return "Accepted by email provider"
   if (row.deliveryStatus === "BOUNCED") return "Bounced"
   if (row.deliveryStatus === "COMPLAINED") return "Complained"

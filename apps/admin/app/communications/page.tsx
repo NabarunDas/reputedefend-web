@@ -2,6 +2,7 @@ import { ukDate } from "@/lib/admin/activity"
 import { loadCommunications } from "@/lib/communications/queries"
 import { deliveryLabel, lifecycleLabel, templateLabel } from "@/lib/communications/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
+import { communicationsSendEnabled, sendDisabledReason } from "@/lib/communications/gate"
 import { DraftCommunicationForm, QueueCommunicationForm, ResendDraftForm, ReviewCommunicationForm } from "./forms"
 
 export const metadata = { title: "Communications" }
@@ -17,11 +18,12 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
   const params = await searchParams
   const caseId = typeof params.case === "string" ? params.case : null
   const data = await loadCommunications(caseId)
+  const sendEnabled = communicationsSendEnabled()
   return <section className="page">
     <PageHeader title="Communications" description="Reviewed outbound customer email. Provider acceptance is not delivery. Live sending is blocked until the production worker can run at an operationally acceptable cadence." />
     <section className="panel">
       <h2>Draft</h2>
-      <p className="muted">The current scheduler is daily and Hobby-compatible. Queueing writes a SEND_EMAIL job; it does not send from the browser.</p>
+      <p className="muted">{sendDisabledReason()}</p>
       <DraftCommunicationForm caseId={caseId || undefined} />
     </section>
     <section className="panel">
@@ -46,13 +48,15 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
               Drafted {ukDate(row.draftedAt)}
               {row.reviewedAt && <><br />Reviewed {ukDate(row.reviewedAt)}</>}
               {row.queuedAt && <><br />Queued {ukDate(row.queuedAt)}</>}
+              {row.firstProviderAttemptAt && <><br />First provider attempt {ukDate(row.firstProviderAttemptAt)}</>}
               {row.providerAcceptedAt && <><br />Provider accepted {ukDate(row.providerAcceptedAt)}</>}
               {row.deliveredAt && <><br />Delivered {ukDate(row.deliveredAt)}</>}
             </td>
             <td>
               {row.events.length ? row.events.map(event => <p key={event.occurredAt + event.eventType} className="muted">{event.eventType}: {event.summary}</p>) : "—"}
               {row.lifecycle === "DRAFT" && <ReviewCommunicationForm communicationId={row.id} version={row.version} />}
-              {row.lifecycle === "REVIEWED" && <QueueCommunicationForm communicationId={row.id} version={row.version} />}
+              {row.lifecycle === "REVIEWED" && sendEnabled && <QueueCommunicationForm communicationId={row.id} version={row.version} />}
+              {row.lifecycle === "REVIEWED" && !sendEnabled && <p className="muted">Queueing is closed until live customer mail is enabled.</p>}
               {(row.deliveryStatus === "BOUNCED" || row.deliveryStatus === "COMPLAINED" || row.deliveryStatus === "SUPPRESSED" || row.deliveryStatus === "FAILED") && row.caseId && (
                 <ResendDraftForm communicationId={row.id} caseId={row.caseId} />
               )}

@@ -26,6 +26,7 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://example.supabase.co")
   vi.stubEnv("SUPABASE_SECRET_KEY", "test")
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
+  vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "communication-link-secret-for-tests-32b")
   mocks.rpc.mockReset()
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -40,8 +41,13 @@ describe("communications admin commands", () => {
     expect(await ok.json()).toMatchObject({ message: expect.stringMatching(/has not been sent/) })
     expect(mocks.rpc).toHaveBeenCalledWith("admin_communication_command_v1", expect.objectContaining({
       p_operation: "draft",
-      p_payload: expect.objectContaining({ customerOrigin: "https://customer.profilerelaunch.com" }),
+      p_payload: expect.objectContaining({
+        customerOrigin: "https://customer.profilerelaunch.com",
+        actionId: expect.any(String),
+        secretHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
     }))
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/#t=/)
     const denied = await communicationsCommand(req({ operation: "send_now", html: "<script>alert(1)</script>" }))
     expect(denied.status).toBe(400)
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/send_now|<script>/)
@@ -53,6 +59,7 @@ describe("communications admin commands", () => {
       operation: "queue", communicationId: key, version: 2, recipient: "other@example.com",
     }))
     expect(denied.status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
     expect(JSON.stringify(await denied.json())).not.toMatch(/RESEND_API_KEY|otp/i)
   })
 })

@@ -4,6 +4,8 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { communicationsSendEnabled, sendDisabledReason } from "./gate"
+import { prepareCommunicationAccessLink } from "./link"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -36,7 +38,7 @@ function mapStatus(status: string | undefined): number {
 const messages: Record<string, string> = {
   draft: "The communication was drafted. It has not been sent.",
   review: "The communication was marked reviewed.",
-  queue: "The communication was queued. Live sending stays disabled until the worker cadence is operational.",
+  queue: "The communication was queued for the durable email worker.",
   cancel: "The communication was cancelled.",
   resend_draft: "A replacement communication was drafted for the newly verified address.",
 }
@@ -63,10 +65,24 @@ export async function communicationsCommand(request: NextRequest) {
     delete payload.version
     if (operation === "draft" || operation === "resend_draft") {
       payload.customerOrigin = config.customerOrigin
-      if ((operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && !config.customerOrigin)
-        || (operation === "resend_draft" && !payload.customerOrigin && payload.templateKey === "EVIDENCE_REQUEST")) {
+      if (operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && !config.customerOrigin) {
         return reply("The customer site origin is not configured.", 503)
       }
+      if (payload.templateKey === "EVIDENCE_REQUEST" || operation === "resend_draft") {
+        const actionId = crypto.randomUUID()
+        const prepared = prepareCommunicationAccessLink(actionId)
+        if (payload.templateKey === "EVIDENCE_REQUEST" && !prepared) {
+          return reply("The secure upload link secret is not configured.", 503)
+        }
+        if (prepared) {
+          payload.actionId = actionId
+          payload.secretHash = prepared.tokenHash
+        }
+      }
+    }
+    if (operation === "queue") {
+      if (!communicationsSendEnabled()) return reply(sendDisabledReason(), 403)
+      payload.sendEnabled = true
     }
     const version = (body as { version?: unknown }).version
     if (["review", "queue", "cancel"].includes(operation) && (typeof version !== "number" || !Number.isInteger(version) || version < 1)) {

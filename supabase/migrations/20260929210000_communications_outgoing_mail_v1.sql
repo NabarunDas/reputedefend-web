@@ -3,6 +3,129 @@ BEGIN;
 -- Step 11: reviewed outbound communications, templates, delivery events, SEND_EMAIL.
 -- Does not reinterpret legacy communications.status SENT as inbox delivery.
 
+ALTER TABLE public.customer_actions DROP CONSTRAINT IF EXISTS customer_actions_kind_check;
+ALTER TABLE public.customer_actions
+  ADD CONSTRAINT customer_actions_kind_check
+  CHECK (kind IN ('AGREEMENT_ACCEPTANCE','AUTHORIZATION_REVOCATION','CASE_ACCESS','COMMUNICATION_ACCESS'));
+
+ALTER TABLE public.customer_actions DROP CONSTRAINT IF EXISTS customer_actions_case_access_scope_check;
+ALTER TABLE public.customer_actions
+  ADD CONSTRAINT customer_actions_case_access_scope_check
+  CHECK (
+    kind NOT IN ('CASE_ACCESS','COMMUNICATION_ACCESS')
+    OR (
+      agreement_version_id IS NULL
+      AND authorization_id IS NULL
+      AND case_id IS NOT NULL
+      AND customer_id IS NOT NULL
+      AND business_id IS NOT NULL
+    )
+  );
+
+CREATE OR REPLACE FUNCTION admin_private.validate_customer_action_scope_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE v public.agreement_versions; auth public.authorization_records; c public.customers; cs public.cases;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT * INTO c FROM public.customers WHERE id = NEW.customer_id;
+    IF c.id IS NULL OR lower(NEW.expected_email_snapshot) IS DISTINCT FROM lower(c.email) THEN
+      RAISE EXCEPTION 'Customer action email snapshot does not match the current customer email';
+    END IF;
+  END IF;
+  IF NEW.kind = 'AGREEMENT_ACCEPTANCE' THEN
+    IF NEW.agreement_version_id IS NULL OR NEW.authorization_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Agreement acceptance actions require an agreement version and no authorisation';
+    END IF;
+    SELECT * INTO v FROM public.agreement_versions WHERE id = NEW.agreement_version_id;
+    IF v.id IS NULL
+      OR v.case_id IS DISTINCT FROM NEW.case_id
+      OR v.customer_id IS DISTINCT FROM NEW.customer_id
+      OR v.business_id IS DISTINCT FROM NEW.business_id
+      OR v.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Customer action does not match the referenced agreement'; END IF;
+  ELSIF NEW.kind = 'AUTHORIZATION_REVOCATION' THEN
+    IF NEW.authorization_id IS NULL OR NEW.agreement_version_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Authorisation revocation actions require an authorisation and no agreement version';
+    END IF;
+    SELECT * INTO auth FROM public.authorization_records WHERE id = NEW.authorization_id;
+    IF auth.id IS NULL
+      OR auth.case_id IS DISTINCT FROM NEW.case_id
+      OR auth.customer_id IS DISTINCT FROM NEW.customer_id
+      OR auth.business_id IS DISTINCT FROM NEW.business_id
+      OR auth.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Customer action does not match the referenced authorisation'; END IF;
+  ELSIF NEW.kind IN ('CASE_ACCESS','COMMUNICATION_ACCESS') THEN
+    IF NEW.agreement_version_id IS NOT NULL OR NEW.authorization_id IS NOT NULL OR NEW.case_id IS NULL THEN
+      RAISE EXCEPTION 'Case access actions require a case and no agreement or authorisation';
+    END IF;
+    SELECT * INTO cs FROM public.cases WHERE id = NEW.case_id;
+    IF cs.id IS NULL
+      OR cs.customer_id IS DISTINCT FROM NEW.customer_id
+      OR cs.business_id IS DISTINCT FROM NEW.business_id
+      OR cs.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Customer action does not match the referenced case'; END IF;
+    IF TG_OP = 'INSERT' AND cs.status IN ('CLOSED','CANCELLED') THEN
+      RAISE EXCEPTION 'Case access cannot be created for a closed case';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'Invalid customer action kind';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+CREATE OR REPLACE FUNCTION admin_private.revoke_case_access_action_v1(p_action uuid, p_reason text, p_details jsonb)
+RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions; reason text; details jsonb;
+BEGIN
+  reason := btrim(coalesce(p_reason, ''));
+  IF p_action IS NULL OR length(reason) NOT BETWEEN 10 AND 2000 THEN RETURN false; END IF;
+  SELECT * INTO a FROM public.customer_actions
+    WHERE id = p_action AND kind IN ('CASE_ACCESS','COMMUNICATION_ACCESS') AND status = 'OPEN'
+    FOR UPDATE;
+  IF a.id IS NULL THEN RETURN false; END IF;
+  UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id RETURNING * INTO a;
+  details := coalesce(p_details, '{}'::jsonb) || jsonb_build_object('reason', left(reason, 200), 'kind', a.kind);
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED', details);
+  DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
+  DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  RETURN true;
+END; $$;
+
+CREATE OR REPLACE FUNCTION admin_private.revoke_case_access_on_case_status_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions; reason text; source text;
+BEGIN
+  IF NEW.status = 'CANCELLED' THEN
+    source := 'CASE_CANCELLED';
+    reason := 'The case was cancelled.';
+  ELSE
+    source := 'CASE_CLOSED';
+    reason := 'The case was closed.';
+  END IF;
+  FOR a IN
+    SELECT * FROM public.customer_actions
+    WHERE case_id = NEW.id AND kind IN ('CASE_ACCESS','COMMUNICATION_ACCESS') AND status = 'OPEN'
+    FOR UPDATE
+  LOOP
+    PERFORM admin_private.revoke_case_access_action_v1(a.id, reason, jsonb_build_object('source', source));
+  END LOOP;
+  RETURN NEW;
+END; $$;
+
+CREATE OR REPLACE FUNCTION admin_private.customer_case_access_action_v1(p_token_hash text)
+RETURNS public.customer_actions
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE sess admin_private.customer_action_sessions; a public.customer_actions;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$' THEN RETURN NULL; END IF;
+  SELECT * INTO sess FROM admin_private.customer_action_sessions WHERE token_hash = p_token_hash AND expires_at > now();
+  IF sess.token_hash IS NULL THEN RETURN NULL; END IF;
+  SELECT * INTO a FROM public.customer_actions WHERE id = sess.action_id;
+  IF a.id IS NULL OR a.kind NOT IN ('CASE_ACCESS','COMMUNICATION_ACCESS') OR NOT admin_private.customer_action_eligible_v1(a) THEN RETURN NULL; END IF;
+  RETURN a;
+END; $$;
+
 ALTER TABLE admin_private.job_outbox DROP CONSTRAINT job_outbox_topic_check;
 ALTER TABLE admin_private.job_outbox ADD CONSTRAINT job_outbox_topic_check
   CHECK (topic IN ('SYSTEM_HEALTH_PROBE', 'SEND_EMAIL'));
@@ -40,6 +163,8 @@ ALTER TABLE public.communications
   ADD COLUMN reviewer_id uuid,
   ADD COLUMN reviewed_at timestamptz,
   ADD COLUMN queued_at timestamptz,
+  ADD COLUMN first_provider_attempt_at timestamptz,
+  ADD COLUMN delivery_occurred_at timestamptz,
   ADD COLUMN provider_accepted_at timestamptz,
   ADD COLUMN delivered_at timestamptz,
   ADD COLUMN failed_at timestamptz,
@@ -53,7 +178,7 @@ ALTER TABLE public.communications
   ),
   ADD CONSTRAINT communications_delivery_check CHECK (
     delivery_status IS NULL OR delivery_status IN (
-      'NONE', 'PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
+      'NONE', 'ACCEPTANCE_UNKNOWN', 'PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
     )
   ),
   ADD CONSTRAINT communications_template_check CHECK (
@@ -66,6 +191,9 @@ CREATE INDEX communications_lifecycle_idx ON public.communications (lifecycle, u
   WHERE lifecycle IS NOT NULL;
 CREATE INDEX communications_delivery_idx ON public.communications (delivery_status, updated_at DESC, id DESC)
   WHERE delivery_status IS NOT NULL;
+CREATE UNIQUE INDEX communications_provider_message_uidx
+  ON public.communications (provider, provider_message_id)
+  WHERE lifecycle IS NOT NULL AND provider_message_id IS NOT NULL;
 
 CREATE TABLE admin_private.communication_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -111,7 +239,7 @@ CREATE TABLE admin_private.communication_delivery_events (
   provider_message_id text,
   summary text NOT NULL,
   CONSTRAINT communication_delivery_events_type_check CHECK (event_type IN (
-    'QUEUED', 'PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED',
+    'QUEUED', 'PROVIDER_ACCEPTED', 'PROVIDER_ACCEPTANCE_UNKNOWN', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED',
     'PROVIDER_REJECTED', 'RETRYABLE_FAILURE', 'PERMANENT_FAILURE'
   )),
   CONSTRAINT communication_delivery_events_summary_check CHECK (length(btrim(summary)) BETWEEN 1 AND 500)
@@ -130,6 +258,7 @@ CREATE TABLE admin_private.communication_webhook_events (
   communication_id uuid REFERENCES public.communications(id) ON DELETE RESTRICT,
   applied boolean NOT NULL DEFAULT false,
   received_at timestamptz NOT NULL DEFAULT now(),
+  provider_occurred_at timestamptz,
   CONSTRAINT communication_webhook_events_provider_check CHECK (provider IN ('resend')),
   CONSTRAINT communication_webhook_events_id_check CHECK (length(btrim(provider_event_id)) BETWEEN 8 AND 200),
   CONSTRAINT communication_webhook_events_type_check CHECK (length(btrim(event_type)) BETWEEN 1 AND 80),
@@ -204,17 +333,19 @@ REVOKE ALL ON FUNCTION admin_private.render_template_v1(text, jsonb) FROM PUBLIC
 
 CREATE FUNCTION admin_private.append_delivery_event_v1(
   p_communication uuid, p_type text, p_summary text, p_provider text DEFAULT NULL,
-  p_provider_event text DEFAULT NULL, p_provider_message text DEFAULT NULL
+  p_provider_event text DEFAULT NULL, p_provider_message text DEFAULT NULL,
+  p_occurred_at timestamptz DEFAULT NULL
 ) RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   INSERT INTO admin_private.communication_delivery_events(
-    communication_id, event_type, summary, provider, provider_event_id, provider_message_id
+    communication_id, event_type, occurred_at, summary, provider, provider_event_id, provider_message_id
   ) VALUES (
-    p_communication, p_type, left(btrim(p_summary), 500), nullif(btrim(coalesce(p_provider, '')), ''),
+    p_communication, p_type, coalesce(p_occurred_at, now()), left(btrim(p_summary), 500),
+    nullif(btrim(coalesce(p_provider, '')), ''),
     nullif(btrim(coalesce(p_provider_event, '')), ''), nullif(btrim(coalesce(p_provider_message, '')), '')
   );
 END; $$;
-REVOKE ALL ON FUNCTION admin_private.append_delivery_event_v1(uuid, text, text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.append_delivery_event_v1(uuid, text, text, text, text, text, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION admin_private.suppress_email_v1(p_address text, p_reason text, p_communication uuid)
 RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
@@ -228,23 +359,41 @@ BEGIN
 END; $$;
 REVOKE ALL ON FUNCTION admin_private.suppress_email_v1(text, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION public.communication_load_send_v1(p_communication uuid)
+CREATE FUNCTION public.communication_load_send_v1(p_communication uuid, p_content_version integer)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row public.communications;
+DECLARE row public.communications; origin text; upload text;
 BEGIN
-  IF p_communication IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF p_communication IS NULL OR p_content_version IS NULL OR p_content_version < 1 THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
   SELECT * INTO row FROM public.communications WHERE id = p_communication;
   IF row.id IS NULL OR row.lifecycle IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF row.lifecycle <> 'QUEUED' OR row.content_locked IS NOT TRUE OR row.content_version <> p_content_version
+    OR btrim(coalesce(row.recipient, '')) = '' OR btrim(coalesce(row.subject, '')) = ''
+    OR btrim(coalesce(row.body_text, '')) = ''
+  THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF row.template_key = 'EVIDENCE_REQUEST' THEN
+    upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/action/[0-9a-f-]{36}');
+    IF upload IS NULL OR position('#t=' in row.body_text) > 0 OR position('#t=' in coalesce(row.body_html, '')) > 0 THEN
+      RETURN jsonb_build_object('status', 'unavailable');
+    END IF;
+    origin := regexp_replace(upload, '/action/.*$', '');
+  END IF;
   RETURN jsonb_build_object(
     'status', 'success',
     'communicationId', row.id,
     'lifecycle', row.lifecycle,
     'deliveryStatus', coalesce(row.delivery_status, 'NONE'),
     'contentVersion', row.content_version,
+    'contentLocked', row.content_locked,
     'recipient', row.recipient,
     'subject', row.subject,
     'bodyText', row.body_text,
     'bodyHtml', row.body_html,
+    'templateKey', row.template_key,
+    'customerActionId', row.customer_action_id,
+    'customerOrigin', origin,
+    'firstProviderAttemptAt', row.first_provider_attempt_at,
     'suppressed', EXISTS (
       SELECT 1 FROM admin_private.email_suppressions s
       WHERE s.address_normalized = admin_private.normalize_email_v1(row.recipient)
@@ -252,10 +401,92 @@ BEGIN
   );
 END; $$;
 
+CREATE FUNCTION admin_private.communication_apply_matched_event_v1(
+  p_communication uuid, p_event_name text, p_provider text, p_event_id text, p_message text, p_occurred_at timestamptz
+) RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE row public.communications; next_status text; summary text;
+BEGIN
+  IF p_occurred_at IS NULL THEN RETURN false; END IF;
+  SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
+  IF row.id IS NULL THEN RETURN false; END IF;
+  next_status := CASE p_event_name
+    WHEN 'email.delivered' THEN 'DELIVERED'
+    WHEN 'email.bounced' THEN 'BOUNCED'
+    WHEN 'email.complained' THEN 'COMPLAINED'
+    WHEN 'email.suppressed' THEN 'SUPPRESSED'
+    ELSE NULL
+  END;
+  IF next_status IS NULL THEN RETURN false; END IF;
+  IF row.delivery_status IN ('DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
+    IF row.delivery_occurred_at IS NOT NULL AND p_occurred_at < row.delivery_occurred_at THEN
+      RETURN false;
+    END IF;
+    IF next_status = 'DELIVERED' AND row.delivery_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
+      RETURN false;
+    END IF;
+  END IF;
+  IF next_status = 'DELIVERED' AND row.delivery_status = 'DELIVERED' THEN
+    RETURN true;
+  END IF;
+  IF p_event_name = 'email.delivered' THEN
+    UPDATE public.communications
+      SET delivery_status = 'DELIVERED', delivered_at = coalesce(delivered_at, p_occurred_at),
+          delivery_occurred_at = p_occurred_at, error_message = NULL,
+          updated_at = now(), record_version = record_version + 1
+      WHERE id = row.id AND delivery_status IS DISTINCT FROM 'DELIVERED';
+    IF FOUND THEN
+      PERFORM admin_private.append_delivery_event_v1(row.id, 'DELIVERED', 'Provider reported delivery', p_provider, p_event_id, p_message, p_occurred_at);
+    END IF;
+    RETURN true;
+  END IF;
+  summary := CASE next_status
+    WHEN 'BOUNCED' THEN 'Recipient address bounced'
+    WHEN 'COMPLAINED' THEN 'Recipient marked the message as spam'
+    ELSE 'Recipient is suppressed'
+  END;
+  UPDATE public.communications
+    SET delivery_status = next_status,
+        status = 'FAILED',
+        failed_at = coalesce(failed_at, p_occurred_at),
+        delivery_occurred_at = p_occurred_at,
+        error_message = summary,
+        updated_at = now(),
+        record_version = record_version + 1
+    WHERE id = row.id;
+  PERFORM admin_private.append_delivery_event_v1(row.id, next_status, 'Provider reported ' || lower(next_status), p_provider, p_event_id, p_message, p_occurred_at);
+  PERFORM admin_private.suppress_email_v1(row.recipient, next_status, row.id);
+  RETURN true;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.communication_apply_matched_event_v1(uuid, text, text, text, text, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.communication_reconcile_webhooks_v1(
+  p_communication uuid, p_provider text, p_message text
+) RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE ev admin_private.communication_webhook_events; applied_now boolean;
+BEGIN
+  IF p_communication IS NULL OR p_message IS NULL OR p_message = '' THEN RETURN; END IF;
+  FOR ev IN
+    SELECT * FROM admin_private.communication_webhook_events
+    WHERE communication_webhook_events.provider = p_provider
+      AND communication_webhook_events.provider_message_id = p_message
+      AND communication_webhook_events.applied = false
+    ORDER BY communication_webhook_events.provider_occurred_at ASC NULLS LAST,
+      communication_webhook_events.received_at ASC, communication_webhook_events.id ASC
+  LOOP
+    applied_now := admin_private.communication_apply_matched_event_v1(
+      p_communication, ev.event_type, ev.provider, ev.provider_event_id, ev.provider_message_id, ev.provider_occurred_at
+    );
+    UPDATE admin_private.communication_webhook_events
+      SET communication_id = p_communication, applied = applied_now OR applied
+      WHERE id = ev.id;
+  END LOOP;
+END; $$;
+REVOKE ALL ON FUNCTION admin_private.communication_reconcile_webhooks_v1(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION public.communication_mark_provider_accepted_v1(
   p_communication uuid, p_provider text, p_provider_message_id text, p_idempotency_key text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row public.communications; provider_name text; message text;
+DECLARE row public.communications; provider_name text; message text; ev admin_private.communication_webhook_events;
 BEGIN
   IF p_communication IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   provider_name := left(btrim(coalesce(p_provider, 'resend')), 40);
@@ -267,8 +498,17 @@ BEGIN
   THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
   SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
   IF row.id IS NULL OR row.lifecycle <> 'QUEUED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-  IF row.delivery_status IN ('PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED') THEN
+  IF row.delivery_status IN ('DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED') THEN
+    IF row.provider_message_id IS NULL THEN
+      UPDATE public.communications SET provider = provider_name, provider_message_id = message, updated_at = now()
+        WHERE id = row.id AND provider_message_id IS NULL;
+    END IF;
+    PERFORM admin_private.communication_reconcile_webhooks_v1(row.id, provider_name, message);
     RETURN jsonb_build_object('status', 'success', 'deliveryStatus', row.delivery_status, 'replay', true);
+  END IF;
+  IF row.delivery_status = 'PROVIDER_ACCEPTED' THEN
+    PERFORM admin_private.communication_reconcile_webhooks_v1(row.id, provider_name, coalesce(row.provider_message_id, message));
+    RETURN jsonb_build_object('status', 'success', 'deliveryStatus', 'PROVIDER_ACCEPTED', 'replay', true);
   END IF;
   UPDATE public.communications
     SET status = 'SENT',
@@ -276,13 +516,45 @@ BEGIN
         provider = provider_name,
         provider_message_id = message,
         provider_accepted_at = now(),
+        first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
+        delivery_occurred_at = coalesce(delivery_occurred_at, now()),
         sent_at = coalesce(sent_at, now()),
         error_message = NULL,
         updated_at = now(),
         record_version = row.record_version + 1
     WHERE id = row.id;
-  PERFORM admin_private.append_delivery_event_v1(row.id, 'PROVIDER_ACCEPTED', 'Email provider accepted the message', provider_name, NULL, message);
-  RETURN jsonb_build_object('status', 'success', 'deliveryStatus', 'PROVIDER_ACCEPTED', 'replay', false);
+  PERFORM admin_private.append_delivery_event_v1(row.id, 'PROVIDER_ACCEPTED', 'Email provider accepted the message', provider_name, NULL, message, now());
+  PERFORM admin_private.communication_reconcile_webhooks_v1(row.id, provider_name, message);
+  SELECT * INTO row FROM public.communications WHERE id = row.id;
+  RETURN jsonb_build_object('status', 'success', 'deliveryStatus', row.delivery_status, 'replay', false);
+END; $$;
+
+CREATE FUNCTION public.communication_mark_acceptance_unknown_v1(
+  p_communication uuid, p_idempotency_key text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE row public.communications;
+BEGIN
+  IF p_communication IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
+  IF row.id IS NULL OR row.lifecycle <> 'QUEUED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF p_idempotency_key IS NULL OR p_idempotency_key <> ('send-email:' || row.id::text || ':v' || row.content_version::text)
+  THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF row.delivery_status IN ('PROVIDER_ACCEPTED', 'DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED') THEN
+    RETURN jsonb_build_object('status', 'success', 'deliveryStatus', row.delivery_status);
+  END IF;
+  UPDATE public.communications
+    SET delivery_status = 'ACCEPTANCE_UNKNOWN',
+        first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
+        error_message = 'Provider acceptance is unknown. Check the email provider before sending again.',
+        updated_at = now(),
+        record_version = row.record_version + 1
+    WHERE id = row.id AND coalesce(delivery_status, 'NONE') IN ('NONE', 'ACCEPTANCE_UNKNOWN', 'FAILED');
+  PERFORM admin_private.append_delivery_event_v1(
+    row.id, 'PROVIDER_ACCEPTANCE_UNKNOWN',
+    'Provider acceptance is unknown. The same idempotency key may be retried only inside the safety window.',
+    'resend', NULL, NULL, now()
+  );
+  RETURN jsonb_build_object('status', 'success', 'deliveryStatus', 'ACCEPTANCE_UNKNOWN');
 END; $$;
 
 CREATE FUNCTION public.communication_mark_provider_rejected_v1(
@@ -317,10 +589,11 @@ BEGIN
 END; $$;
 
 CREATE FUNCTION public.communication_apply_provider_event_v1(
-  p_provider text, p_provider_event_id text, p_event_type text, p_provider_message_id text
+  p_provider text, p_provider_event_id text, p_event_type text, p_provider_message_id text,
+  p_occurred_at timestamptz DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE existing admin_private.communication_webhook_events; row public.communications;
-  provider_name text; event_id text; event_name text; message text; next_status text; apply boolean := false;
+  provider_name text; event_id text; event_name text; message text; apply boolean := false;
 BEGIN
   provider_name := lower(btrim(coalesce(p_provider, '')));
   event_id := btrim(coalesce(p_provider_event_id, ''));
@@ -334,45 +607,15 @@ BEGIN
     RETURN jsonb_build_object('status', 'success', 'duplicate', true, 'applied', existing.applied);
   END IF;
   IF message IS NOT NULL THEN
-    SELECT * INTO row FROM public.communications WHERE provider_message_id = message FOR UPDATE;
+    SELECT * INTO row FROM public.communications
+      WHERE provider = provider_name AND provider_message_id = message AND lifecycle IS NOT NULL
+      FOR UPDATE;
   END IF;
-  next_status := CASE event_name
-    WHEN 'email.delivered' THEN 'DELIVERED'
-    WHEN 'email.bounced' THEN 'BOUNCED'
-    WHEN 'email.complained' THEN 'COMPLAINED'
-    WHEN 'email.suppressed' THEN 'SUPPRESSED'
-    ELSE NULL
-  END;
-  apply := next_status IS NOT NULL AND row.id IS NOT NULL;
-  IF apply THEN
-    IF next_status = 'DELIVERED' AND row.delivery_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED') THEN
-      apply := false;
-    ELSIF next_status = 'DELIVERED' THEN
-      UPDATE public.communications
-        SET delivery_status = 'DELIVERED', delivered_at = coalesce(delivered_at, now()), error_message = NULL,
-            updated_at = now(), record_version = record_version + 1
-        WHERE id = row.id AND delivery_status IS DISTINCT FROM 'DELIVERED';
-      PERFORM admin_private.append_delivery_event_v1(row.id, 'DELIVERED', 'Provider reported delivery', provider_name, event_id, message);
-    ELSIF next_status IN ('BOUNCED', 'COMPLAINED', 'SUPPRESSED') THEN
-      UPDATE public.communications
-        SET delivery_status = next_status,
-            status = 'FAILED',
-            failed_at = coalesce(failed_at, now()),
-            error_message = CASE next_status
-              WHEN 'BOUNCED' THEN 'Recipient address bounced'
-              WHEN 'COMPLAINED' THEN 'Recipient marked the message as spam'
-              ELSE 'Recipient is suppressed'
-            END,
-            updated_at = now(),
-            record_version = record_version + 1
-        WHERE id = row.id;
-      PERFORM admin_private.append_delivery_event_v1(row.id, next_status, 'Provider reported ' || lower(next_status), provider_name, event_id, message);
-      PERFORM admin_private.suppress_email_v1(row.recipient, next_status, row.id);
-    END IF;
-  END IF;
+  apply := row.id IS NOT NULL AND p_occurred_at IS NOT NULL
+    AND admin_private.communication_apply_matched_event_v1(row.id, event_name, provider_name, event_id, message, p_occurred_at);
   INSERT INTO admin_private.communication_webhook_events(
-    provider, provider_event_id, event_type, provider_message_id, communication_id, applied
-  ) VALUES (provider_name, event_id, event_name, message, row.id, apply);
+    provider, provider_event_id, event_type, provider_message_id, communication_id, applied, provider_occurred_at
+  ) VALUES (provider_name, event_id, event_name, message, row.id, apply, p_occurred_at);
   RETURN jsonb_build_object('status', 'success', 'duplicate', false, 'applied', apply);
 END; $$;
 
@@ -403,6 +646,7 @@ BEGIN
     'draftedAt', c.created_at,
     'reviewedAt', c.reviewed_at,
     'queuedAt', c.queued_at,
+    'firstProviderAttemptAt', c.first_provider_attempt_at,
     'providerAcceptedAt', c.provider_accepted_at,
     'deliveredAt', c.delivered_at,
     'failedAt', c.failed_at,
@@ -490,6 +734,8 @@ BEGIN
         'caseId', cs.id,
         'evidenceRequestId', row.evidence_request_id,
         'customerOrigin', p_payload->>'customerOrigin',
+        'actionId', p_payload->>'actionId',
+        'secretHash', p_payload->>'secretHash',
         'fact', p_payload->>'fact',
         'effect', p_payload->>'effect',
         'nextStep', p_payload->>'nextStep'
@@ -508,14 +754,20 @@ BEGIN
       SELECT * INTO req FROM public.evidence_requests
         WHERE id = NULLIF(p_payload->>'evidenceRequestId', '')::uuid AND case_id = cs.id;
       IF req.id IS NULL OR req.status <> 'OPEN' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-      SELECT * INTO action FROM public.customer_actions
-        WHERE case_id = cs.id AND kind = 'CASE_ACCESS' AND status = 'OPEN' AND expires_at > now()
-        ORDER BY created_at DESC, id DESC LIMIT 1;
       origin := btrim(coalesce(p_payload->>'customerOrigin', ''));
-      IF action.id IS NULL OR origin !~ '^https://[A-Za-z0-9.-]+$' THEN
-        RETURN jsonb_build_object('status', 'denied');
-      END IF;
+      IF origin !~ '^https://[A-Za-z0-9.-]+$'
+        OR NULLIF(p_payload->>'actionId', '')::uuid IS NULL
+        OR coalesce(p_payload->>'secretHash', '') !~ '^[a-f0-9]{64}$'
+      THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      INSERT INTO public.customer_actions(
+        id, customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by
+      ) VALUES (
+        (p_payload->>'actionId')::uuid, cs.customer_id, cs.business_id, cs.location_id, cs.id,
+        'COMMUNICATION_ACCESS', p_payload->>'secretHash', admin_private.normalize_email_v1(verified),
+        now() + interval '14 days', actor
+      ) RETURNING * INTO action;
       upload := origin || '/action/' || action.id::text;
+      IF position('#t=' in upload) > 0 THEN RETURN jsonb_build_object('status', 'denied'); END IF;
       values := values || jsonb_build_object('specific_document', req.title, 'upload_url', upload);
     ELSE
       IF length(btrim(coalesce(p_payload->>'fact', ''))) NOT BETWEEN 10 AND 400
@@ -598,6 +850,9 @@ BEGIN
     RETURN result;
   END IF;
 
+  IF op = 'queue' AND coalesce((p_payload->>'sendEnabled')::boolean, false) IS NOT TRUE THEN
+    RETURN jsonb_build_object('status', 'denied');
+  END IF;
   IF row.lifecycle <> 'REVIEWED' OR row.content_locked IS NOT TRUE THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   IF coalesce(p_payload->>'recipient', row.recipient) IS DISTINCT FROM row.recipient
     OR coalesce(p_payload->>'subject', row.subject) IS DISTINCT FROM row.subject
@@ -609,7 +864,7 @@ BEGIN
   ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   IF row.template_key = 'EVIDENCE_REQUEST' THEN
     SELECT * INTO action FROM public.customer_actions
-      WHERE id = row.customer_action_id AND kind = 'CASE_ACCESS' AND status = 'OPEN' AND expires_at > now();
+      WHERE id = row.customer_action_id AND kind = 'COMMUNICATION_ACCESS' AND status = 'OPEN' AND expires_at > now();
     SELECT * INTO req FROM public.evidence_requests WHERE id = row.evidence_request_id AND status = 'OPEN';
     IF action.id IS NULL OR req.id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   END IF;
@@ -724,19 +979,21 @@ BEGIN
   RETURN result;
 END; $$;
 
-REVOKE ALL ON FUNCTION public.communication_load_send_v1(uuid),
+REVOKE ALL ON FUNCTION public.communication_load_send_v1(uuid, integer),
   public.communication_mark_provider_accepted_v1(uuid, text, text, text),
+  public.communication_mark_acceptance_unknown_v1(uuid, text),
   public.communication_mark_provider_rejected_v1(uuid, text, boolean, text),
-  public.communication_apply_provider_event_v1(text, text, text, text),
+  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz),
   public.admin_communication_list_v1(text, uuid),
   public.admin_communication_command_v1(text, uuid, text, jsonb, integer),
   public.admin_job_health_v1(text),
   public.admin_audit_list_v1(text, bigint, text, text)
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.communication_load_send_v1(uuid),
+GRANT EXECUTE ON FUNCTION public.communication_load_send_v1(uuid, integer),
   public.communication_mark_provider_accepted_v1(uuid, text, text, text),
+  public.communication_mark_acceptance_unknown_v1(uuid, text),
   public.communication_mark_provider_rejected_v1(uuid, text, boolean, text),
-  public.communication_apply_provider_event_v1(text, text, text, text),
+  public.communication_apply_provider_event_v1(text, text, text, text, timestamptz),
   public.admin_communication_list_v1(text, uuid),
   public.admin_communication_command_v1(text, uuid, text, jsonb, integer),
   public.admin_job_health_v1(text),

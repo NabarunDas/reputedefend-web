@@ -39,6 +39,7 @@ describe("communications page", () => {
         draftedAt: "2026-09-29T12:00:00.000Z",
         reviewedAt: "2026-09-29T12:01:00.000Z",
         queuedAt: "2026-09-29T12:02:00.000Z",
+        firstProviderAttemptAt: "2026-09-29T12:03:00.000Z",
         providerAcceptedAt: "2026-09-29T12:03:00.000Z",
         deliveredAt: null,
         failedAt: null,
@@ -51,6 +52,7 @@ describe("communications page", () => {
     expect(screen.getByRole("heading", { name: "Communications" })).toBeTruthy()
     expect(screen.getByText("Accepted by email provider")).toBeTruthy()
     expect(screen.queryByText("Delivered")).toBeNull()
+    expect(screen.getByText(/not enabled yet/)).toBeTruthy()
     expect(screen.getByText(/operationally acceptable cadence/)).toBeTruthy()
     expect(screen.getByText("Draft communication")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/RESEND_API_KEY|webhook|raw payload|svix/i)

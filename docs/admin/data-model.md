@@ -12,7 +12,7 @@ Step 9B2 adds customer-upload provenance on `case_document_versions` (`submissio
 
 Step 10 adds `admin_private.job_outbox`, `admin_private.jobs`, `admin_private.job_attempts`, `admin_private.job_worker_heartbeats` and `admin_private.job_command_receipts`, plus service-role promote/claim/complete/fail/heartbeat RPCs and Admin probe/replay/health RPCs. Jobs constrain `attempts <= max_attempts`. Heartbeats store `expected_interval_seconds` and `late_after_seconds` so Admin HEALTHY/LATE uses the worker cadence, not a 10-minute window. The applied migration is `20260929183214_jobs_outbox_operational_health_v1.sql`. Step 10 is COMPLETE / LIVE-TESTED.
 
-Step 11 adds reviewed outbound columns on `public.communications` without rewriting legacy `SENT` as delivered, plus `admin_private.communication_templates`, `communication_delivery_events`, `communication_webhook_events`, `email_suppressions` and `communication_command_receipts`. Job/outbox types gain `SEND_EMAIL`. The additive migration is `20260929210000_communications_outgoing_mail_v1.sql`. It is not remotely applied.
+Step 11 adds reviewed outbound columns on `public.communications` without rewriting legacy `SENT` as delivered, plus `admin_private.communication_templates`, `communication_delivery_events`, `communication_webhook_events`, `email_suppressions` and `communication_command_receipts`. Delivery includes `ACCEPTANCE_UNKNOWN`. Webhook rows store `provider_occurred_at`. Step 11 communications uniquely index `(provider, provider_message_id)` when both are present. Job/outbox types gain `SEND_EMAIL`. Dedicated `COMMUNICATION_ACCESS` customer actions hold only a SHA-256 capability hash. The additive migration is `20260929210000_communications_outgoing_mail_v1.sql`. It is not remotely applied.
 
 ## Relationships
 
@@ -27,7 +27,7 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS; secret_hash only; expired OPEN CASE_ACCESS is terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS; secret_hash only; expired OPEN CASE_ACCESS is terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)

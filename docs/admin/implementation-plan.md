@@ -439,7 +439,7 @@ Acceptance: worker crash after provider call does not duplicate side effects; co
 ## Step 11 Communications ledger and outgoing mail
 Deliver: reviewed communications-context migration, templates, draft/review/send, provider acceptance/delivery events, bounce handling and resend rules. Preserve existing intake receipt semantics.
 
-As built in this source PR: additive `20260929210000_communications_outgoing_mail_v1.sql`, Admin `/communications`, `SEND_EMAIL` outbox/jobs, Resend adapter and unsigned-closed webhook route. Live sending is blocked until the worker cadence is operational. Marketing enquiry intake is unchanged. The migration is not remotely applied. The webhook is not configured. `JOB_PROVIDER_MODE` stays disabled. No real customer email is sent. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+As built in this source PR: additive `20260929210000_communications_outgoing_mail_v1.sql`, Admin `/communications`, `SEND_EMAIL` outbox/jobs, Resend SDK idempotency on `emails.send(payload, { idempotencyKey })`, official webhook verification, `ACCEPTANCE_UNKNOWN` with a 23-hour retry window, HMAC `COMMUNICATION_ACCESS` upload links rematerialised only in memory, and a fail-closed `COMMUNICATIONS_SEND_ENABLED` gate. Live sending is blocked until the worker cadence is operational. Marketing enquiry intake is unchanged. The migration is not remotely applied. The webhook is not configured. `JOB_PROVIDER_MODE` stays disabled. No real customer email is sent. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
 
 Acceptance: business changes survive email failure; accepted is not displayed as delivered; duplicate webhooks do not resend; historical recipients remain unchanged. Critical customer copy follows section 19. Depends on 9–10.
 

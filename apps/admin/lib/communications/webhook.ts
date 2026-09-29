@@ -1,6 +1,6 @@
 import "server-only"
-import { createHmac, timingSafeEqual } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
+import { Resend } from "resend"
 import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
 
@@ -13,18 +13,27 @@ export function webhookSecret(env: Record<string, string | undefined> = process.
   return raw
 }
 
+export function parseProviderOccurredAt(value: unknown, receivedAt = Date.now()): string | null {
+  if (typeof value !== "string" || !value.trim()) return null
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return null
+  if (parsed > receivedAt + 60 * 60 * 1000) return null
+  if (parsed < receivedAt - 30 * 24 * 60 * 60 * 1000) return null
+  return new Date(parsed).toISOString()
+}
+
 export function verifyResendSignature(rawBody: string, id: string, timestamp: string, signatureHeader: string, secret: string): boolean {
-  if (!id || !timestamp || !signatureHeader) return false
-  const age = Math.abs(Date.now() - Number(timestamp) * 1000)
-  if (!Number.isFinite(age) || age > 5 * 60 * 1000) return false
-  const secretBytes = secret.startsWith("whsec_") ? Buffer.from(secret.slice(6), "base64") : Buffer.from(secret)
-  const expected = createHmac("sha256", secretBytes).update(`${id}.${timestamp}.${rawBody}`).digest("base64")
-  const candidates = signatureHeader.split(" ").map(part => part.replace(/^v1,/, "").trim()).filter(Boolean)
-  return candidates.some(candidate => {
-    const provided = Buffer.from(candidate)
-    const wanted = Buffer.from(expected)
-    return provided.length === wanted.length && timingSafeEqual(provided, wanted)
-  })
+  if (!id || !timestamp || !signatureHeader || !secret) return false
+  try {
+    new Resend("re_webhook_verify_only").webhooks.verify({
+      payload: rawBody,
+      webhookSecret: secret,
+      headers: { id, timestamp, signature: signatureHeader },
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function handleResendWebhook(request: NextRequest, env: Record<string, string | undefined> = process.env) {
@@ -45,16 +54,18 @@ export async function handleResendWebhook(request: NextRequest, env: Record<stri
   const timestamp = request.headers.get("svix-timestamp") || ""
   const signature = request.headers.get("svix-signature") || ""
   if (!verifyResendSignature(raw, id, timestamp, signature, secret)) return reply({ status: "unauthorized" }, 401)
-  let parsed: { type?: unknown; data?: { email_id?: unknown } }
-  try { parsed = JSON.parse(raw) as { type?: unknown; data?: { email_id?: unknown } } }
+  let parsed: { type?: unknown; created_at?: unknown; data?: { email_id?: unknown } }
+  try { parsed = JSON.parse(raw) as { type?: unknown; created_at?: unknown; data?: { email_id?: unknown } } }
   catch { return reply({ status: "invalid" }, 400) }
   const eventType = typeof parsed.type === "string" ? parsed.type : ""
   const messageId = typeof parsed.data?.email_id === "string" ? parsed.data.email_id : null
+  const occurredAt = parseProviderOccurredAt(parsed.created_at)
   const result = await backend().rpc<{ status?: string; duplicate?: boolean; applied?: boolean }>("communication_apply_provider_event_v1", {
     p_provider: "resend",
     p_provider_event_id: id,
     p_event_type: eventType || "unknown",
     p_provider_message_id: messageId,
+    p_occurred_at: occurredAt,
   })
   if (result?.status !== "success") return reply({ status: "error" }, 503)
   return reply({ status: "success", duplicate: result.duplicate === true })

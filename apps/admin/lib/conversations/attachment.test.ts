@@ -48,8 +48,8 @@ describe("inbound attachment helpers", () => {
         },
       }
     }
-    const fetchImpl = async (url: string) => {
-      expect(url).toBe("https://example.test/att_1")
+    const fetchImpl: typeof fetch = async input => {
+      expect(String(input)).toBe("https://example.test/att_1")
       return new Response(bytes, { status: 200, headers: { "content-length": String(bytes.byteLength) } })
     }
     const provider = createResendInboundAttachmentProvider("re_test", {

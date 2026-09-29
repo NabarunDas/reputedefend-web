@@ -1,6 +1,6 @@
 # Jobs, outbox and operational health — Step 10
 
-Source-only. The additive migration is `20260929180000_jobs_outbox_operational_health_v1.sql`. It is not remotely applied. `CRON_SECRET`, `JOB_WORKER_ENABLED` and `JOB_PROVIDER_MODE` are not configured by this PR. The production worker is not enabled. There are no live Resend, Stripe or Google adapters.
+The additive migration is applied remotely as `20260929183214_jobs_outbox_operational_health_v1.sql`. Production worker configuration is live with `JOB_WORKER_ENABLED=true`, `JOB_PROVIDER_MODE=disabled`, `JOB_WORKER_CADENCE_SECONDS=86400`, and a protected `CRON_SECRET`. The Hobby-compatible daily Cron has been manually invoked once for live acceptance. No live Resend, Stripe or Google adapters are enabled.
 
 Step 9 is LIVE-TESTED COMPLETE, including `authorizationReady=true` on PR-26-6CKR5M, published-pack View/Download, and customer evidence upload → GuardDuty → Admin accept → fulfil. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
@@ -59,7 +59,7 @@ Do not make that production-plan change now. Queue, lease, retry and dead-letter
 
 The route requires `Authorization: Bearer ${CRON_SECRET}`. Missing `CRON_SECRET` fails closed. Preview/local never process jobs. Production processes jobs only when `JOB_WORKER_ENABLED=true`. `JOB_WORKER_CADENCE_SECONDS` is server-only, must be a bounded integer, and is never read by browser code.
 
-Do not set those environment variables from this PR. Do not activate production Cron from Cursor.
+Production worker variables are now configured. The worker has been live-tested with a `SYSTEM_HEALTH_PROBE`; automatic scheduling remains daily on the current Hobby-compatible Cron.
 
 ## Provider mode
 

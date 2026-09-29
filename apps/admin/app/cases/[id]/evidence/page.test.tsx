@@ -133,4 +133,17 @@ describe("case evidence workspace", () => {
     expect(screen.getByRole("button", { name: "Download" })).toBeDisabled()
     expect(screen.queryByRole("button", { name: "Accept version" })).toBeNull()
   })
+  it("labels customer-submitted evidence without adding review shortcuts", async () => {
+    getEvidenceCase.mockResolvedValue({
+      caseId, reference: "PR-1", requests: [], documents: [{
+        id: "66666666-6666-4666-8666-666666666666", title: "Utility bill", evidenceRequestId: "88888888-8888-4888-8888-888888888888",
+        createdAt: "2026-09-28T10:00:00.000Z", updatedAt: "2026-09-28T10:00:00.000Z", version: 1,
+        versions: [version({ originalFilename: "bill.pdf", scanStatus: "PENDING", validationStatus: "PENDING", validatedAt: null, submissionSource: "CUSTOMER" })],
+      }],
+    } as EvidenceCase)
+    render(await EvidencePage({ params: Promise.resolve({ id: caseId }) }))
+    expect(screen.getByText("Customer submitted")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Refresh scan status" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Accept version" })).toBeNull()
+  })
 })

@@ -1,16 +1,32 @@
 import "server-only"
 import { GetObjectCommand, GetObjectTaggingCommand, S3Client } from "@aws-sdk/client-s3"
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider"
 import { customerEvidenceAwsConfig } from "./config"
-import { GUARDDUTY_TAG, READ_EXPIRES_SECONDS, mapGuardDutyStatus, type ScanStatus } from "./model"
+import { GUARDDUTY_TAG, MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, mapGuardDutyStatus, type ScanStatus } from "./model"
 
+export type PresignedUpload = { url: string; fields: Record<string, string>; expiresSeconds: number; conditions: unknown[] }
 export type ObjectProbe = { exists: boolean; scan: ScanStatus }
 export type ReadDisposition = "inline" | "attachment"
 export type CustomerEvidenceStorage = {
   bucket: string
+  createUpload(input: { key: string; contentType: string }): Promise<PresignedUpload>
   probeObject(key: string): Promise<ObjectProbe>
   createReadUrl(input: { key: string; contentType: string; filename: string; disposition: ReadDisposition }): Promise<string>
+}
+
+export function presignedPostInput(key: string, contentType: string) {
+  return {
+    Key: key,
+    Expires: UPLOAD_EXPIRES_SECONDS,
+    Fields: { key, "Content-Type": contentType },
+    Conditions: [
+      ["eq", "$key", key],
+      ["eq", "$Content-Type", contentType],
+      ["content-length-range", 1, MAX_EVIDENCE_BYTES],
+    ] as Array<["eq", string, string] | ["content-length-range", number, number]>,
+  }
 }
 
 const missingObjectCodes = new Set(["NoSuchKey", "NotFound"])
@@ -68,6 +84,11 @@ export function createCustomerEvidenceStorage(): CustomerEvidenceStorage | null 
   })
   return {
     bucket: config.bucket,
+    async createUpload({ key, contentType }) {
+      const policy = presignedPostInput(key, contentType)
+      const post = await createPresignedPost(client, { Bucket: config.bucket, ...policy })
+      return { url: post.url, fields: post.fields, expiresSeconds: policy.Expires, conditions: policy.Conditions }
+    },
     async probeObject(key) {
       try {
         const result = await client.send(new GetObjectTaggingCommand({ Bucket: config.bucket, Key: key }))

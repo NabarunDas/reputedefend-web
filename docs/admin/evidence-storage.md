@@ -124,8 +124,18 @@ Packs live on the case evidence page only. Approval means: the Admin has approve
 
 ## Step 9B1 customer publication
 
-Source-implemented, not remotely applied, and the customer AWS role is not configured. Admin must publish explicitly. `customer_visible=true` is required on every included version. Losing eligibility or visibility unpublishes automatically and never auto-republishes. Step 9B2 customer upload is still pending. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+LIVE-TESTED COMPLETE after PR #103. Admin must publish explicitly. `customer_visible=true` is required on every included version. Losing eligibility or visibility unpublishes automatically and never auto-republishes. The applied migration is `20260928175738_customer_case_pack_access_v1.sql`. The customer AWS read-only role (`GetObject` / `GetObjectTagging`) is live. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+
+## Step 9B2 customer evidence-request upload
+
+Source-only. Customers upload only against an OPEN evidence request for the CASE_ACCESS case. The customer adapter now mints the same constrained presigned POST as Admin (`createUpload`) using `AWS_CUSTOMER_EVIDENCE_ROLE_ARN`, `AWS_REGION` and `AWS_EVIDENCE_BUCKET` via Vercel OIDC. Customer CSP `connect-src` allows `https://*.amazonaws.com` so the browser can POST the file to S3 without proxying bytes through Vercel. Static AWS keys and Preview/local still fail closed. The browser never chooses the bucket or key. Finalize proves object presence with GetObjectTagging and does not run content validation. Admin Refresh scan remains responsible for GuardDuty → magic-byte validation.
+
+This PR does not change the IAM role or Vercel environment variables. After source/migration review, add only:
+
+`s3:PutObject` for `arn:aws:s3:::profilerelaunch-evidence-dev-01/cases/*`
+
+Do not add DeleteObject, ListBucket, PutObjectTagging, DeleteObjectTagging, s3:*, multipart or extra KMS/admin permissions. The 9B2 migration `20260928190000_customer_evidence_upload_v1.sql` is not remotely applied. Customer replacement upload is not included.
 
 ## Future work
 
-Payment/permission workflow gates, Google submission and customer upload remain later stages. Step 8 is complete. Step 9A live Service Agreement acceptance has succeeded. Step 9B1 is source-only until the migration and customer IAM role are applied.
+Payment/permission workflow gates, Google submission and customer replacement upload remain later stages. Step 8 is complete. Step 9A live Service Agreement acceptance has succeeded. Step 9B1 is live-tested complete. Step 9B2 is source-only until the migration is applied and `s3:PutObject` is added to the existing customer role.

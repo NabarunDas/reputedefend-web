@@ -6,7 +6,9 @@ Evidence migration filenames match the versions recorded on `profilerelaunch-dev
 
 Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, `location_manager_access` and private action session/challenge/receipt tables. See customer-actions.md. The 9A migration filename matches the version recorded on `profilerelaunch-dev`: `20260928094817`.
 
-Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `case_prepared_packs`, `PACK_PUBLISHED` / `PACK_UNPUBLISHED` events, and customer pack RPCs. The additive migration is `20260928172000_customer_case_pack_access_v1.sql`. It is not remotely applied.
+Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `case_prepared_packs`, `PACK_PUBLISHED` / `PACK_UNPUBLISHED` events, and customer pack RPCs. It is LIVE-TESTED COMPLETE. The applied migration is `20260928175738_customer_case_pack_access_v1.sql`.
+
+Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The additive migration is `20260928190000_customer_evidence_upload_v1.sql`. It is not remotely applied.
 
 ## Relationships
 
@@ -28,6 +30,7 @@ public.case_document_events  (append-only lifecycle)
 public.case_prepared_pack_events  (append-only pack lifecycle)
 admin_private.evidence_command_receipts
 admin_private.pack_command_receipts
+admin_private.customer_evidence_upload_receipts
 admin_private.customer_pack_access_receipts
 ```
 
@@ -78,10 +81,13 @@ One immutable storage object per version.
 | validation_status / validation_error | Signature result after a clean scan |
 | review_status / review_note / reviewed_by / reviewed_at | Set by Step 8B review commands |
 | customer_visible | `NOT NULL DEFAULT false`; explicit `set_visibility` only |
+| submission_source | `ADMIN` or `CUSTOMER`; existing rows default to `ADMIN` |
+| customer_action_id | NULL for Admin uploads; CASE_ACCESS action for customer uploads |
+| customer_evidence_request_id | NULL for Admin uploads; the OPEN request the customer answered |
 | record_version | Optimistic concurrency; bumped on every update |
 | created_by, created_at, uploaded_at, validated_at | |
 
-Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`.
+Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`. At most one `CUSTOMER` version per evidence request. Customer provenance columns are server-controlled and never accepted from the browser.
 
 ## public.case_document_events
 
@@ -122,9 +128,12 @@ Privileged RPCs:
 - `admin_authorization_command_v1` — create agreement action, revoke open action, issue customer revocation action, Admin emergency revoke, create case-access action
 - `admin_manager_access_command_v1` — verify / revoke
 - `customer_action_exchange_v1`, `customer_action_begin_otp_v1`, `customer_action_confirm_otp_sent_v1`, `customer_action_attempt_otp_v1`, `customer_action_finish_otp_v1`, `customer_action_session_v1`, `customer_action_command_v1`
-- `customer_case_pack_v1` — customer-safe published pack projection
+- `customer_case_pack_v1` — customer-safe published pack plus OPEN evidence-request projection (no storage coordinates)
 - `customer_case_pack_version_v1` — server-only published-pack version including storage coordinates
 - `customer_case_pack_access_v1` — records customer View/Download; does not return a URL
+- `customer_evidence_begin_v1` — request-scoped customer upload begin; service_role only
+- `customer_evidence_upload_version_v1` — server-only customer upload version lookup
+- `customer_evidence_finalize_v1` — `PENDING_UPLOAD` → `UPLOADED` only; request stays OPEN
 
 ## public.case_prepared_packs
 

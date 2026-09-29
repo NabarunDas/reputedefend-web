@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { customerEvidenceAwsConfig } from "./config"
-import { createCustomerEvidenceStorage, isAllowedReadExpiry, signedUrlExpiresSeconds } from "./storage"
-import { READ_EXPIRES_SECONDS } from "./model"
+import { createCustomerEvidenceStorage, isAllowedReadExpiry, presignedPostInput, signedUrlExpiresSeconds } from "./storage"
+import { MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey } from "./model"
 
 describe("customer evidence storage policy", () => {
   afterEach(() => {
@@ -28,6 +28,21 @@ describe("customer evidence storage policy", () => {
     delete process.env.AWS_ACCESS_KEY_ID
     process.env.VERCEL_ENV = "preview"
     expect(customerEvidenceAwsConfig()).toBeNull()
+  })
+
+  it("limits the presigned POST to five minutes, the exact key, type and 10 MB", () => {
+    const key = evidenceObjectKey("55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777")
+    const policy = presignedPostInput(key, "image/png")
+    expect(policy.Expires).toBe(UPLOAD_EXPIRES_SECONDS)
+    expect(policy.Expires).toBeLessThanOrEqual(300)
+    expect(policy.Key).toBe(key)
+    expect(policy.Fields).toEqual({ key, "Content-Type": "image/png" })
+    expect(policy.Conditions).toEqual([
+      ["eq", "$key", key],
+      ["eq", "$Content-Type", "image/png"],
+      ["content-length-range", 1, MAX_EVIDENCE_BYTES],
+    ])
+    expect(MAX_EVIDENCE_BYTES).toBe(10_485_760)
   })
 
   it("limits signed GET expiry to 60 seconds", () => {

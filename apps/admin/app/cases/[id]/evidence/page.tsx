@@ -32,6 +32,7 @@ function VersionCard({ caseId, documentTitle, version }: { caseId: string; docum
       <Badge tone={version.validationStatus === "VALID" ? "success" : version.validationStatus === "PENDING" ? "warning" : "danger"}>{version.validationStatus}</Badge>
       <Badge tone={version.reviewStatus === "ACCEPTED" ? "success" : version.reviewStatus === "REJECTED" ? "danger" : version.reviewStatus === "UNREVIEWED" ? "warning" : "neutral"}>{version.reviewStatus}</Badge>
       <Badge tone={version.customerVisible ? "info" : "neutral"}>{version.customerVisible ? "Future customer visibility on" : "Not customer visible"}</Badge>
+      {version.submissionSource === "CUSTOMER" && <Badge tone="info">Customer submitted</Badge>}
     </p>
     {actions.statusLabel && <p className={actions.threatBlocked ? "notice-danger" : "muted"}>{actions.statusLabel}</p>}
     {version.validationError && <p className="muted">Validation: {version.validationError}</p>}

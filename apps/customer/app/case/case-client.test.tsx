@@ -30,6 +30,7 @@ const empty: CustomerCasePack = {
   locationName: "High Street",
   maskedEmail: "a***@example.com",
   pack: null,
+  evidenceRequests: [],
 }
 
 const published: CustomerCasePack = {
@@ -54,9 +55,12 @@ describe("customer case documents", () => {
     expect(screen.getByRole("heading", { name: "Case documents" })).toBeTruthy()
     expect(screen.getByText(/PR-26-ABCDEF/)).toBeTruthy()
     expect(screen.getByText(/No case documents are currently published/)).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Evidence requests" })).toBeTruthy()
+    expect(screen.getByText("No open evidence requests.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Upload" })).toBeNull()
-    expect(document.body.textContent).not.toMatch(/dashboard|billing|storage|arn:aws/i)
+    expect(screen.queryByLabelText("Upload evidence")).toBeNull()
+    expect(document.body.textContent).not.toMatch(/dashboard|billing|storage|arn:aws|Accept|Reject|Publish|Fulfil/i)
   })
 
   it("lists published documents and opens View without sending a case id", async () => {
@@ -71,5 +75,72 @@ describe("customer case documents", () => {
       operation: "view", versionId: "77777777-7777-4777-8777-777777777777",
     })
     expect(JSON.stringify(fetchMock.mock.calls[0][1].body)).not.toMatch(/caseId|bucket|email/)
+  })
+
+  it("uploads only against an open request and then shows awaiting review", async () => {
+    const request = {
+      requestId: "88888888-8888-4888-8888-888888888888",
+      title: "Utility bill",
+      requestText: "Please upload a recent utility bill.",
+      dueAt: "2026-10-01T00:00:00.000Z",
+      createdAt: "2026-09-28T12:00:00.000Z",
+      submissionStatus: "NOT_SUBMITTED" as const,
+      filename: null,
+      submittedAt: null,
+    }
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: "Upload the file directly using the provided fields.",
+          versionId: "77777777-7777-4777-8777-777777777777",
+          upload: { url: "https://s3.example/post", fields: { key: "cases/x", "Content-Type": "application/pdf" } },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: "Uploaded — awaiting security review" }) })
+    render(<CaseClient data={{ ...empty, evidenceRequests: [request] }} />)
+    expect(screen.getByText("Utility bill")).toBeTruthy()
+    expect(screen.getByText("Please upload a recent utility bill.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Refresh scan" })).toBeNull()
+    const file = new File(["%PDF-1.4"], "bill.pdf", { type: "application/pdf" })
+    fireEvent.change(screen.getByLabelText("Upload evidence"), { target: { files: [file] } })
+    await waitFor(() => expect(screen.getByText("Uploaded — awaiting security review")).toBeTruthy())
+    expect(screen.getByText(/bill\.pdf/)).toBeTruthy()
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      operation: "begin",
+      evidenceRequestId: request.requestId,
+      filename: "bill.pdf",
+      contentType: "application/pdf",
+      size: file.size,
+    })
+    expect(JSON.stringify(fetchMock.mock.calls[0][1].body)).not.toMatch(/caseId|bucket|storageKey|customerId|email/)
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+      operation: "finalize",
+      versionId: "77777777-7777-4777-8777-777777777777",
+    })
+    expect(screen.queryByRole("button", { name: "View" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download" })).toBeNull()
+  })
+
+  it("does not offer View or Download for an already uploaded customer file", () => {
+    render(<CaseClient data={{
+      ...empty,
+      evidenceRequests: [{
+        requestId: "88888888-8888-4888-8888-888888888888",
+        title: "Utility bill",
+        requestText: "Please upload a recent utility bill.",
+        dueAt: null,
+        createdAt: "2026-09-28T12:00:00.000Z",
+        submissionStatus: "AWAITING_REVIEW",
+        filename: "bill.pdf",
+        submittedAt: "2026-09-28T13:00:00.000Z",
+      }],
+    }} />)
+    expect(screen.getByText("Uploaded — awaiting security review · bill.pdf")).toBeTruthy()
+    expect(screen.queryByLabelText("Upload evidence")).toBeNull()
+    expect(screen.queryByRole("button", { name: "View" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download" })).toBeNull()
   })
 })

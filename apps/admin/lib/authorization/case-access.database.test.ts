@@ -69,6 +69,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_admin_prepared_packs_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_admin_customer_actions_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_customer_case_pack_access_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_customer_evidence_upload_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 30000)
 afterAll(async () => { await db.close() })
@@ -80,7 +81,7 @@ beforeEach(async () => {
     alter table public.agreement_versions disable trigger agreement_versions_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
     alter table public.case_prepared_pack_events disable trigger case_prepared_pack_events_immutable;
-    truncate public.customer_action_events,public.customer_actions,public.authorization_events,public.authorization_records,public.agreement_versions,public.location_manager_access_events,public.location_manager_access,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.authorization_command_receipts,admin_private.customer_action_command_receipts,admin_private.customer_pack_access_receipts,public.case_prepared_pack_events,public.case_prepared_pack_items,public.case_prepared_packs,admin_private.pack_command_receipts,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,admin_private.evidence_command_receipts,public.case_tasks,public.case_work_events,public.case_submissions,public.case_submission_results,admin_private.case_command_receipts,public.enquiries,public.enquiry_events,public.admin_audit_events,public.admin_auth_events,public.admin_sessions,public.admin_identity,public.business_memberships,public.customer_contact_verifications,public.customers,public.businesses,public.locations,auth.users cascade;
+    truncate public.customer_action_events,public.customer_actions,public.authorization_events,public.authorization_records,public.agreement_versions,public.location_manager_access_events,public.location_manager_access,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.authorization_command_receipts,admin_private.customer_action_command_receipts,admin_private.customer_pack_access_receipts,admin_private.customer_evidence_upload_receipts,public.case_prepared_pack_events,public.case_prepared_pack_items,public.case_prepared_packs,admin_private.pack_command_receipts,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,admin_private.evidence_command_receipts,public.case_tasks,public.case_work_events,public.case_submissions,public.case_submission_results,admin_private.case_command_receipts,public.enquiries,public.enquiry_events,public.admin_audit_events,public.admin_auth_events,public.admin_sessions,public.admin_identity,public.business_memberships,public.customer_contact_verifications,public.customers,public.businesses,public.locations,auth.users cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
     alter table public.authorization_events enable trigger authorization_events_immutable;

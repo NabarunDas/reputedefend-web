@@ -35,6 +35,7 @@ function req(body: unknown, headers: Record<string, string> = {}) {
 function storage(overrides: Partial<CustomerEvidenceStorage> = {}): CustomerEvidenceStorage {
   return {
     bucket: "test-evidence",
+    createUpload: vi.fn(async () => ({ url: "https://s3.example/post", fields: { key: "cases/x" }, expiresSeconds: 300, conditions: [] })),
     probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
     createReadUrl: vi.fn(async () => "https://s3.example/object?X-Amz-Expires=60"),
     ...overrides,

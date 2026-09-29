@@ -7,7 +7,8 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   let response: NextResponse
   const authPost = request.method === "POST" && /^\/auth\/(send|verify|logout|logout-all)$/.test(pathname)
-  if (isPublicRead(pathname, request.method) || authPost || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
+  const cronRead = (request.method === "GET" || request.method === "HEAD") && pathname === "/api/internal/jobs/run"
+  if (isPublicRead(pathname, request.method) || authPost || cronRead || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     response = NextResponse.next()
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {
     response = NextResponse.json({ error: "Staff sign-in is required." }, { status: 401 })

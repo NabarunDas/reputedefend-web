@@ -6,7 +6,7 @@ Step 8 is complete, with live acceptance confirmed on 18 September 2026. Step 9A
 
 Step 9B1 is LIVE-TESTED COMPLETE after PR #103. Admin published Pack #1, the customer completed CASE_ACCESS email OTP, viewed the published PNG/PDF, downloaded the PDF, and the live customer AWS read-only role passed GuardDuty tag checks with `CUSTOMER_CASE_ACCESS` audit records. The applied 9B1 migration is `20260928175738_customer_case_pack_access_v1.sql`.
 
-Step 9B2 is source-only in this PR. The additive migration is `20260928190000_customer_evidence_upload_v1.sql`. It is not remotely applied. Customer IAM `s3:PutObject` is not configured. Customer replacement upload is not included. Do not mark all of Step 9 complete. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
+Step 9 is LIVE-TESTED COMPLETE. Case PR-26-6CKR5M reached `authorizationReady=true`. Step 9B1 live published-pack View/Download passed. Step 9B2 live customer evidence upload passed (direct S3 POST, Customer PutObject, GuardDuty, Admin accept, request fulfilment). The applied 9B2 migration is `20260929150057_customer_evidence_upload_v1.sql`. Customer replacement after `UPLOADED` is not included. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
 Current Supabase advisor baseline still contains historical security findings for `public.rls_auto_enable()`, `public.set_case_public_ref`, and leaked-password protection. Step 9A introduced missing-FK-index performance recommendations; those are not security or correctness blockers and are deferred to the performance/production-readiness cleanup.
 
@@ -78,7 +78,7 @@ Customer RPCs `customer_case_pack_v1`, `customer_case_pack_version_v1` and `cust
 
 ## Step 9B2 customer evidence-request upload
 
-Source-only. A customer may upload only in response to an `OPEN` `evidence_requests` row for the exact CASE_ACCESS case. `/case` projects customer-safe OPEN requests (`requestId`, `title`, `requestText`, `dueAt`, `createdAt`, `submissionStatus`, `filename`, `submittedAt`) and never storage coordinates, Admin notes or review internals. Published-pack projection is unchanged.
+LIVE-TESTED COMPLETE. A customer may upload only in response to an `OPEN` `evidence_requests` row for the exact CASE_ACCESS case. `/case` projects customer-safe OPEN requests (`requestId`, `title`, `requestText`, `dueAt`, `createdAt`, `submissionStatus`, `filename`, `submittedAt`) and never storage coordinates, Admin notes or review internals. Published-pack projection is unchanged.
 
 `POST /api/case/evidence/upload` accepts only `begin` and `finalize`. The browser may send `evidenceRequestId`, filename, declared MIME and size, or `versionId`. It must not send case/customer/business IDs, bucket, key, review, visibility, scan or validation fields. Scope comes from the HttpOnly CASE_ACCESS session.
 
@@ -88,4 +88,4 @@ A `PENDING_UPLOAD` attempt is incomplete and may be abandoned. Same action + sam
 
 The customer Vercel server mints the same constrained presigned POST as Admin (exact bucket/key/Content-Type, content-length-range 1..10485760, 300 seconds). The browser uploads directly to S3. Finalize (`customer_evidence_finalize_v1`) requires the object to exist, then moves only `PENDING_UPLOAD` → `UPLOADED` and sets `uploaded_at`. Scan, validation, review and visibility stay pending/unreviewed/false. The evidence request stays `OPEN` until Admin fulfils it. The customer cannot accept/reject, set visibility, publish, refresh scan, or download the unreviewed upload.
 
-Customer IAM PutObject is not configured by this PR. The 9B2 migration is not remotely applied. Replacement upload, customer scan/validation, Google submission and a dashboard remain later work. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+The 9B2 migration is applied as `20260929150057`. Live customer PutObject and S3 CORS were configured for the 9B2 live test; this document does not change them. Replacement upload, customer scan/validation, Google submission and a dashboard remain later work. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.

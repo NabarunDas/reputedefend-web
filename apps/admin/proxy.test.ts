@@ -17,6 +17,11 @@ describe("admin access boundary", () => {
     expect(result.status).toBe(401)
     expect(await result.json()).toEqual({ error: "Staff sign-in is required." })
   })
+  it("allows the scheduled job route through so Cron can authenticate itself", async () => {
+    const allowed = await proxy(new NextRequest("https://admin.profilerelaunch.com/api/internal/jobs/run"))
+    expect(allowed.headers.get("x-middleware-next")).toBe("1")
+    expect((await proxy(new NextRequest("https://admin.profilerelaunch.com/api/internal/jobs/run", { method: "POST" }))).status).toBe(401)
+  })
   it.each(["/login", "/robots.txt", "/_next/static/chunks/app.js", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"])("allows public read %s with noindex", async path => {
     const result = await proxy(new NextRequest(`https://admin.profilerelaunch.com${path}`))
     expect(result.headers.get("x-middleware-next")).toBe("1")

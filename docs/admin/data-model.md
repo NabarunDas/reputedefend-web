@@ -8,7 +8,9 @@ Step 9A adds `agreement_versions`, `authorization_records`, `customer_actions`, 
 
 Step 9B1 adds `CASE_ACCESS` on `customer_actions`, pack publication columns on `case_prepared_packs`, `PACK_PUBLISHED` / `PACK_UNPUBLISHED` events, and customer pack RPCs. It is LIVE-TESTED COMPLETE. The applied migration is `20260928175738_customer_case_pack_access_v1.sql`.
 
-Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The applied additive migration is `20260929150057_customer_evidence_upload_v1.sql`.
+Step 9B2 adds customer-upload provenance on `case_document_versions` (`submission_source`, `customer_action_id`, `customer_evidence_request_id`), `admin_private.customer_evidence_upload_receipts`, a customer-safe OPEN evidence-request projection on `customer_case_pack_v1`, and service-role RPCs `customer_evidence_begin_v1`, `customer_evidence_upload_version_v1` and `customer_evidence_finalize_v1`. The applied additive migration is `20260929150057_customer_evidence_upload_v1.sql`. Step 9 is LIVE-TESTED COMPLETE.
+
+Step 10 adds `admin_private.job_outbox`, `admin_private.jobs`, `admin_private.job_attempts`, `admin_private.job_worker_heartbeats` and `admin_private.job_command_receipts`, plus service-role promote/claim/complete/fail/heartbeat RPCs and Admin probe/replay/health RPCs. The additive migration is `20260929180000_jobs_outbox_operational_health_v1.sql`. It is not remotely applied.
 
 ## Relationships
 
@@ -32,6 +34,9 @@ admin_private.evidence_command_receipts
 admin_private.pack_command_receipts
 admin_private.customer_evidence_upload_receipts
 admin_private.customer_pack_access_receipts
+admin_private.job_outbox → admin_private.jobs → admin_private.job_attempts
+admin_private.job_worker_heartbeats
+admin_private.job_command_receipts
 ```
 
 Foreign keys to `cases` and `evidence_requests` use `ON DELETE RESTRICT`. Versions never overwrite a previous `storage_key`. At most one version per document may have `customer_visible = true`.

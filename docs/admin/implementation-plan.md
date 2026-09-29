@@ -446,6 +446,8 @@ Acceptance: business changes survive email failure; accepted is not displayed as
 ## Step 12 Incoming mail and conversations
 Deliver: configured inbound route, thread linking, unmatched inbox, safe attachment ingestion, assignment, replies, phone notes and contact-recovery tasks. Add a verified-mailbox operational test procedure.
 
+SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. Additive `20260929221604_incoming_mail_conversations_v1.sql` is local only. As built: signed `email.received` webhook, `IMPORT_INBOUND_EMAIL` on the Step 10 worker, `public.conversations` with unmatched/open/closed states, RFC/alias thread resolution, quarantine attachments, Step 11 `CONVERSATION_REPLY` drafts, phone notes and `case_tasks` contact recovery. Resend Receiving is not configured. The inbound webhook secret and inbound subdomain/DNS are not configured. No live inbound email has been received. Root-domain MX is unchanged. Outgoing Step 11 remains live-delivery-disabled. Cron remains daily. `PREPARATION` / `READY_TO_SUBMIT` stay blocked.
+
 Acceptance: spoofed sender cannot change identity/permissions; duplicate imports and mail loops are blocked; unlinked email can be triaged without losing the original. Existing inbox keeps receiving mail during cutover. Depends on 8 and 11.
 
 ## Step 13 Catalogue quotes and service orders

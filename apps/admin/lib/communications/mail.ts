@@ -8,6 +8,9 @@ export type OutgoingMailMessage = {
   subject: string
   text: string
   html?: string | null
+  replyTo?: string | null
+  inReplyTo?: string | null
+  referencesHeader?: string | null
 }
 
 export type OutgoingMailResult =
@@ -24,6 +27,8 @@ export type ResendEmailPayload = {
   subject: string
   text: string
   html?: string
+  replyTo?: string
+  headers?: Record<string, string>
 }
 
 export type ResendSendOptions = {
@@ -61,6 +66,9 @@ export function createIdempotentMailProvider(): OutgoingMailProvider & {
         subject: message.subject,
         text: message.text,
         html: message.html ?? null,
+        replyTo: message.replyTo ?? null,
+        inReplyTo: message.inReplyTo ?? null,
+        referencesHeader: message.referencesHeader ?? null,
       })
       const existing = processed.get(message.idempotencyKey)
       if (existing) return { ok: true, providerMessageId: existing, replay: true }
@@ -97,12 +105,17 @@ export function createResendMailProvider(
 ): OutgoingMailProvider {
   return {
     async send(message) {
+      const headers: Record<string, string> = {}
+      if (message.inReplyTo) headers["In-Reply-To"] = message.inReplyTo
+      if (message.referencesHeader) headers.References = message.referencesHeader
       const payload: ResendEmailPayload = {
         from: message.from || from,
         to: message.to,
         subject: message.subject,
         text: message.text,
         html: message.html || undefined,
+        ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+        ...(Object.keys(headers).length ? { headers } : {}),
       }
       const options: ResendSendOptions = { idempotencyKey: message.idempotencyKey }
       try {

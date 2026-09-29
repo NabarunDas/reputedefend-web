@@ -14,6 +14,8 @@ Step 10 adds `admin_private.job_outbox`, `admin_private.jobs`, `admin_private.jo
 
 Step 11 adds reviewed outbound columns on `public.communications` without rewriting legacy `SENT` as delivered, plus `admin_private.communication_templates`, `communication_delivery_events`, `communication_webhook_events`, `email_suppressions` and `communication_command_receipts`. Delivery includes `ACCEPTANCE_UNKNOWN`, `TRANSIENT_BOUNCE` and `UNDETERMINED_BOUNCE`. Communications snapshot `sender_address` and `link_key_version`. Webhook rows store `provider_occurred_at` and a bounded `bounce_class`. Step 11 communications uniquely index `(provider, provider_message_id)` when both are present. Job/outbox types gain `SEND_EMAIL`. Dedicated `COMMUNICATION_ACCESS` customer actions pin `evidence_request_id` and hold only a SHA-256 capability hash plus the non-secret link-key version. The applied additive migration is `20260929210000_communications_outgoing_mail_v1.sql`. Live delivery remains disabled.
 
+Step 12 adds `public.conversations`, immutable `conversation_messages`, quarantined `conversation_attachments`, inbound receipts and `IMPORT_INBOUND_EMAIL`. Additive outbound threading columns are `conversation_id`, `reply_to_address`, `in_reply_to`, `references_header` and set-once `rfc_message_id`. The local migration is `20260929221604_incoming_mail_conversations_v1.sql`. It is not remotely applied.
+
 ## Relationships
 
 ```

@@ -98,8 +98,9 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_customer_evidence_upload_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_jobs_outbox_operational_health_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
   ]) await db.exec(read(name))
-}, 30000)
+}, 45000)
 
 afterAll(async () => { await db.close() })
 
@@ -107,7 +108,7 @@ beforeEach(async () => {
   await db.exec(`alter table public.admin_audit_events disable trigger admin_audit_immutable;
     alter table public.customer_action_events disable trigger customer_action_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.job_attempts,admin_private.jobs,admin_private.job_outbox,admin_private.job_worker_heartbeats,admin_private.job_command_receipts,admin_private.communication_delivery_events,admin_private.communication_webhook_events,admin_private.email_suppressions,admin_private.communication_command_receipts,admin_private.customer_evidence_upload_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,public.communications,public.customer_action_events,public.customer_actions,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,public.enquiry_events,public.enquiries,admin_private.case_command_receipts,admin_private.evidence_command_receipts cascade;
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.job_attempts,admin_private.jobs,admin_private.job_outbox,admin_private.job_worker_heartbeats,admin_private.job_command_receipts,admin_private.communication_delivery_events,admin_private.communication_webhook_events,admin_private.email_suppressions,admin_private.communication_command_receipts,admin_private.inbound_email_receipts,admin_private.conversation_command_receipts,admin_private.customer_evidence_upload_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,public.conversation_attachments,public.conversation_messages,public.conversations,public.communications,public.customer_action_events,public.customer_actions,public.case_document_events,public.case_document_versions,public.case_documents,public.evidence_requests,public.customer_contact_verifications,public.business_memberships,public.case_tasks,public.case_work_events,public.enquiry_events,public.enquiries,admin_private.case_command_receipts,admin_private.evidence_command_receipts cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;

@@ -21,8 +21,12 @@ export function resetGoogleAnalyticsRuntime() {
 function queueGtag(measurementId: string) {
   window.dataLayer = window.dataLayer || []
   if (typeof window.gtag !== "function") {
-    window.gtag = function gtag(...args: unknown[]) {
-      window.dataLayer?.push(args)
+    window.gtag = function gtag() {
+      // gtag.js only processes queue entries that are Arguments objects; a rest
+      // parameter pushes a plain Array, which is read as a GTM-style event and
+      // silently never reaches /g/collect.
+      // eslint-disable-next-line prefer-rest-params
+      window.dataLayer?.push(arguments)
     }
   }
 

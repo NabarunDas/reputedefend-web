@@ -35,6 +35,11 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
     } catch {
       // Daily Guard reconciliation is optional until the Step 16 migration is applied.
     }
+    try {
+      await options.rpc.rpc("guard_enqueue_daily_checks_v1", {})
+    } catch {
+      // Daily Guard check maintenance is optional until the Step 17 migration is applied.
+    }
     const promoted = await options.rpc.rpc<{ status?: string; promoted?: number }>("job_promote_outbox_v1", {
       p_limit: options.promoteLimit ?? 20,
     })

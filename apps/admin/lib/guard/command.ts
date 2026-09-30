@@ -118,7 +118,7 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
     return reply(
       issued ? "The secure customer action is ready. Copy the customer link now; the secret cannot be shown again."
         : issuesLink ? "This customer action was already created. The secret cannot be shown again."
-        : operation === "activate" ? "Guard is active for this location. Twice-daily checks are not generated yet."
+        : operation === "activate" ? "Guard is active for this location. Live twice-daily checks remain disabled until the check gate and an approved schedule are configured."
         : operation === "create_direct_coverage" ? "Direct Guard coverage was created. Billing stays pending until a confirmed invoice is paid."
         : operation === "create_included_offer" ? "The included 30-day Guard offer is recorded. The customer must still accept it."
         : operation === "create_included_continuation" ? "Included-to-paid continuation is recorded. Recurring consent is still required."

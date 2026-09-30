@@ -481,6 +481,8 @@ Acceptance: cancellation of one location leaves others intact; no auto-charge af
 ## Step 17 Manual checks rota and baselines
 Deliver: twice-daily obligation generator, morning/evening queues, claim/complete, profile/review observations, baseline comparison, missed/failed retries, holiday/weekend cover and handling-time tracking.
 
+SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE MONITORING DISABLED. Additive `20260930203750_guard_manual_checks_v1.sql` exists in source only after applied `20260930180050_guard_subscriptions_billing_v1.sql`. It has not been applied. Exact production check clock windows are not yet approved. The schedule is versioned/configurable and no APPROVED production schedule is invented. Europe/London is authoritative. Two symbolic MORNING/EVENING checks per active location/day. Weekends and bank holidays are included. Capture is manual only. Incomplete observations cannot be HEALTHY. Missed/late history is immutable. Daily `MAINTAIN_GUARD_CHECKS` reuses the existing daily worker. Cron remains `0 4 * * *`. `GUARD_CHECKS_ENABLED` remains unset. No Google API, Step 18 alerts or customer notification. Stripe/Guard activation and Step 11/12 mail remain disabled. See guard-manual-checks.md.
+
 Acceptance: UK clock changes produce exactly two windows; duplicate schedulers create no extra obligations; paused/ended locations are excluded; incomplete observations never count healthy; late completion stays late in reporting. Depends on 10 and 15–16.
 
 ## Step 18 Alerts escalation and linked cases

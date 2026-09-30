@@ -14,7 +14,7 @@ export const metadata = { title: "Guard" }
 export default async function GuardPage() {
   const guard = await loadGuard()
   return <section className="page">
-    <PageHeader title="Guard" description="Per-location onboarding, permission, baseline, rota, activation and subscription billing. A monitoring request is intake history only. Live monitoring, Stripe, refunds and twice-daily checks remain disabled. There is no Mark paid, Mark refunded, or override paid-through control." />
+    <PageHeader title="Guard" description="Per-location onboarding, permission, baseline, rota, activation and subscription billing. A monitoring request is intake history only. Live monitoring, Stripe, refunds and twice-daily checks remain disabled. There is no Mark paid, Mark refunded, or override paid-through control." actions={<a href="/guard/checks">Open Guard checks</a>} />
     <section className="panel">
       <h2>Monitoring requests</h2>
       {!guard.requests.length ? <EmptyState>No monitoring requests.</EmptyState> : guard.requests.map(request => <article key={request.id} className="stack">

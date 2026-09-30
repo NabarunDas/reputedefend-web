@@ -24,6 +24,8 @@ Step 15 adds Guard onboarding/activation tables in applied `20260930164529_guard
 
 Step 16 adds applied `20260930180050_guard_subscriptions_billing_v1.sql` after Step 15 (`20260930180050 guard_subscriptions_billing_v1` exactly once): `guard_provider_price_maps`, `guard_continuations`, `guard_subscriptions`, append-only `guard_subscription_events`, `guard_recurring_consents`, `guard_subscription_invoices`, `guard_price_change_offers`, `guard_billing_adjustments`, `guard_refunds`, `guard_disputes`, `guard_reminder_policies`, `guard_reminder_records`, `guard_reconciliation_runs`, `guard_reconciliation_targets`, `guard_reconciliation_issues`, and private `guard_subscription_receipts`. Customer actions gain `GUARD_SUBSCRIPTION_START` and `GUARD_PRICE_CHANGE_ACCEPTANCE`. Coverage origin gains `INCLUDED_CONTINUATION`. Job type `RECONCILE_GUARD_BILLING` reuses the Step 10 outbox. DATABASE APPLIED / STRIPE & GUARD LIVE DISABLED. See guard-subscriptions-billing.md.
 
+Step 17 adds unapplied source-only `20260930203750_guard_manual_checks_v1.sql` after Step 16: versioned `guard_check_schedule_versions`, `guard_check_obligations`, append-only `guard_check_obligation_events`, `guard_check_attempts`, immutable `guard_check_observations`, and private `guard_check_receipts`. Job type `MAINTAIN_GUARD_CHECKS` reuses the Step 10 outbox. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE MONITORING DISABLED. See guard-manual-checks.md.
+
 ## Relationships
 
 ```

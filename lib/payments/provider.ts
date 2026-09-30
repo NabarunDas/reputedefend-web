@@ -8,6 +8,7 @@ import type {
   CreateSetupInput,
   CreateGuardRecoveryCheckoutInput,
   CreateSubscriptionCheckoutInput,
+  GuardMetadata,
   MappedProviderEvent,
   ProviderCheckout,
   ProviderCustomer,
@@ -71,8 +72,14 @@ export interface PaymentProvider {
     currentPriceId: string
     nextPriceId: string
     periodEnd: number
+    customerId?: string
   }): Promise<ProviderSchedule>
-  createRefund(input: { idempotencyKey: string; paymentIntentId: string; amountMinor: number }): Promise<RetrievedRefund>
+  createRefund(input: {
+    idempotencyKey: string
+    paymentIntentId: string
+    amountMinor: number
+    metadata?: GuardMetadata
+  }): Promise<RetrievedRefund>
   retrieveRefund(id: string): Promise<RetrievedRefund | null>
   retrieveDispute(id: string): Promise<RetrievedDispute | null>
   mapEvent(event: { id: string; type: string; data?: { object?: Record<string, unknown> } }): MappedProviderEvent

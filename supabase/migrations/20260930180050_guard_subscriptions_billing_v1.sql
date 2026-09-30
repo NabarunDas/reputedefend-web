@@ -43,12 +43,17 @@ ALTER TABLE public.provider_operations ADD CONSTRAINT provider_operations_purpos
   'UPFRONT','SETUP','OFF_SESSION','RECOVERY','INVOICE','CUSTOMER','GUARD_SUBSCRIPTION','GUARD_PRICE','GUARD_REFUND','GUARD_RECOVERY'
 ));
 ALTER TABLE public.provider_operations ADD COLUMN IF NOT EXISTS guard_subscription_id uuid;
+ALTER TABLE public.provider_operations ADD COLUMN IF NOT EXISTS source_provider_operation_id uuid
+  REFERENCES public.provider_operations(id) ON DELETE RESTRICT;
 ALTER TABLE public.provider_operations ALTER COLUMN customer_id DROP NOT NULL;
 ALTER TABLE public.provider_operations ADD CONSTRAINT provider_operations_customer_scope CHECK (
   (kind = 'CREATE_RECURRING_PRICE' AND purpose = 'GUARD_PRICE' AND customer_id IS NULL
     AND service_order_id IS NULL AND obligation_id IS NULL AND guard_subscription_id IS NULL)
   OR (kind <> 'CREATE_RECURRING_PRICE' AND customer_id IS NOT NULL)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS provider_operations_recovery_source_uidx
+  ON public.provider_operations (source_provider_operation_id)
+  WHERE kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD' AND source_provider_operation_id IS NOT NULL;
 
 ALTER TABLE public.payment_ledger DROP CONSTRAINT payment_ledger_event_check;
 ALTER TABLE public.payment_ledger ADD CONSTRAINT payment_ledger_event_check CHECK (event IN (
@@ -1436,7 +1441,8 @@ BEGIN
     sub.stripe_subscription_id, 'ADMIN', p_actor, 'CANCEL_AT_PERIOD_END');
   RETURN jsonb_build_object(
     'status','success','id', sub.id, 'version', sub.record_version, 'providerOperationId', op.id,
-    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id
+    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id,
+    'providerOperationStatus', op.status
   );
 END; $$;
 
@@ -1464,7 +1470,8 @@ BEGIN
     'Undo of scheduled cancellation requested', jsonb_build_object('providerOperationId', op.id));
   RETURN jsonb_build_object(
     'status','success','id', sub.id, 'version', sub.record_version, 'providerOperationId', op.id,
-    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id
+    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id,
+    'providerOperationStatus', op.status
   );
 END; $$;
 
@@ -1526,7 +1533,14 @@ BEGIN
   END IF;
   SELECT * INTO refund FROM public.guard_refunds WHERE adjustment_id = adj.id FOR UPDATE;
   IF refund.id IS NOT NULL THEN
-    RETURN jsonb_build_object('status','success','id', refund.id, 'providerOperationId', refund.provider_operation_id, 'replay', true);
+    SELECT * INTO op FROM public.provider_operations WHERE id = refund.provider_operation_id;
+    RETURN jsonb_build_object(
+      'status','success','id', refund.id, 'providerOperationId', refund.provider_operation_id, 'replay', true,
+      'idempotencyKey', op.idempotency_key, 'amountMinor', refund.amount_minor,
+      'paymentIntentId', refund.stripe_payment_intent_id, 'chargeId', refund.stripe_charge_id,
+      'providerOperationStatus', op.status, 'guardRefundId', refund.id,
+      'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardSubscriptionId', sub.id
+    );
   END IF;
   INSERT INTO public.provider_operations(
     idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
@@ -1546,7 +1560,9 @@ BEGIN
     'Bounded refund approved', jsonb_build_object('refundId', refund.id, 'amountMinor', amount));
   RETURN jsonb_build_object(
     'status','success','id', refund.id, 'providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
-    'amountMinor', amount, 'paymentIntentId', inv.stripe_payment_intent_id, 'chargeId', inv.stripe_charge_id
+    'amountMinor', amount, 'paymentIntentId', inv.stripe_payment_intent_id, 'chargeId', inv.stripe_charge_id,
+    'providerOperationStatus', op.status, 'guardRefundId', refund.id,
+    'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardSubscriptionId', sub.id
   );
 END; $$;
 
@@ -1575,7 +1591,8 @@ BEGIN
     'Immediate cancellation approved for provider execution', jsonb_build_object('providerOperationId', op.id));
   RETURN jsonb_build_object(
     'status','success','id', sub.id, 'version', sub.record_version, 'providerOperationId', op.id,
-    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id
+    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id,
+    'providerOperationStatus', op.status
   );
 END; $$;
 
@@ -1629,7 +1646,12 @@ BEGIN
   END IF;
   SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = price.id;
   IF map.id IS NOT NULL THEN
-    RETURN jsonb_build_object('status','success','id', map.id, 'providerOperationId', map.provider_operation_id, 'replay', true);
+    SELECT * INTO op FROM public.provider_operations WHERE id = map.provider_operation_id;
+    RETURN jsonb_build_object(
+      'status','success','id', map.id, 'providerOperationId', map.provider_operation_id, 'replay', true,
+      'idempotencyKey', op.idempotency_key, 'providerOperationStatus', op.status,
+      'amountMinor', price.amount_minor, 'currency', 'GBP', 'priceVersionId', price.id
+    );
   END IF;
   SELECT * INTO op FROM public.provider_operations
     WHERE kind = 'CREATE_RECURRING_PRICE' AND purpose = 'GUARD_PRICE' AND idempotency_key = price.id FOR UPDATE;
@@ -1640,7 +1662,8 @@ BEGIN
   END IF;
   RETURN jsonb_build_object(
     'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
-    'amountMinor', price.amount_minor, 'currency', 'GBP', 'priceVersionId', price.id
+    'amountMinor', price.amount_minor, 'currency', 'GBP', 'priceVersionId', price.id,
+    'providerOperationStatus', op.status
   );
 END; $$;
 
@@ -1784,7 +1807,20 @@ BEGIN
   IF offer.status IN ('ACCEPTED','SCHEDULE_PENDING','SCHEDULED','APPLIED') THEN
     UPDATE public.customer_actions SET status = 'COMPLETED', completed_at = coalesce(completed_at, now())
       WHERE id = p_action.id AND status = 'OPEN';
-    RETURN jsonb_build_object('status','success','offerId', offer.id, 'replay', true);
+    SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = offer.new_price_version_id;
+    SELECT * INTO op FROM public.provider_operations
+      WHERE id = offer.provider_operation_id
+         OR (guard_subscription_id = sub.id AND kind IN ('CREATE_SUBSCRIPTION_SCHEDULE','UPDATE_SUBSCRIPTION_SCHEDULE'))
+      ORDER BY created_at ASC LIMIT 1;
+    RETURN jsonb_build_object(
+      'status','success','offerId', offer.id, 'replay', true,
+      'providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+      'providerOperationStatus', op.status, 'subscriptionItemId', sub.stripe_subscription_item_id,
+      'newStripePriceId', map.stripe_price_id, 'oldStripePriceId', sub.stripe_price_id,
+      'cancelAtPeriodEnd', sub.cancel_at_period_end, 'scheduleId', sub.stripe_schedule_id,
+      'stripeSubscriptionId', sub.stripe_subscription_id, 'periodEnd', sub.current_period_end,
+      'stripeCustomerId', sub.stripe_customer_id
+    );
   END IF;
   SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = offer.new_price_version_id;
   UPDATE public.guard_price_change_offers SET status = 'ACCEPTED', accepted_at = now() WHERE id = offer.id RETURNING * INTO offer;
@@ -1815,7 +1851,8 @@ BEGIN
     'newStripePriceId', map.stripe_price_id, 'oldStripePriceId', sub.stripe_price_id,
     'cancelAtPeriodEnd', sub.cancel_at_period_end, 'scheduleId', sub.stripe_schedule_id,
     'providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
-    'stripeSubscriptionId', sub.stripe_subscription_id, 'periodEnd', sub.current_period_end
+    'stripeSubscriptionId', sub.stripe_subscription_id, 'periodEnd', sub.current_period_end,
+    'providerOperationStatus', op.status, 'stripeCustomerId', sub.stripe_customer_id
   );
 END; $$;
 
@@ -1910,10 +1947,12 @@ BEGIN
       IF included.activated_at IS NULL OR included.included_start_at IS NULL OR included.included_end_at IS NULL THEN
         RETURN jsonb_build_object('status','denied','reason','included_never_activated');
       END IF;
-      IF included.included_end_at > now() AND included.included_end_at < now() + interval '2 minutes' THEN
-        RETURN jsonb_build_object('status','denied','reason','included_window_too_short');
+      IF included.included_end_at > now()
+        AND included.included_end_at < now() + interval '48 hours 5 minutes'
+      THEN
+        RETURN jsonb_build_object('status','denied','reason','included_trial_window_unsupported');
       END IF;
-      IF included.included_end_at > now() THEN
+      IF included.included_end_at >= now() + interval '48 hours 5 minutes' THEN
         trial_end := included.included_end_at;
       END IF;
     END IF;
@@ -1937,7 +1976,8 @@ BEGIN
       'stripeCustomerId', cus.stripe_customer_id, 'stripePriceId', map.stripe_price_id, 'amountMinor', sub.amount_minor,
       'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardCoverageId', sub.coverage_id,
       'guardSubscriptionId', sub.id, 'priceVersionId', sub.price_version_id, 'continuationId', sub.continuation_id,
-      'mode', 'subscription', 'trialEnd', trial_end, 'includedEndAt', included.included_end_at
+      'mode', 'subscription', 'trialEnd', trial_end, 'includedEndAt', included.included_end_at,
+      'providerOperationStatus', op.status
     );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
@@ -1951,7 +1991,7 @@ BEGIN
       'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
       'stripeCustomerId', cus.stripe_customer_id, 'stripeSubscriptionId', sub.stripe_subscription_id,
       'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardSubscriptionId', sub.id,
-      'priceVersionId', sub.price_version_id, 'mode', 'setup'
+      'priceVersionId', sub.price_version_id, 'mode', 'setup', 'providerOperationStatus', op.status
     );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
@@ -1966,7 +2006,10 @@ BEGIN
     );
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CANCELLATION_REQUESTED', NULL, sub.lifecycle_state,
       'Customer requested period-end cancellation', jsonb_build_object('providerOperationId', op.id));
-    cached := jsonb_build_object('status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id);
+    cached := jsonb_build_object(
+      'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+      'stripeSubscriptionId', sub.stripe_subscription_id, 'providerOperationStatus', op.status
+    );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
   END IF;
@@ -1980,7 +2023,10 @@ BEGIN
     );
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CANCELLATION_REQUESTED', NULL, sub.lifecycle_state,
       'Customer requested undo of scheduled cancellation', jsonb_build_object('providerOperationId', op.id));
-    cached := jsonb_build_object('status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id);
+    cached := jsonb_build_object(
+      'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+      'stripeSubscriptionId', sub.stripe_subscription_id, 'providerOperationStatus', op.status
+    );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
   END IF;
@@ -2239,18 +2285,17 @@ BEGIN
   IF sub.id IS NULL AND p_type LIKE 'refund.%' THEN
     SELECT s.* INTO sub FROM public.guard_refunds r
       JOIN public.guard_subscriptions s ON s.id = r.subscription_id
-      WHERE r.stripe_refund_id = p_object_id
+      WHERE (p_object_id ~ '^re_' AND r.stripe_refund_id = p_object_id)
+         OR r.id = NULLIF(payload->>'guardRefundId','')::uuid
          OR r.provider_operation_id = NULLIF(payload->>'providerOperationId','')::uuid
-         OR r.stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId','')
-         OR r.stripe_charge_id = NULLIF(payload->>'chargeId','')
       LIMIT 1 FOR UPDATE;
-    IF sub.id IS NULL THEN
-      SELECT s.* INTO sub FROM public.guard_subscription_invoices i
-        JOIN public.guard_subscriptions s ON s.id = i.subscription_id
-        WHERE i.stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId','')
-           OR i.stripe_charge_id = NULLIF(payload->>'chargeId','')
-        LIMIT 1 FOR UPDATE;
-    END IF;
+  END IF;
+  IF sub.id IS NULL AND p_type = 'charge.refunded' THEN
+    SELECT s.* INTO sub FROM public.guard_subscription_invoices i
+      JOIN public.guard_subscriptions s ON s.id = i.subscription_id
+      WHERE i.stripe_charge_id = coalesce(NULLIF(p_object_id,''), NULLIF(payload->>'chargeId',''))
+         OR i.stripe_charge_id = NULLIF(payload->>'chargeId','')
+      LIMIT 1 FOR UPDATE;
   END IF;
   IF sub.id IS NULL AND p_type LIKE 'charge.dispute.%' THEN
     SELECT s.* INTO sub FROM public.guard_subscription_invoices i
@@ -2349,17 +2394,34 @@ BEGIN
       sub.amount_minor, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
   ELSIF p_type IN ('refund.updated','refund.failed','refund.created') THEN
     SELECT * INTO refund FROM public.guard_refunds
-      WHERE stripe_refund_id = p_object_id
+      WHERE (p_object_id ~ '^re_' AND stripe_refund_id = p_object_id)
+         OR id = NULLIF(payload->>'guardRefundId','')::uuid
          OR provider_operation_id = NULLIF(payload->>'providerOperationId','')::uuid
-         OR (NULLIF(payload->>'paymentIntentId','') IS NOT NULL AND stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId',''))
-         OR (NULLIF(payload->>'chargeId','') IS NOT NULL AND stripe_charge_id = NULLIF(payload->>'chargeId',''))
       FOR UPDATE;
     IF refund.id IS NULL THEN
       RETURN jsonb_build_object('status','unmatched','reason','refund_correlation_pending');
     END IF;
+    IF NULLIF(payload->>'amountMinor','') IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','refund_amount_missing');
+    END IF;
+    IF NULLIF(payload->>'currency','') IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','refund_currency_missing');
+    END IF;
+    IF lower(payload->>'currency') IS DISTINCT FROM 'gbp' THEN
+      RETURN jsonb_build_object('status','denied','reason','refund_currency_invalid');
+    END IF;
+    SELECT * INTO inv FROM public.guard_subscription_invoices WHERE id = refund.invoice_id;
     IF refund.subscription_id IS DISTINCT FROM sub.id
-      OR (NULLIF(payload->>'amountMinor','') IS NOT NULL AND (payload->>'amountMinor')::integer IS DISTINCT FROM refund.amount_minor)
-      OR (NULLIF(payload->>'currency','') IS NOT NULL AND lower(payload->>'currency') IS DISTINCT FROM 'gbp')
+      OR (payload->>'amountMinor')::integer IS DISTINCT FROM refund.amount_minor
+      OR (inv.id IS NOT NULL AND inv.subscription_id IS DISTINCT FROM sub.id)
+      OR (refund.stripe_payment_intent_id IS NOT NULL AND NULLIF(payload->>'paymentIntentId','') IS NOT NULL
+        AND refund.stripe_payment_intent_id IS DISTINCT FROM NULLIF(payload->>'paymentIntentId',''))
+      OR (refund.stripe_charge_id IS NOT NULL AND NULLIF(payload->>'chargeId','') IS NOT NULL
+        AND refund.stripe_charge_id IS DISTINCT FROM NULLIF(payload->>'chargeId',''))
+      OR (inv.stripe_payment_intent_id IS NOT NULL AND NULLIF(payload->>'paymentIntentId','') IS NOT NULL
+        AND inv.stripe_payment_intent_id IS DISTINCT FROM NULLIF(payload->>'paymentIntentId',''))
+      OR (inv.stripe_charge_id IS NOT NULL AND NULLIF(payload->>'chargeId','') IS NOT NULL
+        AND inv.stripe_charge_id IS DISTINCT FROM NULLIF(payload->>'chargeId',''))
     THEN
       RETURN jsonb_build_object('status','denied','reason','refund_scope_mismatch');
     END IF;
@@ -2390,8 +2452,16 @@ BEGIN
       CASE WHEN refund.status = 'FAILED' THEN 'GUARD_REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'GUARD_REFUND_SUCCEEDED' ELSE 'GUARD_REFUND_SUBMITTED' END,
       refund.amount_minor, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
   ELSIF p_type = 'charge.refunded' THEN
+    SELECT * INTO inv FROM public.guard_subscription_invoices
+      WHERE subscription_id = sub.id
+        AND stripe_charge_id = coalesce(NULLIF(p_object_id,''), NULLIF(payload->>'chargeId',''))
+      LIMIT 1;
+    IF inv.id IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','charge_invoice_pending');
+    END IF;
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'SYSTEM', NULL, 'RECONCILIATION_MISMATCH', sub.lifecycle_state, sub.lifecycle_state,
-      'charge.refunded is supplemental and does not mark a refund succeeded', jsonb_build_object('objectId', p_object_id, 'chargeId', payload->>'chargeId'));
+      'charge.refunded is supplemental and does not mark a refund succeeded',
+      jsonb_build_object('objectId', p_object_id, 'chargeId', payload->>'chargeId', 'invoiceId', inv.id));
   ELSIF p_type LIKE 'setup_intent.%' THEN
     IF meta_sub IS DISTINCT FROM sub.id THEN
       RETURN jsonb_build_object('status','denied','reason','setup_scope');
@@ -2410,13 +2480,39 @@ BEGIN
     IF inv.id IS NULL THEN
       RETURN jsonb_build_object('status','unmatched','reason','dispute_invoice_pending');
     END IF;
+    IF NULLIF(payload->>'amountMinor','') IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','dispute_amount_missing');
+    END IF;
+    IF NULLIF(payload->>'currency','') IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','dispute_currency_missing');
+    END IF;
+    IF lower(payload->>'currency') IS DISTINCT FROM 'gbp' THEN
+      RETURN jsonb_build_object('status','denied','reason','dispute_currency_invalid');
+    END IF;
+    IF (payload->>'amountMinor')::integer <= 0
+      OR (payload->>'amountMinor')::integer > inv.amount_paid_minor
+      OR inv.subscription_id IS DISTINCT FROM sub.id
+      OR (NULLIF(payload->>'locationId','') IS NOT NULL AND NULLIF(payload->>'locationId','')::uuid IS DISTINCT FROM sub.location_id)
+    THEN
+      RETURN jsonb_build_object('status','denied','reason','dispute_scope_mismatch');
+    END IF;
+    SELECT * INTO dispute FROM public.guard_disputes WHERE stripe_dispute_id = p_object_id FOR UPDATE;
+    IF dispute.id IS NOT NULL AND (
+      dispute.subscription_id IS DISTINCT FROM sub.id
+      OR dispute.location_id IS DISTINCT FROM sub.location_id
+      OR dispute.invoice_id IS DISTINCT FROM inv.id
+      OR dispute.stripe_charge_id IS DISTINCT FROM NULLIF(payload->>'chargeId','')
+      OR dispute.amount_minor IS DISTINCT FROM (payload->>'amountMinor')::integer
+      OR dispute.currency IS DISTINCT FROM 'GBP'
+    ) THEN
+      RETURN jsonb_build_object('status','denied','reason','dispute_scope_mismatch');
+    END IF;
     INSERT INTO public.guard_disputes(
       subscription_id, location_id, invoice_id, stripe_dispute_id, stripe_charge_id, amount_minor, currency, provider_status
     ) VALUES (
-      sub.id, sub.location_id,
-      (SELECT id FROM public.guard_subscription_invoices WHERE subscription_id = sub.id AND stripe_charge_id = NULLIF(payload->>'chargeId','') LIMIT 1),
+      sub.id, sub.location_id, inv.id,
       p_object_id, NULLIF(payload->>'chargeId',''),
-      coalesce(NULLIF(payload->>'amountMinor','')::integer, sub.amount_minor), 'GBP',
+      (payload->>'amountMinor')::integer, 'GBP',
       coalesce(NULLIF(payload->>'disputeStatus',''), 'needs_response')
     ) ON CONFLICT (stripe_dispute_id) DO UPDATE SET
       provider_status = excluded.provider_status,
@@ -2428,7 +2524,7 @@ BEGIN
       NULL, sub.lifecycle_state, 'Provider dispute update', jsonb_build_object('disputeId', p_object_id));
     PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL,
       CASE WHEN p_type = 'charge.dispute.closed' THEN 'GUARD_DISPUTE_CLOSED' ELSE 'GUARD_DISPUTE_OPENED' END,
-      coalesce(NULLIF(payload->>'amountMinor','')::integer, sub.amount_minor), 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
+      (payload->>'amountMinor')::integer, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
   END IF;
   UPDATE admin_private.stripe_event_receipts SET processed = true WHERE provider_event_id = p_event_id;
   RETURN jsonb_build_object('status','success','duplicate', false, 'subscriptionId', sub.id);
@@ -2522,13 +2618,28 @@ END; $$;
 
 CREATE FUNCTION public.guard_confirm_cancellation_v1(p_operation uuid, p_object_id text, p_cancel boolean, p_status text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE op public.provider_operations; recorded jsonb;
+DECLARE op public.provider_operations; recorded jsonb; expected boolean;
 BEGIN
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation FOR UPDATE;
+  IF op.id IS NULL OR op.guard_subscription_id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF op.kind = 'CANCEL_SUBSCRIPTION_PERIOD_END' THEN
+    expected := true;
+  ELSIF op.kind = 'UNDO_SUBSCRIPTION_CANCELLATION' THEN
+    expected := false;
+  ELSE
+    RETURN jsonb_build_object('status','denied','reason','unexpected_operation_kind');
+  END IF;
+  IF p_cancel IS DISTINCT FROM expected THEN
+    PERFORM admin_private.guard_subscription_append_v1(
+      op.guard_subscription_id, 'SYSTEM', NULL, 'RECONCILIATION_MISMATCH', NULL, NULL,
+      'Provider cancel flag does not match the requested operation',
+      jsonb_build_object('providerOperationId', op.id, 'kind', op.kind, 'providerCancelAtPeriodEnd', p_cancel, 'expected', expected)
+    );
+    RETURN jsonb_build_object('status','denied','reason','provider_cancel_flag_mismatch');
+  END IF;
   recorded := public.payment_record_provider_refs_v1(p_operation, p_object_id, 'subscription',
     CASE WHEN p_status IN ('SUCCEEDED','FAILED','CANCELLED','SUBMITTED') THEN p_status ELSE 'SUBMITTED' END);
   IF recorded->>'status' IS DISTINCT FROM 'success' THEN RETURN recorded; END IF;
-  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation;
-  IF op.guard_subscription_id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   PERFORM admin_private.guard_confirm_cancel_flag_v1(op.guard_subscription_id, p_cancel);
   UPDATE public.provider_operations SET status = 'SUCCEEDED' WHERE id = op.id AND status IN ('PENDING','SUBMITTED');
   RETURN jsonb_build_object('status','success','id', op.guard_subscription_id, 'cancelAtPeriodEnd', p_cancel);
@@ -2567,7 +2678,8 @@ END; $$;
 CREATE FUNCTION public.guard_apply_recovery_setup_v1(
   p_setup_intent text, p_customer text, p_payment_method text, p_guard_subscription uuid, p_operation uuid
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE sub public.guard_subscriptions; op public.provider_operations;
+DECLARE
+  sub public.guard_subscriptions; op public.provider_operations; checkout public.provider_operations;
 BEGIN
   IF p_setup_intent IS NULL OR p_customer IS NULL OR p_payment_method IS NULL OR p_payment_method !~ '^pm_'
     OR p_guard_subscription IS NULL
@@ -2576,20 +2688,33 @@ BEGIN
   IF sub.id IS NULL OR sub.stripe_customer_id IS DISTINCT FROM p_customer THEN
     RETURN jsonb_build_object('status','denied','reason','customer_mismatch');
   END IF;
+  SELECT * INTO checkout FROM public.provider_operations
+    WHERE id = p_operation AND kind = 'CREATE_RECOVERY_CHECKOUT' AND guard_subscription_id = sub.id
+    FOR UPDATE;
+  IF checkout.id IS NULL THEN
+    RETURN jsonb_build_object('status','denied','reason','recovery_operation_missing');
+  END IF;
   SELECT * INTO op FROM public.provider_operations
-    WHERE id = coalesce(p_operation, id) AND guard_subscription_id = sub.id
-      AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD' AND status IN ('PENDING','SUBMITTED')
-    ORDER BY created_at ASC LIMIT 1 FOR UPDATE;
+    WHERE source_provider_operation_id = checkout.id AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD'
+    FOR UPDATE;
   IF op.id IS NULL THEN
-    INSERT INTO public.provider_operations(
-      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-    ) VALUES (
-      coalesce(p_operation, extensions.gen_random_uuid()), 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD', 'GUARD_RECOVERY',
-      sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
-    ) RETURNING * INTO op;
+    BEGIN
+      INSERT INTO public.provider_operations(
+        idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status,
+        source_provider_operation_id
+      ) VALUES (
+        extensions.gen_random_uuid(), 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD', 'GUARD_RECOVERY',
+        sub.customer_id, sub.service_order_id, sub.id, 'PENDING', checkout.id
+      ) RETURNING * INTO op;
+    EXCEPTION WHEN unique_violation THEN
+      SELECT * INTO op FROM public.provider_operations
+        WHERE source_provider_operation_id = checkout.id AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD'
+        FOR UPDATE;
+    END;
   END IF;
   RETURN jsonb_build_object(
     'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+    'providerOperationStatus', op.status,
     'stripeSubscriptionId', sub.stripe_subscription_id, 'stripeCustomerId', sub.stripe_customer_id,
     'paymentMethodId', p_payment_method, 'guardSubscriptionId', sub.id
   );
@@ -2606,6 +2731,64 @@ BEGIN
     'Default payment method updated after provider confirmation. Invoice remains unpaid until invoice.paid',
     jsonb_build_object('subscriptionId', p_object_id));
   RETURN jsonb_build_object('status','success','id', op.guard_subscription_id);
+END; $$;
+
+CREATE FUNCTION admin_private.guard_settle_pending_operations_v1(p_subscription uuid, p_payload jsonb)
+RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  sub public.guard_subscriptions; op public.provider_operations; payload jsonb;
+  cancel_flag boolean; schedule_id text; item_id text;
+BEGIN
+  payload := coalesce(p_payload, '{}'::jsonb);
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = p_subscription FOR UPDATE;
+  IF sub.id IS NULL THEN RETURN; END IF;
+  IF payload ? 'cancelAtPeriodEnd' THEN
+    cancel_flag := (payload->>'cancelAtPeriodEnd')::boolean;
+    FOR op IN
+      SELECT * FROM public.provider_operations
+      WHERE guard_subscription_id = sub.id AND status IN ('PENDING','SUBMITTED')
+        AND kind IN ('CANCEL_SUBSCRIPTION_PERIOD_END','UNDO_SUBSCRIPTION_CANCELLATION')
+      FOR UPDATE
+    LOOP
+      IF op.kind = 'CANCEL_SUBSCRIPTION_PERIOD_END' AND cancel_flag IS TRUE THEN
+        PERFORM public.guard_confirm_cancellation_v1(op.id, coalesce(sub.stripe_subscription_id, payload->>'subscriptionId'), true, 'SUCCEEDED');
+      ELSIF op.kind = 'UNDO_SUBSCRIPTION_CANCELLATION' AND cancel_flag IS FALSE THEN
+        PERFORM public.guard_confirm_cancellation_v1(op.id, coalesce(sub.stripe_subscription_id, payload->>'subscriptionId'), false, 'SUCCEEDED');
+      END IF;
+    END LOOP;
+  END IF;
+  IF NULLIF(payload->>'providerStatus','') = 'canceled' THEN
+    FOR op IN
+      SELECT * FROM public.provider_operations
+      WHERE guard_subscription_id = sub.id AND status IN ('PENDING','SUBMITTED')
+        AND kind = 'CANCEL_SUBSCRIPTION_IMMEDIATE'
+      FOR UPDATE
+    LOOP
+      PERFORM public.guard_confirm_immediate_cancellation_v1(op.id, coalesce(sub.stripe_subscription_id, payload->>'subscriptionId'));
+    END LOOP;
+  END IF;
+  schedule_id := NULLIF(payload->>'scheduleId','');
+  item_id := coalesce(NULLIF(payload->>'subscriptionItemId',''), sub.stripe_subscription_item_id);
+  IF schedule_id IS NOT NULL AND schedule_id ~ '^sub_sched_[A-Za-z0-9]+$' THEN
+    FOR op IN
+      SELECT * FROM public.provider_operations
+      WHERE guard_subscription_id = sub.id AND status IN ('PENDING','SUBMITTED')
+        AND kind = 'CREATE_SUBSCRIPTION_SCHEDULE'
+      FOR UPDATE
+    LOOP
+      PERFORM public.guard_record_price_schedule_v1(op.id, schedule_id, item_id);
+    END LOOP;
+  END IF;
+  IF NULLIF(payload->>'defaultPaymentMethodId','') ~ '^pm_' OR payload->>'paymentMethodUpdated' = 'true' THEN
+    FOR op IN
+      SELECT * FROM public.provider_operations
+      WHERE guard_subscription_id = sub.id AND status IN ('PENDING','SUBMITTED')
+        AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD'
+      FOR UPDATE
+    LOOP
+      PERFORM public.guard_confirm_payment_method_v1(op.id, coalesce(sub.stripe_subscription_id, payload->>'subscriptionId'));
+    END LOOP;
+  END IF;
 END; $$;
 
 CREATE FUNCTION admin_private.guard_materialise_reconciliation_targets_v1(p_run uuid) RETURNS integer
@@ -2653,7 +2836,34 @@ BEGIN
   lim := least(greatest(coalesce(p_limit, 25), 1), 50);
   SELECT coalesce(jsonb_agg(jsonb_build_object(
     'id', t.id, 'subscriptionId', t.subscription_id, 'expectedStripeSubscriptionId', t.expected_stripe_subscription_id,
-    'status', t.status, 'attempts', t.attempts, 'mismatchCount', t.mismatch_count
+    'status', t.status, 'attempts', t.attempts, 'mismatchCount', t.mismatch_count,
+    'pendingOperations', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', o.id, 'kind', o.kind, 'status', o.status, 'idempotencyKey', o.idempotency_key,
+        'providerObjectId', o.provider_object_id
+      ) ORDER BY o.created_at), '[]'::jsonb)
+      FROM public.provider_operations o
+      WHERE o.guard_subscription_id = t.subscription_id AND o.status IN ('PENDING','SUBMITTED')
+    ),
+    'pendingRefunds', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', r.id, 'stripeRefundId', r.stripe_refund_id, 'providerOperationId', r.provider_operation_id,
+        'status', r.status, 'amountMinor', r.amount_minor
+      ) ORDER BY r.created_at), '[]'::jsonb)
+      FROM public.guard_refunds r
+      WHERE r.subscription_id = t.subscription_id
+        AND r.stripe_refund_id IS NOT NULL
+        AND r.status IN ('SUBMITTED','PENDING')
+    ),
+    'unresolvedDisputes', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', d.id, 'stripeDisputeId', d.stripe_dispute_id, 'status', d.provider_status, 'amountMinor', d.amount_minor
+      ) ORDER BY d.opened_at), '[]'::jsonb)
+      FROM public.guard_disputes d
+      WHERE d.subscription_id = t.subscription_id
+        AND d.stripe_dispute_id IS NOT NULL
+        AND d.resolved_at IS NULL
+    )
   ) ORDER BY t.id), '[]'::jsonb) INTO rows
   FROM (
     SELECT * FROM public.guard_reconciliation_targets
@@ -2742,6 +2952,20 @@ BEGIN
         VALUES (run.id, sub.id, sub.coverage_id, 'QUANTITY_NOT_ONE', jsonb_build_object('quantity', payload->>'quantity'));
         mismatches := mismatches + 1;
       END IF;
+    END IF;
+    IF jsonb_typeof(payload->'followUpErrors') = 'array' THEN
+      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+      SELECT run.id, sub.id, sub.coverage_id, coalesce(err->>'code', 'FOLLOW_UP_FAILED'), err
+      FROM jsonb_array_elements(payload->'followUpErrors') AS err;
+      mismatches := mismatches + (
+        SELECT count(*)::int FROM jsonb_array_elements(payload->'followUpErrors')
+      );
+    END IF;
+    IF payload->>'outcome' IS DISTINCT FROM 'PROVIDER_DISABLED'
+      AND payload->>'outcome' IS DISTINCT FROM 'RETRY'
+      AND payload->>'outcome' IS DISTINCT FROM 'FAILED'
+    THEN
+      PERFORM admin_private.guard_settle_pending_operations_v1(sub.id, payload);
     END IF;
     next_status := 'SUCCEEDED';
   END IF;

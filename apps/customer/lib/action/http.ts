@@ -146,6 +146,9 @@ export async function command(request: NextRequest) {
       periodEnd?: string
       cancelAtPeriodEnd?: boolean
       unapplied?: boolean
+      providerOperationStatus?: string
+      stripeCustomerId?: string
+      scheduleId?: string
     }>("customer_action_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
@@ -153,23 +156,35 @@ export async function command(request: NextRequest) {
     if (result.status !== "success") return reply()
     if (operation === "accept" && result.providerOperationId && result.stripeSubscriptionId && result.newStripePriceId && !result.unapplied) {
       const { guardSubscriptionsEnabled } = await import("../../../../lib/guard-billing/config")
-      if (guardSubscriptionsEnabled() && result.subscriptionItemId && result.oldStripePriceId && result.periodEnd) {
+      if (guardSubscriptionsEnabled() && result.subscriptionItemId && result.oldStripePriceId && result.periodEnd
+        && result.providerOperationStatus !== "SUCCEEDED") {
         const { paymentProvider } = await import("../../../../lib/payments")
         const periodEnd = Math.floor(Date.parse(result.periodEnd) / 1000)
         if (Number.isFinite(periodEnd)) {
-          const schedule = await paymentProvider().createSubscriptionSchedule({
-            idempotencyKey: result.idempotencyKey || key,
-            subscriptionId: result.stripeSubscriptionId,
-            subscriptionItemId: result.subscriptionItemId,
-            currentPriceId: result.oldStripePriceId,
-            nextPriceId: result.newStripePriceId,
-            periodEnd,
-          })
-          await backend().rpc("guard_record_price_schedule_v1", {
-            p_operation: result.providerOperationId,
-            p_schedule_id: schedule.id,
-            p_subscription_item_id: result.subscriptionItemId,
-          })
+          const provider = paymentProvider()
+          const current = await provider.retrieveSubscription(result.stripeSubscriptionId)
+          if (current?.scheduleId) {
+            await backend().rpc("guard_record_price_schedule_v1", {
+              p_operation: result.providerOperationId,
+              p_schedule_id: current.scheduleId,
+              p_subscription_item_id: result.subscriptionItemId,
+            })
+          } else {
+            const schedule = await provider.createSubscriptionSchedule({
+              idempotencyKey: result.idempotencyKey || key,
+              subscriptionId: result.stripeSubscriptionId,
+              subscriptionItemId: result.subscriptionItemId,
+              currentPriceId: result.oldStripePriceId,
+              nextPriceId: result.newStripePriceId,
+              periodEnd,
+              customerId: result.stripeCustomerId,
+            })
+            await backend().rpc("guard_record_price_schedule_v1", {
+              p_operation: result.providerOperationId,
+              p_schedule_id: schedule.id,
+              p_subscription_item_id: result.subscriptionItemId,
+            })
+          }
         }
       }
     }

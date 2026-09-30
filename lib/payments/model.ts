@@ -119,6 +119,17 @@ export type RetrievedInvoice = {
   subscriptionMetadata?: Record<string, string>
 }
 
+export const STRIPE_TRIAL_END_MINIMUM_SECONDS = 48 * 3600
+export const STRIPE_TRIAL_END_SAFETY_SECONDS = 5 * 60
+
+export function stripeTrialEndMinimumUnix(nowSeconds = Math.floor(Date.now() / 1000)): number {
+  return nowSeconds + STRIPE_TRIAL_END_MINIMUM_SECONDS + STRIPE_TRIAL_END_SAFETY_SECONDS
+}
+
+export function isStripeTrialEndAllowed(trialEnd: number, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
+  return Number.isInteger(trialEnd) && trialEnd >= stripeTrialEndMinimumUnix(nowSeconds)
+}
+
 export type GuardMetadata = {
   customerId: string
   serviceOrderId: string
@@ -127,6 +138,7 @@ export type GuardMetadata = {
   guardCoverageId?: string
   continuationId?: string
   providerOperationId?: string
+  guardRefundId?: string
 }
 
 export type CreateSubscriptionCheckoutInput = {
@@ -173,6 +185,7 @@ export type RetrievedSubscription = {
   currentPeriodStart: string | null
   currentPeriodEnd: string | null
   scheduleId: string | null
+  defaultPaymentMethodId: string | null
   metadata: Record<string, string>
   livemode: false
 }
@@ -180,18 +193,19 @@ export type RetrievedSubscription = {
 export type RetrievedRefund = {
   id: string
   status: string
-  amountMinor: number
+  amountMinor: number | null
   currency: string
   paymentIntentId: string | null
   chargeId: string | null
   failureReason: string | null
+  metadata?: Record<string, string>
   livemode: false
 }
 
 export type RetrievedDispute = {
   id: string
   status: string
-  amountMinor: number
+  amountMinor: number | null
   currency: string
   chargeId: string | null
   reason: string | null
@@ -210,6 +224,50 @@ export type ProviderSchedule = {
   id: string
   subscriptionId: string
   livemode: false
+}
+
+export type CreateSubscriptionScheduleInput = {
+  idempotencyKey: string
+  subscriptionId: string
+  subscriptionItemId: string
+  currentPriceId: string
+  nextPriceId: string
+  periodEnd: number
+  customerId?: string
+}
+
+export function assertGuardScheduleSubscription(
+  input: CreateSubscriptionScheduleInput,
+  retrieved: RetrievedSubscription | null,
+): asserts retrieved is RetrievedSubscription {
+  if (!retrieved) {
+    throw new Error("Subscription could not be retrieved before scheduling.")
+  }
+  if (retrieved.id !== input.subscriptionId) {
+    throw new Error("Stripe Subscription ID does not match the Guard schedule request.")
+  }
+  if (input.customerId && retrieved.customerId !== input.customerId) {
+    throw new Error("Stripe Customer does not match the Guard schedule request.")
+  }
+  if (!input.subscriptionItemId || retrieved.subscriptionItemId !== input.subscriptionItemId) {
+    throw new Error("Stripe Subscription Item does not match the Guard schedule request.")
+  }
+  if (retrieved.priceId !== input.currentPriceId) {
+    throw new Error("Current Stripe Price does not match the Guard schedule request.")
+  }
+  if (retrieved.quantity !== 1) {
+    throw new Error("Guard price scheduling requires quantity 1.")
+  }
+  if (retrieved.status === "canceled") {
+    throw new Error("A canceled Stripe Subscription cannot be scheduled.")
+  }
+  if (retrieved.cancelAtPeriodEnd) {
+    throw new Error("A period-end cancellation blocks Guard price scheduling.")
+  }
+  const actualEnd = retrieved.currentPeriodEnd ? Math.floor(Date.parse(retrieved.currentPeriodEnd) / 1000) : null
+  if (actualEnd == null || actualEnd !== input.periodEnd) {
+    throw new Error("Current period end does not match the Guard schedule request.")
+  }
 }
 
 export type CreateHostedInvoiceInput = {
@@ -373,7 +431,7 @@ export function isUuid(value: unknown): value is string {
 }
 
 const PAYMENT_METADATA_KEYS = ["customerId", "serviceOrderId", "obligationId", "attemptId", "orderRef", "providerOperationId"]
-const GUARD_METADATA_KEYS = ["customerId", "serviceOrderId", "guardCoverageId", "guardSubscriptionId", "priceVersionId", "providerOperationId", "continuationId"]
+const GUARD_METADATA_KEYS = ["customerId", "serviceOrderId", "guardCoverageId", "guardSubscriptionId", "priceVersionId", "providerOperationId", "continuationId", "guardRefundId"]
 
 export function assertSafeMetadata(meta: Record<string, string>) {
   for (const [key, value] of Object.entries(meta)) {
@@ -398,6 +456,7 @@ export function guardMetadata(input: GuardMetadata): Record<string, string> {
   if (input.guardCoverageId) out.guardCoverageId = input.guardCoverageId
   if (input.continuationId) out.continuationId = input.continuationId
   if (input.providerOperationId) out.providerOperationId = input.providerOperationId
+  if (input.guardRefundId) out.guardRefundId = input.guardRefundId
   return out
 }
 

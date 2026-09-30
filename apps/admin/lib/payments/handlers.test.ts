@@ -300,4 +300,71 @@ describe("payment job handlers", () => {
       p_payload: expect.objectContaining({ chargeId: "ch_testguard1" }),
     }))
   })
+
+  it("replays a Guard recovery SetupIntent onto one update-payment-method operation", async () => {
+    fake.objects.set("seti_guard_replay", {
+      id: "seti_guard_replay",
+      status: "succeeded",
+      usage: "off_session",
+      customerId: "cus_guard",
+      paymentMethodId: "pm_guard1",
+      metadata: {
+        guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        customerId,
+        serviceOrderId: orderId,
+        providerOperationId: operationId,
+      },
+    })
+    fake.objects.set("sub_guard1", { id: "sub_guard1", status: "past_due", customerId: "cus_guard" })
+    const update = vi.spyOn(fake, "updateSubscriptionPaymentMethod")
+    const rpc = rpcMock()
+    const updateOp = "99999999-9999-4999-8999-999999999999"
+    rpc.rpc.mockImplementation((async (name: string) => {
+      if (name === "guard_apply_subscription_event_v1") return { status: "success" }
+      if (name === "guard_apply_recovery_setup_v1") {
+        return { status: "success", providerOperationId: updateOp, idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", stripeSubscriptionId: "sub_guard1", providerOperationStatus: "PENDING" }
+      }
+      return { status: "success" }
+    }) as typeof rpc.rpc)
+    const first = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_seti_replay_a", eventType: "setup_intent.succeeded", objectId: "seti_guard_replay" },
+      rpc: rpc.asJob,
+    })
+    expect(first).toEqual({ ok: true })
+    rpc.rpc.mockImplementation((async (name: string) => {
+      if (name === "guard_apply_subscription_event_v1") return { status: "success" }
+      if (name === "guard_apply_recovery_setup_v1") {
+        return { status: "success", providerOperationId: updateOp, idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", stripeSubscriptionId: "sub_guard1", providerOperationStatus: "SUCCEEDED" }
+      }
+      return { status: "success" }
+    }) as typeof rpc.rpc)
+    const second = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_seti_replay_b", eventType: "setup_intent.succeeded", objectId: "seti_guard_replay" },
+      rpc: rpc.asJob,
+    })
+    expect(second).toEqual({ ok: true })
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      id: "sub_guard1",
+      idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    }))
+    expect(rpc.rpc.mock.calls.filter(call => call[0] === "guard_confirm_payment_method_v1")).toHaveLength(1)
+  })
+
+  it("sends charge.refunded as supplemental Charge evidence only", async () => {
+    const rpc = rpcMock()
+    const result = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_ch_ref", eventType: "charge.refunded", objectId: "ch_testguard1" },
+      rpc: rpc.asJob,
+    })
+    expect(result).toEqual({ ok: true })
+    expect(rpc.rpc).toHaveBeenCalledWith("guard_apply_subscription_event_v1", expect.objectContaining({
+      p_type: "charge.refunded",
+      p_object_id: "ch_testguard1",
+      p_payload: expect.objectContaining({ chargeId: "ch_testguard1", supplemental: true }),
+    }))
+  })
 })

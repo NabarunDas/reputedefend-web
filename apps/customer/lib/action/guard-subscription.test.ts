@@ -52,6 +52,16 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_SECRET_KEY", "test")
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
   mocks.rpc.mockReset()
+  mocks.provider.createSubscriptionCheckout.mockReset()
+  mocks.provider.createGuardRecoveryCheckout.mockReset()
+  mocks.provider.createSetupCheckout.mockReset()
+  mocks.provider.createCustomer.mockReset()
+  mocks.provider.setCancelAtPeriodEnd.mockReset()
+  mocks.provider.createSubscriptionCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.createGuardRecoveryCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.createSetupCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.createCustomer.mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.setCancelAtPeriodEnd.mockImplementation(async () => { throw new mocks.Disabled() })
 })
 afterEach(() => vi.unstubAllEnvs())
 
@@ -119,5 +129,78 @@ describe("customer Guard subscription HTTP", () => {
     }))
     expect(mocks.provider.createSetupCheckout).not.toHaveBeenCalled()
     expect(mocks.provider.createSubscriptionCheckout).not.toHaveBeenCalled()
+  })
+
+  it("sends the exact included trial_end when 72 hours remain", async () => {
+    vi.stubEnv("GUARD_SUBSCRIPTIONS_ENABLED", "true")
+    const trialEnd = new Date(Date.now() + 72 * 3600 * 1000).toISOString()
+    mocks.provider.createSubscriptionCheckout.mockResolvedValue({
+      id: "cs_trial", url: "https://checkout.stripe.test/sub", mode: "subscription", amountMinor: 0, livemode: false,
+    })
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      mode: "subscription",
+      providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+      stripeCustomerId: "cus_ok",
+      stripePriceId: "price_test",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      trialEnd,
+      includedEndAt: trialEnd,
+    })
+    const checkout = await guardPost(req({ operation: "start_checkout" }))
+    expect(checkout.status).toBe(200)
+    expect(mocks.provider.createSubscriptionCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      trialEnd: Math.floor(Date.parse(trialEnd) / 1000),
+    }))
+  })
+
+  it("makes zero subscription provider calls when 47 hours of included Guard remain", async () => {
+    vi.stubEnv("GUARD_SUBSCRIPTIONS_ENABLED", "true")
+    const includedEndAt = new Date(Date.now() + 47 * 3600 * 1000).toISOString()
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      mode: "subscription",
+      providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+      stripeCustomerId: "cus_ok",
+      stripePriceId: "price_test",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      includedEndAt,
+    })
+    const checkout = await guardPost(req({ operation: "start_checkout" }))
+    expect(checkout.status).toBe(403)
+    expect(await checkout.json()).toMatchObject({ reason: "included_trial_window_unsupported" })
+    expect(mocks.provider.createSubscriptionCheckout).not.toHaveBeenCalled()
+  })
+
+  it("uses immediate normal paid Checkout when the included period has already ended", async () => {
+    vi.stubEnv("GUARD_SUBSCRIPTIONS_ENABLED", "true")
+    mocks.provider.createSubscriptionCheckout.mockResolvedValue({
+      id: "cs_paid", url: "https://checkout.stripe.test/sub", mode: "subscription", amountMinor: 0, livemode: false,
+    })
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      mode: "subscription",
+      providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+      stripeCustomerId: "cus_ok",
+      stripePriceId: "price_test",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      includedEndAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+    })
+    const checkout = await guardPost(req({ operation: "start_checkout" }))
+    expect(checkout.status).toBe(200)
+    expect(mocks.provider.createSubscriptionCheckout).toHaveBeenCalledWith(expect.not.objectContaining({
+      trialEnd: expect.anything(),
+    }))
+    const args = mocks.provider.createSubscriptionCheckout.mock.calls[0][0] as { trialEnd?: number }
+    expect(args.trialEnd).toBeUndefined()
   })
 })

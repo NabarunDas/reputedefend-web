@@ -4,11 +4,37 @@ import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/mode
 
 const PAGE = 25
 
+type PendingOperation = {
+  id: string
+  kind: string
+  status: string
+  idempotencyKey?: string
+  providerObjectId?: string | null
+}
+
+type PendingRefund = {
+  id: string
+  stripeRefundId?: string | null
+  providerOperationId?: string | null
+  status: string
+  amountMinor?: number
+}
+
+type UnresolvedDispute = {
+  id: string
+  stripeDisputeId?: string | null
+  status?: string
+  amountMinor?: number
+}
+
 type ReconciliationTarget = {
   id: string
   subscriptionId: string
   expectedStripeSubscriptionId?: string | null
   status: string
+  pendingOperations?: PendingOperation[]
+  pendingRefunds?: PendingRefund[]
+  unresolvedDisputes?: UnresolvedDispute[]
 }
 
 export function reconcileGuardBillingHandler(env: Record<string, string | undefined> = process.env): JobHandler {
@@ -30,9 +56,10 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
         for (const target of targets) {
           try {
             if (!target.expectedStripeSubscriptionId) {
+              const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target)
               await rpc.rpc("guard_apply_reconciliation_target_v1", {
                 p_target: target.id,
-                p_payload: { outcome: "SUCCEEDED", localOnly: true, livemode: false },
+                p_payload: { outcome: "SUCCEEDED", localOnly: true, livemode: false, followUpErrors },
               })
               continue
             }
@@ -51,6 +78,7 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
               })
               continue
             }
+            const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target)
             await rpc.rpc("guard_apply_reconciliation_target_v1", {
               p_target: target.id,
               p_payload: {
@@ -65,8 +93,11 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
                 periodStart: subscription.currentPeriodStart,
                 periodEnd: subscription.currentPeriodEnd,
                 scheduleId: subscription.scheduleId,
+                defaultPaymentMethodId: subscription.defaultPaymentMethodId,
+                paymentMethodUpdated: Boolean(subscription.defaultPaymentMethodId),
                 guardSubscriptionId: target.subscriptionId,
                 livemode: false,
+                followUpErrors,
               },
             })
           } catch (error) {
@@ -92,7 +123,76 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
       })
       if (result.status === "success") return { ok: true }
       if (result.status === "pending") return { ok: false, retryable: true, error: "Guard billing targets remain unresolved." }
-      return { ok: false, retryable: true, error: "Guard billing reconciliation did not complete." }
+      return { ok: true }
     },
   }
+}
+
+async function reconcileFollowUps(
+  provider: ReturnType<typeof paymentProvider>,
+  rpc: NonNullable<JobHandlerInput["rpc"]>,
+  runId: string,
+  target: ReconciliationTarget,
+) {
+  const errors: Array<Record<string, unknown>> = []
+  for (const refund of target.pendingRefunds ?? []) {
+    if (!refund.stripeRefundId) continue
+    try {
+      const retrieved = await provider.retrieveRefund(refund.stripeRefundId)
+      if (!retrieved) {
+        errors.push({ code: "REFUND_NOT_RETRIEVED", refundId: refund.id, stripeRefundId: refund.stripeRefundId })
+        continue
+      }
+      const applied = await rpc.rpc<{ status?: string; reason?: string }>("guard_apply_subscription_event_v1", {
+        p_event_id: `reconcile-refund:${runId}:${refund.id}`,
+        p_type: "refund.updated",
+        p_object_id: retrieved.id,
+        p_payload: {
+          refundStatus: retrieved.status,
+          ...(typeof retrieved.amountMinor === "number" ? { amountMinor: retrieved.amountMinor } : {}),
+          ...(retrieved.currency ? { currency: retrieved.currency } : {}),
+          paymentIntentId: retrieved.paymentIntentId,
+          chargeId: retrieved.chargeId,
+          failureCode: retrieved.failureReason,
+          guardRefundId: refund.id,
+          providerOperationId: refund.providerOperationId,
+          livemode: false,
+        },
+      })
+      if (applied.status !== "success") {
+        errors.push({ code: "REFUND_APPLY_FAILED", refundId: refund.id, reason: applied.reason || applied.status })
+      }
+    } catch (error) {
+      errors.push({ code: "REFUND_RETRIEVAL_FAILED", refundId: refund.id, error: (error as Error).name })
+    }
+  }
+  for (const dispute of target.unresolvedDisputes ?? []) {
+    if (!dispute.stripeDisputeId) continue
+    try {
+      const retrieved = await provider.retrieveDispute(dispute.stripeDisputeId)
+      if (!retrieved) {
+        errors.push({ code: "DISPUTE_NOT_RETRIEVED", disputeId: dispute.id, stripeDisputeId: dispute.stripeDisputeId })
+        continue
+      }
+      const applied = await rpc.rpc<{ status?: string; reason?: string }>("guard_apply_subscription_event_v1", {
+        p_event_id: `reconcile-dispute:${runId}:${dispute.id}`,
+        p_type: "charge.dispute.updated",
+        p_object_id: retrieved.id,
+        p_payload: {
+          disputeStatus: retrieved.status,
+          ...(typeof retrieved.amountMinor === "number" ? { amountMinor: retrieved.amountMinor } : {}),
+          ...(retrieved.currency ? { currency: retrieved.currency } : {}),
+          chargeId: retrieved.chargeId,
+          outcome: retrieved.reason,
+          livemode: false,
+        },
+      })
+      if (applied.status !== "success") {
+        errors.push({ code: "DISPUTE_APPLY_FAILED", disputeId: dispute.id, reason: applied.reason || applied.status })
+      }
+    } catch (error) {
+      errors.push({ code: "DISPUTE_RETRIEVAL_FAILED", disputeId: dispute.id, error: (error as Error).name })
+    }
+  }
+  return errors
 }

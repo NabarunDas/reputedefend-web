@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerConfig, sessionCookie } from "@/lib/config"
 import { isUuid } from "../uuid"
 import { paymentProvider } from "../../../../lib/payments"
+import { isStripeTrialEndAllowed } from "../../../../lib/payments/model"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { guardSubscriptionsEnabled } from "../../../../lib/guard-billing/config"
 
@@ -67,11 +68,13 @@ export async function guardSubscriptionCommand(request: NextRequest) {
       reviewRequired?: boolean
       trialEnd?: string
       includedEndAt?: string
+      reason?: string
+      providerOperationStatus?: string
     }>("customer_guard_subscription_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
-    if (result.status === "denied") return NextResponse.json({ message: ACTION_UNAVAILABLE, reason: result.status }, { status: 403, headers: privateResponseHeaders })
+    if (result.status === "denied") return NextResponse.json({ message: ACTION_UNAVAILABLE, reason: result.reason || result.status }, { status: 403, headers: privateResponseHeaders })
     if (result.status !== "success") return reply()
     if (operation === "request_immediate_cancellation") {
       return NextResponse.json({
@@ -96,9 +99,18 @@ async function applyCancellation(result: {
   providerOperationId?: string
   idempotencyKey?: string
   stripeSubscriptionId?: string
+  providerOperationStatus?: string
 }, cancel: boolean) {
   if (!result.stripeSubscriptionId || !result.idempotencyKey || !result.providerOperationId) {
     return NextResponse.json({ status: "ok", message: "The request is recorded. Provider cancellation stays pending while Stripe is disabled." }, { headers: privateResponseHeaders })
+  }
+  if (result.providerOperationStatus === "SUCCEEDED") {
+    return NextResponse.json({
+      status: "ok",
+      message: cancel
+        ? "Cancellation is scheduled at period end. Already-paid service continues until paid-through."
+        : "The scheduled cancellation was reversed for this location only.",
+    }, { headers: privateResponseHeaders })
   }
   if (!guardSubscriptionsEnabled()) {
     return NextResponse.json({
@@ -140,6 +152,7 @@ async function beginCheckout(origin: string, result: {
   mode?: string
   trialEnd?: string
   includedEndAt?: string
+  providerOperationStatus?: string
 }) {
   if (!guardSubscriptionsEnabled()) {
     return NextResponse.json({
@@ -164,8 +177,17 @@ async function beginCheckout(origin: string, result: {
   const trialEnd = unixTrialEnd(includedBoundary)
   if (Number.isFinite(includedAt) && includedAt > Date.now() && !trialEnd) {
     return NextResponse.json({
-      message: ACTION_UNAVAILABLE, reason: "included_window_too_short",
+      message: ACTION_UNAVAILABLE, reason: "included_trial_window_unsupported",
     }, { status: 403, headers: privateResponseHeaders })
+  }
+  if (result.providerOperationStatus === "SUCCEEDED") {
+    return NextResponse.json({
+      status: "ok",
+      mode: result.mode || "subscription",
+      confirming: true,
+      delayedUntil: result.trialEnd || result.includedEndAt || null,
+      message: "Returning from Stripe does not start Guard billing. A confirmed invoice payment is required.",
+    }, { headers: privateResponseHeaders })
   }
   const checkout = result.mode === "setup"
     ? await provider.createGuardRecoveryCheckout({
@@ -202,7 +224,7 @@ function unixTrialEnd(value?: string) {
   const at = Date.parse(value)
   if (!Number.isFinite(at)) return undefined
   const seconds = Math.floor(at / 1000)
-  if (seconds <= Math.floor(Date.now() / 1000) + 60) return undefined
+  if (!isStripeTrialEndAllowed(seconds)) return undefined
   return seconds
 }
 

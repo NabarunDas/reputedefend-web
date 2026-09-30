@@ -184,7 +184,7 @@ describe("payment provider contract", () => {
         priceVersionId: priceInput.priceVersionId,
         providerOperationId: priceInput.providerOperationId,
       },
-      trialEnd: Math.floor(Date.now() / 1000) + 86400,
+      trialEnd: Math.floor(Date.now() / 1000) + (72 * 3600),
     })
     expect(provider.objects.get(delayed.id)).toMatchObject({ trialEnd: expect.any(Number), quantity: 1 })
     const recovery = await provider.createGuardRecoveryCheckout({
@@ -203,13 +203,24 @@ describe("payment provider contract", () => {
     expect(provider.objects.get(recovery.id)).toMatchObject({
       metadata: expect.objectContaining({ guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
     })
+    const periodEnd = Math.floor(Date.now() / 1000) + 86400
+    provider.objects.set("sub_existing1", {
+      id: "sub_existing1",
+      status: "active",
+      customerId: "cus_testabc",
+      priceId: first.priceId,
+      subscriptionItemId: "si_existing1",
+      quantity: 1,
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
+    })
     const schedule = await provider.createSubscriptionSchedule({
       idempotencyKey: "77777777-7777-4777-8777-777777777777",
       subscriptionId: "sub_existing1",
       subscriptionItemId: "si_existing1",
       currentPriceId: first.priceId,
       nextPriceId: "price_newguard1",
-      periodEnd: Math.floor(Date.now() / 1000) + 86400,
+      periodEnd,
     })
     expect(schedule.id).toMatch(/^sub_sched_/)
     expect(provider.objects.get(schedule.id)).toMatchObject({ quantity: 1, proration: "none", subscriptionId: "sub_existing1" })
@@ -227,5 +238,59 @@ describe("payment provider contract", () => {
     expect(() => assertSafeGuardMetadata({ notes: "customer note" })).toThrow(/disallowed/)
     expect(mapBoundedProviderEvent({ id: "evt_sub", type: "customer.subscription.updated", data: { object: { id: "sub_1" } } }).objectType).toBe("subscription")
     expect(mapBoundedProviderEvent({ id: "evt_inv", type: "invoice.paid", data: { object: { id: "in_1" } } }).outcome).toBe("succeeded")
+    await expect(provider.createSubscriptionCheckout({
+      idempotencyKey: "12121212-1212-4121-8121-121212121212",
+      stripeCustomerId: "cus_testabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId: "22222222-2222-4222-8222-222222222222",
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        priceVersionId: priceInput.priceVersionId,
+        providerOperationId: priceInput.providerOperationId,
+      },
+      trialEnd: Math.floor(Date.now() / 1000) + (47 * 3600),
+    })).rejects.toBeInstanceOf(PaymentsDisabledError)
+    provider.objects.set("sub_qty", {
+      id: "sub_qty", status: "active", customerId: "cus_testabc", priceId: first.priceId,
+      subscriptionItemId: "si_qty", quantity: 2, cancelAtPeriodEnd: false,
+      currentPeriodEnd: new Date((periodEnd) * 1000).toISOString(),
+    })
+    await expect(provider.createSubscriptionSchedule({
+      idempotencyKey: "13131313-1313-4131-8131-131313131313",
+      subscriptionId: "sub_qty",
+      subscriptionItemId: "si_qty",
+      currentPriceId: first.priceId,
+      nextPriceId: "price_newguard1",
+      periodEnd,
+    })).rejects.toBeInstanceOf(PaymentsDisabledError)
+    provider.objects.set("sub_item", {
+      id: "sub_item", status: "active", customerId: "cus_testabc", priceId: first.priceId,
+      subscriptionItemId: "si_item", quantity: 1, cancelAtPeriodEnd: false,
+      currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
+    })
+    await expect(provider.createSubscriptionSchedule({
+      idempotencyKey: "14141414-1414-4141-8141-141414141414",
+      subscriptionId: "sub_item",
+      subscriptionItemId: "si_wrong",
+      currentPriceId: first.priceId,
+      nextPriceId: "price_newguard1",
+      periodEnd,
+    })).rejects.toBeInstanceOf(PaymentsDisabledError)
+    provider.objects.set("sub_cancel", {
+      id: "sub_cancel", status: "active", customerId: "cus_testabc", priceId: first.priceId,
+      subscriptionItemId: "si_cancel", quantity: 1, cancelAtPeriodEnd: true,
+      currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
+    })
+    await expect(provider.createSubscriptionSchedule({
+      idempotencyKey: "15151515-1515-4151-8151-151515151515",
+      subscriptionId: "sub_cancel",
+      subscriptionItemId: "si_cancel",
+      currentPriceId: first.priceId,
+      nextPriceId: "price_newguard1",
+      periodEnd,
+    })).rejects.toBeInstanceOf(PaymentsDisabledError)
   })
 })

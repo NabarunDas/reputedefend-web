@@ -94,13 +94,15 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
       exceptionId?: string; reason?: string; activatedAt?: string; offerId?: string
       providerOperationId?: string; idempotencyKey?: string; stripeSubscriptionId?: string
       paymentIntentId?: string; amountMinor?: number; priceVersionId?: number | string
+      providerOperationStatus?: string; customerId?: string; serviceOrderId?: string
+      guardSubscriptionId?: string; guardRefundId?: string
     }>("admin_guard_command_v1", {
       p_token: tokenHash(token), p_request: key, p_operation: operation, p_payload: payload, p_version: version,
     })
     if (result.status !== "success") return reply(commandMessage(result.status, result.reason), mapStatus(result.status), {
       ...(result.exceptionId ? { exceptionId: result.exceptionId } : {}),
     })
-    if (result.replay !== true) {
+    if (shouldContinueProviderOperation(result.providerOperationStatus, result.providerOperationId, result.idempotencyKey)) {
       try {
         await executeProviderFollowThrough(operation, result)
       } catch (error) {
@@ -130,6 +132,11 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
   }
 }
 
+function shouldContinueProviderOperation(status?: string, operationId?: string, idempotencyKey?: string) {
+  if (!operationId || !idempotencyKey) return false
+  return status !== "SUCCEEDED" && status !== "FAILED" && status !== "CANCELLED"
+}
+
 async function executeProviderFollowThrough(operation: string, result: {
   providerOperationId?: string
   idempotencyKey?: string
@@ -137,6 +144,11 @@ async function executeProviderFollowThrough(operation: string, result: {
   paymentIntentId?: string
   amountMinor?: number
   priceVersionId?: number | string
+  customerId?: string
+  serviceOrderId?: string
+  guardSubscriptionId?: string
+  guardRefundId?: string
+  id?: string
 }) {
   if (!result.providerOperationId || !result.idempotencyKey) return
   const provider = paymentProvider()
@@ -188,6 +200,15 @@ async function executeProviderFollowThrough(operation: string, result: {
       idempotencyKey: result.idempotencyKey,
       paymentIntentId: result.paymentIntentId,
       amountMinor: result.amountMinor,
+      ...(result.customerId && result.serviceOrderId && (result.guardSubscriptionId || result.id) ? {
+        metadata: {
+          customerId: result.customerId,
+          serviceOrderId: result.serviceOrderId,
+          guardSubscriptionId: result.guardSubscriptionId || result.id || "",
+          providerOperationId: result.providerOperationId,
+          guardRefundId: result.guardRefundId || result.id,
+        },
+      } : {}),
     })
     await backend().rpc("guard_record_refund_v1", {
       p_operation: result.providerOperationId,

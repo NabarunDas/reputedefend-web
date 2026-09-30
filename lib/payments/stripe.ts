@@ -1,7 +1,7 @@
 import "server-only"
 import Stripe from "stripe"
 import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, type PaymentEnv } from "./config"
-import { assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 function rawSecret(env: PaymentEnv): string | null {
@@ -325,8 +325,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     async createSubscriptionCheckout(input) {
       const meta = guardMetadata(input.metadata)
       assertSafeGuardMetadata(meta)
-      if (input.trialEnd != null && (!Number.isInteger(input.trialEnd) || input.trialEnd <= Math.floor(Date.now() / 1000))) {
-        throw new PaymentsDisabledError("Delayed Guard Checkout requires a future included-period boundary.")
+      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
       }
       const session = await client(env).checkout.sessions.create({
         mode: "subscription",
@@ -391,6 +391,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
           ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
           : null,
         scheduleId: asId(subscription.schedule),
+        defaultPaymentMethodId: asId(subscription.default_payment_method),
         metadata: metadataOf(subscription),
         livemode: false as const,
       }
@@ -455,6 +456,15 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     },
     async createSubscriptionSchedule(input) {
       const stripe = client(env)
+      const current = await this.retrieveSubscription(input.subscriptionId)
+      try {
+        assertGuardScheduleSubscription(input, current)
+      } catch (error) {
+        throw new PaymentsDisabledError((error as Error).message)
+      }
+      if (current.scheduleId) {
+        return { id: current.scheduleId, subscriptionId: current.id, livemode: false as const }
+      }
       const created = await stripe.subscriptionSchedules.create({
         from_subscription: input.subscriptionId,
       }, { idempotencyKey: input.idempotencyKey })
@@ -479,19 +489,23 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       return { id: updated.id, subscriptionId: asId(updated.subscription) || input.subscriptionId, livemode: false as const }
     },
     async createRefund(input) {
+      const meta = input.metadata ? guardMetadata(input.metadata) : undefined
+      if (meta) assertSafeGuardMetadata(meta)
       const refund = await client(env).refunds.create({
         payment_intent: input.paymentIntentId,
         amount: input.amountMinor,
+        ...(meta ? { metadata: meta } : {}),
       }, { idempotencyKey: input.idempotencyKey })
       if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe refunds are forbidden.")
       return {
         id: refund.id,
         status: refund.status || "pending",
-        amountMinor: refund.amount,
-        currency: (refund.currency || "gbp").toLowerCase(),
+        amountMinor: typeof refund.amount === "number" ? refund.amount : null,
+        currency: refund.currency ? refund.currency.toLowerCase() : "",
         paymentIntentId: asId(refund.payment_intent),
         chargeId: asId(refund.charge),
         failureReason: refund.failure_reason ?? null,
+        metadata: metadataOf(refund),
         livemode: false as const,
       }
     },
@@ -501,11 +515,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       return {
         id: refund.id,
         status: refund.status || "pending",
-        amountMinor: refund.amount,
-        currency: (refund.currency || "gbp").toLowerCase(),
+        amountMinor: typeof refund.amount === "number" ? refund.amount : null,
+        currency: refund.currency ? refund.currency.toLowerCase() : "",
         paymentIntentId: asId(refund.payment_intent),
         chargeId: asId(refund.charge),
         failureReason: refund.failure_reason ?? null,
+        metadata: metadataOf(refund),
         livemode: false as const,
       }
     },
@@ -515,8 +530,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       return {
         id: dispute.id,
         status: dispute.status,
-        amountMinor: dispute.amount,
-        currency: (dispute.currency || "gbp").toLowerCase(),
+        amountMinor: typeof dispute.amount === "number" ? dispute.amount : null,
+        currency: dispute.currency ? dispute.currency.toLowerCase() : "",
         chargeId: asId(dispute.charge),
         reason: dispute.reason ?? null,
         livemode: false as const,

@@ -1,5 +1,5 @@
-import { assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
-import type { PaymentProvider } from "./provider"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
+import { PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 type StoredCheckout = {
   id: string
@@ -342,6 +342,9 @@ export function createFakePaymentProvider(): PaymentProvider & {
     async createSubscriptionCheckout(input) {
       const meta = guardMetadata(input.metadata)
       assertSafeGuardMetadata(meta)
+      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+      }
       if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
       const created: StoredCheckout = {
         id: `cs_test_sub_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
@@ -406,7 +409,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
       const found = objects.get(id) as {
         id?: string; status?: string; customerId?: string; priceId?: string; subscriptionItemId?: string
         quantity?: number; cancelAtPeriodEnd?: boolean; currentPeriodStart?: string; currentPeriodEnd?: string
-        scheduleId?: string; metadata?: Record<string, string>
+        scheduleId?: string; defaultPaymentMethodId?: string; metadata?: Record<string, string>
       } | undefined
       if (!found) return null
       return {
@@ -420,6 +423,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         currentPeriodStart: found.currentPeriodStart ?? null,
         currentPeriodEnd: found.currentPeriodEnd ?? null,
         scheduleId: found.scheduleId ?? null,
+        defaultPaymentMethodId: found.defaultPaymentMethodId ?? null,
         metadata: found.metadata ?? {},
         livemode: false as const,
       }
@@ -475,6 +479,15 @@ export function createFakePaymentProvider(): PaymentProvider & {
       return { id: found.id, status: "canceled", cancelAtPeriodEnd: false, canceled: true, livemode: false as const }
     },
     async createSubscriptionSchedule(input) {
+      const current = await this.retrieveSubscription(input.subscriptionId)
+      try {
+        assertGuardScheduleSubscription(input, current)
+      } catch (error) {
+        throw new PaymentsDisabledError((error as Error).message)
+      }
+      if (current.scheduleId) {
+        return { id: current.scheduleId, subscriptionId: current.id, livemode: false as const }
+      }
       state.idempotency.add(input.idempotencyKey)
       const id = `sub_sched_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 10)}`
       objects.set(id, { id, subscriptionId: input.subscriptionId, currentPriceId: input.currentPriceId, nextPriceId: input.nextPriceId, quantity: 1, proration: "none" })
@@ -487,9 +500,11 @@ export function createFakePaymentProvider(): PaymentProvider & {
       return { id, subscriptionId: input.subscriptionId, livemode: false as const }
     },
     async createRefund(input) {
+      const meta = input.metadata ? guardMetadata(input.metadata) : undefined
+      if (meta) assertSafeGuardMetadata(meta)
       if (objects.has(input.idempotencyKey)) {
-        const existing = objects.get(input.idempotencyKey) as { id: string; status: string; amountMinor: number; currency: string; paymentIntentId: string }
-        return { ...existing, chargeId: null, failureReason: null, livemode: false as const }
+        const existing = objects.get(input.idempotencyKey) as { id: string; status: string; amountMinor: number; currency: string; paymentIntentId: string; metadata?: Record<string, string> }
+        return { ...existing, chargeId: null, failureReason: null, metadata: existing.metadata ?? meta, livemode: false as const }
       }
       const created = {
         id: `re_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 14)}`,
@@ -499,6 +514,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         paymentIntentId: input.paymentIntentId,
         chargeId: null as string | null,
         failureReason: null as string | null,
+        metadata: meta,
         livemode: false as const,
       }
       objects.set(input.idempotencyKey, created)
@@ -507,27 +523,28 @@ export function createFakePaymentProvider(): PaymentProvider & {
       return created
     },
     async retrieveRefund(id) {
-      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number; currency?: string; paymentIntentId?: string; chargeId?: string | null; failureReason?: string | null } | undefined
+      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number | null; currency?: string; paymentIntentId?: string; chargeId?: string | null; failureReason?: string | null; metadata?: Record<string, string> } | undefined
       if (!found) return null
       return {
         id: found.id,
         status: found.status || "pending",
-        amountMinor: found.amountMinor ?? 0,
-        currency: found.currency ?? "gbp",
+        amountMinor: typeof found.amountMinor === "number" ? found.amountMinor : null,
+        currency: found.currency ?? "",
         paymentIntentId: found.paymentIntentId ?? null,
         chargeId: found.chargeId ?? null,
         failureReason: found.failureReason ?? null,
+        metadata: found.metadata,
         livemode: false as const,
       }
     },
     async retrieveDispute(id) {
-      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number; currency?: string; chargeId?: string | null; reason?: string | null } | undefined
+      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number | null; currency?: string; chargeId?: string | null; reason?: string | null } | undefined
       if (!found) return null
       return {
         id: found.id,
         status: found.status || "needs_response",
-        amountMinor: found.amountMinor ?? 0,
-        currency: found.currency ?? "gbp",
+        amountMinor: typeof found.amountMinor === "number" ? found.amountMinor : null,
+        currency: found.currency ?? "",
         chargeId: found.chargeId ?? null,
         reason: found.reason ?? null,
         livemode: false as const,

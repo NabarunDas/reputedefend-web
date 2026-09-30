@@ -208,6 +208,7 @@ export function processStripeEventHandler(env: Record<string, string | undefined
                 providerOperationId?: string
                 idempotencyKey?: string
                 stripeSubscriptionId?: string
+                providerOperationStatus?: string
               }>("guard_apply_recovery_setup_v1", {
                 p_setup_intent: setup.id,
                 p_customer: setup.customerId,
@@ -216,14 +217,16 @@ export function processStripeEventHandler(env: Record<string, string | undefined
                 p_operation: setup.metadata.providerOperationId || null,
               })
               if (prepared.status === "success" && prepared.stripeSubscriptionId && prepared.providerOperationId) {
-                const updated = await provider.updateSubscriptionPaymentMethod({
-                  id: prepared.stripeSubscriptionId,
-                  idempotencyKey: prepared.idempotencyKey || eventId,
-                  paymentMethodId: method.id,
-                })
-                await rpc.rpc("guard_confirm_payment_method_v1", {
-                  p_operation: prepared.providerOperationId, p_object_id: updated.id,
-                })
+                if (prepared.providerOperationStatus !== "SUCCEEDED") {
+                  const updated = await provider.updateSubscriptionPaymentMethod({
+                    id: prepared.stripeSubscriptionId,
+                    idempotencyKey: prepared.idempotencyKey || eventId,
+                    paymentMethodId: method.id,
+                  })
+                  await rpc.rpc("guard_confirm_payment_method_v1", {
+                    p_operation: prepared.providerOperationId, p_object_id: updated.id,
+                  })
+                }
               }
             }
             return applyResult(guard)
@@ -287,9 +290,14 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
             p_event_id: eventId, p_type: eventType, p_object_id: refund.id,
             p_payload: {
-              refundStatus: refund.status, amountMinor: refund.amountMinor, currency: refund.currency,
+              refundStatus: refund.status,
+              ...(typeof refund.amountMinor === "number" ? { amountMinor: refund.amountMinor } : {}),
+              ...(refund.currency ? { currency: refund.currency } : {}),
               failureCode: refund.failureReason, paymentIntentId: refund.paymentIntentId,
               chargeId: refund.chargeId, livemode: false,
+              guardRefundId: refund.metadata?.guardRefundId,
+              guardSubscriptionId: refund.metadata?.guardSubscriptionId,
+              providerOperationId: refund.metadata?.providerOperationId,
             },
           })
           return applyResult(result)
@@ -300,7 +308,9 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
             p_event_id: eventId, p_type: eventType, p_object_id: dispute.id,
             p_payload: {
-              disputeStatus: dispute.status, amountMinor: dispute.amountMinor, currency: dispute.currency,
+              disputeStatus: dispute.status,
+              ...(typeof dispute.amountMinor === "number" ? { amountMinor: dispute.amountMinor } : {}),
+              ...(dispute.currency ? { currency: dispute.currency } : {}),
               chargeId: dispute.chargeId, outcome: dispute.reason, livemode: false,
             },
           })

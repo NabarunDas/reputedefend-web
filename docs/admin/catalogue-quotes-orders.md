@@ -1,20 +1,32 @@
 # Catalogue, quotes and service orders — Step 13
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED**
+Status: **DATABASE APPLIED / LIVE COMMERCIAL DISABLED**
 
-This is a source-only commercial foundation. ChatGPT will independently review and apply `20260929233953_catalogue_quotes_orders_v1.sql` later. This PR does not apply the migration, request Supabase credentials, create Stripe objects, charge money, send mail, or activate monitoring.
+The additive migration `20260929233953_catalogue_quotes_orders_v1.sql` is applied to `profilerelaunch-dev` as `20260929233953 catalogue_quotes_orders_v1`, exactly once after `20260929221604 incoming_mail_conversations_v1`. Live commercial use remains disabled: no Stripe objects, no payment collection, no real quote acceptance, and no Guard activation. Seeded tax behaviour remains `UNCONFIRMED`. This does not imply VAT registration. Step 11 live delivery and Step 12 live inbound stay disabled. Cron remains `0 4 * * *`. Worker cadence remains 86400 seconds. `PREPARATION` / `READY_TO_SUBMIT` remain blocked.
 
-## What this step implements
+Independent live verification confirmed the eight Step 13 public commercial tables, two private command-receipt tables, RLS with no direct anon/authenticated table access, service-role-only commercial RPCs, immutability / overlap / arithmetic triggers, the five current seed prices, current-price enforcement, scheduled rollover, and quote/action tax and validity gates. Live commercial rows remain empty: 0 quotes, 0 quote acceptances, 0 service orders. Operational side effects remain zero: 0 `SEND_EMAIL`, 0 `IMPORT_INBOUND_EMAIL`, 0 `IMPORT_INBOUND_ATTACHMENT` jobs.
+
+## What is database-applied
 
 - Effective-dated `public.price_versions` with `DRAFT` / `APPROVED` / `RETIRED`
+- Five approved seed prices matching `lib/pricing.ts` (9900 / 29900 / 5900 / 14900 / 999 pence), each the unique current price for its service
+- Scheduled future-price rollover and current-price enforcement on `create_draft` / `create_version`
 - Immutable `public.quotes` + `public.quote_versions`
+- Durable Guard qualification snapshots (`PAID_GUARD_MANAGED_20`; 29900 → 23920, 14900 → 11920)
+- Tax snapshot model (`UNCONFIRMED` / `INCLUSIVE` / `EXCLUSIVE` / `NOT_APPLICABLE`)
+- Customer `QUOTE_ACCEPTANCE` pinned to `quote_version_id` on the existing Step 9 action + OTP flow
 - Immutable `public.quote_acceptances` and `public.service_orders`
-- Durable Guard discount qualification snapshots
-- Explicit tax configuration/snapshot fields
-- Admin `/commercial` workspace (Catalogue, Quotes, Orders)
-- Customer `QUOTE_ACCEPTANCE` on the existing Step 9 action + OTP flow
+- Admin commercial RPC foundation (`admin_catalogue_*` / `admin_quote_*` / `admin_order_*`) and `/commercial` workspace
 
-It does **not** implement Stripe Checkout, invoices, payment-method storage, Guard coverage/onboarding, live outgoing mail, or live inbound mail.
+## What remains intentionally not live
+
+- No Stripe integration, Checkout, SetupIntent, PaymentIntent, subscriptions, invoices, or payment collection
+- No real quote acceptance and no real customer commercial action performed
+- No Guard activation or monitoring onboarding
+- Step 11 outgoing mail still disabled
+- Step 12 inbound mail still disabled
+- Seeded catalogue tax behaviour remains `UNCONFIRMED` until commercial/tax setup is approved
+- `PREPARATION` and `READY_TO_SUBMIT` remain blocked
 
 ## Seeded catalogue
 
@@ -90,9 +102,15 @@ No Stripe objects, invoices, payment attempts, subscriptions, or success-fee obl
 
 ## Still blocked / unchanged
 
+- Live commercial use remains disabled
+- No Stripe, Checkout, SetupIntent, PaymentIntent, subscriptions, invoices, or payment collection
+- No real quote acceptance or customer commercial action has been performed
+- No Guard activation
 - Step 11 live delivery remains disabled
 - Step 12 live inbound remains disabled
 - Cron remains `0 4 * * *`
+- Worker cadence remains 86400 seconds
 - `PREPARATION` and `READY_TO_SUBMIT` remain blocked
-- No Stripe, Resend, AWS, DNS, or Vercel production secret changes
-- Migration is not applied
+- No Resend, AWS, DNS, or Vercel production secret changes
+- Seeded tax behaviour remains `UNCONFIRMED` and does not imply VAT registration
+- Do not replay the applied migration

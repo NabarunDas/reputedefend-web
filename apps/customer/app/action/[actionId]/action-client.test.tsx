@@ -289,6 +289,80 @@ describe("customer action page", () => {
     expect(JSON.stringify(fetchMock.mock.calls.at(-1)?.[1].body)).toContain("GUARD_PERMISSION_V1")
   })
 
+  it("requires recurring consent before Guard Checkout and does not claim billing from a return", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "GUARD_SUBSCRIPTION_START",
+          locationName: "High Street",
+          agreement: null,
+          subscription: {
+            subscriptionId: actionId,
+            amountMinor: 999,
+            currency: "GBP",
+            frequency: "MONTHLY",
+            taxBehaviour: "NOT_APPLICABLE",
+            consentVersion: "GUARD_RECURRING_CONSENT_V1",
+            consentText: "I authorise monthly billing for Relaunch Guard for this exact location.",
+            cancellationTermsVersion: "GUARD_CANCELLATION_TERMS_V1",
+            cancellationTermsText: "Cancel at period end keeps already-paid service.",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept monthly billing for this location" })).toBeTruthy())
+    expect(screen.getByText(/£9.99/)).toBeTruthy()
+    expect(screen.getByText(/High Street/)).toBeTruthy()
+    expect(document.body.textContent).toMatch(/does not start Guard billing/)
+    expect(screen.queryByRole("button", { name: "Continue to secure Stripe Checkout" })).toBeNull()
+    fireEvent.click(screen.getByRole("checkbox"))
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok" }) })
+    fireEvent.click(screen.getByRole("button", { name: "Accept monthly billing for this location" }))
+    await waitFor(() => expect(screen.getByText("This action is complete.")).toBeTruthy())
+    expect(JSON.stringify(fetchMock.mock.calls.at(-1)?.[1].body)).toContain("GUARD_RECURRING_CONSENT_V1")
+  })
+
+  it("requires an explicit accept or decline for a Guard price change", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "GUARD_PRICE_CHANGE_ACCEPTANCE",
+          locationName: "High Street",
+          agreement: null,
+          priceChange: {
+            offerId: actionId,
+            oldAmountMinor: 999,
+            newAmountMinor: 1299,
+            currency: "GBP",
+            effectiveRenewalAt: "2026-11-01T00:00:00.000Z",
+            noticeVersion: "GUARD_PRICE_CHANGE_NOTICE_V1",
+            noticeText: "The new price applies at the next renewal only.",
+            status: "OFFERED",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept price change" })).toBeTruthy())
+    expect(screen.getByText(/£9.99/)).toBeTruthy()
+    expect(screen.getByText(/£12.99/)).toBeTruthy()
+    expect(document.body.textContent).toMatch(/No response is not acceptance/)
+    expect(screen.getByRole("button", { name: "Decline" })).toBeTruthy()
+  })
+
   it("does not claim a code was sent when the provider fails", async () => {
     await renderAfterExchange()
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }) })

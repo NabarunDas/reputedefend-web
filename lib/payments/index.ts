@@ -3,7 +3,11 @@ import { createFakePaymentProvider } from "./fake"
 import { disabledPaymentProvider, type PaymentProvider } from "./provider"
 import { createStripePaymentProvider } from "./stripe"
 
-export { SUCCESS_FEE_CONSENT_TEXT, SUCCESS_FEE_CONSENT_VERSION, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "./model"
+export {
+  SUCCESS_FEE_CONSENT_TEXT, SUCCESS_FEE_CONSENT_VERSION, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION,
+  GUARD_RECURRING_CONSENT_TEXT, GUARD_RECURRING_CONSENT_VERSION, GUARD_CANCELLATION_TERMS_VERSION,
+  GUARD_PRICE_CHANGE_NOTICE_VERSION,
+} from "./model"
 export { createFakePaymentProvider as mapWithFake } from "./fake"
 export { PaymentsDisabledError, type PaymentProvider } from "./provider"
 export { createFakePaymentProvider } from "./fake"

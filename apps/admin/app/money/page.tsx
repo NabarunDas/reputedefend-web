@@ -1,5 +1,7 @@
 import { ukDate } from "@/lib/admin/activity"
 import { formatGbp, paymentModelLabel } from "@/lib/commerce/model"
+import { loadGuard } from "@/lib/guard/queries"
+import { billingStateLabel } from "@/lib/guard/model"
 import { loadMoney } from "@/lib/payments/queries"
 import { obligationLabel } from "@/lib/payments/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
@@ -8,9 +10,9 @@ import { ApproveSuccessFeeForm, IssuePaymentActionForm } from "./forms"
 export const metadata = { title: "Money" }
 
 export default async function MoneyPage() {
-  const money = await loadMoney()
+  const [money, guard] = await Promise.all([loadMoney(), loadGuard()])
   return <section className="page">
-    <PageHeader title="Money" description="Payment obligations, payment-method setup, success-fee approval, and TEST-MODE hosted invoice fallback. Stripe remains disabled until a later Finance launch gate. This workspace has no Mark paid, Force success, or Change amount controls." />
+    <PageHeader title="Money" description="Payment obligations, payment-method setup, success-fee approval, Guard subscriptions, and TEST-MODE hosted invoice fallback. Stripe remains disabled until a later Finance launch gate. This workspace has no Mark paid, Mark refunded, Force success, Change amount, or override paid-through controls." />
     <section className="panel">
       <h2>Service orders</h2>
       {!money.orders.length ? <EmptyState>No accepted service orders.</EmptyState> : <div className="table-scroll" role="region" aria-label="Money" tabIndex={0}>
@@ -30,6 +32,38 @@ export default async function MoneyPage() {
               {row.obligationId && row.obligationState && !["PAID", "VOID"].includes(row.obligationState) && row.invoiceStatus !== "ISSUED" && row.invoiceStatus !== "PAID" && !row.receiptId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue TEST-MODE hosted invoice fallback" obligationId={row.obligationId} />}
               {row.invoiceStatus === "ISSUED" && <p>TEST-MODE hosted invoice issued. Payment is confirmed only from the Stripe webhook.</p>}
               {row.receiptId && <p>Receipt recorded {ukDate(new Date().toISOString())}.</p>}
+            </td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+    </section>
+    <section className="panel">
+      <h2>Guard subscriptions</h2>
+      <p>One Stripe subscription per location. Subscription active is not entitlement. Confirmed invoice payment sets paid-through.</p>
+      {!(guard.subscriptions || []).length ? <EmptyState>No Guard subscriptions.</EmptyState> : <div className="table-scroll" role="region" aria-label="Guard subscriptions" tabIndex={0}>
+        <table>
+          <thead><tr><th>Location</th><th>Billing</th><th>Provider</th><th>Paid through</th><th>Exceptions</th></tr></thead>
+          <tbody>{(guard.subscriptions || []).map(row => <tr key={row.id}>
+            <td>{row.locationName}<br /><span className="muted">{row.businessName} · {row.customerName}</span></td>
+            <td>
+              <Badge>{billingStateLabel(row.billingState || "PENDING")}</Badge>
+              <p className="muted">{formatGbp(row.amountMinor)} {row.currency} / month</p>
+            </td>
+            <td>
+              <p>{row.lifecycleState} · Stripe {row.providerStatus}</p>
+              {row.cancelAtPeriodEnd && <p>Scheduled cancellation</p>}
+              {row.latestInvoiceFailure && <p>Failure {row.latestInvoiceFailure}</p>}
+            </td>
+            <td>
+              {row.paidThroughAt ? <p>{ukDate(row.paidThroughAt)}</p> : <p className="muted">No confirmed invoice</p>}
+              {row.currentPeriodEnd && <p className="muted">Renewal {ukDate(row.currentPeriodEnd)}</p>}
+              {row.latestPaidInvoiceId && <p className="muted">Invoice {row.latestPaidInvoiceId}</p>}
+            </td>
+            <td>
+              {row.refundStatus && <p>Refund {row.refundStatus}</p>}
+              {row.disputeStatus && <p>Dispute {row.disputeStatus}</p>}
+              {row.priceChangeStatus && <p>Price change {row.priceChangeStatus}</p>}
+              {row.reconciliationOpen && <p>Reconciliation mismatch</p>}
             </td>
           </tr>)}</tbody>
         </table>

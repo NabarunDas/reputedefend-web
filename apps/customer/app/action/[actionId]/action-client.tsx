@@ -71,6 +71,34 @@ type Session = {
     includedDays?: number | null
     includedOfferId?: string | null
     includedOfferStatus?: string | null
+    includedEndAt?: string | null
+  } | null
+  subscription?: {
+    subscriptionId: string
+    amountMinor: number
+    currency: string
+    frequency: string
+    taxBehaviour: string
+    consentVersion: string
+    consentText: string
+    cancellationTermsVersion: string
+    cancellationTermsText: string
+    consentId?: string | null
+    locationName?: string | null
+    lifecycleState?: string
+    paidThroughAt?: string | null
+    cancelAtPeriodEnd?: boolean
+    includedEndAt?: string | null
+  } | null
+  priceChange?: {
+    offerId: string
+    oldAmountMinor: number
+    newAmountMinor: number
+    currency: string
+    effectiveRenewalAt?: string | null
+    noticeVersion: string
+    noticeText: string
+    status: string
   } | null
 }
 
@@ -163,6 +191,21 @@ export function ActionClient({ actionId }: { actionId: string }) {
     if (!response.ok) { setPhase("unavailable"); return }
     setPhase("done")
     setMessage(operation === "decline" ? "You declined this action." : "This action is complete.")
+  }
+  async function subscription(operation: string, extra: Record<string, unknown> = {}) {
+    setMessage("")
+    const response = await fetch("/api/action/guard-subscription", {
+      method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ operation, ...extra }),
+    })
+    const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
+    if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
+    if (!response.ok) { setPhase("unavailable"); return }
+    if (result.checkoutUrl) {
+      window.location.assign(result.checkoutUrl)
+      return
+    }
+    setMessage(result.message || "This subscription request is recorded.")
   }
   async function payment(operation: "confirm_consent" | "start_checkout", extra: Record<string, unknown> = {}) {
     setMessage("")
@@ -258,12 +301,67 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <p role="status">{message}</p>
     </section>
   }
+  if (session?.kind === "GUARD_SUBSCRIPTION_START" && session.subscription) {
+    const sub = session.subscription
+    return <section>
+      <h1>Start Relaunch Guard for this location</h1>
+      <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
+      <p>Accepted monthly amount {formatGbp(sub.amountMinor)} {sub.currency}, billed {sub.frequency.toLowerCase()} for this exact location only.</p>
+      <p>Tax treatment: {sub.taxBehaviour}.</p>
+      <h2>Cancellation</h2>
+      <p className="preserve-lines">{sub.cancellationTermsText}</p>
+      <p>Opening this link or verifying the one-time code does not create a subscription or charge a card.</p>
+      {!sub.consentId && <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true", consentVersion: sub.consentVersion }) }}>
+        <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />{sub.consentText}</label>
+        <button type="submit">Accept monthly billing for this location</button>
+      </form>}
+      {sub.consentId && <form onSubmit={event => { event.preventDefault(); void subscription("start_checkout") }}>
+        <button type="submit">Continue to secure Stripe Checkout</button>
+      </form>}
+      {sub.consentId && sub.lifecycleState === "PAST_DUE" && <form onSubmit={event => { event.preventDefault(); void subscription("start_recovery") }}>
+        <button type="submit">Update the payment method securely</button>
+      </form>}
+      {sub.consentId && !sub.cancelAtPeriodEnd && <form onSubmit={event => { event.preventDefault(); void subscription("request_period_end_cancellation") }}>
+        <button type="submit">Cancel at period end</button>
+      </form>}
+      {sub.consentId && sub.cancelAtPeriodEnd && <form onSubmit={event => { event.preventDefault(); void subscription("undo_period_end_cancellation") }}>
+        <button type="submit">Keep this location subscription</button>
+      </form>}
+      {sub.consentId && <form onSubmit={event => { event.preventDefault(); void subscription("request_immediate_cancellation") }}>
+        <button type="submit">Request immediate cancellation review</button>
+      </form>}
+      <p>Cancel at period end keeps already-paid service until paid-through. Immediate cancellation is a Finance review and does not promise a refund.</p>
+      <p>The Stripe return page does not start Guard billing. A confirmed subscription invoice payment is required.</p>
+      {sub.includedEndAt && <p>This is a paid continuation after included Guard. Included coverage does not automatically become a paid subscription.</p>}
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "GUARD_PRICE_CHANGE_ACCEPTANCE" && session.priceChange) {
+    const offer = session.priceChange
+    return <section>
+      <h1>Review this Guard price change</h1>
+      <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
+      <p>Current monthly amount {formatGbp(offer.oldAmountMinor)} {offer.currency}.</p>
+      <p>Proposed monthly amount {formatGbp(offer.newAmountMinor)} {offer.currency}.</p>
+      {offer.effectiveRenewalAt && <p>If accepted, the new price applies at the next renewal on {new Date(offer.effectiveRenewalAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}. There is no mid-period increase and no proration.</p>}
+      <p className="preserve-lines">{offer.noticeText}</p>
+      <p>No response is not acceptance. Decline is not acceptance.</p>
+      <div className="button-row">
+        <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true" }) }}>
+          <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact future price for this location only.</label>
+          <button type="submit">Accept price change</button>
+        </form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+      </div>
+      <p role="status">{message}</p>
+    </section>
+  }
   if (session?.kind === "GUARD_PERMISSION" && session.guard) {
     const guard = session.guard
     return <section>
       <h1>Guard monitoring permission</h1>
       <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
-      {guard.coverageBasis === "INCLUDED" && <p>This also records your choice to take the included {guard.includedDays || 30}-day Relaunch Guard offer. The 30 days start only when Guard is activated, not when you accept this permission.</p>}
+      {guard.coverageBasis === "INCLUDED" && <p>This also records your choice to take the included {guard.includedDays || 30}-day Relaunch Guard offer. The 30 days start only when Guard is activated, not when you accept this permission. No subscription exists by default and no automatic charge occurs at included expiry. Paid continuation requires a separate accepted Guard order and recurring consent.</p>}
       {guard.coverageBasis !== "INCLUDED" && <p>You already accepted the commercial quote. This is a separate operational permission for this location. It does not take payment or start monitoring.</p>}
       <h2>Permission wording</h2>
       <p className="preserve-lines">{guard.permissionText}</p>

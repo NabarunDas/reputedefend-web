@@ -30,6 +30,11 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
       p_expected_interval: config.cadenceSeconds,
       p_late_after: config.lateAfterSeconds,
     })
+    try {
+      await options.rpc.rpc("guard_enqueue_daily_reconcile_v1", {})
+    } catch {
+      // Daily Guard reconciliation is optional until the Step 16 migration is applied.
+    }
     const promoted = await options.rpc.rpc<{ status?: string; promoted?: number }>("job_promote_outbox_v1", {
       p_limit: options.promoteLimit ?? 20,
     })

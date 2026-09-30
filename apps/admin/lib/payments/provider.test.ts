@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createFakePaymentProvider } from "../../../../lib/payments/fake"
 import { disabledPaymentProvider, PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { isStripeTestSecret, liveSecretRejected, paymentsEnabled, resolvePaymentProviderMode } from "../../../../lib/payments/config"
-import { assertSafeMetadata, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
+import { assertSafeGuardMetadata, assertSafeMetadata, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
 
 describe("payment provider contract", () => {
   it("pins the official Stripe SDK version and fail-closes by default", async () => {
@@ -140,5 +140,50 @@ describe("payment provider contract", () => {
     expect(() => assertSafeMetadata({ evidence: "private note" })).toThrow(/disallowed/)
     expect(() => assertSafeMetadata({ customerId: "not-a-uuid" })).toThrow(/opaque/)
     expect(JSON.stringify({ STRIPE_SECRET_KEY: undefined, client_secret: undefined })).not.toMatch(/sk_live|sk_test|client_secret/)
+  })
+
+  it("creates one recurring Guard Price and subscription Checkout with quantity 1", async () => {
+    const provider = createFakePaymentProvider()
+    const priceInput = {
+      idempotencyKey: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      amountMinor: 999,
+      currency: "GBP" as const,
+      priceVersionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      providerOperationId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    }
+    const first = await provider.createRecurringPrice(priceInput)
+    const second = await provider.createRecurringPrice(priceInput)
+    expect(first.priceId).toBe(second.priceId)
+    expect(first.amountMinor).toBe(999)
+    await expect(disabledPaymentProvider().createRecurringPrice(priceInput)).rejects.toBeInstanceOf(PaymentsDisabledError)
+    const checkout = await provider.createSubscriptionCheckout({
+      idempotencyKey: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      stripeCustomerId: "cus_testabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId: "22222222-2222-4222-8222-222222222222",
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        priceVersionId: priceInput.priceVersionId,
+        providerOperationId: priceInput.providerOperationId,
+      },
+    })
+    expect(checkout.mode).toBe("subscription")
+    const refund = await provider.createRefund({
+      idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      paymentIntentId: "pi_testabc",
+      amountMinor: 100,
+    })
+    expect(refund.status).toBe("pending")
+    expect(await provider.createRefund({
+      idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      paymentIntentId: "pi_testabc",
+      amountMinor: 100,
+    })).toMatchObject({ id: refund.id })
+    expect(() => assertSafeGuardMetadata({ notes: "customer note" })).toThrow(/disallowed/)
+    expect(mapBoundedProviderEvent({ id: "evt_sub", type: "customer.subscription.updated", data: { object: { id: "sub_1" } } }).objectType).toBe("subscription")
+    expect(mapBoundedProviderEvent({ id: "evt_inv", type: "invoice.paid", data: { object: { id: "in_1" } } }).outcome).toBe("succeeded")
   })
 })

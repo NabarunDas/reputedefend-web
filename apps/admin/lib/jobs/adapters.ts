@@ -1,6 +1,7 @@
 import { sendEmailHandler } from "../communications/handler"
 import { importInboundAttachmentHandler } from "../conversations/attachment"
 import { importInboundEmailHandler } from "../conversations/import"
+import { reconcileGuardBillingHandler } from "../guard/reconcile"
 import { collectPaymentHandler, processStripeEventHandler } from "../payments/handlers"
 import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "./config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult, JobType } from "./model"
@@ -41,6 +42,7 @@ export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record
     IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env),
     COLLECT_PAYMENT: collectPaymentHandler(env),
     PROCESS_STRIPE_EVENT: processStripeEventHandler(env),
+    RECONCILE_GUARD_BILLING: reconcileGuardBillingHandler(env),
   }
 }
 
@@ -51,5 +53,6 @@ export function handlerFor(jobType: string, handlers: Partial<Record<JobType, Jo
   if (jobType === "IMPORT_INBOUND_ATTACHMENT") return handlers.IMPORT_INBOUND_ATTACHMENT ?? null
   if (jobType === "COLLECT_PAYMENT") return handlers.COLLECT_PAYMENT ?? null
   if (jobType === "PROCESS_STRIPE_EVENT") return handlers.PROCESS_STRIPE_EVENT ?? null
+  if (jobType === "RECONCILE_GUARD_BILLING") return handlers.RECONCILE_GUARD_BILLING ?? null
   return null
 }

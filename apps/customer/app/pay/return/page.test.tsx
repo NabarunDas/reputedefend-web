@@ -9,6 +9,7 @@ describe("payment return page", () => {
     render(<PaymentReturnPage />)
     expect(screen.getByRole("heading", { name: "We’re confirming your payment" })).toBeInTheDocument()
     expect(document.body.textContent).toMatch(/does not mark a payment as paid/)
+    expect(document.body.textContent).toMatch(/does not start Guard billing/)
     expect(screen.queryByRole("button", { name: /mark paid|confirm payment/i })).toBeNull()
   })
 })

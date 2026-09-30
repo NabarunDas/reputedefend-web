@@ -129,7 +129,29 @@ describe("guard admin commands", () => {
     const page = readFileSync(new URL("../../app/guard/page.tsx", import.meta.url), "utf8")
     const command = readFileSync(new URL("./command.ts", import.meta.url), "utf8")
     expect(forms + page).not.toMatch(/GUARD_ACTIVATION_ENABLED|NEXT_PUBLIC_GUARD/)
-    expect(command).not.toMatch(/NEXT_PUBLIC_GUARD_ACTIVATION_ENABLED/)
+    expect(command).not.toMatch(/NEXT_PUBLIC_GUARD_ACTIVATION_ENABLED|NEXT_PUBLIC_GUARD_SUBSCRIPTIONS|NEXT_PUBLIC_GUARD_REFUNDS/)
     expect(command).toMatch(/guardActivationEnabled/)
+  })
+
+  it("blocks provider subscription mutations when GUARD_SUBSCRIPTIONS_ENABLED is unset", async () => {
+    const denied = await guardCommand(req({
+      operation: "schedule_period_end_cancellation",
+      subscriptionId: coverageId,
+      version: 1,
+    }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ reason: "subscriptions_disabled" })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("blocks refund approval when GUARD_REFUNDS_ENABLED is unset", async () => {
+    const denied = await guardCommand(req({
+      operation: "approve_refund",
+      adjustmentId: coverageId,
+      amountMinor: 100,
+    }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ reason: "refunds_disabled" })
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 })

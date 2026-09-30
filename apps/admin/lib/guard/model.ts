@@ -11,6 +11,15 @@ export const guardOperations = [
   "record_activation_exception",
   "acknowledge_exception",
   "revoke_permission",
+  "issue_subscription_start_action",
+  "create_included_continuation",
+  "issue_price_change_action",
+  "schedule_period_end_cancellation",
+  "undo_scheduled_cancellation",
+  "request_immediate_cancellation",
+  "approve_refund",
+  "approve_service_credit",
+  "map_provider_price",
 ] as const
 export type GuardOperation = (typeof guardOperations)[number]
 
@@ -106,11 +115,73 @@ export type GuardLocation = {
   country?: string | null
 }
 
+export type GuardSubscription = {
+  id: string
+  locationId: string
+  coverageId?: string | null
+  continuationId?: string | null
+  customerId: string
+  businessId: string
+  serviceOrderId: string
+  locationName?: string | null
+  customerName?: string | null
+  businessName?: string | null
+  lifecycleState: string
+  providerStatus: string
+  amountMinor: number
+  currency: string
+  stripePriceId?: string | null
+  stripeSubscriptionId?: string | null
+  paidThroughAt?: string | null
+  billingState?: string | null
+  coverageState?: string | null
+  currentPeriodEnd?: string | null
+  cancelAtPeriodEnd?: boolean
+  latestPaidInvoiceId?: string | null
+  latestInvoiceFailure?: string | null
+  priceChangeStatus?: string | null
+  disputeStatus?: string | null
+  refundStatus?: string | null
+  reconciliationOpen?: boolean
+  version: number
+}
+
+export type GuardContinuation = {
+  id: string
+  includedCoverageId: string
+  serviceOrderId: string
+  status: string
+  locationId: string
+  scheduledStartAt?: string | null
+  version: number
+}
+
+export type GuardReminder = {
+  id: string
+  coverageId: string
+  offsetDays: number
+  dueAt: string
+  status: string
+}
+
+export type GuardAdjustment = {
+  id: string
+  subscriptionId: string
+  kind: string
+  status: string
+  amountMinor: number
+  approvedAmountMinor?: number | null
+}
+
 export type GuardList = {
   requests: GuardRequest[]
   coverages: GuardCoverage[]
   guardOrders: GuardOrder[]
   locations: GuardLocation[]
+  subscriptions?: GuardSubscription[]
+  continuations?: GuardContinuation[]
+  reminders?: GuardReminder[]
+  adjustments?: GuardAdjustment[]
 }
 
 export function coverageStateLabel(state: string): string {

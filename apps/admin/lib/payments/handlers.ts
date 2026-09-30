@@ -140,6 +140,17 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           applyPayload.attemptId = session.metadata.attemptId
           applyPayload.providerOperationId = session.metadata.providerOperationId
           applyPayload.orderRef = session.metadata.orderRef
+          if (session.mode === "subscription" || session.metadata.guardSubscriptionId) {
+            const guard = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
+              p_event_id: eventId, p_type: eventType, p_object_id: objectId,
+              p_payload: {
+                ...applyPayload,
+                guardSubscriptionId: session.metadata.guardSubscriptionId,
+                guardCoverageId: session.metadata.guardCoverageId,
+              },
+            })
+            return applyResult(guard)
+          }
           const correlated = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
             p_event_id: eventId, p_type: eventType, p_object_id: objectId, p_payload: applyPayload,
           })
@@ -197,7 +208,84 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           })
           return applyResult(result)
         }
+        if (eventType.startsWith("customer.subscription.") && objectId) {
+          const subscription = await provider.retrieveSubscription(objectId)
+          if (!subscription) return { ok: false, retryable: true, error: "Subscription could not be retrieved." }
+          const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
+            p_event_id: eventId,
+            p_type: eventType,
+            p_object_id: subscription.id,
+            p_payload: {
+              subscriptionId: subscription.id,
+              providerStatus: subscription.status,
+              stripeCustomerId: subscription.customerId,
+              priceId: subscription.priceId,
+              subscriptionItemId: subscription.subscriptionItemId,
+              quantity: subscription.quantity,
+              cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+              periodStart: subscription.currentPeriodStart,
+              periodEnd: subscription.currentPeriodEnd,
+              scheduleId: subscription.scheduleId,
+              guardSubscriptionId: subscription.metadata.guardSubscriptionId,
+              customerId: subscription.metadata.customerId,
+              serviceOrderId: subscription.metadata.serviceOrderId,
+              livemode: false,
+            },
+          })
+          return applyResult(result)
+        }
+        if ((eventType.startsWith("refund.") || eventType === "charge.refunded") && objectId) {
+          const refund = eventType === "charge.refunded" ? null : await provider.retrieveRefund(objectId)
+          const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
+            p_event_id: eventId, p_type: eventType, p_object_id: objectId,
+            p_payload: {
+              refundStatus: refund?.status, amountMinor: refund?.amountMinor, failureCode: refund?.failureReason,
+              paymentIntentId: refund?.paymentIntentId, chargeId: refund?.chargeId, livemode: false,
+            },
+          })
+          return applyResult(result)
+        }
+        if (eventType.startsWith("charge.dispute.") && objectId) {
+          const dispute = await provider.retrieveDispute(objectId)
+          const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
+            p_event_id: eventId, p_type: eventType, p_object_id: objectId,
+            p_payload: {
+              disputeStatus: dispute?.status, amountMinor: dispute?.amountMinor, chargeId: dispute?.chargeId,
+              outcome: dispute?.reason, livemode: false,
+            },
+          })
+          return applyResult(result)
+        }
         if (eventType.startsWith("invoice.") && objectId) {
+          const recurring = await provider.retrieveRecurringInvoice(objectId).catch(() => null)
+          if (recurring?.subscriptionId || recurring?.metadata.guardSubscriptionId) {
+            const type = recurring.status === "paid" || eventType === "invoice.paid" ? "invoice.paid" : eventType
+            const result = await rpc.rpc<{ status?: string }>("guard_apply_subscription_event_v1", {
+              p_event_id: eventId,
+              p_type: type,
+              p_object_id: recurring.id,
+              p_payload: {
+                stripeCustomerId: recurring.customerId,
+                amountPaidMinor: recurring.amountPaidMinor,
+                amountMinor: recurring.amountDueMinor,
+                currency: recurring.currency,
+                subscriptionId: recurring.subscriptionId,
+                subscriptionItemId: recurring.subscriptionItemId,
+                priceId: recurring.priceId,
+                quantity: recurring.quantity,
+                periodStart: recurring.periodStart,
+                periodEnd: recurring.periodEnd,
+                paymentIntentId: recurring.paymentIntentId,
+                chargeId: recurring.chargeId,
+                guardSubscriptionId: recurring.metadata.guardSubscriptionId,
+                customerId: recurring.metadata.customerId,
+                serviceOrderId: recurring.metadata.serviceOrderId,
+                providerOperationId: recurring.metadata.providerOperationId,
+                livemode: false,
+              },
+            })
+            return applyResult(result)
+          }
           const invoice = await provider.retrieveInvoice(objectId)
           if (!invoice) return { ok: false, retryable: true, error: "Invoice could not be retrieved." }
           const type = invoice.status === "paid" || eventType === "invoice.paid" ? "invoice.paid" : eventType

@@ -75,5 +75,46 @@ export function guardArgs(operation: GuardOperation, body: Record<string, unknow
     if (!isUuid(body.coverageId) || typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1 || !reason) return null
     return { coverageId: body.coverageId, version: body.version, reason }
   }
+  if (operation === "issue_subscription_start_action") {
+    const expiresAt = futureTimestamp(body.expiresAt)
+    if (!expiresAt) return null
+    if (isUuid(body.coverageId)) return { coverageId: body.coverageId, expiresAt }
+    if (isUuid(body.continuationId)) return { continuationId: body.continuationId, expiresAt }
+    return null
+  }
+  if (operation === "create_included_continuation") {
+    if (!isUuid(body.coverageId) || !isUuid(body.serviceOrderId)) return null
+    return { coverageId: body.coverageId, serviceOrderId: body.serviceOrderId }
+  }
+  if (operation === "issue_price_change_action") {
+    const expiresAt = futureTimestamp(body.expiresAt)
+    if (!isUuid(body.subscriptionId) || !isUuid(body.priceVersionId) || !expiresAt) return null
+    if (typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1) return null
+    return { subscriptionId: body.subscriptionId, priceVersionId: body.priceVersionId, expiresAt, version: body.version }
+  }
+  if (operation === "schedule_period_end_cancellation" || operation === "undo_scheduled_cancellation") {
+    if (!isUuid(body.subscriptionId) || typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1) return null
+    const reason = typeof body.reason === "string" ? body.reason.trim() : ""
+    if (reason.length > 2000) return null
+    return { subscriptionId: body.subscriptionId, version: body.version, ...(reason ? { reason } : {}) }
+  }
+  if (operation === "request_immediate_cancellation") {
+    const reason = text(body.reason, 10, 2000)
+    if (!isUuid(body.subscriptionId) || typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1 || !reason) return null
+    return { subscriptionId: body.subscriptionId, version: body.version, reason }
+  }
+  if (operation === "approve_refund") {
+    if (!isUuid(body.adjustmentId) || typeof body.amountMinor !== "number" || !Number.isInteger(body.amountMinor) || body.amountMinor <= 0) return null
+    return { adjustmentId: body.adjustmentId, amountMinor: body.amountMinor }
+  }
+  if (operation === "approve_service_credit") {
+    const reason = text(body.reason, 10, 2000)
+    if (!isUuid(body.subscriptionId) || typeof body.amountMinor !== "number" || !Number.isInteger(body.amountMinor) || body.amountMinor <= 0 || !reason) return null
+    return { subscriptionId: body.subscriptionId, amountMinor: body.amountMinor, reason }
+  }
+  if (operation === "map_provider_price") {
+    if (!isUuid(body.priceVersionId)) return null
+    return { priceVersionId: body.priceVersionId }
+  }
   return null
 }

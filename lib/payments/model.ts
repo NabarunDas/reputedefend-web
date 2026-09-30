@@ -8,7 +8,13 @@ export const SUCCESS_FEE_CONSENT_VERSION = "SUCCESS_FEE_CONSENT_V1"
 export const SUCCESS_FEE_CONSENT_TEXT =
   "No service fee is charged today. The agreed success fee may be charged later only after the defined successful outcome has occurred and ProfileRelaunch has approved billing. The amount is the immutable accepted quote amount. The payment method may be used off-session for that specific agreed success fee. The issuing bank may later require additional authentication."
 
-export type CheckoutMode = "payment" | "setup"
+export type CheckoutMode = "payment" | "setup" | "subscription"
+
+export const GUARD_RECURRING_CONSENT_VERSION = "GUARD_RECURRING_CONSENT_V1"
+export const GUARD_RECURRING_CONSENT_TEXT =
+  "I authorise monthly billing for Relaunch Guard for this exact location at the accepted monthly amount until cancelled under the agreed cancellation terms. This consent covers only this location and this accepted price. Opening a link or verifying a one-time code is not acceptance."
+export const GUARD_CANCELLATION_TERMS_VERSION = "GUARD_CANCELLATION_TERMS_V1"
+export const GUARD_PRICE_CHANGE_NOTICE_VERSION = "GUARD_PRICE_CHANGE_NOTICE_V1"
 
 export type PaymentMetadata = {
   customerId: string
@@ -101,6 +107,98 @@ export type RetrievedInvoice = {
   currency: string
   hostedInvoiceUrl: string | null
   metadata: Record<string, string>
+  livemode: false
+  subscriptionId?: string | null
+  subscriptionItemId?: string | null
+  priceId?: string | null
+  quantity?: number | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  paymentIntentId?: string | null
+  chargeId?: string | null
+}
+
+export type GuardMetadata = {
+  customerId: string
+  serviceOrderId: string
+  guardSubscriptionId: string
+  priceVersionId?: string
+  guardCoverageId?: string
+  continuationId?: string
+  providerOperationId?: string
+}
+
+export type CreateSubscriptionCheckoutInput = {
+  idempotencyKey: string
+  stripeCustomerId: string
+  stripePriceId: string
+  successUrl: string
+  cancelUrl: string
+  metadata: GuardMetadata
+}
+
+export type CreateRecurringPriceInput = {
+  idempotencyKey: string
+  amountMinor: number
+  currency: "GBP"
+  priceVersionId: string
+  providerOperationId: string
+}
+
+export type ProviderRecurringPrice = {
+  productId: string
+  priceId: string
+  amountMinor: number
+  livemode: false
+}
+
+export type RetrievedSubscription = {
+  id: string
+  status: string
+  customerId: string | null
+  priceId: string | null
+  subscriptionItemId: string | null
+  quantity: number
+  cancelAtPeriodEnd: boolean
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  scheduleId: string | null
+  metadata: Record<string, string>
+  livemode: false
+}
+
+export type RetrievedRefund = {
+  id: string
+  status: string
+  amountMinor: number
+  currency: string
+  paymentIntentId: string | null
+  chargeId: string | null
+  failureReason: string | null
+  livemode: false
+}
+
+export type RetrievedDispute = {
+  id: string
+  status: string
+  amountMinor: number
+  currency: string
+  chargeId: string | null
+  reason: string | null
+  livemode: false
+}
+
+export type CancelSubscriptionResult = {
+  id: string
+  status: string
+  cancelAtPeriodEnd: boolean
+  canceled: boolean
+  livemode: false
+}
+
+export type ProviderSchedule = {
+  id: string
+  subscriptionId: string
   livemode: false
 }
 
@@ -229,6 +327,21 @@ export function mapBoundedProviderEvent(event: BoundedProviderEvent): MappedProv
   } else if (event.type === "invoice.paid") {
     mapped.outcome = "succeeded"
     mapped.objectType = "invoice"
+  } else if (event.type === "invoice.payment_failed" || event.type === "invoice.finalization_failed") {
+    mapped.outcome = "failed"
+    mapped.objectType = "invoice"
+  } else if (event.type === "invoice.payment_action_required") {
+    mapped.outcome = "requires_action"
+    mapped.objectType = "invoice"
+  } else if (event.type.startsWith("customer.subscription.")) {
+    mapped.objectType = "subscription"
+    mapped.outcome = event.type === "customer.subscription.deleted" ? "failed" : "correlated"
+  } else if (event.type.startsWith("charge.refunded") || event.type.startsWith("refund.")) {
+    mapped.objectType = "refund"
+    mapped.outcome = event.type.includes("failed") ? "failed" : "correlated"
+  } else if (event.type.startsWith("charge.dispute.")) {
+    mapped.objectType = "dispute"
+    mapped.outcome = "correlated"
   }
   return mapped
 }
@@ -249,14 +362,41 @@ export function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+const PAYMENT_METADATA_KEYS = ["customerId", "serviceOrderId", "obligationId", "attemptId", "orderRef", "providerOperationId"]
+const GUARD_METADATA_KEYS = ["customerId", "serviceOrderId", "guardCoverageId", "guardSubscriptionId", "priceVersionId", "providerOperationId", "continuationId"]
+
 export function assertSafeMetadata(meta: Record<string, string>) {
   for (const [key, value] of Object.entries(meta)) {
-    if (!["customerId", "serviceOrderId", "obligationId", "attemptId", "orderRef", "providerOperationId"].includes(key)) {
+    if (!PAYMENT_METADATA_KEYS.includes(key)) {
       throw new Error("Stripe metadata contains a disallowed key")
     }
     if (key === "orderRef") {
       if (!/^SO-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/.test(value)) throw new Error("Stripe metadata orderRef is invalid")
     } else if (!isUuid(value)) {
+      throw new Error("Stripe metadata must use opaque internal identifiers")
+    }
+  }
+}
+
+export function guardMetadata(input: GuardMetadata): Record<string, string> {
+  const out: Record<string, string> = {
+    customerId: input.customerId,
+    serviceOrderId: input.serviceOrderId,
+    guardSubscriptionId: input.guardSubscriptionId,
+  }
+  if (input.priceVersionId) out.priceVersionId = input.priceVersionId
+  if (input.guardCoverageId) out.guardCoverageId = input.guardCoverageId
+  if (input.continuationId) out.continuationId = input.continuationId
+  if (input.providerOperationId) out.providerOperationId = input.providerOperationId
+  return out
+}
+
+export function assertSafeGuardMetadata(meta: Record<string, string>) {
+  for (const [key, value] of Object.entries(meta)) {
+    if (!GUARD_METADATA_KEYS.includes(key)) {
+      throw new Error("Stripe metadata contains a disallowed key")
+    }
+    if (!isUuid(value)) {
       throw new Error("Stripe metadata must use opaque internal identifiers")
     }
   }

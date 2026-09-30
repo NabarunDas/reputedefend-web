@@ -69,6 +69,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_catalogue_quotes_orders_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_stripe_payments_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_guard_onboarding_activation_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_guard_subscriptions_billing_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 90000)
 
@@ -82,9 +83,10 @@ beforeEach(async () => {
     alter table public.price_versions disable trigger price_versions_protect;
     alter table public.price_versions disable trigger price_versions_overlap;
     alter table public.guard_coverage_events disable trigger guard_coverage_events_immutable;
+    alter table public.guard_subscription_events disable trigger guard_subscription_events_immutable;
     alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,admin_private.guard_subscription_receipts,admin_private.stripe_event_receipts,public.provider_operations,public.payment_ledger,public.guard_reconciliation_issues,public.guard_reconciliation_runs,public.guard_reminder_records,public.guard_refunds,public.guard_disputes,public.guard_billing_adjustments,public.guard_price_change_offers,public.guard_subscription_invoices,public.guard_recurring_consents,public.guard_subscription_events,public.guard_subscriptions,public.guard_continuations,public.guard_provider_price_maps,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null;
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
@@ -94,6 +96,7 @@ beforeEach(async () => {
     alter table public.quote_events enable trigger quote_events_immutable;
     alter table public.price_version_events enable trigger price_version_events_immutable;
     alter table public.guard_coverage_events enable trigger guard_coverage_events_immutable;
+    alter table public.guard_subscription_events enable trigger guard_subscription_events_immutable;
     alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);

@@ -116,14 +116,24 @@ export async function command(request: NextRequest) {
   const body = await readJson(request, 2048)
   if (!validToken(token) || !isUuid(key) || !body || typeof body.operation !== "string" || !["accept", "decline", "revoke"].includes(body.operation)) return reply()
   const operation = body.operation
-  if (operation === "accept" && (!exactKeys(body, ["operation", "accepted"]) || body.accepted !== true)) {
-    return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+  const acceptKeys = ["operation", "accepted", "permissionVersion", "consentVersion"]
+  if (operation === "accept") {
+    const keys = Object.keys(body)
+    if (body.accepted !== true || !keys.includes("operation") || !keys.includes("accepted") || keys.some(key => !acceptKeys.includes(key))) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
   }
   if (operation === "decline" && !exactKeys(body, ["operation"])) return reply()
   if (operation === "revoke" && (!exactKeys(body, ["operation", "confirmed"]) || body.confirmed !== true)) {
     return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
   }
-  const data = operation === "accept" ? { accepted: true } : operation === "revoke" ? { confirmed: true } : {}
+  const data = operation === "accept"
+    ? {
+      accepted: true,
+      ...(typeof body.permissionVersion === "string" ? { permissionVersion: body.permissionVersion } : {}),
+      ...(typeof body.consentVersion === "string" ? { consentVersion: body.consentVersion } : {}),
+    }
+    : operation === "revoke" ? { confirmed: true } : {}
   try {
     const result = await backend().rpc<{ status?: string }>("customer_action_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,

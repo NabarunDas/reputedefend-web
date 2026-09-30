@@ -150,6 +150,7 @@ export function IssuePermissionForm({ coverageId }: { coverageId: string }) {
 
 export function RecordBaselineForm({ coverageId, version }: { coverageId: string; version: number }) {
   const { busy, message, run } = useCommand()
+  const [availability, setAvailability] = useState("AVAILABLE")
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -168,7 +169,7 @@ export function RecordBaselineForm({ coverageId, version }: { coverageId: string
     <label>Profile URL<input name="profileUrl" required maxLength={500} /></label>
     <label>Displayed business name<input name="displayedBusinessName" required maxLength={200} /></label>
     <label>Profile availability
-      <select name="profileAvailability" required>
+      <select name="profileAvailability" required value={availability} onChange={event => setAvailability(event.target.value)}>
         <option value="AVAILABLE">Available</option>
         <option value="UNAVAILABLE">Unavailable</option>
         <option value="UNKNOWN">Unknown</option>
@@ -178,8 +179,10 @@ export function RecordBaselineForm({ coverageId, version }: { coverageId: string
     <label>Rating<input name="rating" type="number" min={1} max={5} step={0.1} /></label>
     <label>Latest review reference<input name="latestReviewReference" maxLength={200} /></label>
     <label>Capture notes<textarea name="notes" maxLength={2000} /></label>
-    <button type="submit" disabled={busy}>Record verified baseline</button>
-    <p className="muted">This captures the starting profile and review state. It does not create daily observations.</p>
+    <button type="submit" disabled={busy}>
+      {availability === "AVAILABLE" ? "Record verified baseline" : "Record incomplete baseline"}
+    </button>
+    <p className="muted">Only an available, verified baseline can satisfy activation. Unavailable or unknown captures are kept as incomplete history and do not start daily observations.</p>
     <p role="status">{message}</p>
   </form>
 }

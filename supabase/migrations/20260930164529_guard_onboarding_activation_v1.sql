@@ -66,8 +66,11 @@ CREATE TABLE public.guard_coverages (
       AND source_recovery_case_id IS NOT NULL AND source_managed_order_id IS NOT NULL)
   ),
   CONSTRAINT guard_coverages_activation_facts CHECK (
-    (state <> 'ACTIVE' AND activated_at IS NULL)
-    OR (state = 'ACTIVE' AND activated_at IS NOT NULL)
+    (state IN (
+      'REQUESTED','AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED',
+      'AWAITING_PAYMENT','READY_TO_ACTIVATE'
+    ) AND activated_at IS NULL)
+    OR (state IN ('ACTIVE','PAUSED','ENDING','ENDED') AND activated_at IS NOT NULL)
   ),
   CONSTRAINT guard_coverages_included_period CHECK (
     (coverage_basis <> 'INCLUDED')
@@ -94,7 +97,8 @@ CREATE TABLE public.guard_coverage_events (
   actor_id uuid,
   event text NOT NULL CHECK (event IN (
     'COVERAGE_CREATED','STATE_CHANGED','PERMISSION_RECORDED','PERMISSION_REVOKED',
-    'BASELINE_RECORDED','ROTA_ASSIGNED','ACTIVATED','EXCEPTION_OPENED','EXCEPTION_ACKNOWLEDGED'
+    'BASELINE_RECORDED','ROTA_ASSIGNED','ACTIVATED','EXCEPTION_OPENED','EXCEPTION_ACKNOWLEDGED',
+    'EXCEPTION_RESOLVED'
   )),
   previous_state text,
   new_state text,
@@ -180,7 +184,10 @@ CREATE TABLE public.guard_baselines (
   captured_at timestamptz NOT NULL DEFAULT now(),
   captured_by uuid NOT NULL,
   notes text NOT NULL DEFAULT '',
-  UNIQUE (coverage_id, version_number)
+  UNIQUE (coverage_id, version_number),
+  CONSTRAINT guard_baselines_verified_available CHECK (
+    status <> 'VERIFIED' OR profile_availability = 'AVAILABLE'
+  )
 );
 CREATE UNIQUE INDEX guard_baselines_one_verified_coverage_idx
   ON public.guard_baselines (coverage_id) WHERE status = 'VERIFIED';
@@ -221,10 +228,14 @@ CREATE TABLE public.guard_activation_exceptions (
   created_by uuid,
   acknowledged_at timestamptz,
   acknowledged_by uuid,
-  record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1)
+  resolved_at timestamptz,
+  resolved_by uuid,
+  record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1),
+  CHECK (status <> 'RESOLVED' OR resolved_at IS NOT NULL)
 );
-CREATE UNIQUE INDEX guard_activation_exceptions_one_open_idx
-  ON public.guard_activation_exceptions (coverage_id) WHERE status = 'OPEN';
+CREATE UNIQUE INDEX guard_activation_exceptions_one_unresolved_idx
+  ON public.guard_activation_exceptions (coverage_id)
+  WHERE status IN ('OPEN','ACKNOWLEDGED');
 
 CREATE TABLE admin_private.guard_command_receipts (
   request_id uuid PRIMARY KEY,
@@ -293,11 +304,6 @@ REVOKE ALL ON TABLE public.guard_onboarding_locations, public.guard_coverages, p
   public.guard_rota_assignments, public.guard_activation_exceptions, admin_private.guard_command_receipts
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.guard_coverage_events_id_seq FROM PUBLIC, anon, authenticated, service_role;
-GRANT ALL ON TABLE public.guard_onboarding_locations, public.guard_coverages, public.guard_coverage_events,
-  public.guard_billing, public.guard_included_offers, public.guard_permissions, public.guard_baselines,
-  public.guard_rota_assignments, public.guard_activation_exceptions, admin_private.guard_command_receipts
-  TO service_role;
-GRANT ALL ON SEQUENCE public.guard_coverage_events_id_seq TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- Protect / validate
@@ -380,6 +386,9 @@ BEGIN
   IF OLD.state IN ('ENDED') AND NEW.state IS DISTINCT FROM 'ENDED' THEN
     RAISE EXCEPTION 'Ended coverage cannot change state';
   END IF;
+  IF NEW.state IS DISTINCT FROM OLD.state
+    AND NOT admin_private.guard_state_transition_allowed_v1(OLD.state, NEW.state)
+  THEN RAISE EXCEPTION 'Invalid Guard coverage state transition'; END IF;
   NEW.record_version := OLD.record_version + 1;
   NEW.updated_at := now();
   RETURN NEW;
@@ -463,7 +472,12 @@ FOR EACH ROW EXECUTE FUNCTION admin_private.validate_guard_mapping_v1();
 
 CREATE FUNCTION admin_private.validate_guard_baseline_size_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE cov public.guard_coverages;
 BEGIN
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = NEW.coverage_id;
+  IF cov.id IS NULL OR NEW.location_id IS DISTINCT FROM cov.location_id THEN
+    RAISE EXCEPTION 'Guard baseline location must match coverage';
+  END IF;
   IF octet_length(NEW.profile_details_snapshot::text) > 4000
     OR jsonb_typeof(NEW.profile_details_snapshot) <> 'object'
     OR NEW.profile_details_snapshot ? 'html'
@@ -508,6 +522,143 @@ FOR EACH ROW EXECUTE FUNCTION admin_private.ensure_intake_primary_mapping_v1();
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
+
+CREATE FUNCTION admin_private.guard_state_transition_allowed_v1(p_old text, p_new text)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE
+  pre text[] := ARRAY[
+    'REQUESTED','AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED',
+    'AWAITING_PAYMENT','READY_TO_ACTIVATE'
+  ];
+BEGIN
+  IF p_old IS NOT DISTINCT FROM p_new THEN RETURN true; END IF;
+  IF p_old = 'ENDED' THEN RETURN false; END IF;
+  IF p_old = ANY(pre) AND p_new = ANY(pre) THEN RETURN true; END IF;
+  IF p_new = 'ACTIVE' AND p_old = ANY(pre) THEN
+    RETURN current_setting('admin_private.guard_activating', true) = '1';
+  END IF;
+  IF p_old = 'ACTIVE' AND p_new IN ('PAUSED','ENDING') THEN RETURN true; END IF;
+  IF p_old = 'PAUSED' AND p_new IN ('ACTIVE','ENDING') THEN RETURN true; END IF;
+  IF p_old = 'ENDING' AND p_new = 'ENDED' THEN RETURN true; END IF;
+  RETURN false;
+END; $$;
+
+CREATE FUNCTION admin_private.guard_begin_activation_v1() RETURNS void
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  PERFORM set_config('admin_private.guard_activating', '1', true);
+END; $$;
+
+CREATE FUNCTION admin_private.guard_first_planned_marker_v1(OUT window_code text, OUT on_date date)
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  -- Planning marker only. No approved clock-time SLA. Step 17 owns exact windows.
+  window_code := 'MORNING';
+  on_date := (timezone('Europe/London', now()))::date + 1;
+END; $$;
+
+CREATE FUNCTION admin_private.validate_guard_coverage_identity_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  ord public.service_orders; map public.guard_onboarding_locations;
+  cs public.cases; managed public.service_orders; req public.monitoring_requests;
+BEGIN
+  IF NEW.coverage_basis = 'DIRECT_GUARD' THEN
+    SELECT * INTO ord FROM public.service_orders WHERE id = NEW.service_order_id;
+    IF ord.id IS NULL OR ord.service_code IS DISTINCT FROM 'RELAUNCH_GUARD'
+      OR ord.payment_model IS DISTINCT FROM 'RECURRING_MONTHLY'
+      OR ord.state IS DISTINCT FROM 'ACCEPTED_RECURRING'
+    THEN RAISE EXCEPTION 'Direct Guard coverage requires an accepted recurring Guard order'; END IF;
+    IF ord.customer_id IS DISTINCT FROM NEW.customer_id
+      OR ord.business_id IS DISTINCT FROM NEW.business_id
+      OR ord.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Direct Guard coverage must match the service-order customer, business and location'; END IF;
+    IF NEW.monitoring_request_id IS NOT NULL THEN
+      SELECT * INTO req FROM public.monitoring_requests WHERE id = NEW.monitoring_request_id;
+      IF req.id IS NULL OR req.customer_id IS DISTINCT FROM NEW.customer_id
+        OR req.business_id IS DISTINCT FROM NEW.business_id
+      THEN RAISE EXCEPTION 'Direct Guard coverage request does not match coverage identity'; END IF;
+      IF ord.monitoring_request_id IS NOT NULL
+        AND ord.monitoring_request_id IS DISTINCT FROM NEW.monitoring_request_id
+      THEN RAISE EXCEPTION 'Direct Guard coverage request does not match the service order'; END IF;
+    END IF;
+    IF NEW.onboarding_location_id IS NOT NULL THEN
+      SELECT * INTO map FROM public.guard_onboarding_locations WHERE id = NEW.onboarding_location_id;
+      IF map.id IS NULL OR map.customer_id IS DISTINCT FROM NEW.customer_id
+        OR map.business_id IS DISTINCT FROM NEW.business_id
+        OR map.location_id IS DISTINCT FROM NEW.location_id
+        OR (NEW.monitoring_request_id IS NOT NULL AND map.monitoring_request_id IS DISTINCT FROM NEW.monitoring_request_id)
+      THEN RAISE EXCEPTION 'Direct Guard coverage mapping does not match coverage identity'; END IF;
+    END IF;
+  ELSE
+    IF NEW.service_order_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Included Guard coverage cannot pin a Guard service order';
+    END IF;
+    SELECT * INTO cs FROM public.cases WHERE id = NEW.source_recovery_case_id;
+    SELECT * INTO managed FROM public.service_orders WHERE id = NEW.source_managed_order_id;
+    IF cs.id IS NULL OR managed.id IS NULL THEN
+      RAISE EXCEPTION 'Included Guard coverage requires the source recovery case and Managed order';
+    END IF;
+    IF cs.customer_id IS DISTINCT FROM NEW.customer_id OR cs.business_id IS DISTINCT FROM NEW.business_id
+      OR cs.location_id IS DISTINCT FROM NEW.location_id
+    THEN RAISE EXCEPTION 'Included Guard coverage must match the recovery case identity'; END IF;
+    IF managed.customer_id IS DISTINCT FROM NEW.customer_id OR managed.business_id IS DISTINCT FROM NEW.business_id
+      OR managed.location_id IS DISTINCT FROM NEW.location_id OR managed.case_id IS DISTINCT FROM cs.id
+    THEN RAISE EXCEPTION 'Included Guard coverage must match the Managed order identity'; END IF;
+    IF managed.service_code IS DISTINCT FROM 'MANAGED_RELAUNCH'
+      OR managed.payment_model IS DISTINCT FROM 'SUCCESS_FEE'
+    THEN RAISE EXCEPTION 'Included Guard coverage requires a Managed Relaunch order'; END IF;
+    IF NEW.onboarding_location_id IS NOT NULL THEN
+      SELECT * INTO map FROM public.guard_onboarding_locations WHERE id = NEW.onboarding_location_id;
+      IF map.id IS NULL OR map.customer_id IS DISTINCT FROM NEW.customer_id
+        OR map.business_id IS DISTINCT FROM NEW.business_id
+        OR map.location_id IS DISTINCT FROM NEW.location_id
+      THEN RAISE EXCEPTION 'Included Guard coverage mapping does not match coverage identity'; END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER guard_coverages_validate_identity BEFORE INSERT OR UPDATE ON public.guard_coverages
+FOR EACH ROW EXECUTE FUNCTION admin_private.validate_guard_coverage_identity_v1();
+
+CREATE FUNCTION admin_private.paid_guard_discount_ready_v1(
+  p_coverage uuid, p_location uuid, p_service text, p_issue_observed timestamptz
+) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE cov public.guard_coverages; bill public.guard_billing;
+BEGIN
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = p_coverage;
+  SELECT * INTO bill FROM public.guard_billing WHERE coverage_id = p_coverage;
+  IF cov.id IS NULL OR bill.coverage_id IS NULL THEN RETURN false; END IF;
+  IF cov.location_id IS DISTINCT FROM p_location THEN RETURN false; END IF;
+  IF cov.coverage_basis IS DISTINCT FROM 'DIRECT_GUARD' OR cov.state IS DISTINCT FROM 'ACTIVE' THEN RETURN false; END IF;
+  IF cov.activated_at IS NULL THEN RETURN false; END IF;
+  IF bill.billing_state IS DISTINCT FROM 'CURRENT' OR bill.entitlement_source IS DISTINCT FROM 'PROVIDER' THEN RETURN false; END IF;
+  IF bill.paid_through_at IS NULL OR bill.paid_through_at <= now() THEN RETURN false; END IF;
+  IF p_service IS NULL OR p_service NOT IN ('MANAGED_RELAUNCH','MANAGED_REVIEW') THEN RETURN false; END IF;
+  IF p_issue_observed IS NULL OR cov.activated_at > p_issue_observed THEN RETURN false; END IF;
+  RETURN true;
+END; $$;
+
+CREATE FUNCTION admin_private.validate_quote_discount_coverage_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  IF NEW.qualification_result = 'QUALIFIED' THEN
+    IF NEW.future_coverage_id IS NULL THEN
+      RAISE EXCEPTION 'Qualified Guard discount requires an authoritative coverage';
+    END IF;
+    IF NOT admin_private.paid_guard_discount_ready_v1(
+      NEW.future_coverage_id, NEW.location_id, NEW.service_code, NEW.issue_observed_at
+    ) THEN RAISE EXCEPTION 'Qualified Guard discount does not match paid active coverage'; END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER quote_discount_snapshots_guard_coverage
+  BEFORE INSERT OR UPDATE ON public.quote_discount_snapshots
+  FOR EACH ROW EXECUTE FUNCTION admin_private.validate_quote_discount_coverage_v1();
+
+ALTER TABLE public.quote_discount_snapshots
+  ADD CONSTRAINT quote_discount_snapshots_future_coverage_fk
+  FOREIGN KEY (future_coverage_id) REFERENCES public.guard_coverages(id) ON DELETE RESTRICT;
 
 CREATE FUNCTION admin_private.guard_permission_text_v1(p_basis text) RETURNS text
 LANGUAGE sql IMMUTABLE SET search_path='' AS $$
@@ -630,8 +781,12 @@ BEGIN
   IF cov.service_order_id IS NOT NULL THEN SELECT * INTO ord FROM public.service_orders WHERE id = cov.service_order_id; END IF;
 
   mapping_ready := (
-    (cov.onboarding_location_id IS NULL AND cov.coverage_basis = 'INCLUDED')
-    OR (map.id IS NOT NULL AND map.status IN ('IDENTIFIED','READY_FOR_ONBOARDING')
+    (cov.coverage_basis = 'INCLUDED' AND (
+      cov.onboarding_location_id IS NULL
+      OR (map.id IS NOT NULL AND map.status <> 'REMOVED'
+        AND map.location_id = cov.location_id AND map.customer_id = cov.customer_id AND map.business_id = cov.business_id)
+    ))
+    OR (cov.coverage_basis = 'DIRECT_GUARD' AND map.id IS NOT NULL AND map.status = 'READY_FOR_ONBOARDING'
       AND map.location_id = cov.location_id AND map.customer_id = cov.customer_id AND map.business_id = cov.business_id)
   );
   membership_ready := admin_private.guard_location_authorized_v1(cov.customer_id, cov.business_id, cov.location_id);
@@ -640,7 +795,8 @@ BEGIN
     AND (cov.coverage_basis <> 'INCLUDED' OR perm.included_offer_id IS NOT NULL);
   access_ready := acc.id IS NOT NULL;
   contact_ready := admin_private.guard_contact_ready_v1(cov.customer_id);
-  baseline_ready := base.id IS NOT NULL AND base.location_id = cov.location_id AND base.status = 'VERIFIED';
+  baseline_ready := base.id IS NOT NULL AND base.location_id = cov.location_id
+    AND base.status = 'VERIFIED' AND base.profile_availability = 'AVAILABLE';
   rota_ready := rota.id IS NOT NULL AND rota.status = 'ACTIVE' AND rota.assignee_auth_user_id IS NOT NULL;
   IF cov.coverage_basis = 'DIRECT_GUARD' THEN
     commercial_ready := ord.id IS NOT NULL AND ord.service_code = 'RELAUNCH_GUARD'
@@ -767,6 +923,12 @@ BEGIN
   IF map.id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', map.id, 'version', map.record_version, 'replay', true);
   END IF;
+  IF (
+    SELECT count(*) FROM public.guard_onboarding_locations
+    WHERE monitoring_request_id = req.id AND status <> 'REMOVED'
+  ) >= req.number_of_locations THEN
+    RETURN jsonb_build_object('status','denied','reason','requested_count');
+  END IF;
   SELECT coalesce(max(ordinal),0)+1 INTO n FROM public.guard_onboarding_locations WHERE monitoring_request_id = req.id;
   INSERT INTO public.guard_onboarding_locations(
     monitoring_request_id, customer_id, business_id, location_id, source, ordinal, status, created_by
@@ -833,9 +995,14 @@ BEGIN
   IF ord.monitoring_request_id IS NOT NULL AND ord.monitoring_request_id IS DISTINCT FROM map.monitoring_request_id THEN
     RETURN jsonb_build_object('status','denied','reason','request_mismatch');
   END IF;
+  PERFORM 1 FROM public.locations WHERE id = map.location_id FOR UPDATE;
   SELECT * INTO cov FROM public.guard_coverages WHERE service_order_id = ord.id AND state <> 'ENDED';
   IF cov.id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', cov.id, 'version', cov.record_version, 'replay', true);
+  END IF;
+  SELECT * INTO cov FROM public.guard_coverages WHERE location_id = map.location_id AND state <> 'ENDED';
+  IF cov.id IS NOT NULL THEN
+    RETURN jsonb_build_object('status','conflict','reason','coverage_exists');
   END IF;
   INSERT INTO public.guard_coverages(
     customer_id, business_id, location_id, monitoring_request_id, onboarding_location_id, service_order_id,
@@ -873,6 +1040,11 @@ BEGIN
   SELECT * INTO off FROM public.guard_included_offers WHERE source_managed_order_id = ord.id;
   IF off.id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', off.coverage_id, 'offerId', off.id, 'version', off.record_version, 'replay', true);
+  END IF;
+  PERFORM 1 FROM public.locations WHERE id = cs.location_id FOR UPDATE;
+  SELECT * INTO cov FROM public.guard_coverages WHERE location_id = cs.location_id AND state <> 'ENDED';
+  IF cov.id IS NOT NULL THEN
+    RETURN jsonb_build_object('status','conflict','reason','coverage_exists');
   END IF;
   SELECT * INTO map FROM public.guard_onboarding_locations
     WHERE location_id = cs.location_id AND customer_id = cs.customer_id AND business_id = cs.business_id
@@ -959,41 +1131,47 @@ CREATE FUNCTION admin_private.guard_record_baseline_v1(p_actor uuid, p_request u
 RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   cov public.guard_coverages; prev public.guard_baselines; base public.guard_baselines; n integer; details jsonb;
+  availability text; baseline_status text;
 BEGIN
   SELECT * INTO cov FROM public.guard_coverages WHERE id = NULLIF(p_payload->>'coverageId','')::uuid FOR UPDATE;
   IF cov.id IS NULL OR cov.state IN ('ENDED') THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF p_version IS DISTINCT FROM cov.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  IF NULLIF(p_payload->>'locationId','') IS NOT NULL
+    AND NULLIF(p_payload->>'locationId','')::uuid IS DISTINCT FROM cov.location_id
+  THEN RETURN jsonb_build_object('status','denied','reason','location_mismatch'); END IF;
   details := coalesce(p_payload->'profileDetails', '{}'::jsonb);
   IF jsonb_typeof(details) <> 'object' OR octet_length(details::text) > 4000 THEN
     RETURN jsonb_build_object('status','invalid');
   END IF;
+  availability := p_payload->>'profileAvailability';
   IF NULLIF(btrim(p_payload->>'profileUrl'),'') IS NULL OR char_length(btrim(p_payload->>'profileUrl')) > 500
     OR NULLIF(btrim(p_payload->>'displayedBusinessName'),'') IS NULL
-    OR p_payload->>'profileAvailability' NOT IN ('AVAILABLE','UNAVAILABLE','UNKNOWN')
+    OR availability NOT IN ('AVAILABLE','UNAVAILABLE','UNKNOWN')
   THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  baseline_status := CASE WHEN availability = 'AVAILABLE' THEN 'VERIFIED' ELSE 'INCOMPLETE' END;
   SELECT * INTO prev FROM public.guard_baselines WHERE coverage_id = cov.id AND status = 'VERIFIED' FOR UPDATE;
   SELECT coalesce(max(version_number),0)+1 INTO n FROM public.guard_baselines WHERE coverage_id = cov.id;
   INSERT INTO public.guard_baselines(
     coverage_id, location_id, version_number, status, profile_url, profile_availability, displayed_business_name,
     profile_details_snapshot, review_count, rating, latest_review_reference, latest_review_at, capture_method, captured_by, notes
   ) VALUES (
-    cov.id, cov.location_id, n, 'VERIFIED', btrim(p_payload->>'profileUrl'), p_payload->>'profileAvailability',
+    cov.id, cov.location_id, n, baseline_status, btrim(p_payload->>'profileUrl'), availability,
     btrim(p_payload->>'displayedBusinessName'), details,
     NULLIF(p_payload->>'reviewCount','')::integer, NULLIF(p_payload->>'rating','')::numeric,
     coalesce(p_payload->>'latestReviewReference',''), NULLIF(p_payload->>'latestReviewAt','')::timestamptz,
     'MANUAL_ADMIN', p_actor, coalesce(p_payload->>'notes','')
   ) RETURNING * INTO base;
-  IF prev.id IS NOT NULL THEN
+  IF baseline_status = 'VERIFIED' AND prev.id IS NOT NULL THEN
     UPDATE public.guard_baselines SET status = 'SUPERSEDED' WHERE id = prev.id;
   END IF;
   UPDATE public.guard_coverages SET baseline_id = base.id WHERE id = cov.id;
   PERFORM admin_private.guard_append_event_v1(cov.id, 'ADMIN', p_actor, 'BASELINE_RECORDED', cov.state, cov.state,
-    'Verified baseline recorded', jsonb_build_object('baselineId', base.id, 'versionNumber', base.version_number));
+    'Guard baseline recorded', jsonb_build_object('baselineId', base.id, 'versionNumber', base.version_number, 'status', base.status));
   PERFORM admin_private.guard_sync_coverage_state_v1(cov.id, 'ADMIN', p_actor);
   SELECT record_version INTO n FROM public.guard_coverages WHERE id = cov.id;
   PERFORM admin_private.write_record_audit_v1(p_actor, 'GUARD_CHANGED', 'success', cov.id, p_request, 'guard_coverage',
-    'Recorded a verified Guard baseline', jsonb_build_object('baselineId', base.id));
-  RETURN jsonb_build_object('status','success','id', cov.id, 'baselineId', base.id, 'version', n);
+    'Recorded a Guard baseline', jsonb_build_object('baselineId', base.id, 'status', base.status));
+  RETURN jsonb_build_object('status','success','id', cov.id, 'baselineId', base.id, 'baselineStatus', base.status, 'version', n);
 END; $$;
 
 CREATE FUNCTION admin_private.guard_assign_rota_v1(p_actor uuid, p_request uuid, p_payload jsonb, p_version integer)
@@ -1028,7 +1206,9 @@ CREATE FUNCTION admin_private.guard_open_exception_v1(
 DECLARE row public.guard_activation_exceptions; codes text[];
 BEGIN
   SELECT coalesce(ARRAY(SELECT jsonb_array_elements_text(p_ready->'blockerCodes')), '{}') INTO codes;
-  SELECT * INTO row FROM public.guard_activation_exceptions WHERE coverage_id = p_coverage AND status = 'OPEN';
+  SELECT * INTO row FROM public.guard_activation_exceptions
+    WHERE coverage_id = p_coverage AND status IN ('OPEN','ACKNOWLEDGED')
+    FOR UPDATE;
   IF row.id IS NOT NULL THEN RETURN row.id; END IF;
   INSERT INTO public.guard_activation_exceptions(
     coverage_id, reason_code, blocker_codes, billing_state_snapshot, coverage_state_snapshot, status, notes, created_by
@@ -1041,11 +1221,26 @@ BEGIN
   RETURN row.id;
 END; $$;
 
+CREATE FUNCTION admin_private.guard_resolve_exception_v1(p_coverage uuid, p_actor uuid)
+RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE row public.guard_activation_exceptions;
+BEGIN
+  SELECT * INTO row FROM public.guard_activation_exceptions
+    WHERE coverage_id = p_coverage AND status IN ('OPEN','ACKNOWLEDGED')
+    FOR UPDATE;
+  IF row.id IS NULL THEN RETURN; END IF;
+  UPDATE public.guard_activation_exceptions
+    SET status = 'RESOLVED', resolved_at = now(), resolved_by = p_actor
+    WHERE id = row.id RETURNING * INTO row;
+  PERFORM admin_private.guard_append_event_v1(p_coverage, 'ADMIN', p_actor, 'EXCEPTION_RESOLVED', NULL, NULL,
+    'Activation exception resolved', jsonb_build_object('exceptionId', row.id));
+END; $$;
+
 CREATE FUNCTION admin_private.guard_activate_v1(p_actor uuid, p_request uuid, p_payload jsonb, p_version integer, p_session jsonb)
 RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   cov public.guard_coverages; ready jsonb; rota public.guard_rota_assignments; window_code text; on_date date;
-  exception_id uuid; london_hour integer;
+  exception_id uuid; paid_not_ready boolean;
 BEGIN
   IF (p_session->>'createdAt')::timestamptz < now() - interval '5 minutes' THEN
     RETURN jsonb_build_object('status','reauth_required');
@@ -1057,7 +1252,10 @@ BEGIN
   END IF;
   IF p_version IS DISTINCT FROM cov.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
   ready := admin_private.guard_coverage_readiness_v1(cov.id);
-  IF (ready->>'billingReady')::boolean IS TRUE AND (ready->>'readyToActivate')::boolean IS NOT TRUE THEN
+  paid_not_ready := cov.coverage_basis = 'DIRECT_GUARD'
+    AND (ready->>'billingReady')::boolean IS TRUE
+    AND (ready->>'readyToActivate')::boolean IS NOT TRUE;
+  IF paid_not_ready THEN
     exception_id := admin_private.guard_open_exception_v1(cov.id, p_actor, ready, 'PAID_NOT_READY', coalesce(p_payload->>'notes',''));
     PERFORM admin_private.write_record_audit_v1(p_actor, 'GUARD_CHANGED', 'denied', cov.id, p_request, 'guard_coverage',
       'Activation blocked after payment entitlement', jsonb_build_object('exceptionId', exception_id, 'blockerCodes', ready->'blockerCodes'));
@@ -1066,13 +1264,18 @@ BEGIN
   IF (ready->>'readyToActivate')::boolean IS NOT TRUE THEN
     RETURN jsonb_build_object('status','denied','reason','not_ready','readiness', ready);
   END IF;
-  london_hour := extract(hour from timezone('Europe/London', now()))::integer;
-  window_code := CASE WHEN london_hour < 12 THEN 'MORNING' ELSE 'EVENING' END;
-  on_date := (timezone('Europe/London', now()))::date;
+  PERFORM admin_private.guard_sync_coverage_state_v1(cov.id, 'ADMIN', p_actor);
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = cov.id;
+  IF cov.state IS DISTINCT FROM 'READY_TO_ACTIVATE' THEN
+    RETURN jsonb_build_object('status','denied','reason','not_ready','readiness', ready);
+  END IF;
+  SELECT marker.window_code, marker.on_date INTO window_code, on_date
+    FROM admin_private.guard_first_planned_marker_v1() AS marker;
   UPDATE public.guard_rota_assignments
     SET first_planned_window_code = window_code, first_planned_on = on_date
     WHERE coverage_id = cov.id AND status = 'ACTIVE'
     RETURNING * INTO rota;
+  PERFORM admin_private.guard_begin_activation_v1();
   UPDATE public.guard_coverages SET
     state = 'ACTIVE',
     activated_at = now(),
@@ -1085,6 +1288,7 @@ BEGIN
     included_start_at = CASE WHEN coverage_basis = 'INCLUDED' THEN now() ELSE included_start_at END,
     included_end_at = CASE WHEN coverage_basis = 'INCLUDED' THEN now() + interval '30 days' ELSE included_end_at END
     WHERE id = cov.id RETURNING * INTO cov;
+  PERFORM admin_private.guard_resolve_exception_v1(cov.id, p_actor);
   PERFORM admin_private.guard_append_event_v1(
     cov.id, 'ADMIN', p_actor, 'ACTIVATED', ready->>'state', 'ACTIVE', 'Guard activated',
     jsonb_build_object(
@@ -1112,7 +1316,8 @@ BEGIN
   ready := admin_private.guard_coverage_readiness_v1(cov.id);
   exception_id := admin_private.guard_open_exception_v1(
     cov.id, p_actor, ready,
-    CASE WHEN (ready->>'billingReady')::boolean THEN 'PAID_NOT_READY' ELSE 'ACTIVATION_BLOCKED' END,
+    CASE WHEN cov.coverage_basis = 'DIRECT_GUARD' AND (ready->>'billingReady')::boolean
+      THEN 'PAID_NOT_READY' ELSE 'ACTIVATION_BLOCKED' END,
     coalesce(p_payload->>'notes','')
   );
   PERFORM admin_private.write_record_audit_v1(p_actor, 'GUARD_CHANGED', 'success', cov.id, p_request, 'guard_coverage',
@@ -1180,7 +1385,10 @@ BEGIN
   payload := p_payload - 'secretHash';
   fp := md5(jsonb_build_array(p_operation, payload, p_version)::text);
   cached := admin_private.guard_receipt_v1(actor, p_request, fp);
-  IF cached IS NOT NULL THEN RETURN cached; END IF;
+  IF cached IS NOT NULL THEN
+    IF cached->>'status' = 'success' THEN RETURN cached || jsonb_build_object('replay', true); END IF;
+    RETURN cached;
+  END IF;
   result := CASE p_operation
     WHEN 'identify_location' THEN admin_private.guard_identify_location_v1(actor, p_request, p_payload)
     WHEN 'remove_location' THEN admin_private.guard_remove_location_v1(actor, p_request, p_payload, p_version)
@@ -1254,7 +1462,7 @@ BEGIN
       JOIN public.businesses b ON b.id = g.business_id
       JOIN public.locations loc ON loc.id = g.location_id
       JOIN public.guard_billing bill ON bill.coverage_id = g.id
-      LEFT JOIN public.guard_activation_exceptions ex ON ex.coverage_id = g.id AND ex.status = 'OPEN'
+      LEFT JOIN public.guard_activation_exceptions ex ON ex.coverage_id = g.id AND ex.status IN ('OPEN','ACKNOWLEDGED')
     ), '[]'::jsonb),
     'guardOrders', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
@@ -1761,6 +1969,101 @@ BEGIN
   RETURN result;
 END; $$;
 
+CREATE FUNCTION admin_private.record_guard_linked_qualification_v1(
+  p_actor uuid, p_request uuid, p_payload jsonb
+) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  data jsonb; service text; price public.price_versions; snap public.quote_discount_snapshots;
+  coverage_id uuid; issue_at timestamptz; location_id uuid; result jsonb;
+BEGIN
+  data := coalesce(p_payload, '{}'::jsonb);
+  service := data->>'serviceCode';
+  SELECT * INTO price FROM public.price_versions WHERE id = NULLIF(data->>'priceVersionId','')::uuid;
+  IF price.id IS NULL OR service IS NULL OR service NOT IN ('GUIDED_RELAUNCH','MANAGED_RELAUNCH','GUIDED_REVIEW','MANAGED_REVIEW','RELAUNCH_GUARD') THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF coalesce(data->>'qualificationResult','') = 'QUALIFIED' THEN
+    coverage_id := coalesce(NULLIF(data->>'coverageId','')::uuid, NULLIF(data->>'futureCoverageId','')::uuid);
+    location_id := NULLIF(data->>'locationId','')::uuid;
+    issue_at := NULLIF(data->>'issueObservedAt','')::timestamptz;
+    IF coverage_id IS NULL OR location_id IS NULL OR issue_at IS NULL
+      OR service NOT IN ('MANAGED_RELAUNCH','MANAGED_REVIEW')
+    THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF NOT admin_private.paid_guard_discount_ready_v1(coverage_id, location_id, service, issue_at) THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    INSERT INTO public.quote_discount_snapshots(
+      location_id, coverage_basis, coverage_status, coverage_type, future_coverage_id, paid_vs_included,
+      issue_observed_at, issue_predates_paid_coverage, service_code, price_version_id, policy_id, discount_bps,
+      qualification_result, reason_code, standard_amount_minor, discount_amount_minor, discounted_subtotal_minor,
+      recorded_by, source, evidence_notes, valid_until
+    ) VALUES (
+      location_id, 'PAID', 'ACTIVE', 'PAID_GUARD', coverage_id, 'PAID',
+      issue_at, false, service, price.id, 'PAID_GUARD_MANAGED_20', 2000,
+      'QUALIFIED', 'QUALIFIED', price.amount_minor,
+      admin_private.money_discount_minor_v1(price.amount_minor, 2000),
+      price.amount_minor - admin_private.money_discount_minor_v1(price.amount_minor, 2000),
+      p_actor, 'ADMIN_RECORDED', NULLIF(left(btrim(coalesce(data->>'evidenceNotes','')), 2000), ''),
+      NULLIF(data->>'validUntil','')::timestamptz
+    ) RETURNING * INTO snap;
+  ELSE
+    INSERT INTO public.quote_discount_snapshots(
+      location_id, coverage_basis, coverage_status, coverage_type, paid_vs_included, issue_observed_at,
+      issue_predates_paid_coverage, service_code, price_version_id, policy_id, discount_bps, qualification_result,
+      reason_code, standard_amount_minor, discount_amount_minor, discounted_subtotal_minor, recorded_by, source, evidence_notes
+    ) VALUES (
+      NULLIF(data->>'locationId','')::uuid, coalesce(NULLIF(data->>'coverageBasis',''),'NONE'),
+      coalesce(NULLIF(data->>'coverageStatus',''),'UNKNOWN'), coalesce(NULLIF(data->>'coverageType',''),'NONE'),
+      coalesce(NULLIF(data->>'paidVsIncluded',''),'UNPROVEN'), NULLIF(data->>'issueObservedAt','')::timestamptz,
+      coalesce((data->>'issuePredatesPaidCoverage')::boolean, true), service, price.id, 'NONE', 0, 'NOT_QUALIFIED',
+      coalesce(NULLIF(data->>'reasonCode',''),'NO_AUTHORITATIVE_COVERAGE'), price.amount_minor, 0, price.amount_minor,
+      p_actor, 'ADMIN_RECORDED', NULLIF(left(btrim(coalesce(data->>'evidenceNotes','')), 2000), '')
+    ) RETURNING * INTO snap;
+  END IF;
+  PERFORM admin_private.write_record_audit_v1(p_actor, 'COMMERCE_CHANGED', 'success', snap.id, p_request, 'discount_snapshot',
+    'Guard discount qualification recorded', jsonb_build_object(
+      'result', snap.qualification_result, 'reasonCode', snap.reason_code, 'futureCoverageId', snap.future_coverage_id
+    ));
+  result := jsonb_build_object(
+    'status', 'success', 'id', snap.id, 'result', snap.qualification_result, 'reasonCode', snap.reason_code,
+    'futureCoverageId', snap.future_coverage_id
+  );
+  RETURN result;
+END; $$;
+
+ALTER FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) RENAME TO admin_quote_command_core_v1;
+ALTER FUNCTION public.admin_quote_command_core_v1(text, uuid, text, jsonb, integer) SET SCHEMA admin_private;
+REVOKE ALL ON FUNCTION admin_private.admin_quote_command_core_v1(text, uuid, text, jsonb, integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION public.admin_quote_command_v1(p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+  s jsonb; actor uuid; data jsonb; fp text; cached jsonb; result jsonb;
+BEGIN
+  IF p_operation IS DISTINCT FROM 'record_qualification' THEN
+    RETURN admin_private.admin_quote_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
+  END IF;
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status','unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF p_request IS NULL OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' OR octet_length(p_payload::text) > 16384 THEN
+    RETURN jsonb_build_object('status','invalid');
+  END IF;
+  data := coalesce(p_payload, '{}'::jsonb);
+  fp := md5(jsonb_build_array(p_operation, data, p_version)::text);
+  cached := admin_private.quote_receipt_v1(actor, p_request, fp);
+  IF cached IS NOT NULL THEN
+    IF cached->>'status' = 'success' THEN RETURN cached || jsonb_build_object('replay', true); END IF;
+    RETURN cached;
+  END IF;
+  result := admin_private.record_guard_linked_qualification_v1(actor, p_request, data);
+  IF result->>'status' = 'success' THEN
+    INSERT INTO admin_private.quote_command_receipts VALUES (p_request, actor, fp, result, now());
+  END IF;
+  RETURN result;
+END; $$;
+
 REVOKE ALL ON FUNCTION public.admin_guard_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_guard_list_v1(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_coverage_readiness_v1(uuid) FROM PUBLIC, anon, authenticated;
@@ -1775,5 +2078,7 @@ GRANT EXECUTE ON FUNCTION public.guard_coverage_readiness_v1(uuid) TO service_ro
 GRANT EXECUTE ON FUNCTION public.customer_action_session_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_command_v1(text, uuid, text, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_audit_list_v1(text, bigint, text, text) TO service_role;
+REVOKE ALL ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) TO service_role;
 
 COMMIT;

@@ -38,10 +38,16 @@ export function quoteArgs(operation: QuoteOperation, body: Record<string, unknow
   if (operation === "record_qualification") {
     const serviceCode = typeof body.serviceCode === "string" && serviceCodes.includes(body.serviceCode as typeof serviceCodes[number]) ? body.serviceCode : null
     if (!serviceCode || !isUuid(body.priceVersionId)) return null
+    const qualificationResult = body.qualificationResult === "QUALIFIED" ? "QUALIFIED" : "NOT_QUALIFIED"
+    const coverageId = isUuid(body.coverageId) ? body.coverageId : (isUuid(body.futureCoverageId) ? body.futureCoverageId : undefined)
+    if (qualificationResult === "QUALIFIED" && (!coverageId || !isUuid(body.locationId) || typeof body.issueObservedAt !== "string" || !body.issueObservedAt)) {
+      return null
+    }
     return {
       serviceCode,
       priceVersionId: body.priceVersionId,
-      qualificationResult: body.qualificationResult === "QUALIFIED" ? "QUALIFIED" : "NOT_QUALIFIED",
+      qualificationResult,
+      coverageId,
       coverageBasis: typeof body.coverageBasis === "string" ? body.coverageBasis : undefined,
       coverageStatus: typeof body.coverageStatus === "string" ? body.coverageStatus : undefined,
       coverageType: typeof body.coverageType === "string" ? body.coverageType : undefined,

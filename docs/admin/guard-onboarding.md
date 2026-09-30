@@ -32,6 +32,16 @@ Do not treat `monitoring_requests` as the coverage table. Do not create Guard ca
 
 Activation is one atomic command. Direct Guard requires an accepted `RELAUNCH_GUARD` order and billing state `CURRENT` with a still-valid provider paid-through entitlement. Step 15 has no production route to fabricate `CURRENT`. Tests may seed that state through `admin_private.guard_set_billing_entitlement_v1`, which is not granted to `service_role`.
 
+Live activation is also gated by server-only `GUARD_ACTIVATION_ENABLED`. Unset, `false`, and any unrecognised value keep activation fail-closed. Do not set `NEXT_PUBLIC_GUARD_ACTIVATION_ENABLED`. Do not configure the flag in Vercel in this step.
+
+`activated_at` is written once and kept for `ACTIVE`, `PAUSED`, `ENDING`, and `ENDED`. Pre-activation states must have a null activation timestamp. State jumps are database-validated. `READY_TO_ACTIVATE -> ACTIVE` requires the controlled activation command.
+
+Direct mapping readiness requires `READY_FOR_ONBOARDING`. `IDENTIFIED` is not enough. Request-scoped identify cannot exceed `number_of_locations`. Only an `AVAILABLE` + `VERIFIED` baseline satisfies activation. `PAID_NOT_READY` is only for paid Direct Guard with current provider entitlement. Unresolved activation exceptions are `OPEN` or `ACKNOWLEDGED`; successful activation resolves them.
+
+New `PAID_GUARD_MANAGED_20` qualifications must pin `quote_discount_snapshots.future_coverage_id` to an authoritative ACTIVE Direct Guard coverage with current provider billing. Included coverage cannot qualify. Historical snapshots stay as written.
+
+The first planned monitoring marker is symbolic: `MORNING` on the next Europe/London service date. It is not a clock-time SLA.
+
 Included coverage requires an accepted eligible 30-day offer and billing state `NOT_REQUIRED`. The 30 days start at `activated_at`, not offer creation, customer acceptance, or recovery completion. There is no automatic paid conversion.
 
 If billing entitlement is ready and other gates fail, activation stays inactive and opens an urgent exception.

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { readFileSync } from "node:fs"
 import { NextRequest } from "next/server"
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
@@ -60,6 +61,7 @@ describe("guard admin commands", () => {
   })
 
   it("maps paid-not-ready activation to an exception message", async () => {
+    vi.stubEnv("GUARD_ACTIVATION_ENABLED", "true")
     mocks.rpc.mockResolvedValue({ status: "denied", reason: "paid_not_ready", exceptionId: coverageId })
     const denied = await guardCommand(req({ operation: "activate", coverageId, version: 2 }))
     expect(denied.status).toBe(403)
@@ -70,9 +72,64 @@ describe("guard admin commands", () => {
   })
 
   it("maps reauth_required for activation", async () => {
+    vi.stubEnv("GUARD_ACTIVATION_ENABLED", "true")
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const denied = await guardCommand(req({ operation: "activate", coverageId, version: 1 }))
     expect(denied.status).toBe(403)
     expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+  })
+
+  it("blocks activation when GUARD_ACTIVATION_ENABLED is unset, false, or malformed", async () => {
+    vi.unstubAllEnvs()
+    vi.stubEnv("ADMIN_AUTH_ENABLED", "true")
+    vi.stubEnv("ADMIN_ORIGIN", origin)
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com")
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co")
+    vi.stubEnv("SUPABASE_SECRET_KEY", "test")
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
+    const unset = await guardCommand(req({ operation: "activate", coverageId, version: 1 }))
+    expect(unset.status).toBe(403)
+    expect(await unset.json()).toMatchObject({ reason: "activation_disabled" })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+
+    vi.stubEnv("GUARD_ACTIVATION_ENABLED", "false")
+    const disabled = await guardCommand(req({ operation: "activate", coverageId, version: 1 }))
+    expect(disabled.status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+
+    vi.stubEnv("GUARD_ACTIVATION_ENABLED", "yes")
+    const malformed = await guardCommand(req({ operation: "activate", coverageId, version: 1 }))
+    expect(malformed.status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("reaches the database command only when GUARD_ACTIVATION_ENABLED is true", async () => {
+    vi.stubEnv("GUARD_ACTIVATION_ENABLED", "true")
+    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, version: 4, activatedAt: "2026-09-30T12:00:00.000Z" })
+    const ok = await guardCommand(req({ operation: "activate", coverageId, version: 3 }))
+    expect(ok.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_guard_command_v1", expect.objectContaining({
+      p_operation: "activate",
+    }))
+  })
+
+  it("does not show a newly generated permission secret on receipt replay", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, replay: true, expiresAt: "2026-10-02T00:00:00.000Z" })
+    const replay = await guardCommand(req({
+      operation: "issue_permission_action", coverageId, expiresAt: "2026-10-02T00:00:00.000Z",
+    }))
+    expect(replay.status).toBe(200)
+    const body = await replay.json() as { actionUrl?: string; message?: string }
+    expect(body.actionUrl).toBeUndefined()
+    expect(body.message).toMatch(/cannot be shown again/i)
+  })
+
+  it("does not expose the activation flag to the client bundle", () => {
+    const forms = readFileSync(new URL("../../app/guard/forms.tsx", import.meta.url), "utf8")
+    const page = readFileSync(new URL("../../app/guard/page.tsx", import.meta.url), "utf8")
+    const command = readFileSync(new URL("./command.ts", import.meta.url), "utf8")
+    expect(forms + page).not.toMatch(/GUARD_ACTIVATION_ENABLED|NEXT_PUBLIC_GUARD/)
+    expect(command).not.toMatch(/NEXT_PUBLIC_GUARD_ACTIVATION_ENABLED/)
+    expect(command).toMatch(/guardActivationEnabled/)
   })
 })

@@ -28,9 +28,16 @@ type RpcResult = Record<string, unknown> & {
   activatedAt?: string
   includedStartAt?: string
   includedEndAt?: string
+  firstPlannedWindow?: string
+  firstPlannedOn?: string
   readyToActivate?: boolean
+  mappingReady?: boolean
   blockerCodes?: string[]
   billingReady?: boolean
+  baselineStatus?: string
+  baselineId?: string
+  replay?: boolean
+  reason?: string
   requests?: Array<{ numberOfLocations: number; identifiedCount: number; stillRequired: number; mappings: Array<{ source: string; locationId: string }> }>
 }
 
@@ -164,17 +171,28 @@ async function acceptPermission(coverageId: string) {
   expect(accepted?.status).toBe("success")
 }
 
-async function verifyAccess() {
-  await db.query("insert into public.location_manager_access(business_id,location_id,status,access_level,verified_at,verified_by,evidence) values($1,$2,'VERIFIED','MANAGER',now(),$3,$4) on conflict (location_id) do update set status='VERIFIED', access_level='MANAGER', verified_at=now(), verified_by=excluded.verified_by, evidence=excluded.evidence, revoked_at=null, revoked_by=null, revocation_reason=''", [business, location, uid, "Manager access confirmed on a live screenshare."])
+async function verifyAccess(targetLocation = location) {
+  await db.query("insert into public.location_manager_access(business_id,location_id,status,access_level,verified_at,verified_by,evidence) values($1,$2,'VERIFIED','MANAGER',now(),$3,$4) on conflict (location_id) do update set status='VERIFIED', access_level='MANAGER', verified_at=now(), verified_by=excluded.verified_by, evidence=excluded.evidence, revoked_at=null, revoked_by=null, revocation_reason=''", [business, targetLocation, uid, "Manager access confirmed on a live screenshare."])
 }
 
 async function coverageVersion(id: string) {
   return (await db.query<{ record_version: number }>("select record_version from public.guard_coverages where id=$1", [id])).rows[0].record_version
 }
 
+async function markCoverageMappingReady(coverageId: string) {
+  const row = (await db.query<{ id: string; record_version: number; status: string }>(
+    "select m.id, m.record_version, m.status from public.guard_onboarding_locations m join public.guard_coverages g on g.onboarding_location_id=m.id where g.id=$1",
+    [coverageId],
+  )).rows[0]
+  if (!row || row.status === "READY_FOR_ONBOARDING") return
+  expect(await rpc("admin_guard_command_v1", [token, key(), "mark_mapping_ready", { mappingId: row.id }, row.record_version])).toMatchObject({ status: "success" })
+}
+
 async function prepareOperational(coverageId: string) {
+  await markCoverageMappingReady(coverageId)
   await acceptPermission(coverageId)
-  await verifyAccess()
+  const coverageLocation = (await db.query<{ location_id: string }>("select location_id from public.guard_coverages where id=$1", [coverageId])).rows[0].location_id
+  await verifyAccess(coverageLocation)
   const baseline = await rpc("admin_guard_command_v1", [token, key(), "record_baseline", {
     coverageId, profileUrl: "https://maps.google.com/?cid=1", displayedBusinessName: "Bakery",
     profileAvailability: "AVAILABLE", notes: "Manual capture of the current profile and review counts.",
@@ -265,6 +283,8 @@ describe("guard onboarding SQL", () => {
     expect(row.rows[0].state).toBe("ACTIVE")
     expect(row.rows[0].included_start_at).toBe(row.rows[0].activated_at)
     expect(new Date(row.rows[0].included_end_at).getTime() - new Date(row.rows[0].included_start_at).getTime()).toBe(30 * 24 * 3600 * 1000)
+    expect(activated?.firstPlannedWindow).toBe("MORNING")
+    expect(JSON.stringify(activated)).not.toMatch(/12:00|09:00|17:00/)
     expect(await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: offer!.id }, activated!.version])).toMatchObject({ status: "success", replay: true })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where location_id=$1", [location])).rows[0].n).toBe(1)
   })
@@ -285,4 +305,306 @@ describe("guard onboarding SQL", () => {
     expect((await db.query<{ state: string }>("select state from public.guard_coverages where id=$1", [created!.id])).rows[0].state).not.toBe("ACTIVE")
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_activation_exceptions where coverage_id=$1 and status='OPEN'", [created!.id])).rows[0].n).toBe(1)
   })
+
+  it("keeps activated_at through pause, resume, ending and ended", async () => {
+    const coverageId = await activateIncluded()
+    const activatedAt = (await db.query<{ activated_at: string }>("select activated_at::text as activated_at from public.guard_coverages where id=$1", [coverageId])).rows[0].activated_at
+    await expect(db.query("update public.guard_coverages set activated_at=now() where id=$1", [coverageId])).rejects.toThrow(/immutable/i)
+    await db.query("update public.guard_coverages set state='PAUSED', paused_at=now() where id=$1", [coverageId])
+    expect((await db.query<{ activated_at: string; state: string }>("select activated_at::text as activated_at, state from public.guard_coverages where id=$1", [coverageId])).rows[0]).toMatchObject({ activated_at: activatedAt, state: "PAUSED" })
+    await db.query("update public.guard_coverages set state='ACTIVE' where id=$1", [coverageId])
+    expect((await db.query<{ activated_at: string }>("select activated_at::text as activated_at from public.guard_coverages where id=$1", [coverageId])).rows[0].activated_at).toBe(activatedAt)
+    await db.query("update public.guard_coverages set state='ENDING', ending_at=now() where id=$1", [coverageId])
+    await db.query("update public.guard_coverages set state='ENDED', ended_at=now() where id=$1", [coverageId])
+    expect((await db.query<{ activated_at: string; state: string }>("select activated_at::text as activated_at, state from public.guard_coverages where id=$1", [coverageId])).rows[0]).toMatchObject({ activated_at: activatedAt, state: "ENDED" })
+    await expect(db.query("update public.guard_coverages set state='ACTIVE' where id=$1", [coverageId])).rejects.toThrow(/Ended coverage|state transition/i)
+  })
+
+  it("denies invalid coverage state jumps and pre-activation activation facts", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    await expect(db.query("update public.guard_coverages set activated_at=now() where id=$1", [created!.id])).rejects.toThrow(/activation_facts|Activation timestamp|CHECK/i)
+    await expect(db.query("update public.guard_coverages set state='ENDED' where id=$1", [created!.id])).rejects.toThrow(/state transition/i)
+    await expect(db.query("update public.guard_coverages set state='ACTIVE', activated_at=now() where id=$1", [created!.id])).rejects.toThrow(/state transition|controlled activation/i)
+    await expect(db.query("insert into public.guard_coverages(customer_id,business_id,location_id,coverage_basis,coverage_origin,state,activated_at) values($1,$2,$3,'DIRECT_GUARD','DIRECT_GUARD','REQUESTED',now())", [customer, business, location])).rejects.toThrow()
+  })
+
+  it("treats IDENTIFIED direct mappings as not activation-ready and READY_FOR_ONBOARDING as ready", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ mappingReady: false })
+    const map = (await db.query<{ id: string; record_version: number }>("select id, record_version from public.guard_onboarding_locations where monitoring_request_id=$1", [requestId])).rows[0]
+    expect(await rpc("admin_guard_command_v1", [token, key(), "mark_mapping_ready", { mappingId: map.id }, map.record_version])).toMatchObject({ status: "success" })
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ mappingReady: true })
+    await db.query("update public.guard_onboarding_locations set status='REMOVED' where id=$1", [map.id])
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ mappingReady: false })
+  })
+
+  it("caps identified mappings at the requested count and allows replacement after removal", async () => {
+    await verify()
+    const requestId = await intake(10)
+    const extra: string[] = []
+    for (let i = 0; i < 10; i += 1) {
+      const id = crypto.randomUUID()
+      extra.push(id)
+      await db.query("insert into public.locations(id,business_id,country,location_name,business_profile_url) values($1,$2,'UK',$3,$4)", [
+        id, business, `Shop ${i + 2}`, `https://maps.google.com/?cid=${i + 10}`,
+      ])
+    }
+    for (let i = 0; i < 9; i += 1) {
+      expect(await rpc("admin_guard_command_v1", [token, key(), "identify_location", { monitoringRequestId: requestId, locationId: extra[i] }, null])).toMatchObject({ status: "success" })
+    }
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_onboarding_locations where monitoring_request_id=$1 and status<>'REMOVED'", [requestId])).rows[0].n).toBe(10)
+    expect(await rpc("admin_guard_command_v1", [token, key(), "identify_location", { monitoringRequestId: requestId, locationId: extra[9] }, null])).toMatchObject({ status: "denied", reason: "requested_count" })
+    const added = (await db.query<{ id: string; record_version: number }>("select id, record_version from public.guard_onboarding_locations where monitoring_request_id=$1 and source='ADMIN_ADDED' order by ordinal limit 1", [requestId])).rows[0]
+    expect(await rpc("admin_guard_command_v1", [token, key(), "remove_location", { mappingId: added.id }, added.record_version])).toMatchObject({ status: "success" })
+    expect(await rpc("admin_guard_command_v1", [token, key(), "identify_location", { monitoringRequestId: requestId, locationId: extra[9] }, null])).toMatchObject({ status: "success" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.locations where business_id=$1", [business])).rows[0].n).toBeGreaterThanOrEqual(12)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_onboarding_locations where monitoring_request_id=$1 and status<>'REMOVED'", [requestId])).rows[0].n).toBe(10)
+  })
+
+  it("verifies only AVAILABLE baselines and keeps incomplete history", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    const unavailable = await rpc("admin_guard_command_v1", [token, key(), "record_baseline", {
+      coverageId: created!.id, profileUrl: "https://maps.google.com/?cid=1", displayedBusinessName: "Bakery",
+      profileAvailability: "UNAVAILABLE", notes: "Profile could not be opened during the capture.",
+    }, await coverageVersion(created!.id!)])
+    expect(unavailable?.status).toBe("success")
+    expect((await db.query<{ status: string }>("select status from public.guard_baselines where id=$1", [unavailable!.baselineId as string])).rows[0].status).toBe("INCOMPLETE")
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ baselineReady: false })
+    const unknown = await rpc("admin_guard_command_v1", [token, key(), "record_baseline", {
+      coverageId: created!.id, profileUrl: "https://maps.google.com/?cid=1", displayedBusinessName: "Bakery",
+      profileAvailability: "UNKNOWN", notes: "Review state could not be confirmed.",
+    }, await coverageVersion(created!.id!)])
+    expect((await db.query<{ status: string }>("select status from public.guard_baselines where id=$1", [unknown!.baselineId as string])).rows[0].status).toBe("INCOMPLETE")
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ baselineReady: false })
+    const verified = await rpc("admin_guard_command_v1", [token, key(), "record_baseline", {
+      coverageId: created!.id, profileUrl: "https://maps.google.com/?cid=1", displayedBusinessName: "Bakery",
+      profileAvailability: "AVAILABLE", notes: "Manual capture of the current profile and review counts.",
+    }, await coverageVersion(created!.id!)])
+    expect((await db.query<{ status: string }>("select status from public.guard_baselines where id=$1", [verified!.baselineId as string])).rows[0].status).toBe("VERIFIED")
+    expect(await rpc("guard_coverage_readiness_v1", [created!.id])).toMatchObject({ baselineReady: true })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_baselines where coverage_id=$1 and status='INCOMPLETE'", [created!.id])).rows[0].n).toBe(2)
+    await expect(db.query("insert into public.guard_baselines(coverage_id,location_id,version_number,status,profile_url,profile_availability,displayed_business_name,capture_method,captured_by) values($1,$2,99,'VERIFIED','https://maps.google.com/?cid=9','AVAILABLE','Other','MANUAL_ADMIN',$3)", [created!.id, otherLocation, uid])).rejects.toThrow(/location must match/i)
+  })
+
+  it("does not describe included blockers as paid-not-ready", async () => {
+    const coverageId = await createIncludedCoverage()
+    await prepareOperational(coverageId)
+    await db.query("update public.location_manager_access set status='REVOKED', revoked_at=now(), revoked_by=$1, revocation_reason='Access was removed after a live check.' where location_id=$2", [uid, location])
+    const denied = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId }, await coverageVersion(coverageId)])
+    expect(denied).toMatchObject({ status: "denied", reason: "not_ready" })
+    expect(denied?.reason).not.toBe("paid_not_ready")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_activation_exceptions where coverage_id=$1 and reason_code='PAID_NOT_READY'", [coverageId])).rows[0].n).toBe(0)
+  })
+
+  it("reuses one unresolved exception through acknowledge and resolves it on activation", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    await db.exec(`select admin_private.guard_set_billing_entitlement_v1('${created!.id}'::uuid, 'CURRENT', now() + interval '30 days', 'PROVIDER')`)
+    await prepareOperational(created!.id!)
+    await db.query("update public.location_manager_access set status='REVOKED', revoked_at=now(), revoked_by=$1, revocation_reason='Access was removed after a live check.' where location_id=$2", [uid, location])
+    const first = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: created!.id }, await coverageVersion(created!.id!)])
+    expect(first).toMatchObject({ status: "denied", reason: "paid_not_ready" })
+    expect(await rpc("admin_guard_command_v1", [token, key(), "acknowledge_exception", { exceptionId: first!.exceptionId }, null])).toMatchObject({ status: "success" })
+    const retry = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: created!.id }, await coverageVersion(created!.id!)])
+    expect(retry?.exceptionId).toBe(first?.exceptionId)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_activation_exceptions where coverage_id=$1 and status in ('OPEN','ACKNOWLEDGED')", [created!.id])).rows[0].n).toBe(1)
+    await verifyAccess()
+    const activated = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: created!.id }, await coverageVersion(created!.id!)])
+    expect(activated?.status).toBe("success")
+    expect(activated?.firstPlannedWindow).toBe("MORNING")
+    expect(activated?.firstPlannedOn).toBeTruthy()
+    expect((await db.query<{ status: string }>("select status from public.guard_activation_exceptions where id=$1", [first!.exceptionId])).rows[0].status).toBe("RESOLVED")
+    await db.query("update public.guard_coverages set state='ENDING', ending_at=now() where id=$1", [created!.id])
+    await db.query("update public.guard_coverages set state='ENDED', ended_at=now() where id=$1", [created!.id])
+    const later = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    expect(later?.status).toBe("success")
+    expect(later?.id).not.toBe(created!.id)
+  })
+
+  it("requires authoritative ACTIVE DIRECT coverage for a paid Guard discount", async () => {
+    const coverageId = await activateDirectPaid()
+    const activatedAt = (await db.query<{ activated_at: string }>("select activated_at::text as activated_at from public.guard_coverages where id=$1", [coverageId])).rows[0].activated_at
+    const after = new Date(new Date(activatedAt).getTime() + 60_000).toISOString()
+    const before = new Date(new Date(activatedAt).getTime() - 60_000).toISOString()
+    const qualified = await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId, locationId: location, issueObservedAt: after,
+    }, null])
+    expect(qualified).toMatchObject({ status: "success", result: "QUALIFIED" })
+    expect((await db.query<{ future_coverage_id: string }>("select future_coverage_id::text from public.quote_discount_snapshots where id=$1", [qualified!.id])).rows[0].future_coverage_id).toBe(coverageId)
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      locationId: location, issueObservedAt: after,
+    }, null])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId, locationId: otherLocation, issueObservedAt: after,
+    }, null])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId, locationId: location, issueObservedAt: before,
+    }, null])).toMatchObject({ status: "denied" })
+    await db.exec(`select admin_private.guard_set_billing_entitlement_v1('${coverageId}'::uuid, 'PENDING', null, 'NONE')`)
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId, locationId: location, issueObservedAt: after,
+    }, null])).toMatchObject({ status: "denied" })
+    await db.exec(`select admin_private.guard_set_billing_entitlement_v1('${coverageId}'::uuid, 'CURRENT', now() + interval '30 days', 'PROVIDER')`)
+    await db.query("update public.guard_coverages set state='PAUSED', paused_at=now() where id=$1", [coverageId])
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId, locationId: location, issueObservedAt: after,
+    }, null])).toMatchObject({ status: "denied" })
+    const includedId = await activateIncluded(otherLocation)
+    expect(await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: await priceId("MANAGED_RELAUNCH"), qualificationResult: "QUALIFIED",
+      coverageId: includedId, locationId: otherLocation, issueObservedAt: after,
+    }, null])).toMatchObject({ status: "denied" })
+    await db.exec("alter table public.quote_discount_snapshots disable trigger quote_discount_snapshots_guard_coverage")
+    const historical = crypto.randomUUID()
+    await db.query("insert into public.quote_discount_snapshots(id,location_id,coverage_basis,coverage_status,coverage_type,paid_vs_included,issue_predates_paid_coverage,service_code,price_version_id,policy_id,discount_bps,qualification_result,reason_code,standard_amount_minor,discount_amount_minor,discounted_subtotal_minor,recorded_by,source) values($1,$2,'PAID','ACTIVE','PAID_GUARD','PAID',false,'MANAGED_RELAUNCH',$3,'PAID_GUARD_MANAGED_20',2000,'QUALIFIED','QUALIFIED',29900,5980,23920,$4,'ADMIN_RECORDED')", [
+      historical, location, await priceId("MANAGED_RELAUNCH"), uid,
+    ])
+    await db.exec("alter table public.quote_discount_snapshots enable trigger quote_discount_snapshots_guard_coverage")
+    expect((await db.query<{ future_coverage_id: string | null }>("select future_coverage_id::text from public.quote_discount_snapshots where id=$1", [historical])).rows[0].future_coverage_id).toBeNull()
+  })
+
+  it("keeps Guard tables RPC-only and denies generic role CRUD", async () => {
+    for (const role of ["anon", "authenticated", "service_role"]) {
+      for (const table of ["guard_coverages", "guard_billing", "guard_onboarding_locations", "guard_activation_exceptions"]) {
+        expect((await db.query<{ ok: boolean }>("select has_table_privilege($1,$2,'SELECT') as ok", [role, `public.${table}`])).rows[0].ok).toBe(false)
+        expect((await db.query<{ ok: boolean }>("select has_table_privilege($1,$2,'INSERT') as ok", [role, `public.${table}`])).rows[0].ok).toBe(false)
+        expect((await db.query<{ ok: boolean }>("select has_table_privilege($1,$2,'UPDATE') as ok", [role, `public.${table}`])).rows[0].ok).toBe(false)
+        expect((await db.query<{ ok: boolean }>("select has_table_privilege($1,$2,'DELETE') as ok", [role, `public.${table}`])).rows[0].ok).toBe(false)
+      }
+    }
+    expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role','public.admin_guard_command_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok")).rows[0].ok).toBe(true)
+    expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role','public.admin_guard_list_v1(text)','EXECUTE') as ok")).rows[0].ok).toBe(true)
+    expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role','admin_private.guard_set_billing_entitlement_v1(uuid,text,timestamptz,text)','EXECUTE') as ok")).rows[0].ok).toBe(false)
+  })
+
+  it("replays a permission-link idempotency key without changing the stored secret", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    const request = key()
+    const firstHash = secretHash()
+    const expiresAt = actionExpiry()
+    const first = await rpc("admin_guard_command_v1", [token, request, "issue_permission_action", { coverageId: created!.id, expiresAt, secretHash: firstHash }, null])
+    expect(first?.status).toBe("success")
+    const stored = (await db.query<{ secret_hash: string }>("select secret_hash from public.customer_actions where id=$1", [first!.id])).rows[0].secret_hash
+    const replay = await rpc("admin_guard_command_v1", [token, request, "issue_permission_action", { coverageId: created!.id, expiresAt, secretHash: secretHash() }, null])
+    expect(replay).toMatchObject({ status: "success", id: first!.id, replay: true })
+    expect((await db.query<{ secret_hash: string }>("select secret_hash from public.customer_actions where id=$1", [first!.id])).rows[0].secret_hash).toBe(stored)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where guard_coverage_id=$1 and kind='GUARD_PERMISSION' and status='OPEN'", [created!.id])).rows[0].n).toBe(1)
+  })
+
+  it("returns a controlled conflict for competing Direct and Included coverage", async () => {
+    const includedId = await createIncludedCoverage()
+    await verify()
+    const requestId = await intake(1)
+    const competing = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    expect(competing).toMatchObject({ status: "conflict", reason: "coverage_exists" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where location_id=$1 and state<>'ENDED'", [location])).rows[0].n).toBe(1)
+    await prepareOperational(includedId)
+    expect((await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: includedId }, await coverageVersion(includedId)]))?.status).toBe("success")
+    await db.query("update public.guard_coverages set state='ENDING', ending_at=now() where id=$1", [includedId])
+    await db.query("update public.guard_coverages set state='ENDED', ended_at=now() where id=$1", [includedId])
+    const later = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+      mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+    }, null])
+    expect(later?.status).toBe("success")
+  })
+
+  it("rejects mismatched coverage identity even for privileged SQL", async () => {
+    await verify()
+    const requestId = await intake(1)
+    const orderId = await acceptGuardOrder()
+    await expect(db.query("insert into public.guard_coverages(customer_id,business_id,location_id,monitoring_request_id,service_order_id,coverage_basis,coverage_origin,state) values($1,$2,$3,$4,$5,'DIRECT_GUARD','DIRECT_GUARD','REQUESTED')", [
+      customer, business, otherLocation, requestId, orderId,
+    ])).rejects.toThrow(/match the service-order|identity/i)
+  })
 })
+
+async function createIncludedCoverage(targetLocation = location) {
+  await verify()
+  const recoveryCase = targetLocation === location ? caseId : crypto.randomUUID()
+  if (targetLocation !== location) {
+    await db.query("insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Profile suspended','2026-01-01',now(),now(),'UNDECIDED')", [recoveryCase, customer, business, targetLocation])
+  }
+  await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+    update public.cases set service_track='MANAGED', status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW' where id='${recoveryCase}';
+    alter table public.cases enable trigger cases_workflow_version;`)
+  const draft = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
+    serviceCode: "MANAGED_RELAUNCH", customerId: customer, businessId: business, caseId: recoveryCase, locationId: targetLocation,
+    priceVersionId: await priceId("MANAGED_RELAUNCH"),
+    scope: "Managed recovery for this location only.",
+    exclusions: "Google decisions and later payment collection are excluded.",
+    validUntil: later(), applyDiscount: false,
+  }, null])
+  expect((await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", { quoteId: draft!.id, taxBehaviour: "NOT_APPLICABLE" }, draft!.version]))?.status).toBe("success")
+  expect((await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: draft!.id }, (draft!.version || 1) + 1]))?.status).toBe("success")
+  const hash = secretHash()
+  const issued = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId: draft!.id, expiresAt: actionExpiry(), secretHash: hash }, null])
+  const session = await completeOtp(issued!.id!, hash)
+  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  expect(accepted?.status).toBe("success")
+  await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+    update public.cases set status='CLOSED', work_stage='FINISHED', outcome='RESTORED' where id='${recoveryCase}';
+    alter table public.cases enable trigger cases_workflow_version;`)
+  const doc = crypto.randomUUID(), version = crypto.randomUUID()
+  await db.query("insert into public.case_documents(id,case_id,title,created_by) values($1,$2,'Outcome evidence',$3)", [doc, recoveryCase, uid])
+  await db.query("insert into public.case_document_versions(id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,upload_status,scan_status,validation_status,review_status,created_by) values($1,$2,1,'outcome.png','image/png',1200,'evidence-test', $3, 'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)", [
+    version, doc, `cases/${recoveryCase}/documents/${doc}/versions/${version}`, uid,
+  ])
+  await db.query("insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'Outcome evidence accepted after review.', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3", [version, uid, accepted!.orderId])
+  const offer = await rpc("admin_guard_command_v1", [token, key(), "create_included_offer", { caseId: recoveryCase, serviceOrderId: accepted!.orderId }, null])
+  expect(offer?.status).toBe("success")
+  return offer!.id!
+}
+
+async function activateIncluded(targetLocation = location) {
+  const coverageId = await createIncludedCoverage(targetLocation)
+  if (targetLocation !== location) {
+    await db.query("insert into public.location_manager_access(business_id,location_id,status,access_level,verified_at,verified_by,evidence) values($1,$2,'VERIFIED','MANAGER',now(),$3,$4) on conflict (location_id) do update set status='VERIFIED', access_level='MANAGER', verified_at=now(), revoked_at=null, revocation_reason=''", [business, targetLocation, uid, "Manager access confirmed on a live screenshare."])
+  }
+  await prepareOperational(coverageId)
+  const activated = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId }, await coverageVersion(coverageId)])
+  expect(activated?.status).toBe("success")
+  return coverageId
+}
+
+async function activateDirectPaid() {
+  await verify()
+  const requestId = await intake(1)
+  const created = await rpc("admin_guard_command_v1", [token, key(), "create_direct_coverage", {
+    mappingId: await mappingId(requestId), serviceOrderId: await acceptGuardOrder(),
+  }, null])
+  await db.exec(`select admin_private.guard_set_billing_entitlement_v1('${created!.id}'::uuid, 'CURRENT', now() + interval '30 days', 'PROVIDER')`)
+  await prepareOperational(created!.id!)
+  const activated = await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: created!.id }, await coverageVersion(created!.id!)])
+  expect(activated?.status).toBe("success")
+  expect(activated?.firstPlannedWindow).toBe("MORNING")
+  return created!.id!
+}

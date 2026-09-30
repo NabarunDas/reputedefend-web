@@ -76,7 +76,7 @@ A qualification snapshot is pinned to one `price_version_id`. A snapshot for tod
 
 Once an eligible discount is in an ACCEPTED quote, later Guard cancellation or catalogue changes cannot rewrite it.
 
-Step 15 may later attach authoritative coverage IDs to new snapshots. Historical snapshots stay as written. `future_coverage_id` is reserved for that.
+Step 15 adds a foreign key from `quote_discount_snapshots.future_coverage_id` to `guard_coverages.id`. New `QUALIFIED` snapshots must pin that exact coverage UUID. The database derives paid/active facts from `guard_coverages` and `guard_billing`. Included, paused, unpaid, other-location, or pre-activation issues cannot qualify. Historical accepted snapshots stay as written.
 
 ## Customer acceptance
 

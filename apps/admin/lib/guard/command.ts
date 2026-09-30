@@ -4,6 +4,7 @@ import { backend, newToken, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { guardActivationEnabled } from "./gate"
 import { isGuardOperation, guardArgs } from "./validation"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -37,10 +38,13 @@ function mapStatus(status: string | undefined): number {
 
 function commandMessage(status: string | undefined, reason?: string): string {
   if (status === "unauthorized") return "Your session has ended. Please sign in again."
+  if (status === "conflict" && reason === "coverage_exists") return "This location already has Guard coverage that has not ended."
   if (status === "conflict") return "That Guard record changed. Reload the page and try again."
   if (status === "reauth_required") return "Sign in again within the last five minutes to activate Guard."
   if (status === "invalid") return "Check the fields before saving."
   if (status === "denied" && reason === "paid_not_ready") return "Payment entitlement is present but Guard cannot activate yet. An urgent exception was recorded."
+  if (status === "denied" && reason === "requested_count") return "All requested locations for this monitoring request have already been identified."
+  if (status === "denied" && reason === "activation_disabled") return "Guard activation is disabled until the live activation gate is enabled."
   if (status === "denied") return "That Guard action is not allowed."
   return "The Guard record could not be updated."
 }
@@ -61,6 +65,9 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
     if (typeof operation !== "string" || !isGuardOperation(operation)) return reply("Check the fields before saving.", 400)
     const args = guardArgs(operation, body as Record<string, unknown>)
     if (!args) return reply("Check the fields before saving.", 400)
+    if (operation === "activate" && !guardActivationEnabled()) {
+      return reply("Guard activation is disabled until the live activation gate is enabled.", 403, { reason: "activation_disabled" })
+    }
     const issuesLink = operation === "issue_permission_action"
     if (issuesLink && !config.customerOrigin) return reply("The customer site origin is not configured.", 503)
     const secret = issuesLink ? newToken() : ""

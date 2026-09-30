@@ -16,5 +16,9 @@ export async function loadGuard(): Promise<GuardList> {
     coverages: result.coverages || [],
     guardOrders: result.guardOrders || [],
     locations: result.locations || [],
+    subscriptions: result.subscriptions || [],
+    continuations: result.continuations || [],
+    reminders: result.reminders || [],
+    adjustments: result.adjustments || [],
   }
 }

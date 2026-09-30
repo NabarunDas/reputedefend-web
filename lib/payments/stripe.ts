@@ -1,7 +1,7 @@
 import "server-only"
 import Stripe from "stripe"
 import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, type PaymentEnv } from "./config"
-import { assertSafeMetadata, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 function rawSecret(env: PaymentEnv): string | null {
@@ -191,7 +191,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
       return {
         id: session.id,
-        mode: session.mode === "setup" ? "setup" : "payment",
+        mode: session.mode === "setup" ? "setup" : session.mode === "subscription" ? "subscription" : "payment",
         status: session.status || "unknown",
         paymentStatus: session.payment_status ?? null,
         paymentIntentId: asId(session.payment_intent),
@@ -297,6 +297,243 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         amountDueMinor: finalized.amount_due,
         currency: (finalized.currency || "gbp").toLowerCase(),
         status: finalized.status || "open",
+        livemode: false as const,
+      }
+    },
+    async createRecurringPrice(input) {
+      const meta = { priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId }
+      assertSafeGuardMetadata(meta)
+      const stripe = client(env)
+      const product = await stripe.products.create({
+        name: "Relaunch Guard",
+        metadata: meta,
+      }, { idempotencyKey: `${input.idempotencyKey}:product` })
+      if (product.livemode) throw new PaymentsDisabledError("Live Stripe products are forbidden.")
+      const price = await stripe.prices.create({
+        currency: input.currency.toLowerCase(),
+        unit_amount: input.amountMinor,
+        recurring: { interval: "month" },
+        product: product.id,
+        metadata: meta,
+      }, { idempotencyKey: input.idempotencyKey })
+      if (price.livemode) throw new PaymentsDisabledError("Live Stripe prices are forbidden.")
+      if (price.unit_amount !== input.amountMinor || (price.currency || "").toLowerCase() !== "gbp" || price.type !== "recurring") {
+        throw new PaymentsDisabledError("Stripe Price does not match the approved Guard amount.")
+      }
+      return { productId: product.id, priceId: price.id, amountMinor: input.amountMinor, livemode: false as const }
+    },
+    async createSubscriptionCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+      }
+      const session = await client(env).checkout.sessions.create({
+        mode: "subscription",
+        customer: input.stripeCustomerId,
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        payment_method_types: ["card"],
+        line_items: [{ price: input.stripePriceId, quantity: 1 }],
+        subscription_data: {
+          metadata: meta,
+          ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
+        },
+        metadata: meta,
+      }, { idempotencyKey: input.idempotencyKey })
+      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
+      return { id: session.id, url: session.url || "", mode: "subscription", amountMinor: 0, livemode: false }
+    },
+    async createGuardRecoveryCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      const session = await client(env).checkout.sessions.create({
+        mode: "setup",
+        customer: input.stripeCustomerId,
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        payment_method_types: ["card"],
+        metadata: meta,
+        setup_intent_data: { metadata: meta },
+      }, { idempotencyKey: input.idempotencyKey })
+      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
+      return { id: session.id, url: session.url || "", mode: "setup", amountMinor: 0, livemode: false }
+    },
+    async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
+      const updated = await client(env).subscriptions.update(id, {
+        default_payment_method: paymentMethodId,
+      }, { idempotencyKey })
+      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: updated.id,
+        status: updated.status,
+        cancelAtPeriodEnd: updated.cancel_at_period_end === true,
+        canceled: updated.status === "canceled",
+        livemode: false as const,
+      }
+    },
+    async retrieveSubscription(id) {
+      const subscription = await client(env).subscriptions.retrieve(id, { expand: ["items.data.price"] })
+      if (subscription.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      const item = subscription.items.data[0]
+      return {
+        id: subscription.id,
+        status: subscription.status,
+        customerId: asId(subscription.customer),
+        priceId: asId(item?.price) ?? (typeof item?.price === "string" ? item.price : null),
+        subscriptionItemId: item?.id ?? null,
+        quantity: typeof item?.quantity === "number" ? item.quantity : null,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+        currentPeriodStart: subscription.items.data[0]?.current_period_start
+          ? new Date(subscription.items.data[0].current_period_start * 1000).toISOString()
+          : null,
+        currentPeriodEnd: subscription.items.data[0]?.current_period_end
+          ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
+          : null,
+        scheduleId: asId(subscription.schedule),
+        defaultPaymentMethodId: asId(subscription.default_payment_method),
+        metadata: metadataOf(subscription),
+        livemode: false as const,
+      }
+    },
+    async retrieveRecurringInvoice(id) {
+      const invoice = await client(env).invoices.retrieve(id, { expand: ["payments.data.payment.payment_intent"] })
+      if (invoice.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      const parent = invoice.parent && typeof invoice.parent === "object" ? invoice.parent as {
+        subscription_details?: {
+          subscription?: string | { id?: string; metadata?: Stripe.Metadata | null }
+          metadata?: Stripe.Metadata | null
+        }
+      } : {}
+      const line = invoice.lines?.data?.[0]
+      const pricing = line && "pricing" in line ? (line.pricing as { price_details?: { price?: string } } | null) : null
+      const subscriptionMeta = {
+        ...metadataOf({ metadata: parent.subscription_details?.metadata }),
+        ...metadataOf({ metadata: typeof parent.subscription_details?.subscription === "object" ? parent.subscription_details.subscription.metadata : undefined }),
+      }
+      return {
+        id: invoice.id,
+        status: invoice.status || "unknown",
+        customerId: asId(invoice.customer),
+        amountDueMinor: invoice.amount_due,
+        amountPaidMinor: invoice.amount_paid,
+        currency: invoice.currency ? invoice.currency.toLowerCase() : "",
+        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+        metadata: { ...subscriptionMeta, ...metadataOf(invoice) },
+        livemode: false as const,
+        subscriptionId: asId(parent.subscription_details?.subscription),
+        subscriptionItemId: line?.parent?.subscription_item_details?.subscription_item ?? null,
+        priceId: pricing?.price_details?.price ?? asId(line?.pricing) ?? null,
+        quantity: typeof line?.quantity === "number" ? line.quantity : null,
+        periodStart: line?.period?.start ? new Date(line.period.start * 1000).toISOString() : null,
+        periodEnd: line?.period?.end ? new Date(line.period.end * 1000).toISOString() : null,
+        paymentIntentId: asId((invoice as { payment_intent?: unknown }).payment_intent),
+        chargeId: asId((invoice as { charge?: unknown }).charge),
+        subscriptionMetadata: subscriptionMeta,
+      }
+    },
+    async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {
+      const updated = await client(env).subscriptions.update(id, { cancel_at_period_end: cancel }, { idempotencyKey })
+      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: updated.id,
+        status: updated.status,
+        cancelAtPeriodEnd: updated.cancel_at_period_end === true,
+        canceled: updated.status === "canceled",
+        livemode: false as const,
+      }
+    },
+    async cancelSubscriptionImmediate({ id, idempotencyKey }) {
+      const cancelled = await client(env).subscriptions.cancel(id, undefined, { idempotencyKey })
+      if (cancelled.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: cancelled.id,
+        status: cancelled.status,
+        cancelAtPeriodEnd: false,
+        canceled: cancelled.status === "canceled",
+        livemode: false as const,
+      }
+    },
+    async createSubscriptionSchedule(input) {
+      const stripe = client(env)
+      const current = await this.retrieveSubscription(input.subscriptionId)
+      try {
+        assertGuardScheduleSubscription(input, current)
+      } catch (error) {
+        throw new PaymentsDisabledError((error as Error).message)
+      }
+      if (current.scheduleId) {
+        return { id: current.scheduleId, subscriptionId: current.id, livemode: false as const }
+      }
+      const created = await stripe.subscriptionSchedules.create({
+        from_subscription: input.subscriptionId,
+      }, { idempotencyKey: input.idempotencyKey })
+      if (created.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      const updated = await stripe.subscriptionSchedules.update(created.id, {
+        end_behavior: "release",
+        proration_behavior: "none",
+        phases: [
+          {
+            items: [{ price: input.currentPriceId, quantity: 1 }],
+            start_date: created.phases[0]?.start_date,
+            end_date: input.periodEnd,
+            proration_behavior: "none",
+          },
+          {
+            items: [{ price: input.nextPriceId, quantity: 1 }],
+            proration_behavior: "none",
+          },
+        ],
+      }, { idempotencyKey: `${input.idempotencyKey}:phases` })
+      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return { id: updated.id, subscriptionId: asId(updated.subscription) || input.subscriptionId, livemode: false as const }
+    },
+    async createRefund(input) {
+      const meta = input.metadata ? guardMetadata(input.metadata) : undefined
+      if (meta) assertSafeGuardMetadata(meta)
+      const refund = await client(env).refunds.create({
+        payment_intent: input.paymentIntentId,
+        amount: input.amountMinor,
+        ...(meta ? { metadata: meta } : {}),
+      }, { idempotencyKey: input.idempotencyKey })
+      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe refunds are forbidden.")
+      return {
+        id: refund.id,
+        status: refund.status || "pending",
+        amountMinor: typeof refund.amount === "number" ? refund.amount : null,
+        currency: refund.currency ? refund.currency.toLowerCase() : "",
+        paymentIntentId: asId(refund.payment_intent),
+        chargeId: asId(refund.charge),
+        failureReason: refund.failure_reason ?? null,
+        metadata: metadataOf(refund),
+        livemode: false as const,
+      }
+    },
+    async retrieveRefund(id) {
+      const refund = await client(env).refunds.retrieve(id)
+      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: refund.id,
+        status: refund.status || "pending",
+        amountMinor: typeof refund.amount === "number" ? refund.amount : null,
+        currency: refund.currency ? refund.currency.toLowerCase() : "",
+        paymentIntentId: asId(refund.payment_intent),
+        chargeId: asId(refund.charge),
+        failureReason: refund.failure_reason ?? null,
+        metadata: metadataOf(refund),
+        livemode: false as const,
+      }
+    },
+    async retrieveDispute(id) {
+      const dispute = await client(env).disputes.retrieve(id)
+      if (dispute.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: dispute.id,
+        status: dispute.status,
+        amountMinor: typeof dispute.amount === "number" ? dispute.amount : null,
+        currency: dispute.currency ? dispute.currency.toLowerCase() : "",
+        chargeId: asId(dispute.charge),
+        reason: dispute.reason ?? null,
         livemode: false as const,
       }
     },

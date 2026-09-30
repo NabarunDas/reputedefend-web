@@ -43,6 +43,8 @@ describe("job worker handlers", () => {
     expect(preview.IMPORT_INBOUND_ATTACHMENT).toEqual(expect.objectContaining({ jobType: "IMPORT_INBOUND_ATTACHMENT" }))
     expect(preview.COLLECT_PAYMENT).toEqual(expect.objectContaining({ jobType: "COLLECT_PAYMENT" }))
     expect(preview.PROCESS_STRIPE_EVENT).toEqual(expect.objectContaining({ jobType: "PROCESS_STRIPE_EVENT" }))
+    expect(preview.RECONCILE_GUARD_BILLING).toEqual(expect.objectContaining({ jobType: "RECONCILE_GUARD_BILLING" }))
     expect(registeredJobHandlers({ VERCEL_ENV: "production" }).SYSTEM_HEALTH_PROBE).toBeTruthy()
+    expect(JSON.stringify(Object.keys(preview))).not.toMatch(/MONITOR|ALERT|SEND_GUARD/)
   })
 })

@@ -1,10 +1,10 @@
-import { assertSafeMetadata, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
-import type { PaymentProvider } from "./provider"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
+import { PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 type StoredCheckout = {
   id: string
   url: string
-  mode: "payment" | "setup"
+  mode: "payment" | "setup" | "subscription"
   amountMinor: number
   status: string
   paymentStatus: string | null
@@ -36,6 +36,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   idempotency: Set<string>
   nextIntentStatus: string
   nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
+  nextRecurringInvoiceError: Error | null
   objects: Map<string, Record<string, unknown>>
 } {
   const customers = new Map<string, string>()
@@ -57,6 +58,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
     nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
+    nextRecurringInvoiceError: null as Error | null,
   }
 
   return {
@@ -74,6 +76,8 @@ export function createFakePaymentProvider(): PaymentProvider & {
     set nextIntentStatus(value: string) { state.nextIntentStatus = value },
     get nextOffSessionError() { return state.nextOffSessionError },
     set nextOffSessionError(value) { state.nextOffSessionError = value },
+    get nextRecurringInvoiceError() { return state.nextRecurringInvoiceError },
+    set nextRecurringInvoiceError(value) { state.nextRecurringInvoiceError = value },
     get objects() { return objects },
     async createCustomer({ idempotencyKey, customerId }) {
       state.idempotency.add(idempotencyKey)
@@ -318,6 +322,233 @@ export function createFakePaymentProvider(): PaymentProvider & {
         id, brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test",
       }
       return found
+    },
+    async createRecurringPrice(input) {
+      assertSafeGuardMetadata({ priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId })
+      if (objects.has(input.idempotencyKey)) {
+        const existing = objects.get(input.idempotencyKey) as { productId: string; priceId: string; amountMinor: number }
+        return { ...existing, livemode: false as const }
+      }
+      const created = {
+        productId: `prod_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
+        priceId: `price_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
+        amountMinor: input.amountMinor,
+      }
+      objects.set(input.idempotencyKey, created)
+      objects.set(created.priceId, created)
+      state.idempotency.add(input.idempotencyKey)
+      return { ...created, livemode: false as const }
+    },
+    async createSubscriptionCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+      }
+      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      const created: StoredCheckout = {
+        id: `cs_test_sub_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
+        url: `https://checkout.stripe.test/sub/${input.idempotencyKey}`,
+        mode: "subscription",
+        amountMinor: 0,
+        status: "open",
+        paymentStatus: "unpaid",
+        paymentIntentId: null,
+        setupIntentId: null,
+        customerId: input.stripeCustomerId,
+        metadata: meta,
+        livemode: false,
+      }
+      sessions.set(input.idempotencyKey, created)
+      objects.set(created.id, { ...created, stripePriceId: input.stripePriceId, quantity: 1, trialEnd: input.trialEnd ?? null })
+      state.checkouts += 1
+      state.idempotency.add(input.idempotencyKey)
+      return { id: created.id, url: created.url, mode: "subscription", amountMinor: 0, livemode: false as const }
+    },
+    async createGuardRecoveryCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      const setupId = `seti_guard_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`
+      const created: StoredCheckout = {
+        id: `cs_test_grec_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
+        url: `https://checkout.stripe.test/guard-recovery/${input.idempotencyKey}`,
+        mode: "setup",
+        amountMinor: 0,
+        status: "open",
+        paymentStatus: null,
+        paymentIntentId: null,
+        setupIntentId: setupId,
+        customerId: input.stripeCustomerId,
+        metadata: meta,
+        livemode: false,
+      }
+      sessions.set(input.idempotencyKey, created)
+      setups.set(setupId, {
+        id: setupId,
+        status: "requires_payment_method",
+        usage: "off_session",
+        customerId: input.stripeCustomerId,
+        paymentMethodId: null,
+        metadata: meta,
+      })
+      objects.set(created.id, created)
+      objects.set(setupId, setups.get(setupId)!)
+      state.setups += 1
+      state.idempotency.add(input.idempotencyKey)
+      return { id: created.id, url: created.url, mode: "setup", amountMinor: 0, livemode: false as const }
+    },
+    async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
+      state.idempotency.add(idempotencyKey)
+      const found = (objects.get(id) || { id, status: "active" }) as { id: string; status: string; defaultPaymentMethodId?: string }
+      found.defaultPaymentMethodId = paymentMethodId
+      objects.set(id, found)
+      return { id: found.id, status: found.status, cancelAtPeriodEnd: false, canceled: found.status === "canceled", livemode: false as const }
+    },
+    async retrieveSubscription(id) {
+      const found = objects.get(id) as {
+        id?: string; status?: string; customerId?: string; priceId?: string; subscriptionItemId?: string
+        quantity?: number; cancelAtPeriodEnd?: boolean; currentPeriodStart?: string; currentPeriodEnd?: string
+        scheduleId?: string; defaultPaymentMethodId?: string; metadata?: Record<string, string>
+      } | undefined
+      if (!found) return null
+      return {
+        id: found.id || id,
+        status: found.status || "incomplete",
+        customerId: found.customerId ?? null,
+        priceId: found.priceId ?? null,
+        subscriptionItemId: found.subscriptionItemId ?? null,
+        quantity: typeof found.quantity === "number" ? found.quantity : null,
+        cancelAtPeriodEnd: found.cancelAtPeriodEnd === true,
+        currentPeriodStart: found.currentPeriodStart ?? null,
+        currentPeriodEnd: found.currentPeriodEnd ?? null,
+        scheduleId: found.scheduleId ?? null,
+        defaultPaymentMethodId: found.defaultPaymentMethodId ?? null,
+        metadata: found.metadata ?? {},
+        livemode: false as const,
+      }
+    },
+    async retrieveRecurringInvoice(id) {
+      if (state.nextRecurringInvoiceError) {
+        const error = state.nextRecurringInvoiceError
+        state.nextRecurringInvoiceError = null
+        throw error
+      }
+      const found = objects.get(id) as {
+        id?: string; status?: string; customerId?: string; amountDueMinor?: number; amountPaidMinor?: number
+        currency?: string; hostedInvoiceUrl?: string; metadata?: Record<string, string>
+        subscriptionId?: string; subscriptionItemId?: string; priceId?: string; quantity?: number
+        periodStart?: string; periodEnd?: string; paymentIntentId?: string; chargeId?: string
+        subscriptionMetadata?: Record<string, string>
+      } | undefined
+      if (!found) return null
+      return {
+        id: found.id || id,
+        status: found.status || "open",
+        customerId: found.customerId ?? null,
+        amountDueMinor: found.amountDueMinor ?? 0,
+        amountPaidMinor: found.amountPaidMinor ?? 0,
+        currency: found.currency ?? "",
+        hostedInvoiceUrl: found.hostedInvoiceUrl ?? null,
+        metadata: { ...(found.subscriptionMetadata ?? {}), ...(found.metadata ?? {}) },
+        livemode: false as const,
+        subscriptionId: found.subscriptionId ?? null,
+        subscriptionItemId: found.subscriptionItemId ?? null,
+        priceId: found.priceId ?? null,
+        quantity: typeof found.quantity === "number" ? found.quantity : null,
+        periodStart: found.periodStart ?? null,
+        periodEnd: found.periodEnd ?? null,
+        paymentIntentId: found.paymentIntentId ?? null,
+        chargeId: found.chargeId ?? null,
+        subscriptionMetadata: found.subscriptionMetadata ?? {},
+      }
+    },
+    async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {
+      state.idempotency.add(idempotencyKey)
+      const found = (objects.get(id) || { id, status: "active" }) as { id: string; status: string; cancelAtPeriodEnd?: boolean }
+      if (found.status === "canceled") return { id: found.id, status: "canceled", cancelAtPeriodEnd: false, canceled: true, livemode: false as const }
+      found.cancelAtPeriodEnd = cancel
+      objects.set(id, found)
+      return { id: found.id, status: found.status, cancelAtPeriodEnd: cancel, canceled: false, livemode: false as const }
+    },
+    async cancelSubscriptionImmediate({ id, idempotencyKey }) {
+      state.idempotency.add(idempotencyKey)
+      const found = (objects.get(id) || { id, status: "active" }) as { id: string; status: string }
+      found.status = "canceled"
+      objects.set(id, found)
+      return { id: found.id, status: "canceled", cancelAtPeriodEnd: false, canceled: true, livemode: false as const }
+    },
+    async createSubscriptionSchedule(input) {
+      const current = await this.retrieveSubscription(input.subscriptionId)
+      try {
+        assertGuardScheduleSubscription(input, current)
+      } catch (error) {
+        throw new PaymentsDisabledError((error as Error).message)
+      }
+      if (current.scheduleId) {
+        return { id: current.scheduleId, subscriptionId: current.id, livemode: false as const }
+      }
+      state.idempotency.add(input.idempotencyKey)
+      const id = `sub_sched_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 10)}`
+      objects.set(id, { id, subscriptionId: input.subscriptionId, currentPriceId: input.currentPriceId, nextPriceId: input.nextPriceId, quantity: 1, proration: "none" })
+      const sub = objects.get(input.subscriptionId) as { scheduleId?: string; subscriptionItemId?: string; quantity?: number } | undefined
+      if (sub) {
+        sub.scheduleId = id
+        sub.quantity = 1
+        objects.set(input.subscriptionId, sub)
+      }
+      return { id, subscriptionId: input.subscriptionId, livemode: false as const }
+    },
+    async createRefund(input) {
+      const meta = input.metadata ? guardMetadata(input.metadata) : undefined
+      if (meta) assertSafeGuardMetadata(meta)
+      if (objects.has(input.idempotencyKey)) {
+        const existing = objects.get(input.idempotencyKey) as { id: string; status: string; amountMinor: number; currency: string; paymentIntentId: string; metadata?: Record<string, string> }
+        return { ...existing, chargeId: null, failureReason: null, metadata: existing.metadata ?? meta, livemode: false as const }
+      }
+      const created = {
+        id: `re_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 14)}`,
+        status: "pending",
+        amountMinor: input.amountMinor,
+        currency: "gbp",
+        paymentIntentId: input.paymentIntentId,
+        chargeId: null as string | null,
+        failureReason: null as string | null,
+        metadata: meta,
+        livemode: false as const,
+      }
+      objects.set(input.idempotencyKey, created)
+      objects.set(created.id, created)
+      state.idempotency.add(input.idempotencyKey)
+      return created
+    },
+    async retrieveRefund(id) {
+      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number | null; currency?: string; paymentIntentId?: string; chargeId?: string | null; failureReason?: string | null; metadata?: Record<string, string> } | undefined
+      if (!found) return null
+      return {
+        id: found.id,
+        status: found.status || "pending",
+        amountMinor: typeof found.amountMinor === "number" ? found.amountMinor : null,
+        currency: found.currency ?? "",
+        paymentIntentId: found.paymentIntentId ?? null,
+        chargeId: found.chargeId ?? null,
+        failureReason: found.failureReason ?? null,
+        metadata: found.metadata,
+        livemode: false as const,
+      }
+    },
+    async retrieveDispute(id) {
+      const found = objects.get(id) as { id: string; status?: string; amountMinor?: number | null; currency?: string; chargeId?: string | null; reason?: string | null } | undefined
+      if (!found) return null
+      return {
+        id: found.id,
+        status: found.status || "needs_response",
+        amountMinor: typeof found.amountMinor === "number" ? found.amountMinor : null,
+        currency: found.currency ?? "",
+        chargeId: found.chargeId ?? null,
+        reason: found.reason ?? null,
+        livemode: false as const,
+      }
     },
     async cancelPaymentIntent({ id, idempotencyKey }) {
       state.idempotency.add(idempotencyKey)

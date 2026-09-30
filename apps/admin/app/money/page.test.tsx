@@ -3,6 +3,34 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
+vi.mock("@/lib/guard/queries", () => ({
+  loadGuard: async () => ({
+    requests: [],
+    coverages: [],
+    guardOrders: [],
+    locations: [],
+    subscriptions: [{
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      locationId: "44444444-4444-4444-8444-444444444444",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      businessId: "33333333-3333-4333-8333-333333333333",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      locationName: "High Street",
+      customerName: "Alex",
+      businessName: "Bakery",
+      lifecycleState: "ACTIVE",
+      providerStatus: "active",
+      amountMinor: 999,
+      currency: "GBP",
+      billingState: "CURRENT",
+      paidThroughAt: "2026-10-30T00:00:00.000Z",
+      version: 1,
+    }],
+    continuations: [],
+    reminders: [],
+    adjustments: [],
+  }),
+}))
 vi.mock("@/lib/payments/queries", () => ({
   loadMoney: async () => ({
     orders: [{
@@ -65,6 +93,9 @@ describe("money workspace", () => {
     expect(screen.getByRole("button", { name: "Issue upfront payment action" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Issue TEST-MODE hosted invoice fallback" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /mark paid|force success|charge/i })).toBeNull()
+    expect(screen.getByRole("heading", { name: "Guard subscriptions" })).toBeInTheDocument()
+    expect(screen.getByText("High Street")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /mark refunded|override paid-through|cancel all/i })).toBeNull()
   })
 
   it("requires accepted outcome evidence for success-fee approval", async () => {

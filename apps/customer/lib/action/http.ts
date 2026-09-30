@@ -116,20 +116,78 @@ export async function command(request: NextRequest) {
   const body = await readJson(request, 2048)
   if (!validToken(token) || !isUuid(key) || !body || typeof body.operation !== "string" || !["accept", "decline", "revoke"].includes(body.operation)) return reply()
   const operation = body.operation
-  if (operation === "accept" && (!exactKeys(body, ["operation", "accepted"]) || body.accepted !== true)) {
-    return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+  const acceptKeys = ["operation", "accepted", "permissionVersion", "consentVersion"]
+  if (operation === "accept") {
+    const keys = Object.keys(body)
+    if (body.accepted !== true || !keys.includes("operation") || !keys.includes("accepted") || keys.some(key => !acceptKeys.includes(key))) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
   }
   if (operation === "decline" && !exactKeys(body, ["operation"])) return reply()
   if (operation === "revoke" && (!exactKeys(body, ["operation", "confirmed"]) || body.confirmed !== true)) {
     return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
   }
-  const data = operation === "accept" ? { accepted: true } : operation === "revoke" ? { confirmed: true } : {}
+  const data = operation === "accept"
+    ? {
+      accepted: true,
+      ...(typeof body.permissionVersion === "string" ? { permissionVersion: body.permissionVersion } : {}),
+      ...(typeof body.consentVersion === "string" ? { consentVersion: body.consentVersion } : {}),
+    }
+    : operation === "revoke" ? { confirmed: true } : {}
   try {
-    const result = await backend().rpc<{ status?: string }>("customer_action_command_v1", {
+    const result = await backend().rpc<{
+      status?: string
+      providerOperationId?: string
+      idempotencyKey?: string
+      stripeSubscriptionId?: string
+      subscriptionItemId?: string
+      newStripePriceId?: string
+      oldStripePriceId?: string
+      periodEnd?: string
+      cancelAtPeriodEnd?: boolean
+      unapplied?: boolean
+      providerOperationStatus?: string
+      stripeCustomerId?: string
+      scheduleId?: string
+    }>("customer_action_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
     if (result.status !== "success") return reply()
+    if (operation === "accept" && result.providerOperationId && result.stripeSubscriptionId && result.newStripePriceId && !result.unapplied) {
+      const { guardSubscriptionsEnabled } = await import("../../../../lib/guard-billing/config")
+      if (guardSubscriptionsEnabled() && result.subscriptionItemId && result.oldStripePriceId && result.periodEnd
+        && result.providerOperationStatus !== "SUCCEEDED") {
+        const { paymentProvider } = await import("../../../../lib/payments")
+        const periodEnd = Math.floor(Date.parse(result.periodEnd) / 1000)
+        if (Number.isFinite(periodEnd)) {
+          const provider = paymentProvider()
+          const current = await provider.retrieveSubscription(result.stripeSubscriptionId)
+          if (current?.scheduleId) {
+            await backend().rpc("guard_record_price_schedule_v1", {
+              p_operation: result.providerOperationId,
+              p_schedule_id: current.scheduleId,
+              p_subscription_item_id: result.subscriptionItemId,
+            })
+          } else {
+            const schedule = await provider.createSubscriptionSchedule({
+              idempotencyKey: result.idempotencyKey || key,
+              subscriptionId: result.stripeSubscriptionId,
+              subscriptionItemId: result.subscriptionItemId,
+              currentPriceId: result.oldStripePriceId,
+              nextPriceId: result.newStripePriceId,
+              periodEnd,
+              customerId: result.stripeCustomerId,
+            })
+            await backend().rpc("guard_record_price_schedule_v1", {
+              p_operation: result.providerOperationId,
+              p_schedule_id: schedule.id,
+              p_subscription_item_id: result.subscriptionItemId,
+            })
+          }
+        }
+      }
+    }
     return NextResponse.json({ status: "ok", message: "This action is complete." }, { headers: privateResponseHeaders })
   } catch { return reply() }
 }

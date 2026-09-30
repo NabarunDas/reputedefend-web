@@ -1,18 +1,28 @@
 import type {
   CancelPaymentResult,
+  CancelSubscriptionResult,
   CreateCheckoutInput,
   CreateHostedInvoiceInput,
   CreateOffSessionInput,
+  CreateRecurringPriceInput,
   CreateSetupInput,
+  CreateGuardRecoveryCheckoutInput,
+  CreateSubscriptionCheckoutInput,
+  GuardMetadata,
   MappedProviderEvent,
   ProviderCheckout,
   ProviderCustomer,
   ProviderInvoice,
   ProviderPaymentIntent,
+  ProviderRecurringPrice,
+  ProviderSchedule,
   RetrievedCheckout,
+  RetrievedDispute,
   RetrievedInvoice,
   RetrievedPaymentIntent,
+  RetrievedRefund,
   RetrievedSetupIntent,
+  RetrievedSubscription,
   SafePaymentMethod,
 } from "./model"
 
@@ -43,6 +53,35 @@ export interface PaymentProvider {
   retrieveInvoice(id: string): Promise<RetrievedInvoice | null>
   createHostedInvoice(input: CreateHostedInvoiceInput): Promise<ProviderInvoice>
   cancelPaymentIntent(input: { id: string; idempotencyKey: string }): Promise<CancelPaymentResult>
+  createRecurringPrice(input: CreateRecurringPriceInput): Promise<ProviderRecurringPrice>
+  createSubscriptionCheckout(input: CreateSubscriptionCheckoutInput): Promise<ProviderCheckout>
+  createGuardRecoveryCheckout(input: CreateGuardRecoveryCheckoutInput): Promise<ProviderCheckout>
+  updateSubscriptionPaymentMethod(input: {
+    id: string
+    idempotencyKey: string
+    paymentMethodId: string
+  }): Promise<CancelSubscriptionResult>
+  retrieveSubscription(id: string): Promise<RetrievedSubscription | null>
+  retrieveRecurringInvoice(id: string): Promise<RetrievedInvoice | null>
+  setCancelAtPeriodEnd(input: { id: string; idempotencyKey: string; cancel: boolean }): Promise<CancelSubscriptionResult>
+  cancelSubscriptionImmediate(input: { id: string; idempotencyKey: string }): Promise<CancelSubscriptionResult>
+  createSubscriptionSchedule(input: {
+    idempotencyKey: string
+    subscriptionId: string
+    subscriptionItemId: string
+    currentPriceId: string
+    nextPriceId: string
+    periodEnd: number
+    customerId?: string
+  }): Promise<ProviderSchedule>
+  createRefund(input: {
+    idempotencyKey: string
+    paymentIntentId: string
+    amountMinor: number
+    metadata?: GuardMetadata
+  }): Promise<RetrievedRefund>
+  retrieveRefund(id: string): Promise<RetrievedRefund | null>
+  retrieveDispute(id: string): Promise<RetrievedDispute | null>
   mapEvent(event: { id: string; type: string; data?: { object?: Record<string, unknown> } }): MappedProviderEvent
 }
 
@@ -64,6 +103,18 @@ export function disabledPaymentProvider(): PaymentProvider {
     retrieveInvoice: deny,
     createHostedInvoice: deny,
     cancelPaymentIntent: deny,
+    createRecurringPrice: deny,
+    createSubscriptionCheckout: deny,
+    createGuardRecoveryCheckout: deny,
+    updateSubscriptionPaymentMethod: deny,
+    retrieveSubscription: deny,
+    retrieveRecurringInvoice: deny,
+    setCancelAtPeriodEnd: deny,
+    cancelSubscriptionImmediate: deny,
+    createSubscriptionSchedule: deny,
+    createRefund: deny,
+    retrieveRefund: deny,
+    retrieveDispute: deny,
     mapEvent() {
       throw new PaymentsDisabledError()
     },

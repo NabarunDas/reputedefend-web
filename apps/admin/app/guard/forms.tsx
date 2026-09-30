@@ -224,3 +224,101 @@ export function AcknowledgeExceptionForm({ exceptionId }: { exceptionId: string 
     <p role="status">{message}</p>
   </form>
 }
+
+export function IssueSubscriptionStartForm({ coverageId, continuationId }: { coverageId?: string; continuationId?: string }) {
+  const { busy, message, actionUrl, run } = useCommand()
+  return <form onSubmit={event => {
+    event.preventDefault()
+    const expiresAt = new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString()
+    void run("issue_subscription_start_action", { expiresAt, ...(coverageId ? { coverageId } : {}), ...(continuationId ? { continuationId } : {}) })
+  }}>
+    <button type="submit" disabled={busy}>Issue subscription-start action</button>
+    {actionUrl && <p>Copy this customer link now: <code>{actionUrl}</code></p>}
+    <p className="muted">Opening the link does not create a subscription. Checkout return does not mark Guard current.</p>
+    <p role="status">{message}</p>
+  </form>
+}
+
+export function CreateContinuationForm({
+  coverageId, orders,
+}: {
+  coverageId: string
+  orders: Array<{ id: string; publicRef: string; covered: boolean }>
+}) {
+  const { busy, message, run } = useCommand()
+  const available = orders.filter(order => !order.covered)
+  if (!available.length) return null
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    await run("create_included_continuation", { coverageId, serviceOrderId: String(form.get("serviceOrderId") || "") })
+  }
+  return <form onSubmit={submit}>
+    <label>Paid continuation order
+      <select name="serviceOrderId" required>
+        <option value="">Select an accepted Guard order</option>
+        {available.map(order => <option key={order.id} value={order.id}>{order.publicRef}</option>)}
+      </select>
+    </label>
+    <button type="submit" disabled={busy}>Record paid continuation</button>
+    <p className="muted">This does not convert included coverage into paid coverage. Recurring consent and Checkout are still required.</p>
+    <p role="status">{message}</p>
+  </form>
+}
+
+export function SubscriptionActionForm({
+  subscriptionId, version, operation, label, requireReason = false,
+}: {
+  subscriptionId: string
+  version: number
+  operation: "schedule_period_end_cancellation" | "undo_scheduled_cancellation" | "request_immediate_cancellation" | "approve_immediate_cancellation"
+  label: string
+  requireReason?: boolean
+}) {
+  const { busy, message, run } = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    await run(operation, { subscriptionId, version, reason: String(form.get("reason") || "") })
+  }
+  return <form onSubmit={submit}>
+    {requireReason && <label>Review reason<textarea name="reason" required minLength={10} maxLength={2000} /></label>}
+    <button type="submit" disabled={busy}>{label}</button>
+    <p className="muted">There is no Mark paid, Mark refunded, or override paid-through control.</p>
+    <p role="status">{message}</p>
+  </form>
+}
+
+export function IssuePriceChangeForm({ subscriptionId, version }: { subscriptionId: string; version: number }) {
+  const { busy, message, actionUrl, run } = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const expiresAt = new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString()
+    await run("issue_price_change_action", {
+      subscriptionId, version, priceVersionId: String(form.get("priceVersionId") || ""), expiresAt,
+    })
+  }
+  return <form onSubmit={submit}>
+    <label>Approved Guard price version id<input name="priceVersionId" required /></label>
+    <button type="submit" disabled={busy}>Issue price-change acceptance</button>
+    {actionUrl && <p>Copy this customer link now: <code>{actionUrl}</code></p>}
+    <p className="muted">Existing subscriptions stay on the accepted price until the customer accepts. No mid-period increase.</p>
+    <p role="status">{message}</p>
+  </form>
+}
+
+export function ApproveRefundForm({ adjustmentId }: { adjustmentId: string }) {
+  const { busy, message, run } = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    await run("approve_refund", { adjustmentId, amountMinor: Number(form.get("amountMinor") || 0) })
+  }
+  return <form onSubmit={submit}>
+    <label>Approved refund (pence)<input name="amountMinor" type="number" min={1} step={1} required /></label>
+    <button type="submit" disabled={busy}>Approve bounded refund</button>
+    <p className="muted">No automatic pro-rata formula. The amount must be a positive integer no greater than the refundable paid amount.</p>
+    <p role="status">{message}</p>
+  </form>
+}

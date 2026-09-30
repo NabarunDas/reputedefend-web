@@ -22,6 +22,8 @@ Step 14 adds payment tables and RPCs in `20260930132106_stripe_payments_v1.sql`,
 
 Step 15 adds Guard onboarding/activation tables in applied `20260930164529_guard_onboarding_activation_v1.sql` (`20260930164529 guard_onboarding_activation_v1` exactly once after Step 14): `guard_onboarding_locations`, `guard_coverages`, append-only `guard_coverage_events`, `guard_billing`, `guard_included_offers`, `guard_permissions`, immutable `guard_baselines`, `guard_rota_assignments`, `guard_activation_exceptions`, and private `guard_command_receipts`. Customer actions gain `GUARD_PERMISSION` pinned to `guard_coverage_id` / optional `guard_included_offer_id`. `monitoring_requests` remain intake history. DATABASE APPLIED / LIVE GUARD DISABLED. See guard-onboarding.md.
 
+Step 16 adds applied `20260930180050_guard_subscriptions_billing_v1.sql` after Step 15 (`20260930180050 guard_subscriptions_billing_v1` exactly once): `guard_provider_price_maps`, `guard_continuations`, `guard_subscriptions`, append-only `guard_subscription_events`, `guard_recurring_consents`, `guard_subscription_invoices`, `guard_price_change_offers`, `guard_billing_adjustments`, `guard_refunds`, `guard_disputes`, `guard_reminder_policies`, `guard_reminder_records`, `guard_reconciliation_runs`, `guard_reconciliation_targets`, `guard_reconciliation_issues`, and private `guard_subscription_receipts`. Customer actions gain `GUARD_SUBSCRIPTION_START` and `GUARD_PRICE_CHANGE_ACCEPTANCE`. Coverage origin gains `INCLUDED_CONTINUATION`. Job type `RECONCILE_GUARD_BILLING` reuses the Step 10 outbox. DATABASE APPLIED / STRIPE & GUARD LIVE DISABLED. See guard-subscriptions-billing.md.
+
 ## Relationships
 
 ```
@@ -35,7 +37,7 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE / GUIDED_PAYMENT / MANAGED_PAYMENT_SETUP / PAYMENT_RECOVERY / INVOICE_PAYMENT / GUARD_PERMISSION; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; payment kinds pin service_order_id / payment_obligation_id; GUARD_PERMISSION pins guard_coverage_id and optional guard_included_offer_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS, QUOTE_ACCEPTANCE, payment and Guard permission actions are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE / GUIDED_PAYMENT / MANAGED_PAYMENT_SETUP / PAYMENT_RECOVERY / INVOICE_PAYMENT / GUARD_PERMISSION / GUARD_SUBSCRIPTION_START / GUARD_PRICE_CHANGE_ACCEPTANCE; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; payment kinds pin service_order_id / payment_obligation_id; GUARD_PERMISSION pins guard_coverage_id and optional guard_included_offer_id; GUARD_SUBSCRIPTION_START pins location/order/coverage or continuation; GUARD_PRICE_CHANGE_ACCEPTANCE pins guard_subscription_id and offer; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS, QUOTE_ACCEPTANCE, payment and Guard permission actions are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
 public.price_versions
 public.quotes → public.quote_versions → public.quote_discount_snapshots
 public.quote_acceptances → public.service_orders
@@ -56,6 +58,17 @@ public.guard_baselines
 public.guard_rota_assignments
 public.guard_activation_exceptions
 admin_private.guard_command_receipts
+public.guard_provider_price_maps
+public.guard_continuations
+public.guard_subscriptions → public.guard_subscription_events
+public.guard_recurring_consents
+public.guard_subscription_invoices
+public.guard_price_change_offers
+public.guard_billing_adjustments → public.guard_refunds
+public.guard_disputes
+public.guard_reminder_policies → public.guard_reminder_records
+public.guard_reconciliation_runs → public.guard_reconciliation_issues
+admin_private.guard_subscription_receipts
 admin_private.catalogue_command_receipts
 admin_private.quote_command_receipts
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)

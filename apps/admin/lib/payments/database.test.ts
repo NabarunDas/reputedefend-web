@@ -471,7 +471,10 @@ describe("stripe payments SQL", () => {
     const { accepted } = await acceptQuote()
     const { session } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
     const checkout = await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "pi_already_paid", "payment_intent"])
+    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "cs_already_paid", "checkout.session"])
+    await rpc("payment_apply_provider_event_v1", ["evt_cs_already", "checkout.session.completed", "cs_already_paid", {
+      paymentIntentId: "pi_already_paid", paymentStatus: "unpaid",
+    }])
     await rpc("payment_apply_provider_event_v1", ["evt_sca_then", "payment_intent.requires_action", "pi_already_paid", {}])
     await db.query("update public.payment_obligations set state='AUTHENTICATION_REQUIRED'")
     const recovery = await issueAndOpen("issue_recovery_action", accepted!.orderId as string, { obligationId: accepted!.obligationId })
@@ -603,7 +606,10 @@ describe("stripe payments SQL", () => {
       customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
       providerOperationId: checkout!.providerOperationId,
     }])).toMatchObject({ status: "denied", reason: "payment_mismatch" })
-    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "pi_wrong_op", "payment_intent"])
+    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "cs_wrong_op", "checkout.session"])
+    await rpc("payment_apply_provider_event_v1", ["evt_cs_wrong_op", "checkout.session.completed", "cs_wrong_op", {
+      paymentIntentId: "pi_wrong_op", paymentStatus: "unpaid",
+    }])
     expect(await rpc("payment_apply_provider_event_v1", ["evt_wrong_op", "payment_intent.succeeded", "pi_wrong_op", {
       paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_mismatch",
       customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
@@ -752,7 +758,7 @@ describe("stripe payments SQL", () => {
 
   it("creates one hosted invoice fallback from the immutable obligation and excludes automatic collection", async () => {
     const { accepted } = await acceptQuote()
-    const { session } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
+    const { session, issued: guidedAction } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
     const checkout = await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
     expect(await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])).toMatchObject({ status: "denied", reason: "active_collection" })
     await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "cs_invoice_block", "checkout.session"])
@@ -763,7 +769,8 @@ describe("stripe payments SQL", () => {
     expect(recorded).toMatchObject({ status: "success", amountMinor: 9900 })
     expect((await db.query<{ amount_minor: number; status: string }>("select amount_minor, status from public.payment_invoices")).rows[0]).toEqual({ amount_minor: 9900, status: "ISSUED" })
     expect(await rpc("payment_collect_prepare_v1", [accepted!.obligationId])).toMatchObject({ status: "denied" })
-    expect(await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "denied" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [guidedAction!.id])).rows[0].status).toBe("REVOKED")
+    expect(await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "unavailable" })
     const issued = await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
       serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
     }, 1])
@@ -793,7 +800,7 @@ describe("stripe payments SQL", () => {
     const { accepted } = await acceptQuote()
     const { session } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
     const checkout = await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "pi_paid_first", "payment_intent"])
+    await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "cs_paid_first", "checkout.session"])
     await rpc("payment_ensure_customer_map_v1", [customer, "cus_paidfirst"])
     await rpc("payment_apply_provider_event_v1", ["evt_pi_paid_first", "payment_intent.succeeded", "pi_paid_first", {
       paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_paidfirst",
@@ -803,5 +810,213 @@ describe("stripe payments SQL", () => {
     expect(await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])).toMatchObject({ status: "denied" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices")).rows[0].n).toBe(0)
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_receipts")).rows[0].n).toBe(1)
+  })
+
+  it("scopes Guided checkout to CHECKOUT attempts and denies invoice or off-session reuse", async () => {
+    const { accepted } = await acceptQuote()
+    const opened = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(prepared).toMatchObject({ status: "success", replay: false })
+    const draftCheckout = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(draftCheckout).toMatchObject({ status: "denied" })
+    expect(draftCheckout?.providerOperationId).not.toBe(prepared?.providerOperationId)
+    expect(draftCheckout?.attemptId).not.toBe(prepared?.attemptId)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_CHECKOUT_SESSION'")).rows[0].n).toBe(0)
+    await rpc("payment_abandon_invoice_v1", [prepared!.providerOperationId])
+    const offOp = crypto.randomUUID(), offKey = crypto.randomUUID()
+    await db.query(
+      "insert into public.provider_operations(id, idempotency_key, kind, purpose, customer_id, service_order_id, obligation_id, status) values ($1,$2,'CREATE_PAYMENT_INTENT','OFF_SESSION',$3,$4,$5,'PENDING')",
+      [offOp, offKey, customer, accepted!.orderId, accepted!.obligationId],
+    )
+    await db.query(
+      "insert into public.payment_attempts(obligation_id, service_order_id, provider_operation_id, attempt_number, purpose, status, amount_minor, currency) values ($1,$2,$3,2,'OFF_SESSION','CREATED',9900,'GBP')",
+      [accepted!.obligationId, accepted!.orderId, offOp],
+    )
+    const offCheckout = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(offCheckout).toMatchObject({ status: "denied" })
+    expect(offCheckout?.providerOperationId).not.toBe(offOp)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_CHECKOUT_SESSION'")).rows[0].n).toBe(0)
+  })
+
+  it("revokes a stale Guided action and its OTP session when the invoice is ISSUED", async () => {
+    const { accepted } = await acceptQuote()
+    const opened = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
+    const otherCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Second profile','2026-01-01',now(),now(),'UNDECIDED')",
+      [otherCase, customer, business, location],
+    )
+    const otherOrder = await acceptQuote("GUIDED_RELAUNCH", { caseId: otherCase })
+    const otherGuided = await issueAndOpen("issue_guided_payment_action", otherOrder.accepted!.orderId as string)
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "denied" })
+    const recorded = await rpc("payment_record_invoice_v1", [prepared!.providerOperationId, "in_revokeguided", "https://invoice.stripe.test/in_revokeguided", 9900, "gbp"])
+    expect(recorded).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string; revoked_at: string | null }>("select status, revoked_at from public.customer_actions where id=$1", [opened.issued!.id])).rows[0]).toMatchObject({ status: "REVOKED" })
+    expect((await db.query<{ revoked_at: string | null }>("select revoked_at from public.customer_actions where id=$1", [opened.issued!.id])).rows[0].revoked_at).toBeTruthy()
+    expect((await db.query<{ reason: string }>("select details->>'reason' as reason from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED'", [opened.issued!.id])).rows[0].reason).toBe("INVOICE_FALLBACK_ISSUED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_sessions where action_id=$1", [opened.issued!.id])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_challenges where action_id=$1", [opened.issued!.id])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where id=$1", [opened.issued!.id])).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_action_events where action_id=$1", [opened.issued!.id])).rows[0].n).toBeGreaterThan(0)
+    expect(await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "unavailable" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [otherGuided.issued!.id])).rows[0].status).toBe("OPEN")
+    const invoiceAction = await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
+      serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])
+    expect(invoiceAction).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [invoiceAction!.id])).rows[0].status).toBe("OPEN")
+  })
+
+  it("blocks stale recovery Checkout and new recovery actions once invoice fallback is active", async () => {
+    const { accepted } = await acceptQuote("MANAGED_RELAUNCH")
+    const setupOpen = await issueAndOpen("issue_managed_setup_action", accepted!.orderId as string)
+    await rpc("customer_payment_command_v1", [setupOpen.session, key(), "confirm_consent", { accepted: true }])
+    const setup = await rpc("customer_payment_command_v1", [setupOpen.session, key(), "start_checkout", { idempotencyKey: key() }])
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_recinv"])
+    await rpc("payment_apply_provider_event_v1", ["evt_setup_rec_inv", "setup_intent.succeeded", "seti_rec_inv", {
+      stripeCustomerId: "cus_recinv", paymentMethodId: "pm_recinv", usage: "off_session",
+      serviceOrderId: accepted!.orderId, customerId: customer, providerOperationId: setup!.providerOperationId,
+    }])
+    const evidenceId = await acceptedEvidence()
+    await db.query("update public.cases set outcome='RESTORED', work_stage='OUTCOME_REVIEW' where id=$1", [caseId])
+    const approved = await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", {
+      serviceOrderId: accepted!.orderId, outcomeEvidenceVersionId: evidenceId,
+      evidenceNote: "Screenshot of the Google outcome page.", approvalReason: "Outcome matches the accepted success definition.",
+    }, 1])
+    const collect = await rpc("payment_collect_prepare_v1", [approved!.obligationId])
+    await rpc("payment_record_provider_refs_v1", [collect!.providerOperationId, "pi_rec_inv", "payment_intent"])
+    await rpc("payment_apply_provider_event_v1", ["evt_sca_rec_inv", "payment_intent.requires_action", "pi_rec_inv", {}])
+    const recovery = await issueAndOpen("issue_recovery_action", accepted!.orderId as string, { obligationId: approved!.obligationId })
+    const needsCancel = await rpc("customer_payment_command_v1", [recovery.session, key(), "start_checkout", { idempotencyKey: key() }])
+    await rpc("payment_record_cancel_v1", [needsCancel!.providerOperationId, "pi_rec_inv", "canceled"])
+    await db.query("update public.payment_obligations set state='AUTHENTICATION_REQUIRED' where id=$1", [approved!.obligationId])
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, approved!.obligationId])
+    expect(prepared).toMatchObject({ status: "success" })
+    const draftStart = await rpc("customer_payment_command_v1", [recovery.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(draftStart).toMatchObject({ status: "denied" })
+    expect(draftStart?.providerOperationId).not.toBe(prepared?.providerOperationId)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_RECOVERY_SESSION'")).rows[0].n).toBe(0)
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: approved!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("payment_record_invoice_v1", [prepared!.providerOperationId, "in_recissued", "https://invoice.stripe.test/in_recissued", 29900, "gbp"])).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [recovery.issued!.id])).rows[0].status).toBe("REVOKED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_sessions where action_id=$1", [recovery.issued!.id])).rows[0].n).toBe(0)
+    expect(await rpc("customer_payment_command_v1", [recovery.session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "unavailable" })
+    await db.query("update public.payment_obligations set state='AUTHENTICATION_REQUIRED' where id=$1", [approved!.obligationId])
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: approved!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+  })
+
+  it("denies new Guided and recovery actions while an invoice is DRAFT, ISSUED, or PAID", async () => {
+    const { accepted } = await acceptQuote()
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
+      serviceOrderId: accepted!.orderId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    await db.query("update public.payment_obligations set state='AUTHENTICATION_REQUIRED' where id=$1", [accepted!.obligationId])
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("payment_record_invoice_v1", [prepared!.providerOperationId, "in_blockactions", "https://invoice.stripe.test/in_blockactions", 9900, "gbp"])).toMatchObject({ status: "success" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
+      serviceOrderId: accepted!.orderId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_blockact"])
+    expect(await rpc("payment_apply_provider_event_v1", ["evt_block_paid", "invoice.paid", "in_blockactions", {
+      amountPaidMinor: 9900, amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_blockact",
+      customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
+      providerOperationId: prepared!.providerOperationId,
+    }])).toMatchObject({ status: "success" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
+      serviceOrderId: accepted!.orderId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+  })
+
+  it("binds provider operations only to the matching Stripe object type", async () => {
+    const { accepted } = await acceptQuote()
+    const opened = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
+    const checkout = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "in_wrong_type", "invoice"])).toMatchObject({
+      status: "denied", reason: "provider_object_type_mismatch",
+    })
+    expect(await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "cs_right_type", "checkout.session"])).toMatchObject({ status: "success" })
+    await rpc("payment_apply_provider_event_v1", ["evt_bind_type_exp", "checkout.session.expired", "cs_right_type", {}])
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(await rpc("payment_record_provider_refs_v1", [prepared!.providerOperationId, "cs_invoice_mismatch", "checkout.session"])).toMatchObject({
+      status: "denied", reason: "provider_object_type_mismatch",
+    })
+    expect(await rpc("payment_record_provider_refs_v1", [prepared!.providerOperationId, "in_right_type", "invoice"])).toMatchObject({ status: "success" })
+    const managed = await acceptQuote("MANAGED_RELAUNCH")
+    const setupOpen = await issueAndOpen("issue_managed_setup_action", managed.accepted!.orderId as string)
+    await rpc("customer_payment_command_v1", [setupOpen.session, key(), "confirm_consent", { accepted: true }])
+    const setup = await rpc("customer_payment_command_v1", [setupOpen.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(await rpc("payment_record_provider_refs_v1", [setup!.providerOperationId, "seti_too_soon", "setup_intent"])).toMatchObject({
+      status: "denied", reason: "provider_object_type_mismatch",
+    })
+    expect(await rpc("payment_record_provider_refs_v1", [setup!.providerOperationId, "cs_setup_right", "checkout.session"])).toMatchObject({ status: "success" })
+    const customerPrep = await rpc("payment_prepare_customer_v1", [otherCustomer])
+    expect(await rpc("payment_record_provider_refs_v1", [customerPrep!.providerOperationId, "cus_typeok", "customer"])).toMatchObject({ status: "success" })
+  })
+
+  it("keeps an uncertain DRAFT invoice and only VOID/FAILED after confirmed permanent failure", async () => {
+    const { accepted } = await acceptQuote()
+    const first = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    const retry = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(retry?.providerOperationId).toBe(first?.providerOperationId)
+    expect(retry?.idempotencyKey).toBe(first?.idempotencyKey)
+    expect(retry?.invoiceId).toBe(first?.invoiceId)
+    expect((await db.query<{ status: string }>("select status from public.payment_invoices where id=$1", [first!.invoiceId])).rows[0].status).toBe("DRAFT")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_INVOICE'")).rows[0].n).toBe(1)
+    expect(await rpc("payment_abandon_invoice_v1", [first!.providerOperationId])).toMatchObject({ status: "success", replay: false })
+    expect((await db.query<{ status: string }>("select status from public.payment_invoices where id=$1", [first!.invoiceId])).rows[0].status).toBe("VOID")
+    expect((await db.query<{ status: string }>("select status from public.provider_operations where id=$1", [first!.providerOperationId])).rows[0].status).toBe("FAILED")
+    expect((await db.query<{ status: string }>("select status from public.payment_attempts where provider_operation_id=$1", [first!.providerOperationId])).rows[0].status).toBe("FAILED")
+    expect(await rpc("payment_abandon_invoice_v1", [first!.providerOperationId])).toMatchObject({ status: "success", replay: true })
+    const opened = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
+    expect(opened.issued).toMatchObject({ status: "success" })
+    const checkout = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(checkout).toMatchObject({ status: "success" })
+    expect(checkout?.providerOperationId).not.toBe(first?.providerOperationId)
+    expect((await db.query<{ kind: string }>("select kind from public.provider_operations where id=$1", [checkout!.providerOperationId])).rows[0].kind).toBe("CREATE_CHECKOUT_SESSION")
+  })
+
+  it("treats invoice PAID as terminal for every other collection path and ignores duplicate events", async () => {
+    const { accepted } = await acceptQuote()
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])
+    expect(await rpc("payment_record_invoice_v1", [prepared!.providerOperationId, "in_paidterm", "https://invoice.stripe.test/in_paidterm", 9900, "gbp"])).toMatchObject({ status: "success" })
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_paidterm"])
+    expect(await rpc("payment_apply_provider_event_v1", ["evt_paid_term", "invoice.paid", "in_paidterm", {
+      amountPaidMinor: 9900, amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_paidterm",
+      customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
+      providerOperationId: prepared!.providerOperationId,
+    }])).toMatchObject({ status: "success" })
+    expect(await rpc("customer_payment_command_v1", [secretHash(), key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "unavailable" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
+      serviceOrderId: accepted!.orderId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_payment_command_v1", [token, key(), "issue_recovery_action", {
+      serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId, expiresAt: actionExpiry(), secretHash: secretHash(),
+    }, 1])).toMatchObject({ status: "denied" })
+    expect(await rpc("payment_collect_prepare_v1", [accepted!.obligationId])).toMatchObject({ status: "denied" })
+    expect(await rpc("payment_prepare_invoice_v1", [token, accepted!.obligationId])).toMatchObject({ status: "denied" })
+    expect(await rpc("payment_apply_provider_event_v1", ["evt_paid_term_dup", "invoice.paid", "in_paidterm", {
+      amountPaidMinor: 9900, currency: "gbp", providerOperationId: prepared!.providerOperationId,
+    }])).toMatchObject({ status: "success", duplicate: true })
+    expect(await rpc("payment_apply_provider_event_v1", ["evt_pi_after_term", "payment_intent.succeeded", "pi_after_term", {
+      paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp",
+      customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
+      providerOperationId: prepared!.providerOperationId,
+    }])).toMatchObject({ status: "success", duplicate: true })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_receipts")).rows[0].n).toBe(1)
+    expect((await db.query<{ state: string }>("select state from public.payment_obligations where id=$1", [accepted!.obligationId])).rows[0].state).toBe("PAID")
   })
 })

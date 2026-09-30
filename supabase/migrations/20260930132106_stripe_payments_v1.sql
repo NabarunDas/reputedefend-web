@@ -892,6 +892,49 @@ BEGIN
   END LOOP;
 END; $$;
 
+CREATE FUNCTION admin_private.obligation_has_blocking_invoice_v1(p_obligation uuid)
+RETURNS boolean LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.payment_invoices
+    WHERE obligation_id = p_obligation AND status IN ('DRAFT','ISSUED','PAID')
+  );
+$$;
+
+CREATE FUNCTION admin_private.provider_operation_expected_object_type_v1(p_kind text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE p_kind
+    WHEN 'CREATE_CHECKOUT_SESSION' THEN 'checkout.session'
+    WHEN 'CREATE_SETUP_SESSION' THEN 'checkout.session'
+    WHEN 'CREATE_RECOVERY_SESSION' THEN 'checkout.session'
+    WHEN 'CREATE_PAYMENT_INTENT' THEN 'payment_intent'
+    WHEN 'CREATE_INVOICE' THEN 'invoice'
+    WHEN 'CANCEL_PAYMENT_INTENT' THEN 'payment_intent'
+    WHEN 'CREATE_CUSTOMER' THEN 'customer'
+    ELSE NULL
+  END;
+$$;
+
+CREATE FUNCTION admin_private.revoke_stale_collection_actions_v1(p_order uuid, p_obligation uuid)
+RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions;
+BEGIN
+  FOR a IN
+    SELECT * FROM public.customer_actions
+    WHERE service_order_id = p_order
+      AND payment_obligation_id IS NOT DISTINCT FROM p_obligation
+      AND kind IN ('GUIDED_PAYMENT','PAYMENT_RECOVERY')
+      AND status = 'OPEN'
+    FOR UPDATE
+  LOOP
+    UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id;
+    INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+    VALUES (a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED',
+      jsonb_build_object('reason', 'INVOICE_FALLBACK_ISSUED', 'source', 'INVOICE_ISSUED', 'kind', a.kind));
+    DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
+    DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  END LOOP;
+END; $$;
+
 
 CREATE FUNCTION public.admin_payment_command_v1(p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -930,8 +973,9 @@ BEGIN
 
   IF p_operation = 'issue_guided_payment_action' THEN
     IF ord.payment_model <> 'UPFRONT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    SELECT * INTO ob FROM public.payment_obligations WHERE service_order_id = ord.id AND kind = 'UPFRONT' AND state <> 'VOID';
+    SELECT * INTO ob FROM public.payment_obligations WHERE service_order_id = ord.id AND kind = 'UPFRONT' AND state <> 'VOID' FOR UPDATE;
     IF ob.id IS NULL OR ob.state = 'PAID' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF admin_private.obligation_has_blocking_invoice_v1(ob.id) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     BEGIN expires := (data->>'expiresAt')::timestamptz; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
     IF expires IS NULL OR expires <= now() OR expires > now() + interval '7 days' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     secret := data->>'secretHash';
@@ -971,6 +1015,7 @@ BEGIN
     IF ob.id IS NULL OR ob.service_order_id IS DISTINCT FROM ord.id OR ob.state <> 'AUTHENTICATION_REQUIRED' THEN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
+    IF admin_private.obligation_has_blocking_invoice_v1(ob.id) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     BEGIN expires := (data->>'expiresAt')::timestamptz; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
     IF expires IS NULL OR expires <= now() OR expires > now() + interval '7 days' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     secret := data->>'secretHash';
@@ -1502,13 +1547,14 @@ BEGIN
     ELSIF a.kind IN ('GUIDED_PAYMENT','PAYMENT_RECOVERY') THEN
       SELECT * INTO ob FROM public.payment_obligations WHERE id = a.payment_obligation_id FOR UPDATE;
       IF ob.id IS NULL OR ob.state IN ('PAID','VOID') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-      IF EXISTS (SELECT 1 FROM public.payment_invoices WHERE obligation_id = ob.id AND status IN ('ISSUED','PAID')) THEN
+      IF admin_private.obligation_has_blocking_invoice_v1(ob.id) THEN
         RETURN jsonb_build_object('status', 'denied');
       END IF;
       PERFORM pg_advisory_xact_lock(hashtextextended(ob.id::text, 14));
       IF a.kind = 'PAYMENT_RECOVERY' THEN
         SELECT * INTO prior FROM public.payment_attempts
           WHERE obligation_id = ob.id AND status IN ('CREATED','SUBMITTED','REQUIRES_ACTION')
+            AND purpose IN ('CHECKOUT','OFF_SESSION')
             AND stripe_payment_intent_id IS NOT NULL
           ORDER BY created_at ASC LIMIT 1;
         IF prior.id IS NOT NULL THEN
@@ -1538,9 +1584,16 @@ BEGIN
     IF ob.id IS NOT NULL THEN
       SELECT * INTO att FROM public.payment_attempts
         WHERE obligation_id = ob.id AND status IN ('CREATED','SUBMITTED','REQUIRES_ACTION')
+          AND purpose = CASE a.kind WHEN 'PAYMENT_RECOVERY' THEN 'RECOVERY' ELSE 'CHECKOUT' END
         ORDER BY created_at ASC LIMIT 1;
       IF att.id IS NOT NULL THEN
         SELECT * INTO op FROM public.provider_operations WHERE id = att.provider_operation_id;
+        IF (a.kind = 'GUIDED_PAYMENT' AND op.kind IS DISTINCT FROM 'CREATE_CHECKOUT_SESSION')
+          OR (a.kind = 'PAYMENT_RECOVERY' AND op.kind IS DISTINCT FROM 'CREATE_RECOVERY_SESSION')
+          OR att.purpose IN ('INVOICE','OFF_SESSION')
+        THEN
+          RETURN jsonb_build_object('status', 'denied');
+        END IF;
         result := jsonb_build_object(
           'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
           'attemptId', att.id, 'amountMinor', coalesce(ob.amount_minor, 0), 'currency', ord.currency,
@@ -1551,6 +1604,16 @@ BEGIN
         );
         INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, result, now());
         RETURN result;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM public.payment_attempts
+        WHERE obligation_id = ob.id AND status IN ('CREATED','SUBMITTED','REQUIRES_ACTION')
+          AND purpose <> CASE a.kind WHEN 'PAYMENT_RECOVERY' THEN 'RECOVERY' ELSE 'CHECKOUT' END
+      ) THEN
+        RETURN jsonb_build_object('status', 'denied');
+      END IF;
+      IF admin_private.obligation_has_blocking_invoice_v1(ob.id) THEN
+        RETURN jsonb_build_object('status', 'denied');
       END IF;
     ELSIF a.kind = 'MANAGED_PAYMENT_SETUP' THEN
       SELECT * INTO op FROM public.provider_operations
@@ -1729,11 +1792,17 @@ END; $$;
 
 CREATE FUNCTION public.payment_record_provider_refs_v1(p_operation uuid, p_object_id text, p_object_type text, p_status text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE op public.provider_operations;
+DECLARE op public.provider_operations; expected text;
 BEGIN
-  IF p_operation IS NULL OR p_object_id IS NULL OR length(p_object_id) < 3 THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF p_operation IS NULL OR p_object_id IS NULL OR length(p_object_id) < 3 OR p_object_type IS NULL THEN
+    RETURN jsonb_build_object('status','invalid');
+  END IF;
   SELECT * INTO op FROM public.provider_operations WHERE id = p_operation FOR UPDATE;
   IF op.id IS NULL THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  expected := admin_private.provider_operation_expected_object_type_v1(op.kind);
+  IF expected IS NULL OR p_object_type IS DISTINCT FROM expected THEN
+    RETURN jsonb_build_object('status','denied','reason','provider_object_type_mismatch');
+  END IF;
   IF op.provider_object_id IS NOT NULL
     AND (op.provider_object_id IS DISTINCT FROM p_object_id OR op.provider_object_type IS DISTINCT FROM p_object_type)
   THEN
@@ -1802,7 +1871,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.payment_receipts WHERE obligation_id = ob.id) THEN
     RETURN jsonb_build_object('status','denied','reason','already_paid');
   END IF;
-  IF EXISTS (SELECT 1 FROM public.payment_invoices WHERE obligation_id = ob.id AND status IN ('ISSUED','PAID')) THEN
+  IF EXISTS (SELECT 1 FROM public.payment_invoices WHERE obligation_id = ob.id AND status IN ('DRAFT','ISSUED','PAID')) THEN
     RETURN jsonb_build_object('status','denied','reason','invoice_issued');
   END IF;
   IF EXISTS (
@@ -1945,6 +2014,9 @@ BEGIN
     WHERE id = op.id;
   UPDATE public.payment_attempts SET status = 'SUBMITTED', attempted_at = now()
     WHERE provider_operation_id = op.id AND status = 'CREATED';
+  IF inv.status = 'ISSUED' THEN
+    PERFORM admin_private.revoke_stale_collection_actions_v1(ob.service_order_id, ob.id);
+  END IF;
   PERFORM admin_private.write_payment_ledger_v1(
     ob.customer_id, ob.service_order_id, ob.id, 'INVOICE_ISSUED', ob.amount_minor, ob.currency,
     p_provider_invoice_id, 'ADMIN', NULL, 'CREATE_INVOICE'
@@ -1955,15 +2027,49 @@ BEGIN
   );
 END; $$;
 
+CREATE FUNCTION public.payment_abandon_invoice_v1(p_operation uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE op public.provider_operations; inv public.payment_invoices; ob public.payment_obligations;
+BEGIN
+  IF p_operation IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation AND kind = 'CREATE_INVOICE' FOR UPDATE;
+  IF op.id IS NULL THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  SELECT * INTO inv FROM public.payment_invoices WHERE provider_operation_id = op.id FOR UPDATE;
+  IF inv.id IS NULL THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  SELECT * INTO ob FROM public.payment_obligations WHERE id = inv.obligation_id FOR UPDATE;
+  IF inv.status = 'VOID' AND op.status = 'FAILED' THEN
+    RETURN jsonb_build_object('status','success','replay', true, 'invoiceId', inv.id);
+  END IF;
+  IF inv.status <> 'DRAFT' THEN
+    RETURN jsonb_build_object('status','denied','reason','invoice_not_draft');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.payment_receipts WHERE obligation_id = ob.id) OR ob.state = 'PAID' THEN
+    RETURN jsonb_build_object('status','denied','reason','already_paid');
+  END IF;
+  UPDATE public.payment_invoices SET status = 'VOID' WHERE id = inv.id AND status = 'DRAFT';
+  UPDATE public.provider_operations SET status = 'FAILED'
+    WHERE id = op.id AND status NOT IN ('SUCCEEDED','CANCELLED');
+  UPDATE public.payment_attempts SET status = 'FAILED', failed_at = now(),
+    failure_category = 'PROVIDER', failure_code = 'invoice_creation_failed'
+    WHERE provider_operation_id = op.id AND status IN ('CREATED','SUBMITTED','REQUIRES_ACTION');
+  RETURN jsonb_build_object('status','success','replay', false, 'invoiceId', inv.id);
+END; $$;
+
 CREATE FUNCTION public.payment_replace_expired_checkout_v1(p_operation uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE op public.provider_operations; att public.payment_attempts; nxt public.provider_operations;
-  next_att public.payment_attempts; n integer;
+  next_att public.payment_attempts; n integer; ob public.payment_obligations;
 BEGIN
   IF p_operation IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   SELECT * INTO op FROM public.provider_operations WHERE id = p_operation FOR UPDATE;
   IF op.id IS NULL OR op.kind NOT IN ('CREATE_CHECKOUT_SESSION','CREATE_SETUP_SESSION','CREATE_RECOVERY_SESSION') THEN
     RETURN jsonb_build_object('status','denied');
+  END IF;
+  IF op.obligation_id IS NOT NULL THEN
+    SELECT * INTO ob FROM public.payment_obligations WHERE id = op.obligation_id FOR UPDATE;
+    IF admin_private.obligation_has_blocking_invoice_v1(op.obligation_id) THEN
+      RETURN jsonb_build_object('status','denied','reason','invoice_issued');
+    END IF;
   END IF;
   IF op.status = 'SUCCEEDED' THEN RETURN jsonb_build_object('status','denied','reason','already_succeeded'); END IF;
   SELECT * INTO att FROM public.payment_attempts WHERE provider_operation_id = op.id FOR UPDATE;
@@ -2026,6 +2132,7 @@ GRANT EXECUTE ON FUNCTION public.payment_record_cancel_v1(uuid, text, text) TO s
 GRANT EXECUTE ON FUNCTION public.payment_collect_prepare_v1(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.payment_prepare_invoice_v1(text, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.payment_record_invoice_v1(uuid, text, text, integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.payment_abandon_invoice_v1(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.payment_replace_expired_checkout_v1(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.customer_action_session_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_case_command_v1(text, uuid, uuid, integer, text, jsonb) TO service_role;
@@ -2047,6 +2154,7 @@ REVOKE ALL ON FUNCTION public.payment_record_cancel_v1(uuid, text, text) FROM PU
 REVOKE ALL ON FUNCTION public.payment_collect_prepare_v1(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.payment_prepare_invoice_v1(text, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.payment_record_invoice_v1(uuid, text, text, integer, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.payment_abandon_invoice_v1(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.payment_replace_expired_checkout_v1(uuid) FROM PUBLIC, anon, authenticated;
 
 REVOKE ALL ON FUNCTION admin_private.success_fee_consent_text_v1() FROM PUBLIC, anon, authenticated, service_role;
@@ -2061,6 +2169,9 @@ REVOKE ALL ON FUNCTION admin_private.prepare_payment_action_v1(uuid, text) FROM 
 REVOKE ALL ON FUNCTION admin_private.qualifying_success_outcome_v1(public.cases) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.accepted_outcome_evidence_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.complete_payment_action_v1(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.obligation_has_blocking_invoice_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.provider_operation_expected_object_type_v1(text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.revoke_stale_collection_actions_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.reject_payment_mutation_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_payment_obligation_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_payment_attempt_v1() FROM PUBLIC, anon, authenticated, service_role;

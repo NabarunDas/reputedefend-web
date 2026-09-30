@@ -62,6 +62,11 @@ beforeEach(async () => {
     alter table public.price_versions disable trigger price_versions_protect;
     alter table public.price_versions disable trigger price_versions_overlap;
     alter table public.payment_ledger disable trigger payment_ledger_immutable;
+    alter table public.agreement_versions disable trigger agreement_versions_immutable;
+    alter table public.authorization_events disable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
+    alter table public.case_document_events disable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events disable trigger case_prepared_pack_events_immutable;
     truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.payment_command_receipts,admin_private.stripe_event_receipts,admin_private.job_outbox,admin_private.jobs,public.payment_ledger,public.payment_receipts,public.payment_invoices,public.payment_attempts,public.provider_operations,public.saved_payment_methods,public.payment_obligations,public.success_fee_approvals,public.payment_consents,public.stripe_customer_maps,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.authorization_records,public.agreement_versions,public.location_manager_access,public.case_tasks,public.case_work_events,admin_private.case_command_receipts,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null;
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
@@ -72,6 +77,11 @@ beforeEach(async () => {
     alter table public.quote_events enable trigger quote_events_immutable;
     alter table public.price_version_events enable trigger price_version_events_immutable;
     alter table public.payment_ledger enable trigger payment_ledger_immutable;
+    alter table public.agreement_versions enable trigger agreement_versions_immutable;
+    alter table public.authorization_events enable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
+    alter table public.case_document_events enable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events enable trigger case_prepared_pack_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${customerAuth}','alex@example.com',now(),null,null);
     insert into auth.users values('${otherAuth}','other@example.com',now(),null,null);
@@ -288,8 +298,8 @@ describe("stripe payments SQL", () => {
     }, 1])
     expect(second?.status).toBe("success")
     expect(second?.id).not.toBe(first?.id)
-    const received = await rpc("payment_receive_stripe_event_v1", ["evt_dup", "checkout.session.completed", "cs_x"])
-    const again = await rpc("payment_receive_stripe_event_v1", ["evt_dup", "checkout.session.completed", "cs_x"])
+    const received = await rpc("payment_receive_stripe_event_v1", ["evt_duplicate_1", "checkout.session.completed", "cs_x"])
+    const again = await rpc("payment_receive_stripe_event_v1", ["evt_duplicate_1", "checkout.session.completed", "cs_x"])
     expect(received).toMatchObject({ status: "success", duplicate: false })
     expect(again).toMatchObject({ status: "success", duplicate: true })
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic='PROCESS_STRIPE_EVENT'")).rows[0].n).toBe(1)

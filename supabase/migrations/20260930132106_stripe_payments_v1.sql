@@ -1041,9 +1041,11 @@ BEGIN
   IF p_event_id IS NULL OR length(p_event_id) < 8 OR p_type IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   INSERT INTO admin_private.stripe_event_receipts(provider_event_id, event_type, provider_object_id)
   VALUES (p_event_id, left(p_type, 80), p_object_id)
-  ON CONFLICT (provider_event_id) DO NOTHING;
-  SELECT * INTO rec FROM admin_private.stripe_event_receipts WHERE provider_event_id = p_event_id;
-  IF rec.processed THEN RETURN jsonb_build_object('status','success','duplicate', true); END IF;
+  ON CONFLICT (provider_event_id) DO NOTHING
+  RETURNING * INTO rec;
+  IF rec.provider_event_id IS NULL THEN
+    RETURN jsonb_build_object('status','success','duplicate', true);
+  END IF;
   PERFORM admin_private.enqueue_outbox_v1(
     'process-stripe-event:' || rec.provider_event_id, 'PROCESS_STRIPE_EVENT', 'stripe_event', NULL,
     jsonb_build_object('eventId', rec.provider_event_id, 'eventType', rec.event_type, 'objectId', rec.provider_object_id), now()
@@ -1348,7 +1350,7 @@ BEGIN
   );
 END; $$;
 
-CREATE FUNCTION public.admin_audit_list_v1(p_token text, p_before bigint DEFAULT NULL, p_action text DEFAULT NULL, p_outcome text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.admin_audit_list_v1(p_token text, p_before bigint DEFAULT NULL, p_action text DEFAULT NULL, p_outcome text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE result jsonb;
 BEGIN

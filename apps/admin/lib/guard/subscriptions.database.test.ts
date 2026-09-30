@@ -79,10 +79,13 @@ beforeEach(async () => {
     alter table public.price_versions disable trigger price_versions_overlap;
     alter table public.guard_coverage_events disable trigger guard_coverage_events_immutable;
     alter table public.guard_subscription_events disable trigger guard_subscription_events_immutable;
+    alter table public.guard_recurring_consents disable trigger guard_recurring_consents_immutable;
+    alter table public.guard_provider_price_maps disable trigger guard_provider_price_maps_immutable;
+    alter table public.guard_subscriptions disable trigger guard_subscriptions_protect;
     alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
     truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,admin_private.guard_subscription_receipts,admin_private.stripe_event_receipts,admin_private.job_outbox,admin_private.jobs,public.provider_operations,public.payment_ledger,public.guard_reconciliation_issues,public.guard_reconciliation_runs,public.guard_reminder_records,public.guard_refunds,public.guard_disputes,public.guard_billing_adjustments,public.guard_price_change_offers,public.guard_subscription_invoices,public.guard_recurring_consents,public.guard_subscription_events,public.guard_subscriptions,public.guard_continuations,public.guard_provider_price_maps,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
-    delete from public.price_versions where seed_key is null;
+    delete from public.price_versions where seed_key is null or seed_key like 'TEST_%';
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
     alter table public.price_versions enable trigger price_versions_overlap;
@@ -92,6 +95,9 @@ beforeEach(async () => {
     alter table public.price_version_events enable trigger price_version_events_immutable;
     alter table public.guard_coverage_events enable trigger guard_coverage_events_immutable;
     alter table public.guard_subscription_events enable trigger guard_subscription_events_immutable;
+    alter table public.guard_recurring_consents enable trigger guard_recurring_consents_immutable;
+    alter table public.guard_provider_price_maps enable trigger guard_provider_price_maps_immutable;
+    alter table public.guard_subscriptions enable trigger guard_subscriptions_protect;
     alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
@@ -313,6 +319,9 @@ describe("guard subscriptions SQL", () => {
     await apply("invoice.payment_failed", "in_fail", { guardSubscriptionId: start.subscriptionId, subscriptionId: "sub_fail", failureCode: "card_declined" })
     expect((await db.query<{ billing_state: string; paid_through_at: string | null }>("select billing_state, paid_through_at::text from public.guard_billing where coverage_id=$1", [coverageId])).rows[0].billing_state).toBe("PAST_DUE")
     expect((await db.query<{ state: string }>("select state from public.guard_coverages where id=$1", [coverageId])).rows[0].state).not.toBe("PAUSED")
+    await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect;")
+    await db.query("update public.guard_coverages set state='ACTIVE', activated_at=now() - interval '20 days' where id=$1", [coverageId])
+    await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect;")
     await db.query("update public.guard_billing set paid_through_at=now() - interval '1 hour' where coverage_id=$1", [coverageId])
     const run = await rpc("guard_enqueue_daily_reconcile_v1", [])
     expect(run?.status).toBe("success")
@@ -374,23 +383,23 @@ describe("guard subscriptions SQL", () => {
       subscriptionId: "sub_trial", providerStatus: "active", quantity: 1, guardSubscriptionId: start!.subscriptionId, stripeCustomerId: "cus_cont",
     })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where coverage_basis='DIRECT_GUARD'")).rows[0].n).toBe(0)
-    const failed = await apply("invoice.payment_failed", "in_cont_fail", { guardSubscriptionId: start!.subscriptionId, subscriptionId: "sub_trial" })
+    const failed = await apply("invoice.payment_failed", "in_contfail1", { guardSubscriptionId: start!.subscriptionId, subscriptionId: "sub_trial" })
     expect(failed?.status).toBe("success")
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where coverage_basis='DIRECT_GUARD'")).rows[0].n).toBe(0)
-    await paidInvoice(String(start!.subscriptionId), { subscriptionId: "sub_trial", stripeCustomerId: "cus_cont" }, "in_cont_ok")
+    await paidInvoice(String(start!.subscriptionId), { subscriptionId: "sub_trial", stripeCustomerId: "cus_cont" }, "in_contok1")
     const included = await db.query<{ coverage_basis: string; state: string }>("select coverage_basis, state from public.guard_coverages where id=$1", [offer!.id])
     expect(included.rows[0]).toMatchObject({ coverage_basis: "INCLUDED", state: "ENDED" })
     const paid = await db.query<{ coverage_basis: string; coverage_origin: string; source_included_coverage_id: string }>("select coverage_basis, coverage_origin, source_included_coverage_id::text from public.guard_coverages where coverage_basis='DIRECT_GUARD'")
     expect(paid.rows[0]).toMatchObject({ coverage_basis: "DIRECT_GUARD", coverage_origin: "INCLUDED_CONTINUATION", source_included_coverage_id: offer!.id })
-    await db.query("update public.guard_coverages set included_end_at=now() - interval '1 hour' where id=$1", [offer!.id])
     const expiryRun = await rpc("guard_enqueue_daily_reconcile_v1", [])
-    expect(expiryRun?.duplicate).toBe(true)
+    expect(expiryRun?.status).toBe("success")
+    expect(await rpc("guard_enqueue_daily_reconcile_v1", [])).toMatchObject({ status: "success", duplicate: true, runId: expiryRun!.runId })
   })
 
   it("expires included coverage without a charge when no continuation exists", async () => {
     await verify()
     await db.exec(`alter table public.cases disable trigger cases_workflow_version;
-      update public.cases set service_track='MANAGED', status='CLOSED', work_stage='FINISHED', outcome='RESTORED' where id='${caseId}';
+      update public.cases set service_track='MANAGED', status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW' where id='${caseId}';
       alter table public.cases enable trigger cases_workflow_version;`)
     const draft = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
       serviceCode: "MANAGED_RELAUNCH", customerId: customer, businessId: business, caseId, locationId: location,
@@ -404,14 +413,19 @@ describe("guard subscriptions SQL", () => {
     const hash = secretHash()
     const issued = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId: draft!.id, expiresAt: actionExpiry(), secretHash: hash }, null])
     const accepted = await rpc("customer_action_command_v1", [await completeOtp(issued!.id!, hash), key(), "accept", { accepted: true }])
+    await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+      update public.cases set status='CLOSED', work_stage='FINISHED', outcome='RESTORED' where id='${caseId}';
+      alter table public.cases enable trigger cases_workflow_version;`)
     const doc = crypto.randomUUID(), version = crypto.randomUUID()
     await db.query("insert into public.case_documents(id,case_id,title,created_by) values($1,$2,'Outcome evidence',$3)", [doc, caseId, uid])
     await db.query("insert into public.case_document_versions(id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,upload_status,scan_status,validation_status,review_status,created_by) values($1,$2,1,'outcome.png','image/png',1200,'evidence-test', $3, 'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)", [
       version, doc, `cases/${caseId}/documents/${doc}/versions/${version}`, uid,
     ])
-    await db.query("insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'note', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3", [version, uid, accepted!.orderId])
+    await db.query("insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'Outcome evidence accepted after review.', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3", [version, uid, accepted!.orderId])
     const offer = await rpc("admin_guard_command_v1", [token, key(), "create_included_offer", { caseId, serviceOrderId: accepted!.orderId }, null])
-    await db.query("update public.guard_coverages set included_end_at=now() - interval '1 hour', included_start_at=now() - interval '31 days', activated_at=now() - interval '31 days', state='ACTIVE' where id=$1", [offer!.id])
+    await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect;")
+    await db.query("update public.guard_coverages set activated_at=now() - interval '30 days' - interval '1 hour', included_start_at=now() - interval '30 days' - interval '1 hour', included_end_at=now() - interval '1 hour', state='ACTIVE' where id=$1", [offer!.id])
+    await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect;")
     const run = await rpc("guard_enqueue_daily_reconcile_v1", [])
     await rpc("guard_reconcile_billing_v1", [run!.runId, { livemode: false }])
     expect((await db.query<{ state: string }>("select state from public.guard_coverages where id=$1", [offer!.id])).rows[0].state).toBe("ENDED")
@@ -458,7 +472,7 @@ describe("guard subscriptions SQL", () => {
     const replay = await rpc("admin_guard_command_v1", [token, key(), "approve_refund", { adjustmentId, amountMinor: 100 }, null])
     expect(replay).toMatchObject({ status: "success", replay: true })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_refunds where subscription_id=$1", [start.subscriptionId])).rows[0].n).toBe(1)
-    await rpc("guard_record_refund_v1", [approved!.providerOperationId, "re_test_fail1", "failed", "card_decline"])
+    await rpc("guard_record_refund_v1", [approved!.providerOperationId, "re_testfail1", "failed", "card_decline"])
     expect((await db.query<{ status: string }>("select status from public.guard_refunds where subscription_id=$1", [start.subscriptionId])).rows[0].status).toBe("FAILED")
     await apply("charge.dispute.created", "dp_1", {
       guardSubscriptionId: start.subscriptionId, amountMinor: 999, chargeId: "ch_testguard1", disputeStatus: "needs_response",
@@ -481,7 +495,7 @@ describe("guard subscriptions SQL", () => {
     await paidInvoice(start.subscriptionId, { subscriptionId: "sub_price", stripeCustomerId: "cus_price" }, "in_price")
     await db.exec("alter table public.price_versions disable trigger price_versions_protect; alter table public.price_versions disable trigger price_versions_overlap;")
     const newPrice = crypto.randomUUID()
-    await db.query("insert into public.price_versions(id,service_code,service_name,amount_minor,currency,payment_model,billing_cadence,billing_unit,effective_from,status,tax_behaviour,created_by,approved_by,seed_key) values($1,'RELAUNCH_GUARD','Relaunch Guard',1299,'GBP','RECURRING_MONTHLY','MONTHLY','LOCATION_MONTH',now() + interval '40 days','APPROVED','NOT_APPLICABLE',$2,$2,'TEST_GUARD_PRICE_UP')", [newPrice, uid])
+    await db.query("insert into public.price_versions(id,service_code,display_name,amount_minor,currency,payment_model,billing_cadence,billing_unit,effective_from,status,tax_behaviour,created_by,approved_by,approved_at,seed_key) values($1,'RELAUNCH_GUARD','Relaunch Guard',1299,'GBP','RECURRING_MONTHLY','MONTHLY','LOCATION_MONTH',now() + interval '40 days','APPROVED','NOT_APPLICABLE',$2,$2,now(),'TEST_GUARD_PRICE_UP')", [newPrice, uid])
     await db.exec("alter table public.price_versions enable trigger price_versions_protect; alter table public.price_versions enable trigger price_versions_overlap;")
     const version = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
     const offer = await rpc("admin_guard_command_v1", [token, key(), "issue_price_change_action", {
@@ -502,7 +516,7 @@ describe("guard subscriptions SQL", () => {
     const acceptSession = await completeOtp(offer2!.id!, hash2)
     expect(await rpc("customer_action_command_v1", [acceptSession, key(), "accept", { accepted: true }])).toMatchObject({ status: "success" })
     expect((await db.query<{ amount_minor: number }>("select amount_minor from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].amount_minor).toBe(999)
-    expect((await db.query<{ status: string }>("select status from public.guard_price_change_offers where subscription_id=$1 order by created_at desc limit 1", [start.subscriptionId])).rows[0].status).toBe("ACCEPTED")
+    expect((await db.query<{ status: string }>("select status from public.guard_price_change_offers where subscription_id=$1 order by offered_at desc limit 1", [start.subscriptionId])).rows[0].status).toBe("ACCEPTED")
   })
 
   it("denies another customer cancelling this subscription and catches reconciliation mismatches", async () => {
@@ -513,14 +527,27 @@ describe("guard subscriptions SQL", () => {
     await apply("customer.subscription.created", "sub_rec", {
       subscriptionId: "sub_rec", providerStatus: "active", quantity: 1, guardSubscriptionId: start.subscriptionId, stripeCustomerId: "cus_rec",
     })
-    const otherHash = secretHash()
-    await db.query("insert into public.customer_actions(id,kind,status,customer_id,business_id,location_id,service_order_id,guard_subscription_id,secret_hash,expected_email_snapshot,expires_at,created_by) values($1,'GUARD_SUBSCRIPTION_START','OPEN',$2,$3,$4,$5,$6,$7,'blake@example.com',now() + interval '1 day',$8)", [
-      crypto.randomUUID(), otherCustomer, business, location, (await db.query<{ service_order_id: string }>("select service_order_id from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].service_order_id, start.subscriptionId, otherHash, uid,
-    ])
-    const foreign = await db.query<{ id: string; secret_hash: string }>("select id, secret_hash from public.customer_actions where customer_id=$1", [otherCustomer])
-    const foreignSession = await completeOtp(foreign.rows[0].id, foreign.rows[0].secret_hash, otherAuth, "blake@example.com")
-    expect(await rpc("customer_guard_subscription_command_v1", [foreignSession, key(), "request_period_end_cancellation", {}])).toMatchObject({ status: "denied" })
+    const ownerOrder = (await db.query<{ service_order_id: string }>("select service_order_id from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].service_order_id
+    await expect(db.query("insert into public.customer_actions(id,kind,status,customer_id,business_id,location_id,service_order_id,guard_subscription_id,secret_hash,expected_email_snapshot,expires_at,created_by) values($1,'GUARD_SUBSCRIPTION_START','OPEN',$2,$3,$4,$5,$6,$7,'blake@example.com',now() + interval '1 day',$8)", [
+      crypto.randomUUID(), otherCustomer, business, location, ownerOrder, start.subscriptionId, secretHash(), uid,
+    ])).rejects.toThrow(/accepted Guard order|does not match/i)
+    await verify(otherCustomer)
+    const foreignDraft = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
+      serviceCode: "RELAUNCH_GUARD", customerId: otherCustomer, businessId: business, caseId: null, locationId: otherLocation,
+      priceVersionId: await priceId(),
+      scope: "Monitor this exact location after access and permission are confirmed.",
+      exclusions: "Payment collection, Google decisions, and automatic activation are excluded.",
+      validUntil: later(), applyDiscount: false,
+    }, null])
+    expect((await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", { quoteId: foreignDraft!.id, taxBehaviour: "NOT_APPLICABLE" }, foreignDraft!.version]))?.status).toBe("success")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: foreignDraft!.id, quoteVersionId: foreignDraft!.quoteVersionId }, (foreignDraft!.version || 1) + 1]))?.status).toBe("success")
+    const foreignHash = secretHash()
+    const foreignIssued = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId: foreignDraft!.id, expiresAt: actionExpiry(), secretHash: foreignHash }, null])
+    const foreignSession = await completeOtp(foreignIssued!.id!, foreignHash, otherAuth, "blake@example.com")
+    expect(await rpc("customer_guard_subscription_command_v1", [foreignSession, key(), "request_period_end_cancellation", { subscriptionId: start.subscriptionId }])).toMatchObject({ status: "denied" })
+    await db.exec("alter table public.guard_subscriptions disable trigger guard_subscriptions_protect;")
     await db.query("update public.guard_subscriptions set lifecycle_state='ACTIVE', stripe_subscription_id=null where id=$1", [start.subscriptionId])
+    await db.exec("alter table public.guard_subscriptions enable trigger guard_subscriptions_protect;")
     const first = await rpc("guard_enqueue_daily_reconcile_v1", [])
     const second = await rpc("guard_enqueue_daily_reconcile_v1", [])
     expect(first?.status).toBe("success")

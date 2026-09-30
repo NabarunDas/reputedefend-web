@@ -380,7 +380,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         metadata: metadataOf(invoice),
         livemode: false as const,
         subscriptionId: asId(parent.subscription_details?.subscription),
-        subscriptionItemId: line?.subscription_item ?? null,
+        subscriptionItemId: line?.parent?.subscription_item_details?.subscription_item ?? null,
         priceId: pricing?.price_details?.price ?? asId(line?.pricing) ?? null,
         quantity: line?.quantity ?? null,
         periodStart: line?.period?.start ? new Date(line.period.start * 1000).toISOString() : null,
@@ -441,7 +441,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         payment_intent: input.paymentIntentId,
         amount: input.amountMinor,
       }, { idempotencyKey: input.idempotencyKey })
-      if (refund.livemode) throw new PaymentsDisabledError("Live Stripe refunds are forbidden.")
+      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe refunds are forbidden.")
       return {
         id: refund.id,
         status: refund.status || "pending",
@@ -455,7 +455,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     },
     async retrieveRefund(id) {
       const refund = await client(env).refunds.retrieve(id)
-      if (refund.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
       return {
         id: refund.id,
         status: refund.status || "pending",

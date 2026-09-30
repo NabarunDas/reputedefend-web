@@ -76,7 +76,7 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Coverage continuation origin (additive; historical INCLUDED rows stay as written)
+-- Coverage continuation origin (additive). Historical INCLUDED rows stay as written.
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE public.guard_coverages
@@ -101,6 +101,27 @@ ALTER TABLE public.guard_coverage_events ADD CONSTRAINT guard_coverage_events_ev
   'EXCEPTION_RESOLVED','BILLING_CHANGED','INCLUDED_ENDED','CONTINUATION_HANDED_OFF','PAUSED_FOR_ENTITLEMENT',
   'ENDED_FOR_CANCELLATION'
 ));
+
+CREATE OR REPLACE FUNCTION admin_private.guard_state_transition_allowed_v1(p_old text, p_new text)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE
+  pre text[] := ARRAY[
+    'REQUESTED','AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED',
+    'AWAITING_PAYMENT','READY_TO_ACTIVATE'
+  ];
+BEGIN
+  IF p_old IS NOT DISTINCT FROM p_new THEN RETURN true; END IF;
+  IF p_old = 'ENDED' THEN RETURN false; END IF;
+  IF p_old = ANY(pre) AND p_new = ANY(pre) THEN RETURN true; END IF;
+  IF p_old = ANY(pre) AND p_new = 'PAUSED' THEN RETURN true; END IF;
+  IF p_new = 'ACTIVE' AND p_old = ANY(pre) THEN
+    RETURN current_setting('admin_private.guard_activating', true) = '1';
+  END IF;
+  IF p_old = 'ACTIVE' AND p_new IN ('PAUSED','ENDING') THEN RETURN true; END IF;
+  IF p_old = 'PAUSED' AND p_new IN ('ACTIVE','ENDING') THEN RETURN true; END IF;
+  IF p_old = 'ENDING' AND p_new = 'ENDED' THEN RETURN true; END IF;
+  RETURN false;
+END; $$;
 
 -- ---------------------------------------------------------------------------
 -- New tables
@@ -356,12 +377,7 @@ CREATE TABLE public.guard_reminder_policies (
   offsets_days integer[] NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT guard_reminder_policies_offsets CHECK (
-    status = 'DISABLED'
-    OR (
-      cardinality(offsets_days) >= 1
-      AND offsets_days = ARRAY(SELECT DISTINCT unnest(offsets_days) ORDER BY 1)
-      AND (SELECT bool_and(value > 0 AND value <= 30) FROM unnest(offsets_days) AS value)
-    )
+    status = 'DISABLED' OR cardinality(offsets_days) >= 1
   )
 );
 
@@ -479,6 +495,25 @@ REVOKE ALL ON TABLE public.guard_provider_price_maps, public.guard_continuations
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.guard_subscription_events_id_seq FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.guard_reconciliation_issues_id_seq FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.protect_guard_reminder_policy_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  IF NEW.status = 'ENABLED' THEN
+    IF NEW.offsets_days IS NULL OR cardinality(NEW.offsets_days) < 1 THEN
+      RAISE EXCEPTION 'Enabled reminder policy requires configured offsets';
+    END IF;
+    IF EXISTS (SELECT 1 FROM unnest(NEW.offsets_days) AS offset_day WHERE offset_day IS NULL OR offset_day < 1 OR offset_day > 30) THEN
+      RAISE EXCEPTION 'Reminder offsets must be between 1 and 30 days';
+    END IF;
+    IF (SELECT count(*) FROM unnest(NEW.offsets_days)) IS DISTINCT FROM (SELECT count(DISTINCT offset_day) FROM unnest(NEW.offsets_days) AS offset_day) THEN
+      RAISE EXCEPTION 'Reminder offsets must be unique';
+    END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER guard_reminder_policies_protect BEFORE INSERT OR UPDATE ON public.guard_reminder_policies
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_guard_reminder_policy_v1();
 
 CREATE FUNCTION admin_private.reject_guard_subscription_event_change_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
@@ -759,13 +794,14 @@ BEGIN
     IF NEW.kind = 'CASE_ACCESS' AND NEW.evidence_request_id IS NOT NULL THEN
       RAISE EXCEPTION 'Case access actions cannot pin an evidence request';
     END IF;
-  IF NEW.kind = 'COMMUNICATION_ACCESS' THEN
-    IF NEW.evidence_request_id IS NULL OR NEW.link_key_version IS NULL OR NEW.link_key_version < 1 THEN
-      RAISE EXCEPTION 'Communication access actions require an evidence request and link key version';
+    IF NEW.kind = 'COMMUNICATION_ACCESS' THEN
+      IF NEW.evidence_request_id IS NULL OR NEW.link_key_version IS NULL OR NEW.link_key_version < 1 THEN
+        RAISE EXCEPTION 'Communication access actions require an evidence request and link key version';
+      END IF;
+      SELECT * INTO req FROM public.evidence_requests WHERE id = NEW.evidence_request_id;
+      IF req.id IS NULL OR req.case_id IS DISTINCT FROM NEW.case_id OR (TG_OP = 'INSERT' AND req.status <> 'OPEN')
+      THEN RAISE EXCEPTION 'Communication access does not match the referenced evidence request'; END IF;
     END IF;
-    SELECT * INTO req FROM public.evidence_requests WHERE id = NEW.evidence_request_id;
-    IF req.id IS NULL OR req.case_id IS DISTINCT FROM NEW.case_id OR (TG_OP = 'INSERT' AND req.status <> 'OPEN')
-    THEN RAISE EXCEPTION 'Communication access does not match the referenced evidence request'; END IF;
   ELSIF NEW.kind = 'QUOTE_ACCEPTANCE' THEN
     IF NEW.quote_version_id IS NULL OR NEW.agreement_version_id IS NOT NULL OR NEW.authorization_id IS NOT NULL THEN
       RAISE EXCEPTION 'Quote acceptance actions require a quote version and no agreement or authorisation';
@@ -1018,8 +1054,11 @@ BEGIN
   END IF;
   UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now()
     WHERE kind = 'GUARD_SUBSCRIPTION_START' AND status = 'OPEN'
-      AND (guard_subscription_id = sub.id OR guard_coverage_id IS NOT DISTINCT FROM sub.coverage_id
-        OR guard_continuation_id IS NOT DISTINCT FROM sub.continuation_id);
+      AND (
+        guard_subscription_id = sub.id
+        OR (sub.coverage_id IS NOT NULL AND guard_coverage_id = sub.coverage_id)
+        OR (sub.continuation_id IS NOT NULL AND guard_continuation_id = sub.continuation_id)
+      );
   INSERT INTO public.customer_actions(
     kind, status, customer_id, business_id, location_id, service_order_id, guard_coverage_id,
     guard_continuation_id, guard_subscription_id, secret_hash, expected_email_snapshot, expires_at, created_by
@@ -1372,24 +1411,24 @@ BEGIN
   IF p_request IS NULL OR p_operation IS NULL OR NOT (p_operation = ANY (billing))
     OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object'
   THEN RETURN jsonb_build_object('status','invalid'); END IF;
-  payload := p_payload - 'secretHash';
+  payload := p_payload;
   IF p_version IS NOT NULL THEN payload := payload || jsonb_build_object('version', p_version); END IF;
-  fp := md5(jsonb_build_array(p_operation, payload, p_version)::text);
+  fp := md5(jsonb_build_array(p_operation, payload - 'secretHash', p_version)::text);
   cached := admin_private.guard_subscription_receipt_v1(actor, p_request, fp);
   IF cached IS NOT NULL THEN
     IF cached->>'status' = 'success' THEN RETURN cached || jsonb_build_object('replay', true); END IF;
     RETURN cached;
   END IF;
   result := CASE p_operation
-    WHEN 'issue_subscription_start_action' THEN admin_private.guard_issue_subscription_start_v1(actor, p_request, p_payload)
-    WHEN 'create_included_continuation' THEN admin_private.guard_create_continuation_v1(actor, p_request, p_payload)
-    WHEN 'issue_price_change_action' THEN admin_private.guard_issue_price_change_v1(actor, p_request, p_payload, s)
-    WHEN 'schedule_period_end_cancellation' THEN admin_private.guard_schedule_cancellation_v1(actor, p_request, p_payload, s)
-    WHEN 'undo_scheduled_cancellation' THEN admin_private.guard_undo_cancellation_v1(actor, p_request, p_payload, s)
-    WHEN 'request_immediate_cancellation' THEN admin_private.guard_request_immediate_cancellation_v1(actor, p_request, p_payload, s)
-    WHEN 'approve_refund' THEN admin_private.guard_approve_refund_v1(actor, p_request, p_payload, s)
-    WHEN 'approve_service_credit' THEN admin_private.guard_approve_credit_v1(actor, p_request, p_payload, s)
-    WHEN 'map_provider_price' THEN admin_private.guard_map_provider_price_v1(actor, p_request, p_payload, s)
+    WHEN 'issue_subscription_start_action' THEN admin_private.guard_issue_subscription_start_v1(actor, p_request, payload)
+    WHEN 'create_included_continuation' THEN admin_private.guard_create_continuation_v1(actor, p_request, payload)
+    WHEN 'issue_price_change_action' THEN admin_private.guard_issue_price_change_v1(actor, p_request, payload, s)
+    WHEN 'schedule_period_end_cancellation' THEN admin_private.guard_schedule_cancellation_v1(actor, p_request, payload, s)
+    WHEN 'undo_scheduled_cancellation' THEN admin_private.guard_undo_cancellation_v1(actor, p_request, payload, s)
+    WHEN 'request_immediate_cancellation' THEN admin_private.guard_request_immediate_cancellation_v1(actor, p_request, payload, s)
+    WHEN 'approve_refund' THEN admin_private.guard_approve_refund_v1(actor, p_request, payload, s)
+    WHEN 'approve_service_credit' THEN admin_private.guard_approve_credit_v1(actor, p_request, payload, s)
+    WHEN 'map_provider_price' THEN admin_private.guard_map_provider_price_v1(actor, p_request, payload, s)
   END;
   IF result IS NULL THEN result := jsonb_build_object('status','invalid'); END IF;
   INSERT INTO admin_private.guard_subscription_receipts VALUES (p_request, actor, fp, result, now());
@@ -1634,13 +1673,24 @@ BEGIN
   SELECT * INTO cont FROM public.guard_continuations WHERE id = p_subscription.continuation_id FOR UPDATE;
   IF cont.paid_coverage_id IS NOT NULL THEN RETURN cont.paid_coverage_id; END IF;
   SELECT * INTO included FROM public.guard_coverages WHERE id = cont.included_coverage_id FOR UPDATE;
+  IF included.activated_at IS NULL THEN
+    PERFORM admin_private.guard_begin_activation_v1();
+    UPDATE public.guard_coverages SET
+      activated_at = now(),
+      included_start_at = now(),
+      included_end_at = now() + interval '30 days',
+      state = 'ACTIVE'
+      WHERE id = included.id RETURNING * INTO included;
+    PERFORM admin_private.guard_append_event_v1(included.id, 'SYSTEM', NULL, 'INCLUDED_ENDED', included.state, 'ACTIVE',
+      'Included coverage closed for paid continuation handoff', jsonb_build_object('continuationId', cont.id));
+  END IF;
   IF included.state IN ('ACTIVE','PAUSED') THEN
     included := admin_private.guard_transition_coverage_v1(included.id, 'ENDING', 'SYSTEM', NULL, 'INCLUDED_ENDED', 'Included period handed off to paid continuation');
   END IF;
   IF included.state = 'ENDING' THEN
     included := admin_private.guard_transition_coverage_v1(included.id, 'ENDED', 'SYSTEM', NULL, 'INCLUDED_ENDED', 'Included coverage ended after paid continuation invoice');
   END IF;
-  UPDATE public.guard_billing SET billing_state = 'ENDED', record_version = record_version + 1, updated_at = now()
+  UPDATE public.guard_billing SET updated_at = now()
     WHERE coverage_id = included.id AND entitlement_source = 'INCLUDED';
   INSERT INTO public.guard_coverages(
     customer_id, business_id, location_id, monitoring_request_id, onboarding_location_id, service_order_id,
@@ -1833,7 +1883,7 @@ BEGIN
     INSERT INTO public.guard_subscription_invoices(
       subscription_id, coverage_id, stripe_invoice_id, amount_paid_minor, currency, kind, status
     ) VALUES (
-      sub.id, sub.coverage_id, coalesce(p_object_id, 'in_unknown_' || p_event_id), 0, 'GBP', 'RENEWAL',
+      sub.id, sub.coverage_id, coalesce(NULLIF(p_object_id,''), 'inunk' || regexp_replace(p_event_id, '[^A-Za-z0-9]', '', 'g')), 0, 'GBP', 'RENEWAL',
       CASE p_type WHEN 'invoice.payment_action_required' THEN 'ACTION_REQUIRED' WHEN 'invoice.finalization_failed' THEN 'FINALIZATION_FAILED' ELSE 'FAILED' END
     ) ON CONFLICT (stripe_invoice_id) DO NOTHING;
     UPDATE public.guard_subscriptions SET
@@ -2046,7 +2096,7 @@ BEGIN
     IF cov.state = 'ENDING' THEN
       cov := admin_private.guard_transition_coverage_v1(cov.id, 'ENDED', 'SYSTEM', NULL, 'INCLUDED_ENDED', 'Included period expired without paid continuation');
     END IF;
-    UPDATE public.guard_billing SET billing_state = 'ENDED', record_version = record_version + 1, updated_at = now()
+    UPDATE public.guard_billing SET updated_at = now()
       WHERE coverage_id = cov.id AND entitlement_source = 'INCLUDED';
   END LOOP;
 

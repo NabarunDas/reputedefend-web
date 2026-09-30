@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -45,8 +45,7 @@ function useCommand() {
 
 export function CreatePriceForm() {
   const { busy, message, run, setMessage } = useCommand()
-  const [minFrom, setMinFrom] = useState("")
-  useEffect(() => { setMinFrom(futureLocalMin(5)) }, [])
+  const minFrom = futureLocalMin(5)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -75,7 +74,7 @@ export function CreatePriceForm() {
     </label>
     <label>Display name<input name="displayName" required maxLength={120} /></label>
     <label>Amount (pence)<input name="amountMinor" type="number" min={0} step={1} required /></label>
-    <label>Effective from<input name="effectiveFrom" type="datetime-local" required min={minFrom || undefined} /></label>
+    <label>Effective from<input name="effectiveFrom" type="datetime-local" required min={minFrom} suppressHydrationWarning /></label>
     <p className="muted">Must be in the future. Approval keeps this timestamp and does not rewrite it.</p>
     <label>Tax behaviour
       <select name="taxBehaviour" defaultValue="UNCONFIRMED">

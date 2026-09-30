@@ -20,6 +20,8 @@ export type GuardCheckObligation = {
   localEnd?: string | null
   windowStartAt?: string | null
   windowEndAt?: string | null
+  windowOpen?: boolean
+  upcoming?: boolean
   claimedBy?: string | null
   claimedAt?: string | null
   claimExpiresAt?: string | null
@@ -81,10 +83,24 @@ export type GuardCheckList = {
   eveningLocalStart?: string | null
   eveningLocalEnd?: string | null
   claimedByMe?: string | null
+  now?: string | null
+  queue?: string | null
+  limit?: number
+  hasMore?: boolean
+  nextCursor?: string | null
   obligations: GuardCheckObligation[]
 }
 
-export type GuardCheckDetail = GuardCheckList & {
+export type GuardCheckQueues = Omit<GuardCheckList, "obligations" | "queue" | "nextCursor"> & {
+  morning: GuardCheckObligation[]
+  evening: GuardCheckObligation[]
+  claimed: GuardCheckObligation[]
+  retry: GuardCheckObligation[]
+  missed: GuardCheckObligation[]
+  completed: GuardCheckObligation[]
+}
+
+export type GuardCheckDetail = Omit<GuardCheckList, "obligations"> & {
   obligation?: GuardCheckObligation
   attempts?: GuardCheckAttempt[]
   observation?: GuardCheckObservation | null
@@ -118,13 +134,24 @@ export function localWindowLabel(start?: string | null, end?: string | null, con
   return `${String(start).slice(0, 5)}–${String(end).slice(0, 5)} Europe/London`
 }
 
-export function queueFor(obligation: GuardCheckObligation, actor?: string | null): string[] {
+export function claimIsActive(obligation: GuardCheckObligation, now?: string | null): boolean {
+  if (obligation.state !== "CLAIMED" || !obligation.claimedBy || !obligation.claimExpiresAt) return false
+  if (!now) return true
+  return new Date(obligation.claimExpiresAt).getTime() > new Date(now).getTime()
+}
+
+export function queueFor(obligation: GuardCheckObligation, actor?: string | null, now?: string | null): string[] {
   const queues: string[] = []
-  if (obligation.windowCode === "MORNING") queues.push("morning")
-  if (obligation.windowCode === "EVENING") queues.push("evening")
-  if (obligation.state === "CLAIMED" && obligation.claimedBy && obligation.claimedBy === actor) queues.push("claimed")
-  if (obligation.retryCount > 0 && obligation.state !== "COMPLETED" && obligation.state !== "CANCELLED") queues.push("retry")
-  if (obligation.missedAt) queues.push("missed")
+  if (obligation.windowCode === "MORNING" && obligation.state !== "COMPLETED" && obligation.state !== "CANCELLED") queues.push("morning")
+  if (obligation.windowCode === "EVENING" && obligation.state !== "COMPLETED" && obligation.state !== "CANCELLED") queues.push("evening")
+  if (claimIsActive(obligation, now) && obligation.claimedBy === actor) queues.push("claimed")
+  if (obligation.retryCount > 0 && obligation.state === "PENDING") queues.push("retry")
+  if (obligation.missedAt && obligation.state !== "COMPLETED" && obligation.state !== "CANCELLED") queues.push("missed")
   if (obligation.state === "COMPLETED") queues.push("completed")
   return queues
+}
+
+export function obligationQueueLabel(obligation: GuardCheckObligation): string {
+  if (obligation.upcoming || obligation.windowOpen === false) return "Upcoming"
+  return obligationStateLabel(obligation.state)
 }

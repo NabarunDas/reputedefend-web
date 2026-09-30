@@ -3,8 +3,7 @@ import { loadGuardChecks } from "@/lib/guard/checks-queries"
 import {
   localWindowLabel,
   londonDateTime,
-  obligationStateLabel,
-  queueFor,
+  obligationQueueLabel,
   windowLabel,
   type GuardCheckObligation,
 } from "@/lib/guard/checks-model"
@@ -35,8 +34,10 @@ function Queue({
           <td>{row.coverageBasis === "INCLUDED" ? "Included" : "Direct"}</td>
           <td>{windowLabel(row.windowCode)}</td>
           <td>{row.serviceDate}</td>
-          <td><Badge>{obligationStateLabel(row.state)}</Badge></td>
-          <td>{row.claimedBy ? (row.claimedBy === actor ? "Claimed by me" : "Claimed") : "Unclaimed"}</td>
+          <td><Badge>{obligationQueueLabel(row)}</Badge></td>
+          <td>{row.upcoming || row.windowOpen === false
+            ? "Upcoming"
+            : row.claimedBy ? (row.claimedBy === actor ? "Claimed by me" : "Claimed") : "Unclaimed"}</td>
           <td>{row.attemptCount}{row.retryCount ? ` · ${row.retryCount} retries` : ""}</td>
           <td>{row.baselineAvailable ? "Verified baseline" : "No verified baseline"}</td>
           <td>{row.previousObservation ? `${row.previousObservation.classification} · ${londonDateTime(row.previousObservation.observedAt)}` : "None"}</td>
@@ -54,12 +55,6 @@ function Queue({
 export default async function GuardChecksPage() {
   const checks = await loadGuardChecks()
   const actor = checks.claimedByMe
-  const morning = checks.obligations.filter(row => queueFor(row, actor).includes("morning") && row.serviceDate === checks.serviceDate)
-  const evening = checks.obligations.filter(row => queueFor(row, actor).includes("evening") && row.serviceDate === checks.serviceDate)
-  const claimed = checks.obligations.filter(row => queueFor(row, actor).includes("claimed"))
-  const retry = checks.obligations.filter(row => queueFor(row, actor).includes("retry"))
-  const missed = checks.obligations.filter(row => queueFor(row, actor).includes("missed"))
-  const completed = checks.obligations.filter(row => queueFor(row, actor).includes("completed") && row.serviceDate === checks.serviceDate)
   return <section className="page">
     <PageHeader
       title="Guard checks"
@@ -69,11 +64,11 @@ export default async function GuardChecksPage() {
       ? `Approved windows: morning ${localWindowLabel(checks.morningLocalStart, checks.morningLocalEnd)} · evening ${localWindowLabel(checks.eveningLocalStart, checks.eveningLocalEnd)}.`
       : "Schedule not configured."}</p>
     <p><Link href="/guard">Back to Guard onboarding</Link></p>
-    <Queue title="Morning" rows={morning} actor={actor} />
-    <Queue title="Evening" rows={evening} actor={actor} />
-    <Queue title="Claimed by me" rows={claimed} actor={actor} />
-    <Queue title="Retry required" rows={retry} actor={actor} />
-    <Queue title="Missed" rows={missed} actor={actor} />
-    <Queue title="Completed today" rows={completed} actor={actor} />
+    <Queue title="Morning" rows={checks.morning} actor={actor} />
+    <Queue title="Evening" rows={checks.evening} actor={actor} />
+    <Queue title="Claimed by me" rows={checks.claimed} actor={actor} />
+    <Queue title="Retry required" rows={checks.retry} actor={actor} />
+    <Queue title="Missed" rows={checks.missed} actor={actor} />
+    <Queue title="Completed today" rows={checks.completed} actor={actor} />
   </section>
 }

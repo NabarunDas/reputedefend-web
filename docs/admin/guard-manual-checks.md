@@ -23,7 +23,7 @@ Two independent gates remain unset:
 1. server-only `GUARD_CHECKS_ENABLED` (default disabled, not `NEXT_PUBLIC_*`, not configured in Vercel)
 2. an APPROVED schedule version
 
-When the feature flag is unset, false or malformed: worker/provider generation does not mutate and claim/complete fail closed. Read-only Admin views may render.
+When the feature flag is unset, false or malformed: the worker does not enqueue `MAINTAIN_GUARD_CHECKS`, no check outbox/job rows are created, and claim/complete fail closed. Read-only Admin views may render.
 
 Even if the flag is later set true, generation still requires an approved schedule.
 
@@ -53,9 +53,9 @@ The applicable rota assignment is snapshotted. Later rota changes do not rewrite
 
 ## Claim, attempts, missed and late
 
-Claim is atomic. Two concurrent claims produce one owner. A two-hour internal lease can expire; the abandoned attempt remains historical and the same obligation can be reclaimed. Retry uses the same obligation and a new attempt. Failed attempts are not observations.
+Claim is atomic. Two concurrent claims produce one owner. A window cannot be claimed or completed before `window_start_utc`. A two-hour internal lease can expire; complete/fail/release then return `claim_expired` and the actor must reclaim. The abandoned attempt remains historical. Retry uses the same obligation and a new attempt. Failed attempts are not observations.
 
-Missed is an immutable fact (`missed_at`), not a terminal state. A missed check can later complete late. Late completion stays late. `missed_at` is never cleared. On-time completion keeps `late=false` and `seconds_late=0`.
+Missed is an immutable fact (`missed_at`), not a terminal state. On-time runs through exact `window_end_utc`. Missed and late both use `window_end_utc < clock`. A missed check can later complete late. Late completion stays late. `missed_at` is never cleared. A completed obligation with `missed_at` must be `late=true` and `seconds_late > 0`. Coverage that ceased to be ACTIVE before a window opens is cancelled with `coverage_not_active_before_window` and is not marked missed.
 
 ## Observations and baseline
 

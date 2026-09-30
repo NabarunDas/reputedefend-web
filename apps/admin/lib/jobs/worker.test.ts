@@ -35,6 +35,31 @@ describe("job worker handlers", () => {
     expect(handlerFor("CHARGE_STRIPE")).toBeNull()
   })
 
+  it("does not enqueue Guard checks when GUARD_CHECKS_ENABLED is unset, false, or malformed", async () => {
+    const calls: string[] = []
+    const rpc = {
+      async rpc<T>(name: string): Promise<T> {
+        calls.push(name)
+        if (name === "job_heartbeat_v1") return { status: "success" } as T
+        if (name === "job_promote_outbox_v1") return { status: "success", promoted: 0 } as T
+        if (name === "job_claim_batch_v1") return { status: "success", jobs: [], deadLettered: 0 } as T
+        return {} as T
+      },
+    }
+    const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32) }
+    await runJobWorker({ rpc, env })
+    expect(calls).not.toContain("guard_enqueue_daily_checks_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_CHECKS_ENABLED: "false" } })
+    expect(calls).not.toContain("guard_enqueue_daily_checks_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_CHECKS_ENABLED: "yes" } })
+    expect(calls).not.toContain("guard_enqueue_daily_checks_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_CHECKS_ENABLED: "true" } })
+    expect(calls).toContain("guard_enqueue_daily_checks_v1")
+  })
+
   it("does not register production adapters outside production", () => {
     const preview = registeredJobHandlers({ JOB_PROVIDER_MODE: "production", VERCEL_ENV: "preview" })
     expect(preview.SYSTEM_HEALTH_PROBE).toEqual(expect.objectContaining({ jobType: "SYSTEM_HEALTH_PROBE" }))

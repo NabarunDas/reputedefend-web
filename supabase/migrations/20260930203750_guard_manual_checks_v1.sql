@@ -117,6 +117,11 @@ CREATE TABLE public.guard_check_obligations (
   CONSTRAINT guard_check_obligation_claim CHECK (
     (state = 'CLAIMED' AND claimed_by IS NOT NULL AND claimed_at IS NOT NULL AND claim_expires_at IS NOT NULL)
     OR (state <> 'CLAIMED' AND claimed_by IS NULL AND claimed_at IS NULL AND claim_expires_at IS NULL)
+  ),
+  CONSTRAINT guard_check_obligation_completed_missed CHECK (
+    state <> 'COMPLETED'
+    OR missed_at IS NULL
+    OR (late IS TRUE AND seconds_late > 0)
   )
 );
 
@@ -191,14 +196,29 @@ CREATE TABLE public.guard_check_observations (
       AND baseline_id IS NOT NULL
       AND comparison_status = 'COMPARED'
       AND char_length(btrim(profile_url)) BETWEEN 8 AND 500
-      AND (rating_available IS FALSE OR rating IS NOT NULL)
+      AND (
+        (rating_available IS TRUE AND rating IS NOT NULL)
+        OR (rating_available IS FALSE AND rating IS NULL)
+      )
     )
   ),
   CONSTRAINT guard_check_observation_unavailable CHECK (
     classification <> 'PROFILE_UNAVAILABLE' OR profile_availability = 'UNAVAILABLE'
   ),
   CONSTRAINT guard_check_observation_rating CHECK (
-    rating_available IS FALSE OR rating IS NOT NULL
+    (rating_available IS TRUE AND rating IS NOT NULL)
+    OR (rating_available IS FALSE AND rating IS NULL)
+  ),
+  CONSTRAINT guard_check_observation_change_detected CHECK (
+    classification <> 'CHANGE_DETECTED'
+    OR (
+      baseline_id IS NOT NULL
+      AND comparison_status = 'COMPARED'
+      AND change_codes && ARRAY[
+        'BUSINESS_NAME_CHANGED','REVIEW_COUNT_INCREASED','REVIEW_COUNT_DECREASED',
+        'RATING_CHANGED','LATEST_REVIEW_CHANGED','PROFILE_UNAVAILABLE'
+      ]::text[]
+    )
   )
 );
 
@@ -208,6 +228,16 @@ CREATE TABLE admin_private.guard_check_receipts (
   fingerprint text NOT NULL,
   result jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE admin_private.guard_check_generation_blockers (
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
+  coverage_id uuid NOT NULL REFERENCES public.guard_coverages(id) ON DELETE RESTRICT,
+  service_date date NOT NULL,
+  reason text NOT NULL,
+  details jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (coverage_id, service_date, reason)
 );
 
 CREATE UNIQUE INDEX guard_check_attempts_open_uidx
@@ -234,22 +264,54 @@ CREATE TRIGGER guard_check_schedule_overlap
   BEFORE INSERT OR UPDATE ON public.guard_check_schedule_versions
   FOR EACH ROW EXECUTE FUNCTION admin_private.guard_check_schedule_overlap_v1();
 
+CREATE FUNCTION admin_private.guard_check_schedule_facts_changed_v1(
+  p_old public.guard_check_schedule_versions, p_new public.guard_check_schedule_versions
+) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT p_new.timezone IS DISTINCT FROM p_old.timezone
+    OR p_new.morning_start IS DISTINCT FROM p_old.morning_start
+    OR p_new.morning_end IS DISTINCT FROM p_old.morning_end
+    OR p_new.evening_start IS DISTINCT FROM p_old.evening_start
+    OR p_new.evening_end IS DISTINCT FROM p_old.evening_end
+    OR p_new.checks_per_day IS DISTINCT FROM p_old.checks_per_day
+    OR p_new.includes_weekends IS DISTINCT FROM p_old.includes_weekends
+    OR p_new.includes_bank_holidays IS DISTINCT FROM p_old.includes_bank_holidays
+    OR p_new.effective_from IS DISTINCT FROM p_old.effective_from
+    OR p_new.approved_at IS DISTINCT FROM p_old.approved_at
+    OR p_new.approved_by IS DISTINCT FROM p_old.approved_by;
+$$;
+
 CREATE FUNCTION admin_private.guard_check_schedule_protect_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
-  IF OLD.status = 'APPROVED' AND NEW.status = 'APPROVED' THEN
-    IF NEW.timezone IS DISTINCT FROM OLD.timezone
-      OR NEW.morning_start IS DISTINCT FROM OLD.morning_start
-      OR NEW.morning_end IS DISTINCT FROM OLD.morning_end
-      OR NEW.evening_start IS DISTINCT FROM OLD.evening_start
-      OR NEW.evening_end IS DISTINCT FROM OLD.evening_end
-      OR NEW.checks_per_day IS DISTINCT FROM OLD.checks_per_day
-      OR NEW.includes_weekends IS DISTINCT FROM OLD.includes_weekends
-      OR NEW.includes_bank_holidays IS DISTINCT FROM OLD.includes_bank_holidays
-      OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
-    THEN RAISE EXCEPTION 'approved schedule is immutable'; END IF;
-  END IF;
   IF OLD.status = 'RETIRED' THEN RAISE EXCEPTION 'retired schedule is immutable'; END IF;
+  IF OLD.status = 'APPROVED' AND NEW.status = 'DRAFT' THEN
+    RAISE EXCEPTION 'approved schedule cannot return to draft';
+  END IF;
+  IF OLD.status = 'DRAFT' AND NEW.status NOT IN ('DRAFT', 'APPROVED', 'RETIRED') THEN
+    RAISE EXCEPTION 'invalid schedule transition';
+  END IF;
+  IF OLD.status = 'APPROVED' AND NEW.status NOT IN ('APPROVED', 'RETIRED') THEN
+    RAISE EXCEPTION 'invalid schedule transition';
+  END IF;
+  IF OLD.status = 'APPROVED' THEN
+    IF admin_private.guard_check_schedule_facts_changed_v1(OLD, NEW) THEN
+      RAISE EXCEPTION 'approved schedule is immutable';
+    END IF;
+    IF NEW.status = 'APPROVED' AND NEW.effective_to IS DISTINCT FROM OLD.effective_to THEN
+      RAISE EXCEPTION 'approved schedule is immutable';
+    END IF;
+    IF NEW.status = 'RETIRED' THEN
+      IF NEW.effective_to IS NULL OR NEW.effective_to <= NEW.effective_from THEN
+        RAISE EXCEPTION 'retired approved schedule requires effective_to after effective_from';
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM public.guard_check_obligations o
+        WHERE o.schedule_version_id = NEW.id AND o.service_date >= NEW.effective_to
+      ) THEN
+        RAISE EXCEPTION 'cannot shorten approved schedule before existing obligations';
+      END IF;
+    END IF;
+  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER guard_check_schedule_protect
@@ -294,7 +356,11 @@ LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'check attempts are immutable'; END IF;
   IF OLD.finished_at IS NOT NULL THEN RAISE EXCEPTION 'closed check attempts are immutable'; END IF;
-  IF NEW.obligation_id IS DISTINCT FROM OLD.obligation_id OR NEW.attempt_number IS DISTINCT FROM OLD.attempt_number THEN
+  IF NEW.obligation_id IS DISTINCT FROM OLD.obligation_id
+    OR NEW.attempt_number IS DISTINCT FROM OLD.attempt_number
+    OR NEW.actor_id IS DISTINCT FROM OLD.actor_id
+    OR NEW.started_at IS DISTINCT FROM OLD.started_at
+  THEN
     RAISE EXCEPTION 'attempt identity is immutable';
   END IF;
   RETURN NEW;
@@ -311,6 +377,100 @@ END; $$;
 CREATE TRIGGER guard_check_observations_immutable
   BEFORE UPDATE OR DELETE ON public.guard_check_observations
   FOR EACH ROW EXECUTE FUNCTION admin_private.guard_check_observations_immutable_v1();
+
+CREATE FUNCTION admin_private.guard_check_obligation_scope_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  cov public.guard_coverages;
+  rota public.guard_rota_assignments;
+  sched public.guard_check_schedule_versions;
+  expected_start time;
+  expected_end time;
+  expected_start_utc timestamptz;
+  expected_end_utc timestamptz;
+BEGIN
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = NEW.coverage_id;
+  IF cov.id IS NULL THEN RAISE EXCEPTION 'obligation coverage does not exist'; END IF;
+  IF NEW.customer_id IS DISTINCT FROM cov.customer_id
+    OR NEW.business_id IS DISTINCT FROM cov.business_id
+    OR NEW.location_id IS DISTINCT FROM cov.location_id
+    OR NEW.coverage_basis IS DISTINCT FROM cov.coverage_basis
+  THEN RAISE EXCEPTION 'obligation coverage scope mismatch'; END IF;
+  SELECT * INTO rota FROM public.guard_rota_assignments WHERE id = NEW.rota_assignment_id;
+  IF rota.id IS NULL OR rota.coverage_id IS DISTINCT FROM NEW.coverage_id THEN
+    RAISE EXCEPTION 'obligation rota does not belong to coverage';
+  END IF;
+  SELECT * INTO sched FROM public.guard_check_schedule_versions WHERE id = NEW.schedule_version_id;
+  IF sched.id IS NULL THEN RAISE EXCEPTION 'obligation schedule does not exist'; END IF;
+  IF NEW.timezone IS DISTINCT FROM sched.timezone THEN RAISE EXCEPTION 'obligation timezone mismatch'; END IF;
+  IF NEW.window_code = 'MORNING' THEN
+    expected_start := sched.morning_start;
+    expected_end := sched.morning_end;
+  ELSE
+    expected_start := sched.evening_start;
+    expected_end := sched.evening_end;
+  END IF;
+  IF NEW.local_start IS DISTINCT FROM expected_start OR NEW.local_end IS DISTINCT FROM expected_end THEN
+    RAISE EXCEPTION 'obligation schedule window mismatch';
+  END IF;
+  expected_start_utc := admin_private.guard_local_window_utc_v1(NEW.service_date, NEW.local_start, NEW.timezone);
+  expected_end_utc := admin_private.guard_local_window_utc_v1(NEW.service_date, NEW.local_end, NEW.timezone);
+  IF NEW.window_start_utc IS DISTINCT FROM expected_start_utc
+    OR NEW.window_end_utc IS DISTINCT FROM expected_end_utc
+  THEN RAISE EXCEPTION 'obligation utc window mismatch'; END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER guard_check_obligation_scope
+  BEFORE INSERT OR UPDATE ON public.guard_check_obligations
+  FOR EACH ROW EXECUTE FUNCTION admin_private.guard_check_obligation_scope_v1();
+
+CREATE FUNCTION admin_private.guard_check_observation_scope_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  obl public.guard_check_obligations;
+  attempt public.guard_check_attempts;
+  baseline public.guard_baselines;
+BEGIN
+  SELECT * INTO attempt FROM public.guard_check_attempts WHERE id = NEW.attempt_id;
+  IF attempt.id IS NULL THEN RAISE EXCEPTION 'observation attempt does not exist'; END IF;
+  IF attempt.obligation_id IS DISTINCT FROM NEW.obligation_id THEN
+    RAISE EXCEPTION 'observation attempt obligation mismatch';
+  END IF;
+  SELECT * INTO obl FROM public.guard_check_obligations WHERE id = NEW.obligation_id;
+  IF obl.id IS NULL THEN RAISE EXCEPTION 'observation obligation does not exist'; END IF;
+  IF NEW.coverage_id IS DISTINCT FROM obl.coverage_id THEN RAISE EXCEPTION 'observation coverage mismatch'; END IF;
+  IF NEW.location_id IS DISTINCT FROM obl.location_id THEN RAISE EXCEPTION 'observation location mismatch'; END IF;
+  IF NEW.baseline_id IS NOT NULL THEN
+    SELECT * INTO baseline FROM public.guard_baselines WHERE id = NEW.baseline_id;
+    IF baseline.id IS NULL
+      OR baseline.coverage_id IS DISTINCT FROM NEW.coverage_id
+      OR baseline.location_id IS DISTINCT FROM NEW.location_id
+      OR baseline.status IS DISTINCT FROM 'VERIFIED'
+      OR baseline.profile_availability IS DISTINCT FROM 'AVAILABLE'
+    THEN RAISE EXCEPTION 'observation baseline is not the verified available baseline'; END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER guard_check_observation_scope
+  BEFORE INSERT ON public.guard_check_observations
+  FOR EACH ROW EXECUTE FUNCTION admin_private.guard_check_observation_scope_v1();
+
+CREATE FUNCTION admin_private.guard_coverage_inactive_at_v1(p_cov public.guard_coverages)
+RETURNS timestamptz LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN p_cov.state = 'PAUSED' THEN p_cov.paused_at
+    WHEN p_cov.state = 'ENDING' THEN coalesce(p_cov.ending_at, p_cov.paused_at)
+    WHEN p_cov.state = 'ENDED' THEN coalesce(p_cov.ended_at, p_cov.ending_at, p_cov.paused_at)
+    ELSE NULL
+  END;
+$$;
+
+CREATE FUNCTION admin_private.guard_check_actual_change_codes_v1(p_codes text[])
+RETURNS text[] LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT coalesce(array_agg(code), ARRAY[]::text[])
+  FROM unnest(coalesce(p_codes, ARRAY[]::text[])) AS code
+  WHERE code NOT IN ('BASELINE_MISSING', 'OBSERVATION_INCOMPLETE');
+$$;
 
 CREATE FUNCTION admin_private.guard_check_receipt_v1(p_actor uuid, p_request uuid, p_fingerprint text) RETURNS jsonb
 LANGUAGE sql SET search_path='' AS $$
@@ -376,6 +536,32 @@ BEGIN
   RETURN attempt;
 END; $$;
 
+CREATE FUNCTION admin_private.guard_check_insert_window_v1(
+  p_cov public.guard_coverages,
+  p_rota public.guard_rota_assignments,
+  p_sched public.guard_check_schedule_versions,
+  p_service date,
+  p_window text,
+  p_local_start time,
+  p_local_end time,
+  p_start_utc timestamptz,
+  p_end_utc timestamptz
+) RETURNS integer LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE inserted integer := 0;
+BEGIN
+  INSERT INTO public.guard_check_obligations(
+    coverage_id, customer_id, business_id, location_id, service_date, window_code,
+    schedule_version_id, rota_assignment_id, coverage_basis, timezone,
+    local_start, local_end, window_start_utc, window_end_utc
+  ) VALUES (
+    p_cov.id, p_cov.customer_id, p_cov.business_id, p_cov.location_id, p_service, p_window,
+    p_sched.id, p_rota.id, p_cov.coverage_basis, p_sched.timezone,
+    p_local_start, p_local_end, p_start_utc, p_end_utc
+  ) ON CONFLICT (coverage_id, service_date, window_code) DO NOTHING;
+  GET DIAGNOSTICS inserted = ROW_COUNT;
+  RETURN inserted;
+END; $$;
+
 CREATE FUNCTION public.guard_maintain_checks_v1(p_now timestamptz DEFAULT NULL, p_service_date date DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
@@ -386,15 +572,17 @@ DECLARE
   expired integer := 0;
   missed integer := 0;
   cancelled integer := 0;
+  blocked integer := 0;
   cov public.guard_coverages;
   rota public.guard_rota_assignments;
   morning_start timestamptz;
   morning_end timestamptz;
   evening_start timestamptz;
   evening_end timestamptz;
-  inserted integer;
   abandoned public.guard_check_attempts;
   obl public.guard_check_obligations;
+  inactive_at timestamptz;
+  prev_state text;
 BEGIN
   clock := coalesce(p_now, now());
   service := coalesce(p_service_date, (timezone('Europe/London', clock))::date);
@@ -412,20 +600,49 @@ BEGIN
     SELECT * INTO rota FROM public.guard_rota_assignments
     WHERE coverage_id = cov.id AND status = 'ACTIVE';
     IF rota.id IS NULL THEN CONTINUE; END IF;
-    INSERT INTO public.guard_check_obligations(
-      coverage_id, customer_id, business_id, location_id, service_date, window_code,
-      schedule_version_id, rota_assignment_id, coverage_basis, timezone,
-      local_start, local_end, window_start_utc, window_end_utc
-    ) VALUES
-      (cov.id, cov.customer_id, cov.business_id, cov.location_id, service, 'MORNING',
-       sched.id, rota.id, cov.coverage_basis, sched.timezone,
-       sched.morning_start, sched.morning_end, morning_start, morning_end),
-      (cov.id, cov.customer_id, cov.business_id, cov.location_id, service, 'EVENING',
-       sched.id, rota.id, cov.coverage_basis, sched.timezone,
-       sched.evening_start, sched.evening_end, evening_start, evening_end)
-    ON CONFLICT (coverage_id, service_date, window_code) DO NOTHING;
-    GET DIAGNOSTICS inserted = ROW_COUNT;
-    generated := generated + inserted;
+    IF cov.coverage_basis = 'INCLUDED' AND cov.included_end_at IS NULL THEN
+      INSERT INTO admin_private.guard_check_generation_blockers(coverage_id, service_date, reason, details)
+      VALUES (cov.id, service, 'included_end_missing', jsonb_build_object('coverageId', cov.id, 'serviceDate', service))
+      ON CONFLICT (coverage_id, service_date, reason) DO UPDATE
+        SET details = excluded.details, created_at = clock;
+      blocked := blocked + 1;
+      CONTINUE;
+    END IF;
+    IF cov.coverage_basis <> 'INCLUDED' OR morning_start < cov.included_end_at THEN
+      generated := generated + admin_private.guard_check_insert_window_v1(
+        cov, rota, sched, service, 'MORNING', sched.morning_start, sched.morning_end, morning_start, morning_end
+      );
+    END IF;
+    IF cov.coverage_basis <> 'INCLUDED' OR evening_start < cov.included_end_at THEN
+      generated := generated + admin_private.guard_check_insert_window_v1(
+        cov, rota, sched, service, 'EVENING', sched.evening_start, sched.evening_end, evening_start, evening_end
+      );
+    END IF;
+  END LOOP;
+
+  FOR obl IN
+    SELECT o.* FROM public.guard_check_obligations o
+    JOIN public.guard_coverages g ON g.id = o.coverage_id
+    WHERE o.state IN ('PENDING', 'CLAIMED')
+      AND g.state <> 'ACTIVE'
+      AND admin_private.guard_coverage_inactive_at_v1(g) IS NOT NULL
+      AND admin_private.guard_coverage_inactive_at_v1(g) < o.window_start_utc
+  LOOP
+    prev_state := obl.state;
+    IF obl.state = 'CLAIMED' THEN
+      PERFORM admin_private.guard_close_open_attempt_v1(obl.id, 'ABANDONED', 'coverage_not_active_before_window', false, clock);
+    END IF;
+    UPDATE public.guard_check_obligations
+      SET state = 'CANCELLED',
+          cancelled_at = clock,
+          cancel_reason = 'coverage_not_active_before_window',
+          claimed_by = NULL,
+          claimed_at = NULL,
+          claim_expires_at = NULL
+      WHERE id = obl.id AND state IN ('PENDING', 'CLAIMED');
+    PERFORM admin_private.guard_check_append_event_v1(obl.id, NULL, 'CANCELLED', prev_state, 'CANCELLED',
+      jsonb_build_object('reason','coverage_not_active_before_window'));
+    cancelled := cancelled + 1;
   END LOOP;
 
   FOR obl IN
@@ -446,7 +663,7 @@ BEGIN
     WHERE missed_at IS NULL
       AND completed_at IS NULL
       AND state <> 'CANCELLED'
-      AND window_end_utc <= clock;
+      AND window_end_utc < clock;
   GET DIAGNOSTICS missed = ROW_COUNT;
 
   FOR obl IN
@@ -465,7 +682,7 @@ BEGIN
   RETURN jsonb_build_object(
     'status','success','serviceDate', service, 'generated', generated,
     'expiredClaims', expired, 'markedMissed', missed, 'cancelled', cancelled,
-    'scheduleVersionId', sched.id
+    'includedEndMissing', blocked, 'scheduleVersionId', sched.id
   );
 END; $$;
 
@@ -496,6 +713,7 @@ BEGIN
   SELECT * INTO obl FROM public.guard_check_obligations WHERE id = (p_payload->>'obligationId')::uuid FOR UPDATE;
   IF obl.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF p_version IS DISTINCT FROM obl.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  IF p_now < obl.window_start_utc THEN RETURN jsonb_build_object('status','denied','reason','window_not_open'); END IF;
   IF obl.state IN ('COMPLETED','CANCELLED') THEN RETURN jsonb_build_object('status','denied','reason','not_claimable'); END IF;
   SELECT * INTO cov FROM public.guard_coverages WHERE id = obl.coverage_id;
   IF cov.state <> 'ACTIVE' THEN RETURN jsonb_build_object('status','denied','reason','coverage_not_active'); END IF;
@@ -549,6 +767,9 @@ BEGIN
   IF obl.state <> 'CLAIMED' OR obl.claimed_by IS DISTINCT FROM p_actor THEN
     RETURN jsonb_build_object('status','denied','reason','not_owner');
   END IF;
+  IF obl.claim_expires_at IS NULL OR obl.claim_expires_at <= p_now THEN
+    RETURN jsonb_build_object('status','denied','reason','claim_expired');
+  END IF;
   attempt := admin_private.guard_close_open_attempt_v1(obl.id, 'ABANDONED', coalesce(p_payload->>'reason','released'), true, p_now);
   UPDATE public.guard_check_obligations
     SET state = 'PENDING', claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL
@@ -575,6 +796,9 @@ BEGIN
   IF p_version IS DISTINCT FROM obl.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
   IF obl.state <> 'CLAIMED' OR obl.claimed_by IS DISTINCT FROM p_actor THEN
     RETURN jsonb_build_object('status','denied','reason','not_owner');
+  END IF;
+  IF obl.claim_expires_at IS NULL OR obl.claim_expires_at <= p_now THEN
+    RETURN jsonb_build_object('status','denied','reason','claim_expired');
   END IF;
   attempt := admin_private.guard_close_open_attempt_v1(obl.id, 'FAILED', reason, true, p_now);
   UPDATE public.guard_check_obligations
@@ -695,6 +919,10 @@ BEGIN
   IF obl.state <> 'CLAIMED' OR obl.claimed_by IS DISTINCT FROM p_actor THEN
     RETURN jsonb_build_object('status','denied','reason','not_owner');
   END IF;
+  IF p_now < obl.window_start_utc THEN RETURN jsonb_build_object('status','denied','reason','window_not_open'); END IF;
+  IF obl.claim_expires_at IS NULL OR obl.claim_expires_at <= p_now THEN
+    RETURN jsonb_build_object('status','denied','reason','claim_expired');
+  END IF;
   SELECT * INTO cov FROM public.guard_coverages WHERE id = obl.coverage_id;
   IF cov.state <> 'ACTIVE' THEN RETURN jsonb_build_object('status','denied','reason','coverage_not_active'); END IF;
   IF EXISTS (SELECT 1 FROM public.guard_check_observations WHERE obligation_id = obl.id) THEN
@@ -721,19 +949,14 @@ BEGIN
     OR availability NOT IN ('AVAILABLE','UNAVAILABLE','UNKNOWN')
     OR location_ok IS NULL
     OR char_length(notes) > 2000
+    OR (rating_available IS TRUE AND rating IS NULL)
+    OR (rating_available IS FALSE AND rating IS NOT NULL)
   THEN RETURN jsonb_build_object('status','invalid'); END IF;
 
-  IF requested_baseline IS NOT NULL THEN
-    SELECT * INTO baseline FROM public.guard_baselines WHERE id = requested_baseline;
-    IF baseline.id IS NULL OR baseline.coverage_id <> obl.coverage_id OR baseline.location_id <> obl.location_id THEN
-      RETURN jsonb_build_object('status','denied','reason','baseline_location_mismatch');
-    END IF;
-  ELSE
-    SELECT * INTO baseline FROM public.guard_baselines
-    WHERE coverage_id = obl.coverage_id AND location_id = obl.location_id AND status = 'VERIFIED';
-  END IF;
-  IF baseline.id IS NOT NULL AND baseline.status <> 'VERIFIED' THEN
-    baseline := NULL;
+  SELECT * INTO baseline FROM public.guard_baselines
+  WHERE coverage_id = obl.coverage_id AND location_id = obl.location_id AND status = 'VERIFIED';
+  IF requested_baseline IS NOT NULL AND (baseline.id IS NULL OR baseline.id IS DISTINCT FROM requested_baseline) THEN
+    RETURN jsonb_build_object('status','denied','reason','baseline_location_mismatch');
   END IF;
 
   codes := admin_private.guard_check_compare_v1(baseline, availability, name, reviews, rating, rating_available, latest_ref, latest_at);
@@ -749,8 +972,10 @@ BEGIN
     IF availability <> 'UNAVAILABLE' THEN RETURN jsonb_build_object('status','invalid'); END IF;
     comparison := CASE WHEN baseline.id IS NULL THEN 'INCOMPLETE' ELSE 'COMPARED' END;
   ELSIF classification = 'CHANGE_DETECTED' THEN
-    IF codes = '{}'::text[] THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    comparison := CASE WHEN baseline.id IS NULL THEN 'INCOMPLETE' ELSE 'COMPARED' END;
+    IF baseline.id IS NULL THEN RETURN jsonb_build_object('status','denied','reason','change_requires_baseline'); END IF;
+    codes := admin_private.guard_check_actual_change_codes_v1(codes);
+    IF codes = '{}'::text[] THEN RETURN jsonb_build_object('status','denied','reason','change_requires_comparison'); END IF;
+    comparison := 'COMPARED';
   ELSE
     IF NOT ('OBSERVATION_INCOMPLETE' = ANY (codes)) THEN codes := array_append(codes, 'OBSERVATION_INCOMPLETE'); END IF;
     comparison := 'INCOMPLETE';
@@ -831,21 +1056,9 @@ BEGIN
   RETURN result;
 END; $$;
 
-CREATE FUNCTION public.admin_guard_check_list_v1(p_token text, p_now timestamptz DEFAULT NULL)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE
-  clock timestamptz;
-  service date;
-  sched public.guard_check_schedule_versions;
-  actor uuid;
-  rows jsonb;
-BEGIN
-  IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
-  actor := (public.admin_session_v1(p_token)->>'userId')::uuid;
-  clock := coalesce(p_now, now());
-  service := (timezone('Europe/London', clock))::date;
-  sched := admin_private.guard_resolve_schedule_v1(service);
-  SELECT coalesce(jsonb_agg(jsonb_build_object(
+CREATE FUNCTION admin_private.guard_check_obligation_json_v1(p_id uuid, p_now timestamptz)
+RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT jsonb_build_object(
     'id', o.id,
     'coverageId', o.coverage_id,
     'locationId', o.location_id,
@@ -861,6 +1074,8 @@ BEGIN
     'localEnd', o.local_end,
     'windowStartAt', o.window_start_utc,
     'windowEndAt', o.window_end_utc,
+    'windowOpen', o.window_start_utc <= p_now,
+    'upcoming', o.window_start_utc > p_now AND o.state NOT IN ('COMPLETED', 'CANCELLED'),
     'claimedBy', o.claimed_by,
     'claimedAt', o.claimed_at,
     'claimExpiresAt', o.claim_expires_at,
@@ -876,7 +1091,7 @@ BEGIN
     'version', o.record_version,
     'baselineAvailable', EXISTS (
       SELECT 1 FROM public.guard_baselines base
-      WHERE base.coverage_id = o.coverage_id AND base.status = 'VERIFIED'
+      WHERE base.coverage_id = o.coverage_id AND base.location_id = o.location_id AND base.status = 'VERIFIED'
     ),
     'previousObservation', (
       SELECT jsonb_build_object(
@@ -889,11 +1104,97 @@ BEGIN
       ORDER BY prev.observed_at DESC
       LIMIT 1
     )
-  ) ORDER BY o.service_date, o.window_code, loc.location_name), '[]'::jsonb) INTO rows
+  )
   FROM public.guard_check_obligations o
   JOIN public.customers c ON c.id = o.customer_id
   JOIN public.businesses b ON b.id = o.business_id
-  JOIN public.locations loc ON loc.id = o.location_id;
+  JOIN public.locations loc ON loc.id = o.location_id
+  WHERE o.id = p_id;
+$$;
+
+CREATE FUNCTION admin_private.guard_check_queue_match_v1(
+  p_queue text, p_window text, p_service date, p_actor uuid, p_now timestamptz, p_obl public.guard_check_obligations
+) RETURNS boolean LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT
+    (p_window IS NULL OR p_obl.window_code = p_window)
+    AND (
+      p_queue IS NULL
+      OR p_queue = 'TODAY' AND p_obl.service_date = p_service
+      OR p_queue = 'MORNING' AND p_obl.service_date = p_service AND p_obl.window_code = 'MORNING'
+        AND p_obl.state NOT IN ('COMPLETED', 'CANCELLED')
+      OR p_queue = 'EVENING' AND p_obl.service_date = p_service AND p_obl.window_code = 'EVENING'
+        AND p_obl.state NOT IN ('COMPLETED', 'CANCELLED')
+      OR p_queue = 'CLAIMED_BY_ME' AND p_obl.state = 'CLAIMED' AND p_obl.claimed_by = p_actor
+        AND p_obl.claim_expires_at IS NOT NULL AND p_obl.claim_expires_at > p_now
+      OR p_queue = 'RETRY_REQUIRED' AND p_obl.state = 'PENDING' AND p_obl.retry_count > 0
+      OR p_queue = 'MISSED' AND p_obl.missed_at IS NOT NULL AND p_obl.state NOT IN ('COMPLETED', 'CANCELLED')
+      OR p_queue = 'COMPLETED_TODAY' AND p_obl.state = 'COMPLETED' AND p_obl.completed_at IS NOT NULL
+        AND (timezone('Europe/London', p_obl.completed_at))::date = p_service
+    );
+$$;
+
+CREATE FUNCTION public.admin_guard_check_list_v1(
+  p_token text,
+  p_now timestamptz DEFAULT NULL,
+  p_service_date date DEFAULT NULL,
+  p_window text DEFAULT NULL,
+  p_queue text DEFAULT NULL,
+  p_limit integer DEFAULT 50,
+  p_after uuid DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+  clock timestamptz;
+  service date;
+  sched public.guard_check_schedule_versions;
+  actor uuid;
+  rows jsonb;
+  v_limit integer;
+  v_queue text;
+  last_id uuid;
+  has_more boolean := false;
+BEGIN
+  IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
+  actor := (public.admin_session_v1(p_token)->>'userId')::uuid;
+  clock := coalesce(p_now, now());
+  service := coalesce(p_service_date, (timezone('Europe/London', clock))::date);
+  IF p_window IS NOT NULL AND p_window NOT IN ('MORNING', 'EVENING') THEN
+    RETURN jsonb_build_object('status','invalid','reason','invalid_window');
+  END IF;
+  v_queue := coalesce(nullif(btrim(coalesce(p_queue, '')), ''), 'TODAY');
+  IF v_queue NOT IN ('TODAY','MORNING','EVENING','CLAIMED_BY_ME','RETRY_REQUIRED','MISSED','COMPLETED_TODAY') THEN
+    RETURN jsonb_build_object('status','invalid','reason','invalid_queue');
+  END IF;
+  v_limit := least(greatest(coalesce(p_limit, 50), 1), 100);
+  sched := admin_private.guard_resolve_schedule_v1(service);
+  SELECT coalesce(jsonb_agg(admin_private.guard_check_obligation_json_v1(q.id, clock) ORDER BY q.service_date, q.window_code, q.location_name, q.id), '[]'::jsonb)
+  INTO rows
+  FROM (
+    SELECT o.id, o.service_date, o.window_code, loc.location_name
+    FROM public.guard_check_obligations o
+    JOIN public.locations loc ON loc.id = o.location_id
+    WHERE admin_private.guard_check_queue_match_v1(v_queue, p_window, service, actor, clock, o)
+      AND (p_after IS NULL OR (o.service_date, o.window_code, loc.location_name, o.id) > (
+        SELECT x.service_date, x.window_code, xl.location_name, x.id
+        FROM public.guard_check_obligations x
+        JOIN public.locations xl ON xl.id = x.location_id
+        WHERE x.id = p_after
+      ))
+    ORDER BY o.service_date, o.window_code, loc.location_name, o.id
+    LIMIT v_limit + 1
+  ) q;
+  IF jsonb_array_length(rows) > v_limit THEN
+    has_more := true;
+    rows := (
+      SELECT coalesce(jsonb_agg(value), '[]'::jsonb)
+      FROM jsonb_array_elements(rows) WITH ORDINALITY arr(value, n)
+      WHERE n <= v_limit
+    );
+  END IF;
+  last_id := CASE
+    WHEN jsonb_array_length(rows) > 0 THEN (rows -> (jsonb_array_length(rows) - 1) ->> 'id')::uuid
+    ELSE NULL
+  END;
   RETURN jsonb_build_object(
     'serviceDate', service,
     'timezone', 'Europe/London',
@@ -904,24 +1205,35 @@ BEGIN
     'eveningLocalStart', sched.evening_start,
     'eveningLocalEnd', sched.evening_end,
     'claimedByMe', actor,
+    'queue', v_queue,
+    'limit', v_limit,
+    'hasMore', has_more,
+    'nextCursor', CASE WHEN has_more THEN last_id END,
+    'now', clock,
     'obligations', rows
   );
 END; $$;
 
-CREATE FUNCTION public.admin_guard_check_detail_v1(p_token text, p_obligation uuid)
+CREATE FUNCTION public.admin_guard_check_detail_v1(p_token text, p_obligation uuid, p_now timestamptz DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
-  list jsonb;
+  clock timestamptz;
+  service date;
+  sched public.guard_check_schedule_versions;
+  actor uuid;
   row jsonb;
   attempts jsonb;
   observation jsonb;
+  obl public.guard_check_obligations;
 BEGIN
-  list := public.admin_guard_check_list_v1(p_token);
-  IF list IS NULL THEN RETURN NULL; END IF;
-  SELECT value INTO row
-  FROM jsonb_array_elements(list->'obligations') value
-  WHERE value->>'id' = p_obligation::text;
-  IF row IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
+  actor := (public.admin_session_v1(p_token)->>'userId')::uuid;
+  clock := coalesce(p_now, now());
+  service := (timezone('Europe/London', clock))::date;
+  sched := admin_private.guard_resolve_schedule_v1(service);
+  SELECT * INTO obl FROM public.guard_check_obligations WHERE id = p_obligation;
+  IF obl.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  row := admin_private.guard_check_obligation_json_v1(obl.id, clock);
   SELECT coalesce(jsonb_agg(jsonb_build_object(
     'id', a.id, 'attemptNumber', a.attempt_number, 'actorId', a.actor_id,
     'startedAt', a.started_at, 'finishedAt', a.finished_at, 'outcome', a.outcome,
@@ -936,7 +1248,21 @@ BEGIN
     'observedAt', obs.observed_at, 'notes', obs.notes, 'attentionCandidate', obs.attention_candidate
   ) INTO observation
   FROM public.guard_check_observations obs WHERE obs.obligation_id = p_obligation;
-  RETURN list || jsonb_build_object('obligation', row, 'attempts', attempts, 'observation', observation);
+  RETURN jsonb_build_object(
+    'serviceDate', service,
+    'timezone', 'Europe/London',
+    'scheduleConfigured', sched.id IS NOT NULL,
+    'scheduleVersionId', sched.id,
+    'morningLocalStart', sched.morning_start,
+    'morningLocalEnd', sched.morning_end,
+    'eveningLocalStart', sched.evening_start,
+    'eveningLocalEnd', sched.evening_end,
+    'claimedByMe', actor,
+    'now', clock,
+    'obligation', row,
+    'attempts', attempts,
+    'observation', observation
+  );
 END; $$;
 
 ALTER TABLE public.guard_check_schedule_versions ENABLE ROW LEVEL SECURITY;
@@ -945,22 +1271,24 @@ ALTER TABLE public.guard_check_obligation_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_check_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_check_observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_private.guard_check_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_private.guard_check_generation_blockers ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.guard_check_schedule_versions, public.guard_check_obligations,
   public.guard_check_obligation_events, public.guard_check_attempts, public.guard_check_observations
   FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON TABLE admin_private.guard_check_receipts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE admin_private.guard_check_receipts, admin_private.guard_check_generation_blockers
+  FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION public.guard_maintain_checks_v1(timestamptz, date) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_enqueue_daily_checks_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_guard_check_command_v1(text, uuid, text, jsonb, integer, timestamptz) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.admin_guard_check_list_v1(text, timestamptz) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.admin_guard_check_detail_v1(text, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_guard_check_list_v1(text, timestamptz, date, text, text, integer, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_guard_check_detail_v1(text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.guard_maintain_checks_v1(timestamptz, date) TO service_role;
 GRANT EXECUTE ON FUNCTION public.guard_enqueue_daily_checks_v1() TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_guard_check_command_v1(text, uuid, text, jsonb, integer, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.admin_guard_check_list_v1(text, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.admin_guard_check_detail_v1(text, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_guard_check_list_v1(text, timestamptz, date, text, text, integer, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_guard_check_detail_v1(text, uuid, timestamptz) TO service_role;
 
 COMMIT;

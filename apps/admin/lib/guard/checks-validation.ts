@@ -47,6 +47,7 @@ export function guardCheckArgs(operation: GuardCheckOperation, body: Record<stri
     const rating = body.rating === "" || body.rating == null ? null : Number(body.rating)
     if (rating != null && (!Number.isFinite(rating) || rating < 1 || rating > 5)) return null
     if (ratingAvailable && rating == null) return null
+    if (!ratingAvailable && rating != null) return null
     return {
       obligationId: body.obligationId,
       version: body.version,

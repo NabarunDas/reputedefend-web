@@ -34,7 +34,10 @@ export default async function GuardCheckDetailPage({ params }: { params: Promise
     </section>
     <section className="panel">
       <h2>Work</h2>
-      {row.state === "PENDING" && <ClaimForm obligationId={row.id} version={row.version} />}
+      {row.state === "PENDING" && (row.upcoming || row.windowOpen === false)
+        ? <p className="muted">Upcoming. This window has not opened yet, so it cannot be claimed.</p>
+        : null}
+      {row.state === "PENDING" && !row.upcoming && row.windowOpen !== false && <ClaimForm obligationId={row.id} version={row.version} />}
       {row.state === "CLAIMED" && <>
         <ReleaseForm obligationId={row.id} version={row.version} />
         <CompleteObservationForm obligationId={row.id} version={row.version} />

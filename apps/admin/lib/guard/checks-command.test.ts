@@ -56,6 +56,22 @@ describe("guard check commands", () => {
     }))
   })
 
+  it("rejects rating_available=false with a numeric rating", async () => {
+    vi.stubEnv("GUARD_CHECKS_ENABLED", "true")
+    const response = await guardCheckCommand(req({
+      operation: "complete",
+      obligationId,
+      version: 1,
+      classification: "INCOMPLETE",
+      profileAvailability: "UNKNOWN",
+      locationIdentified: false,
+      ratingAvailable: false,
+      rating: 4.2,
+    }))
+    expect(response.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("does not expose the check flag to the client bundle", () => {
     const forms = readFileSync(new URL("../../app/guard/checks/forms.tsx", import.meta.url), "utf8")
     const page = readFileSync(new URL("../../app/guard/checks/page.tsx", import.meta.url), "utf8")

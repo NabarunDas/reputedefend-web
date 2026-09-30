@@ -493,7 +493,7 @@ describe("guard subscriptions SQL", () => {
     await rpc("guard_record_refund_v1", [approved!.providerOperationId, "re_testfail1", "failed", "card_decline"])
     expect((await db.query<{ status: string }>("select status from public.guard_refunds where subscription_id=$1", [start.subscriptionId])).rows[0].status).toBe("FAILED")
     await apply("charge.dispute.created", "dp_1", {
-      guardSubscriptionId: start.subscriptionId, amountMinor: 999, chargeId: "ch_testguard1", disputeStatus: "needs_response",
+      guardSubscriptionId: start.subscriptionId, amountMinor: 999, currency: "gbp", chargeId: "ch_testguard1", disputeStatus: "needs_response",
     })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_disputes where subscription_id=$1", [start.subscriptionId])).rows[0].n).toBe(1)
     const secondAdj = (await db.query<{ id: string }>("select id from public.guard_billing_adjustments where subscription_id=$1 order by created_at desc limit 1", [start.subscriptionId])).rows[0]
@@ -893,7 +893,7 @@ describe("guard subscriptions provider correctness", () => {
     await db.query("insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'Outcome evidence accepted after review.', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3", [version, uid, accepted!.orderId])
     const offer = await rpc("admin_guard_command_v1", [token, key(), "create_included_offer", { caseId, serviceOrderId: accepted!.orderId }, null])
     await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect;")
-    await db.query(`update public.guard_coverages set activated_at=now(), included_start_at=now(), included_end_at=${endSql}, state='ACTIVE' where id=$1`, [offer!.id])
+    await db.query(`update public.guard_coverages set included_end_at=${endSql}, included_start_at=${endSql} - interval '30 days', activated_at=${endSql} - interval '30 days', state='ACTIVE' where id=$1`, [offer!.id])
     await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect;")
     const guardOrder = await acceptGuardOrder()
     const continuation = await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: guardOrder }, null])
@@ -918,7 +918,7 @@ describe("guard subscriptions provider correctness", () => {
   })
 
   it("allows Checkout at exactly 48 hours plus the safety margin", async () => {
-    const start = await includedStart("now() + interval '48 hours 5 minutes'")
+    const start = await includedStart("now() + interval '48 hours 5 minutes 5 seconds'")
     const checkout = await rpc("customer_guard_subscription_command_v1", [start.session, key(), "start_checkout", {}])
     expect(checkout).toMatchObject({ status: "success", mode: "subscription" })
     expect(checkout?.trialEnd).toBeTruthy()
@@ -1002,18 +1002,18 @@ describe("guard subscriptions provider correctness", () => {
     await db.query("insert into public.provider_operations(id,idempotency_key,kind,purpose,customer_id,service_order_id,guard_subscription_id,status) values($1,$1,'CREATE_REFUND','GUARD_REFUND',$2,$3,$4,'SUBMITTED')", [opB, customer, (await db.query<{ service_order_id: string }>("select service_order_id from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].service_order_id, start.subscriptionId])
     await db.query("insert into public.guard_billing_adjustments(id,subscription_id,location_id,invoice_id,kind,status,amount_minor,approved_amount_minor,currency,reason,created_by) values($1,$2,$3,$4,'REFUND','APPROVED',100,100,'GBP','First partial refund',$5)", [adjA, start.subscriptionId, location, invoice.id, uid])
     await db.query("insert into public.guard_billing_adjustments(id,subscription_id,location_id,invoice_id,kind,status,amount_minor,approved_amount_minor,currency,reason,created_by) values($1,$2,$3,$4,'REFUND','APPROVED',200,200,'GBP','Second partial refund',$5)", [adjB, start.subscriptionId, location, invoice.id, uid])
-    await db.query("insert into public.guard_refunds(adjustment_id,subscription_id,invoice_id,provider_operation_id,stripe_refund_id,stripe_payment_intent_id,stripe_charge_id,amount_minor,currency,status) values($1,$2,$3,$4,'re_part_a','pi_testguard1','ch_testguard1',100,'GBP','PENDING')", [adjA, start.subscriptionId, invoice.id, opA])
-    await db.query("insert into public.guard_refunds(adjustment_id,subscription_id,invoice_id,provider_operation_id,stripe_refund_id,stripe_payment_intent_id,stripe_charge_id,amount_minor,currency,status) values($1,$2,$3,$4,'re_part_b','pi_testguard1','ch_testguard1',200,'GBP','PENDING')", [adjB, start.subscriptionId, invoice.id, opB])
-    expect(await apply("refund.updated", "re_part_a", {
+    await db.query("insert into public.guard_refunds(adjustment_id,subscription_id,invoice_id,provider_operation_id,stripe_refund_id,stripe_payment_intent_id,stripe_charge_id,amount_minor,currency,status) values($1,$2,$3,$4,'re_parta','pi_testguard1','ch_testguard1',100,'GBP','PENDING')", [adjA, start.subscriptionId, invoice.id, opA])
+    await db.query("insert into public.guard_refunds(adjustment_id,subscription_id,invoice_id,provider_operation_id,stripe_refund_id,stripe_payment_intent_id,stripe_charge_id,amount_minor,currency,status) values($1,$2,$3,$4,'re_partb','pi_testguard1','ch_testguard1',200,'GBP','PENDING')", [adjB, start.subscriptionId, invoice.id, opB])
+    expect(await apply("refund.updated", "re_parta", {
       refundStatus: "succeeded", amountMinor: 100, currency: "gbp", paymentIntentId: "pi_testguard1", chargeId: "ch_testguard1",
     })).toMatchObject({ status: "success" })
-    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_part_a'")).rows[0].status).toBe("SUCCEEDED")
-    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_part_b'")).rows[0].status).toBe("PENDING")
-    expect(await apply("refund.updated", "re_part_b", {
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_parta'")).rows[0].status).toBe("SUCCEEDED")
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_partb'")).rows[0].status).toBe("PENDING")
+    expect(await apply("refund.updated", "re_partb", {
       refundStatus: "failed", amountMinor: 200, currency: "gbp", paymentIntentId: "pi_testguard1", chargeId: "ch_testguard1",
     })).toMatchObject({ status: "success" })
-    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_part_a'")).rows[0].status).toBe("SUCCEEDED")
-    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_part_b'")).rows[0].status).toBe("FAILED")
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_parta'")).rows[0].status).toBe("SUCCEEDED")
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_partb'")).rows[0].status).toBe("FAILED")
   })
 
   it("denies a Guard refund event that is missing amount or uses the wrong currency", async () => {

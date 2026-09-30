@@ -416,7 +416,7 @@ describe("guard manual checks SQL", () => {
     const morning = (await obligations(coverageId, "2026-09-30")).find(row => row.window_code === "MORNING")!
     let claimed = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:10:00Z"])
     expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload({ displayedBusinessName: "", reviewCount: null }) }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_healthy" })
-    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload({ classification: "HEALTHY", profileAvailability: "UNAVAILABLE" }) }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_healthy" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload({ classification: "HEALTHY", profileAvailability: "UNAVAILABLE" }) }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "unavailable_not_healthy" })
     const otherBaseline = (await db.query<{ id: string }>("select id from public.guard_baselines where coverage_id=$1 and status='VERIFIED'", [other])).rows[0].id
     expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload({ baselineId: otherBaseline }) }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "baseline_location_mismatch" })
     await db.query("update public.guard_baselines set status='SUPERSEDED' where coverage_id=$1", [coverageId])
@@ -1010,5 +1010,72 @@ describe("guard manual checks SQL", () => {
     expect((next.obligations || []).map(row => row.windowCode)).toEqual(["EVENING", "EVENING"])
     expect((next.obligations || []).every(row => !(page.obligations || []).some(firstRow => firstRow.id === row.id))).toBe(true)
   })
+
+  it("enforces the classification and availability matrix in commands and privileged inserts", async () => {
+    const coverageId = await activateIncluded()
+    const other = await activateIncluded(otherLocation)
+    await approveSchedule()
+    await maintain("2026-09-30T08:00:00Z", "2026-09-30")
+    const morning = (await obligations(coverageId, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const evening = (await obligations(coverageId, "2026-09-30")).find(row => row.window_code === "EVENING")!
+    const otherMorning = (await obligations(other, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const otherEvening = (await obligations(other, "2026-09-30")).find(row => row.window_code === "EVENING")!
+
+    const healthyClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload() }, healthyClaim!.version, "2026-09-30T08:15:00Z"])).toMatchObject({ status: "success" })
+
+    const changeClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T16:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: evening.id, ...healthyPayload({ classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery" }),
+    }, changeClaim!.version, "2026-09-30T16:15:00Z"])).toMatchObject({ status: "success" })
+
+    const incompleteClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: otherMorning.id }, otherMorning.record_version, "2026-09-30T08:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: otherMorning.id, ...healthyPayload({ classification: "INCOMPLETE", displayedBusinessName: "", reviewCount: null }),
+    }, incompleteClaim!.version, "2026-09-30T08:16:00Z"])).toMatchObject({ status: "success" })
+
+    const unavailableClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: otherEvening.id }, otherEvening.record_version, "2026-09-30T16:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: otherEvening.id, ...healthyPayload({ classification: "PROFILE_UNAVAILABLE", profileAvailability: "UNAVAILABLE", locationIdentified: false }),
+    }, unavailableClaim!.version, "2026-09-30T16:16:00Z"])).toMatchObject({ status: "success" })
+
+    await maintain("2026-10-01T07:00:00Z", "2026-10-01")
+    const nextMorning = (await obligations(coverageId, "2026-10-01")).find(row => row.window_code === "MORNING")!
+    const nextEvening = (await obligations(coverageId, "2026-10-01")).find(row => row.window_code === "EVENING")!
+
+    const denyClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: nextMorning.id }, nextMorning.record_version, "2026-10-01T08:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", profileAvailability: "UNAVAILABLE" }),
+    }, denyClaim!.version, "2026-10-01T08:12:00Z"])).toMatchObject({ status: "denied", reason: "change_requires_available_profile" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "HEALTHY", profileAvailability: "UNAVAILABLE" }),
+    }, denyClaim!.version, "2026-10-01T08:12:00Z"])).toMatchObject({ status: "denied", reason: "unavailable_not_healthy" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", profileAvailability: "UNKNOWN" }),
+    }, denyClaim!.version, "2026-10-01T08:12:00Z"])).toMatchObject({ status: "denied", reason: "change_requires_available_profile" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "HEALTHY", profileAvailability: "UNKNOWN" }),
+    }, denyClaim!.version, "2026-10-01T08:12:00Z"])).toMatchObject({ status: "denied", reason: "unknown_requires_incomplete" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "PROFILE_UNAVAILABLE", profileAvailability: "UNKNOWN" }),
+    }, denyClaim!.version, "2026-10-01T08:12:00Z"])).toMatchObject({ status: "denied", reason: "unknown_requires_incomplete" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: nextMorning.id, ...healthyPayload({ classification: "INCOMPLETE", profileAvailability: "UNKNOWN" }),
+    }, denyClaim!.version, "2026-10-01T08:14:00Z"])).toMatchObject({ status: "success" })
+
+    const insertClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: nextEvening.id }, nextEvening.record_version, "2026-10-01T16:10:00Z"])
+    expect(insertClaim?.status).toBe("success")
+    const attempt = (await db.query<{ id: string }>("select id from public.guard_check_attempts where obligation_id=$1 and finished_at is null", [nextEvening.id])).rows[0].id
+    const baseline = (await db.query<{ id: string }>("select id from public.guard_baselines where coverage_id=$1 and status='VERIFIED'", [coverageId])).rows[0].id
+    await expect(db.query(
+      "insert into public.guard_check_observations(obligation_id,attempt_id,coverage_id,location_id,observed_at,capture_method,profile_availability,location_identified,displayed_business_name,review_count,profile_url,classification,comparison_status,change_codes,baseline_id) values($1,$2,$3,$4,now(),'MANUAL','UNKNOWN',true,'Bakery',10,'https://maps.google.com/?cid=1','CHANGE_DETECTED','COMPARED',ARRAY['BUSINESS_NAME_CHANGED']::text[],$5)",
+      [nextEvening.id, attempt, coverageId, location, baseline],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_check_observations(obligation_id,attempt_id,coverage_id,location_id,observed_at,capture_method,profile_availability,location_identified,displayed_business_name,review_count,profile_url,classification,comparison_status,change_codes,baseline_id) values($1,$2,$3,$4,now(),'MANUAL','UNAVAILABLE',true,'Bakery',10,'https://maps.google.com/?cid=1','CHANGE_DETECTED','COMPARED',ARRAY['PROFILE_UNAVAILABLE']::text[],$5)",
+      [nextEvening.id, attempt, coverageId, location, baseline],
+    )).rejects.toThrow()
+  })
 })
+
 

@@ -3,6 +3,8 @@ import {
   canCancelCheck,
   claimedWorkSurface,
   claimIsActive,
+  classificationsForAvailability,
+  guardCheckClassificationAllowed,
   guardCheckQueueHref,
   parseCheckQueueCursors,
   queueFor,
@@ -58,5 +60,22 @@ describe("guard check queue membership", () => {
     expect(guardCheckQueueHref({ morning: null, missed: "55555555-5555-4555-8555-555555555555" }, "missed", "66666666-6666-4666-8666-666666666666"))
       .toBe("/guard/checks?missed=66666666-6666-4666-8666-666666666666")
     expect(guardCheckQueueHref({ missed: "55555555-5555-4555-8555-555555555555" }, "missed", null)).toBe("/guard/checks")
+  })
+
+  it("allows only the bounded classification and availability matrix", () => {
+    expect(guardCheckClassificationAllowed("AVAILABLE", "HEALTHY")).toBe(true)
+    expect(guardCheckClassificationAllowed("AVAILABLE", "CHANGE_DETECTED")).toBe(true)
+    expect(guardCheckClassificationAllowed("AVAILABLE", "INCOMPLETE")).toBe(true)
+    expect(guardCheckClassificationAllowed("AVAILABLE", "PROFILE_UNAVAILABLE")).toBe(false)
+    expect(guardCheckClassificationAllowed("UNAVAILABLE", "PROFILE_UNAVAILABLE")).toBe(true)
+    expect(guardCheckClassificationAllowed("UNAVAILABLE", "CHANGE_DETECTED")).toBe(false)
+    expect(guardCheckClassificationAllowed("UNAVAILABLE", "HEALTHY")).toBe(false)
+    expect(guardCheckClassificationAllowed("UNKNOWN", "INCOMPLETE")).toBe(true)
+    expect(guardCheckClassificationAllowed("UNKNOWN", "CHANGE_DETECTED")).toBe(false)
+    expect(guardCheckClassificationAllowed("UNKNOWN", "HEALTHY")).toBe(false)
+    expect(guardCheckClassificationAllowed("UNKNOWN", "PROFILE_UNAVAILABLE")).toBe(false)
+    expect(classificationsForAvailability("AVAILABLE")).toEqual(["HEALTHY", "CHANGE_DETECTED", "INCOMPLETE"])
+    expect(classificationsForAvailability("UNAVAILABLE")).toEqual(["PROFILE_UNAVAILABLE"])
+    expect(classificationsForAvailability("UNKNOWN")).toEqual(["INCOMPLETE"])
   })
 })

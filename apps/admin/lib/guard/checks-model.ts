@@ -3,6 +3,24 @@ export type GuardCheckOperation = (typeof guardCheckOperations)[number]
 
 export const guardCheckClassifications = ["HEALTHY", "CHANGE_DETECTED", "PROFILE_UNAVAILABLE", "INCOMPLETE"] as const
 export type GuardCheckClassification = (typeof guardCheckClassifications)[number]
+export const guardCheckAvailabilities = ["AVAILABLE", "UNAVAILABLE", "UNKNOWN"] as const
+export type GuardCheckAvailability = (typeof guardCheckAvailabilities)[number]
+
+export function guardCheckClassificationAllowed(
+  availability: string,
+  classification: string,
+): boolean {
+  if (availability === "AVAILABLE") return classification === "HEALTHY" || classification === "CHANGE_DETECTED" || classification === "INCOMPLETE"
+  if (availability === "UNAVAILABLE") return classification === "PROFILE_UNAVAILABLE"
+  if (availability === "UNKNOWN") return classification === "INCOMPLETE"
+  return false
+}
+
+export function classificationsForAvailability(availability: string): GuardCheckClassification[] {
+  if (availability === "UNAVAILABLE") return ["PROFILE_UNAVAILABLE"]
+  if (availability === "UNKNOWN") return ["INCOMPLETE"]
+  return ["HEALTHY", "CHANGE_DETECTED", "INCOMPLETE"]
+}
 
 export type GuardCheckObligation = {
   id: string

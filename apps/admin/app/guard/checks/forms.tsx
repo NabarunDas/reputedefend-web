@@ -1,5 +1,6 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import { classificationsForAvailability } from "@/lib/guard/checks-model"
 
 async function post(operation: string, body: Record<string, unknown>, key: string) {
   const response = await fetch("/api/operations/guard-checks", {
@@ -90,8 +91,17 @@ export function CancelForm({ obligationId, version }: { obligationId: string; ve
   </form>
 }
 
+const classificationLabels: Record<string, string> = {
+  HEALTHY: "Healthy",
+  CHANGE_DETECTED: "Change detected",
+  PROFILE_UNAVAILABLE: "Profile unavailable",
+  INCOMPLETE: "Incomplete",
+}
+
 export function CompleteObservationForm({ obligationId, version }: { obligationId: string; version: number }) {
   const { busy, message, run } = useCommand()
+  const [availability, setAvailability] = useState("AVAILABLE")
+  const allowed = classificationsForAvailability(availability)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -112,19 +122,16 @@ export function CompleteObservationForm({ obligationId, version }: { obligationI
     })
   }
   return <form onSubmit={submit}>
-    <label>Classification
-      <select name="classification" required>
-        <option value="HEALTHY">Healthy</option>
-        <option value="CHANGE_DETECTED">Change detected</option>
-        <option value="PROFILE_UNAVAILABLE">Profile unavailable</option>
-        <option value="INCOMPLETE">Incomplete</option>
-      </select>
-    </label>
     <label>Profile availability
-      <select name="profileAvailability" required>
+      <select name="profileAvailability" required value={availability} onChange={event => setAvailability(event.target.value)}>
         <option value="AVAILABLE">Available</option>
         <option value="UNAVAILABLE">Unavailable</option>
         <option value="UNKNOWN">Unknown</option>
+      </select>
+    </label>
+    <label>Classification
+      <select name="classification" required>
+        {allowed.map(value => <option key={value} value={value}>{classificationLabels[value]}</option>)}
       </select>
     </label>
     <label>Correct location identified
@@ -146,7 +153,7 @@ export function CompleteObservationForm({ obligationId, version }: { obligationI
     <label>Latest review time<input name="latestReviewAt" type="datetime-local" /></label>
     <label>Profile URL<input name="profileUrl" /></label>
     <label>Notes<textarea name="notes" maxLength={2000} /></label>
-    <p className="muted">Manual capture only. This does not call Google, send email, or create a customer alert. Incomplete facts cannot be healthy.</p>
+    <p className="muted">Available: Healthy, Change detected, or Incomplete. Unavailable: Profile unavailable. Unknown: Incomplete. Manual capture only. This does not call Google, send email, or create a customer alert.</p>
     <button type="submit" disabled={busy}>Complete observation</button>
     <p role="status">{message}</p>
   </form>

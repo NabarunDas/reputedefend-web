@@ -56,6 +56,29 @@ describe("guard check commands", () => {
     }))
   })
 
+  it("rejects unavailable or unknown CHANGE_DETECTED before the database", async () => {
+    vi.stubEnv("GUARD_CHECKS_ENABLED", "true")
+    const unavailable = await guardCheckCommand(req({
+      operation: "complete",
+      obligationId,
+      version: 1,
+      classification: "CHANGE_DETECTED",
+      profileAvailability: "UNAVAILABLE",
+      locationIdentified: true,
+    }))
+    const unknown = await guardCheckCommand(req({
+      operation: "complete",
+      obligationId,
+      version: 1,
+      classification: "CHANGE_DETECTED",
+      profileAvailability: "UNKNOWN",
+      locationIdentified: false,
+    }))
+    expect(unavailable.status).toBe(400)
+    expect(unknown.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("rejects rating_available=false with a numeric rating", async () => {
     vi.stubEnv("GUARD_CHECKS_ENABLED", "true")
     const response = await guardCheckCommand(req({

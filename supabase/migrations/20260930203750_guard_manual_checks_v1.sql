@@ -226,14 +226,20 @@ CREATE TABLE public.guard_check_observations (
     (rating_available IS TRUE AND rating IS NOT NULL)
     OR (rating_available IS FALSE AND rating IS NULL)
   ),
+  CONSTRAINT guard_check_observation_availability_class CHECK (
+    (profile_availability = 'AVAILABLE' AND classification IN ('HEALTHY', 'CHANGE_DETECTED', 'INCOMPLETE'))
+    OR (profile_availability = 'UNAVAILABLE' AND classification = 'PROFILE_UNAVAILABLE')
+    OR (profile_availability = 'UNKNOWN' AND classification = 'INCOMPLETE')
+  ),
   CONSTRAINT guard_check_observation_change_detected CHECK (
     classification <> 'CHANGE_DETECTED'
     OR (
-      baseline_id IS NOT NULL
+      profile_availability = 'AVAILABLE'
+      AND baseline_id IS NOT NULL
       AND comparison_status = 'COMPARED'
       AND change_codes && ARRAY[
         'BUSINESS_NAME_CHANGED','REVIEW_COUNT_INCREASED','REVIEW_COUNT_DECREASED',
-        'RATING_CHANGED','LATEST_REVIEW_CHANGED','PROFILE_UNAVAILABLE'
+        'RATING_CHANGED','LATEST_REVIEW_CHANGED'
       ]::text[]
     )
   ),
@@ -512,7 +518,7 @@ CREATE FUNCTION admin_private.guard_check_actual_change_codes_v1(p_codes text[])
 RETURNS text[] LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   SELECT coalesce(array_agg(code), ARRAY[]::text[])
   FROM unnest(coalesce(p_codes, ARRAY[]::text[])) AS code
-  WHERE code NOT IN ('BASELINE_MISSING', 'OBSERVATION_INCOMPLETE');
+  WHERE code NOT IN ('BASELINE_MISSING', 'OBSERVATION_INCOMPLETE', 'PROFILE_UNAVAILABLE');
 $$;
 
 CREATE FUNCTION admin_private.guard_check_receipt_v1(p_actor uuid, p_request uuid, p_fingerprint text) RETURNS jsonb
@@ -1006,6 +1012,21 @@ BEGIN
     OR (rating_available IS TRUE AND rating IS NULL)
     OR (rating_available IS FALSE AND rating IS NOT NULL)
   THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF classification = 'CHANGE_DETECTED' AND availability <> 'AVAILABLE' THEN
+    RETURN jsonb_build_object('status','denied','reason','change_requires_available_profile');
+  END IF;
+  IF availability = 'UNKNOWN' AND classification <> 'INCOMPLETE' THEN
+    RETURN jsonb_build_object('status','denied','reason','unknown_requires_incomplete');
+  END IF;
+  IF availability = 'UNAVAILABLE' AND classification <> 'PROFILE_UNAVAILABLE' THEN
+    RETURN jsonb_build_object(
+      'status','denied',
+      'reason', CASE WHEN classification = 'HEALTHY' THEN 'unavailable_not_healthy' ELSE 'unavailable_requires_profile_unavailable' END
+    );
+  END IF;
+  IF classification = 'PROFILE_UNAVAILABLE' AND availability <> 'UNAVAILABLE' THEN
+    RETURN jsonb_build_object('status','invalid');
+  END IF;
 
   SELECT * INTO baseline FROM public.guard_baselines
   WHERE coverage_id = obl.coverage_id AND location_id = obl.location_id AND status = 'VERIFIED';

@@ -1,5 +1,6 @@
 import { isUuid } from "../records/model"
 import {
+  guardCheckClassificationAllowed,
   guardCheckClassifications,
   guardCheckOperations,
   type GuardCheckClassification,
@@ -37,6 +38,7 @@ export function guardCheckArgs(operation: GuardCheckOperation, body: Record<stri
     if (typeof classification !== "string" || !(guardCheckClassifications as readonly string[]).includes(classification)) return null
     const profileAvailability = body.profileAvailability
     if (profileAvailability !== "AVAILABLE" && profileAvailability !== "UNAVAILABLE" && profileAvailability !== "UNKNOWN") return null
+    if (!guardCheckClassificationAllowed(profileAvailability, classification)) return null
     if (typeof body.locationIdentified !== "boolean") return null
     const notes = typeof body.notes === "string" ? body.notes : ""
     if (notes.length > 2000) return null

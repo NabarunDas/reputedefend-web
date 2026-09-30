@@ -6,7 +6,7 @@ The additive migration `20260930132106_stripe_payments_v1.sql` is applied to `pr
 
 The official Stripe Node SDK `22.6.2` is pinned in the lockfile and uses the SDK-bundled API version `2026-08-26.dahlia`. Stripe itself remains disabled. No Stripe secret, webhook secret, or Vercel production payment variable is configured. The deployed application has created no Stripe Customer, Checkout Session, SetupIntent, PaymentIntent, invoice, subscription or charge. No card was charged. No money moved. Live mode is impossible without a later Finance launch gate.
 
-Step 11 outgoing mail remains disabled. Step 12 inbound mail remains disabled. Cron remains `0 4 * * *`. Worker cadence remains 86400 seconds. Step 16 Guard subscription source exists as unapplied `20260930180050_guard_subscriptions_billing_v1.sql`. No Guard subscription was activated and no Stripe subscription object was created by deployed environments.
+Step 11 outgoing mail remains disabled. Step 12 inbound mail remains disabled. Cron remains `0 4 * * *`. Worker cadence remains 86400 seconds. Step 16 Guard subscription schema exists as independently applied `20260930180050 guard_subscriptions_billing_v1`. Stripe and Guard live gates remain unset, so no Guard subscription was activated and no Stripe subscription object was created by deployed environments.
 
 ## Independent live verification
 
@@ -110,5 +110,5 @@ Related source that remains inactive until Stripe is enabled later: provider mod
 - Step 11 outgoing mail still disabled
 - Step 12 inbound mail still disabled
 - Cron still `0 4 * * *`
-- No refunds, disputes or live Step 16 behaviour. Step 16 source is unapplied and Stripe remains disabled
+- No refunds, disputes or live Step 16 behaviour. Step 16 is DATABASE APPLIED / STRIPE & GUARD LIVE DISABLED and Stripe remains disabled
 - `PREPARATION` / `READY_TO_SUBMIT` remain blocked until later payment/permission/pack gates are used in a live collection

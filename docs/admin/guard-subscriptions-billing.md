@@ -1,29 +1,68 @@
 # Guard subscriptions and billing — Step 16
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / STRIPE & GUARD LIVE DISABLED**
+Status: **DATABASE APPLIED / STRIPE & GUARD LIVE DISABLED**
 
-The additive migration `20260930180050_guard_subscriptions_billing_v1.sql` exists in source only. It sorts after applied `20260930164529_guard_onboarding_activation_v1.sql`. It has not been applied to Supabase. Do not apply it from this PR. Do not create another Step 16 migration while this one remains unapplied. Do not modify any applied migration.
+The additive migration `20260930180050_guard_subscriptions_billing_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 15 as `20260930180050 guard_subscriptions_billing_v1`. Live migration history now ends with `20260930164529 guard_onboarding_activation_v1` then `20260930180050 guard_subscriptions_billing_v1`. Step 16 exists remotely exactly once. Do not replay it. Do not create another Step 16 migration. Do not modify the applied SQL.
 
 This step implements per-location Guard subscriptions, renewals, paid-through entitlement, included-period expiry, explicit included-to-paid continuation, cancellation, refunds/credits, price-change acceptance, disputes and daily billing reconciliation.
 
 It does not implement Step 17 monitoring-check generation or Step 18 alerts.
 
-## Independent review
+## Independent live verification
 
-ChatGPT will independently review the migration and Stripe integration before anything is applied or configured.
+Independent live verification confirmed:
 
-This PR does not:
+- Step 16 migration count = 1
+- all Step 16 Guard subscription/billing tables exist
+- RLS enabled on all new public Step 16 tables
+- anon direct table CRUD denied
+- authenticated direct table CRUD denied
+- service_role direct table CRUD denied
+- reviewed Guard subscription RPCs executable by service_role only
+- `admin_private.guard_set_billing_entitlement_v1` remains unavailable to service_role
+- `RECONCILE_GUARD_BILLING` is an allowed Step 10 job type
+- provider operations support the reviewed Guard subscription operations
+- `CREATE_RECURRING_PRICE` / `GUARD_PRICE` may use `customer_id` NULL only in its tightly-scoped catalogue operation
+- Guard recovery has source provider-operation lineage
+- current live Step 16 data is empty: 0 Guard provider Price mappings, continuations, subscriptions, subscription events, recurring consents, recurring invoices, price-change offers, billing adjustments, refunds, disputes, reconciliation runs, reconciliation targets, reconciliation issues and `RECONCILE_GUARD_BILLING` jobs
+- no Stripe Product, Price, Checkout Session, Subscription or Refund was created
+- no money moved
+- no Guard activation occurred
+- Supabase security advisor produced no new Step-16-specific WARN
+- existing project warnings remain outside this PR
+
+This documentation-only update does not:
 
 - request Supabase credentials
-- apply the new migration remotely
-- modify any applied migration
+- access Supabase
+- replay or modify the applied migration
 - configure Stripe Dashboard
 - configure Stripe or Vercel secrets
 - create real Stripe test or live objects from deployed environments
 - move money
 - enable `GUARD_ACTIVATION_ENABLED`, `GUARD_SUBSCRIPTIONS_ENABLED` or `GUARD_REFUNDS_ENABLED`
 
-Step 11 outgoing email remains disabled. Step 12 incoming email remains disabled. Step 14 Stripe provider remains disabled. Step 15 live Guard activation remains disabled. Current Cron remains `0 4 * * *`. Do not change Cron.
+Step 11 outgoing email remains disabled. Step 12 incoming email remains disabled. Step 14 Stripe provider remains disabled. Step 15 live Guard activation remains disabled. Worker cadence remains 86400 seconds. Current Cron remains `0 4 * * *`. Do not change Cron.
+
+## Database-ready but not live
+
+These contracts exist in the applied database and Admin/Customer source. They are **not** live operational services. Stripe/Guard feature gates remain unset, so none of the following provider effects are live:
+
+- one subscription per Guard location
+- recurring Guard consent
+- recurring Stripe Price mapping
+- subscription Checkout
+- invoice-paid entitlement
+- paid-through renewals
+- included-to-paid continuation
+- period-end cancellation
+- immediate cancellation review
+- refunds
+- bounded service credits
+- price-change acceptance/scheduling
+- disputes
+- payment-method recovery
+- daily billing reconciliation
 
 ## What this is
 
@@ -37,7 +76,7 @@ One Stripe subscription per Guard-covered location. Quantity is always 1. Curren
 
 `public.price_versions` remains the commercial source of truth. `public.guard_provider_price_maps` is an immutable mapping from an approved `RELAUNCH_GUARD` price version to one Stripe test Price. Provider Price must be GBP, recurring monthly, quantity/licensed, exact internal minor-unit amount, test mode, and immutable. A durable provider operation is created before any Stripe Price. A new internal price version gets a new Stripe Price mapping. Old Stripe Prices are not mutated.
 
-No provider Product or Price is created in this PR because provider mode remains disabled.
+No provider Product or Price is created because provider mode remains disabled and `GUARD_SUBSCRIPTIONS_ENABLED` remains unset.
 
 ## Recurring consent and customer action
 
@@ -47,13 +86,13 @@ No provider Product or Price is created in this PR because provider mode remains
 
 ## Direct Checkout
 
-Stripe-hosted Checkout uses `mode = subscription` with exactly one mapped monthly Price and quantity 1. The Checkout return page does not make Guard billing `CURRENT`. `checkout.session.completed` is correlation only. A Stripe Subscription being `active` alone does not make Guard billing `CURRENT`.
+Stripe-hosted Checkout uses `mode = subscription` with exactly one mapped monthly Price and quantity 1. The Checkout return page does not make Guard billing `CURRENT`. `checkout.session.completed` is correlation only. A Stripe Subscription being `active` alone does not make Guard billing `CURRENT`. Subscription `active` / `trialing` is not entitlement.
 
 Before issuing Direct Guard Checkout, Step 15 non-billing readiness gates must pass. Only the expected `BILLING_NOT_CURRENT` blocker is ignored.
 
 ## Invoice-paid entitlement
 
-Authoritative paid entitlement begins only after a verified subscription invoice is successfully paid. Then:
+`invoice.paid` is the authoritative paid-entitlement event. Authoritative paid entitlement begins only after a verified subscription invoice is successfully paid. Then:
 
 - `billing_state = CURRENT`
 - `entitlement_source = PROVIDER`
@@ -65,13 +104,13 @@ Do not grant entitlement from Checkout redirect, `checkout.session.completed`, s
 
 ## Renewal failure and paid-through
 
-A confirmed renewal `invoice.paid` extends `paid_through_at` and never shortens it from a later stale webhook. One invoice creates one logical renewal record.
+Paid-through is monotonic. A confirmed renewal `invoice.paid` extends `paid_through_at` and never shortens it from a later stale webhook. One invoice creates one logical renewal record.
 
-`invoice.payment_failed` or authentication-required is recorded immediately. If `paid_through_at > now()`, coverage remains operational until paid-through expiry. Billing may become `PAST_DUE`. At or after paid-through expiry without a successful renewal, the exact coverage pauses through a controlled command. Later recovery can restore billing `CURRENT` and paid-through, but coverage resume is a separate controlled readiness check. Live Guard activation remains disabled.
+`invoice.payment_failed` or authentication-required is recorded immediately. Failed renewal does not prematurely remove already-paid service. If `paid_through_at > now()`, coverage remains operational until paid-through expiry. Billing may become `PAST_DUE`. At or after paid-through expiry without a successful renewal, the exact coverage pauses through a controlled command. Later recovery can restore billing `CURRENT` and paid-through, but coverage resume is a separate controlled readiness check. Live Guard activation remains disabled.
 
 ## Included expiry
 
-Included coverage remains `INCLUDED`, billing `NOT_REQUIRED`, no paid entitlement, no paid-Guard discount and no subscription by default. The included offer never creates a Stripe subscription and never silently converts to paid.
+Included coverage remains `INCLUDED`, billing `NOT_REQUIRED`, no paid entitlement, no paid-Guard discount and no subscription by default. The included offer never creates a Stripe subscription and never silently converts to paid. Included Guard never auto-converts.
 
 At `included_end_at`, if the customer has taken no separate paid action, included coverage ends. No Stripe object is created. No charge occurs. No customer debt is created.
 
@@ -83,35 +122,43 @@ Continuation requires a separately accepted Step 13 `RELAUNCH_GUARD` order for t
 
 Historical `INCLUDED` coverage is not mutated into paid coverage. `public.guard_continuations` and coverage origin `INCLUDED_CONTINUATION` record the handoff. `trialing` is not paid entitlement. Paid Guard discount eligibility begins only from actual paid/direct activation.
 
+Continuation cannot charge before the included period ends. When included Guard still has time remaining, subscription Checkout may use the exact included-end timestamp as Stripe `trial_end` only if that boundary is at least 48 hours plus a small safety margin in the future. Short included windows that cannot satisfy Stripe's safe delayed-billing boundary fail closed. They do not create an immediately chargeable subscription, do not round the included end forward, do not shorten the included period and do not charge early.
+
 When the first paid continuation invoice succeeds, historical included coverage ends and a new `DIRECT_GUARD` continuation coverage is created for the same customer/business/location. If that invoice fails, included coverage still ends at the agreed included end and no paid coverage is fabricated.
 
 ## Cancellation
 
-Cancellation is per subscription/location.
+Cancellation is per subscription/location. Cancellation intent and provider-confirmed cancellation remain separate.
 
-- Normal path: persist the request, use a durable provider operation, then `cancel_at_period_end = true`. Coverage stays active through already-paid `paid_through_at`.
-- Undo: `cancel_at_period_end = false` only before provider period end, for the same customer/location/subscription. An already canceled Stripe subscription is not resurrected.
+- Normal path: persist the request, use a durable provider operation, then confirm `cancel_at_period_end = true` only from provider evidence. Coverage stays active through already-paid `paid_through_at`.
+- Undo: confirm `cancel_at_period_end = false` only before provider period end, for the same customer/location/subscription. An already canceled Stripe subscription is not resurrected.
 - Immediate cancellation is exceptional. No refund amount is decided automatically. Admin/Finance review and fresh Admin authentication are required.
+
+A successful Stripe API call that returns the opposite cancel flag must not terminalise the requested operation as succeeded.
 
 ## Refunds and credits
 
 `public.guard_billing_adjustments` and `public.guard_refunds` are first-class auditable records. There is no automatic pro-rata refund formula, no hidden default percentage and no automatic refund merely because coverage paused.
 
-Admin may approve a specific integer minor-unit amount only after fresh authentication. The amount must be `> 0`, `<=` refundable paid amount and pinned to the exact location subscription/invoice/payment. A submitted refund is not succeeded. A failed refund remains visible and owned. Full refund plus overlapping service credit for the same period is denied without explicit checked accounting.
+Admin may approve a specific integer minor-unit amount only after fresh authentication. The amount must be `> 0`, `<=` refundable paid amount and pinned to the exact location subscription/invoice/payment. Refunds remain provider-confirmed and idempotent. A submitted refund is not succeeded. A failed refund remains visible and owned. Full refund plus overlapping service credit for the same period is denied without explicit checked accounting. `charge.refunded` is supplemental evidence only and does not independently mark a refund succeeded.
 
 `SERVICE_CREDIT` stays `APPROVED` / `PENDING_APPLICATION` and is not claimed as financially applied, because exact per-subscription Stripe customer-balance scoping cannot be guaranteed.
 
 ## Price-change acceptance
 
-Existing subscriptions stay on their accepted price. A newly approved website/catalogue price does not automatically increase existing customers. `public.guard_price_change_offers` plus `GUARD_PRICE_CHANGE_ACCEPTANCE` require a positive customer accept. No response is not acceptance. After acceptance, the new provider Price is scheduled for the next renewal with quantity 1 and no mid-period proration. The same acceptance workflow is used for lower prices.
+Existing subscriptions stay on their accepted price. A newly approved website/catalogue price does not automatically increase existing customers. Recurring price increases require explicit customer acceptance. `public.guard_price_change_offers` plus `GUARD_PRICE_CHANGE_ACCEPTANCE` require a positive customer accept. No response is not acceptance. After acceptance, the new provider Price is scheduled for the next renewal with quantity 1 and no mid-period proration. The same acceptance workflow is used for lower prices.
 
 ## Disputes
 
 `public.guard_disputes` tracks provider dispute state. An open dispute is urgent Finance work. No automatic refund is issued. Already-paid entitlement is not silently rewritten. At paid-through expiry, normal entitlement rules apply.
 
+## Payment-method recovery
+
+Guard recovery uses a Guard-specific Setup Checkout and SetupIntent path. A recovery Checkout operation has exactly one sourced `UPDATE_SUBSCRIPTION_PAYMENT_METHOD` operation. Replay reuses that same operation and idempotency key. Updating a payment method does not mark an invoice paid.
+
 ## Daily reconciliation
 
-Job type `RECONCILE_GUARD_BILLING` reuses the existing Step 10 worker. Cron stays `0 4 * * *`. At most one reconciliation run per UK service date. Mismatches are persisted and not silently overwritten. Included expiry and paid-through pause are enforced here.
+Job type `RECONCILE_GUARD_BILLING` reuses the existing Step 10 daily worker. Cron stays `0 4 * * *`. At most one reconciliation run per UK service date. Mismatches are persisted and not silently overwritten. Included expiry and paid-through pause are enforced here. Reconciliation verifies and settles already-issued provider operations from authoritative provider state. It does not create provider mutations merely because local and provider data differ.
 
 ## Provider and webhooks
 
@@ -123,14 +170,15 @@ All new public billing/subscription tables have RLS enabled. No direct table CRU
 
 ## Feature gates
 
-Server-only `GUARD_SUBSCRIPTIONS_ENABLED` and `GUARD_REFUNDS_ENABLED` default disabled. Do not use `NEXT_PUBLIC_*`. Do not configure them in Vercel. When disabled, read-only Admin data may render and provider mutation endpoints fail closed. `GUARD_ACTIVATION_ENABLED` remains disabled/unset.
+Server-only `GUARD_SUBSCRIPTIONS_ENABLED` and `GUARD_REFUNDS_ENABLED` default disabled and remain unset. Do not use `NEXT_PUBLIC_*`. Do not configure them in Vercel. When disabled, read-only Admin data may render and provider mutation endpoints fail closed. `GUARD_ACTIVATION_ENABLED` remains disabled/unset.
 
 ## Out of scope
 
-- applying this migration
+- replaying or rewriting this applied migration
 - Stripe Dashboard / secrets / live objects
 - money movement
 - live Guard activation
+- enabling `GUARD_SUBSCRIPTIONS_ENABLED` or `GUARD_REFUNDS_ENABLED`
 - Step 11/12 live mail
 - Step 17 checks
 - Step 18 alerts

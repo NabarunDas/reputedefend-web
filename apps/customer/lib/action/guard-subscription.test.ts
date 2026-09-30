@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
     Disabled,
     provider: {
       createCustomer: vi.fn(async () => { throw new Disabled() }),
-      createSubscriptionCheckout: vi.fn(async () => { throw new Disabled() }),
+      createSubscriptionCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: string; amountMinor: number; livemode: boolean }> => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async () => { throw new Disabled() }),
       createGuardRecoveryCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: string; amountMinor: number; livemode: boolean }> => { throw new Disabled() }),
       setCancelAtPeriodEnd: vi.fn(async () => { throw new Disabled() }),
@@ -57,8 +57,8 @@ beforeEach(() => {
   mocks.provider.createSetupCheckout.mockReset()
   mocks.provider.createCustomer.mockReset()
   mocks.provider.setCancelAtPeriodEnd.mockReset()
-  mocks.provider.createSubscriptionCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
-  mocks.provider.createGuardRecoveryCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.createSubscriptionCheckout.mockImplementation(async (): Promise<{ id: string; url: string; mode: string; amountMinor: number; livemode: boolean }> => { throw new mocks.Disabled() })
+  mocks.provider.createGuardRecoveryCheckout.mockImplementation(async (): Promise<{ id: string; url: string; mode: string; amountMinor: number; livemode: boolean }> => { throw new mocks.Disabled() })
   mocks.provider.createSetupCheckout.mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.createCustomer.mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.setCancelAtPeriodEnd.mockImplementation(async () => { throw new mocks.Disabled() })
@@ -197,10 +197,8 @@ describe("customer Guard subscription HTTP", () => {
     })
     const checkout = await guardPost(req({ operation: "start_checkout" }))
     expect(checkout.status).toBe(200)
-    expect(mocks.provider.createSubscriptionCheckout).toHaveBeenCalledWith(expect.not.objectContaining({
-      trialEnd: expect.anything(),
-    }))
-    const args = mocks.provider.createSubscriptionCheckout.mock.calls[0][0] as { trialEnd?: number }
-    expect(args.trialEnd).toBeUndefined()
+    expect(mocks.provider.createSubscriptionCheckout).toHaveBeenCalled()
+    const calls = mocks.provider.createSubscriptionCheckout.mock.calls as unknown as Array<[{ trialEnd?: number }]>
+    expect(calls[0][0].trialEnd).toBeUndefined()
   })
 })

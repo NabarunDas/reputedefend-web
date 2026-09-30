@@ -1035,10 +1035,10 @@ describe("guard subscriptions provider correctness", () => {
   it("denies a dispute missing amount or using the wrong currency", async () => {
     const start = await paidStart()
     expect(await apply("charge.dispute.created", "dp_noamt1", {
-      chargeId: "ch_testguard1", currency: "gbp", disputeStatus: "needs_response",
+      chargeId: "ch_testguard1", currency: "gbp", disputeStatus: "needs_response", guardSubscriptionId: start.subscriptionId,
     })).toMatchObject({ status: "unmatched", reason: "dispute_amount_missing" })
     expect(await apply("charge.dispute.created", "dp_badcur1", {
-      chargeId: "ch_testguard1", amountMinor: 999, currency: "usd", disputeStatus: "needs_response",
+      chargeId: "ch_testguard1", amountMinor: 999, currency: "usd", disputeStatus: "needs_response", guardSubscriptionId: start.subscriptionId,
     })).toMatchObject({ status: "denied", reason: "dispute_currency_invalid" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_disputes")).rows[0].n).toBe(0)
   })

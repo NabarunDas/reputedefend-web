@@ -4,6 +4,13 @@ import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/mode
 
 const PAGE = 25
 
+type ReconciliationTarget = {
+  id: string
+  subscriptionId: string
+  expectedStripeSubscriptionId?: string | null
+  status: string
+}
+
 export function reconcileGuardBillingHandler(env: Record<string, string | undefined> = process.env): JobHandler {
   return {
     jobType: "RECONCILE_GUARD_BILLING",
@@ -14,18 +21,11 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
       const provider = paymentProvider(env)
       let after: string | null = null
       for (;;) {
-        const page = await rpc.rpc<{
-          status?: string
-          targets?: Array<{
-            id: string
-            subscriptionId: string
-            expectedStripeSubscriptionId?: string | null
-            status: string
-          }>
-        }>("guard_list_reconciliation_targets_v1", {
-          p_run: runId, p_after: after, p_limit: PAGE,
-        })
-        const targets = page.targets ?? []
+        const page: { status?: string; targets?: ReconciliationTarget[] } = await rpc.rpc(
+          "guard_list_reconciliation_targets_v1",
+          { p_run: runId, p_after: after, p_limit: PAGE },
+        )
+        const targets: ReconciliationTarget[] = page.targets ?? []
         if (!targets.length) break
         for (const target of targets) {
           try {

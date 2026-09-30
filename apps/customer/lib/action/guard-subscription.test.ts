@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
       createCustomer: vi.fn(async () => { throw new Disabled() }),
       createSubscriptionCheckout: vi.fn(async () => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async () => { throw new Disabled() }),
-      createGuardRecoveryCheckout: vi.fn(async () => { throw new Disabled() }),
+      createGuardRecoveryCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: string; amountMinor: number; livemode: boolean }> => { throw new Disabled() }),
       setCancelAtPeriodEnd: vi.fn(async () => { throw new Disabled() }),
     },
   }

@@ -211,13 +211,13 @@ describe("payment job handlers", () => {
       },
     })
     const rpc = rpcMock()
-    rpc.rpc.mockImplementation(async (name: string) => {
+    rpc.rpc.mockImplementation((async (name: string) => {
       if (name === "guard_apply_subscription_event_v1") return { status: "success" }
       if (name === "guard_apply_recovery_setup_v1") {
         return { status: "success", providerOperationId: "99999999-9999-4999-8999-999999999999", idempotencyKey: key, stripeSubscriptionId: "sub_guard1" }
       }
       return { status: "success" }
-    })
+    }) as typeof rpc.rpc)
     fake.objects.set("sub_guard1", { id: "sub_guard1", status: "past_due", customerId: "cus_guard" })
     const result = await processStripeEventHandler().execute({
       idempotencyKey: key,

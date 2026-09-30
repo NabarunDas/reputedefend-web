@@ -726,7 +726,7 @@ describe("guard subscriptions provider correctness", () => {
   it("refund and dispute correlate through exact payment objects and pending stays pending", async () => {
     const start = await paidStart()
     const version = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
-    const review = await rpc("admin_guard_command_v1", [token, key(), "request_immediate_cancellation", { subscriptionId: start.subscriptionId, reason: "Finance must review a partial refund." }, version])
+    expect(await rpc("admin_guard_command_v1", [token, key(), "request_immediate_cancellation", { subscriptionId: start.subscriptionId, reason: "Finance must review a partial refund." }, version])).toMatchObject({ status: "success" })
     const adjustmentId = (await db.query<{ id: string }>("select id from public.guard_billing_adjustments where subscription_id=$1", [start.subscriptionId])).rows[0].id
     const approved = await rpc("admin_guard_command_v1", [token, key(), "approve_refund", { adjustmentId, amountMinor: 100 }, null])
     await rpc("guard_record_refund_v1", [approved!.providerOperationId, "re_corr1", "pending", ""])

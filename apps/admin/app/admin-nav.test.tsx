@@ -30,12 +30,13 @@ describe("admin navigation", () => {
       ["/commercial", "Commercial"],
       ["/money", "Money"],
       ["/guard", "Guard"],
+      ["/guard/checks", "Checks"],
       ["/operations/jobs", "Jobs"],
       ["/security", "Security"],
     ])
     expect(nav.textContent).not.toMatch(/Payments|Reports/)
     expect(nav.textContent).not.toContain("admin@profilerelaunch.com")
-    expect(adminNavItems).toHaveLength(14)
+    expect(adminNavItems).toHaveLength(15)
   })
 
   it("marks Today as the home route and Security as its own route", () => {

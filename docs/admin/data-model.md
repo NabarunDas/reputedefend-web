@@ -16,6 +16,8 @@ Step 11 adds reviewed outbound columns on `public.communications` without rewrit
 
 Step 12 adds `public.conversations`, immutable `conversation_messages`, quarantined `conversation_attachments`, inbound receipts, `IMPORT_INBOUND_EMAIL` and `IMPORT_INBOUND_ATTACHMENT`. Attachment rows track `ingestion_status` (`METADATA_RECORDED` / `STORAGE_PENDING` / `STORED` / `CLEAN` / `MALWARE` / `UNSUPPORTED` / `FAILED`) and cannot become `CLEAN` without private storage identity, a clean GuardDuty result and byte validation. Attachment outbox keys stay within the existing Step 10 200-character contract. Receipts store `sender_display` and `provider_occurred_at`. Additive outbound threading columns are `conversation_id`, `reply_to_address`, `in_reply_to`, `references_header` and set-once `rfc_message_id`. The applied additive migration is `20260929221604_incoming_mail_conversations_v1.sql`. DATABASE APPLIED / LIVE INBOUND DISABLED.
 
+Step 13 adds `public.price_versions`, `public.quotes`, immutable `public.quote_versions`, immutable `public.quote_discount_snapshots`, immutable `public.quote_acceptances` and `public.service_orders`. Customer actions gain `QUOTE_ACCEPTANCE` pinned to `quote_version_id`. Approving a future price version schedules the current predecessor `effective_to` to the successor `effective_from` without overlap or gap. New Admin drafts may be approved only when `effective_from` is still in the future. Quotes must use the exact current price; discount snapshots are pinned to that price version. Amounts are integer GBP pence. Seeded prices match `lib/pricing.ts` and remain tax-behaviour `UNCONFIRMED`. The additive migration `20260929233953_catalogue_quotes_orders_v1.sql` is applied to `profilerelaunch-dev` as `20260929233953 catalogue_quotes_orders_v1`. DATABASE APPLIED / LIVE COMMERCIAL DISABLED. See catalogue-quotes-orders.md.
+
 ## Relationships
 
 ```
@@ -29,7 +31,12 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; expired OPEN CASE_ACCESS and COMMUNICATION_ACCESS are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS and QUOTE_ACCEPTANCE are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
+public.price_versions
+public.quotes → public.quote_versions → public.quote_discount_snapshots
+public.quote_acceptances → public.service_orders
+admin_private.catalogue_command_receipts
+admin_private.quote_command_receipts
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)

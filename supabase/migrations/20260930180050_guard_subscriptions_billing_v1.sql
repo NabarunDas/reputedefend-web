@@ -815,7 +815,7 @@ BEGIN
   SELECT * INTO base FROM public.guard_baselines
     WHERE coverage_id = src.id AND status = 'VERIFIED' AND profile_availability = 'AVAILABLE'
       AND location_id = src.location_id
-    ORDER BY created_at DESC LIMIT 1;
+    ORDER BY captured_at DESC LIMIT 1;
   SELECT * INTO rota FROM public.guard_rota_assignments
     WHERE coverage_id = src.id AND status = 'ACTIVE' AND assignee_auth_user_id IS NOT NULL
     ORDER BY created_at DESC LIMIT 1;
@@ -2288,6 +2288,7 @@ BEGIN
     UPDATE public.guard_subscriptions SET
       stripe_subscription_id = coalesce(stripe_subscription_id, p_object_id),
       stripe_subscription_item_id = coalesce(NULLIF(payload->>'subscriptionItemId',''), stripe_subscription_item_id),
+      stripe_customer_id = coalesce(NULLIF(payload->>'stripeCustomerId',''), stripe_customer_id),
       stripe_schedule_id = coalesce(NULLIF(payload->>'scheduleId',''), stripe_schedule_id),
       provider_status = coalesce(NULLIF(payload->>'providerStatus',''), provider_status),
       current_period_start = coalesce(NULLIF(payload->>'periodStart','')::timestamptz, current_period_start),
@@ -2376,7 +2377,12 @@ BEGIN
       failed_at = CASE WHEN p_type = 'refund.failed' OR payload->>'refundStatus' = 'failed' THEN now() ELSE failed_at END,
       failure_code = coalesce(NULLIF(payload->>'failureCode',''), failure_code)
       WHERE id = refund.id RETURNING * INTO refund;
-    UPDATE public.guard_billing_adjustments SET status = refund.status WHERE id = refund.adjustment_id;
+    UPDATE public.guard_billing_adjustments SET status = CASE refund.status
+      WHEN 'SUCCEEDED' THEN 'SUCCEEDED'
+      WHEN 'FAILED' THEN 'FAILED'
+      WHEN 'CANCELED' THEN 'CANCELLED'
+      ELSE 'SUBMITTED'
+    END WHERE id = refund.adjustment_id;
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL,
       CASE WHEN refund.status = 'FAILED' THEN 'REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'REFUND_SUCCEEDED' ELSE 'REFUND_SUBMITTED' END,
       NULL, sub.lifecycle_state, 'Provider refund update', jsonb_build_object('refundId', refund.id, 'status', refund.status));
@@ -2456,7 +2462,13 @@ BEGIN
     failed_at = CASE WHEN p_status = 'failed' THEN now() ELSE failed_at END,
     failure_code = coalesce(p_failure, failure_code)
     WHERE provider_operation_id = op.id RETURNING * INTO refund;
-  UPDATE public.guard_billing_adjustments SET status = refund.status WHERE id = refund.adjustment_id;
+  UPDATE public.guard_billing_adjustments SET status = CASE refund.status
+    WHEN 'SUCCEEDED' THEN 'SUCCEEDED'
+    WHEN 'FAILED' THEN 'FAILED'
+    WHEN 'CANCELED' THEN 'CANCELLED'
+    WHEN 'PENDING' THEN 'SUBMITTED'
+    ELSE status
+  END WHERE id = refund.adjustment_id;
   RETURN jsonb_build_object('status','success','id', refund.id, 'refundStatus', refund.status);
 END; $$;
 
@@ -2466,11 +2478,11 @@ DECLARE cov public.guard_coverages;
 BEGIN
   SELECT * INTO cov FROM public.guard_coverages WHERE id = p_coverage FOR UPDATE;
   IF cov.id IS NULL OR cov.state = 'ENDED' THEN RETURN; END IF;
-  IF cov.state IN (
-    'REQUESTED','AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED','AWAITING_PAYMENT','READY_TO_ACTIVATE'
-  ) THEN
-    cov := admin_private.guard_transition_coverage_v1(cov.id, 'PAUSED', 'SYSTEM', NULL, 'ENDED_FOR_CANCELLATION',
-      'Immediate cancellation ends this location only');
+  IF cov.activated_at IS NULL THEN
+    UPDATE public.guard_billing SET billing_state = CASE WHEN billing_state = 'CURRENT' THEN 'ENDED' ELSE billing_state END,
+      record_version = record_version + 1, updated_at = now()
+      WHERE coverage_id = p_coverage;
+    RETURN;
   END IF;
   IF cov.state IN ('ACTIVE','PAUSED') THEN
     cov := admin_private.guard_transition_coverage_v1(cov.id, 'ENDING', 'SYSTEM', NULL, 'ENDED_FOR_CANCELLATION',

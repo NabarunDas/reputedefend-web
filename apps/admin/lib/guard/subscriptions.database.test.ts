@@ -86,7 +86,7 @@ beforeEach(async () => {
     alter table public.case_document_events disable trigger case_document_events_immutable;
     truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,admin_private.guard_subscription_receipts,admin_private.stripe_event_receipts,admin_private.job_outbox,admin_private.jobs,public.provider_operations,public.payment_ledger,public.guard_reconciliation_issues,public.guard_reconciliation_targets,public.guard_reconciliation_runs,public.guard_reminder_records,public.guard_refunds,public.guard_disputes,public.guard_billing_adjustments,public.guard_price_change_offers,public.guard_subscription_invoices,public.guard_recurring_consents,public.guard_subscription_events,public.guard_subscriptions,public.guard_continuations,public.guard_provider_price_maps,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null or seed_key like 'TEST_%';
-    update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
+    update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1, tax_behaviour=CASE WHEN service_code='RELAUNCH_GUARD' THEN 'NOT_APPLICABLE' ELSE tax_behaviour END where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
     alter table public.price_versions enable trigger price_versions_overlap;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
@@ -207,12 +207,12 @@ async function apply(type: string, objectId: string, payload: Record<string, unk
 }
 
 async function paidInvoice(subscriptionId: string, extras: Record<string, unknown> = {}, invoiceId = `in_${crypto.randomUUID().replace(/-/g, "").slice(0, 14)}`) {
-  const sub = (await db.query<{ stripe_price_id: string | null; stripe_subscription_id: string | null; stripe_customer_id: string | null; amount_minor: number; coverage_id: string | null; service_order_id: string; customer_id: string }>("select stripe_price_id, stripe_subscription_id, stripe_customer_id, amount_minor, coverage_id, service_order_id, customer_id from public.guard_subscriptions where id=$1", [subscriptionId])).rows[0]
+  const sub = (await db.query<{ stripe_price_id: string | null; stripe_subscription_id: string | null; stripe_subscription_item_id: string | null; stripe_customer_id: string | null; amount_minor: number; coverage_id: string | null; service_order_id: string; customer_id: string }>("select stripe_price_id, stripe_subscription_id, stripe_subscription_item_id, stripe_customer_id, amount_minor, coverage_id, service_order_id, customer_id from public.guard_subscriptions where id=$1", [subscriptionId])).rows[0]
   return apply("invoice.paid", invoiceId, {
     livemode: false,
     stripeCustomerId: sub.stripe_customer_id || "cus_testguard1",
     subscriptionId: sub.stripe_subscription_id || "sub_testguard1",
-    subscriptionItemId: "si_testguard1",
+    subscriptionItemId: sub.stripe_subscription_item_id || "si_testguard1",
     priceId: sub.stripe_price_id || "price_testguard1",
     quantity: 1,
     amountPaidMinor: sub.amount_minor,
@@ -639,7 +639,9 @@ describe("guard subscriptions provider correctness", () => {
     const target = (await db.query<{ id: string }>("select id from public.guard_reconciliation_targets where subscription_id=$1", [start.subscriptionId])).rows[0]
     expect(await rpc("guard_apply_reconciliation_target_v1", [target.id, { outcome: "PROVIDER_DISABLED" }])).toMatchObject({ targetStatus: "PROVIDER_DISABLED" })
     expect(await rpc("guard_reconcile_billing_v1", [run!.runId, {}])).toMatchObject({ status: "failed", runStatus: "FAILED" })
-    await db.exec("truncate public.guard_reconciliation_targets, public.guard_reconciliation_issues, public.guard_reconciliation_runs cascade")
+  })
+
+  it("completes a daily run with no subscriptions", async () => {
     const empty = await rpc("guard_enqueue_daily_reconcile_v1", [])
     expect(await rpc("guard_reconcile_billing_v1", [empty!.runId, {}])).toMatchObject({ status: "success", runStatus: "COMPLETED", expectedCount: 0 })
   })
@@ -711,7 +713,7 @@ describe("guard subscriptions provider correctness", () => {
       guardSubscriptionId: start.subscriptionId, amountPaidMinor: 999,
     })
     expect(missing).toMatchObject({ status: "unmatched" })
-    const missingEvent = (await db.query<{ processed: boolean }>("select processed from admin_private.stripe_event_receipts order by received_at desc limit 1")).rows[0]
+    const missingEvent = (await db.query<{ processed: boolean }>("select processed from admin_private.stripe_event_receipts order by created_at desc limit 1")).rows[0]
     expect(missingEvent.processed).toBe(false)
     const unmatched = await apply("invoice.paid", "in_nomatch1", {
       livemode: false, stripeCustomerId: "cus_x", subscriptionId: "sub_x", subscriptionItemId: "si_x",

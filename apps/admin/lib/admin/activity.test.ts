@@ -11,6 +11,8 @@ describe("activity filters", () => {
     expect(parseActivityFilters({ action: "OPERATIONS_CHANGED" })).toEqual({ before: null, action: "OPERATIONS_CHANGED", outcome: null })
     expect(parseActivityFilters({ action: "COMMUNICATION_CHANGED" })).toEqual({ before: null, action: "COMMUNICATION_CHANGED", outcome: null })
     expect(parseActivityFilters({ action: "COMMERCE_CHANGED" })).toEqual({ before: null, action: "COMMERCE_CHANGED", outcome: null })
+    expect(parseActivityFilters({ action: "PAYMENT_CHANGED" })).toEqual({ before: null, action: "PAYMENT_CHANGED", outcome: null })
+    expect(parseActivityFilters({ action: "GUARD_CHANGED" })).toEqual({ before: null, action: "GUARD_CHANGED", outcome: null })
   })
   it("accepts cleared filters", () => {
     expect(parseActivityFilters({ action: "", outcome: "" })).toEqual({ before: null, action: null, outcome: null })

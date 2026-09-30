@@ -12,6 +12,7 @@ export const adminNavItems = [
   { href: "/conversations", label: "Conversations", match: (pathname: string) => pathname.startsWith("/conversations") },
   { href: "/commercial", label: "Commercial", match: (pathname: string) => pathname.startsWith("/commercial") },
   { href: "/money", label: "Money", match: (pathname: string) => pathname.startsWith("/money") },
+  { href: "/guard", label: "Guard", match: (pathname: string) => pathname.startsWith("/guard") },
   { href: "/operations/jobs", label: "Jobs", match: (pathname: string) => pathname.startsWith("/operations") },
   { href: "/security", label: "Security", match: (pathname: string) => pathname.startsWith("/security") },
 ] as const

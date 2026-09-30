@@ -20,6 +20,8 @@ Step 13 adds `public.price_versions`, `public.quotes`, immutable `public.quote_v
 
 Step 14 adds payment tables and RPCs in `20260930132106_stripe_payments_v1.sql`, applied to `profilerelaunch-dev` exactly once after Step 13 as `20260930132106 stripe_payments_v1`: `stripe_customer_maps`, immutable `payment_consents`, `saved_payment_methods`, `success_fee_approvals`, `payment_obligations`, `provider_operations`, `payment_attempts`, `payment_invoices`, `payment_receipts`, append-only `payment_ledger`, and private `stripe_event_receipts` / `payment_command_receipts`. Customer actions gain `GUIDED_PAYMENT`, `MANAGED_PAYMENT_SETUP`, `PAYMENT_RECOVERY` and `INVOICE_PAYMENT` pinned to `service_order_id` / `payment_obligation_id`. Job types `COLLECT_PAYMENT` and `PROCESS_STRIPE_EVENT` reuse the Step 10 outbox. DATABASE APPLIED / STRIPE DISABLED / NO MONEY MOVED. See stripe-payments.md.
 
+Step 15 adds Guard onboarding/activation tables in applied `20260930164529_guard_onboarding_activation_v1.sql` (`20260930164529 guard_onboarding_activation_v1` exactly once after Step 14): `guard_onboarding_locations`, `guard_coverages`, append-only `guard_coverage_events`, `guard_billing`, `guard_included_offers`, `guard_permissions`, immutable `guard_baselines`, `guard_rota_assignments`, `guard_activation_exceptions`, and private `guard_command_receipts`. Customer actions gain `GUARD_PERMISSION` pinned to `guard_coverage_id` / optional `guard_included_offer_id`. `monitoring_requests` remain intake history. DATABASE APPLIED / LIVE GUARD DISABLED. See guard-onboarding.md.
+
 ## Relationships
 
 ```
@@ -33,7 +35,7 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE / GUIDED_PAYMENT / MANAGED_PAYMENT_SETUP / PAYMENT_RECOVERY; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; payment kinds pin service_order_id / payment_obligation_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS, QUOTE_ACCEPTANCE and payment actions are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE / GUIDED_PAYMENT / MANAGED_PAYMENT_SETUP / PAYMENT_RECOVERY / INVOICE_PAYMENT / GUARD_PERMISSION; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; payment kinds pin service_order_id / payment_obligation_id; GUARD_PERMISSION pins guard_coverage_id and optional guard_included_offer_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS, QUOTE_ACCEPTANCE, payment and Guard permission actions are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
 public.price_versions
 public.quotes → public.quote_versions → public.quote_discount_snapshots
 public.quote_acceptances → public.service_orders
@@ -45,6 +47,15 @@ public.payment_invoices
 public.payment_ledger
 admin_private.stripe_event_receipts
 admin_private.payment_command_receipts
+public.guard_onboarding_locations
+public.guard_coverages → public.guard_coverage_events
+public.guard_billing
+public.guard_included_offers
+public.guard_permissions
+public.guard_baselines
+public.guard_rota_assignments
+public.guard_activation_exceptions
+admin_private.guard_command_receipts
 admin_private.catalogue_command_receipts
 admin_private.quote_command_receipts
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)

@@ -76,6 +76,24 @@ describe("commercial admin commands", () => {
     expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
   })
 
+  it("requires a Guard coverage UUID before sending a QUALIFIED snapshot", async () => {
+    const denied = await quoteCommand(req("/api/operations/quotes", {
+      operation: "record_qualification",
+      serviceCode: "MANAGED_RELAUNCH",
+      priceVersionId: quoteId,
+      qualificationResult: "QUALIFIED",
+      coverageBasis: "PAID",
+      coverageStatus: "ACTIVE",
+      coverageType: "PAID_GUARD",
+      paidVsIncluded: "PAID",
+      issuePredatesPaidCoverage: "false",
+      locationId: quoteId,
+      issueObservedAt: "2026-10-01T12:00:00.000Z",
+    }))
+    expect(denied.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("rejects a newly created price version whose effective date is not in the future", async () => {
     const denied = await catalogueCommand(req("/api/operations/catalogue", {
       operation: "create_price_version",

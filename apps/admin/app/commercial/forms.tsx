@@ -162,18 +162,22 @@ export function RecordQualificationForm() {
       serviceCode: String(form.get("serviceCode") || ""),
       priceVersionId: String(form.get("priceVersionId") || ""),
       qualificationResult: String(form.get("qualificationResult") || "NOT_QUALIFIED"),
+      coverageId: String(form.get("coverageId") || "") || undefined,
       coverageBasis: String(form.get("coverageBasis") || ""),
       coverageStatus: String(form.get("coverageStatus") || ""),
       coverageType: String(form.get("coverageType") || ""),
       paidVsIncluded: String(form.get("paidVsIncluded") || ""),
       issuePredatesPaidCoverage: form.get("issuePredatesPaidCoverage") === "false" ? "false" : "true",
       locationId: String(form.get("locationId") || "") || undefined,
+      issueObservedAt: form.get("issueObservedAt") ? new Date(String(form.get("issueObservedAt"))).toISOString() : undefined,
       reasonCode: String(form.get("reasonCode") || "") || undefined,
       evidenceNotes: String(form.get("evidenceNotes") || "") || undefined,
     })
   }
   return <form onSubmit={submit}>
-    <p className="muted">Do not infer paid coverage from a monitoring request or included period. Only record QUALIFIED when paid active coverage facts are proven.</p>
+    <p className="muted">Do not infer paid coverage from a monitoring request, included period, or Admin labels. QUALIFIED snapshots must pin the exact active Direct Guard coverage UUID. The database checks coverage and billing facts.</p>
+    <label>Guard coverage ID<input name="coverageId" maxLength={36} /></label>
+    <p className="muted">Required for QUALIFIED. Included, paused, ending, ended, or unpaid Direct Guard cannot qualify.</p>
     <label>Service
       <select name="serviceCode" required>
         <option value="MANAGED_RELAUNCH">Managed Relaunch</option>
@@ -186,6 +190,8 @@ export function RecordQualificationForm() {
     <label>Price version ID<input name="priceVersionId" required maxLength={36} /></label>
     <p className="muted">The snapshot is pinned to this price version. It cannot be applied to a different current price later.</p>
     <label>Location ID<input name="locationId" maxLength={36} /></label>
+    <label>Issue observed at<input name="issueObservedAt" type="datetime-local" /></label>
+    <p className="muted">Required for QUALIFIED. The issue must be at or after Guard activation on this exact location.</p>
     <label>Result
       <select name="qualificationResult" defaultValue="NOT_QUALIFIED">
         <option value="NOT_QUALIFIED">Not qualified</option>

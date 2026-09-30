@@ -34,6 +34,10 @@ A later approved public price change must coordinate a new DB price version, web
 
 Approving a future version rolls the current open-ended predecessor forward atomically: `effective_to` becomes the successor `effective_from`. There is no overlap, no gap, and no need to retire today's price to schedule tomorrow's. Retirement remains the command for ending a service without a successor. Approved amounts, currency, tax and payment fields stay immutable.
 
+Admin approval of a newly created draft requires `effective_from > now()`. The timestamp is not rewritten on approval. Seeded historical rows are inserted already approved and are exempt. Immediately effective new prices are not permitted.
+
+`create_draft` and `create_version` must use the exact current price from `admin_private.price_version_current_v1(service, now())`. Status `APPROVED` is not enough. A future approved version cannot be quoted before cutover; the predecessor cannot be quoted after cutover; retired and expired windows are denied. Zero or multiple current prices fail closed.
+
 ## Integer pence arithmetic
 
 Canonical calculation is shared by `lib/money.ts` and `admin_private.money_*_v1`:
@@ -55,6 +59,8 @@ Supported behaviours: `UNCONFIRMED`, `INCLUSIVE`, `EXCLUSIVE`, `NOT_APPLICABLE`.
 Policy `PAID_GUARD_MANAGED_20` (`discount_bps = 2000`) applies only to Managed Relaunch/Review when an explicit Admin qualification snapshot proves ACTIVE PAID coverage and the issue does not predate that coverage.
 
 Fail closed. Do not infer paid coverage from a monitoring enquiry, a monitoring request, Guard terms acceptance, or the included 30-day period. Guided services, Guard fees, included/free coverage, inactive/paused coverage, pre-existing issues, and a second discount do not qualify. Discounts do not stack.
+
+A qualification snapshot is pinned to one `price_version_id`. A snapshot for today's current price cannot be applied to tomorrow's successor, and a snapshot recorded against a future price cannot be used before that price becomes current. After cutover, a new qualification is required if the discount is to apply to the new current price. Existing immutable snapshots and accepted quotes are not rewritten.
 
 Once an eligible discount is in an ACCEPTED quote, later Guard cancellation or catalogue changes cannot rewrite it.
 

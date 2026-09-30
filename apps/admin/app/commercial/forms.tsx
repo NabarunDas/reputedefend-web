@@ -1,5 +1,11 @@
 "use client"
-import { useRef, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
+
+function futureLocalMin(minutes = 5) {
+  const at = new Date(Date.now() + minutes * 60 * 1000)
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
 
 async function post(path: string, operation: string, body: Record<string, unknown>, key: string) {
   const response = await fetch(path, {
@@ -34,19 +40,26 @@ function useCommand() {
       setBusy(false)
     }
   }
-  return { busy, message, actionUrl, run }
+  return { busy, message, actionUrl, run, setMessage }
 }
 
 export function CreatePriceForm() {
-  const { busy, message, run } = useCommand()
+  const { busy, message, run, setMessage } = useCommand()
+  const [minFrom, setMinFrom] = useState("")
+  useEffect(() => { setMinFrom(futureLocalMin(5)) }, [])
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const effectiveFrom = form.get("effectiveFrom") ? new Date(String(form.get("effectiveFrom"))).toISOString() : ""
+    if (!effectiveFrom || Date.parse(effectiveFrom) <= Date.now()) {
+      setMessage("Choose a future effective date. Approval will not rewrite it.")
+      return
+    }
     await run("/api/operations/catalogue", "create_price_version", {
       serviceCode: String(form.get("serviceCode") || ""),
       displayName: String(form.get("displayName") || ""),
       amountMinor: Number(form.get("amountMinor")),
-      effectiveFrom: form.get("effectiveFrom") ? new Date(String(form.get("effectiveFrom"))).toISOString() : "",
+      effectiveFrom,
       taxBehaviour: String(form.get("taxBehaviour") || "UNCONFIRMED"),
     })
   }
@@ -62,7 +75,8 @@ export function CreatePriceForm() {
     </label>
     <label>Display name<input name="displayName" required maxLength={120} /></label>
     <label>Amount (pence)<input name="amountMinor" type="number" min={0} step={1} required /></label>
-    <label>Effective from<input name="effectiveFrom" type="datetime-local" required /></label>
+    <label>Effective from<input name="effectiveFrom" type="datetime-local" required min={minFrom || undefined} /></label>
+    <p className="muted">Must be in the future. Approval keeps this timestamp and does not rewrite it.</p>
     <label>Tax behaviour
       <select name="taxBehaviour" defaultValue="UNCONFIRMED">
         <option value="UNCONFIRMED">Unconfirmed</option>
@@ -79,6 +93,7 @@ export function CreatePriceForm() {
 export function ApprovePriceForm({ priceVersionId, version }: { priceVersionId: string; version: number }) {
   const { busy, message, run } = useCommand()
   return <form onSubmit={event => { event.preventDefault(); void run("/api/operations/catalogue", "approve_price_version", { priceVersionId, version }) }}>
+    <p className="muted">Approval is allowed only when effective from is still in the future. The date is not rewritten.</p>
     <button type="submit" disabled={busy}>{busy ? "Approving…" : "Approve price"}</button>
     {message && <p role="status">{message}</p>}
   </form>
@@ -128,6 +143,7 @@ export function CreateQuoteForm() {
     <label>Location ID<input name="locationId" maxLength={36} /></label>
     <label>Monitoring request ID<input name="monitoringRequestId" maxLength={36} /></label>
     <label>Price version ID<input name="priceVersionId" required maxLength={36} /></label>
+    <p className="muted">Use the current approved price for this service. A future or retired version cannot be quoted yet.</p>
     <label>Scope<textarea name="scope" required minLength={10} maxLength={5000} rows={3} /></label>
     <label>Exclusions<textarea name="exclusions" required minLength={10} maxLength={5000} rows={3} /></label>
     <label>Valid until<input name="validUntil" type="datetime-local" required /></label>
@@ -169,6 +185,7 @@ export function RecordQualificationForm() {
       </select>
     </label>
     <label>Price version ID<input name="priceVersionId" required maxLength={36} /></label>
+    <p className="muted">The snapshot is pinned to this price version. It cannot be applied to a different current price later.</p>
     <label>Location ID<input name="locationId" maxLength={36} /></label>
     <label>Result
       <select name="qualificationResult" defaultValue="NOT_QUALIFIED">

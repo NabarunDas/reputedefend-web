@@ -420,6 +420,18 @@ BEGIN
   RETURN NULL;
 END; $$;
 
+CREATE FUNCTION admin_private.price_version_is_current_v1(p_price_id uuid, p_service text, p_at timestamptz)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE current public.price_versions;
+BEGIN
+  IF p_price_id IS NULL OR p_service IS NULL OR p_at IS NULL THEN RETURN false; END IF;
+  current := admin_private.price_version_current_v1(p_service, p_at);
+  IF current.id IS NULL OR current.service_code IS DISTINCT FROM p_service OR current.status <> 'APPROVED' THEN
+    RETURN false;
+  END IF;
+  RETURN current.id = p_price_id;
+END; $$;
+
 CREATE FUNCTION admin_private.prevent_price_overlap_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
@@ -1067,6 +1079,7 @@ BEGIN
     IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF p_version IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF row.status <> 'DRAFT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF row.effective_from <= now() THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     SELECT count(*) INTO overlap_n
     FROM public.price_versions p
     WHERE p.id IS DISTINCT FROM row.id
@@ -1281,7 +1294,9 @@ BEGIN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
     SELECT * INTO price FROM public.price_versions WHERE id = NULLIF(data->>'priceVersionId','')::uuid;
-    IF price.id IS NULL OR price.service_code <> service OR price.status <> 'APPROVED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF price.id IS NULL OR NOT admin_private.price_version_is_current_v1(price.id, service, now()) THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
     apply_discount := coalesce((data->>'applyDiscount')::boolean, false);
     IF apply_discount THEN
       SELECT * INTO snap FROM public.quote_discount_snapshots WHERE id = NULLIF(data->>'qualificationId','')::uuid;
@@ -1336,7 +1351,9 @@ BEGIN
     SELECT * INTO price FROM public.price_versions WHERE id = coalesce(NULLIF(data->>'priceVersionId','')::uuid, qv.price_version_id);
     SELECT * INTO cs FROM public.cases WHERE id = qu.case_id;
     SELECT * INTO mon FROM public.monitoring_requests WHERE id = qu.monitoring_request_id;
-    IF NOT admin_private.quote_service_compatible_v1(cs, service, mon, qu.location_id) OR price.service_code <> service OR price.status <> 'APPROVED' THEN
+    IF NOT admin_private.quote_service_compatible_v1(cs, service, mon, qu.location_id)
+      OR NOT admin_private.price_version_is_current_v1(price.id, service, now())
+    THEN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
     apply_discount := coalesce((data->>'applyDiscount')::boolean, false);
@@ -1735,6 +1752,7 @@ REVOKE ALL ON FUNCTION admin_private.payment_timing_text_v1(text) FROM PUBLIC, a
 REVOKE ALL ON FUNCTION admin_private.success_definition_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.quote_service_compatible_v1(public.cases, text, public.monitoring_requests, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.price_version_current_v1(text, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.price_version_is_current_v1(uuid, text, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.prevent_price_overlap_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_price_version_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.reject_discount_snapshot_mutation_v1() FROM PUBLIC, anon, authenticated, service_role;

@@ -75,4 +75,17 @@ describe("commercial admin commands", () => {
     expect(denied.status).toBe(403)
     expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
   })
+
+  it("rejects a newly created price version whose effective date is not in the future", async () => {
+    const denied = await catalogueCommand(req("/api/operations/catalogue", {
+      operation: "create_price_version",
+      serviceCode: "MANAGED_RELAUNCH",
+      displayName: "Managed Relaunch",
+      amountMinor: 31900,
+      effectiveFrom: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+      taxBehaviour: "UNCONFIRMED",
+    }))
+    expect(denied.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
 })

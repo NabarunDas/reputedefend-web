@@ -13,12 +13,19 @@ function integer(value: unknown): number | null {
   return null
 }
 
+function futureTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || !value) return null
+  const at = Date.parse(value)
+  if (!Number.isFinite(at) || at <= Date.now()) return null
+  return value
+}
+
 export function catalogueArgs(operation: CatalogueOperation, body: Record<string, unknown>) {
   if (operation === "create_price_version") {
     const serviceCode = typeof body.serviceCode === "string" && serviceCodes.includes(body.serviceCode as typeof serviceCodes[number]) ? body.serviceCode : null
     const displayName = text(body.displayName, 1, 120)
     const amountMinor = integer(body.amountMinor)
-    const effectiveFrom = typeof body.effectiveFrom === "string" && body.effectiveFrom ? body.effectiveFrom : null
+    const effectiveFrom = futureTimestamp(body.effectiveFrom)
     const taxBehaviour = typeof body.taxBehaviour === "string" && taxBehaviours.includes(body.taxBehaviour as typeof taxBehaviours[number]) ? body.taxBehaviour : "UNCONFIRMED"
     if (!serviceCode || !displayName || amountMinor === null || !effectiveFrom) return null
     return { serviceCode, displayName, amountMinor, effectiveFrom, taxBehaviour, notes: text(body.notes, 0, 2000) || undefined }

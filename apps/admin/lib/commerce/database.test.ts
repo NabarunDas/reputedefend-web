@@ -167,6 +167,32 @@ async function currentPrice(code: string, at: string) {
   )).rows[0]
 }
 
+async function isCurrentPrice(priceVersionId: string | undefined, service: string, at = new Date().toISOString()) {
+  return (await db.query<{ ok: boolean }>(
+    "select admin_private.price_version_is_current_v1($1::uuid, $2, $3::timestamptz) as ok",
+    [priceVersionId, service, at],
+  )).rows[0].ok
+}
+
+async function scheduleSuccessor(serviceCode: string, amountMinor: number, effectiveFrom = "2027-01-01T00:00:00Z") {
+  const predecessor = await priceId(serviceCode)
+  const created = await rpc("admin_catalogue_command_v1", [token, key(), "create_price_version", {
+    serviceCode, displayName: serviceCode.replaceAll("_", " "), amountMinor, effectiveFrom, taxBehaviour: "UNCONFIRMED",
+  }, null])
+  expect(created?.status).toBe("success")
+  expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("success")
+  return { predecessor, successor: created!.id! }
+}
+
+async function simulateCutover(predecessorId: string, successorId: string, at = new Date().toISOString()) {
+  await db.exec("alter table public.price_versions disable trigger price_versions_protect")
+  await db.exec("alter table public.price_versions disable trigger price_versions_overlap")
+  await db.query("update public.price_versions set effective_to=$2::timestamptz where id=$1", [predecessorId, at])
+  await db.query("update public.price_versions set effective_from=$2::timestamptz where id=$1", [successorId, at])
+  await db.exec("alter table public.price_versions enable trigger price_versions_overlap")
+  await db.exec("alter table public.price_versions enable trigger price_versions_protect")
+}
+
 async function completeOtp(actionId: string | undefined, hash: string, email = "alex@example.com", auth = customerAuth) {
   const pending = secretHash(), session = secretHash()
   expect(await rpc("customer_action_exchange_v1", [actionId, hash, pending])).toMatchObject({ status: "ok" })
@@ -214,6 +240,13 @@ describe("catalogue quotes and orders SQL", () => {
     expect(seeded?.every(row => Number.isInteger(row.amountMinor))).toBe(true)
     expect(seeded?.map(row => row.amountMinor).sort((a, b) => a - b)).toEqual([999, 5900, 9900, 14900, 29900])
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.price_versions where status='APPROVED' and service_code='GUIDED_RELAUNCH' and effective_to is null")).rows[0].n).toBe(1)
+    const now = new Date().toISOString()
+    for (const item of catalogueSeed) {
+      const id = await priceId(item.serviceCode)
+      expect(await isCurrentPrice(id, item.serviceCode, now)).toBe(true)
+      expect((await currentPrice(item.serviceCode, now)).id).toBe(id)
+      expect((await currentPrice(item.serviceCode, now)).amount_minor).toBe(item.amountMinor)
+    }
   })
 
   it("schedules a future approved price without retiring or overlapping the current version", async () => {
@@ -390,9 +423,23 @@ describe("catalogue quotes and orders SQL", () => {
       serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", amountMinor: 34900, effectiveFrom: "2028-01-01T00:00:00Z",
     }, null])
     expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("success")
-    const frozen = await db.query<{ total_amount_minor: number; discount_amount_minor: number }>("select qv.total_amount_minor, qv.discount_amount_minor from public.quote_versions qv join public.service_orders o on o.quote_version_id=qv.id where o.id=$1", [accepted?.orderId])
-    expect(frozen.rows[0]).toEqual({ total_amount_minor: 23920, discount_amount_minor: 5980 })
+    const frozen = await db.query<{ total_amount_minor: number; discount_amount_minor: number; price_version_id: string; status: string }>(
+      "select qv.total_amount_minor, qv.discount_amount_minor, qv.price_version_id, qv.status from public.quote_versions qv join public.service_orders o on o.quote_version_id=qv.id where o.id=$1",
+      [accepted?.orderId],
+    )
+    expect(frozen.rows[0]).toEqual({
+      total_amount_minor: 23920, discount_amount_minor: 5980, price_version_id: await priceId("MANAGED_RELAUNCH"), status: "ACCEPTED",
+    })
     expect((await db.query<{ amount_minor: number }>("select amount_minor from public.service_orders where id=$1", [accepted?.orderId])).rows[0].amount_minor).toBe(23920)
+    await simulateCutover(await priceId("MANAGED_RELAUNCH"), created!.id!)
+    expect((await db.query<{ total_amount_minor: number; discount_amount_minor: number; price_version_id: string }>(
+      "select qv.total_amount_minor, qv.discount_amount_minor, qv.price_version_id from public.quote_versions qv join public.service_orders o on o.quote_version_id=qv.id where o.id=$1",
+      [accepted?.orderId],
+    )).rows[0]).toEqual({
+      total_amount_minor: 23920, discount_amount_minor: 5980, price_version_id: await priceId("MANAGED_RELAUNCH"),
+    })
+    expect((await db.query<{ amount_minor: number; state: string }>("select amount_minor, state from public.service_orders where id=$1", [accepted?.orderId])).rows[0])
+      .toEqual({ amount_minor: 23920, state: "ACCEPTED_SUCCESS_FEE" })
   })
 
   it("creates no payment, invoice or monitoring side effects and keeps workflow gates blocked", async () => {
@@ -547,5 +594,111 @@ describe("catalogue quotes and orders SQL", () => {
     await setTax(ok!.id!, ok!.version!)
     expect((await offer(ok!.id!, ok!.version! + 1))?.status).toBe("success")
     expect((await issue(ok!.id!)).result?.status).toBe("success")
+  })
+
+  it("quotes only the exact current price before and after cutover", async () => {
+    const { predecessor, successor } = await scheduleSuccessor("MANAGED_RELAUNCH", 31900)
+    expect(await isCurrentPrice(predecessor, "MANAGED_RELAUNCH")).toBe(true)
+    expect(await isCurrentPrice(successor, "MANAGED_RELAUNCH")).toBe(false)
+    expect((await currentPrice("MANAGED_RELAUNCH", new Date().toISOString())).id).toBe(predecessor)
+    expect((await createDraft({ serviceCode: "MANAGED_RELAUNCH", priceVersionId: successor }))?.status).toBe("denied")
+    const currentDraft = await createDraft({ serviceCode: "MANAGED_RELAUNCH", priceVersionId: predecessor })
+    expect(currentDraft?.status).toBe("success")
+    expect((await setTax(currentDraft!.id!, currentDraft!.version!))?.status).toBe("success")
+    const offered = await offer(currentDraft!.id!, currentDraft!.version! + 1)
+    expect(offered?.status).toBe("success")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: currentDraft?.id, priceVersionId: successor,
+      scope: "Replacement managed recovery for this location only.", exclusions: "Payment, monitoring activation and Google outcomes remain excluded.",
+    }, offered?.version]))?.status).toBe("denied")
+    const amended = await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: currentDraft?.id, priceVersionId: predecessor,
+      scope: "Replacement managed recovery for this location only.", exclusions: "Payment, monitoring activation and Google outcomes remain excluded.",
+    }, offered?.version])
+    expect(amended?.status).toBe("success")
+    expect((await db.query<{ price_version_id: string; standard_amount_minor: number }>(
+      "select price_version_id, standard_amount_minor from public.quote_versions where id=$1", [amended?.quoteVersionId],
+    )).rows[0]).toEqual({ price_version_id: predecessor, standard_amount_minor: 29900 })
+    await simulateCutover(predecessor, successor)
+    expect(await isCurrentPrice(successor, "MANAGED_RELAUNCH")).toBe(true)
+    expect(await isCurrentPrice(predecessor, "MANAGED_RELAUNCH")).toBe(false)
+    expect((await currentPrice("MANAGED_RELAUNCH", new Date().toISOString())).id).toBe(successor)
+    expect((await createDraft({ serviceCode: "MANAGED_RELAUNCH", priceVersionId: predecessor }))?.status).toBe("denied")
+    const after = await createDraft({ serviceCode: "MANAGED_RELAUNCH", priceVersionId: successor })
+    expect(after?.status).toBe("success")
+    expect((await db.query<{ price_version_id: string; standard_amount_minor: number }>(
+      "select price_version_id, standard_amount_minor from public.quote_versions where id=$1", [after?.quoteVersionId],
+    )).rows[0]).toEqual({ price_version_id: successor, standard_amount_minor: 31900 })
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: after?.id, priceVersionId: predecessor,
+      scope: "Post-cutover amendment still cannot use the predecessor.", exclusions: "Payment, monitoring activation and Google outcomes remain excluded.",
+    }, after?.version]))?.status).toBe("denied")
+    const reviewId = await priceId("GUIDED_REVIEW")
+    expect((await rpc("admin_catalogue_command_v1", [token, key(), "retire_price_version", { priceVersionId: reviewId }, 1]))?.status).toBe("success")
+    expect(await isCurrentPrice(reviewId, "GUIDED_REVIEW")).toBe(false)
+    expect((await createDraft({ serviceCode: "GUIDED_REVIEW", caseId: reviewCase, priceVersionId: reviewId }))?.status).toBe("denied")
+  })
+
+  it("applies Guard snapshots only to the current price they were pinned to", async () => {
+    const predecessor = await priceId("MANAGED_RELAUNCH")
+    const currentSnap = await qualify("MANAGED_RELAUNCH")
+    expect(currentSnap?.status).toBe("success")
+    const currentDiscount = await createDraft({
+      serviceCode: "MANAGED_RELAUNCH", applyDiscount: true, qualificationId: currentSnap?.id, priceVersionId: predecessor,
+    })
+    expect(currentDiscount?.status).toBe("success")
+    expect((await db.query<{ quoted_subtotal_minor: number; discount_amount_minor: number }>(
+      "select quoted_subtotal_minor, discount_amount_minor from public.quote_versions where id=$1", [currentDiscount?.quoteVersionId],
+    )).rows[0]).toEqual({ quoted_subtotal_minor: 23920, discount_amount_minor: 5980 })
+    const reviewSnap = await qualify("MANAGED_REVIEW")
+    const reviewDiscount = await createDraft({
+      serviceCode: "MANAGED_REVIEW", caseId: reviewCase, applyDiscount: true, qualificationId: reviewSnap?.id,
+    })
+    expect((await db.query<{ quoted_subtotal_minor: number }>(
+      "select quoted_subtotal_minor from public.quote_versions where id=$1", [reviewDiscount?.quoteVersionId],
+    )).rows[0].quoted_subtotal_minor).toBe(11920)
+    const { successor } = await scheduleSuccessor("MANAGED_RELAUNCH", 31900)
+    const futureSnap = await qualify("MANAGED_RELAUNCH", { priceVersionId: successor })
+    expect(futureSnap?.status).toBe("success")
+    expect((await createDraft({
+      serviceCode: "MANAGED_RELAUNCH", applyDiscount: true, qualificationId: futureSnap?.id, priceVersionId: successor,
+    }))?.status).toBe("denied")
+    expect((await createDraft({
+      serviceCode: "MANAGED_RELAUNCH", applyDiscount: true, qualificationId: futureSnap?.id, priceVersionId: predecessor,
+    }))?.status).toBe("denied")
+    await simulateCutover(predecessor, successor)
+    expect((await createDraft({
+      serviceCode: "MANAGED_RELAUNCH", applyDiscount: true, qualificationId: currentSnap?.id, priceVersionId: successor,
+    }))?.status).toBe("denied")
+    const successorSnap = await qualify("MANAGED_RELAUNCH", { priceVersionId: successor })
+    const after = await createDraft({
+      serviceCode: "MANAGED_RELAUNCH", applyDiscount: true, qualificationId: successorSnap?.id, priceVersionId: successor,
+    })
+    expect(after?.status).toBe("success")
+    expect((await db.query<{ quoted_subtotal_minor: number; standard_amount_minor: number; discount_amount_minor: number }>(
+      "select quoted_subtotal_minor, standard_amount_minor, discount_amount_minor from public.quote_versions where id=$1", [after?.quoteVersionId],
+    )).rows[0]).toEqual({ quoted_subtotal_minor: 25520, standard_amount_minor: 31900, discount_amount_minor: 6380 })
+  })
+
+  it("denies retroactive approval of a newly created price version", async () => {
+    const created = await rpc("admin_catalogue_command_v1", [token, key(), "create_price_version", {
+      serviceCode: "GUIDED_RELAUNCH",
+      displayName: "Guided Relaunch",
+      amountMinor: 10900,
+      effectiveFrom: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+      taxBehaviour: "UNCONFIRMED",
+    }, null])
+    expect(created?.status).toBe("success")
+    const before = (await db.query<{ effective_from: string; status: string }>(
+      "select effective_from::text, status from public.price_versions where id=$1", [created?.id],
+    )).rows[0]
+    expect(before.status).toBe("DRAFT")
+    expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("denied")
+    const after = (await db.query<{ effective_from: string; status: string; approved_at: string | null }>(
+      "select effective_from::text, status, approved_at::text from public.price_versions where id=$1", [created?.id],
+    )).rows[0]
+    expect(after).toMatchObject({ status: "DRAFT", approved_at: null, effective_from: before.effective_from })
+    expect(await isCurrentPrice(created?.id, "GUIDED_RELAUNCH")).toBe(false)
+    expect(await isCurrentPrice(await priceId("GUIDED_RELAUNCH"), "GUIDED_RELAUNCH")).toBe(true)
   })
 })

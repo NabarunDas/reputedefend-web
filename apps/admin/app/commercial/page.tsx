@@ -30,7 +30,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
     {tab === "catalogue" && <>
       <section className="panel">
         <h2>Create future price version</h2>
-        <p className="muted">Approval requires a fresh sign-in. Approved amounts cannot be edited in place.</p>
+        <p className="muted">New versions must take effect in the future. Approval requires a fresh sign-in and does not rewrite the effective date. Approved amounts cannot be edited in place. Quotes use only the current approved price.</p>
         <CreatePriceForm />
       </section>
       <section className="panel">

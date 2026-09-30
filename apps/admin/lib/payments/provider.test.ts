@@ -1,15 +1,27 @@
 import { describe, expect, it } from "vitest"
 import { createFakePaymentProvider } from "../../../../lib/payments/fake"
 import { disabledPaymentProvider, PaymentsDisabledError } from "../../../../lib/payments/provider"
-import { liveSecretRejected, resolvePaymentProviderMode } from "../../../../lib/payments/config"
-import { assertSafeMetadata, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
+import { isStripeTestSecret, liveSecretRejected, paymentsEnabled, resolvePaymentProviderMode } from "../../../../lib/payments/config"
+import { assertSafeMetadata, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
 
 describe("payment provider contract", () => {
   it("pins the official Stripe SDK version and fail-closes by default", async () => {
     expect(STRIPE_SDK_VERSION).toBe("22.6.2")
     expect(STRIPE_SDK_API_VERSION).toBe("2026-08-26.dahlia")
     expect(resolvePaymentProviderMode({})).toBe("disabled")
+    expect(isStripeTestSecret("sk_test_secret_value")).toBe(true)
+    expect(isStripeTestSecret("rk_test_restricted_key")).toBe(true)
+    expect(isStripeTestSecret("sk_live_secret_value")).toBe(false)
+    expect(isStripeTestSecret("rk_live_restricted_key")).toBe(false)
+    expect(isStripeTestSecret("pk_test_publishable")).toBe(false)
+    expect(isStripeTestSecret("whsec_unknown_secret")).toBe(false)
     expect(liveSecretRejected("stripe_test", "sk_live_secret_value")).toBe(true)
+    expect(liveSecretRejected("stripe_test", "rk_live_restricted_key")).toBe(true)
+    expect(liveSecretRejected("stripe_test", "sk_test_secret_value")).toBe(false)
+    expect(liveSecretRejected("stripe_test", "rk_test_restricted_key")).toBe(false)
+    expect(paymentsEnabled({ PAYMENTS_PROVIDER_MODE: "stripe_test", STRIPE_SECRET_KEY: "sk_live_secret_value" })).toBe(false)
+    expect(paymentsEnabled({ PAYMENTS_PROVIDER_MODE: "stripe_test", STRIPE_SECRET_KEY: "rk_live_restricted_key" })).toBe(false)
+    expect(paymentsEnabled({ PAYMENTS_PROVIDER_MODE: "stripe_test", STRIPE_SECRET_KEY: "pk_test_publishable_xxxxxxxx" })).toBe(false)
     await expect(disabledPaymentProvider().createPaymentCheckout({
       idempotencyKey: "11111111-1111-4111-8111-111111111111",
       stripeCustomerId: "cus_test",
@@ -44,7 +56,12 @@ describe("payment provider contract", () => {
     expect(first.amountMinor).toBe(9900)
     expect(first.id).toBe(second.id)
     expect(provider.checkouts).toBe(1)
-    expect(provider.lastCheckout).toMatchObject({ amountMinor: 9900, mode: "payment", idempotencyKey: input.idempotencyKey })
+    expect(provider.lastCheckout).toMatchObject({ amountMinor: 9900, mode: "payment", idempotencyKey: input.idempotencyKey, paymentMethodTypes: ["card"] })
+    expect(mapBoundedProviderEvent({
+      id: "evt_unpaid",
+      type: "checkout.session.completed",
+      data: { object: { id: first.id, mode: "payment", payment_status: "unpaid" } },
+    }).outcome).toBe("correlated")
   })
 
   it("creates Managed setup with zero charge and off-session intent", async () => {
@@ -59,6 +76,42 @@ describe("payment provider contract", () => {
     expect(session.mode).toBe("setup")
     expect(session.amountMinor).toBe(0)
     expect(provider.lastCheckout).toMatchObject({ mode: "setup", amountMinor: 0, setupUsage: "off_session" })
+  })
+
+  it("classifies Stripe-shaped off-session failures without creating a second intent", async () => {
+    const provider = createFakePaymentProvider()
+    const input = {
+      idempotencyKey: "88888888-8888-4888-8888-888888888888",
+      stripeCustomerId: "cus_testabc",
+      paymentMethodId: "pm_test_saved",
+      amountMinor: 29900,
+      currency: "GBP" as const,
+      metadata: { customerId: "22222222-2222-4222-8222-222222222222", serviceOrderId: "33333333-3333-4333-8333-333333333333" },
+    }
+    provider.nextOffSessionError = { type: "StripeRateLimitError", statusCode: 429, rawType: "rate_limit_error", code: "rate_limit" }
+    const limited = await provider.createOffSessionPayment(input)
+    expect(limited).toMatchObject({ classification: "retryable", retryable: true })
+    expect(provider.intents).toBe(0)
+    provider.nextOffSessionError = { type: "StripeCardError", code: "card_declined", payment_intent: { id: "pi_declined", status: "requires_payment_method" } }
+    const declined = await provider.createOffSessionPayment(input)
+    expect(declined).toMatchObject({ classification: "declined", retryable: false, id: "pi_declined" })
+    provider.nextOffSessionError = { type: "StripeCardError", code: "authentication_required", payment_intent: { id: "pi_sca", status: "requires_action" } }
+    const sca = await provider.createOffSessionPayment({ ...input, idempotencyKey: "99999999-9999-4999-8999-999999999999" })
+    expect(sca).toMatchObject({ classification: "requires_action", retryable: false, id: "pi_sca" })
+    provider.objects.set("pi_sca", { id: "pi_sca", status: "requires_action" })
+    const cancelled = await provider.cancelPaymentIntent({ id: "pi_sca", idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })
+    expect(cancelled).toMatchObject({ cancelled: true, alreadySucceeded: false })
+    provider.objects.set("pi_paid", { id: "pi_paid", status: "succeeded" })
+    expect(await provider.cancelPaymentIntent({ id: "pi_paid", idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" })).toMatchObject({
+      alreadySucceeded: true, cancelled: false,
+    })
+  })
+
+  it("rejects a SetupIntent identifier as a PaymentMethod", async () => {
+    const provider = createFakePaymentProvider()
+    expect(await provider.retrievePaymentMethod("seti_not_a_method")).toBeNull()
+    const method = await provider.retrievePaymentMethod("pm_test_saved")
+    expect(method?.id).toBe("pm_test_saved")
   })
 
   it("rejects sensitive Stripe metadata and never logs secrets", () => {

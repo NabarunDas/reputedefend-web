@@ -23,8 +23,8 @@ export function paymentArgs(operation: PaymentOperation, body: Record<string, un
   if (operation === "approve_success_fee") {
     const evidenceNote = text(body.evidenceNote, 10, 2000)
     const approvalReason = text(body.approvalReason, 10, 2000)
-    if (!evidenceNote || !approvalReason) return null
-    return { serviceOrderId: body.serviceOrderId, version: body.version, evidenceNote, approvalReason }
+    if (!evidenceNote || !approvalReason || !isUuid(body.outcomeEvidenceVersionId)) return null
+    return { serviceOrderId: body.serviceOrderId, version: body.version, evidenceNote, approvalReason, outcomeEvidenceVersionId: body.outcomeEvidenceVersionId }
   }
   if (operation === "revoke_action") {
     const reason = text(body.reason, 10, 2000)

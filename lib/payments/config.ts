@@ -9,9 +9,13 @@ export function resolvePaymentProviderMode(env: PaymentEnv = process.env): Payme
   return "disabled"
 }
 
+export function isStripeTestSecret(secret: string | null | undefined): secret is string {
+  return !!secret && secret.length >= 16 && (secret.startsWith("sk_test_") || secret.startsWith("rk_test_"))
+}
+
 export function stripeSecret(env: PaymentEnv = process.env): string | null {
   const raw = env.STRIPE_SECRET_KEY
-  if (!raw || raw.length < 16) return null
+  if (!isStripeTestSecret(raw)) return null
   return raw
 }
 
@@ -28,13 +32,15 @@ export function customerOrigin(env: PaymentEnv = process.env): string | null {
 }
 
 export function liveSecretRejected(mode: PaymentProviderMode, secret: string | null): boolean {
-  return mode === "stripe_test" && !!secret && secret.startsWith("sk_live")
+  if (mode !== "stripe_test") return false
+  if (!secret) return true
+  return !isStripeTestSecret(secret)
 }
 
 export function paymentsEnabled(env: PaymentEnv = process.env): boolean {
   const mode = resolvePaymentProviderMode(env)
-  const secret = stripeSecret(env)
+  const secret = env.STRIPE_SECRET_KEY ?? null
   if (mode !== "stripe_test") return false
-  if (!secret || liveSecretRejected(mode, secret)) return false
+  if (liveSecretRejected(mode, secret) || !isStripeTestSecret(secret)) return false
   return true
 }

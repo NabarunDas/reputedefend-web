@@ -57,11 +57,21 @@ describe("admin payment commands", () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
+  it("rejects success-fee approval without outcome evidence", async () => {
+    const denied = await paymentCommand(req({
+      operation: "approve_success_fee", serviceOrderId: orderId, version: 1,
+      evidenceNote: "Screenshot of the Google outcome page.", approvalReason: "Matches the accepted success definition.",
+    }))
+    expect(denied.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("maps reauth_required for success-fee approval", async () => {
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const denied = await paymentCommand(req({
       operation: "approve_success_fee", serviceOrderId: orderId, version: 1,
       evidenceNote: "Screenshot of the Google outcome page.", approvalReason: "Matches the accepted success definition.",
+      outcomeEvidenceVersionId: "99999999-9999-4999-8999-999999999999",
     }))
     expect(denied.status).toBe(403)
     expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })

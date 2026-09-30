@@ -16,6 +16,7 @@ export type PaymentMetadata = {
   obligationId?: string
   attemptId?: string
   orderRef?: string
+  providerOperationId?: string
 }
 
 export type CreateCheckoutInput = {
@@ -54,11 +55,57 @@ export type ProviderCheckout = {
 }
 
 export type ProviderPaymentIntent = {
-  id: string
+  id?: string
   status: string
   amountMinor: number
   requiresAction: boolean
   livemode: false
+  classification: "succeeded" | "requires_action" | "declined" | "retryable"
+  retryable: boolean
+  failureCode?: string | null
+  failureCategory?: string | null
+}
+
+export type RetrievedCheckout = {
+  id: string
+  mode: CheckoutMode
+  status: string
+  paymentStatus: string | null
+  paymentIntentId: string | null
+  setupIntentId: string | null
+  customerId: string | null
+  url: string | null
+  livemode: false
+}
+
+export type RetrievedPaymentIntent = {
+  id: string
+  status: string
+  customerId: string | null
+  amountMinor: number
+  chargeId: string | null
+  receiptUrl: string | null
+  lastErrorCode: string | null
+  metadata: Record<string, string>
+  livemode: false
+}
+
+export type RetrievedSetupIntent = {
+  id: string
+  status: string
+  usage: string | null
+  customerId: string | null
+  paymentMethodId: string | null
+  metadata: Record<string, string>
+  livemode: false
+}
+
+export type CancelPaymentResult = {
+  ok: boolean
+  id: string
+  status: string
+  alreadySucceeded: boolean
+  cancelled: boolean
 }
 
 export type ProviderCustomer = {
@@ -80,7 +127,7 @@ export type MappedProviderEvent = {
   type: string
   objectId: string
   objectType: string
-  outcome: "succeeded" | "failed" | "requires_action" | "setup_succeeded" | "setup_failed" | "ignored"
+  outcome: "succeeded" | "failed" | "requires_action" | "setup_succeeded" | "setup_failed" | "ignored" | "correlated"
   paymentMethod?: SafePaymentMethod
   stripeCustomerId?: string
   chargeId?: string | null
@@ -119,18 +166,9 @@ export function mapBoundedProviderEvent(event: BoundedProviderEvent): MappedProv
     outcome: "ignored",
     stripeCustomerId: asId(object.customer),
   }
-  if (event.type === "checkout.session.completed" && object.mode === "setup") {
-    mapped.outcome = "setup_succeeded"
-    const setupPm = asRecord(asRecord(object.setup_intent).payment_method)
-    mapped.paymentMethod = {
-      id: asId(object.payment_method) || asId(setupPm) || asId(object.setup_intent) || "",
-      brand: typeof card.brand === "string" ? card.brand : typeof setupPm.brand === "string" ? setupPm.brand : null,
-      last4: typeof card.last4 === "string" ? card.last4 : null,
-      expMonth: typeof card.exp_month === "number" ? card.exp_month : null,
-      expYear: typeof card.exp_year === "number" ? card.exp_year : null,
-      fingerprint: typeof card.fingerprint === "string" ? card.fingerprint : null,
-    }
-  } else if (event.type === "checkout.session.completed" || event.type === "payment_intent.succeeded") {
+  if (event.type === "checkout.session.completed") {
+    mapped.outcome = "correlated"
+  } else if (event.type === "payment_intent.succeeded") {
     mapped.outcome = "succeeded"
     mapped.chargeId = asId(latestCharge) ?? null
     mapped.receiptUrl = typeof asRecord(latestCharge).receipt_url === "string" ? asRecord(latestCharge).receipt_url as string : null
@@ -152,7 +190,7 @@ export function mapBoundedProviderEvent(event: BoundedProviderEvent): MappedProv
         expYear: typeof card.exp_year === "number" ? card.exp_year : null,
         fingerprint: typeof card.fingerprint === "string" ? card.fingerprint : null,
       }
-    } else if (typeof pm === "string") {
+    } else if (typeof pm === "string" && pm.startsWith("pm_")) {
       mapped.paymentMethod = { id: pm, brand: null, last4: null, expMonth: null, expYear: null, fingerprint: null }
     }
   } else if (event.type === "setup_intent.setup_failed" || event.type === "setup_intent.canceled") {
@@ -169,6 +207,7 @@ export function paymentMetadata(input: PaymentMetadata): Record<string, string> 
   if (input.obligationId) out.obligationId = input.obligationId
   if (input.attemptId) out.attemptId = input.attemptId
   if (input.orderRef) out.orderRef = input.orderRef
+  if (input.providerOperationId) out.providerOperationId = input.providerOperationId
   return out
 }
 
@@ -178,7 +217,7 @@ export function isUuid(value: unknown): value is string {
 
 export function assertSafeMetadata(meta: Record<string, string>) {
   for (const [key, value] of Object.entries(meta)) {
-    if (!["customerId", "serviceOrderId", "obligationId", "attemptId", "orderRef"].includes(key)) {
+    if (!["customerId", "serviceOrderId", "obligationId", "attemptId", "orderRef", "providerOperationId"].includes(key)) {
       throw new Error("Stripe metadata contains a disallowed key")
     }
     if (key === "orderRef") {

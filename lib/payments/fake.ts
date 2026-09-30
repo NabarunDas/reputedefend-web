@@ -1,40 +1,66 @@
-import { assertSafeMetadata, paymentMetadata, type MappedProviderEvent } from "./model"
+import { assertSafeMetadata, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
 import type { PaymentProvider } from "./provider"
+
+type StoredCheckout = {
+  id: string
+  url: string
+  mode: "payment" | "setup"
+  amountMinor: number
+  status: string
+  paymentStatus: string | null
+  paymentIntentId: string | null
+  setupIntentId: string | null
+  customerId: string
+  livemode: false
+}
 
 export function createFakePaymentProvider(): PaymentProvider & {
   customers: number
   checkouts: number
   setups: number
   intents: number
-  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session" } | null
+  cancels: number
+  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"] } | null
   lastIntent: { amountMinor: number; idempotencyKey: string; offSession: true } | null
   idempotency: Set<string>
   nextIntentStatus: string
+  nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
+  objects: Map<string, Record<string, unknown>>
 } {
   const customers = new Map<string, string>()
-  const sessions = new Map<string, { id: string; url: string; mode: "payment" | "setup"; amountMinor: number }>()
-  const intents = new Map<string, { id: string; status: string; amountMinor: number }>()
+  const sessions = new Map<string, StoredCheckout>()
+  const intents = new Map<string, { id: string; status: string; amountMinor: number; customerId?: string }>()
+  const setups = new Map<string, { id: string; status: string; usage: string; customerId: string; paymentMethodId: string | null; metadata: Record<string, string> }>()
+  const methods = new Map<string, { id: string; brand: string; last4: string; expMonth: number; expYear: number; fingerprint: string }>()
+  const objects = new Map<string, Record<string, unknown>>()
   const state = {
     customers: 0,
     checkouts: 0,
     setups: 0,
     intents: 0,
-    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session" } | null,
+    cancels: 0,
+    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"] } | null,
     lastIntent: null as { amountMinor: number; idempotencyKey: string; offSession: true } | null,
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
+    nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
   }
+
   return {
     mode: "fake",
     get customers() { return state.customers },
     get checkouts() { return state.checkouts },
     get setups() { return state.setups },
     get intents() { return state.intents },
+    get cancels() { return state.cancels },
     get lastCheckout() { return state.lastCheckout },
     get lastIntent() { return state.lastIntent },
     get idempotency() { return state.idempotency },
     get nextIntentStatus() { return state.nextIntentStatus },
     set nextIntentStatus(value: string) { state.nextIntentStatus = value },
+    get nextOffSessionError() { return state.nextOffSessionError },
+    set nextOffSessionError(value) { state.nextOffSessionError = value },
+    get objects() { return objects },
     async createCustomer({ idempotencyKey, customerId }) {
       state.idempotency.add(idempotencyKey)
       const existing = customers.get(customerId)
@@ -46,81 +72,175 @@ export function createFakePaymentProvider(): PaymentProvider & {
     },
     async createPaymentCheckout(input) {
       assertSafeMetadata(paymentMetadata(input.metadata))
-      if (sessions.has(input.idempotencyKey)) {
-        const existing = sessions.get(input.idempotencyKey)!
-        return { ...existing, livemode: false as const }
-      }
-      const created = {
+      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      const created: StoredCheckout = {
         id: `cs_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`,
         url: `https://checkout.stripe.test/${input.idempotencyKey}`,
-        mode: "payment" as const,
+        mode: "payment",
         amountMinor: input.amountMinor,
-        livemode: false as const,
+        status: "open",
+        paymentStatus: "unpaid",
+        paymentIntentId: `pi_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`,
+        setupIntentId: null,
+        customerId: input.stripeCustomerId,
+        livemode: false,
       }
       sessions.set(input.idempotencyKey, created)
+      objects.set(created.id, created)
       state.checkouts += 1
-      state.lastCheckout = { amountMinor: input.amountMinor, mode: "payment", idempotencyKey: input.idempotencyKey }
+      state.lastCheckout = { amountMinor: input.amountMinor, mode: "payment", idempotencyKey: input.idempotencyKey, paymentMethodTypes: ["card"] }
       state.idempotency.add(input.idempotencyKey)
-      return created
+      return { id: created.id, url: created.url, mode: "payment", amountMinor: input.amountMinor, livemode: false as const }
     },
     async createSetupCheckout(input) {
       assertSafeMetadata(paymentMetadata(input.metadata))
-      if (sessions.has(input.idempotencyKey)) {
-        const existing = sessions.get(input.idempotencyKey)!
-        return { ...existing, livemode: false as const }
-      }
-      const created = {
+      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      const setupId = `seti_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`
+      const created: StoredCheckout = {
         id: `cs_test_setup_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
         url: `https://checkout.stripe.test/setup/${input.idempotencyKey}`,
-        mode: "setup" as const,
+        mode: "setup",
         amountMinor: 0,
-        livemode: false as const,
+        status: "open",
+        paymentStatus: null,
+        paymentIntentId: null,
+        setupIntentId: setupId,
+        customerId: input.stripeCustomerId,
+        livemode: false,
       }
       sessions.set(input.idempotencyKey, created)
+      setups.set(setupId, {
+        id: setupId,
+        status: "requires_payment_method",
+        usage: "off_session",
+        customerId: input.stripeCustomerId,
+        paymentMethodId: null,
+        metadata: paymentMetadata(input.metadata),
+      })
+      objects.set(created.id, created)
+      objects.set(setupId, setups.get(setupId)!)
       state.setups += 1
-      state.lastCheckout = { amountMinor: 0, mode: "setup", idempotencyKey: input.idempotencyKey, setupUsage: "off_session" }
+      state.lastCheckout = { amountMinor: 0, mode: "setup", idempotencyKey: input.idempotencyKey, setupUsage: "off_session", paymentMethodTypes: ["card"] }
       state.idempotency.add(input.idempotencyKey)
-      return created
+      return { id: created.id, url: created.url, mode: "setup", amountMinor: 0, livemode: false as const }
     },
     async createOffSessionPayment(input) {
       assertSafeMetadata(paymentMetadata(input.metadata))
-      if (intents.has(input.idempotencyKey)) return { ...intents.get(input.idempotencyKey)!, requiresAction: intents.get(input.idempotencyKey)!.status === "requires_action", livemode: false as const }
+      if (intents.has(input.idempotencyKey)) {
+        const existing = intents.get(input.idempotencyKey)!
+        return {
+          id: existing.id,
+          status: existing.status,
+          amountMinor: existing.amountMinor,
+          requiresAction: existing.status === "requires_action",
+          livemode: false as const,
+          classification: existing.status === "succeeded" ? "succeeded" : existing.status === "requires_action" ? "requires_action" : "declined",
+          retryable: false,
+        } satisfies ProviderPaymentIntent
+      }
+      if (state.nextOffSessionError) {
+        const error = state.nextOffSessionError
+        state.nextOffSessionError = null
+        if (error.payment_intent?.status === "requires_action" || error.code === "authentication_required") {
+          return {
+            id: error.payment_intent?.id,
+            status: "requires_action",
+            amountMinor: input.amountMinor,
+            requiresAction: true,
+            livemode: false,
+            classification: "requires_action",
+            retryable: false,
+            failureCode: error.code ?? "authentication_required",
+            failureCategory: "AUTHENTICATION_REQUIRED",
+          }
+        }
+        const retryable = error.type === "StripeConnectionError" || error.type === "StripeRateLimitError" || error.rawType === "api_connection_error" || (error.statusCode ?? 0) >= 500
+        return {
+          id: error.payment_intent?.id,
+          status: retryable ? "retryable" : "failed",
+          amountMinor: input.amountMinor,
+          requiresAction: false,
+          livemode: false,
+          classification: retryable ? "retryable" : "declined",
+          retryable,
+          failureCode: error.code ?? error.type ?? "card_declined",
+          failureCategory: retryable ? "INFRASTRUCTURE" : "DECLINED",
+        }
+      }
       const status = state.nextIntentStatus
-      const created = { id: `pi_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`, status, amountMinor: input.amountMinor }
+      const created = { id: `pi_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`, status, amountMinor: input.amountMinor, customerId: input.stripeCustomerId }
       intents.set(input.idempotencyKey, created)
+      objects.set(created.id, created)
       state.intents += 1
       state.lastIntent = { amountMinor: input.amountMinor, idempotencyKey: input.idempotencyKey, offSession: true }
       state.idempotency.add(input.idempotencyKey)
-      return { ...created, requiresAction: status === "requires_action", livemode: false as const }
-    },
-    mapEvent(event) {
-      const object = event.data?.object ?? {}
-      const objectId = typeof object.id === "string" ? object.id : ""
-      const mapped: MappedProviderEvent = {
-        eventId: event.id,
-        type: event.type,
-        objectId,
-        objectType: event.type.startsWith("payment_intent") ? "payment_intent" : event.type.startsWith("setup_intent") ? "setup_intent" : "checkout.session",
-        outcome: "ignored",
+      return {
+        id: created.id,
+        status,
+        amountMinor: input.amountMinor,
+        requiresAction: status === "requires_action",
+        livemode: false as const,
+        classification: status === "succeeded" ? "succeeded" : status === "requires_action" ? "requires_action" : "declined",
+        retryable: false,
       }
-      if (event.type === "checkout.session.completed" && object.mode === "setup") {
-        mapped.outcome = "setup_succeeded"
-        mapped.stripeCustomerId = typeof object.customer === "string" ? object.customer : undefined
-        mapped.paymentMethod = { id: String(object.setup_intent || "pm_test_saved"), brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test" }
-      } else if (event.type === "checkout.session.completed" || event.type === "payment_intent.succeeded") {
-        mapped.outcome = "succeeded"
-      } else if (event.type === "payment_intent.requires_action") {
-        mapped.outcome = "requires_action"
-      } else if (event.type === "payment_intent.payment_failed" || event.type === "checkout.session.expired") {
-        mapped.outcome = "failed"
-        mapped.failureCategory = "DECLINED"
-        mapped.failureCode = "card_declined"
-      } else if (event.type === "setup_intent.succeeded") {
-        mapped.outcome = "setup_succeeded"
-        mapped.stripeCustomerId = typeof object.customer === "string" ? object.customer : "cus_test"
-        mapped.paymentMethod = { id: String(object.payment_method || "pm_test_saved"), brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test" }
-      }
-      return mapped
     },
-  }
+    async retrieveCheckout(id) {
+      const found = [...sessions.values()].find(session => session.id === id) || objects.get(id) as StoredCheckout | undefined
+      return found ? { ...found, livemode: false as const } : null
+    },
+    async retrievePaymentIntent(id) {
+      const found = [...intents.values()].find(intent => intent.id === id) || objects.get(id) as { id: string; status: string; amountMinor?: number; customerId?: string } | undefined
+      if (!found) return null
+      return {
+        id: found.id,
+        status: found.status,
+        customerId: found.customerId ?? null,
+        amountMinor: found.amountMinor ?? 0,
+        chargeId: found.status === "succeeded" ? `ch_${found.id.slice(-8)}` : null,
+        receiptUrl: found.status === "succeeded" ? `https://stripe.test/receipts/${found.id}` : null,
+        lastErrorCode: found.status === "failed" ? "card_declined" : null,
+        metadata: {},
+        livemode: false as const,
+      }
+    },
+    async retrieveSetupIntent(id) {
+      const found = setups.get(id) || objects.get(id) as { id: string; status?: string; usage?: string; customerId?: string; paymentMethodId?: string | null; metadata?: Record<string, string> } | undefined
+      if (!found) return null
+      return {
+        id: found.id,
+        status: found.status || "requires_payment_method",
+        usage: found.usage ?? "off_session",
+        customerId: found.customerId ?? null,
+        paymentMethodId: found.paymentMethodId ?? null,
+        metadata: found.metadata ?? {},
+        livemode: false as const,
+      }
+    },
+    async retrievePaymentMethod(id) {
+      if (!id.startsWith("pm_")) return null
+      const found = methods.get(id) || {
+        id, brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test",
+      }
+      return found
+    },
+    async cancelPaymentIntent({ id, idempotencyKey }) {
+      state.idempotency.add(idempotencyKey)
+      const found = [...intents.values()].find(intent => intent.id === id) || objects.get(id) as { id: string; status: string } | undefined
+      if (!found) return { ok: false, id, status: "unknown", alreadySucceeded: false, cancelled: false }
+      if (found.status === "succeeded") return { ok: false, id: found.id, status: "succeeded", alreadySucceeded: true, cancelled: false }
+      found.status = "canceled"
+      state.cancels += 1
+      return { ok: true, id: found.id, status: "canceled", alreadySucceeded: false, cancelled: true }
+    },
+    mapEvent(event): MappedProviderEvent {
+      return mapBoundedProviderEvent(event)
+    },
+    succeedSetup(id: string, paymentMethodId = "pm_test_saved") {
+      const setup = setups.get(id)
+      if (!setup) return
+      setup.status = "succeeded"
+      setup.paymentMethodId = paymentMethodId
+      methods.set(paymentMethodId, { id: paymentMethodId, brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test" })
+    },
+  } as ReturnType<typeof createFakePaymentProvider> & { succeedSetup(id: string, paymentMethodId?: string): void }
 }

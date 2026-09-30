@@ -23,7 +23,7 @@ export async function handleStripeWebhook(request: NextRequest, env: Record<stri
   }
   raw += decoder.decode()
   const signature = request.headers.get("stripe-signature") || ""
-  let event: { id: string; type: string; data?: { object?: { id?: string } } }
+  let event: { id: string; type: string; livemode?: boolean; data?: { object?: { id?: string } } }
   try {
     event = constructStripeEvent(raw, signature, secret)
   } catch {
@@ -31,7 +31,7 @@ export async function handleStripeWebhook(request: NextRequest, env: Record<stri
   }
   const objectId = typeof event.data?.object?.id === "string" ? event.data.object.id : null
   const result = await backend().rpc<{ status?: string; duplicate?: boolean }>("payment_receive_stripe_event_v1", {
-    p_event_id: event.id, p_type: event.type, p_object_id: objectId,
+    p_event_id: event.id, p_type: event.type, p_object_id: objectId, p_livemode: event.livemode === true,
   })
   if (result.status !== "success") return reply({ status: "invalid" }, 400)
   return reply({ status: "success", duplicate: result.duplicate === true })

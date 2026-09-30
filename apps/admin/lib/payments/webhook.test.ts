@@ -35,14 +35,14 @@ describe("stripe webhook", () => {
 
   it("verifies the raw body and enqueues one event receipt", async () => {
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret_value")
-    mocks.construct.mockReturnValue({ id: "evt_1", type: "checkout.session.completed", data: { object: { id: "cs_1" } } })
+    mocks.construct.mockReturnValue({ id: "evt_1", type: "checkout.session.completed", livemode: false, data: { object: { id: "cs_1" } } })
     mocks.rpc.mockResolvedValue({ status: "success", duplicate: false })
     const raw = "{\"id\":\"evt_1\",\"type\":\"checkout.session.completed\"}"
     const ok = await handleStripeWebhook(req(raw, "t=1,v1=good"))
     expect(ok.status).toBe(200)
     expect(mocks.construct).toHaveBeenCalledWith(raw, "t=1,v1=good", "whsec_test_secret_value")
     expect(mocks.rpc).toHaveBeenCalledWith("payment_receive_stripe_event_v1", {
-      p_event_id: "evt_1", p_type: "checkout.session.completed", p_object_id: "cs_1",
+      p_event_id: "evt_1", p_type: "checkout.session.completed", p_object_id: "cs_1", p_livemode: false,
     })
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/sk_live|whsec_|client_secret/)
   })

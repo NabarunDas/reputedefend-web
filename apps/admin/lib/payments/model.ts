@@ -25,6 +25,7 @@ export type MoneyOrder = {
   consentId: string | null
   approvalId: string | null
   receiptId: string | null
+  acceptedEvidence?: Array<{ id: string; filename: string; versionNumber: number }>
 }
 
 export type MoneyList = { orders: MoneyOrder[] }

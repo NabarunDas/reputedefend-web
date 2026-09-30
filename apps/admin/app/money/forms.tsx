@@ -68,7 +68,9 @@ export function IssuePaymentActionForm({
   </form>
 }
 
-export function ApproveSuccessFeeForm({ serviceOrderId, version }: { serviceOrderId: string; version: number }) {
+export function ApproveSuccessFeeForm({
+  serviceOrderId, version, evidence,
+}: { serviceOrderId: string; version: number; evidence?: Array<{ id: string; filename: string; versionNumber: number }> }) {
   const { busy, message, run } = useCommand()
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -76,12 +78,19 @@ export function ApproveSuccessFeeForm({ serviceOrderId, version }: { serviceOrde
     await run("approve_success_fee", {
       serviceOrderId,
       version,
+      outcomeEvidenceVersionId: String(form.get("outcomeEvidenceVersionId") || ""),
       evidenceNote: String(form.get("evidenceNote") || ""),
       approvalReason: String(form.get("approvalReason") || ""),
     })
   }
   return <form onSubmit={submit}>
-    <p>Approval requires a fresh sign-in in the last five minutes. The amount is the immutable accepted order total. This page does not charge a card.</p>
+    <p>Approval requires a fresh sign-in in the last five minutes. The amount is the immutable accepted order total. This page does not charge a card. Select accepted case evidence for the same case.</p>
+    <label>Accepted outcome evidence
+      <select name="outcomeEvidenceVersionId" required>
+        <option value="">Select accepted evidence</option>
+        {(evidence ?? []).map(item => <option key={item.id} value={item.id}>{item.filename} · v{item.versionNumber}</option>)}
+      </select>
+    </label>
     <label>Evidence note<textarea name="evidenceNote" required minLength={10} maxLength={2000} /></label>
     <label>Approval reason<textarea name="approvalReason" required minLength={10} maxLength={2000} /></label>
     <button type="submit" disabled={busy}>Approve success fee</button>

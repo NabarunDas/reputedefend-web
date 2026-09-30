@@ -8,7 +8,7 @@ export { createFakePaymentProvider as mapWithFake } from "./fake"
 export { PaymentsDisabledError, type PaymentProvider } from "./provider"
 export { createFakePaymentProvider } from "./fake"
 export { createStripePaymentProvider } from "./stripe"
-export { resolvePaymentProviderMode, paymentsEnabled, stripeSecret, stripeWebhookSecret, customerOrigin } from "./config"
+export { resolvePaymentProviderMode, paymentsEnabled, stripeSecret, stripeWebhookSecret, customerOrigin, isStripeTestSecret, liveSecretRejected } from "./config"
 
 export function paymentProvider(env: PaymentEnv = process.env, options?: { fake?: boolean }): PaymentProvider {
   if (options?.fake) return createFakePaymentProvider()

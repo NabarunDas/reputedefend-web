@@ -12,12 +12,12 @@ Do **not** authorize a card now and capture weeks later.
 
 Managed flow:
 
-1. Hosted Checkout `mode=setup`. Stripe Node SDK `22.6.2` Checkout `setup_intent_data` has no `usage` field; SetupIntent create defaults usage to `off_session`, which is the intended later-charge use. Do not invent an API-version string.
+1. Hosted Checkout `mode=setup` with `payment_method_types: ["card"]`. Stripe Node SDK `22.6.2` Checkout `setup_intent_data` has no `usage` field; SetupIntent create defaults usage to `off_session`. The retrieved SetupIntent usage is verified before setup is marked ready. Do not invent an API-version string.
 2. Save a reusable payment method
 3. Record immutable ProfileRelaunch later-charge consent (`SUCCESS_FEE_CONSENT_V1`)
 4. No payment obligation and no charge at setup
 5. Perform the service
-6. Qualifying evidenced outcome (`RESTORED` or `REMOVED` only)
+6. Qualifying evidenced outcome (`RESTORED` or `REMOVED` only) with an accepted same-case `outcome_evidence_version_id`
 7. Fresh-auth Admin billing approval
 8. Exactly one `SUCCESS_FEE` obligation from the immutable accepted order amount
 9. One idempotent off-session PaymentIntent through the Step 10 `COLLECT_PAYMENT` job
@@ -27,7 +27,7 @@ A saved payment method alone is not authority to charge.
 
 ## Guided design
 
-Accepted Guided orders create one `UPFRONT` obligation from the immutable Step 13 order snapshot. Hosted Checkout `mode=payment` uses that amount in GBP minor units. The success return page at `/pay/return` never marks paid. Only a signed webhook / `PROCESS_STRIPE_EVENT` reconciliation can mark `PAID` and write a receipt.
+Accepted Guided orders create one `UPFRONT` obligation from the immutable Step 13 order snapshot. Hosted Checkout `mode=payment` with `payment_method_types: ["card"]` uses that amount in GBP minor units. The success return page at `/pay/return` never marks paid. `checkout.session.completed` only binds provider IDs. Canonical collection success is a retrieved PaymentIntent with `status = succeeded`. An unpaid Checkout Session never writes a receipt.
 
 ## What exists in source
 

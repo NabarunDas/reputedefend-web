@@ -26,7 +26,7 @@ export default async function MoneyPage() {
               {row.paymentModel === "UPFRONT" && row.obligationState !== "PAID" && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_guided_payment_action" label="Issue upfront payment action" />}
               {row.paymentModel === "SUCCESS_FEE" && !row.setupReady && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_managed_setup_action" label="Issue payment-method setup action" />}
               {row.paymentModel === "SUCCESS_FEE" && row.obligationState === "AUTHENTICATION_REQUIRED" && row.obligationId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_recovery_action" label="Issue recovery action" obligationId={row.obligationId} />}
-              {row.paymentModel === "SUCCESS_FEE" && !row.approvalId && <ApproveSuccessFeeForm serviceOrderId={row.orderId} version={row.version} />}
+              {row.paymentModel === "SUCCESS_FEE" && !row.approvalId && <ApproveSuccessFeeForm serviceOrderId={row.orderId} version={row.version} evidence={row.acceptedEvidence} />}
               {row.receiptId && <p>Receipt recorded {ukDate(new Date().toISOString())}.</p>}
             </td>
           </tr>)}</tbody>

@@ -216,6 +216,46 @@ describe("customer action page", () => {
     expect(screen.queryByText(/Payment successful/i)).toBeNull()
   })
 
+  it("shows the hosted invoice link without marking the obligation paid", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "INVOICE_PAYMENT",
+          agreement: null,
+          payment: {
+            orderId: actionId,
+            orderRef: "SO-26-ABCDE2",
+            serviceCode: "GUIDED_RELAUNCH",
+            amountMinor: 9900,
+            currency: "GBP",
+            taxBehaviour: "NOT_APPLICABLE",
+            taxAmountMinor: 0,
+            paymentModel: "UPFRONT",
+            successDefinition: "Restore the listed profile.",
+            obligationId: actionId,
+            obligationState: "DUE",
+            consentText: "No service fee is charged today.",
+            consentVersion: "SUCCESS_FEE_CONSENT_V1",
+            invoiceId: actionId,
+            invoiceStatus: "ISSUED",
+            hostedInvoiceUrl: "https://invoice.stripe.test/in_test",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("link", { name: "Open the secure Stripe hosted invoice" })).toBeTruthy())
+    expect(screen.getByRole("link", { name: "Open the secure Stripe hosted invoice" })).toHaveAttribute("href", "https://invoice.stripe.test/in_test")
+    expect(document.body.textContent).toMatch(/does not mark this paid/)
+    expect(screen.queryByRole("button", { name: /mark paid/i })).toBeNull()
+  })
+
   it("does not claim a code was sent when the provider fails", async () => {
     await renderAfterExchange()
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }) })

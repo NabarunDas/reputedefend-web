@@ -2,6 +2,12 @@ import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
+function applyResult(result: { status?: string }): JobHandlerResult {
+  if (result.status === "unmatched") return { ok: false, retryable: true, error: "correlation_pending" }
+  if (result.status === "success" || result.status === "denied") return { ok: true }
+  return { ok: false, retryable: true, error: "Provider event could not be applied." }
+}
+
 export function collectPaymentHandler(env: Record<string, string | undefined> = process.env): JobHandler {
   return {
     jobType: "COLLECT_PAYMENT",
@@ -52,7 +58,16 @@ export function collectPaymentHandler(env: Record<string, string | undefined> = 
           p_event_id: `collect:${prepared.idempotencyKey}:${intent.id}:action`,
           p_type: "payment_intent.requires_action",
           p_object_id: intent.id,
-          p_payload: { status: intent.status },
+          p_payload: {
+            status: intent.status,
+            paymentIntentStatus: intent.status,
+            amountMinor: intent.amountMinor,
+            currency: "gbp",
+            providerOperationId: prepared.providerOperationId,
+            customerId: prepared.customerId,
+            serviceOrderId: prepared.serviceOrderId,
+            obligationId,
+          },
         })
         return { ok: true }
       }
@@ -61,7 +76,12 @@ export function collectPaymentHandler(env: Record<string, string | undefined> = 
           p_event_id: `collect:${prepared.idempotencyKey}:${intent.id || "declined"}:failed`,
           p_type: "payment_intent.payment_failed",
           p_object_id: intent.id || prepared.providerOperationId,
-          p_payload: { status: intent.status, failureCategory: intent.failureCategory, failureCode: intent.failureCode },
+          p_payload: {
+            status: intent.status,
+            failureCategory: intent.failureCategory,
+            failureCode: intent.failureCode,
+            providerOperationId: prepared.providerOperationId,
+          },
         })
         return { ok: false, retryable: false, error: intent.failureCode || "Payment declined." }
       }
@@ -69,7 +89,17 @@ export function collectPaymentHandler(env: Record<string, string | undefined> = 
         p_event_id: `collect:${prepared.idempotencyKey}:${intent.id}`,
         p_type: "payment_intent.succeeded",
         p_object_id: intent.id,
-        p_payload: { status: intent.status, paymentIntentStatus: "succeeded" },
+        p_payload: {
+          status: intent.status,
+          paymentIntentStatus: "succeeded",
+          amountMinor: intent.amountMinor,
+          currency: "gbp",
+          stripeCustomerId: prepared.stripeCustomerId,
+          providerOperationId: prepared.providerOperationId,
+          customerId: prepared.customerId,
+          serviceOrderId: prepared.serviceOrderId,
+          obligationId,
+        },
       })
       return { ok: true }
     },
@@ -104,53 +134,16 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           applyPayload.paymentIntentId = session.paymentIntentId
           applyPayload.setupIntentId = session.setupIntentId
           applyPayload.stripeCustomerId = session.customerId
-          if (session.mode === "payment" && session.paymentStatus === "paid" && session.paymentIntentId) {
-            const intent = await provider.retrievePaymentIntent(session.paymentIntentId)
-            if (intent?.status === "succeeded") {
-              const result = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
-                p_event_id: eventId,
-                p_type: "payment_intent.succeeded",
-                p_object_id: intent.id,
-                p_payload: {
-                  paymentIntentStatus: intent.status,
-                  paymentStatus: "paid",
-                  chargeId: intent.chargeId,
-                  receiptUrl: intent.receiptUrl,
-                  stripeCustomerId: intent.customerId,
-                },
-              })
-              return result.status === "success" ? { ok: true } : { ok: false, retryable: true, error: "Provider event could not be applied." }
-            }
-          }
-          if (session.mode === "setup" && session.setupIntentId) {
-            const setup = await provider.retrieveSetupIntent(session.setupIntentId)
-            if (setup?.status === "succeeded" && setup.usage === "off_session" && setup.paymentMethodId?.startsWith("pm_")) {
-              const method = await provider.retrievePaymentMethod(setup.paymentMethodId)
-              const result = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
-                p_event_id: eventId,
-                p_type: "setup_intent.succeeded",
-                p_object_id: setup.id,
-                p_payload: {
-                  stripeCustomerId: setup.customerId,
-                  paymentMethodId: method?.id,
-                  usage: setup.usage,
-                  brand: method?.brand,
-                  last4: method?.last4,
-                  expMonth: method?.expMonth,
-                  expYear: method?.expYear,
-                  fingerprint: method?.fingerprint,
-                  customerId: setup.metadata.customerId,
-                  serviceOrderId: setup.metadata.serviceOrderId,
-                  providerOperationId: setup.metadata.providerOperationId,
-                },
-              })
-              return result.status === "success" || result.status === "denied" ? { ok: true } : { ok: false, retryable: true, error: "Setup event could not be applied." }
-            }
-          }
+          applyPayload.customerId = session.metadata.customerId
+          applyPayload.serviceOrderId = session.metadata.serviceOrderId
+          applyPayload.obligationId = session.metadata.obligationId
+          applyPayload.attemptId = session.metadata.attemptId
+          applyPayload.providerOperationId = session.metadata.providerOperationId
+          applyPayload.orderRef = session.metadata.orderRef
           const correlated = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
             p_event_id: eventId, p_type: eventType, p_object_id: objectId, p_payload: applyPayload,
           })
-          return correlated.status === "success" ? { ok: true } : { ok: false, retryable: true, error: "Checkout event could not be applied." }
+          return applyResult(correlated)
         }
         if (eventType.startsWith("payment_intent.") && objectId) {
           const intent = await provider.retrievePaymentIntent(objectId)
@@ -168,9 +161,17 @@ export function processStripeEventHandler(env: Record<string, string | undefined
               receiptUrl: intent.receiptUrl,
               stripeCustomerId: intent.customerId,
               failureCode: intent.lastErrorCode,
+              amountMinor: intent.amountMinor,
+              currency: intent.currency,
+              customerId: intent.metadata.customerId,
+              serviceOrderId: intent.metadata.serviceOrderId,
+              obligationId: intent.metadata.obligationId,
+              attemptId: intent.metadata.attemptId,
+              providerOperationId: intent.metadata.providerOperationId,
+              orderRef: intent.metadata.orderRef,
             },
           })
-          return result.status === "success" ? { ok: true } : { ok: false, retryable: true, error: "PaymentIntent event could not be applied." }
+          return applyResult(result)
         }
         if (eventType.startsWith("setup_intent.") && objectId) {
           const setup = await provider.retrieveSetupIntent(objectId)
@@ -194,12 +195,35 @@ export function processStripeEventHandler(env: Record<string, string | undefined
               providerOperationId: setup.metadata.providerOperationId,
             },
           })
-          return result.status === "success" || result.status === "denied" ? { ok: true } : { ok: false, retryable: true, error: "SetupIntent event could not be applied." }
+          return applyResult(result)
+        }
+        if (eventType.startsWith("invoice.") && objectId) {
+          const invoice = await provider.retrieveInvoice(objectId)
+          if (!invoice) return { ok: false, retryable: true, error: "Invoice could not be retrieved." }
+          const type = invoice.status === "paid" || eventType === "invoice.paid" ? "invoice.paid" : eventType
+          const result = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
+            p_event_id: eventId,
+            p_type: type,
+            p_object_id: invoice.id,
+            p_payload: {
+              stripeCustomerId: invoice.customerId,
+              amountPaidMinor: invoice.amountPaidMinor,
+              amountMinor: invoice.amountDueMinor,
+              currency: invoice.currency,
+              hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+              customerId: invoice.metadata.customerId,
+              serviceOrderId: invoice.metadata.serviceOrderId,
+              obligationId: invoice.metadata.obligationId,
+              providerOperationId: invoice.metadata.providerOperationId,
+              orderRef: invoice.metadata.orderRef,
+            },
+          })
+          return applyResult(result)
         }
         const ignored = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
           p_event_id: eventId, p_type: eventType, p_object_id: objectId, p_payload: applyPayload,
         })
-        return ignored.status === "success" ? { ok: true } : { ok: false, retryable: true, error: "Provider event could not be applied." }
+        return applyResult(ignored)
       } catch (error) {
         if ((error as { name?: string }).name === "PaymentsDisabledError") {
           return { ok: false, retryable: false, error: "Payments are disabled." }

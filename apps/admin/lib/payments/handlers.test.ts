@@ -93,4 +93,51 @@ describe("payment job handlers", () => {
       p_payload: { livemode: true },
     }))
   })
+
+  it("treats Checkout as correlation-only and retries unmatched PaymentIntents", async () => {
+    const rpc = rpcMock()
+    const checkout = await fake.createPaymentCheckout({
+      idempotencyKey: key,
+      stripeCustomerId: "cus_test",
+      amountMinor: 9900,
+      currency: "GBP",
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: { customerId, serviceOrderId: orderId, obligationId, providerOperationId: operationId },
+    })
+    rpc.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_apply_provider_event_v1") return { status: "success" }
+      return { status: "success" }
+    })
+    const correlated = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_cs", eventType: "checkout.session.completed", objectId: checkout.id },
+      rpc: rpc.asJob,
+    })
+    expect(correlated).toEqual({ ok: true })
+    expect(rpc.rpc).toHaveBeenCalledWith("payment_apply_provider_event_v1", expect.objectContaining({
+      p_type: "checkout.session.completed",
+      p_object_id: checkout.id,
+    }))
+    expect(rpc.rpc.mock.calls.some(call => call[1] && (call[1] as { p_type?: string }).p_type === "payment_intent.succeeded")).toBe(false)
+
+    rpc.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_apply_provider_event_v1") return { status: "unmatched", retryable: true }
+      return { status: "success" }
+    })
+    fake.objects.set("pi_unmatched", {
+      id: "pi_unmatched",
+      status: "succeeded",
+      amountMinor: 9900,
+      currency: "gbp",
+      customerId: "cus_test",
+      metadata: { providerOperationId: operationId, customerId, serviceOrderId: orderId },
+    })
+    const unmatched = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_unmatched", eventType: "payment_intent.succeeded", objectId: "pi_unmatched" },
+      rpc: rpc.asJob,
+    })
+    expect(unmatched).toEqual({ ok: false, retryable: true, error: "correlation_pending" })
+  })
 })

@@ -75,6 +75,7 @@ export type RetrievedCheckout = {
   setupIntentId: string | null
   customerId: string | null
   url: string | null
+  metadata: Record<string, string>
   livemode: false
 }
 
@@ -83,10 +84,40 @@ export type RetrievedPaymentIntent = {
   status: string
   customerId: string | null
   amountMinor: number
+  currency: string
   chargeId: string | null
   receiptUrl: string | null
   lastErrorCode: string | null
   metadata: Record<string, string>
+  livemode: false
+}
+
+export type RetrievedInvoice = {
+  id: string
+  status: string
+  customerId: string | null
+  amountDueMinor: number
+  amountPaidMinor: number
+  currency: string
+  hostedInvoiceUrl: string | null
+  metadata: Record<string, string>
+  livemode: false
+}
+
+export type CreateHostedInvoiceInput = {
+  idempotencyKey: string
+  stripeCustomerId: string
+  amountMinor: number
+  currency: "GBP"
+  metadata: PaymentMetadata
+}
+
+export type ProviderInvoice = {
+  id: string
+  hostedInvoiceUrl: string
+  amountDueMinor: number
+  currency: string
+  status: string
   livemode: false
 }
 
@@ -195,6 +226,9 @@ export function mapBoundedProviderEvent(event: BoundedProviderEvent): MappedProv
     }
   } else if (event.type === "setup_intent.setup_failed" || event.type === "setup_intent.canceled") {
     mapped.outcome = "setup_failed"
+  } else if (event.type === "invoice.paid") {
+    mapped.outcome = "succeeded"
+    mapped.objectType = "invoice"
   }
   return mapped
 }

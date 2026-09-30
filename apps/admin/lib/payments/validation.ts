@@ -33,7 +33,7 @@ export function paymentArgs(operation: PaymentOperation, body: Record<string, un
   }
   const expiresAt = futureTimestamp(body.expiresAt)
   if (!expiresAt) return null
-  if (operation === "issue_recovery_action") {
+  if (operation === "issue_recovery_action" || operation === "issue_invoice_fallback") {
     if (!isUuid(body.obligationId)) return null
     return { serviceOrderId: body.serviceOrderId, version: body.version, obligationId: body.obligationId, expiresAt }
   }

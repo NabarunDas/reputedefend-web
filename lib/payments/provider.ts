@@ -1,13 +1,16 @@
 import type {
   CancelPaymentResult,
   CreateCheckoutInput,
+  CreateHostedInvoiceInput,
   CreateOffSessionInput,
   CreateSetupInput,
   MappedProviderEvent,
   ProviderCheckout,
   ProviderCustomer,
+  ProviderInvoice,
   ProviderPaymentIntent,
   RetrievedCheckout,
+  RetrievedInvoice,
   RetrievedPaymentIntent,
   RetrievedSetupIntent,
   SafePaymentMethod,
@@ -37,6 +40,8 @@ export interface PaymentProvider {
   retrievePaymentIntent(id: string): Promise<RetrievedPaymentIntent | null>
   retrieveSetupIntent(id: string): Promise<RetrievedSetupIntent | null>
   retrievePaymentMethod(id: string): Promise<SafePaymentMethod | null>
+  retrieveInvoice(id: string): Promise<RetrievedInvoice | null>
+  createHostedInvoice(input: CreateHostedInvoiceInput): Promise<ProviderInvoice>
   cancelPaymentIntent(input: { id: string; idempotencyKey: string }): Promise<CancelPaymentResult>
   mapEvent(event: { id: string; type: string; data?: { object?: Record<string, unknown> } }): MappedProviderEvent
 }
@@ -56,6 +61,8 @@ export function disabledPaymentProvider(): PaymentProvider {
     retrievePaymentIntent: deny,
     retrieveSetupIntent: deny,
     retrievePaymentMethod: deny,
+    retrieveInvoice: deny,
+    createHostedInvoice: deny,
     cancelPaymentIntent: deny,
     mapEvent() {
       throw new PaymentsDisabledError()

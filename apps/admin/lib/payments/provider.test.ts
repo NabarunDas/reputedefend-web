@@ -48,6 +48,7 @@ describe("payment provider contract", () => {
         obligationId: "55555555-5555-4555-8555-555555555555",
         attemptId: "66666666-6666-4666-8666-666666666666",
         orderRef: "SO-26-ABCDE2",
+        providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       },
     }
     const first = await provider.createPaymentCheckout(input)
@@ -56,7 +57,28 @@ describe("payment provider contract", () => {
     expect(first.amountMinor).toBe(9900)
     expect(first.id).toBe(second.id)
     expect(provider.checkouts).toBe(1)
-    expect(provider.lastCheckout).toMatchObject({ amountMinor: 9900, mode: "payment", idempotencyKey: input.idempotencyKey, paymentMethodTypes: ["card"] })
+    expect(provider.lastCheckout).toMatchObject({
+      amountMinor: 9900,
+      mode: "payment",
+      idempotencyKey: input.idempotencyKey,
+      paymentMethodTypes: ["card"],
+      paymentIntentMetadata: {
+        customerId: input.metadata.customerId,
+        serviceOrderId: input.metadata.serviceOrderId,
+        obligationId: input.metadata.obligationId,
+        attemptId: input.metadata.attemptId,
+        orderRef: input.metadata.orderRef,
+        providerOperationId: input.metadata.providerOperationId,
+      },
+    })
+    const intent = await provider.retrievePaymentIntent(first.id.replace("cs_test_", "pi_test_"))
+    expect(intent?.metadata).toMatchObject({
+      customerId: input.metadata.customerId,
+      serviceOrderId: input.metadata.serviceOrderId,
+      obligationId: input.metadata.obligationId,
+      providerOperationId: input.metadata.providerOperationId,
+    })
+    expect(intent?.currency).toBe("gbp")
     expect(mapBoundedProviderEvent({
       id: "evt_unpaid",
       type: "checkout.session.completed",

@@ -4,6 +4,8 @@ import { backend, newToken, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { paymentProvider } from "../../../../lib/payments"
+import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
 import { isPaymentOperation, paymentArgs } from "./validation"
 
@@ -41,8 +43,28 @@ function commandMessage(status: string | undefined): string {
   if (status === "conflict") return "That payment record changed. Reload the page and try again."
   if (status === "denied") return "That payment action is not allowed."
   if (status === "invalid") return "Check the fields before saving."
-  if (status === "reauth_required") return "Sign in again within the last five minutes to approve a success fee."
+  if (status === "reauth_required") return "Sign in again within the last five minutes to approve a success fee or issue a TEST-MODE hosted invoice fallback."
   return "The payment record could not be updated."
+}
+
+async function ensureStripeCustomer(customerId: string): Promise<string> {
+  const prepared = await backend().rpc<{
+    status?: string
+    stripeCustomerId?: string
+    needsCreate?: boolean
+    providerOperationId?: string
+    idempotencyKey?: string
+  }>("payment_prepare_customer_v1", { p_customer: customerId })
+  if (prepared.stripeCustomerId) return prepared.stripeCustomerId
+  const created = await paymentProvider().createCustomer({
+    idempotencyKey: prepared.idempotencyKey || "",
+    customerId,
+  })
+  const mapped = await backend().rpc<{ status?: string; stripeCustomerId?: string }>("payment_record_customer_map_v1", {
+    p_operation: prepared.providerOperationId, p_stripe_customer_id: created.id,
+  })
+  if (mapped.status !== "success" || !mapped.stripeCustomerId) throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
+  return mapped.stripeCustomerId
 }
 
 export async function paymentCommand(request: NextRequest): Promise<NextResponse> {
@@ -68,13 +90,66 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
     const payload: Record<string, unknown> = { ...args }
     delete payload.version
     if (issuesLink) payload.secretHash = tokenHash(secret)
+    if (operation === "issue_invoice_fallback") {
+      const prepared = await backend().rpc<{
+        status?: string
+        reason?: string
+        replay?: boolean
+        providerOperationId?: string
+        idempotencyKey?: string
+        attemptId?: string
+        invoiceId?: string
+        amountMinor?: number
+        hostedInvoiceUrl?: string
+        customerId?: string
+        serviceOrderId?: string
+        obligationId?: string
+        orderRef?: string
+      }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId })
+      if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
+      if (prepared.status !== "success") return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      if (!prepared.replay || !prepared.hostedInvoiceUrl) {
+        try {
+          const stripeCustomer = await ensureStripeCustomer(prepared.customerId || "")
+          const invoice = await paymentProvider().createHostedInvoice({
+            idempotencyKey: prepared.idempotencyKey || "",
+            stripeCustomerId: stripeCustomer,
+            amountMinor: prepared.amountMinor || 0,
+            currency: "GBP",
+            metadata: {
+              customerId: prepared.customerId || "",
+              serviceOrderId: prepared.serviceOrderId || "",
+              obligationId: prepared.obligationId,
+              attemptId: prepared.attemptId,
+              providerOperationId: prepared.providerOperationId,
+              orderRef: prepared.orderRef,
+            },
+          })
+          const recorded = await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
+            p_operation: prepared.providerOperationId,
+            p_provider_invoice_id: invoice.id,
+            p_hosted_url: invoice.hostedInvoiceUrl,
+            p_amount_due: invoice.amountDueMinor,
+            p_currency: invoice.currency,
+          })
+          if (recorded.status !== "success") return reply("The TEST-MODE hosted invoice could not be recorded.", 409)
+        } catch (error) {
+          if (error instanceof PaymentsDisabledError) {
+            return reply("TEST-MODE FOUNDATION: a hosted invoice cannot be issued until Stripe test payments and seller/tax configuration are enabled.", 503)
+          }
+          throw error
+        }
+      }
+    }
     const result = await backend().rpc<{ status?: string; id?: string; obligationId?: string; expiresAt?: string; replay?: boolean }>("admin_payment_command_v1", {
       p_token: tokenHash(token), p_request: key, p_operation: operation, p_payload: payload, p_version: version,
     })
     if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
     const issued = issuesLink && result.replay !== true && result.id && config.customerOrigin
     return reply(
-      issued ? `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`
+      issued ? (operation === "issue_invoice_fallback"
+        ? `TEST-MODE hosted invoice fallback is ready. Returning from the invoice page does not mark this paid. ${LOST_PAYMENT_LINK_NOTE}`
+        : `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`)
         : issuesLink ? "This payment action was already created. The secret cannot be shown again."
         : operation === "approve_success_fee" ? "The success fee is approved. Collection, if ready, is queued. This did not charge a card from this page."
         : "The payment record has been updated.",

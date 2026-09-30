@@ -10,7 +10,7 @@ export const metadata = { title: "Money" }
 export default async function MoneyPage() {
   const money = await loadMoney()
   return <section className="page">
-    <PageHeader title="Money" description="Payment obligations, payment-method setup and success-fee approval. Stripe remains disabled until a later Finance launch gate. This workspace has no Mark paid, Force success, or Change amount controls." />
+    <PageHeader title="Money" description="Payment obligations, payment-method setup, success-fee approval, and TEST-MODE hosted invoice fallback. Stripe remains disabled until a later Finance launch gate. This workspace has no Mark paid, Force success, or Change amount controls." />
     <section className="panel">
       <h2>Service orders</h2>
       {!money.orders.length ? <EmptyState>No accepted service orders.</EmptyState> : <div className="table-scroll" role="region" aria-label="Money" tabIndex={0}>
@@ -27,6 +27,8 @@ export default async function MoneyPage() {
               {row.paymentModel === "SUCCESS_FEE" && !row.setupReady && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_managed_setup_action" label="Issue payment-method setup action" />}
               {row.paymentModel === "SUCCESS_FEE" && row.obligationState === "AUTHENTICATION_REQUIRED" && row.obligationId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_recovery_action" label="Issue recovery action" obligationId={row.obligationId} />}
               {row.paymentModel === "SUCCESS_FEE" && !row.approvalId && <ApproveSuccessFeeForm serviceOrderId={row.orderId} version={row.version} evidence={row.acceptedEvidence} />}
+              {row.obligationId && row.obligationState && !["PAID", "VOID"].includes(row.obligationState) && row.invoiceStatus !== "ISSUED" && row.invoiceStatus !== "PAID" && !row.receiptId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue TEST-MODE hosted invoice fallback" obligationId={row.obligationId} />}
+              {row.invoiceStatus === "ISSUED" && <p>TEST-MODE hosted invoice issued. Payment is confirmed only from the Stripe webhook.</p>}
               {row.receiptId && <p>Receipt recorded {ukDate(new Date().toISOString())}.</p>}
             </td>
           </tr>)}</tbody>

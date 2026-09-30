@@ -108,9 +108,20 @@ async function beginCheckout(origin: string, result: {
       return NextResponse.json({ status: "ok", checkoutUrl: existing.url, mode: existing.mode, confirming: true }, { headers: privateResponseHeaders })
     }
     if (existing && existing.status !== "open") {
-      await backend().rpc("payment_record_provider_refs_v1", {
-        p_operation: result.providerOperationId, p_object_id: existing.id, p_object_type: "checkout.session", p_status: "FAILED",
-      })
+      const replaced = await backend().rpc<{
+        status?: string
+        providerOperationId?: string
+        idempotencyKey?: string
+        attemptId?: string
+      }>("payment_replace_expired_checkout_v1", { p_operation: result.providerOperationId })
+      if (replaced.status !== "success" || !replaced.providerOperationId || !replaced.idempotencyKey) return reply()
+      result = {
+        ...result,
+        providerOperationId: replaced.providerOperationId,
+        idempotencyKey: replaced.idempotencyKey,
+        attemptId: replaced.attemptId,
+        checkoutSessionId: undefined,
+      }
     }
   }
   const stripeCustomer = await ensureCustomer(result.customerId || "")

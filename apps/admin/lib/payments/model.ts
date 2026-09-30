@@ -2,6 +2,7 @@ export const paymentOperations = [
   "issue_guided_payment_action",
   "issue_managed_setup_action",
   "issue_recovery_action",
+  "issue_invoice_fallback",
   "approve_success_fee",
   "revoke_action",
 ] as const
@@ -25,6 +26,8 @@ export type MoneyOrder = {
   consentId: string | null
   approvalId: string | null
   receiptId: string | null
+  invoiceId?: string | null
+  invoiceStatus?: string | null
   acceptedEvidence?: Array<{ id: string; filename: string; versionNumber: number }>
 }
 

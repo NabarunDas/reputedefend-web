@@ -45,7 +45,7 @@ function useCommand() {
 
 export function IssuePaymentActionForm({
   serviceOrderId, version, operation, label, obligationId,
-}: { serviceOrderId: string; version: number; operation: "issue_guided_payment_action" | "issue_managed_setup_action" | "issue_recovery_action"; label: string; obligationId?: string | null }) {
+}: { serviceOrderId: string; version: number; operation: "issue_guided_payment_action" | "issue_managed_setup_action" | "issue_recovery_action" | "issue_invoice_fallback"; label: string; obligationId?: string | null }) {
   const { busy, message, actionUrl, run } = useCommand()
   const minFrom = futureLocalMin(5)
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -62,6 +62,7 @@ export function IssuePaymentActionForm({
   return <form onSubmit={submit}>
     {obligationId && <input type="hidden" name="obligationId" value={obligationId} />}
     <label>Expires<input name="expiresAt" type="datetime-local" required min={minFrom} suppressHydrationWarning /></label>
+    {operation === "issue_invoice_fallback" && <p>This creates a TEST-MODE hosted payment fallback. It does not mark the obligation paid. Sign in again within the last five minutes.</p>}
     <button type="submit" disabled={busy}>{label}</button>
     {actionUrl && <p><a href={actionUrl}>Open the one-time customer link</a></p>}
     <p role="status">{message}</p>

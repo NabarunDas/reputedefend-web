@@ -66,6 +66,20 @@ describe("admin payment commands", () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
+  it("rejects invoice fallback without an obligation and maps reauth", async () => {
+    const denied = await paymentCommand(req({
+      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, expiresAt: "2026-10-02T00:00:00.000Z",
+    }))
+    expect(denied.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    mocks.rpc.mockResolvedValue({ status: "reauth_required" })
+    const reauth = await paymentCommand(req({
+      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, obligationId: orderId, expiresAt: "2026-10-02T00:00:00.000Z",
+    }))
+    expect(reauth.status).toBe(403)
+    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+  })
+
   it("maps reauth_required for success-fee approval", async () => {
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const denied = await paymentCommand(req({

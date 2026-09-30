@@ -63,6 +63,7 @@ describe("money workspace", () => {
     expect(screen.getByText("SO-26-ABCDE2")).toBeInTheDocument()
     expect(screen.getByText("Due")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Issue upfront payment action" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Issue TEST-MODE hosted invoice fallback" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /mark paid|force success|charge/i })).toBeNull()
   })
 

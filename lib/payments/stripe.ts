@@ -104,6 +104,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         cancel_url: input.cancelUrl,
         client_reference_id: input.metadata.attemptId || input.metadata.obligationId,
         payment_method_types: ["card"],
+        payment_intent_data: { metadata: meta },
         line_items: [{
           quantity: 1,
           price_data: {
@@ -197,6 +198,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         setupIntentId: asId(session.setup_intent),
         customerId: asId(session.customer),
         url: session.url,
+        metadata: metadataOf(session),
         livemode: false,
       }
     },
@@ -209,6 +211,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         status: intent.status,
         customerId: asId(intent.customer),
         amountMinor: intent.amount,
+        currency: (intent.currency || "gbp").toLowerCase(),
         chargeId: asId(charge),
         receiptUrl: charge && typeof charge === "object" && "receipt_url" in charge && typeof charge.receipt_url === "string" ? charge.receipt_url : null,
         lastErrorCode: intent.last_payment_error?.code ?? null,
@@ -240,6 +243,61 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         expMonth: method.card?.exp_month ?? null,
         expYear: method.card?.exp_year ?? null,
         fingerprint: method.card?.fingerprint ?? null,
+      }
+    },
+    async retrieveInvoice(id) {
+      const invoice = await client(env).invoices.retrieve(id)
+      if (invoice.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: invoice.id,
+        status: invoice.status || "unknown",
+        customerId: asId(invoice.customer),
+        amountDueMinor: invoice.amount_due,
+        amountPaidMinor: invoice.amount_paid,
+        currency: (invoice.currency || "gbp").toLowerCase(),
+        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+        metadata: metadataOf(invoice),
+        livemode: false as const,
+      }
+    },
+    async createHostedInvoice(input) {
+      const meta = paymentMetadata(input.metadata)
+      assertSafeMetadata(meta)
+      const stripe = client(env)
+      const created = await stripe.invoices.create({
+        customer: input.stripeCustomerId,
+        currency: input.currency.toLowerCase(),
+        collection_method: "send_invoice",
+        days_until_due: 30,
+        auto_advance: false,
+        pending_invoice_items_behavior: "exclude",
+        metadata: meta,
+        payment_settings: { payment_method_types: ["card"] },
+      }, { idempotencyKey: input.idempotencyKey })
+      if (created.livemode) throw new PaymentsDisabledError("Live Stripe invoices are forbidden.")
+      await stripe.invoices.addLines(created.id, {
+        lines: [{
+          description: "ProfileRelaunch service",
+          quantity: 1,
+          price_data: {
+            currency: input.currency.toLowerCase(),
+            product_data: { name: "ProfileRelaunch service" },
+            unit_amount: input.amountMinor,
+          },
+        }],
+      }, { idempotencyKey: `${input.idempotencyKey}:lines` })
+      const finalized = await stripe.invoices.finalizeInvoice(created.id, { auto_advance: false }, { idempotencyKey: `${input.idempotencyKey}:finalize` })
+      if (finalized.livemode) throw new PaymentsDisabledError("Live Stripe invoices are forbidden.")
+      if (finalized.amount_due !== input.amountMinor || (finalized.currency || "").toLowerCase() !== "gbp" || !finalized.hosted_invoice_url) {
+        throw new PaymentsDisabledError("Hosted invoice amount or currency did not match the obligation.")
+      }
+      return {
+        id: finalized.id,
+        hostedInvoiceUrl: finalized.hosted_invoice_url,
+        amountDueMinor: finalized.amount_due,
+        currency: (finalized.currency || "gbp").toLowerCase(),
+        status: finalized.status || "open",
+        livemode: false as const,
       }
     },
     async cancelPaymentIntent({ id, idempotencyKey }) {

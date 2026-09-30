@@ -59,6 +59,9 @@ type Session = {
     consentId?: string | null
     consentText: string
     consentVersion: string
+    invoiceId?: string | null
+    invoiceStatus?: string | null
+    hostedInvoiceUrl?: string | null
   } | null
 }
 
@@ -220,6 +223,18 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <button type="submit">Save payment method securely</button>
       </form>
       <p>A saved payment method is not authority to charge until this consent and a later billing approval exist.</p>
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "INVOICE_PAYMENT" && paymentDetails) {
+    return <section>
+      <h1>Pay this earned amount by invoice</h1>
+      <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
+      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
+      <p>This is a TEST-MODE hosted invoice fallback for an already-earned unpaid obligation. Returning from the invoice page does not mark this paid.</p>
+      {paymentDetails.hostedInvoiceUrl
+        ? <p><a href={paymentDetails.hostedInvoiceUrl}>Open the secure Stripe hosted invoice</a></p>
+        : <p>The hosted invoice link is not available yet.</p>}
       <p role="status">{message}</p>
     </section>
   }

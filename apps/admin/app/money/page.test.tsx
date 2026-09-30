@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
 vi.mock("@/lib/payments/queries", () => ({
@@ -52,6 +52,9 @@ import MoneyPage from "./page"
 describe("money workspace", () => {
   beforeEach(() => {
     vi.stubEnv("ADMIN_AUTH_ENABLED", "true")
+  })
+  afterEach(() => {
+    cleanup()
   })
 
   it("shows obligation state and no mark-paid control", async () => {

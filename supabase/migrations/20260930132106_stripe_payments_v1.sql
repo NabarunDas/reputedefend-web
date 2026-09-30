@@ -1562,7 +1562,7 @@ CREATE FUNCTION public.payment_record_cancel_v1(p_operation uuid, p_payment_inte
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE op public.provider_operations; att public.payment_attempts; ob public.payment_obligations;
 BEGIN
-  IF p_operation IS NULL OR p_payment_intent_id IS NULL OR p_payment_intent_id !~ '^pi_[A-Za-z0-9]+$' THEN
+  IF p_operation IS NULL OR p_payment_intent_id IS NULL OR p_payment_intent_id !~ '^pi_[A-Za-z0-9_]+$' THEN
     RETURN jsonb_build_object('status','invalid');
   END IF;
   SELECT * INTO op FROM public.provider_operations WHERE id = p_operation AND kind = 'CANCEL_PAYMENT_INTENT' FOR UPDATE;

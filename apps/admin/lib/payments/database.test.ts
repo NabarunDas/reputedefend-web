@@ -395,7 +395,7 @@ describe("stripe payments SQL", () => {
     const replacement = await issueAndOpen("issue_managed_setup_action", accepted!.orderId as string)
     const reused = await rpc("customer_payment_command_v1", [replacement.session, key(), "start_checkout", { idempotencyKey: key() }])
     expect(reused).toMatchObject({ status: "success", mode: "setup" })
-    expect((await db.query<{ n: number; id: string }>("select count(*)::int as n, min(id)::text as id from public.payment_consents")).rows[0]).toMatchObject({
+    expect((await db.query<{ n: number; id: string }>("select count(*)::int as n, min(id::text) as id from public.payment_consents")).rows[0]).toMatchObject({
       n: 1, id: consent!.consentId,
     })
     const foreign = await rpc("customer_payment_command_v1", [secretHash(), key(), "start_checkout", { idempotencyKey: key() }])
@@ -430,7 +430,8 @@ describe("stripe payments SQL", () => {
     expect(await rpc("payment_record_provider_refs_v1", [first!.providerOperationId, "cs_other", "checkout.session"])).toMatchObject({ status: "denied" })
     await rpc("payment_apply_provider_event_v1", ["evt_bind_pi", "checkout.session.completed", "cs_active", { paymentIntentId: "pi_active", paymentStatus: "unpaid" }])
     await rpc("payment_apply_provider_event_v1", ["evt_paid_once", "payment_intent.succeeded", "pi_active", { paymentIntentStatus: "succeeded" }])
-    expect(await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "denied" })
+    expect(await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])).toMatchObject({ status: "unavailable" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_CHECKOUT_SESSION'")).rows[0].n).toBe(1)
   })
 
   it("requires provider-side PaymentIntent cancellation before recovery Checkout", async () => {

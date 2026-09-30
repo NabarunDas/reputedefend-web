@@ -70,7 +70,33 @@ describe("job worker handlers", () => {
     expect(preview.PROCESS_STRIPE_EVENT).toEqual(expect.objectContaining({ jobType: "PROCESS_STRIPE_EVENT" }))
     expect(preview.RECONCILE_GUARD_BILLING).toEqual(expect.objectContaining({ jobType: "RECONCILE_GUARD_BILLING" }))
     expect(preview.MAINTAIN_GUARD_CHECKS).toEqual(expect.objectContaining({ jobType: "MAINTAIN_GUARD_CHECKS" }))
+    expect(preview.MAINTAIN_GUARD_ALERTS).toEqual(expect.objectContaining({ jobType: "MAINTAIN_GUARD_ALERTS" }))
     expect(registeredJobHandlers({ VERCEL_ENV: "production" }).SYSTEM_HEALTH_PROBE).toBeTruthy()
-    expect(JSON.stringify(Object.keys(preview))).not.toMatch(/ALERT|SEND_GUARD|GOOGLE/)
+    expect(JSON.stringify(Object.keys(preview))).not.toMatch(/SEND_GUARD|GOOGLE/)
+  })
+
+  it("does not enqueue Guard alerts when GUARD_ALERTS_ENABLED is unset, false, or malformed", async () => {
+    const calls: string[] = []
+    const rpc = {
+      async rpc<T>(name: string): Promise<T> {
+        calls.push(name)
+        if (name === "job_heartbeat_v1") return { status: "success" } as T
+        if (name === "job_promote_outbox_v1") return { status: "success", promoted: 0 } as T
+        if (name === "job_claim_batch_v1") return { status: "success", jobs: [], deadLettered: 0 } as T
+        return {} as T
+      },
+    }
+    const env = { JOB_WORKER_ENABLED: "true", VERCEL_ENV: "production", CRON_SECRET: "a".repeat(32) }
+    await runJobWorker({ rpc, env })
+    expect(calls).not.toContain("guard_enqueue_daily_alerts_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_ALERTS_ENABLED: "false" } })
+    expect(calls).not.toContain("guard_enqueue_daily_alerts_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_ALERTS_ENABLED: "yes" } })
+    expect(calls).not.toContain("guard_enqueue_daily_alerts_v1")
+    calls.length = 0
+    await runJobWorker({ rpc, env: { ...env, GUARD_ALERTS_ENABLED: "true" } })
+    expect(calls).toContain("guard_enqueue_daily_alerts_v1")
   })
 })

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { guardActivationEnabled, guardChecksEnabled, guardRefundsEnabled, guardSubscriptionsEnabled } from "./gate"
+import {
+  guardActivationEnabled,
+  guardAlertNotificationsEnabled,
+  guardAlertsEnabled,
+  guardChecksEnabled,
+  guardRefundsEnabled,
+  guardSubscriptionsEnabled,
+} from "./gate"
 
 describe("guard feature gates", () => {
   it("defaults subscription, refund and activation gates to disabled", () => {
@@ -14,5 +21,11 @@ describe("guard feature gates", () => {
     expect(guardChecksEnabled({ GUARD_CHECKS_ENABLED: "false" })).toBe(false)
     expect(guardChecksEnabled({ GUARD_CHECKS_ENABLED: "yes" })).toBe(false)
     expect(guardChecksEnabled({ GUARD_CHECKS_ENABLED: "true" })).toBe(true)
+    expect(guardAlertsEnabled({})).toBe(false)
+    expect(guardAlertsEnabled({ GUARD_ALERTS_ENABLED: "false" })).toBe(false)
+    expect(guardAlertsEnabled({ GUARD_ALERTS_ENABLED: "yes" })).toBe(false)
+    expect(guardAlertsEnabled({ GUARD_ALERTS_ENABLED: "true" })).toBe(true)
+    expect(guardAlertNotificationsEnabled({})).toBe(false)
+    expect(guardAlertNotificationsEnabled({ GUARD_ALERT_NOTIFICATIONS_ENABLED: "true" })).toBe(true)
   })
 })

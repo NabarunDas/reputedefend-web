@@ -26,6 +26,8 @@ Step 16 adds applied `20260930180050_guard_subscriptions_billing_v1.sql` after S
 
 Step 17 adds applied `20260930203750_guard_manual_checks_v1.sql` after Step 16 (`20260930203750 guard_manual_checks_v1` exactly once): versioned `guard_check_schedule_versions`, `guard_check_obligations`, append-only `guard_check_obligation_events`, `guard_check_attempts`, immutable `guard_check_observations`, and private `guard_check_receipts`. Job type `MAINTAIN_GUARD_CHECKS` reuses the Step 10 outbox. DATABASE APPLIED / LIVE MONITORING DISABLED. See guard-manual-checks.md.
 
+Step 18 adds unapplied source `20260930222821_guard_alerts_escalation_v1.sql`: `guard_alerts`, append-only `guard_alert_observations` / `guard_alert_events`, `guard_alert_cases`, `guard_alert_notifications`, `guard_service_actions`, and private `guard_alert_receipts`. Communications gain nullable `guard_alert_id` and a three-way parent XOR. Template `GUARD_ALERT` v1 is additive. Job type `MAINTAIN_GUARD_ALERTS` reuses the Step 10 outbox. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED. See guard-alerts-escalation.md.
+
 ## Relationships
 
 ```

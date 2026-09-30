@@ -1,6 +1,7 @@
 import { sendEmailHandler } from "../communications/handler"
 import { importInboundAttachmentHandler } from "../conversations/attachment"
 import { importInboundEmailHandler } from "../conversations/import"
+import { maintainGuardAlertsHandler } from "../guard/maintain-alerts"
 import { maintainGuardChecksHandler } from "../guard/maintain-checks"
 import { reconcileGuardBillingHandler } from "../guard/reconcile"
 import { collectPaymentHandler, processStripeEventHandler } from "../payments/handlers"
@@ -45,6 +46,7 @@ export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record
     PROCESS_STRIPE_EVENT: processStripeEventHandler(env),
     RECONCILE_GUARD_BILLING: reconcileGuardBillingHandler(env),
     MAINTAIN_GUARD_CHECKS: maintainGuardChecksHandler(env),
+    MAINTAIN_GUARD_ALERTS: maintainGuardAlertsHandler(env),
   }
 }
 
@@ -57,5 +59,6 @@ export function handlerFor(jobType: string, handlers: Partial<Record<JobType, Jo
   if (jobType === "PROCESS_STRIPE_EVENT") return handlers.PROCESS_STRIPE_EVENT ?? null
   if (jobType === "RECONCILE_GUARD_BILLING") return handlers.RECONCILE_GUARD_BILLING ?? null
   if (jobType === "MAINTAIN_GUARD_CHECKS") return handlers.MAINTAIN_GUARD_CHECKS ?? null
+  if (jobType === "MAINTAIN_GUARD_ALERTS") return handlers.MAINTAIN_GUARD_ALERTS ?? null
   return null
 }

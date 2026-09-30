@@ -235,7 +235,7 @@ CREATE TABLE public.price_version_events (
   id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   price_version_id uuid NOT NULL REFERENCES public.price_versions(id) ON DELETE RESTRICT,
   actor_id uuid,
-  event text NOT NULL CHECK (event IN ('PRICE_DRAFTED','PRICE_APPROVED','PRICE_RETIRED')),
+  event text NOT NULL CHECK (event IN ('PRICE_DRAFTED','PRICE_APPROVED','PRICE_RETIRED','PRICE_SCHEDULED_END')),
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -456,6 +456,16 @@ BEGIN
       OR NEW.seed_key IS DISTINCT FROM OLD.seed_key
     THEN RAISE EXCEPTION 'Approved price financial fields are immutable'; END IF;
     IF NEW.status = 'RETIRED' THEN
+      NEW.record_version := OLD.record_version + 1;
+      RETURN NEW;
+    END IF;
+    IF NEW.effective_to IS DISTINCT FROM OLD.effective_to
+      AND NEW.status = 'APPROVED'
+      AND NEW.effective_to IS NOT NULL
+      AND (OLD.effective_to IS NULL OR NEW.effective_to < OLD.effective_to)
+      AND NEW.effective_to > OLD.effective_from
+      AND current_setting('admin_private.price_rollover', true) = OLD.id::text
+    THEN
       NEW.record_version := OLD.record_version + 1;
       RETURN NEW;
     END IF;
@@ -811,6 +821,40 @@ BEGIN
   RETURN snap;
 END; $$;
 
+CREATE FUNCTION admin_private.qualified_discount_snapshot_v1(
+  p_snap public.quote_discount_snapshots, p_service text, p_price_id uuid, p_location uuid
+) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  IF p_snap.id IS NULL OR p_snap.qualification_result <> 'QUALIFIED' THEN RETURN false; END IF;
+  IF p_snap.service_code IS DISTINCT FROM p_service
+    OR p_snap.price_version_id IS DISTINCT FROM p_price_id
+    OR p_snap.location_id IS DISTINCT FROM p_location
+  THEN RETURN false; END IF;
+  IF p_snap.valid_until IS NOT NULL AND p_snap.valid_until <= now() THEN RETURN false; END IF;
+  IF p_snap.policy_id <> 'PAID_GUARD_MANAGED_20' OR p_snap.discount_bps <> 2000 THEN RETURN false; END IF;
+  IF p_snap.coverage_basis <> 'PAID' OR p_snap.coverage_status <> 'ACTIVE'
+    OR p_snap.coverage_type <> 'PAID_GUARD' OR p_snap.paid_vs_included <> 'PAID'
+    OR p_snap.issue_predates_paid_coverage IS DISTINCT FROM false
+  THEN RETURN false; END IF;
+  IF p_snap.discount_amount_minor IS DISTINCT FROM admin_private.money_discount_minor_v1(p_snap.standard_amount_minor, p_snap.discount_bps)
+    OR p_snap.standard_amount_minor IS DISTINCT FROM (p_snap.discount_amount_minor + p_snap.discounted_subtotal_minor)
+  THEN RETURN false; END IF;
+  RETURN true;
+END; $$;
+
+CREATE FUNCTION admin_private.quote_version_offerable_v1(p_version public.quote_versions)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  IF p_version.id IS NULL OR p_version.valid_until IS NULL OR p_version.valid_until <= now() THEN RETURN false; END IF;
+  IF p_version.tax_behaviour IS NULL OR p_version.tax_behaviour = 'UNCONFIRMED' THEN RETURN false; END IF;
+  IF p_version.discount_amount_minor IS DISTINCT FROM admin_private.money_discount_minor_v1(p_version.standard_amount_minor, p_version.discount_bps)
+    OR p_version.quoted_subtotal_minor IS DISTINCT FROM (p_version.standard_amount_minor - p_version.discount_amount_minor)
+    OR p_version.tax_amount_minor IS DISTINCT FROM admin_private.money_tax_minor_v1(p_version.quoted_subtotal_minor, p_version.tax_behaviour, p_version.tax_rate_bps)
+    OR p_version.total_amount_minor IS DISTINCT FROM admin_private.money_total_minor_v1(p_version.quoted_subtotal_minor, p_version.tax_behaviour, p_version.tax_amount_minor)
+  THEN RETURN false; END IF;
+  RETURN true;
+END; $$;
+
 CREATE FUNCTION admin_private.quote_json_v1(p_quote public.quotes, p_version public.quote_versions)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path='' AS $$
 DECLARE snap public.quote_discount_snapshots; action public.customer_actions; acc public.quote_acceptances;
@@ -978,7 +1022,8 @@ END; $$;
 CREATE FUNCTION public.admin_catalogue_command_v1(p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE s jsonb; actor uuid; data jsonb; fp text; cached jsonb; result jsonb; row public.price_versions;
-  service text; name text; amount integer; from_at timestamptz; to_at timestamptz;
+  pred public.price_versions; service text; name text; amount integer; from_at timestamptz; to_at timestamptz;
+  overlap_n integer;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -1022,19 +1067,36 @@ BEGIN
     IF row.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF p_version IS DISTINCT FROM row.record_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     IF row.status <> 'DRAFT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    IF EXISTS (
-      SELECT 1 FROM public.price_versions p
+    SELECT count(*) INTO overlap_n
+    FROM public.price_versions p
+    WHERE p.id IS DISTINCT FROM row.id
+      AND p.service_code = row.service_code
+      AND p.status = 'APPROVED'
+      AND tstzrange(p.effective_from, p.effective_to, '[)') && tstzrange(row.effective_from, row.effective_to, '[)');
+    IF overlap_n > 1 THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF overlap_n = 1 THEN
+      SELECT * INTO pred
+      FROM public.price_versions p
       WHERE p.id IS DISTINCT FROM row.id
         AND p.service_code = row.service_code
         AND p.status = 'APPROVED'
         AND tstzrange(p.effective_from, p.effective_to, '[)') && tstzrange(row.effective_from, row.effective_to, '[)')
-    ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      FOR UPDATE;
+      IF pred.id IS NULL
+        OR pred.effective_from >= row.effective_from
+        OR (pred.effective_to IS NOT NULL AND pred.effective_to <= row.effective_from)
+      THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      PERFORM set_config('admin_private.price_rollover', pred.id::text, true);
+      UPDATE public.price_versions SET effective_to = row.effective_from WHERE id = pred.id;
+      INSERT INTO public.price_version_events(price_version_id, actor_id, event, details)
+      VALUES (pred.id, actor, 'PRICE_SCHEDULED_END', jsonb_build_object('successorId', row.id, 'effectiveTo', row.effective_from));
+    END IF;
     UPDATE public.price_versions SET status = 'APPROVED', approved_at = now(), approved_by = actor
       WHERE id = row.id RETURNING * INTO row;
     INSERT INTO public.price_version_events(price_version_id, actor_id, event, details)
     VALUES (row.id, actor, 'PRICE_APPROVED', jsonb_build_object('serviceCode', row.service_code, 'amountMinor', row.amount_minor));
     PERFORM admin_private.write_record_audit_v1(actor, 'COMMERCE_CHANGED', 'success', row.id, p_request, 'price_version',
-      'Price version approved', jsonb_build_object('operation', p_operation, 'serviceCode', row.service_code));
+      'Price version approved', jsonb_build_object('operation', p_operation, 'serviceCode', row.service_code, 'rolledOverFrom', pred.id));
     result := jsonb_build_object('status', 'success', 'id', row.id, 'version', row.record_version);
   ELSE
     SELECT * INTO row FROM public.price_versions WHERE id = NULLIF(data->>'priceVersionId','')::uuid FOR UPDATE;
@@ -1069,6 +1131,26 @@ BEGIN
     DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
     DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
   END LOOP;
+END; $$;
+
+CREATE FUNCTION admin_private.prepare_quote_acceptance_action_v1(p_version uuid)
+RETURNS text LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE a public.customer_actions;
+BEGIN
+  SELECT * INTO a FROM public.customer_actions
+    WHERE quote_version_id = p_version AND kind = 'QUOTE_ACCEPTANCE' AND status = 'OPEN'
+    FOR UPDATE;
+  IF a.id IS NULL THEN RETURN 'clear'; END IF;
+  IF a.expires_at > now() THEN RETURN 'exists'; END IF;
+  UPDATE public.customer_actions SET status = 'REVOKED', revoked_at = now() WHERE id = a.id;
+  INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
+  VALUES (
+    a.id, a.case_id, 'SYSTEM', NULL, 'ACTION_REVOKED',
+    jsonb_build_object('reason', 'The previous quote-acceptance capability expired.', 'source', 'ACTION_EXPIRED', 'kind', a.kind)
+  );
+  DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
+  DELETE FROM admin_private.customer_action_sessions WHERE action_id = a.id;
+  RETURN 'expired';
 END; $$;
 
 CREATE FUNCTION admin_private.build_quote_version_v1(
@@ -1115,6 +1197,7 @@ DECLARE
   cs public.cases; mon public.monitoring_requests; c public.customers;
   service text; scope text; exclusions text; success text; valid_until timestamptz; expires timestamptz;
   secret text; action public.customer_actions; apply_discount boolean; v_tax_behaviour text; v_tax_rate integer;
+  prep text;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -1202,11 +1285,9 @@ BEGIN
     apply_discount := coalesce((data->>'applyDiscount')::boolean, false);
     IF apply_discount THEN
       SELECT * INTO snap FROM public.quote_discount_snapshots WHERE id = NULLIF(data->>'qualificationId','')::uuid;
-      IF snap.id IS NULL OR snap.qualification_result <> 'QUALIFIED' OR snap.service_code <> service
-        OR snap.price_version_id IS DISTINCT FROM price.id
-        OR snap.location_id IS DISTINCT FROM coalesce(cs.location_id, NULLIF(data->>'locationId','')::uuid)
-        OR (snap.valid_until IS NOT NULL AND snap.valid_until <= now())
-      THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      IF NOT admin_private.qualified_discount_snapshot_v1(
+        snap, service, price.id, coalesce(cs.location_id, NULLIF(data->>'locationId','')::uuid)
+      ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     ELSE
       IF NULLIF(data->>'qualificationId','') IS NOT NULL THEN
         SELECT * INTO snap FROM public.quote_discount_snapshots WHERE id = NULLIF(data->>'qualificationId','')::uuid;
@@ -1251,6 +1332,7 @@ BEGIN
     scope := btrim(coalesce(NULLIF(data->>'scope',''), qv.scope_text));
     exclusions := btrim(coalesce(NULLIF(data->>'exclusions',''), qv.exclusions_text));
     BEGIN valid_until := coalesce(NULLIF(data->>'validUntil','')::timestamptz, qv.valid_until); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
+    IF valid_until IS NULL OR valid_until <= now() THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     SELECT * INTO price FROM public.price_versions WHERE id = coalesce(NULLIF(data->>'priceVersionId','')::uuid, qv.price_version_id);
     SELECT * INTO cs FROM public.cases WHERE id = qu.case_id;
     SELECT * INTO mon FROM public.monitoring_requests WHERE id = qu.monitoring_request_id;
@@ -1260,7 +1342,9 @@ BEGIN
     apply_discount := coalesce((data->>'applyDiscount')::boolean, false);
     IF apply_discount THEN
       SELECT * INTO snap FROM public.quote_discount_snapshots WHERE id = NULLIF(data->>'qualificationId','')::uuid;
-      IF snap.id IS NULL OR snap.qualification_result <> 'QUALIFIED' OR snap.service_code <> service THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      IF NOT admin_private.qualified_discount_snapshot_v1(snap, service, price.id, qu.location_id) THEN
+        RETURN jsonb_build_object('status', 'denied');
+      END IF;
     ELSE
       snap := admin_private.fail_closed_discount_v1(actor, service, price, qu.location_id, 'NO_AUTHORITATIVE_COVERAGE');
     END IF;
@@ -1308,6 +1392,7 @@ BEGIN
   ELSIF p_operation = 'offer' THEN
     SELECT * INTO qv FROM public.quote_versions WHERE id = coalesce(NULLIF(data->>'quoteVersionId','')::uuid, qu.current_version_id) FOR UPDATE;
     IF qv.quote_id IS DISTINCT FROM qu.id OR qv.status <> 'DRAFT' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF NOT admin_private.quote_version_offerable_v1(qv) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     IF qu.current_version_id IS DISTINCT FROM qv.id THEN
       UPDATE public.quote_versions SET status = 'SUPERSEDED' WHERE id = qu.current_version_id AND status = 'OFFERED';
       PERFORM admin_private.revoke_quote_actions_v1(qu.current_version_id, 'A replacement quote version was offered.');
@@ -1342,22 +1427,30 @@ BEGIN
     result := jsonb_build_object('status', 'success', 'id', qu.id, 'version', qu.record_version);
   ELSIF p_operation = 'create_quote_acceptance_action' THEN
     IF qv.status <> 'OFFERED' OR qu.status <> 'OFFERED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF qv.valid_until <= now() OR qv.tax_behaviour = 'UNCONFIRMED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     SELECT * INTO c FROM public.customers WHERE id = qu.customer_id;
     BEGIN expires := (data->>'expiresAt')::timestamptz; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status', 'invalid'); END;
     secret := data->>'secretHash';
     IF secret IS NULL OR secret !~ '^[a-f0-9]{64}$' OR expires IS NULL
       OR expires <= now() + interval '15 minutes' OR expires > now() + interval '7 days'
+      OR expires > qv.valid_until
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     IF NOT admin_private.contact_verified_v1(qu.customer_id, 'email') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     IF NOT EXISTS (
       SELECT 1 FROM public.business_memberships m
       WHERE m.customer_id = qu.customer_id AND m.business_id = qu.business_id AND m.status = 'verified'
     ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-    INSERT INTO public.customer_actions(
-      customer_id, business_id, location_id, case_id, quote_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by
-    ) VALUES (
-      qu.customer_id, qu.business_id, qu.location_id, qu.case_id, qv.id, 'QUOTE_ACCEPTANCE', secret, c.email, expires, actor
-    ) RETURNING * INTO action;
+    prep := admin_private.prepare_quote_acceptance_action_v1(qv.id);
+    IF prep = 'exists' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    BEGIN
+      INSERT INTO public.customer_actions(
+        customer_id, business_id, location_id, case_id, quote_version_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by
+      ) VALUES (
+        qu.customer_id, qu.business_id, qu.location_id, qu.case_id, qv.id, 'QUOTE_ACCEPTANCE', secret, c.email, expires, actor
+      ) RETURNING * INTO action;
+    EXCEPTION WHEN unique_violation THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END;
     INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
     VALUES (action.id, action.case_id, 'ADMIN', actor, 'ACTION_CREATED', jsonb_build_object('kind', 'QUOTE_ACCEPTANCE', 'quoteVersionId', qv.id));
     INSERT INTO public.quote_events(quote_id, quote_version_id, actor_type, actor_id, event, details)
@@ -1657,8 +1750,11 @@ REVOKE ALL ON FUNCTION admin_private.customer_action_eligible_v1(public.customer
 REVOKE ALL ON FUNCTION admin_private.catalogue_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.quote_receipt_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.fail_closed_discount_v1(uuid, text, public.price_versions, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.qualified_discount_snapshot_v1(public.quote_discount_snapshots, text, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.quote_version_offerable_v1(public.quote_versions) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.quote_json_v1(public.quotes, public.quote_versions) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.revoke_quote_actions_v1(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.prepare_quote_acceptance_action_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.build_quote_version_v1(public.quotes, uuid, text, public.price_versions, public.quote_discount_snapshots, text, text, text, timestamptz, text, text, integer, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.accept_quote_version_v1(public.customer_actions, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.admin_catalogue_list_v1(text) FROM PUBLIC, anon, authenticated;

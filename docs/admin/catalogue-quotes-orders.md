@@ -32,6 +32,8 @@ Amounts are integer GBP pence. Guard is per location per month. Seeded tax behav
 
 A later approved public price change must coordinate a new DB price version, website copy, terms/customer copy, and effective date. Do not create two independent current prices.
 
+Approving a future version rolls the current open-ended predecessor forward atomically: `effective_to` becomes the successor `effective_from`. There is no overlap, no gap, and no need to retire today's price to schedule tomorrow's. Retirement remains the command for ending a service without a successor. Approved amounts, currency, tax and payment fields stay immutable.
+
 ## Integer pence arithmetic
 
 Canonical calculation is shared by `lib/money.ts` and `admin_private.money_*_v1`:
@@ -46,7 +48,7 @@ Exact Guard results: `29900 - 20% = 23920` (£239.20), `14900 - 20% = 11920` (£
 
 ## Tax
 
-Supported behaviours: `UNCONFIRMED`, `INCLUSIVE`, `EXCLUSIVE`, `NOT_APPLICABLE`. A quote cannot be accepted while tax is `UNCONFIRMED`. The customer page shows the snapshotted treatment. Later catalogue tax changes do not recalculate accepted quotes.
+Supported behaviours: `UNCONFIRMED`, `INCLUSIVE`, `EXCLUSIVE`, `NOT_APPLICABLE`. A quote cannot be offered, issued as a customer action, or accepted while tax is `UNCONFIRMED`. The customer page shows the snapshotted treatment. Later catalogue tax changes do not recalculate accepted quotes. Quote `valid_until` must still be in the future before offer, amendment, or action issuance. A `QUOTE_ACCEPTANCE` expiry later than the quote validity is rejected.
 
 ## Guard discount
 
@@ -60,7 +62,7 @@ Step 15 may later attach authoritative coverage IDs to new snapshots. Historical
 
 ## Customer acceptance
 
-Admin issues `/action/{id}#t={secret}` with kind `QUOTE_ACCEPTANCE` pinned to `quote_version_id`. The raw secret is never stored. OTP, membership, expiry and revocation reuse Step 9. Admin cannot tick “Accepted by customer”.
+Admin issues `/action/{id}#t={secret}` with kind `QUOTE_ACCEPTANCE` pinned to `quote_version_id`. The raw secret is never stored. OTP, membership, expiry and revocation reuse Step 9. Admin cannot tick “Accepted by customer”. An expired OPEN action is revoked with `ACTION_EXPIRED` before a replacement is created. A still-valid OPEN action is denied rather than duplicated.
 
 Acceptance is one transaction: validate action/session/membership, validate the exact offered unexpired quote version, reject unconfirmed tax, create the acceptance, mark the quote accepted, create exactly one service order, complete the action, write audit. Retries return the same order.
 

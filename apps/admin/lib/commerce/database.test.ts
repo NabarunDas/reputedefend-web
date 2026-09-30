@@ -13,14 +13,16 @@ const customerAuth = "66666666-6666-4666-8666-666666666666"
 const otherAuth = "88888888-8888-4888-8888-888888888888"
 const business = "33333333-3333-4333-8333-333333333333"
 const location = "44444444-4444-4444-8444-444444444444"
+const otherLocation = "aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
 const caseId = "55555555-5555-4555-8555-555555555555"
 const reviewCase = "99999999-9999-4999-8999-999999999999"
 const token = "a".repeat(64)
 const key = () => crypto.randomUUID()
 const secret = () => randomBytes(32).toString("hex")
 const secretHash = (value = secret()) => createHash("sha256").update(value).digest("hex")
-const later = () => new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString()
+const later = () => new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString()
 const actionExpiry = () => new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString()
+const past = () => new Date(Date.now() - 60 * 1000).toISOString()
 
 type RpcResult = {
   status?: string
@@ -107,6 +109,7 @@ beforeEach(async () => {
     insert into public.customers(id,full_name,email) values('${otherCustomer}','Other','other@example.com') on conflict (id) do update set email=excluded.email;
     insert into public.businesses(id,display_name) values('${business}','Bakery') on conflict (id) do nothing;
     insert into public.locations(id,business_id,country,location_name) values('${location}','${business}','UK','High Street') on conflict (id) do nothing;
+    insert into public.locations(id,business_id,country,location_name) values('${otherLocation}','${business}','UK','Side Street') on conflict (id) do nothing;
     insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'UNDECIDED') on conflict (id) do nothing;
     insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${reviewCase}','REVIEW_PROTECTION','${customer}','${business}','${location}','Review dispute','2026-01-01',now(),now(),'UNDECIDED') on conflict (id) do nothing;
     alter table public.cases disable trigger cases_workflow_version;
@@ -153,8 +156,15 @@ async function offer(quoteId: string, version: number, quoteVersionId?: string) 
   return rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId, quoteVersionId }, version])
 }
 
-async function issue(quoteId: string, hash = secretHash()) {
-  return { hash, result: await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId, expiresAt: actionExpiry(), secretHash: hash }, null]) }
+async function issue(quoteId: string, hash = secretHash(), expiresAt = actionExpiry()) {
+  return { hash, result: await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId, expiresAt, secretHash: hash }, null]) }
+}
+
+async function currentPrice(code: string, at: string) {
+  return (await db.query<{ id: string; amount_minor: number; effective_from: string; effective_to: string | null }>(
+    "select id, amount_minor, effective_from::text, effective_to::text from admin_private.price_version_current_v1($1, $2::timestamptz)",
+    [code, at],
+  )).rows[0]
 }
 
 async function completeOtp(actionId: string | undefined, hash: string, email = "alex@example.com", auth = customerAuth) {
@@ -206,7 +216,7 @@ describe("catalogue quotes and orders SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.price_versions where status='APPROVED' and service_code='GUIDED_RELAUNCH' and effective_to is null")).rows[0].n).toBe(1)
   })
 
-  it("keeps approved price financial fields immutable and isolates later versions from existing quotes", async () => {
+  it("schedules a future approved price without retiring or overlapping the current version", async () => {
     const managedId = await priceId("MANAGED_RELAUNCH")
     await expect(db.query("update public.price_versions set amount_minor=1 where id=$1", [managedId])).rejects.toThrow(/immutable/i)
     const draft = await createDraft({ serviceCode: "MANAGED_RELAUNCH", caseId })
@@ -215,13 +225,39 @@ describe("catalogue quotes and orders SQL", () => {
       serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", amountMinor: 31900, effectiveFrom: "2027-01-01T00:00:00Z", taxBehaviour: "UNCONFIRMED",
     }, null])
     expect(created?.status).toBe("success")
-    expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("denied")
-    await db.query("update public.admin_sessions set created_at=now()")
-    const retired = await rpc("admin_catalogue_command_v1", [token, key(), "retire_price_version", { priceVersionId: managedId }, 1])
-    expect(retired?.status).toBe("success")
     expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("success")
+    const predecessor = (await db.query<{ effective_to: string | null; amount_minor: number }>(
+      "select effective_to::text, amount_minor from public.price_versions where id=$1", [managedId],
+    )).rows[0]
+    expect(predecessor.amount_minor).toBe(29900)
+    expect(predecessor.effective_to).toMatch(/^2027-01-01/)
+    const successor = (await db.query<{ effective_from: string; amount_minor: number; status: string }>(
+      "select effective_from::text, amount_minor, status from public.price_versions where id=$1", [created?.id],
+    )).rows[0]
+    expect(successor).toMatchObject({ amount_minor: 31900, status: "APPROVED" })
+    expect(successor.effective_from).toMatch(/^2027-01-01/)
+    expect((await currentPrice("MANAGED_RELAUNCH", "2026-12-31T23:59:59Z")).amount_minor).toBe(29900)
+    expect((await currentPrice("MANAGED_RELAUNCH", "2027-01-01T00:00:00Z")).amount_minor).toBe(31900)
+    const overlaps = await db.query<{ n: number }>(`
+      select count(*)::int as n
+      from public.price_versions a
+      join public.price_versions b on a.id < b.id and a.service_code = b.service_code
+      where a.status = 'APPROVED' and b.status = 'APPROVED' and a.service_code = 'MANAGED_RELAUNCH'
+        and tstzrange(a.effective_from, a.effective_to, '[)') && tstzrange(b.effective_from, b.effective_to, '[)')
+    `)
+    expect(overlaps.rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>(`
+      select count(*)::int as n from public.price_versions
+      where service_code='MANAGED_RELAUNCH' and status='APPROVED'
+        and effective_from <= '2027-01-01T00:00:00Z' and (effective_to is null or effective_to > '2026-12-31T23:59:59Z')
+    `)).rows[0].n).toBe(2)
     const quoted = await db.query<{ standard_amount_minor: number }>("select standard_amount_minor from public.quote_versions where id=$1", [draft?.quoteVersionId])
     expect(quoted.rows[0].standard_amount_minor).toBe(29900)
+    const third = await rpc("admin_catalogue_command_v1", [token, key(), "create_price_version", {
+      serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", amountMinor: 32900, effectiveFrom: "2026-12-01T00:00:00Z",
+    }, null])
+    expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: third?.id }, third?.version]))?.status).toBe("denied")
+    await expect(db.query("update public.price_versions set effective_to='2026-06-01T00:00:00Z' where id=$1", [managedId])).rejects.toThrow(/retired|controlled|immutable/i)
   })
 
   it("requires fresh authentication for price approval", async () => {
@@ -304,10 +340,8 @@ describe("catalogue quotes and orders SQL", () => {
     await expect(db.query("update public.quote_acceptances set total_amount_minor=1")).rejects.toThrow(/immutable/i)
     await expect(db.query("update public.service_orders set amount_minor=1")).rejects.toThrow(/immutable/i)
     const unconfirmed = await createDraft({ serviceCode: "GUIDED_REVIEW", caseId: reviewCase })
-    await offer(unconfirmed!.id!, unconfirmed!.version!)
-    const issuedOpen = await issue(unconfirmed!.id!)
-    const openSession = await completeOtp(issuedOpen.result?.id, issuedOpen.hash)
-    expect(await rpc("customer_action_command_v1", [openSession, key(), "accept", { accepted: true }])).toEqual({ status: "denied" })
+    expect((await offer(unconfirmed!.id!, unconfirmed!.version!))?.status).toBe("denied")
+    expect((await issue(unconfirmed!.id!)).result?.status).toBe("denied")
   })
 
   it("applies paid Guard Managed discounts exactly and fail-closes every ineligible path", async () => {
@@ -355,7 +389,6 @@ describe("catalogue quotes and orders SQL", () => {
     const created = await rpc("admin_catalogue_command_v1", [token, key(), "create_price_version", {
       serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", amountMinor: 34900, effectiveFrom: "2028-01-01T00:00:00Z",
     }, null])
-    await rpc("admin_catalogue_command_v1", [token, key(), "retire_price_version", { priceVersionId: await priceId("MANAGED_RELAUNCH") }, 1])
     expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: created?.id }, created?.version]))?.status).toBe("success")
     const frozen = await db.query<{ total_amount_minor: number; discount_amount_minor: number }>("select qv.total_amount_minor, qv.discount_amount_minor from public.quote_versions qv join public.service_orders o on o.quote_version_id=qv.id where o.id=$1", [accepted?.orderId])
     expect(frozen.rows[0]).toEqual({ total_amount_minor: 23920, discount_amount_minor: 5980 })
@@ -412,5 +445,107 @@ describe("catalogue quotes and orders SQL", () => {
     expect((await createDraft({ serviceCode: "GUIDED_RELAUNCH" }))?.status).toBe("success")
     await db.query("update public.cases set service_track='MANAGED' where id=$1", [reviewCase])
     expect((await createDraft({ serviceCode: "GUIDED_REVIEW", caseId: reviewCase }))?.status).toBe("denied")
+  })
+
+  it("rejects mismatched discount snapshots when amending a quote version", async () => {
+    const seedPrice = await priceId("MANAGED_RELAUNCH")
+    const qualified = await qualify("MANAGED_RELAUNCH")
+    const draft = await createDraft({ serviceCode: "MANAGED_RELAUNCH" })
+    expect(draft?.status).toBe("success")
+    expect((await setTax(draft!.id!, draft!.version!))?.status).toBe("success")
+    const offered = await offer(draft!.id!, draft!.version! + 1)
+    expect(offered?.status).toBe("success")
+    const otherLoc = await qualify("MANAGED_RELAUNCH", { locationId: otherLocation })
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: otherLoc?.id,
+    }, offered?.version]))?.status).toBe("denied")
+    const otherService = await qualify("MANAGED_REVIEW")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: otherService?.id,
+    }, offered?.version]))?.status).toBe("denied")
+    const future = await rpc("admin_catalogue_command_v1", [token, key(), "create_price_version", {
+      serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", amountMinor: 31900, effectiveFrom: "2027-01-01T00:00:00Z",
+    }, null])
+    expect((await rpc("admin_catalogue_command_v1", [token, key(), "approve_price_version", { priceVersionId: future?.id }, future?.version]))?.status).toBe("success")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: qualified?.id, priceVersionId: future?.id,
+    }, offered?.version]))?.status).toBe("denied")
+    const expiredSnap = await qualify("MANAGED_RELAUNCH", { validUntil: past() })
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: expiredSnap?.id,
+    }, offered?.version]))?.status).toBe("denied")
+    const included = await rpc("admin_quote_command_v1", [token, key(), "record_qualification", {
+      serviceCode: "MANAGED_RELAUNCH", priceVersionId: seedPrice, qualificationResult: "NOT_QUALIFIED",
+      coverageBasis: "INCLUDED_ONLY", coverageStatus: "ACTIVE", coverageType: "INCLUDED_GUARD", paidVsIncluded: "INCLUDED_ONLY",
+      reasonCode: "INCLUDED_ONLY", locationId: location,
+    }, null])
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: included?.id,
+    }, offered?.version]))?.status).toBe("denied")
+    const amended = await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: draft?.id, applyDiscount: true, qualificationId: qualified?.id, priceVersionId: seedPrice,
+      scope: "Amended managed recovery for this location only.", exclusions: "Payment, monitoring activation and Google outcomes remain excluded.",
+    }, offered?.version])
+    expect(amended?.status).toBe("success")
+    expect((await db.query<{ discount_amount_minor: number; price_version_id: string }>(
+      "select discount_amount_minor, price_version_id from public.quote_versions where id=$1", [amended?.quoteVersionId],
+    )).rows[0]).toEqual({ discount_amount_minor: 5980, price_version_id: seedPrice })
+  })
+
+  it("revokes an expired OPEN quote action before issuing a replacement", async () => {
+    await verify()
+    const draft = await createDraft()
+    await setTax(draft!.id!, draft!.version!)
+    await offer(draft!.id!, draft!.version! + 1)
+    const first = await issue(draft!.id!)
+    expect(first.result?.status).toBe("success")
+    const pending = secretHash()
+    expect(await rpc("customer_action_exchange_v1", [first.result?.id, first.hash, pending])).toMatchObject({ status: "ok" })
+    expect((await issue(draft!.id!)).result?.status).toBe("denied")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where quote_version_id=$1 and status='OPEN'", [first.result?.quoteVersionId])).rows[0].n).toBe(1)
+    await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+    await db.query("update public.customer_actions set expires_at=now()-interval '1 minute' where id=$1", [first.result?.id])
+    await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+    const [left, right] = await Promise.all([issue(draft!.id!), issue(draft!.id!)])
+    const created = [left, right].filter(item => item.result?.status === "success")
+    expect(created).toHaveLength(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where quote_version_id=$1 and status='OPEN'", [first.result?.quoteVersionId])).rows[0].n).toBe(1)
+    const old = await db.query<{ status: string; revoked_at: string | null }>("select status, revoked_at from public.customer_actions where id=$1", [first.result?.id])
+    expect(old.rows[0].status).toBe("REVOKED")
+    expect(old.rows[0].revoked_at).toBeTruthy()
+    const expiredEvent = await db.query<{ details: { source?: string } }>(
+      "select details from public.customer_action_events where action_id=$1 and event='ACTION_REVOKED' order by created_at desc limit 1",
+      [first.result?.id],
+    )
+    expect(expiredEvent.rows[0].details.source).toBe("ACTION_EXPIRED")
+    expect(await rpc("customer_action_exchange_v1", [first.result?.id, first.hash, secretHash()])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_session_v1", [pending])).toBeNull()
+    expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: expect.stringMatching(/unavailable|denied|invalid/) })
+  })
+
+  it("refuses unusable offers and actions until tax and validity are final", async () => {
+    await verify()
+    const unconfirmed = await createDraft()
+    expect(unconfirmed?.status).toBe("success")
+    expect((await offer(unconfirmed!.id!, unconfirmed!.version!))?.status).toBe("denied")
+    const expiredDraft = await createDraft()
+    await setTax(expiredDraft!.id!, expiredDraft!.version!)
+    await db.query("update public.quote_versions set valid_until=now()-interval '1 minute' where id=$1", [expiredDraft?.quoteVersionId])
+    expect((await offer(expiredDraft!.id!, expiredDraft!.version! + 1))?.status).toBe("denied")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "create_version", {
+      quoteId: expiredDraft?.id, validUntil: past(),
+    }, expiredDraft!.version! + 1]))?.status).toBe("invalid")
+    const ready = await createDraft()
+    expect((await setTax(ready!.id!, ready!.version!))?.status).toBe("success")
+    expect((await offer(ready!.id!, ready!.version! + 1))?.status).toBe("success")
+    expect((await issue(ready!.id!, secretHash(), new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString())).result?.status).toBe("invalid")
+    await db.exec("alter table public.quote_versions disable trigger quote_versions_protect")
+    await db.query("update public.quote_versions set valid_until=now()-interval '1 minute' where id=$1", [ready?.quoteVersionId])
+    await db.exec("alter table public.quote_versions enable trigger quote_versions_protect")
+    expect((await issue(ready!.id!)).result?.status).toBe("denied")
+    const ok = await createDraft()
+    await setTax(ok!.id!, ok!.version!)
+    expect((await offer(ok!.id!, ok!.version! + 1))?.status).toBe("success")
+    expect((await issue(ok!.id!)).result?.status).toBe("success")
   })
 })

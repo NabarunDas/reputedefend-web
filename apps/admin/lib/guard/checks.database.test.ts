@@ -323,6 +323,12 @@ describe("guard manual checks SQL", () => {
   it("generates weekend and bank-holiday labelled dates and excludes inactive coverage", async () => {
     const active = await activateIncluded()
     await approveSchedule()
+    await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect")
+    await db.query(
+      "update public.guard_coverages set activated_at=$2::timestamptz - interval '30 days', included_start_at=$2::timestamptz - interval '30 days', included_end_at=$2 where id=$1",
+      [active, "2026-12-26T00:00:00Z"],
+    )
+    await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect")
     for (const date of ["2026-09-26", "2026-09-27", "2026-12-25"]) {
       expect(await maintain(`${date}T08:00:00Z`, date)).toMatchObject({ status: "success" })
       expect(await obligations(active, date)).toHaveLength(2)
@@ -575,11 +581,11 @@ describe("guard manual checks SQL", () => {
     await approveSchedule()
     await maintain("2026-09-30T08:00:00Z", "2026-09-30")
     const [evening, morning] = await obligations(coverageId, "2026-09-30")
-    const claimed = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:00:00Z"])
+    const claimed = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:30:00Z"])
     expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: morning.id, ...healthyPayload() }, claimed!.version, morning.window_end_utc])).toMatchObject({ status: "success", late: false, secondsLate: 0 })
     expect((await obligations(coverageId, "2026-09-30")).find(row => row.id === morning.id)).toMatchObject({ late: false, missed_at: null })
 
-    const eveningClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T16:00:00Z"])
+    const eveningClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T16:30:00Z"])
     const oneSecondAfter = new Date(new Date(evening.window_end_utc).getTime() + 1000).toISOString()
     expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: evening.id, ...healthyPayload() }, eveningClaim!.version, oneSecondAfter])).toMatchObject({ status: "success", late: true })
     const afterLate = (await obligations(coverageId, "2026-09-30")).find(row => row.id === evening.id)!

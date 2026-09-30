@@ -199,7 +199,7 @@ CREATE TABLE public.guard_rota_assignments (
   evening_window_code text NOT NULL DEFAULT 'EVENING' CHECK (evening_window_code = 'EVENING'),
   first_planned_window_code text CHECK (first_planned_window_code IS NULL OR first_planned_window_code IN ('MORNING','EVENING')),
   first_planned_on date,
-  status text NOT NULL CHECK (status IN ('ACTIVE','SUPERSEDED')),
+  status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUPERSEDED')),
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid NOT NULL,
   record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1)
@@ -975,13 +975,13 @@ BEGIN
   SELECT coalesce(max(version_number),0)+1 INTO n FROM public.guard_baselines WHERE coverage_id = cov.id;
   INSERT INTO public.guard_baselines(
     coverage_id, location_id, version_number, status, profile_url, profile_availability, displayed_business_name,
-    profile_details_snapshot, review_count, rating, latest_review_reference, latest_review_at, captured_by, notes
+    profile_details_snapshot, review_count, rating, latest_review_reference, latest_review_at, capture_method, captured_by, notes
   ) VALUES (
     cov.id, cov.location_id, n, 'VERIFIED', btrim(p_payload->>'profileUrl'), p_payload->>'profileAvailability',
     btrim(p_payload->>'displayedBusinessName'), details,
     NULLIF(p_payload->>'reviewCount','')::integer, NULLIF(p_payload->>'rating','')::numeric,
     coalesce(p_payload->>'latestReviewReference',''), NULLIF(p_payload->>'latestReviewAt','')::timestamptz,
-    p_actor, coalesce(p_payload->>'notes','')
+    'MANUAL_ADMIN', p_actor, coalesce(p_payload->>'notes','')
   ) RETURNING * INTO base;
   IF prev.id IS NOT NULL THEN
     UPDATE public.guard_baselines SET status = 'SUPERSEDED' WHERE id = prev.id;
@@ -1010,8 +1010,8 @@ BEGIN
   IF prev.id IS NOT NULL THEN
     UPDATE public.guard_rota_assignments SET status = 'SUPERSEDED' WHERE id = prev.id;
   END IF;
-  INSERT INTO public.guard_rota_assignments(coverage_id, assignee_auth_user_id, created_by)
-  VALUES (cov.id, p_actor, p_actor) RETURNING * INTO rota;
+  INSERT INTO public.guard_rota_assignments(coverage_id, assignee_auth_user_id, created_by, status)
+  VALUES (cov.id, p_actor, p_actor, 'ACTIVE') RETURNING * INTO rota;
   UPDATE public.guard_coverages SET rota_id = rota.id WHERE id = cov.id;
   PERFORM admin_private.guard_append_event_v1(cov.id, 'ADMIN', p_actor, 'ROTA_ASSIGNED', cov.state, cov.state,
     'Monitoring rota assigned', jsonb_build_object('rotaId', rota.id, 'windows', jsonb_build_array('MORNING','EVENING')));

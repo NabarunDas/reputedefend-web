@@ -75,7 +75,9 @@ beforeEach(async () => {
     alter table public.price_versions disable trigger price_versions_protect;
     alter table public.price_versions disable trigger price_versions_overlap;
     alter table public.guard_coverage_events disable trigger guard_coverage_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
+    alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
+    alter table public.case_document_events disable trigger case_document_events_immutable;
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null;
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
@@ -85,6 +87,8 @@ beforeEach(async () => {
     alter table public.quote_events enable trigger quote_events_immutable;
     alter table public.price_version_events enable trigger price_version_events_immutable;
     alter table public.guard_coverage_events enable trigger guard_coverage_events_immutable;
+    alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
+    alter table public.case_document_events enable trigger case_document_events_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${customerAuth}','alex@example.com',now(),null,null);
     insert into public.admin_identity(singleton,auth_user_id,enabled) values(true,'${uid}',true);
@@ -222,7 +226,7 @@ describe("guard onboarding SQL", () => {
   it("activates included coverage without a paid subscription and starts 30 days at activation", async () => {
     await verify()
     await db.exec(`alter table public.cases disable trigger cases_workflow_version;
-      update public.cases set service_track='MANAGED', status='CLOSED', outcome='RESTORED', work_stage='CLOSED' where id='${caseId}';
+      update public.cases set service_track='MANAGED', status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW' where id='${caseId}';
       alter table public.cases enable trigger cases_workflow_version;`)
     const draft = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
       serviceCode: "MANAGED_RELAUNCH", customerId: customer, businessId: business, caseId, locationId: location,
@@ -239,6 +243,9 @@ describe("guard onboarding SQL", () => {
     const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
     expect(accepted?.status).toBe("success")
     expect((await rpc("admin_guard_command_v1", [token, key(), "create_included_offer", { caseId, serviceOrderId: accepted!.orderId }, null]))?.status).toBe("denied")
+    await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+      update public.cases set status='CLOSED', work_stage='FINISHED', outcome='RESTORED' where id='${caseId}';
+      alter table public.cases enable trigger cases_workflow_version;`)
     const doc = crypto.randomUUID(), version = crypto.randomUUID()
     await db.query("insert into public.case_documents(id,case_id,title,created_by) values($1,$2,'Outcome evidence',$3)", [doc, caseId, uid])
     await db.query("insert into public.case_document_versions(id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,upload_status,scan_status,validation_status,review_status,created_by) values($1,$2,1,'outcome.png','image/png',1200,'evidence-test', $3, 'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)", [

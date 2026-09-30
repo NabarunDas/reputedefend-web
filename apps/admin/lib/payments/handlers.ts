@@ -1,5 +1,6 @@
 import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
+import { mapBoundedProviderEvent } from "../../../../lib/payments/model"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
 export function collectPaymentHandler(env: Record<string, string | undefined> = process.env): JobHandler {
@@ -62,10 +63,16 @@ export function processStripeEventHandler(env: Record<string, string | undefined
       const eventType = typeof payload.eventType === "string" ? payload.eventType : ""
       const objectId = typeof payload.objectId === "string" ? payload.objectId : null
       if (!eventId || !eventType) return { ok: false, retryable: false, error: "Event payload is invalid." }
-      const mapped = paymentProvider(env, { fake: true }).mapEvent({
+      const kind = eventType.startsWith("payment_intent.") ? "payment_intent" : eventType.startsWith("setup_intent.") ? "setup_intent" : "checkout.session" as const
+      const provider = paymentProvider(env)
+      let object: Record<string, unknown> = { id: objectId || undefined }
+      if (objectId && provider.retrieveObject) {
+        object = await provider.retrieveObject(kind, objectId) ?? object
+      }
+      const mapped = mapBoundedProviderEvent({
         id: eventId,
         type: eventType,
-        data: { object: { id: objectId || undefined } },
+        data: { object },
       })
       const result = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
         p_event_id: eventId,

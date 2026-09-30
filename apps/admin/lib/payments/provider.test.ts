@@ -58,7 +58,7 @@ describe("payment provider contract", () => {
     })
     expect(session.mode).toBe("setup")
     expect(session.amountMinor).toBe(0)
-    expect(provider.lastCheckout?.mode).toBe("setup")
+    expect(provider.lastCheckout).toMatchObject({ mode: "setup", amountMinor: 0, setupUsage: "off_session" })
   })
 
   it("rejects sensitive Stripe metadata and never logs secrets", () => {

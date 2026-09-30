@@ -6,7 +6,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   checkouts: number
   setups: number
   intents: number
-  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string } | null
+  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session" } | null
   lastIntent: { amountMinor: number; idempotencyKey: string; offSession: true } | null
   idempotency: Set<string>
   nextIntentStatus: string
@@ -19,7 +19,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     checkouts: 0,
     setups: 0,
     intents: 0,
-    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string } | null,
+    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session" } | null,
     lastIntent: null as { amountMinor: number; idempotencyKey: string; offSession: true } | null,
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
@@ -78,7 +78,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
       }
       sessions.set(input.idempotencyKey, created)
       state.setups += 1
-      state.lastCheckout = { amountMinor: 0, mode: "setup", idempotencyKey: input.idempotencyKey }
+      state.lastCheckout = { amountMinor: 0, mode: "setup", idempotencyKey: input.idempotencyKey, setupUsage: "off_session" }
       state.idempotency.add(input.idempotencyKey)
       return created
     },

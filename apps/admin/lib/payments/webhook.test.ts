@@ -27,7 +27,7 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("stripe webhook", () => {
   it("fails closed without a webhook secret and never parses before verification", async () => {
-    const denied = await handleStripeWebhook(req("{\"id\":\"evt\"}"), "")
+    const denied = await handleStripeWebhook(req("{\"id\":\"evt\"}"), {})
     expect(denied.status).toBe(503)
     expect(mocks.construct).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalled()

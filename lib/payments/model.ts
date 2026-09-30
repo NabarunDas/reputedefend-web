@@ -89,6 +89,78 @@ export type MappedProviderEvent = {
   failureCode?: string | null
 }
 
+export type BoundedProviderEvent = {
+  id: string
+  type: string
+  data?: { object?: Record<string, unknown> }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function asId(value: unknown): string | undefined {
+  if (typeof value === "string") return value
+  const rec = asRecord(value)
+  return typeof rec.id === "string" ? rec.id : undefined
+}
+
+export function mapBoundedProviderEvent(event: BoundedProviderEvent): MappedProviderEvent {
+  const object = asRecord(event.data?.object)
+  const paymentMethod = object.payment_method
+  const latestCharge = object.latest_charge
+  const lastError = asRecord(object.last_payment_error)
+  const card = asRecord(asRecord(paymentMethod).card)
+  const mapped: MappedProviderEvent = {
+    eventId: event.id,
+    type: event.type,
+    objectId: typeof object.id === "string" ? object.id : "",
+    objectType: event.type.startsWith("payment_intent.") ? "payment_intent" : event.type.startsWith("setup_intent.") ? "setup_intent" : "checkout.session",
+    outcome: "ignored",
+    stripeCustomerId: asId(object.customer),
+  }
+  if (event.type === "checkout.session.completed" && object.mode === "setup") {
+    mapped.outcome = "setup_succeeded"
+    const setupPm = asRecord(asRecord(object.setup_intent).payment_method)
+    mapped.paymentMethod = {
+      id: asId(object.payment_method) || asId(setupPm) || asId(object.setup_intent) || "",
+      brand: typeof card.brand === "string" ? card.brand : typeof setupPm.brand === "string" ? setupPm.brand : null,
+      last4: typeof card.last4 === "string" ? card.last4 : null,
+      expMonth: typeof card.exp_month === "number" ? card.exp_month : null,
+      expYear: typeof card.exp_year === "number" ? card.exp_year : null,
+      fingerprint: typeof card.fingerprint === "string" ? card.fingerprint : null,
+    }
+  } else if (event.type === "checkout.session.completed" || event.type === "payment_intent.succeeded") {
+    mapped.outcome = "succeeded"
+    mapped.chargeId = asId(latestCharge) ?? null
+    mapped.receiptUrl = typeof asRecord(latestCharge).receipt_url === "string" ? asRecord(latestCharge).receipt_url as string : null
+  } else if (event.type === "payment_intent.requires_action") {
+    mapped.outcome = "requires_action"
+  } else if (event.type === "payment_intent.payment_failed" || event.type === "checkout.session.expired") {
+    mapped.outcome = "failed"
+    mapped.failureCategory = "DECLINED"
+    mapped.failureCode = typeof lastError.code === "string" ? lastError.code : event.type
+  } else if (event.type === "setup_intent.succeeded") {
+    mapped.outcome = "setup_succeeded"
+    const pm = paymentMethod
+    if (pm && typeof pm === "object") {
+      mapped.paymentMethod = {
+        id: asId(pm) || "",
+        brand: typeof card.brand === "string" ? card.brand : null,
+        last4: typeof card.last4 === "string" ? card.last4 : null,
+        expMonth: typeof card.exp_month === "number" ? card.exp_month : null,
+        expYear: typeof card.exp_year === "number" ? card.exp_year : null,
+        fingerprint: typeof card.fingerprint === "string" ? card.fingerprint : null,
+      }
+    } else if (typeof pm === "string") {
+      mapped.paymentMethod = { id: pm, brand: null, last4: null, expMonth: null, expYear: null, fingerprint: null }
+    }
+  } else if (event.type === "setup_intent.setup_failed" || event.type === "setup_intent.canceled") {
+    mapped.outcome = "setup_failed"
+  }
+  return mapped
+}
+
 export function paymentMetadata(input: PaymentMetadata): Record<string, string> {
   const out: Record<string, string> = {
     customerId: input.customerId,

@@ -22,6 +22,7 @@ export interface PaymentProvider {
   createSetupCheckout(input: CreateSetupInput): Promise<ProviderCheckout>
   createOffSessionPayment(input: CreateOffSessionInput): Promise<ProviderPaymentIntent>
   mapEvent(event: { id: string; type: string; data?: { object?: Record<string, unknown> } }): MappedProviderEvent
+  retrieveObject?(kind: "checkout.session" | "payment_intent" | "setup_intent", id: string): Promise<Record<string, unknown> | null>
 }
 
 export function disabledPaymentProvider(): PaymentProvider {

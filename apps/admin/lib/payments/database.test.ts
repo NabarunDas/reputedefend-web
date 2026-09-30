@@ -110,10 +110,12 @@ async function priceId(code: string) {
 async function createDraft(overrides: Record<string, unknown> = {}) {
   const serviceCode = String(overrides.serviceCode || "GUIDED_RELAUNCH")
   return rpc("admin_quote_command_v1", [token, key(), "create_draft", {
-    serviceCode, customerId: customer, businessId: business, caseId, locationId: location,
+    customerId: customer, businessId: business, caseId, locationId: location,
     scope: "Prepare the agreed recovery pack for this location only.",
     exclusions: "Google decisions, Manager access, and later payment collection are excluded.",
-    validUntil: later(), applyDiscount: false, priceVersionId: await priceId(serviceCode), ...overrides, serviceCode,
+    validUntil: later(), applyDiscount: false, priceVersionId: await priceId(serviceCode),
+    ...overrides,
+    serviceCode,
   }, null])
 }
 

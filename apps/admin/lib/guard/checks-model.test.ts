@@ -16,6 +16,7 @@ const base: GuardCheckObligation = {
   secondsLate: 0,
   attemptCount: 1,
   retryCount: 0,
+  version: 1,
 }
 
 describe("guard check queue membership", () => {

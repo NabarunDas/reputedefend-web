@@ -2,7 +2,7 @@
 
 Status: **DATABASE APPLIED / STRIPE & GUARD LIVE DISABLED**
 
-The additive migration `20260930180050_guard_subscriptions_billing_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 15 as `20260930180050 guard_subscriptions_billing_v1`. Live migration history now ends with `20260930164529 guard_onboarding_activation_v1` then `20260930180050 guard_subscriptions_billing_v1`. Step 16 exists remotely exactly once. Do not replay it. Do not create another Step 16 migration. Do not modify the applied SQL.
+The additive migration `20260930180050_guard_subscriptions_billing_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 15 as `20260930180050 guard_subscriptions_billing_v1`. Live migration history now continues with independently applied `20260930203750 guard_manual_checks_v1`. Step 16 exists remotely exactly once. Do not replay it. Do not create another Step 16 migration. Do not modify the applied SQL.
 
 This step implements per-location Guard subscriptions, renewals, paid-through entitlement, included-period expiry, explicit included-to-paid continuation, cancellation, refunds/credits, price-change acceptance, disputes and daily billing reconciliation.
 

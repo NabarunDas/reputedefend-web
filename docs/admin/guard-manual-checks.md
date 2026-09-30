@@ -2,11 +2,59 @@
 
 Status: **DATABASE APPLIED / LIVE MONITORING DISABLED**
 
-The additive migration `20260930203750_guard_manual_checks_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 16 `20260930180050_guard_subscriptions_billing_v1.sql`. The database is ready for Step 17 manual-check operations, but live monitoring remains disabled. No APPROVED production schedule exists and `GUARD_CHECKS_ENABLED` remains unset. Do not replay or modify the applied migration.
+The additive migration `20260930203750_guard_manual_checks_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 16 as `20260930203750 guard_manual_checks_v1`. Live migration history now ends with `20260930180050 guard_subscriptions_billing_v1` then `20260930203750 guard_manual_checks_v1`. Step 17 exists remotely exactly once. Do not replay or modify the applied migration. Do not create another Step 17 migration.
+
+The database is ready for Step 17 manual-check operations, but live monitoring remains disabled. No APPROVED production schedule exists. Exact production clock windows remain an Owner decision. `GUARD_CHECKS_ENABLED` remains unset, so no daily Guard-check jobs or outbox rows are created and no obligations exist.
 
 This step implements manual Guard monitoring checks: versioned Europe/London schedules, twice-daily MORNING/EVENING obligations, Admin claim/complete, immutable observations, baseline comparison, retries, missed/late history and handling-time metrics.
 
 It does not implement Step 18 alerts or customer notifications. It does not implement Step 19 reporting, Step 20 settings, or Step 21 Google API automation.
+
+## Independent live verification
+
+Independent live verification confirmed:
+
+- Step 17 migration count = 1
+- schedule rows = 0
+- APPROVED production schedules = 0
+- check obligations = 0
+- check attempts = 0
+- observations = 0
+- generation blockers = 0
+- `MAINTAIN_GUARD_CHECKS` jobs = 0
+- `MAINTAIN_GUARD_CHECKS` outbox rows = 0
+- worker cadence = 86400 seconds
+- Cron remains `0 4 * * *`
+- RLS enabled on all new Step 17 public tables
+- anon direct CRUD denied
+- authenticated direct CRUD denied
+- service_role direct CRUD denied
+- Step 17 public RPCs are service-role-only
+- no new Step-17-specific security WARN
+- live observation classification constraint is `AVAILABLE` → `HEALTHY` / `CHANGE_DETECTED` / `INCOMPLETE`; `UNAVAILABLE` → `PROFILE_UNAVAILABLE`; `UNKNOWN` → `INCOMPLETE`
+- incomplete or unknown data cannot masquerade as healthy or change detection
+- `GUARD_CHECKS_ENABLED` remains unset
+- no production monitoring schedule has been approved
+- no Google API is configured
+- no Guard monitoring is live
+- no customer alert or email was generated
+- Step 11 outgoing mail remains disabled
+- Step 12 incoming mail remains disabled
+- Stripe and Guard activation remain disabled
+
+This documentation-only update does not:
+
+- request Supabase credentials
+- access Supabase
+- replay or modify the applied migration
+- create another migration
+- enable `GUARD_CHECKS_ENABLED`
+- approve or seed production clock windows
+- configure Google API
+- implement Step 18 alerts
+- send customer notifications
+
+Europe/London remains authoritative. Weekends and bank holidays remain included. Capture remains MANUAL only. Exact production clock windows remain an Owner decision. Cron remains `0 4 * * *`. Worker cadence remains 86400 seconds.
 
 ## What is not approved yet
 

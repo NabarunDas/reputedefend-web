@@ -4,7 +4,7 @@ Status: **DATABASE APPLIED / LIVE GUARD DISABLED**
 
 The additive migration `20260930164529_guard_onboarding_activation_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 14 as `20260930164529 guard_onboarding_activation_v1`. Live migration history now continues with independently applied `20260930180050 guard_subscriptions_billing_v1`. Step 15 exists remotely exactly once. Do not replay it. Do not create another Guard onboarding migration. Do not modify the applied SQL.
 
-This step implements the Guard onboarding and per-location activation foundation. Step 16 subscription schema exists separately as applied `20260930180050_guard_subscriptions_billing_v1.sql` and remains STRIPE & GUARD LIVE DISABLED. Step 17 check source exists separately as unapplied `20260930203750_guard_manual_checks_v1.sql` and remains LIVE MONITORING DISABLED. This applied Step 15 migration is not rewritten. Step 18 alerts are not implemented.
+This step implements the Guard onboarding and per-location activation foundation. Step 16 subscription schema exists separately as applied `20260930180050_guard_subscriptions_billing_v1.sql` and remains STRIPE & GUARD LIVE DISABLED. Step 17 check schema exists separately as applied `20260930203750_guard_manual_checks_v1.sql` and remains LIVE MONITORING DISABLED. This applied Step 15 migration is not rewritten. Step 18 alerts are not implemented.
 
 Step 11 outgoing mail remains disabled. Step 12 incoming mail remains disabled. Step 14 Stripe remains disabled. Worker cadence remains 86400 seconds. Current Vercel Cron remains `0 4 * * *`. No Stripe subscription is created. Live Guard monitoring is not enabled. `GUARD_ACTIVATION_ENABLED` was not configured during the rollout and remains unset.
 

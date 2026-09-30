@@ -1,6 +1,6 @@
 export function isPublicRead(pathname: string, method: string): boolean {
   if (method !== "GET" && method !== "HEAD") return false
-  return pathname === "/" || pathname === "/robots.txt" || pathname.startsWith("/action/") || pathname.startsWith("/_next/static/")
+  return pathname === "/" || pathname === "/robots.txt" || pathname === "/pay/return" || pathname.startsWith("/action/") || pathname.startsWith("/_next/static/")
 }
 
 export const privateResponseHeaders = {

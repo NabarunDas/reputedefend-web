@@ -41,6 +41,8 @@ describe("job worker handlers", () => {
     expect(preview.SEND_EMAIL).toEqual(expect.objectContaining({ jobType: "SEND_EMAIL" }))
     expect(preview.IMPORT_INBOUND_EMAIL).toEqual(expect.objectContaining({ jobType: "IMPORT_INBOUND_EMAIL" }))
     expect(preview.IMPORT_INBOUND_ATTACHMENT).toEqual(expect.objectContaining({ jobType: "IMPORT_INBOUND_ATTACHMENT" }))
+    expect(preview.COLLECT_PAYMENT).toEqual(expect.objectContaining({ jobType: "COLLECT_PAYMENT" }))
+    expect(preview.PROCESS_STRIPE_EVENT).toEqual(expect.objectContaining({ jobType: "PROCESS_STRIPE_EVENT" }))
     expect(registeredJobHandlers({ VERCEL_ENV: "production" }).SYSTEM_HEALTH_PROBE).toBeTruthy()
   })
 })

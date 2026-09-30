@@ -27,6 +27,11 @@ describe("admin access boundary", () => {
     expect(allowed.headers.get("x-middleware-next")).toBe("1")
     expect((await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/resend/inbound"))).status).toBe(401)
   })
+  it("allows the Stripe webhook through so the dedicated signature can authenticate it", async () => {
+    const allowed = await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/stripe", { method: "POST" }))
+    expect(allowed.headers.get("x-middleware-next")).toBe("1")
+    expect((await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/stripe"))).status).toBe(401)
+  })
   it.each(["/login", "/robots.txt", "/_next/static/chunks/app.js", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"])("allows public read %s with noindex", async path => {
     const result = await proxy(new NextRequest(`https://admin.profilerelaunch.com${path}`))
     expect(result.headers.get("x-middleware-next")).toBe("1")

@@ -44,6 +44,25 @@ type Session = {
   agreement?: { title: string; body: string; scope: string; kind: string } | null
   authorization?: { id: string; kind: string; status: string } | null
   quote?: Quote | null
+  payment?: {
+    orderId: string
+    orderRef: string
+    serviceCode: string
+    amountMinor: number
+    currency: string
+    taxBehaviour: string
+    taxAmountMinor: number
+    paymentModel: string
+    successDefinition: string
+    obligationId?: string | null
+    obligationState?: string | null
+    consentId?: string | null
+    consentText: string
+    consentVersion: string
+    invoiceId?: string | null
+    invoiceStatus?: string | null
+    hostedInvoiceUrl?: string | null
+  } | null
 }
 
 function formatGbp(minor: number): string {
@@ -136,6 +155,21 @@ export function ActionClient({ actionId }: { actionId: string }) {
     setPhase("done")
     setMessage(operation === "decline" ? "You declined this action." : "This action is complete.")
   }
+  async function payment(operation: "confirm_consent" | "start_checkout", extra: Record<string, unknown> = {}) {
+    setMessage("")
+    const response = await fetch("/api/action/payment", {
+      method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ operation, ...extra }),
+    })
+    const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
+    if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
+    if (!response.ok) { setPhase("unavailable"); return }
+    if (result.checkoutUrl) {
+      window.location.assign(result.checkoutUrl)
+      return
+    }
+    setMessage(result.message || "Consent recorded. No fee is due today.")
+  }
 
   if (phase === "unavailable") return <section><h1>Secure action</h1><p>{ACTION_UNAVAILABLE}</p></section>
   if (phase === "start") return <section><h1>Secure action</h1><p className="muted">Checking this link…</p></section>
@@ -158,7 +192,63 @@ export function ActionClient({ actionId }: { actionId: string }) {
   if (phase === "done") return <section><h1>Secure action</h1><p>{message}</p></section>
   const agreement = session?.agreement
   const quote = session?.quote
+  const paymentDetails = session?.payment
   const permission = agreement?.kind === "CASE_MANAGEMENT_PERMISSION"
+  if (session?.kind === "GUIDED_PAYMENT" && paymentDetails) {
+    return <section>
+      <h1>Pay this accepted order</h1>
+      <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
+      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
+      <p>Payment is due now for this Guided service. Stripe Checkout collects the accepted order amount only.</p>
+      <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
+        <button type="submit">Pay securely with Stripe</button>
+      </form>
+      <p>The return page never marks this paid. ProfileRelaunch confirms collection from the signed Stripe webhook.</p>
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "MANAGED_PAYMENT_SETUP" && paymentDetails) {
+    return <section>
+      <h1>Save a payment method</h1>
+      <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
+      <p>Agreed success fee {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
+      <h2>Success definition</h2>
+      <p className="preserve-lines">{paymentDetails.successDefinition}</p>
+      <p>No service fee is charged today.</p>
+      <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void payment("confirm_consent", { accepted: form.get("accepted") === "true" }) }}>
+        <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />{paymentDetails.consentText}</label>
+        <button type="submit">Record later-charge consent</button>
+      </form>
+      <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
+        <button type="submit">Save payment method securely</button>
+      </form>
+      <p>A saved payment method is not authority to charge until this consent and a later billing approval exist.</p>
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "INVOICE_PAYMENT" && paymentDetails) {
+    return <section>
+      <h1>Pay this earned amount by invoice</h1>
+      <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
+      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
+      <p>This is a TEST-MODE hosted invoice fallback for an already-earned unpaid obligation. Returning from the invoice page does not mark this paid.</p>
+      {paymentDetails.hostedInvoiceUrl
+        ? <p><a href={paymentDetails.hostedInvoiceUrl}>Open the secure Stripe hosted invoice</a></p>
+        : <p>The hosted invoice link is not available yet.</p>}
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "PAYMENT_RECOVERY" && paymentDetails) {
+    return <section>
+      <h1>Complete this earned fee</h1>
+      <p>{paymentDetails.orderRef}. Outstanding {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
+      <p>The previous off-session attempt needs additional authentication. This is not yet paid.</p>
+      <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
+        <button type="submit">Continue securely with Stripe</button>
+      </form>
+      <p role="status">{message}</p>
+    </section>
+  }
   if (session?.kind === "QUOTE_ACCEPTANCE" && quote) {
     const canAccept = quote.taxBehaviour !== "UNCONFIRMED"
     return <section>

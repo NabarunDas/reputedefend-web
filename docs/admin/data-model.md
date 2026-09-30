@@ -18,6 +18,8 @@ Step 12 adds `public.conversations`, immutable `conversation_messages`, quaranti
 
 Step 13 adds `public.price_versions`, `public.quotes`, immutable `public.quote_versions`, immutable `public.quote_discount_snapshots`, immutable `public.quote_acceptances` and `public.service_orders`. Customer actions gain `QUOTE_ACCEPTANCE` pinned to `quote_version_id`. Approving a future price version schedules the current predecessor `effective_to` to the successor `effective_from` without overlap or gap. New Admin drafts may be approved only when `effective_from` is still in the future. Quotes must use the exact current price; discount snapshots are pinned to that price version. Amounts are integer GBP pence. Seeded prices match `lib/pricing.ts` and remain tax-behaviour `UNCONFIRMED`. The additive migration `20260929233953_catalogue_quotes_orders_v1.sql` is applied to `profilerelaunch-dev` as `20260929233953 catalogue_quotes_orders_v1`. DATABASE APPLIED / LIVE COMMERCIAL DISABLED. See catalogue-quotes-orders.md.
 
+Step 14 adds payment tables and RPCs in `20260930132106_stripe_payments_v1.sql`, applied to `profilerelaunch-dev` exactly once after Step 13 as `20260930132106 stripe_payments_v1`: `stripe_customer_maps`, immutable `payment_consents`, `saved_payment_methods`, `success_fee_approvals`, `payment_obligations`, `provider_operations`, `payment_attempts`, `payment_invoices`, `payment_receipts`, append-only `payment_ledger`, and private `stripe_event_receipts` / `payment_command_receipts`. Customer actions gain `GUIDED_PAYMENT`, `MANAGED_PAYMENT_SETUP`, `PAYMENT_RECOVERY` and `INVOICE_PAYMENT` pinned to `service_order_id` / `payment_obligation_id`. Job types `COLLECT_PAYMENT` and `PROCESS_STRIPE_EVENT` reuse the Step 10 outbox. DATABASE APPLIED / STRIPE DISABLED / NO MONEY MOVED. See stripe-payments.md.
+
 ## Relationships
 
 ```
@@ -31,10 +33,18 @@ public.cases
         └── public.case_prepared_pack_items (unique pack + version, unique pack + position)
   └── public.agreement_versions (immutable snapshots)
   └── public.authorization_records (ACTIVE / REVIEW_REQUIRED / REVOKED)
-  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS and QUOTE_ACCEPTANCE are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
+  └── public.customer_actions (OPEN / COMPLETED / DECLINED / REVOKED; kinds AGREEMENT_ACCEPTANCE / AUTHORIZATION_REVOCATION / CASE_ACCESS / COMMUNICATION_ACCESS / QUOTE_ACCEPTANCE / GUIDED_PAYMENT / MANAGED_PAYMENT_SETUP / PAYMENT_RECOVERY; secret_hash only; COMMUNICATION_ACCESS also stores immutable evidence_request_id + link_key_version; QUOTE_ACCEPTANCE pins immutable quote_version_id; payment kinds pin service_order_id / payment_obligation_id; expired OPEN CASE_ACCESS, COMMUNICATION_ACCESS, QUOTE_ACCEPTANCE and payment actions are terminalised on reissue; CLOSED/CANCELLED revokes CASE_ACCESS and COMMUNICATION_ACCESS)
 public.price_versions
 public.quotes → public.quote_versions → public.quote_discount_snapshots
 public.quote_acceptances → public.service_orders
+public.stripe_customer_maps
+public.payment_consents → public.saved_payment_methods
+public.success_fee_approvals → public.payment_obligations → public.payment_attempts → public.payment_receipts
+public.provider_operations
+public.payment_invoices
+public.payment_ledger
+admin_private.stripe_event_receipts
+admin_private.payment_command_receipts
 admin_private.catalogue_command_receipts
 admin_private.quote_command_receipts
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)

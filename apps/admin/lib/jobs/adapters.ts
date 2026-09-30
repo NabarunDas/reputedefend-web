@@ -1,6 +1,7 @@
 import { sendEmailHandler } from "../communications/handler"
 import { importInboundAttachmentHandler } from "../conversations/attachment"
 import { importInboundEmailHandler } from "../conversations/import"
+import { collectPaymentHandler, processStripeEventHandler } from "../payments/handlers"
 import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "./config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult, JobType } from "./model"
 
@@ -38,6 +39,8 @@ export function registeredJobHandlers(env: EnvMap = process.env): Partial<Record
     SEND_EMAIL: sendEmailHandler(env),
     IMPORT_INBOUND_EMAIL: importInboundEmailHandler(env),
     IMPORT_INBOUND_ATTACHMENT: importInboundAttachmentHandler(env),
+    COLLECT_PAYMENT: collectPaymentHandler(env),
+    PROCESS_STRIPE_EVENT: processStripeEventHandler(env),
   }
 }
 
@@ -46,5 +49,7 @@ export function handlerFor(jobType: string, handlers: Partial<Record<JobType, Jo
   if (jobType === "SEND_EMAIL") return handlers.SEND_EMAIL ?? null
   if (jobType === "IMPORT_INBOUND_EMAIL") return handlers.IMPORT_INBOUND_EMAIL ?? null
   if (jobType === "IMPORT_INBOUND_ATTACHMENT") return handlers.IMPORT_INBOUND_ATTACHMENT ?? null
+  if (jobType === "COLLECT_PAYMENT") return handlers.COLLECT_PAYMENT ?? null
+  if (jobType === "PROCESS_STRIPE_EVENT") return handlers.PROCESS_STRIPE_EVENT ?? null
   return null
 }

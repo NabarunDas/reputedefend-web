@@ -103,6 +103,14 @@ export function guardArgs(operation: GuardOperation, body: Record<string, unknow
     if (!isUuid(body.subscriptionId) || typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1 || !reason) return null
     return { subscriptionId: body.subscriptionId, version: body.version, reason }
   }
+  if (operation === "approve_immediate_cancellation") {
+    if (!isUuid(body.subscriptionId) || typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1) return null
+    return {
+      subscriptionId: body.subscriptionId,
+      version: body.version,
+      ...(isUuid(body.locationId) ? { locationId: body.locationId } : {}),
+    }
+  }
   if (operation === "approve_refund") {
     if (!isUuid(body.adjustmentId) || typeof body.amountMinor !== "number" || !Number.isInteger(body.amountMinor) || body.amountMinor <= 0) return null
     return { adjustmentId: body.adjustmentId, amountMinor: body.amountMinor }

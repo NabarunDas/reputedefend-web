@@ -123,6 +123,7 @@ export default async function GuardPage() {
               <SubscriptionActionForm subscriptionId={row.id} version={row.version} operation="schedule_period_end_cancellation" label="Schedule period-end cancellation" />
               {row.cancelAtPeriodEnd && <SubscriptionActionForm subscriptionId={row.id} version={row.version} operation="undo_scheduled_cancellation" label="Undo scheduled cancellation" />}
               <SubscriptionActionForm subscriptionId={row.id} version={row.version} operation="request_immediate_cancellation" label="Request immediate cancellation review" requireReason />
+              <SubscriptionActionForm subscriptionId={row.id} version={row.version} operation="approve_immediate_cancellation" label="Approve immediate cancellation" />
               <IssuePriceChangeForm subscriptionId={row.id} version={row.version} />
             </td>
           </tr>)}</tbody>

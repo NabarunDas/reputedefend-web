@@ -1,13 +1,18 @@
 import "server-only"
+import {
+  guardActivationEnabled as sharedActivation,
+  guardRefundsEnabled as sharedRefunds,
+  guardSubscriptionsEnabled as sharedSubscriptions,
+} from "../../../../lib/guard-billing/config"
 
 export function guardActivationEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.GUARD_ACTIVATION_ENABLED === "true"
+  return sharedActivation(env)
 }
 
 export function guardSubscriptionsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.GUARD_SUBSCRIPTIONS_ENABLED === "true"
+  return sharedSubscriptions(env)
 }
 
 export function guardRefundsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.GUARD_REFUNDS_ENABLED === "true"
+  return sharedRefunds(env)
 }

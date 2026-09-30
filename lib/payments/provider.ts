@@ -6,6 +6,7 @@ import type {
   CreateOffSessionInput,
   CreateRecurringPriceInput,
   CreateSetupInput,
+  CreateGuardRecoveryCheckoutInput,
   CreateSubscriptionCheckoutInput,
   MappedProviderEvent,
   ProviderCheckout,
@@ -53,6 +54,12 @@ export interface PaymentProvider {
   cancelPaymentIntent(input: { id: string; idempotencyKey: string }): Promise<CancelPaymentResult>
   createRecurringPrice(input: CreateRecurringPriceInput): Promise<ProviderRecurringPrice>
   createSubscriptionCheckout(input: CreateSubscriptionCheckoutInput): Promise<ProviderCheckout>
+  createGuardRecoveryCheckout(input: CreateGuardRecoveryCheckoutInput): Promise<ProviderCheckout>
+  updateSubscriptionPaymentMethod(input: {
+    id: string
+    idempotencyKey: string
+    paymentMethodId: string
+  }): Promise<CancelSubscriptionResult>
   retrieveSubscription(id: string): Promise<RetrievedSubscription | null>
   retrieveRecurringInvoice(id: string): Promise<RetrievedInvoice | null>
   setCancelAtPeriodEnd(input: { id: string; idempotencyKey: string; cancel: boolean }): Promise<CancelSubscriptionResult>
@@ -91,6 +98,8 @@ export function disabledPaymentProvider(): PaymentProvider {
     cancelPaymentIntent: deny,
     createRecurringPrice: deny,
     createSubscriptionCheckout: deny,
+    createGuardRecoveryCheckout: deny,
+    updateSubscriptionPaymentMethod: deny,
     retrieveSubscription: deny,
     retrieveRecurringInvoice: deny,
     setCancelAtPeriodEnd: deny,

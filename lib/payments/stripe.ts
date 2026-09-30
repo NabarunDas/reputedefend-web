@@ -325,6 +325,9 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     async createSubscriptionCheckout(input) {
       const meta = guardMetadata(input.metadata)
       assertSafeGuardMetadata(meta)
+      if (input.trialEnd != null && (!Number.isInteger(input.trialEnd) || input.trialEnd <= Math.floor(Date.now() / 1000))) {
+        throw new PaymentsDisabledError("Delayed Guard Checkout requires a future included-period boundary.")
+      }
       const session = await client(env).checkout.sessions.create({
         mode: "subscription",
         customer: input.stripeCustomerId,
@@ -332,11 +335,42 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         cancel_url: input.cancelUrl,
         payment_method_types: ["card"],
         line_items: [{ price: input.stripePriceId, quantity: 1 }],
-        subscription_data: { metadata: meta },
+        subscription_data: {
+          metadata: meta,
+          ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
+        },
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
       return { id: session.id, url: session.url || "", mode: "subscription", amountMinor: 0, livemode: false }
+    },
+    async createGuardRecoveryCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      const session = await client(env).checkout.sessions.create({
+        mode: "setup",
+        customer: input.stripeCustomerId,
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        payment_method_types: ["card"],
+        metadata: meta,
+        setup_intent_data: { metadata: meta },
+      }, { idempotencyKey: input.idempotencyKey })
+      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
+      return { id: session.id, url: session.url || "", mode: "setup", amountMinor: 0, livemode: false }
+    },
+    async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
+      const updated = await client(env).subscriptions.update(id, {
+        default_payment_method: paymentMethodId,
+      }, { idempotencyKey })
+      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      return {
+        id: updated.id,
+        status: updated.status,
+        cancelAtPeriodEnd: updated.cancel_at_period_end === true,
+        canceled: updated.status === "canceled",
+        livemode: false as const,
+      }
     },
     async retrieveSubscription(id) {
       const subscription = await client(env).subscriptions.retrieve(id, { expand: ["items.data.price"] })
@@ -348,7 +382,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         customerId: asId(subscription.customer),
         priceId: asId(item?.price) ?? (typeof item?.price === "string" ? item.price : null),
         subscriptionItemId: item?.id ?? null,
-        quantity: item?.quantity ?? 0,
+        quantity: typeof item?.quantity === "number" ? item.quantity : null,
         cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
         currentPeriodStart: subscription.items.data[0]?.current_period_start
           ? new Date(subscription.items.data[0].current_period_start * 1000).toISOString()
@@ -365,28 +399,36 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       const invoice = await client(env).invoices.retrieve(id, { expand: ["payments.data.payment.payment_intent"] })
       if (invoice.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
       const parent = invoice.parent && typeof invoice.parent === "object" ? invoice.parent as {
-        subscription_details?: { subscription?: string | { id?: string } }
+        subscription_details?: {
+          subscription?: string | { id?: string; metadata?: Stripe.Metadata | null }
+          metadata?: Stripe.Metadata | null
+        }
       } : {}
       const line = invoice.lines?.data?.[0]
       const pricing = line && "pricing" in line ? (line.pricing as { price_details?: { price?: string } } | null) : null
+      const subscriptionMeta = {
+        ...metadataOf({ metadata: parent.subscription_details?.metadata }),
+        ...metadataOf({ metadata: typeof parent.subscription_details?.subscription === "object" ? parent.subscription_details.subscription.metadata : undefined }),
+      }
       return {
         id: invoice.id,
         status: invoice.status || "unknown",
         customerId: asId(invoice.customer),
         amountDueMinor: invoice.amount_due,
         amountPaidMinor: invoice.amount_paid,
-        currency: (invoice.currency || "gbp").toLowerCase(),
+        currency: invoice.currency ? invoice.currency.toLowerCase() : "",
         hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-        metadata: metadataOf(invoice),
+        metadata: { ...subscriptionMeta, ...metadataOf(invoice) },
         livemode: false as const,
         subscriptionId: asId(parent.subscription_details?.subscription),
         subscriptionItemId: line?.parent?.subscription_item_details?.subscription_item ?? null,
         priceId: pricing?.price_details?.price ?? asId(line?.pricing) ?? null,
-        quantity: line?.quantity ?? null,
+        quantity: typeof line?.quantity === "number" ? line.quantity : null,
         periodStart: line?.period?.start ? new Date(line.period.start * 1000).toISOString() : null,
         periodEnd: line?.period?.end ? new Date(line.period.end * 1000).toISOString() : null,
         paymentIntentId: asId((invoice as { payment_intent?: unknown }).payment_intent),
         chargeId: asId((invoice as { charge?: unknown }).charge),
+        subscriptionMetadata: subscriptionMeta,
       }
     },
     async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {

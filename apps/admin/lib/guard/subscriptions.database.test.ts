@@ -84,7 +84,7 @@ beforeEach(async () => {
     alter table public.guard_subscriptions disable trigger guard_subscriptions_protect;
     alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
-    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,admin_private.guard_subscription_receipts,admin_private.stripe_event_receipts,admin_private.job_outbox,admin_private.jobs,public.provider_operations,public.payment_ledger,public.guard_reconciliation_issues,public.guard_reconciliation_runs,public.guard_reminder_records,public.guard_refunds,public.guard_disputes,public.guard_billing_adjustments,public.guard_price_change_offers,public.guard_subscription_invoices,public.guard_recurring_consents,public.guard_subscription_events,public.guard_subscriptions,public.guard_continuations,public.guard_provider_price_maps,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
+    truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.quote_command_receipts,admin_private.catalogue_command_receipts,admin_private.customer_action_sessions,admin_private.customer_action_challenges,admin_private.customer_action_command_receipts,admin_private.guard_command_receipts,admin_private.guard_subscription_receipts,admin_private.stripe_event_receipts,admin_private.job_outbox,admin_private.jobs,public.provider_operations,public.payment_ledger,public.guard_reconciliation_issues,public.guard_reconciliation_targets,public.guard_reconciliation_runs,public.guard_reminder_records,public.guard_refunds,public.guard_disputes,public.guard_billing_adjustments,public.guard_price_change_offers,public.guard_subscription_invoices,public.guard_recurring_consents,public.guard_subscription_events,public.guard_subscriptions,public.guard_continuations,public.guard_provider_price_maps,public.guard_activation_exceptions,public.guard_coverage_events,public.guard_baselines,public.guard_rota_assignments,public.guard_permissions,public.guard_included_offers,public.guard_billing,public.guard_coverages,public.guard_onboarding_locations,public.quote_events,public.quote_acceptances,public.service_orders,public.customer_action_events,public.customer_actions,public.quote_versions,public.quotes,public.quote_discount_snapshots,public.customer_contact_verifications,public.business_memberships,public.success_fee_approvals,public.location_manager_access,public.location_manager_access_events,public.case_document_events,public.case_document_versions,public.case_documents,public.monitoring_request_events,public.monitoring_requests,public.price_version_events cascade;
     delete from public.price_versions where seed_key is null or seed_key like 'TEST_%';
     update public.price_versions set status='APPROVED', retired_at=null, retired_by=null, effective_to=null, record_version=1 where seed_key is not null;
     alter table public.price_versions enable trigger price_versions_protect;
@@ -251,9 +251,11 @@ describe("guard subscriptions SQL", () => {
     await paidInvoice(startB.subscriptionId, { subscriptionId: "sub_b", stripeCustomerId: "cus_b", paymentIntentId: "pi_b", chargeId: "ch_b" }, "in_b1")
     const versionA = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [startA.subscriptionId])).rows[0].record_version
     expect(await rpc("admin_guard_command_v1", [token, key(), "schedule_period_end_cancellation", { subscriptionId: startA.subscriptionId, reason: "Customer asked to stop High Street only." }, versionA])).toMatchObject({ status: "success" })
-    const after = await db.query<{ id: string; cancel_at_period_end: boolean; location_id: string }>("select id, cancel_at_period_end, location_id from public.guard_subscriptions")
-    expect(after.rows.find(row => row.id === startA.subscriptionId)?.cancel_at_period_end).toBe(true)
+    const after = await db.query<{ id: string; cancel_at_period_end: boolean; requested_cancel_at_period_end: boolean; location_id: string }>("select id, cancel_at_period_end, requested_cancel_at_period_end, location_id from public.guard_subscriptions")
+    expect(after.rows.find(row => row.id === startA.subscriptionId)?.requested_cancel_at_period_end).toBe(true)
+    expect(after.rows.find(row => row.id === startA.subscriptionId)?.cancel_at_period_end).toBe(false)
     expect(after.rows.find(row => row.id === startB.subscriptionId)?.cancel_at_period_end).toBe(false)
+    expect(after.rows.find(row => row.id === startB.subscriptionId)?.requested_cancel_at_period_end).toBe(false)
     expect(after.rows.find(row => row.id === startB.subscriptionId)?.location_id).toBe(otherLocation)
   })
 
@@ -325,6 +327,11 @@ describe("guard subscriptions SQL", () => {
     await db.query("update public.guard_billing set paid_through_at=now() - interval '1 hour' where coverage_id=$1", [coverageId])
     const run = await rpc("guard_enqueue_daily_reconcile_v1", [])
     expect(run?.status).toBe("success")
+    const target = (await db.query<{ id: string }>("select id from public.guard_reconciliation_targets where run_id=$1 and subscription_id=$2", [run!.runId, start.subscriptionId])).rows[0]
+    expect(await rpc("guard_apply_reconciliation_target_v1", [target.id, {
+      outcome: "CHECKED", subscriptionId: "sub_fail", stripeCustomerId: "cus_fail", stripePriceId: "price_testguard1",
+      subscriptionItemId: "si_testguard1", quantity: 1, livemode: false, guardSubscriptionId: start.subscriptionId,
+    }])).toMatchObject({ status: "success" })
     expect(await rpc("guard_reconcile_billing_v1", [run!.runId, { livemode: false }])).toMatchObject({ status: "success" })
     expect((await db.query<{ state: string }>("select state from public.guard_coverages where id=$1", [coverageId])).rows[0].state).toBe("PAUSED")
     const recovered = await paidInvoice(start.subscriptionId, { subscriptionId: "sub_fail", stripeCustomerId: "cus_fail", periodEnd: periodEnd(30), paymentIntentId: "pi_rec", chargeId: "ch_rec" }, "in_rec")
@@ -365,6 +372,10 @@ describe("guard subscriptions SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_subscriptions")).rows[0].n).toBe(0)
     expect(await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: accepted!.orderId }, null])).toMatchObject({ status: "denied" })
     const guardOrder = await acceptGuardOrder()
+    expect(await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: guardOrder }, null])).toMatchObject({ status: "denied", reason: "included_never_activated" })
+    await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect;")
+    await db.query("update public.guard_coverages set activated_at=now(), included_start_at=now(), included_end_at=now() + interval '30 days', state='ACTIVE' where id=$1", [offer!.id])
+    await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect;")
     const continuation = await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: guardOrder }, null])
     expect(continuation?.status).toBe("success")
     await mapGuardPrice()
@@ -386,11 +397,18 @@ describe("guard subscriptions SQL", () => {
     const failed = await apply("invoice.payment_failed", "in_contfail1", { guardSubscriptionId: start!.subscriptionId, subscriptionId: "sub_trial" })
     expect(failed?.status).toBe("success")
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where coverage_basis='DIRECT_GUARD'")).rows[0].n).toBe(0)
+    const beforeHandoff = await db.query<{ activated_at: string; included_start_at: string; included_end_at: string }>("select activated_at::text, included_start_at::text, included_end_at::text from public.guard_coverages where id=$1", [offer!.id])
     await paidInvoice(String(start!.subscriptionId), { subscriptionId: "sub_trial", stripeCustomerId: "cus_cont" }, "in_contok1")
-    const included = await db.query<{ coverage_basis: string; state: string }>("select coverage_basis, state from public.guard_coverages where id=$1", [offer!.id])
+    const included = await db.query<{ coverage_basis: string; state: string; activated_at: string; included_start_at: string; included_end_at: string }>("select coverage_basis, state, activated_at::text, included_start_at::text, included_end_at::text from public.guard_coverages where id=$1", [offer!.id])
     expect(included.rows[0]).toMatchObject({ coverage_basis: "INCLUDED", state: "ENDED" })
-    const paid = await db.query<{ coverage_basis: string; coverage_origin: string; source_included_coverage_id: string }>("select coverage_basis, coverage_origin, source_included_coverage_id::text from public.guard_coverages where coverage_basis='DIRECT_GUARD'")
+    expect(included.rows[0].activated_at).toBe(beforeHandoff.rows[0].activated_at)
+    expect(included.rows[0].included_start_at).toBe(beforeHandoff.rows[0].included_start_at)
+    expect(included.rows[0].included_end_at).toBe(beforeHandoff.rows[0].included_end_at)
+    const paid = await db.query<{ id: string; coverage_basis: string; coverage_origin: string; source_included_coverage_id: string; state: string }>("select id::text, coverage_basis, coverage_origin, source_included_coverage_id::text, state from public.guard_coverages where coverage_basis='DIRECT_GUARD'")
     expect(paid.rows[0]).toMatchObject({ coverage_basis: "DIRECT_GUARD", coverage_origin: "INCLUDED_CONTINUATION", source_included_coverage_id: offer!.id })
+    expect(paid.rows[0].state).not.toBe("ACTIVE")
+    const readiness = (await db.query<{ value: { readyToActivate?: boolean; state?: string } }>("select admin_private.guard_coverage_readiness_v1($1) as value", [paid.rows[0].id])).rows[0].value
+    expect(readiness.readyToActivate).toBe(false)
     const expiryRun = await rpc("guard_enqueue_daily_reconcile_v1", [])
     expect(expiryRun?.status).toBe("success")
     expect(await rpc("guard_enqueue_daily_reconcile_v1", [])).toMatchObject({ status: "success", duplicate: true, runId: expiryRun!.runId })
@@ -570,5 +588,278 @@ describe("guard subscriptions SQL", () => {
     expect(jobs.rows.every(row => row.topic === "RECONCILE_GUARD_BILLING")).toBe(true)
     expect(JSON.stringify(jobs.rows)).not.toMatch(/MONITOR|ALERT|SEND_EMAIL/)
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_reminder_policies where status='ENABLED'")).rows[0].n).toBe(0)
+    await expect(db.query("set role service_role; insert into public.guard_reconciliation_targets(run_id,subscription_id,status) values($1,$2,'PENDING'); reset role;", [crypto.randomUUID(), crypto.randomUUID()])).rejects.toThrow()
+    await db.query("reset role")
+  })
+})
+
+describe("guard subscriptions provider correctness", () => {
+  async function paidStart() {
+    await mapGuardPrice()
+    const coverageId = await createDirect()
+    const start = await issueStart(coverageId)
+    const session = await acceptConsent(start.actionId, start.hash)
+    await apply("customer.subscription.created", "sub_ok", {
+      subscriptionId: "sub_ok", providerStatus: "active", quantity: 1, subscriptionItemId: "si_ok",
+      guardSubscriptionId: start.subscriptionId, stripeCustomerId: "cus_ok",
+    })
+    await paidInvoice(start.subscriptionId, { subscriptionId: "sub_ok", stripeCustomerId: "cus_ok" }, "in_ok1")
+    return { coverageId, session, ...start }
+  }
+
+  it("materialises every relevant target and does not complete while unresolved", async () => {
+    const a = await paidStart()
+    const bCoverage = await createDirect(otherLocation)
+    const b = await issueStart(bCoverage)
+    const run = await rpc("guard_enqueue_daily_reconcile_v1", [])
+    const targets = await db.query<{ subscription_id: string; status: string }>("select subscription_id::text, status from public.guard_reconciliation_targets where run_id=$1", [run!.runId])
+    expect(targets.rows).toHaveLength(2)
+    expect(targets.rows.map(row => row.subscription_id).sort()).toEqual([a.subscriptionId, b.subscriptionId].sort())
+    expect(targets.rows.every(row => row.status === "PENDING")).toBe(true)
+    const pending = await rpc("guard_reconcile_billing_v1", [run!.runId, {}])
+    expect(pending).toMatchObject({ status: "pending" })
+    expect((await db.query<{ status: string }>("select status from public.guard_reconciliation_runs where id=$1", [run!.runId])).rows[0].status).toBe("STARTED")
+    const listed = await rpc("guard_list_reconciliation_targets_v1", [run!.runId, null, 25])
+    expect((listed?.targets as unknown[]).length).toBe(2)
+    const first = (listed?.targets as Array<{ id: string; subscriptionId: string }>)[0]
+    expect(await rpc("guard_apply_reconciliation_target_v1", [first.id, { outcome: "RETRY", lastError: "timeout" }])).toMatchObject({ targetStatus: "RETRY" })
+    const second = (listed?.targets as Array<{ id: string }>)[1]
+    expect(await rpc("guard_apply_reconciliation_target_v1", [second.id, {
+      outcome: "CHECKED", subscriptionId: "sub_ok", stripeCustomerId: "cus_ok", stripePriceId: "price_testguard1",
+      subscriptionItemId: "si_ok", quantity: 1, livemode: false,
+    }])).toMatchObject({ targetStatus: "SUCCEEDED" })
+    expect(await rpc("guard_reconcile_billing_v1", [run!.runId, {}])).toMatchObject({ status: "pending" })
+    const empty = await rpc("guard_enqueue_daily_reconcile_v1", [])
+    expect(empty).toMatchObject({ duplicate: true })
+  })
+
+  it("marks provider-disabled targets without claiming success, and completes an empty run", async () => {
+    const start = await paidStart()
+    const run = await rpc("guard_enqueue_daily_reconcile_v1", [])
+    const target = (await db.query<{ id: string }>("select id from public.guard_reconciliation_targets where subscription_id=$1", [start.subscriptionId])).rows[0]
+    expect(await rpc("guard_apply_reconciliation_target_v1", [target.id, { outcome: "PROVIDER_DISABLED" }])).toMatchObject({ targetStatus: "PROVIDER_DISABLED" })
+    expect(await rpc("guard_reconcile_billing_v1", [run!.runId, {}])).toMatchObject({ status: "failed", runStatus: "FAILED" })
+    await db.exec("truncate public.guard_reconciliation_targets, public.guard_reconciliation_issues, public.guard_reconciliation_runs cascade")
+    const empty = await rpc("guard_enqueue_daily_reconcile_v1", [])
+    expect(await rpc("guard_reconcile_billing_v1", [empty!.runId, {}])).toMatchObject({ status: "success", runStatus: "COMPLETED", expectedCount: 0 })
+  })
+
+  it("never fabricates included activation and delayed continuation has no CURRENT entitlement", async () => {
+    await verify()
+    await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+      update public.cases set service_track='MANAGED', status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW' where id='${caseId}';
+      alter table public.cases enable trigger cases_workflow_version;`)
+    const draft = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
+      serviceCode: "MANAGED_RELAUNCH", customerId: customer, businessId: business, caseId, locationId: location,
+      priceVersionId: await priceId("MANAGED_RELAUNCH"),
+      scope: "Managed recovery for this location only.",
+      exclusions: "Google decisions and later payment collection are excluded.",
+      validUntil: later(), applyDiscount: false,
+    }, null])
+    expect((await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", { quoteId: draft!.id, taxBehaviour: "NOT_APPLICABLE" }, draft!.version]))?.status).toBe("success")
+    expect((await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: draft!.id }, (draft!.version || 1) + 1]))?.status).toBe("success")
+    const hash = secretHash()
+    const issued = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", { quoteId: draft!.id, expiresAt: actionExpiry(), secretHash: hash }, null])
+    const accepted = await rpc("customer_action_command_v1", [await completeOtp(issued!.id!, hash), key(), "accept", { accepted: true }])
+    await db.exec(`alter table public.cases disable trigger cases_workflow_version;
+      update public.cases set status='CLOSED', work_stage='FINISHED', outcome='RESTORED' where id='${caseId}';
+      alter table public.cases enable trigger cases_workflow_version;`)
+    const doc = crypto.randomUUID(), version = crypto.randomUUID()
+    await db.query("insert into public.case_documents(id,case_id,title,created_by) values($1,$2,'Outcome evidence',$3)", [doc, caseId, uid])
+    await db.query("insert into public.case_document_versions(id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,upload_status,scan_status,validation_status,review_status,created_by) values($1,$2,1,'outcome.png','image/png',1200,'evidence-test', $3, 'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)", [
+      version, doc, `cases/${caseId}/documents/${doc}/versions/${version}`, uid,
+    ])
+    await db.query("insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'Outcome evidence accepted after review.', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3", [version, uid, accepted!.orderId])
+    const offer = await rpc("admin_guard_command_v1", [token, key(), "create_included_offer", { caseId, serviceOrderId: accepted!.orderId }, null])
+    const guardOrder = await acceptGuardOrder()
+    expect(await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: guardOrder }, null])).toMatchObject({ reason: "included_never_activated" })
+    await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect;")
+    await db.query("update public.guard_coverages set activated_at=now(), included_start_at=now(), included_end_at=now() + interval '30 days', state='ACTIVE' where id=$1", [offer!.id])
+    await db.exec("alter table public.guard_coverages enable trigger guard_coverages_protect;")
+    const continuation = await rpc("admin_guard_command_v1", [token, key(), "create_included_continuation", { coverageId: offer!.id, serviceOrderId: guardOrder }, null])
+    await mapGuardPrice()
+    const startHash = secretHash()
+    const start = await rpc("admin_guard_command_v1", [token, key(), "issue_subscription_start_action", {
+      continuationId: continuation!.id, expiresAt: actionExpiry(), secretHash: startHash,
+    }, null])
+    const session = await acceptConsent(start!.id!, startHash)
+    const checkout = await rpc("customer_guard_subscription_command_v1", [session, key(), "start_checkout", {}])
+    expect(checkout).toMatchObject({ status: "success", mode: "subscription" })
+    expect(checkout?.trialEnd).toBeTruthy()
+    await apply("customer.subscription.created", "sub_delay", {
+      subscriptionId: "sub_delay", providerStatus: "trialing", quantity: 1, guardSubscriptionId: start!.subscriptionId, stripeCustomerId: "cus_delay",
+    })
+    expect((await db.query<{ billing_state: string }>("select billing_state from public.guard_billing where coverage_id=$1", [offer!.id])).rows[0].billing_state).toBe("NOT_REQUIRED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where coverage_basis='DIRECT_GUARD'")).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.quote_discount_snapshots")).rows[0].n).toBeGreaterThanOrEqual(0)
+  })
+
+  it("invoice.paid before subscription.created still correlates and missing financial fields fail closed", async () => {
+    await mapGuardPrice()
+    const coverageId = await createDirect()
+    const start = await issueStart(coverageId)
+    await acceptConsent(start.actionId, start.hash)
+    const early = await apply("invoice.paid", "in_earlyok1", {
+      livemode: false, stripeCustomerId: "cus_early", subscriptionId: "sub_early", subscriptionItemId: "si_early",
+      priceId: "price_testguard1", quantity: 1, amountPaidMinor: 999, amountMinor: 999, currency: "gbp",
+      periodStart: new Date().toISOString(), periodEnd: periodEnd(30),
+      guardSubscriptionId: start.subscriptionId, customerId: customer,
+    })
+    expect(early).toMatchObject({ status: "success", kind: "INITIAL" })
+    const missing = await apply("invoice.paid", "in_missing1", {
+      livemode: false, stripeCustomerId: "cus_early", subscriptionId: "sub_early",
+      guardSubscriptionId: start.subscriptionId, amountPaidMinor: 999,
+    })
+    expect(missing).toMatchObject({ status: "unmatched" })
+    const missingEvent = (await db.query<{ processed: boolean }>("select processed from admin_private.stripe_event_receipts order by received_at desc limit 1")).rows[0]
+    expect(missingEvent.processed).toBe(false)
+    const unmatched = await apply("invoice.paid", "in_nomatch1", {
+      livemode: false, stripeCustomerId: "cus_x", subscriptionId: "sub_x", subscriptionItemId: "si_x",
+      priceId: "price_testguard1", quantity: 1, amountPaidMinor: 999, currency: "gbp", periodEnd: periodEnd(30),
+      guardSubscriptionId: crypto.randomUUID(),
+    })
+    expect(unmatched).toMatchObject({ status: "unmatched" })
+  })
+
+  it("refund and dispute correlate through exact payment objects and pending stays pending", async () => {
+    const start = await paidStart()
+    const version = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
+    const review = await rpc("admin_guard_command_v1", [token, key(), "request_immediate_cancellation", { subscriptionId: start.subscriptionId, reason: "Finance must review a partial refund." }, version])
+    const adjustmentId = (await db.query<{ id: string }>("select id from public.guard_billing_adjustments where subscription_id=$1", [start.subscriptionId])).rows[0].id
+    const approved = await rpc("admin_guard_command_v1", [token, key(), "approve_refund", { adjustmentId, amountMinor: 100 }, null])
+    await rpc("guard_record_refund_v1", [approved!.providerOperationId, "re_corr1", "pending", ""])
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_corr1'")).rows[0].status).toBe("PENDING")
+    await apply("refund.updated", "re_corr1", {
+      refundStatus: "pending", amountMinor: 100, currency: "gbp", paymentIntentId: "pi_testguard1", chargeId: "ch_testguard1",
+    })
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_corr1'")).rows[0].status).toBe("PENDING")
+    await apply("refund.failed", "re_corr1", {
+      refundStatus: "failed", amountMinor: 100, currency: "gbp", paymentIntentId: "pi_testguard1", chargeId: "ch_testguard1", failureCode: "declined",
+    })
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_corr1'")).rows[0].status).toBe("FAILED")
+    await apply("charge.refunded", "ch_testguard1", { chargeId: "ch_testguard1" })
+    expect((await db.query<{ status: string }>("select status from public.guard_refunds where stripe_refund_id='re_corr1'")).rows[0].status).toBe("FAILED")
+    const created = await apply("refund.created", "re_unknown1", { paymentIntentId: "pi_testguard1", chargeId: "ch_testguard1", amountMinor: 100, currency: "gbp", refundStatus: "pending" })
+    expect(["success", "unmatched"]).toContain(created?.status)
+    const dispute = await apply("charge.dispute.created", "dp_corr1", {
+      chargeId: "ch_testguard1", amountMinor: 999, currency: "gbp", disputeStatus: "needs_response",
+    })
+    expect(dispute).toMatchObject({ status: "success" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_disputes where stripe_dispute_id='dp_corr1'")).rows[0].n).toBe(1)
+  })
+
+  it("accepted price change creates a schedule operation and applies only after provider evidence", async () => {
+    const start = await paidStart()
+    await db.exec("alter table public.price_versions disable trigger price_versions_protect; alter table public.price_versions disable trigger price_versions_overlap;")
+    const newPrice = crypto.randomUUID()
+    await db.query("insert into public.price_versions(id,service_code,display_name,amount_minor,currency,payment_model,billing_cadence,billing_unit,effective_from,status,tax_behaviour,created_by,approved_by,approved_at,seed_key) values($1,'RELAUNCH_GUARD','Relaunch Guard',1299,'GBP','RECURRING_MONTHLY','MONTHLY','LOCATION_MONTH',now() + interval '40 days','APPROVED','NOT_APPLICABLE',$2,$2,now(),'TEST_GUARD_PRICE_UP2')", [newPrice, uid])
+    await db.exec("alter table public.price_versions enable trigger price_versions_protect; alter table public.price_versions enable trigger price_versions_overlap;")
+    const mapped = await rpc("admin_guard_command_v1", [token, key(), "map_provider_price", { priceVersionId: newPrice }, null])
+    expect(mapped?.status).toBe("success")
+    expect((await db.query<{ customer_id: string | null }>("select customer_id from public.provider_operations where id=$1", [mapped!.providerOperationId])).rows[0].customer_id).toBeNull()
+    await rpc("guard_record_provider_price_map_v1", [mapped!.providerOperationId, newPrice, "prod_newguard1", "price_newguard1", uid])
+    const version = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
+    const hash = secretHash()
+    const offer = await rpc("admin_guard_command_v1", [token, key(), "issue_price_change_action", {
+      subscriptionId: start.subscriptionId, priceVersionId: newPrice, expiresAt: actionExpiry(), secretHash: hash,
+    }, version])
+    const acceptSession = await completeOtp(offer!.id!, hash)
+    const accepted = await rpc("customer_action_command_v1", [acceptSession, key(), "accept", { accepted: true }])
+    expect(accepted).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string }>("select status from public.guard_price_change_offers where subscription_id=$1 order by offered_at desc limit 1", [start.subscriptionId])).rows[0].status).toMatch(/ACCEPTED|SCHEDULE_PENDING/)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.provider_operations where kind='CREATE_SUBSCRIPTION_SCHEDULE'")).rows[0].n).toBeGreaterThanOrEqual(1)
+    expect((await db.query<{ amount_minor: number }>("select amount_minor from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].amount_minor).toBe(999)
+    const denied = await paidInvoice(start.subscriptionId, {
+      subscriptionId: "sub_ok", stripeCustomerId: "cus_ok", priceId: "price_newguard1", amountPaidMinor: 1299, amountMinor: 1299,
+      periodEnd: periodEnd(60), paymentIntentId: "pi_new", chargeId: "ch_new",
+    }, "in_newprice1")
+    expect(["success", "denied"]).toContain(denied?.status)
+    const scheduled = await rpc("guard_record_price_schedule_v1", [
+      (await db.query<{ id: string }>("select id from public.provider_operations where kind='CREATE_SUBSCRIPTION_SCHEDULE' order by created_at desc limit 1")).rows[0].id,
+      "sub_sched_test1", "si_ok",
+    ])
+    expect(scheduled?.status).toBe("success")
+    const applied = await paidInvoice(start.subscriptionId, {
+      subscriptionId: "sub_ok", stripeCustomerId: "cus_ok", priceId: "price_newguard1", amountPaidMinor: 1299, amountMinor: 1299,
+      periodEnd: periodEnd(60), paymentIntentId: "pi_new2", chargeId: "ch_new2",
+    }, "in_newprice2")
+    expect(applied).toMatchObject({ status: "success" })
+    expect((await db.query<{ amount_minor: number; stripe_price_id: string }>("select amount_minor, stripe_price_id from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0]).toMatchObject({
+      amount_minor: 1299, stripe_price_id: "price_newguard1",
+    })
+    expect((await db.query<{ status: string }>("select status from public.guard_price_change_offers where subscription_id=$1 order by offered_at desc limit 1", [start.subscriptionId])).rows[0].status).toBe("APPLIED")
+  })
+
+  it("keeps requested cancellation separate from provider confirmation and does not mint a 1p refund", async () => {
+    const start = await paidStart()
+    const version = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
+    const requested = await rpc("admin_guard_command_v1", [token, key(), "schedule_period_end_cancellation", { subscriptionId: start.subscriptionId, reason: "Stop after the paid month." }, version])
+    expect(requested).toMatchObject({ status: "success" })
+    const row = (await db.query<{ cancel_at_period_end: boolean; requested_cancel_at_period_end: boolean }>("select cancel_at_period_end, requested_cancel_at_period_end from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0]
+    expect(row).toEqual({ cancel_at_period_end: false, requested_cancel_at_period_end: true })
+    await rpc("guard_confirm_cancellation_v1", [requested!.providerOperationId, "sub_ok", true, "SUCCEEDED"])
+    expect((await db.query<{ cancel_at_period_end: boolean }>("select cancel_at_period_end from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].cancel_at_period_end).toBe(true)
+    const next = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
+    const undo = await rpc("admin_guard_command_v1", [token, key(), "undo_scheduled_cancellation", { subscriptionId: start.subscriptionId }, next])
+    expect((await db.query<{ cancel_at_period_end: boolean; requested_cancel_at_period_end: boolean }>("select cancel_at_period_end, requested_cancel_at_period_end from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0]).toMatchObject({
+      cancel_at_period_end: true, requested_cancel_at_period_end: false,
+    })
+    await rpc("guard_confirm_cancellation_v1", [undo!.providerOperationId, "sub_ok", false, "SUCCEEDED"])
+    expect((await db.query<{ cancel_at_period_end: boolean }>("select cancel_at_period_end from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].cancel_at_period_end).toBe(false)
+    await db.query("update public.guard_subscription_invoices set amount_paid_minor=0 where subscription_id=$1", [start.subscriptionId])
+    const again = (await db.query<{ record_version: number }>("select record_version from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].record_version
+    const immediate = await rpc("admin_guard_command_v1", [token, key(), "request_immediate_cancellation", { subscriptionId: start.subscriptionId, reason: "Need a Finance review of remaining time." }, again])
+    expect(immediate).toMatchObject({ status: "success", refundableMinor: 0 })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_billing_adjustments where subscription_id=$1", [start.subscriptionId])).rows[0].n).toBe(0)
+    const approved = await rpc("admin_guard_command_v1", [token, key(), "approve_immediate_cancellation", { subscriptionId: start.subscriptionId }, (immediate!.version as number)])
+    expect(approved).toMatchObject({ status: "success" })
+    expect((await db.query<{ kind: string }>("select kind from public.provider_operations where id=$1", [approved!.providerOperationId])).rows[0].kind).toBe("CANCEL_SUBSCRIPTION_IMMEDIATE")
+    expect((await db.query<{ lifecycle_state: string }>("select lifecycle_state from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].lifecycle_state).not.toBe("CANCELED")
+    expect(await rpc("guard_confirm_immediate_cancellation_v1", [approved!.providerOperationId, "sub_ok"])).toMatchObject({ status: "success" })
+    expect((await db.query<{ lifecycle_state: string }>("select lifecycle_state from public.guard_subscriptions where id=$1", [start.subscriptionId])).rows[0].lifecycle_state).toBe("CANCELED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_refunds where subscription_id=$1", [start.subscriptionId])).rows[0].n).toBe(0)
+  })
+
+  it("bounds service credits, blocks unsafe tax, and reuses CREATE_RECURRING_PRICE without a customer", async () => {
+    const start = await paidStart()
+    expect(await rpc("admin_guard_command_v1", [token, key(), "approve_service_credit", {
+      subscriptionId: start.subscriptionId, amountMinor: 9999, reason: "Credit exceeds the attributable paid period.",
+    }, null])).toMatchObject({ status: "denied", reason: "exceeds_attributable" })
+    expect(await rpc("admin_guard_command_v1", [token, key(), "approve_service_credit", {
+      subscriptionId: start.subscriptionId, amountMinor: 100, reason: "Bounded credit for a short outage period.",
+    }, null])).toMatchObject({ status: "success" })
+    expect((await db.query<{ status: string; billing_state?: string }>("select status from public.guard_billing_adjustments where kind='SERVICE_CREDIT'")).rows[0].status).toBe("PENDING_APPLICATION")
+    expect((await db.query<{ billing_state: string }>("select billing_state from public.guard_billing where coverage_id=$1", [start.coverageId])).rows[0].billing_state).toBe("CURRENT")
+    const exclusive = crypto.randomUUID()
+    await db.exec("alter table public.price_versions disable trigger price_versions_protect; alter table public.price_versions disable trigger price_versions_overlap;")
+    await db.query("insert into public.price_versions(id,service_code,display_name,amount_minor,currency,payment_model,billing_cadence,billing_unit,effective_from,status,tax_behaviour,tax_rate_bps,created_by,approved_by,approved_at,seed_key) values($1,'RELAUNCH_GUARD','Relaunch Guard',999,'GBP','RECURRING_MONTHLY','MONTHLY','LOCATION_MONTH',now() + interval '80 days','APPROVED','EXCLUSIVE',2000,$2,$2,now(),'TEST_GUARD_EXCL')", [exclusive, uid])
+    const unconfirmed = crypto.randomUUID()
+    await db.query("insert into public.price_versions(id,service_code,display_name,amount_minor,currency,payment_model,billing_cadence,billing_unit,effective_from,status,tax_behaviour,created_by,approved_by,approved_at,seed_key) values($1,'RELAUNCH_GUARD','Relaunch Guard',999,'GBP','RECURRING_MONTHLY','MONTHLY','LOCATION_MONTH',now() + interval '90 days','APPROVED','UNCONFIRMED',$2,$2,now(),'TEST_GUARD_UNCONF')", [unconfirmed, uid])
+    await db.exec("alter table public.price_versions enable trigger price_versions_protect; alter table public.price_versions enable trigger price_versions_overlap;")
+    expect(await rpc("admin_guard_command_v1", [token, key(), "map_provider_price", { priceVersionId: exclusive }, null])).toMatchObject({ reason: "tax_not_provider_ready" })
+    expect(await rpc("admin_guard_command_v1", [token, key(), "map_provider_price", { priceVersionId: unconfirmed }, null])).toMatchObject({ reason: "tax_not_provider_ready" })
+    const mapped = await rpc("admin_guard_command_v1", [token, key(), "map_provider_price", { priceVersionId: await priceId() }, null])
+    expect(mapped).toMatchObject({ status: "success" })
+    expect((await db.query<{ customer_id: string | null }>("select customer_id from public.provider_operations where kind='CREATE_RECURRING_PRICE' limit 1")).rows[0].customer_id).toBeNull()
+    await expect(db.query("insert into public.provider_operations(idempotency_key,kind,purpose,customer_id,status) values($1,'CREATE_CHECKOUT_SESSION','UPFRONT',null,'PENDING')", [crypto.randomUUID()])).rejects.toThrow()
+  })
+
+  it("recovery setup does not mark invoices paid and operations terminalise", async () => {
+    const start = await paidStart()
+    const recovery = await rpc("customer_guard_subscription_command_v1", [start.session, key(), "start_recovery", {}])
+    expect(recovery).toMatchObject({ status: "success", mode: "setup", guardSubscriptionId: start.subscriptionId })
+    const prepared = await rpc("guard_apply_recovery_setup_v1", ["seti_ok1", "cus_ok", "pm_ok1", start.subscriptionId, recovery!.providerOperationId])
+    expect(prepared).toMatchObject({ status: "success" })
+    expect(await rpc("guard_confirm_payment_method_v1", [prepared!.providerOperationId, "sub_ok"])).toMatchObject({ status: "success" })
+    expect((await db.query<{ billing_state: string }>("select billing_state from public.guard_billing where coverage_id=$1", [start.coverageId])).rows[0].billing_state).toBe("CURRENT")
+    expect((await db.query<{ status: string }>("select status from public.provider_operations where id=$1", [prepared!.providerOperationId])).rows[0].status).toBe("SUCCEEDED")
+    const stale = await apply("invoice.paid", "in_stale2", {
+      livemode: false, stripeCustomerId: "cus_ok", subscriptionId: "sub_ok", subscriptionItemId: "si_ok",
+      priceId: "price_testguard1", quantity: 1, amountPaidMinor: 999, currency: "gbp",
+      periodStart: new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString(),
+      periodEnd: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
+      guardSubscriptionId: start.subscriptionId, customerId: customer,
+    })
+    expect(stale).toMatchObject({ status: "denied" })
   })
 })

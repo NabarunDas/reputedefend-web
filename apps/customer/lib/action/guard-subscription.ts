@@ -5,6 +5,7 @@ import { customerConfig, sessionCookie } from "@/lib/config"
 import { isUuid } from "../uuid"
 import { paymentProvider } from "../../../../lib/payments"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
+import { guardSubscriptionsEnabled } from "../../../../lib/guard-billing/config"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
   NextResponse.json({ message: ACTION_UNAVAILABLE, ...extra }, { status: http, headers: privateResponseHeaders })
@@ -41,6 +42,11 @@ export async function guardSubscriptionCommand(request: NextRequest) {
   ]
   if (!operations.includes(body.operation)) return reply()
   const operation = body.operation
+  if (operation !== "request_immediate_cancellation" && !guardSubscriptionsEnabled()) {
+    return NextResponse.json({
+      message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
+    }, { status: 403, headers: privateResponseHeaders })
+  }
   const data = { idempotencyKey: isUuid(body.idempotencyKey) ? body.idempotencyKey : key }
   try {
     const result = await backend().rpc<{
@@ -59,11 +65,13 @@ export async function guardSubscriptionCommand(request: NextRequest) {
       continuationId?: string
       mode?: string
       reviewRequired?: boolean
+      trialEnd?: string
+      includedEndAt?: string
     }>("customer_guard_subscription_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
-    if (result.status === "denied") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 403, headers: privateResponseHeaders })
+    if (result.status === "denied") return NextResponse.json({ message: ACTION_UNAVAILABLE, reason: result.status }, { status: 403, headers: privateResponseHeaders })
     if (result.status !== "success") return reply()
     if (operation === "request_immediate_cancellation") {
       return NextResponse.json({
@@ -92,14 +100,22 @@ async function applyCancellation(result: {
   if (!result.stripeSubscriptionId || !result.idempotencyKey || !result.providerOperationId) {
     return NextResponse.json({ status: "ok", message: "The request is recorded. Provider cancellation stays pending while Stripe is disabled." }, { headers: privateResponseHeaders })
   }
+  if (!guardSubscriptionsEnabled()) {
+    return NextResponse.json({
+      message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
+    }, { status: 403, headers: privateResponseHeaders })
+  }
   const provider = paymentProvider()
   const updated = await provider.setCancelAtPeriodEnd({
     id: result.stripeSubscriptionId,
     idempotencyKey: result.idempotencyKey,
     cancel,
   })
-  await backend().rpc("guard_record_provider_refs_v1", {
-    p_operation: result.providerOperationId, p_object_id: updated.id, p_object_type: "subscription", p_status: updated.status,
+  await backend().rpc("guard_confirm_cancellation_v1", {
+    p_operation: result.providerOperationId,
+    p_object_id: updated.id,
+    p_cancel: updated.cancelAtPeriodEnd,
+    p_status: "SUCCEEDED",
   })
   return NextResponse.json({
     status: "ok",
@@ -122,7 +138,14 @@ async function beginCheckout(origin: string, result: {
   priceVersionId?: string
   continuationId?: string
   mode?: string
+  trialEnd?: string
+  includedEndAt?: string
 }) {
+  if (!guardSubscriptionsEnabled()) {
+    return NextResponse.json({
+      message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
+    }, { status: 403, headers: privateResponseHeaders })
+  }
   const provider = paymentProvider()
   const stripeCustomer = result.stripeCustomerId || await ensureCustomer(result.customerId || "")
   const successUrl = `${origin}/pay/return`
@@ -136,17 +159,21 @@ async function beginCheckout(origin: string, result: {
     continuationId: result.continuationId,
     providerOperationId: result.providerOperationId,
   }
+  const includedBoundary = result.trialEnd || result.includedEndAt
+  const includedAt = includedBoundary ? Date.parse(includedBoundary) : NaN
+  const trialEnd = unixTrialEnd(includedBoundary)
+  if (Number.isFinite(includedAt) && includedAt > Date.now() && !trialEnd) {
+    return NextResponse.json({
+      message: ACTION_UNAVAILABLE, reason: "included_window_too_short",
+    }, { status: 403, headers: privateResponseHeaders })
+  }
   const checkout = result.mode === "setup"
-    ? await provider.createSetupCheckout({
+    ? await provider.createGuardRecoveryCheckout({
       idempotencyKey: result.idempotencyKey || "",
       stripeCustomerId: stripeCustomer,
       successUrl,
       cancelUrl,
-      metadata: {
-        customerId: metadata.customerId,
-        serviceOrderId: metadata.serviceOrderId,
-        providerOperationId: metadata.providerOperationId,
-      },
+      metadata,
     })
     : await provider.createSubscriptionCheckout({
       idempotencyKey: result.idempotencyKey || "",
@@ -155,6 +182,7 @@ async function beginCheckout(origin: string, result: {
       successUrl,
       cancelUrl,
       metadata,
+      ...(trialEnd ? { trialEnd } : {}),
     })
   await backend().rpc("guard_record_provider_refs_v1", {
     p_operation: result.providerOperationId, p_object_id: checkout.id, p_object_type: "checkout.session",
@@ -164,8 +192,18 @@ async function beginCheckout(origin: string, result: {
     checkoutUrl: checkout.url,
     mode: checkout.mode,
     confirming: true,
+    delayedUntil: result.trialEnd || result.includedEndAt || null,
     message: "Returning from Stripe does not start Guard billing. A confirmed invoice payment is required.",
   }, { headers: privateResponseHeaders })
+}
+
+function unixTrialEnd(value?: string) {
+  if (!value) return undefined
+  const at = Date.parse(value)
+  if (!Number.isFinite(at)) return undefined
+  const seconds = Math.floor(at / 1000)
+  if (seconds <= Math.floor(Date.now() / 1000) + 60) return undefined
+  return seconds
 }
 
 async function ensureCustomer(customerId: string): Promise<string> {

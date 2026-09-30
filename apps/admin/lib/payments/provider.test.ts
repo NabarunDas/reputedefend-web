@@ -171,6 +171,48 @@ describe("payment provider contract", () => {
       },
     })
     expect(checkout.mode).toBe("subscription")
+    const delayed = await provider.createSubscriptionCheckout({
+      idempotencyKey: "99999999-9999-4999-8999-999999999999",
+      stripeCustomerId: "cus_testabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId: "22222222-2222-4222-8222-222222222222",
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        priceVersionId: priceInput.priceVersionId,
+        providerOperationId: priceInput.providerOperationId,
+      },
+      trialEnd: Math.floor(Date.now() / 1000) + 86400,
+    })
+    expect(provider.objects.get(delayed.id)).toMatchObject({ trialEnd: expect.any(Number), quantity: 1 })
+    const recovery = await provider.createGuardRecoveryCheckout({
+      idempotencyKey: "88888888-8888-4888-8888-888888888888",
+      stripeCustomerId: "cus_testabc",
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId: "22222222-2222-4222-8222-222222222222",
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        providerOperationId: priceInput.providerOperationId,
+      },
+    })
+    expect(recovery.mode).toBe("setup")
+    expect(provider.objects.get(recovery.id)).toMatchObject({
+      metadata: expect.objectContaining({ guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+    })
+    const schedule = await provider.createSubscriptionSchedule({
+      idempotencyKey: "77777777-7777-4777-8777-777777777777",
+      subscriptionId: "sub_existing1",
+      subscriptionItemId: "si_existing1",
+      currentPriceId: first.priceId,
+      nextPriceId: "price_newguard1",
+      periodEnd: Math.floor(Date.now() / 1000) + 86400,
+    })
+    expect(schedule.id).toMatch(/^sub_sched_/)
+    expect(provider.objects.get(schedule.id)).toMatchObject({ quantity: 1, proration: "none", subscriptionId: "sub_existing1" })
     const refund = await provider.createRefund({
       idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       paymentIntentId: "pi_testabc",

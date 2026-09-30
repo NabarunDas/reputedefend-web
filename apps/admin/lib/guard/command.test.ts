@@ -142,6 +142,13 @@ describe("guard admin commands", () => {
     expect(denied.status).toBe(403)
     expect(await denied.json()).toMatchObject({ reason: "subscriptions_disabled" })
     expect(mocks.rpc).not.toHaveBeenCalled()
+    const immediate = await guardCommand(req({
+      operation: "approve_immediate_cancellation",
+      subscriptionId: coverageId,
+      version: 1,
+    }))
+    expect(immediate.status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it("blocks refund approval when GUARD_REFUNDS_ENABLED is unset", async () => {

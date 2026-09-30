@@ -17,6 +17,7 @@ export const guardOperations = [
   "schedule_period_end_cancellation",
   "undo_scheduled_cancellation",
   "request_immediate_cancellation",
+  "approve_immediate_cancellation",
   "approve_refund",
   "approve_service_credit",
   "map_provider_price",
@@ -137,6 +138,7 @@ export type GuardSubscription = {
   coverageState?: string | null
   currentPeriodEnd?: string | null
   cancelAtPeriodEnd?: boolean
+  requestedCancelAtPeriodEnd?: boolean
   latestPaidInvoiceId?: string | null
   latestInvoiceFailure?: string | null
   priceChangeStatus?: string | null

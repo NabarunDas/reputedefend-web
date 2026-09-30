@@ -271,7 +271,7 @@ export function SubscriptionActionForm({
 }: {
   subscriptionId: string
   version: number
-  operation: "schedule_period_end_cancellation" | "undo_scheduled_cancellation" | "request_immediate_cancellation"
+  operation: "schedule_period_end_cancellation" | "undo_scheduled_cancellation" | "request_immediate_cancellation" | "approve_immediate_cancellation"
   label: string
   requireReason?: boolean
 }) {

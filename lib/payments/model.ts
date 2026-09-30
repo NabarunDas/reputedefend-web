@@ -116,6 +116,7 @@ export type RetrievedInvoice = {
   periodEnd?: string | null
   paymentIntentId?: string | null
   chargeId?: string | null
+  subscriptionMetadata?: Record<string, string>
 }
 
 export type GuardMetadata = {
@@ -132,6 +133,15 @@ export type CreateSubscriptionCheckoutInput = {
   idempotencyKey: string
   stripeCustomerId: string
   stripePriceId: string
+  successUrl: string
+  cancelUrl: string
+  metadata: GuardMetadata
+  trialEnd?: number
+}
+
+export type CreateGuardRecoveryCheckoutInput = {
+  idempotencyKey: string
+  stripeCustomerId: string
   successUrl: string
   cancelUrl: string
   metadata: GuardMetadata
@@ -158,7 +168,7 @@ export type RetrievedSubscription = {
   customerId: string | null
   priceId: string | null
   subscriptionItemId: string | null
-  quantity: number
+  quantity: number | null
   cancelAtPeriodEnd: boolean
   currentPeriodStart: string | null
   currentPeriodEnd: string | null

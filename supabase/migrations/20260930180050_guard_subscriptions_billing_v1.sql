@@ -36,13 +36,19 @@ ALTER TABLE public.provider_operations DROP CONSTRAINT provider_operations_kind_
 ALTER TABLE public.provider_operations ADD CONSTRAINT provider_operations_kind_check CHECK (kind IN (
   'CREATE_CUSTOMER','CREATE_CHECKOUT_SESSION','CREATE_SETUP_SESSION','CREATE_PAYMENT_INTENT','CREATE_RECOVERY_SESSION','CREATE_INVOICE','CANCEL_PAYMENT_INTENT',
   'CREATE_RECURRING_PRICE','CREATE_SUBSCRIPTION_CHECKOUT','CREATE_RECOVERY_CHECKOUT','CANCEL_SUBSCRIPTION_PERIOD_END','UNDO_SUBSCRIPTION_CANCELLATION',
-  'CANCEL_SUBSCRIPTION_IMMEDIATE','CREATE_SUBSCRIPTION_SCHEDULE','UPDATE_SUBSCRIPTION_SCHEDULE','CREATE_REFUND'
+  'CANCEL_SUBSCRIPTION_IMMEDIATE','CREATE_SUBSCRIPTION_SCHEDULE','UPDATE_SUBSCRIPTION_SCHEDULE','CREATE_REFUND','UPDATE_SUBSCRIPTION_PAYMENT_METHOD'
 ));
 ALTER TABLE public.provider_operations DROP CONSTRAINT provider_operations_purpose_check;
 ALTER TABLE public.provider_operations ADD CONSTRAINT provider_operations_purpose_check CHECK (purpose IN (
   'UPFRONT','SETUP','OFF_SESSION','RECOVERY','INVOICE','CUSTOMER','GUARD_SUBSCRIPTION','GUARD_PRICE','GUARD_REFUND','GUARD_RECOVERY'
 ));
 ALTER TABLE public.provider_operations ADD COLUMN IF NOT EXISTS guard_subscription_id uuid;
+ALTER TABLE public.provider_operations ALTER COLUMN customer_id DROP NOT NULL;
+ALTER TABLE public.provider_operations ADD CONSTRAINT provider_operations_customer_scope CHECK (
+  (kind = 'CREATE_RECURRING_PRICE' AND purpose = 'GUARD_PRICE' AND customer_id IS NULL
+    AND service_order_id IS NULL AND obligation_id IS NULL AND guard_subscription_id IS NULL)
+  OR (kind <> 'CREATE_RECURRING_PRICE' AND customer_id IS NOT NULL)
+);
 
 ALTER TABLE public.payment_ledger DROP CONSTRAINT payment_ledger_event_check;
 ALTER TABLE public.payment_ledger ADD CONSTRAINT payment_ledger_event_check CHECK (event IN (
@@ -71,6 +77,7 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
     WHEN 'CREATE_SUBSCRIPTION_SCHEDULE' THEN 'subscription_schedule'
     WHEN 'UPDATE_SUBSCRIPTION_SCHEDULE' THEN 'subscription_schedule'
     WHEN 'CREATE_REFUND' THEN 'refund'
+    WHEN 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD' THEN 'subscription'
     ELSE NULL
   END;
 $$;
@@ -194,9 +201,10 @@ CREATE TABLE public.guard_subscriptions (
   current_period_start timestamptz,
   current_period_end timestamptz,
   cancel_at_period_end boolean NOT NULL DEFAULT false,
+  requested_cancel_at_period_end boolean NOT NULL DEFAULT false,
   cancel_at timestamptz,
   canceled_at timestamptz,
-  cancellation_intent text CHECK (cancellation_intent IS NULL OR cancellation_intent IN ('CANCEL_AT_PERIOD_END','REQUEST_IMMEDIATE_CANCELLATION')),
+  cancellation_intent text CHECK (cancellation_intent IS NULL OR cancellation_intent IN ('CANCEL_AT_PERIOD_END','REQUEST_IMMEDIATE_CANCELLATION','UNDO_PERIOD_END')),
   latest_paid_invoice_id text,
   latest_invoice_failure text NOT NULL DEFAULT '',
   livemode boolean NOT NULL DEFAULT false CHECK (livemode = false),
@@ -298,7 +306,8 @@ CREATE TABLE public.guard_price_change_offers (
   effective_renewal_at timestamptz,
   notice_version text NOT NULL CHECK (notice_version = 'GUARD_PRICE_CHANGE_NOTICE_V1'),
   notice_text text NOT NULL CHECK (char_length(notice_text) BETWEEN 20 AND 2000),
-  status text NOT NULL CHECK (status IN ('OFFERED','ACCEPTED','DECLINED','EXPIRED','SCHEDULED','APPLIED','CANCELLED')),
+  status text NOT NULL CHECK (status IN ('OFFERED','ACCEPTED','SCHEDULE_PENDING','DECLINED','EXPIRED','SCHEDULED','APPLIED','CANCELLED')),
+  provider_operation_id uuid REFERENCES public.provider_operations(id) ON DELETE RESTRICT,
   offered_at timestamptz NOT NULL DEFAULT now(),
   accepted_at timestamptz,
   declined_at timestamptz,
@@ -309,7 +318,7 @@ CREATE TABLE public.guard_price_change_offers (
 );
 CREATE UNIQUE INDEX guard_price_change_one_open_subscription_idx
   ON public.guard_price_change_offers (subscription_id)
-  WHERE status IN ('OFFERED','ACCEPTED','SCHEDULED');
+  WHERE status IN ('OFFERED','ACCEPTED','SCHEDULE_PENDING','SCHEDULED');
 
 CREATE TABLE public.guard_billing_adjustments (
   id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
@@ -397,8 +406,31 @@ CREATE TABLE public.guard_reconciliation_runs (
   service_date date NOT NULL UNIQUE,
   status text NOT NULL CHECK (status IN ('STARTED','COMPLETED','FAILED')),
   mismatch_count integer NOT NULL DEFAULT 0 CHECK (mismatch_count >= 0),
+  expected_count integer NOT NULL DEFAULT 0 CHECK (expected_count >= 0),
+  succeeded_count integer NOT NULL DEFAULT 0 CHECK (succeeded_count >= 0),
+  retry_count integer NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+  failed_count integer NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
+  mismatched_count integer NOT NULL DEFAULT 0 CHECK (mismatched_count >= 0),
+  provider_disabled_count integer NOT NULL DEFAULT 0 CHECK (provider_disabled_count >= 0),
   started_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz
+);
+
+CREATE TABLE public.guard_reconciliation_targets (
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
+  run_id uuid NOT NULL REFERENCES public.guard_reconciliation_runs(id) ON DELETE RESTRICT,
+  subscription_id uuid NOT NULL REFERENCES public.guard_subscriptions(id) ON DELETE RESTRICT,
+  expected_stripe_subscription_id text,
+  status text NOT NULL CHECK (status IN ('PENDING','RUNNING','SUCCEEDED','RETRY','FAILED','PROVIDER_DISABLED')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  last_error text NOT NULL DEFAULT '',
+  checked_at timestamptz,
+  mismatch_count integer NOT NULL DEFAULT 0 CHECK (mismatch_count >= 0),
+  provider_evidence jsonb NOT NULL DEFAULT '{}'::jsonb,
+  record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (run_id, subscription_id)
 );
 
 CREATE TABLE public.guard_reconciliation_issues (
@@ -484,6 +516,7 @@ ALTER TABLE public.guard_disputes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_reminder_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_reminder_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_reconciliation_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.guard_reconciliation_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guard_reconciliation_issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_private.guard_subscription_receipts ENABLE ROW LEVEL SECURITY;
 
@@ -491,7 +524,7 @@ REVOKE ALL ON TABLE public.guard_provider_price_maps, public.guard_continuations
   public.guard_subscription_events, public.guard_recurring_consents, public.guard_subscription_invoices,
   public.guard_price_change_offers, public.guard_billing_adjustments, public.guard_refunds, public.guard_disputes,
   public.guard_reminder_policies, public.guard_reminder_records, public.guard_reconciliation_runs,
-  public.guard_reconciliation_issues, admin_private.guard_subscription_receipts
+  public.guard_reconciliation_targets, public.guard_reconciliation_issues, admin_private.guard_subscription_receipts
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.guard_subscription_events_id_seq FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.guard_reconciliation_issues_id_seq FROM PUBLIC, anon, authenticated, service_role;
@@ -539,8 +572,7 @@ BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Guard subscriptions cannot be deleted'; END IF;
   IF NEW.customer_id IS DISTINCT FROM OLD.customer_id OR NEW.business_id IS DISTINCT FROM OLD.business_id
     OR NEW.location_id IS DISTINCT FROM OLD.location_id OR NEW.service_order_id IS DISTINCT FROM OLD.service_order_id
-    OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR NEW.currency IS DISTINCT FROM OLD.currency
-    OR NEW.quantity IS DISTINCT FROM OLD.quantity
+    OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.quantity IS DISTINCT FROM OLD.quantity
   THEN RAISE EXCEPTION 'Guard subscription commercial identity is immutable'; END IF;
   IF OLD.stripe_subscription_id IS NOT NULL AND NEW.stripe_subscription_id IS DISTINCT FROM OLD.stripe_subscription_id THEN
     RAISE EXCEPTION 'Stripe subscription identity is immutable';
@@ -707,6 +739,228 @@ LANGUAGE sql STABLE SET search_path='' AS $$
       AND a.period_end IS NOT DISTINCT FROM p_end
   );
 $$;
+
+CREATE FUNCTION admin_private.guard_tax_provider_ready_v1(p_tax text, p_price_amount integer, p_order_amount integer)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT p_tax IN ('NOT_APPLICABLE','INCLUSIVE')
+    AND p_price_amount IS NOT NULL AND p_order_amount IS NOT NULL
+    AND p_price_amount > 0 AND p_order_amount > 0
+    AND p_price_amount = p_order_amount;
+$$;
+
+CREATE FUNCTION admin_private.guard_creditable_minor_v1(p_subscription uuid, p_start timestamptz, p_end timestamptz)
+RETURNS integer LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE paid integer := 0; refunded integer := 0; credited integer := 0;
+BEGIN
+  SELECT coalesce(sum(i.amount_paid_minor), 0) INTO paid
+    FROM public.guard_subscription_invoices i
+    WHERE i.subscription_id = p_subscription AND i.status = 'PAID'
+      AND i.period_start IS NOT DISTINCT FROM p_start
+      AND i.period_end IS NOT DISTINCT FROM p_end;
+  SELECT coalesce(sum(r.amount_minor), 0) INTO refunded
+    FROM public.guard_refunds r
+    JOIN public.guard_subscription_invoices i ON i.id = r.invoice_id
+    WHERE r.subscription_id = p_subscription AND r.status IN ('SUBMITTED','PENDING','SUCCEEDED')
+      AND i.period_start IS NOT DISTINCT FROM p_start
+      AND i.period_end IS NOT DISTINCT FROM p_end;
+  SELECT coalesce(sum(a.amount_minor), 0) INTO credited
+    FROM public.guard_billing_adjustments a
+    WHERE a.subscription_id = p_subscription AND a.kind = 'SERVICE_CREDIT'
+      AND a.status IN ('APPROVED','PENDING_APPLICATION','SUCCEEDED')
+      AND a.period_start IS NOT DISTINCT FROM p_start
+      AND a.period_end IS NOT DISTINCT FROM p_end;
+  RETURN greatest(paid - refunded - credited, 0);
+END; $$;
+
+CREATE FUNCTION admin_private.guard_reuse_provider_operation_v1(
+  p_key uuid, p_kind text, p_purpose text, p_customer uuid, p_order uuid, p_subscription uuid
+) RETURNS public.provider_operations LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE op public.provider_operations;
+BEGIN
+  SELECT * INTO op FROM public.provider_operations WHERE idempotency_key = p_key FOR UPDATE;
+  IF op.id IS NOT NULL THEN
+    IF op.kind IS DISTINCT FROM p_kind OR op.purpose IS DISTINCT FROM p_purpose
+      OR op.customer_id IS DISTINCT FROM p_customer OR op.guard_subscription_id IS DISTINCT FROM p_subscription
+    THEN RAISE EXCEPTION 'Provider operation identity conflict'; END IF;
+    RETURN op;
+  END IF;
+  INSERT INTO public.provider_operations(
+    idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
+  ) VALUES (p_key, p_kind, p_purpose, p_customer, p_order, p_subscription, 'PENDING')
+  RETURNING * INTO op;
+  RETURN op;
+END; $$;
+
+CREATE FUNCTION admin_private.guard_continuation_evidence_ready_v1(p_coverage public.guard_coverages)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE
+  src public.guard_coverages; perm public.guard_permissions; base public.guard_baselines;
+  rota public.guard_rota_assignments; acc public.location_manager_access;
+BEGIN
+  IF p_coverage.coverage_origin IS DISTINCT FROM 'INCLUDED_CONTINUATION' OR p_coverage.source_included_coverage_id IS NULL THEN
+    RETURN false;
+  END IF;
+  SELECT * INTO src FROM public.guard_coverages WHERE id = p_coverage.source_included_coverage_id;
+  IF src.id IS NULL OR src.coverage_basis <> 'INCLUDED'
+    OR src.customer_id IS DISTINCT FROM p_coverage.customer_id
+    OR src.business_id IS DISTINCT FROM p_coverage.business_id
+    OR src.location_id IS DISTINCT FROM p_coverage.location_id
+    OR src.activated_at IS NULL OR src.included_start_at IS NULL OR src.included_end_at IS NULL
+  THEN RETURN false; END IF;
+  SELECT * INTO perm FROM public.guard_permissions
+    WHERE coverage_id = src.id AND status = 'ACTIVE' AND location_id = src.location_id
+      AND customer_id = src.customer_id AND business_id = src.business_id
+      AND permission_version = 'GUARD_PERMISSION_V1' AND revoked_at IS NULL
+    ORDER BY accepted_at DESC LIMIT 1;
+  SELECT * INTO base FROM public.guard_baselines
+    WHERE coverage_id = src.id AND status = 'VERIFIED' AND profile_availability = 'AVAILABLE'
+      AND location_id = src.location_id
+    ORDER BY created_at DESC LIMIT 1;
+  SELECT * INTO rota FROM public.guard_rota_assignments
+    WHERE coverage_id = src.id AND status = 'ACTIVE' AND assignee_auth_user_id IS NOT NULL
+    ORDER BY created_at DESC LIMIT 1;
+  SELECT * INTO acc FROM admin_private.guard_access_record_v1(src.business_id, src.location_id);
+  RETURN perm.id IS NOT NULL AND base.id IS NOT NULL AND rota.id IS NOT NULL
+    AND acc.id IS NOT NULL AND admin_private.guard_contact_ready_v1(src.customer_id);
+END; $$;
+
+CREATE OR REPLACE FUNCTION admin_private.guard_coverage_readiness_v1(p_coverage uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE
+  cov public.guard_coverages; map public.guard_onboarding_locations; bill public.guard_billing;
+  perm public.guard_permissions; acc public.location_manager_access; base public.guard_baselines;
+  rota public.guard_rota_assignments; off public.guard_included_offers; ord public.service_orders;
+  src public.guard_coverages;
+  mapping_ready boolean := false; membership_ready boolean := false; permission_ready boolean := false;
+  access_ready boolean := false; contact_ready boolean := false; baseline_ready boolean := false;
+  rota_ready boolean := false; commercial_ready boolean := false; billing_ready boolean := false;
+  included_eligibility_ready boolean := false; included_choice_ready boolean := false;
+  ready boolean := false; blockers text[] := '{}'; projected text; inherited boolean := false;
+BEGIN
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = p_coverage;
+  IF cov.id IS NULL THEN RETURN jsonb_build_object('status', 'missing'); END IF;
+  SELECT * INTO map FROM public.guard_onboarding_locations WHERE id = cov.onboarding_location_id;
+  SELECT * INTO bill FROM public.guard_billing WHERE coverage_id = cov.id;
+  SELECT * INTO perm FROM public.guard_permissions WHERE coverage_id = cov.id AND status = 'ACTIVE';
+  SELECT * INTO acc FROM admin_private.guard_access_record_v1(cov.business_id, cov.location_id);
+  SELECT * INTO base FROM public.guard_baselines WHERE coverage_id = cov.id AND status = 'VERIFIED';
+  SELECT * INTO rota FROM public.guard_rota_assignments WHERE coverage_id = cov.id AND status = 'ACTIVE';
+  SELECT * INTO off FROM public.guard_included_offers WHERE coverage_id = cov.id;
+  IF cov.service_order_id IS NOT NULL THEN SELECT * INTO ord FROM public.service_orders WHERE id = cov.service_order_id; END IF;
+  IF cov.coverage_origin = 'INCLUDED_CONTINUATION' AND cov.source_included_coverage_id IS NOT NULL THEN
+    SELECT * INTO src FROM public.guard_coverages WHERE id = cov.source_included_coverage_id;
+    inherited := admin_private.guard_continuation_evidence_ready_v1(cov);
+    IF perm.id IS NULL AND inherited THEN
+      SELECT * INTO perm FROM public.guard_permissions
+        WHERE coverage_id = src.id AND status = 'ACTIVE' AND location_id = cov.location_id
+          AND customer_id = cov.customer_id AND business_id = cov.business_id AND revoked_at IS NULL
+        ORDER BY accepted_at DESC LIMIT 1;
+    END IF;
+    IF base.id IS NULL AND inherited THEN
+      SELECT * INTO base FROM public.guard_baselines
+        WHERE coverage_id = src.id AND status = 'VERIFIED' AND profile_availability = 'AVAILABLE'
+          AND location_id = cov.location_id
+        ORDER BY captured_at DESC LIMIT 1;
+    END IF;
+    IF rota.id IS NULL AND inherited THEN
+      SELECT * INTO rota FROM public.guard_rota_assignments
+        WHERE coverage_id = src.id AND status = 'ACTIVE' AND assignee_auth_user_id IS NOT NULL
+        ORDER BY created_at DESC LIMIT 1;
+    END IF;
+  END IF;
+
+  mapping_ready := (
+    (cov.coverage_basis = 'INCLUDED' AND (
+      cov.onboarding_location_id IS NULL
+      OR (map.id IS NOT NULL AND map.status <> 'REMOVED'
+        AND map.location_id = cov.location_id AND map.customer_id = cov.customer_id AND map.business_id = cov.business_id)
+    ))
+    OR (cov.coverage_basis = 'DIRECT_GUARD' AND cov.coverage_origin = 'INCLUDED_CONTINUATION' AND src.id IS NOT NULL
+      AND src.customer_id = cov.customer_id AND src.business_id = cov.business_id AND src.location_id = cov.location_id
+      AND (
+        cov.onboarding_location_id IS NULL
+        OR (map.id IS NOT NULL AND map.status <> 'REMOVED'
+          AND map.location_id = cov.location_id AND map.customer_id = cov.customer_id AND map.business_id = cov.business_id)
+      ))
+    OR (cov.coverage_basis = 'DIRECT_GUARD' AND cov.coverage_origin IS DISTINCT FROM 'INCLUDED_CONTINUATION'
+      AND map.id IS NOT NULL AND map.status = 'READY_FOR_ONBOARDING'
+      AND map.location_id = cov.location_id AND map.customer_id = cov.customer_id AND map.business_id = cov.business_id)
+  );
+  membership_ready := admin_private.guard_location_authorized_v1(cov.customer_id, cov.business_id, cov.location_id);
+  permission_ready := perm.id IS NOT NULL AND perm.status = 'ACTIVE' AND perm.location_id = cov.location_id
+    AND perm.permission_version = 'GUARD_PERMISSION_V1' AND perm.revoked_at IS NULL
+    AND (cov.coverage_basis <> 'INCLUDED' OR perm.included_offer_id IS NOT NULL);
+  access_ready := acc.id IS NOT NULL;
+  contact_ready := admin_private.guard_contact_ready_v1(cov.customer_id);
+  baseline_ready := base.id IS NOT NULL AND base.location_id = cov.location_id
+    AND base.status = 'VERIFIED' AND base.profile_availability = 'AVAILABLE';
+  rota_ready := rota.id IS NOT NULL AND rota.status = 'ACTIVE' AND rota.assignee_auth_user_id IS NOT NULL;
+  IF cov.coverage_basis = 'DIRECT_GUARD' THEN
+    commercial_ready := ord.id IS NOT NULL AND ord.service_code = 'RELAUNCH_GUARD'
+      AND ord.payment_model = 'RECURRING_MONTHLY' AND ord.state = 'ACCEPTED_RECURRING'
+      AND ord.customer_id = cov.customer_id AND ord.business_id = cov.business_id
+      AND ord.location_id = cov.location_id
+      AND (ord.monitoring_request_id IS NULL OR ord.monitoring_request_id IS NOT DISTINCT FROM cov.monitoring_request_id);
+    billing_ready := bill.billing_state = 'CURRENT' AND bill.entitlement_source = 'PROVIDER'
+      AND bill.paid_through_at IS NOT NULL AND bill.paid_through_at > now();
+    included_eligibility_ready := true;
+    included_choice_ready := true;
+  ELSE
+    commercial_ready := off.id IS NOT NULL AND admin_private.included_guard_eligible_v1(
+      cov.customer_id, cov.business_id, cov.location_id, cov.source_recovery_case_id, cov.source_managed_order_id
+    );
+    billing_ready := bill.billing_state = 'NOT_REQUIRED' AND bill.entitlement_source = 'INCLUDED';
+    included_eligibility_ready := commercial_ready AND off.included_days = 30
+      AND (cov.included_start_at IS NULL);
+    included_choice_ready := off.status = 'ACCEPTED' AND perm.included_offer_id IS NOT DISTINCT FROM off.id;
+  END IF;
+
+  IF NOT mapping_ready THEN blockers := blockers || ARRAY['MAPPING_NOT_READY']; END IF;
+  IF NOT membership_ready THEN blockers := blockers || ARRAY['MEMBERSHIP_UNVERIFIED']; END IF;
+  IF NOT permission_ready THEN blockers := blockers || ARRAY['PERMISSION_INACTIVE']; END IF;
+  IF NOT access_ready THEN blockers := blockers || ARRAY['ACCESS_NOT_VERIFIED']; END IF;
+  IF NOT contact_ready THEN blockers := blockers || ARRAY['CONTACT_NOT_CURRENT']; END IF;
+  IF NOT baseline_ready THEN blockers := blockers || ARRAY['BASELINE_NOT_VERIFIED']; END IF;
+  IF NOT rota_ready THEN blockers := blockers || ARRAY['ROTA_NOT_ASSIGNED']; END IF;
+  IF NOT commercial_ready THEN blockers := blockers || ARRAY['COMMERCIAL_ORDER_MISSING']; END IF;
+  IF NOT billing_ready THEN blockers := blockers || ARRAY['BILLING_NOT_CURRENT']; END IF;
+  IF cov.coverage_basis = 'INCLUDED' AND NOT included_eligibility_ready THEN
+    blockers := blockers || ARRAY['INCLUDED_ELIGIBILITY_MISSING'];
+  END IF;
+  IF cov.coverage_basis = 'INCLUDED' AND NOT included_choice_ready THEN
+    blockers := blockers || ARRAY['INCLUDED_CHOICE_MISSING'];
+  END IF;
+  IF cov.state IN ('ACTIVE','PAUSED','ENDING','ENDED') THEN
+    blockers := blockers || ARRAY['COVERAGE_STATE_INVALID'];
+  END IF;
+
+  ready := mapping_ready AND membership_ready AND permission_ready AND access_ready AND contact_ready
+    AND baseline_ready AND rota_ready AND commercial_ready AND billing_ready
+    AND included_eligibility_ready AND included_choice_ready
+    AND cov.state NOT IN ('ACTIVE','PAUSED','ENDING','ENDED');
+
+  IF cov.state IN ('ACTIVE','PAUSED','ENDING','ENDED') THEN projected := cov.state;
+  ELSIF NOT permission_ready THEN projected := 'AWAITING_AUTHORIZATION';
+  ELSIF NOT access_ready THEN projected := 'VERIFYING_ACCESS';
+  ELSIF NOT baseline_ready THEN projected := 'BASELINE_REQUIRED';
+  ELSIF cov.coverage_basis = 'DIRECT_GUARD' AND NOT billing_ready THEN projected := 'AWAITING_PAYMENT';
+  ELSIF ready THEN projected := 'READY_TO_ACTIVATE';
+  ELSE projected := 'REQUESTED';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'coverageId', cov.id, 'state', cov.state, 'projectedState', projected, 'coverageBasis', cov.coverage_basis,
+    'mappingReady', mapping_ready, 'businessMembershipReady', membership_ready, 'permissionReady', permission_ready,
+    'accessReady', access_ready, 'contactReady', contact_ready, 'baselineReady', baseline_ready,
+    'rotaReady', rota_ready, 'commercialOrderReady', commercial_ready, 'billingReady', billing_ready,
+    'includedEligibilityReady', included_eligibility_ready, 'includedChoiceReady', included_choice_ready,
+    'readyToActivate', ready, 'blockerCodes', to_jsonb(blockers),
+    'permissionId', perm.id, 'accessId', acc.id, 'accessVersion', acc.record_version,
+    'baselineId', base.id, 'rotaId', rota.id, 'billingState', bill.billing_state,
+    'includedOfferId', off.id, 'includedOfferStatus', off.status,
+    'continuationEvidenceReady', inherited
+  );
+END; $$;
 
 -- ---------------------------------------------------------------------------
 -- Customer-action validation extensions
@@ -1003,7 +1257,13 @@ BEGIN
     OR ord.location_id IS DISTINCT FROM p_location
   THEN RAISE EXCEPTION 'Guard subscription requires the accepted location order'; END IF;
   SELECT * INTO qv FROM public.quote_versions WHERE id = ord.quote_version_id;
+  IF NOT admin_private.guard_tax_provider_ready_v1(ord.tax_behaviour, qv.total_amount_minor, ord.amount_minor)
+    OR qv.tax_behaviour IS DISTINCT FROM ord.tax_behaviour
+  THEN RAISE EXCEPTION 'tax_not_provider_ready'; END IF;
   SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = qv.price_version_id;
+  IF map.id IS NOT NULL AND map.amount_minor IS DISTINCT FROM ord.amount_minor THEN
+    RAISE EXCEPTION 'tax_not_provider_ready';
+  END IF;
   INSERT INTO public.guard_subscriptions(
     customer_id, business_id, location_id, coverage_id, continuation_id, service_order_id, price_version_id,
     provider_price_map_id, amount_minor, currency, tax_behaviour, tax_amount_minor, stripe_price_id, lifecycle_state
@@ -1084,6 +1344,9 @@ BEGIN
   IF cov.id IS NULL OR cov.coverage_basis <> 'INCLUDED' OR cov.state IN ('ENDING','ENDED') THEN
     RETURN jsonb_build_object('status','denied');
   END IF;
+  IF cov.activated_at IS NULL OR cov.included_start_at IS NULL OR cov.included_end_at IS NULL THEN
+    RETURN jsonb_build_object('status','denied','reason','included_never_activated');
+  END IF;
   IF ord.id IS NULL OR ord.service_code <> 'RELAUNCH_GUARD' OR ord.state <> 'ACCEPTED_RECURRING'
     OR ord.customer_id IS DISTINCT FROM cov.customer_id OR ord.location_id IS DISTINCT FROM cov.location_id
   THEN RETURN jsonb_build_object('status','denied'); END IF;
@@ -1125,7 +1388,7 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM public.guard_price_change_offers o
-    WHERE o.subscription_id = sub.id AND o.status IN ('OFFERED','ACCEPTED','SCHEDULED')
+    WHERE o.subscription_id = sub.id AND o.status IN ('OFFERED','ACCEPTED','SCHEDULE_PENDING','SCHEDULED')
   ) THEN RETURN jsonb_build_object('status','denied','reason','offer_open'); END IF;
   INSERT INTO public.guard_price_change_offers(
     subscription_id, location_id, old_price_version_id, old_amount_minor, new_price_version_id, new_amount_minor,
@@ -1162,14 +1425,11 @@ BEGIN
   IF sub.lifecycle_state IN ('CANCELED','ENDED') THEN RETURN jsonb_build_object('status','denied','reason','already_ended'); END IF;
   IF sub.stripe_subscription_id IS NULL THEN RETURN jsonb_build_object('status','denied','reason','no_provider'); END IF;
   UPDATE public.guard_subscriptions SET
-    cancellation_intent = 'CANCEL_AT_PERIOD_END', cancel_at_period_end = true,
-    cancel_at = coalesce(current_period_end, cancel_at)
+    cancellation_intent = 'CANCEL_AT_PERIOD_END', requested_cancel_at_period_end = true
     WHERE id = sub.id RETURNING * INTO sub;
-  INSERT INTO public.provider_operations(
-    idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-  ) VALUES (
-    p_request, 'CANCEL_SUBSCRIPTION_PERIOD_END', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
-  ) RETURNING * INTO op;
+  op := admin_private.guard_reuse_provider_operation_v1(
+    p_request, 'CANCEL_SUBSCRIPTION_PERIOD_END', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id
+  );
   PERFORM admin_private.guard_subscription_append_v1(sub.id, 'ADMIN', p_actor, 'CANCELLATION_REQUESTED', NULL, sub.lifecycle_state,
     coalesce(p_payload->>'reason','Period-end cancellation requested'), jsonb_build_object('providerOperationId', op.id));
   PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL, 'GUARD_CANCELLATION', NULL, 'GBP',
@@ -1191,18 +1451,17 @@ BEGIN
   IF sub.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF (p_payload->>'version')::integer IS DISTINCT FROM sub.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
   IF sub.lifecycle_state IN ('CANCELED','ENDED') THEN RETURN jsonb_build_object('status','denied','reason','already_ended'); END IF;
-  IF sub.cancel_at_period_end IS NOT TRUE THEN RETURN jsonb_build_object('status','denied','reason','not_scheduled'); END IF;
+  IF sub.cancel_at_period_end IS NOT TRUE AND sub.requested_cancel_at_period_end IS NOT TRUE THEN
+    RETURN jsonb_build_object('status','denied','reason','not_scheduled');
+  END IF;
   UPDATE public.guard_subscriptions SET
-    cancellation_intent = NULL, cancel_at_period_end = false, cancel_at = NULL,
-    lifecycle_state = CASE WHEN lifecycle_state = 'CANCEL_AT_PERIOD_END' THEN 'ACTIVE' ELSE lifecycle_state END
+    cancellation_intent = 'UNDO_PERIOD_END', requested_cancel_at_period_end = false
     WHERE id = sub.id RETURNING * INTO sub;
-  INSERT INTO public.provider_operations(
-    idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-  ) VALUES (
-    p_request, 'UNDO_SUBSCRIPTION_CANCELLATION', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
-  ) RETURNING * INTO op;
-  PERFORM admin_private.guard_subscription_append_v1(sub.id, 'ADMIN', p_actor, 'CANCELLATION_REVERSED', 'CANCEL_AT_PERIOD_END', sub.lifecycle_state,
-    'Scheduled cancellation reversed', jsonb_build_object('providerOperationId', op.id));
+  op := admin_private.guard_reuse_provider_operation_v1(
+    p_request, 'UNDO_SUBSCRIPTION_CANCELLATION', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id
+  );
+  PERFORM admin_private.guard_subscription_append_v1(sub.id, 'ADMIN', p_actor, 'CANCELLATION_REQUESTED', sub.lifecycle_state, sub.lifecycle_state,
+    'Undo of scheduled cancellation requested', jsonb_build_object('providerOperationId', op.id));
   RETURN jsonb_build_object(
     'status','success','id', sub.id, 'version', sub.record_version, 'providerOperationId', op.id,
     'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id
@@ -1226,12 +1485,14 @@ BEGIN
     WHERE subscription_id = sub.id AND status = 'PAID' ORDER BY created_at DESC LIMIT 1;
   refundable := CASE WHEN inv.id IS NULL THEN 0 ELSE admin_private.guard_refundable_minor_v1(inv.id) END;
   UPDATE public.guard_subscriptions SET cancellation_intent = 'REQUEST_IMMEDIATE_CANCELLATION' WHERE id = sub.id RETURNING * INTO sub;
-  INSERT INTO public.guard_billing_adjustments(
-    subscription_id, location_id, invoice_id, kind, status, amount_minor, currency, period_start, period_end, reason, created_by
-  ) VALUES (
-    sub.id, sub.location_id, inv.id, 'REFUND', 'REQUESTED', greatest(refundable, 1), 'GBP',
-    sub.current_period_start, sub.current_period_end, btrim(p_payload->>'reason'), p_actor
-  ) RETURNING * INTO adj;
+  IF refundable > 0 AND inv.id IS NOT NULL THEN
+    INSERT INTO public.guard_billing_adjustments(
+      subscription_id, location_id, invoice_id, kind, status, amount_minor, currency, period_start, period_end, reason, created_by
+    ) VALUES (
+      sub.id, sub.location_id, inv.id, 'REFUND', 'REQUESTED', refundable, 'GBP',
+      sub.current_period_start, sub.current_period_end, btrim(p_payload->>'reason'), p_actor
+    ) RETURNING * INTO adj;
+  END IF;
   PERFORM admin_private.guard_subscription_append_v1(sub.id, 'ADMIN', p_actor, 'CANCELLATION_REQUESTED', sub.lifecycle_state, sub.lifecycle_state,
     'Immediate cancellation review requested', jsonb_build_object('adjustmentId', adj.id, 'refundableMinor', refundable));
   RETURN jsonb_build_object(
@@ -1289,9 +1550,38 @@ BEGIN
   );
 END; $$;
 
+CREATE FUNCTION admin_private.guard_approve_immediate_cancellation_v1(p_actor uuid, p_request uuid, p_payload jsonb, p_session jsonb)
+RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE sub public.guard_subscriptions; op public.provider_operations;
+BEGIN
+  IF (p_session->>'createdAt')::timestamptz < now() - interval '5 minutes' THEN
+    RETURN jsonb_build_object('status','reauth_required');
+  END IF;
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = NULLIF(p_payload->>'subscriptionId','')::uuid FOR UPDATE;
+  IF sub.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF (p_payload->>'version')::integer IS DISTINCT FROM sub.record_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  IF sub.lifecycle_state IN ('CANCELED','ENDED') THEN RETURN jsonb_build_object('status','denied','reason','already_ended'); END IF;
+  IF sub.stripe_subscription_id IS NULL THEN RETURN jsonb_build_object('status','denied','reason','no_provider'); END IF;
+  IF sub.cancellation_intent IS DISTINCT FROM 'REQUEST_IMMEDIATE_CANCELLATION' THEN
+    RETURN jsonb_build_object('status','denied','reason','no_customer_request');
+  END IF;
+  IF sub.location_id IS DISTINCT FROM NULLIF(p_payload->>'locationId','')::uuid AND NULLIF(p_payload->>'locationId','') IS NOT NULL THEN
+    RETURN jsonb_build_object('status','denied','reason','location_mismatch');
+  END IF;
+  op := admin_private.guard_reuse_provider_operation_v1(
+    p_request, 'CANCEL_SUBSCRIPTION_IMMEDIATE', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id
+  );
+  PERFORM admin_private.guard_subscription_append_v1(sub.id, 'ADMIN', p_actor, 'CANCELLATION_REQUESTED', sub.lifecycle_state, sub.lifecycle_state,
+    'Immediate cancellation approved for provider execution', jsonb_build_object('providerOperationId', op.id));
+  RETURN jsonb_build_object(
+    'status','success','id', sub.id, 'version', sub.record_version, 'providerOperationId', op.id,
+    'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id
+  );
+END; $$;
+
 CREATE FUNCTION admin_private.guard_approve_credit_v1(p_actor uuid, p_request uuid, p_payload jsonb, p_session jsonb)
 RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE adj public.guard_billing_adjustments; sub public.guard_subscriptions; amount integer;
+DECLARE adj public.guard_billing_adjustments; sub public.guard_subscriptions; amount integer; creditable integer;
 BEGIN
   IF (p_session->>'createdAt')::timestamptz < now() - interval '5 minutes' THEN
     RETURN jsonb_build_object('status','reauth_required');
@@ -1301,6 +1591,8 @@ BEGIN
   IF sub.id IS NULL OR amount IS NULL OR amount <= 0 OR length(btrim(coalesce(p_payload->>'reason',''))) < 10 THEN
     RETURN jsonb_build_object('status','invalid');
   END IF;
+  creditable := admin_private.guard_creditable_minor_v1(sub.id, sub.current_period_start, sub.current_period_end);
+  IF amount > creditable THEN RETURN jsonb_build_object('status','denied','reason','exceeds_attributable'); END IF;
   IF EXISTS (
     SELECT 1 FROM public.guard_billing_adjustments a
     WHERE a.subscription_id = sub.id AND a.kind = 'REFUND' AND a.status IN ('APPROVED','SUBMITTED','SUCCEEDED')
@@ -1332,18 +1624,18 @@ BEGIN
   IF price.id IS NULL OR price.service_code <> 'RELAUNCH_GUARD' OR price.status <> 'APPROVED'
     OR price.payment_model <> 'RECURRING_MONTHLY' OR price.billing_cadence <> 'MONTHLY'
   THEN RETURN jsonb_build_object('status','denied','reason','wrong_price'); END IF;
+  IF price.tax_behaviour IS NULL OR price.tax_behaviour NOT IN ('NOT_APPLICABLE','INCLUSIVE') THEN
+    RETURN jsonb_build_object('status','denied','reason','tax_not_provider_ready');
+  END IF;
   SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = price.id;
   IF map.id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', map.id, 'providerOperationId', map.provider_operation_id, 'replay', true);
   END IF;
-  INSERT INTO public.provider_operations(
-    idempotency_key, kind, purpose, customer_id, status
-  ) SELECT p_request, 'CREATE_RECURRING_PRICE', 'GUARD_PRICE', c.id, 'PENDING'
-    FROM public.customers c LIMIT 1
-  RETURNING * INTO op;
+  SELECT * INTO op FROM public.provider_operations
+    WHERE kind = 'CREATE_RECURRING_PRICE' AND purpose = 'GUARD_PRICE' AND idempotency_key = price.id FOR UPDATE;
   IF op.id IS NULL THEN
     INSERT INTO public.provider_operations(idempotency_key, kind, purpose, customer_id, status)
-    VALUES (p_request, 'CREATE_RECURRING_PRICE', 'GUARD_PRICE', '22222222-2222-4222-8222-222222222222', 'PENDING')
+    VALUES (price.id, 'CREATE_RECURRING_PRICE', 'GUARD_PRICE', NULL, 'PENDING')
     RETURNING * INTO op;
   END IF;
   RETURN jsonb_build_object(
@@ -1370,6 +1662,9 @@ BEGIN
   IF map.id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', map.id, 'replay', true);
   END IF;
+  IF p_actor IS NULL THEN
+    SELECT auth_user_id INTO p_actor FROM public.admin_identity WHERE singleton IS TRUE LIMIT 1;
+  END IF;
   UPDATE public.provider_operations SET
     provider_object_id = p_price_id, provider_object_type = 'price', status = 'SUCCEEDED', submitted_at = coalesce(submitted_at, now())
     WHERE id = op.id;
@@ -1377,7 +1672,7 @@ BEGIN
     price_version_id, service_code, amount_minor, currency, interval, quantity, stripe_product_id, stripe_price_id,
     provider_operation_id, created_by
   ) VALUES (
-    price.id, 'RELAUNCH_GUARD', price.amount_minor, 'GBP', 'month', 1, p_product_id, p_price_id, op.id, coalesce(p_actor, op.customer_id)
+    price.id, 'RELAUNCH_GUARD', price.amount_minor, 'GBP', 'month', 1, p_product_id, p_price_id, op.id, p_actor
   ) RETURNING * INTO map;
   RETURN jsonb_build_object('status','success','id', map.id, 'stripePriceId', map.stripe_price_id);
 END; $$;
@@ -1399,7 +1694,7 @@ DECLARE
   billing text[] := ARRAY[
     'issue_subscription_start_action','create_included_continuation','issue_price_change_action',
     'schedule_period_end_cancellation','undo_scheduled_cancellation','request_immediate_cancellation',
-    'approve_refund','approve_service_credit','map_provider_price'
+    'approve_immediate_cancellation','approve_refund','approve_service_credit','map_provider_price'
   ];
 BEGIN
   IF p_operation IS NULL OR p_operation = ANY (existing) THEN
@@ -1426,6 +1721,7 @@ BEGIN
     WHEN 'schedule_period_end_cancellation' THEN admin_private.guard_schedule_cancellation_v1(actor, p_request, payload, s)
     WHEN 'undo_scheduled_cancellation' THEN admin_private.guard_undo_cancellation_v1(actor, p_request, payload, s)
     WHEN 'request_immediate_cancellation' THEN admin_private.guard_request_immediate_cancellation_v1(actor, p_request, payload, s)
+    WHEN 'approve_immediate_cancellation' THEN admin_private.guard_approve_immediate_cancellation_v1(actor, p_request, payload, s)
     WHEN 'approve_refund' THEN admin_private.guard_approve_refund_v1(actor, p_request, payload, s)
     WHEN 'approve_service_credit' THEN admin_private.guard_approve_credit_v1(actor, p_request, payload, s)
     WHEN 'map_provider_price' THEN admin_private.guard_map_provider_price_v1(actor, p_request, payload, s)
@@ -1474,7 +1770,7 @@ CREATE FUNCTION admin_private.accept_guard_price_change_v1(
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   offer public.guard_price_change_offers; sub public.guard_subscriptions; map public.guard_provider_price_maps;
-  a public.customer_actions;
+  a public.customer_actions; op public.provider_operations;
 BEGIN
   SELECT * INTO offer FROM public.guard_price_change_offers WHERE id = p_action.guard_price_change_offer_id FOR UPDATE;
   SELECT * INTO sub FROM public.guard_subscriptions WHERE id = offer.subscription_id FOR UPDATE;
@@ -1485,7 +1781,7 @@ BEGIN
       'Price-change offer declined', jsonb_build_object('offerId', offer.id));
     RETURN jsonb_build_object('status','success','actionStatus', a.status, 'offerStatus', 'DECLINED');
   END IF;
-  IF offer.status IN ('ACCEPTED','SCHEDULED','APPLIED') THEN
+  IF offer.status IN ('ACCEPTED','SCHEDULE_PENDING','SCHEDULED','APPLIED') THEN
     UPDATE public.customer_actions SET status = 'COMPLETED', completed_at = coalesce(completed_at, now())
       WHERE id = p_action.id AND status = 'OPEN';
     RETURN jsonb_build_object('status','success','offerId', offer.id, 'replay', true);
@@ -1497,10 +1793,29 @@ BEGIN
     'Price-change accepted for next renewal', jsonb_build_object('offerId', offer.id, 'newAmountMinor', offer.new_amount_minor));
   PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL, 'GUARD_PRICE_CHANGE', offer.new_amount_minor, 'GBP',
     offer.id::text, 'CUSTOMER', p_actor, 'PRICE_CHANGE_ACCEPTED');
+  IF sub.cancel_at_period_end IS TRUE THEN
+    RETURN jsonb_build_object(
+      'status','success','offerId', offer.id, 'unapplied', true, 'reason', 'cancel_at_period_end',
+      'subscriptionItemId', sub.stripe_subscription_item_id, 'newStripePriceId', map.stripe_price_id,
+      'oldStripePriceId', sub.stripe_price_id, 'cancelAtPeriodEnd', true
+    );
+  END IF;
+  IF map.id IS NOT NULL AND sub.stripe_subscription_id IS NOT NULL AND sub.stripe_subscription_item_id IS NOT NULL THEN
+    UPDATE public.guard_price_change_offers SET status = 'SCHEDULE_PENDING' WHERE id = offer.id AND status = 'ACCEPTED' RETURNING * INTO offer;
+    INSERT INTO public.provider_operations(
+      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
+    ) VALUES (
+      p_request, 'CREATE_SUBSCRIPTION_SCHEDULE', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
+    ) ON CONFLICT (idempotency_key) DO UPDATE SET kind = public.provider_operations.kind
+      RETURNING * INTO op;
+    UPDATE public.guard_price_change_offers SET provider_operation_id = op.id WHERE id = offer.id;
+  END IF;
   RETURN jsonb_build_object(
     'status','success','offerId', offer.id, 'subscriptionItemId', sub.stripe_subscription_item_id,
     'newStripePriceId', map.stripe_price_id, 'oldStripePriceId', sub.stripe_price_id,
-    'cancelAtPeriodEnd', sub.cancel_at_period_end, 'scheduleId', sub.stripe_schedule_id
+    'cancelAtPeriodEnd', sub.cancel_at_period_end, 'scheduleId', sub.stripe_schedule_id,
+    'providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+    'stripeSubscriptionId', sub.stripe_subscription_id, 'periodEnd', sub.current_period_end
   );
 END; $$;
 
@@ -1556,6 +1871,7 @@ DECLARE
   sess admin_private.customer_action_sessions; a public.customer_actions; sub public.guard_subscriptions;
   consent public.guard_recurring_consents; map public.guard_provider_price_maps; op public.provider_operations;
   fp text; cached jsonb; cus public.stripe_customer_maps; ready boolean;
+  cont public.guard_continuations; included public.guard_coverages; trial_end timestamptz;
 BEGIN
   IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$' OR p_request IS NULL
     OR p_operation IS NULL OR p_operation NOT IN (
@@ -1581,9 +1897,25 @@ BEGIN
     IF sub.coverage_id IS NOT NULL AND NOT admin_private.guard_non_billing_ready_v1(sub.coverage_id) THEN
       RETURN jsonb_build_object('status','denied','reason','not_ready');
     END IF;
+    IF NOT admin_private.guard_tax_provider_ready_v1(sub.tax_behaviour, sub.amount_minor, sub.amount_minor) THEN
+      RETURN jsonb_build_object('status','denied','reason','tax_not_provider_ready');
+    END IF;
     SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = sub.price_version_id;
     IF map.id IS NULL OR map.amount_minor IS DISTINCT FROM sub.amount_minor THEN
       RETURN jsonb_build_object('status','denied','reason','wrong_price');
+    END IF;
+    IF sub.continuation_id IS NOT NULL THEN
+      SELECT * INTO cont FROM public.guard_continuations WHERE id = sub.continuation_id;
+      SELECT * INTO included FROM public.guard_coverages WHERE id = cont.included_coverage_id;
+      IF included.activated_at IS NULL OR included.included_start_at IS NULL OR included.included_end_at IS NULL THEN
+        RETURN jsonb_build_object('status','denied','reason','included_never_activated');
+      END IF;
+      IF included.included_end_at > now() AND included.included_end_at < now() + interval '2 minutes' THEN
+        RETURN jsonb_build_object('status','denied','reason','included_window_too_short');
+      END IF;
+      IF included.included_end_at > now() THEN
+        trial_end := included.included_end_at;
+      END IF;
     END IF;
     SELECT * INTO cus FROM public.stripe_customer_maps WHERE customer_id = sub.customer_id;
     SELECT * INTO op FROM public.provider_operations
@@ -1599,40 +1931,39 @@ BEGIN
     END IF;
     UPDATE public.guard_subscriptions SET lifecycle_state = 'PENDING_PROVIDER' WHERE id = sub.id AND lifecycle_state = 'PENDING_CUSTOMER';
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CHECKOUT_CREATED', 'PENDING_CUSTOMER', 'PENDING_PROVIDER',
-      'Subscription Checkout prepared', jsonb_build_object('providerOperationId', op.id));
+      'Subscription Checkout prepared', jsonb_build_object('providerOperationId', op.id, 'trialEnd', trial_end));
     cached := jsonb_build_object(
       'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
       'stripeCustomerId', cus.stripe_customer_id, 'stripePriceId', map.stripe_price_id, 'amountMinor', sub.amount_minor,
       'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardCoverageId', sub.coverage_id,
       'guardSubscriptionId', sub.id, 'priceVersionId', sub.price_version_id, 'continuationId', sub.continuation_id,
-      'mode', 'subscription'
+      'mode', 'subscription', 'trialEnd', trial_end, 'includedEndAt', included.included_end_at
     );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
   END IF;
   IF p_operation = 'start_recovery' THEN
-    INSERT INTO public.provider_operations(
-      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-    ) VALUES (
-      p_request, 'CREATE_RECOVERY_CHECKOUT', 'GUARD_RECOVERY', sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
-    ) RETURNING * INTO op;
+    op := admin_private.guard_reuse_provider_operation_v1(
+      p_request, 'CREATE_RECOVERY_CHECKOUT', 'GUARD_RECOVERY', sub.customer_id, sub.service_order_id, sub.id
+    );
     SELECT * INTO cus FROM public.stripe_customer_maps WHERE customer_id = sub.customer_id;
     cached := jsonb_build_object(
       'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
       'stripeCustomerId', cus.stripe_customer_id, 'stripeSubscriptionId', sub.stripe_subscription_id,
-      'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardSubscriptionId', sub.id, 'mode', 'setup'
+      'customerId', sub.customer_id, 'serviceOrderId', sub.service_order_id, 'guardSubscriptionId', sub.id,
+      'priceVersionId', sub.price_version_id, 'mode', 'setup'
     );
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
   END IF;
   IF p_operation = 'request_period_end_cancellation' THEN
     IF sub.lifecycle_state IN ('CANCELED','ENDED') THEN RETURN jsonb_build_object('status','denied'); END IF;
-    UPDATE public.guard_subscriptions SET cancellation_intent = 'CANCEL_AT_PERIOD_END', cancel_at_period_end = true
+    UPDATE public.guard_subscriptions SET
+      cancellation_intent = 'CANCEL_AT_PERIOD_END', requested_cancel_at_period_end = true
       WHERE id = sub.id RETURNING * INTO sub;
-    INSERT INTO public.provider_operations(
-      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-    ) VALUES (p_request, 'CANCEL_SUBSCRIPTION_PERIOD_END', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id, 'PENDING')
-    RETURNING * INTO op;
+    op := admin_private.guard_reuse_provider_operation_v1(
+      p_request, 'CANCEL_SUBSCRIPTION_PERIOD_END', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id
+    );
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CANCELLATION_REQUESTED', NULL, sub.lifecycle_state,
       'Customer requested period-end cancellation', jsonb_build_object('providerOperationId', op.id));
     cached := jsonb_build_object('status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id);
@@ -1641,15 +1972,14 @@ BEGIN
   END IF;
   IF p_operation = 'undo_period_end_cancellation' THEN
     IF sub.lifecycle_state IN ('CANCELED','ENDED') THEN RETURN jsonb_build_object('status','denied','reason','already_ended'); END IF;
-    UPDATE public.guard_subscriptions SET cancellation_intent = NULL, cancel_at_period_end = false,
-      lifecycle_state = CASE WHEN lifecycle_state = 'CANCEL_AT_PERIOD_END' THEN 'ACTIVE' ELSE lifecycle_state END
+    UPDATE public.guard_subscriptions SET
+      cancellation_intent = 'UNDO_PERIOD_END', requested_cancel_at_period_end = false
       WHERE id = sub.id RETURNING * INTO sub;
-    INSERT INTO public.provider_operations(
-      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
-    ) VALUES (p_request, 'UNDO_SUBSCRIPTION_CANCELLATION', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id, 'PENDING')
-    RETURNING * INTO op;
-    PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CANCELLATION_REVERSED', NULL, sub.lifecycle_state,
-      'Customer reversed scheduled cancellation', jsonb_build_object('providerOperationId', op.id));
+    op := admin_private.guard_reuse_provider_operation_v1(
+      p_request, 'UNDO_SUBSCRIPTION_CANCELLATION', 'GUARD_SUBSCRIPTION', sub.customer_id, sub.service_order_id, sub.id
+    );
+    PERFORM admin_private.guard_subscription_append_v1(sub.id, 'CUSTOMER', sess.auth_user_id, 'CANCELLATION_REQUESTED', NULL, sub.lifecycle_state,
+      'Customer requested undo of scheduled cancellation', jsonb_build_object('providerOperationId', op.id));
     cached := jsonb_build_object('status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key, 'stripeSubscriptionId', sub.stripe_subscription_id);
     INSERT INTO admin_private.customer_action_command_receipts VALUES (p_request, sess.auth_user_id, fp, cached, now());
     RETURN cached;
@@ -1666,24 +1996,22 @@ CREATE FUNCTION admin_private.guard_handoff_continuation_v1(p_subscription publi
 RETURNS uuid LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   cont public.guard_continuations; included public.guard_coverages; paid public.guard_coverages;
-  perm public.guard_permissions; base public.guard_baselines; rota public.guard_rota_assignments;
-  acc public.location_manager_access;
+  ord public.service_orders;
 BEGIN
   IF p_subscription.continuation_id IS NULL THEN RETURN p_subscription.coverage_id; END IF;
   SELECT * INTO cont FROM public.guard_continuations WHERE id = p_subscription.continuation_id FOR UPDATE;
   IF cont.paid_coverage_id IS NOT NULL THEN RETURN cont.paid_coverage_id; END IF;
   SELECT * INTO included FROM public.guard_coverages WHERE id = cont.included_coverage_id FOR UPDATE;
-  IF included.activated_at IS NULL THEN
-    PERFORM admin_private.guard_begin_activation_v1();
-    UPDATE public.guard_coverages SET
-      activated_at = now(),
-      included_start_at = now(),
-      included_end_at = now() + interval '30 days',
-      state = 'ACTIVE'
-      WHERE id = included.id RETURNING * INTO included;
-    PERFORM admin_private.guard_append_event_v1(included.id, 'SYSTEM', NULL, 'INCLUDED_ENDED', included.state, 'ACTIVE',
-      'Included coverage closed for paid continuation handoff', jsonb_build_object('continuationId', cont.id));
-  END IF;
+  IF included.id IS NULL OR included.coverage_basis <> 'INCLUDED'
+    OR included.activated_at IS NULL OR included.included_start_at IS NULL OR included.included_end_at IS NULL
+    OR included.customer_id IS DISTINCT FROM p_subscription.customer_id
+    OR included.business_id IS DISTINCT FROM p_subscription.business_id
+    OR included.location_id IS DISTINCT FROM p_subscription.location_id
+  THEN RAISE EXCEPTION 'continuation_requires_historical_included_activation'; END IF;
+  SELECT * INTO ord FROM public.service_orders WHERE id = p_subscription.service_order_id;
+  IF ord.id IS NULL OR ord.service_code <> 'RELAUNCH_GUARD' OR ord.state <> 'ACCEPTED_RECURRING'
+    OR ord.id IS DISTINCT FROM cont.service_order_id
+  THEN RAISE EXCEPTION 'continuation_requires_accepted_paid_order'; END IF;
   IF included.state IN ('ACTIVE','PAUSED') THEN
     included := admin_private.guard_transition_coverage_v1(included.id, 'ENDING', 'SYSTEM', NULL, 'INCLUDED_ENDED', 'Included period handed off to paid continuation');
   END IF;
@@ -1694,11 +2022,10 @@ BEGIN
     WHERE coverage_id = included.id AND entitlement_source = 'INCLUDED';
   INSERT INTO public.guard_coverages(
     customer_id, business_id, location_id, monitoring_request_id, onboarding_location_id, service_order_id,
-    coverage_basis, coverage_origin, source_included_coverage_id, state, permission_id, baseline_id, rota_id, access_id
+    coverage_basis, coverage_origin, source_included_coverage_id, state
   ) VALUES (
     cont.customer_id, cont.business_id, cont.location_id, included.monitoring_request_id, included.onboarding_location_id,
-    cont.service_order_id, 'DIRECT_GUARD', 'INCLUDED_CONTINUATION', included.id, 'REQUESTED',
-    included.permission_id, included.baseline_id, included.rota_id, included.access_id
+    cont.service_order_id, 'DIRECT_GUARD', 'INCLUDED_CONTINUATION', included.id, 'REQUESTED'
   ) RETURNING * INTO paid;
   INSERT INTO public.guard_billing(coverage_id, billing_state, entitlement_source, paid_through_at)
   VALUES (paid.id, 'PENDING', 'NONE', NULL);
@@ -1711,33 +2038,81 @@ BEGIN
   RETURN paid.id;
 END; $$;
 
+CREATE FUNCTION admin_private.guard_apply_accepted_price_v1(p_sub public.guard_subscriptions, p_price_id text, p_amount integer)
+RETURNS public.guard_subscriptions LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE offer public.guard_price_change_offers; map public.guard_provider_price_maps;
+BEGIN
+  SELECT * INTO offer FROM public.guard_price_change_offers
+    WHERE subscription_id = p_sub.id AND status IN ('ACCEPTED','SCHEDULE_PENDING','SCHEDULED')
+    ORDER BY accepted_at DESC NULLS LAST LIMIT 1 FOR UPDATE;
+  IF offer.id IS NULL THEN RETURN p_sub; END IF;
+  SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = offer.new_price_version_id;
+  IF map.id IS NULL OR map.stripe_price_id IS DISTINCT FROM p_price_id OR offer.new_amount_minor IS DISTINCT FROM p_amount THEN
+    RETURN p_sub;
+  END IF;
+  UPDATE public.guard_subscriptions SET
+    price_version_id = offer.new_price_version_id,
+    provider_price_map_id = map.id,
+    stripe_price_id = map.stripe_price_id,
+    amount_minor = offer.new_amount_minor
+    WHERE id = p_sub.id RETURNING * INTO p_sub;
+  UPDATE public.guard_price_change_offers SET status = 'APPLIED', applied_at = now() WHERE id = offer.id;
+  PERFORM admin_private.guard_subscription_append_v1(p_sub.id, 'PROVIDER', NULL, 'PRICE_CHANGE_APPLIED', p_sub.lifecycle_state, p_sub.lifecycle_state,
+    'Accepted price applied after provider invoice evidence', jsonb_build_object('offerId', offer.id, 'amountMinor', offer.new_amount_minor));
+  RETURN p_sub;
+END; $$;
+
 CREATE FUNCTION admin_private.guard_apply_invoice_paid_v1(p_sub public.guard_subscriptions, p_payload jsonb, p_object_id text)
 RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   inv public.guard_subscription_invoices; period_end timestamptz; amount integer; kind text; coverage uuid;
-  previous public.guard_billing; first_paid boolean;
+  previous public.guard_billing; first_paid boolean; qty integer; currency text; price_id text;
+  offer public.guard_price_change_offers; map public.guard_provider_price_maps;
 BEGIN
   IF coalesce(p_payload->>'livemode','false') = 'true' THEN
     RETURN jsonb_build_object('status','denied','reason','livemode');
   END IF;
+  IF NULLIF(p_payload->>'stripeCustomerId','') IS NULL
+    OR NULLIF(p_payload->>'subscriptionId','') IS NULL
+    OR NULLIF(p_payload->>'subscriptionItemId','') IS NULL
+    OR NULLIF(p_payload->>'priceId','') IS NULL
+    OR NULLIF(p_payload->>'quantity','') IS NULL
+    OR NULLIF(p_payload->>'currency','') IS NULL
+    OR NULLIF(p_payload->>'amountPaidMinor','') IS NULL
+  THEN RETURN jsonb_build_object('status','unmatched','reason','missing_financial_fields'); END IF;
   IF NULLIF(p_payload->>'stripeCustomerId','') IS DISTINCT FROM p_sub.stripe_customer_id
-    AND NULLIF(p_payload->>'stripeCustomerId','') IS NOT NULL
     AND p_sub.stripe_customer_id IS NOT NULL
   THEN RETURN jsonb_build_object('status','denied','reason','customer_mismatch'); END IF;
   IF NULLIF(p_payload->>'subscriptionId','') IS DISTINCT FROM p_sub.stripe_subscription_id
     AND p_sub.stripe_subscription_id IS NOT NULL
   THEN RETURN jsonb_build_object('status','denied','reason','subscription_mismatch'); END IF;
-  IF NULLIF(p_payload->>'priceId','') IS NOT NULL AND NULLIF(p_payload->>'priceId','') IS DISTINCT FROM p_sub.stripe_price_id THEN
-    RETURN jsonb_build_object('status','denied','reason','price_mismatch');
-  END IF;
-  IF coalesce(NULLIF(p_payload->>'quantity','')::integer, 1) <> 1 THEN
+  IF p_sub.stripe_subscription_item_id IS NOT NULL
+    AND NULLIF(p_payload->>'subscriptionItemId','') IS DISTINCT FROM p_sub.stripe_subscription_item_id
+  THEN RETURN jsonb_build_object('status','denied','reason','item_mismatch'); END IF;
+  qty := NULLIF(p_payload->>'quantity','')::integer;
+  IF qty IS DISTINCT FROM 1 THEN
     RETURN jsonb_build_object('status','denied','reason','quantity');
   END IF;
-  amount := coalesce(NULLIF(p_payload->>'amountPaidMinor','')::integer, NULLIF(p_payload->>'amountMinor','')::integer);
-  IF amount IS NULL OR amount <> p_sub.amount_minor OR lower(coalesce(p_payload->>'currency','gbp')) <> 'gbp' THEN
-    RETURN jsonb_build_object('status','denied','reason','amount');
+  currency := lower(p_payload->>'currency');
+  IF currency IS DISTINCT FROM 'gbp' THEN
+    RETURN jsonb_build_object('status','denied','reason','currency');
   END IF;
-  period_end := coalesce(NULLIF(p_payload->>'periodEnd','')::timestamptz, p_sub.current_period_end);
+  amount := NULLIF(p_payload->>'amountPaidMinor','')::integer;
+  price_id := NULLIF(p_payload->>'priceId','');
+  IF amount IS NULL THEN
+    RETURN jsonb_build_object('status','unmatched','reason','missing_financial_fields');
+  END IF;
+  IF price_id IS DISTINCT FROM p_sub.stripe_price_id OR amount IS DISTINCT FROM p_sub.amount_minor THEN
+    SELECT * INTO offer FROM public.guard_price_change_offers
+      WHERE subscription_id = p_sub.id AND status IN ('ACCEPTED','SCHEDULE_PENDING','SCHEDULED')
+      ORDER BY accepted_at DESC NULLS LAST LIMIT 1;
+    SELECT * INTO map FROM public.guard_provider_price_maps WHERE price_version_id = offer.new_price_version_id;
+    IF offer.id IS NULL OR map.stripe_price_id IS DISTINCT FROM price_id OR offer.new_amount_minor IS DISTINCT FROM amount THEN
+      RETURN jsonb_build_object('status','denied','reason','price_mismatch');
+    END IF;
+    p_sub := admin_private.guard_apply_accepted_price_v1(p_sub, price_id, amount);
+  END IF;
+  period_end := NULLIF(p_payload->>'periodEnd','')::timestamptz;
   IF period_end IS NULL OR period_end <= now() THEN
     RETURN jsonb_build_object('status','denied','reason','period');
   END IF;
@@ -1795,6 +2170,40 @@ BEGIN
   RETURN jsonb_build_object('status','success','id', inv.id, 'coverageId', coverage, 'kind', kind);
 END; $$;
 
+CREATE FUNCTION admin_private.guard_confirm_cancel_flag_v1(p_subscription uuid, p_cancel boolean)
+RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE sub public.guard_subscriptions; previous boolean;
+BEGIN
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = p_subscription FOR UPDATE;
+  IF sub.id IS NULL THEN RETURN; END IF;
+  previous := sub.cancel_at_period_end;
+  UPDATE public.guard_subscriptions SET
+    cancel_at_period_end = p_cancel,
+    cancel_at = CASE WHEN p_cancel THEN coalesce(current_period_end, cancel_at) ELSE NULL END,
+    lifecycle_state = CASE
+      WHEN lifecycle_state IN ('CANCELED','ENDED') THEN lifecycle_state
+      WHEN p_cancel THEN 'CANCEL_AT_PERIOD_END'
+      WHEN lifecycle_state = 'CANCEL_AT_PERIOD_END' THEN 'ACTIVE'
+      ELSE lifecycle_state
+    END,
+    cancellation_intent = CASE
+      WHEN p_cancel AND cancellation_intent = 'CANCEL_AT_PERIOD_END' THEN cancellation_intent
+      WHEN NOT p_cancel AND cancellation_intent = 'UNDO_PERIOD_END' THEN NULL
+      ELSE cancellation_intent
+    END
+    WHERE id = sub.id RETURNING * INTO sub;
+  IF previous IS DISTINCT FROM p_cancel THEN
+    PERFORM admin_private.guard_subscription_append_v1(
+      sub.id, 'PROVIDER', NULL,
+      CASE WHEN p_cancel THEN 'CANCELLATION_SCHEDULED' ELSE 'CANCELLATION_REVERSED' END,
+      CASE WHEN previous THEN 'CANCEL_AT_PERIOD_END' ELSE sub.lifecycle_state END,
+      sub.lifecycle_state,
+      CASE WHEN p_cancel THEN 'Provider confirmed period-end cancellation' ELSE 'Provider confirmed cancellation undo' END,
+      jsonb_build_object('cancelAtPeriodEnd', p_cancel)
+    );
+  END IF;
+END; $$;
+
 CREATE FUNCTION public.guard_apply_subscription_event_v1(
   p_event_id text, p_type text, p_object_id text, p_payload jsonb
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -1827,7 +2236,38 @@ BEGIN
       WHERE o.provider_object_id = p_object_id
     LIMIT 1;
   END IF;
+  IF sub.id IS NULL AND p_type LIKE 'refund.%' THEN
+    SELECT s.* INTO sub FROM public.guard_refunds r
+      JOIN public.guard_subscriptions s ON s.id = r.subscription_id
+      WHERE r.stripe_refund_id = p_object_id
+         OR r.provider_operation_id = NULLIF(payload->>'providerOperationId','')::uuid
+         OR r.stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId','')
+         OR r.stripe_charge_id = NULLIF(payload->>'chargeId','')
+      LIMIT 1 FOR UPDATE;
+    IF sub.id IS NULL THEN
+      SELECT s.* INTO sub FROM public.guard_subscription_invoices i
+        JOIN public.guard_subscriptions s ON s.id = i.subscription_id
+        WHERE i.stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId','')
+           OR i.stripe_charge_id = NULLIF(payload->>'chargeId','')
+        LIMIT 1 FOR UPDATE;
+    END IF;
+  END IF;
+  IF sub.id IS NULL AND p_type LIKE 'charge.dispute.%' THEN
+    SELECT s.* INTO sub FROM public.guard_subscription_invoices i
+      JOIN public.guard_subscriptions s ON s.id = i.subscription_id
+      WHERE i.stripe_charge_id = NULLIF(payload->>'chargeId','')
+      LIMIT 1 FOR UPDATE;
+  END IF;
+  IF sub.id IS NULL AND p_type LIKE 'setup_intent.%' THEN
+    SELECT * INTO sub FROM public.guard_subscriptions WHERE id = meta_sub FOR UPDATE;
+  END IF;
   IF sub.id IS NULL THEN
+    IF meta_sub IS NOT NULL OR NULLIF(payload->>'subscriptionId','') ~ '^sub_'
+      OR NULLIF(payload->>'paymentIntentId','') IS NOT NULL
+      OR NULLIF(payload->>'chargeId','') IS NOT NULL
+    THEN
+      RETURN jsonb_build_object('status','unmatched','reason','correlation_pending');
+    END IF;
     UPDATE admin_private.stripe_event_receipts SET processed = true WHERE provider_event_id = p_event_id;
     RETURN jsonb_build_object('status','success','ignored', true, 'reason', 'unrelated');
   END IF;
@@ -1850,18 +2290,19 @@ BEGIN
       stripe_subscription_item_id = coalesce(NULLIF(payload->>'subscriptionItemId',''), stripe_subscription_item_id),
       stripe_schedule_id = coalesce(NULLIF(payload->>'scheduleId',''), stripe_schedule_id),
       provider_status = coalesce(NULLIF(payload->>'providerStatus',''), provider_status),
-      cancel_at_period_end = coalesce((payload->>'cancelAtPeriodEnd')::boolean, cancel_at_period_end),
       current_period_start = coalesce(NULLIF(payload->>'periodStart','')::timestamptz, current_period_start),
       current_period_end = coalesce(NULLIF(payload->>'periodEnd','')::timestamptz, current_period_end),
       lifecycle_state = CASE
         WHEN lifecycle_state IN ('CANCELED','ENDED') THEN lifecycle_state
-        WHEN coalesce((payload->>'cancelAtPeriodEnd')::boolean, false) THEN 'CANCEL_AT_PERIOD_END'
         WHEN NULLIF(payload->>'providerStatus','') IN ('past_due','unpaid') THEN 'PAST_DUE'
         WHEN NULLIF(payload->>'providerStatus','') = 'canceled' THEN 'CANCELED'
         WHEN NULLIF(payload->>'providerStatus','') IN ('incomplete','incomplete_expired','trialing') THEN 'INCOMPLETE'
         ELSE lifecycle_state
       END
-      WHERE id = sub.id;
+      WHERE id = sub.id RETURNING * INTO sub;
+    IF payload ? 'cancelAtPeriodEnd' THEN
+      PERFORM admin_private.guard_confirm_cancel_flag_v1(sub.id, (payload->>'cancelAtPeriodEnd')::boolean);
+    END IF;
     IF NULLIF(payload->>'providerStatus','') = 'trialing' THEN
       PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL, 'CONTINUATION_SCHEDULED', sub.lifecycle_state, 'INCOMPLETE',
         'Trialing is not paid entitlement', '{}'::jsonb);
@@ -1870,9 +2311,13 @@ BEGIN
     UPDATE public.guard_subscriptions SET
       provider_status = 'canceled', lifecycle_state = 'CANCELED', canceled_at = coalesce(canceled_at, now()),
       cancel_at_period_end = false
-      WHERE id = sub.id AND lifecycle_state NOT IN ('ENDED');
+      WHERE id = sub.id AND lifecycle_state NOT IN ('ENDED')
+      RETURNING * INTO sub;
     PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL, 'SUBSCRIPTION_ENDED', sub.lifecycle_state, 'CANCELED',
       'Provider subscription deleted', jsonb_build_object('subscriptionId', p_object_id));
+    IF sub.cancellation_intent = 'REQUEST_IMMEDIATE_CANCELLATION' AND sub.coverage_id IS NOT NULL THEN
+      PERFORM admin_private.guard_end_coverage_for_immediate_cancel_v1(sub.coverage_id);
+    END IF;
   ELSIF p_type = 'invoice.paid' THEN
     payload := admin_private.guard_apply_invoice_paid_v1(sub, payload, p_object_id);
     IF payload->>'status' = 'success' THEN
@@ -1901,33 +2346,64 @@ BEGIN
       jsonb_build_object('invoiceId', p_object_id));
     PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL, 'GUARD_RENEWAL_FAILED',
       sub.amount_minor, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
-  ELSIF p_type IN ('charge.refunded','refund.updated','refund.failed','refund.created') THEN
+  ELSIF p_type IN ('refund.updated','refund.failed','refund.created') THEN
     SELECT * INTO refund FROM public.guard_refunds
-      WHERE stripe_refund_id = p_object_id OR provider_operation_id = NULLIF(payload->>'providerOperationId','')::uuid
+      WHERE stripe_refund_id = p_object_id
+         OR provider_operation_id = NULLIF(payload->>'providerOperationId','')::uuid
+         OR (NULLIF(payload->>'paymentIntentId','') IS NOT NULL AND stripe_payment_intent_id = NULLIF(payload->>'paymentIntentId',''))
+         OR (NULLIF(payload->>'chargeId','') IS NOT NULL AND stripe_charge_id = NULLIF(payload->>'chargeId',''))
       FOR UPDATE;
-    IF refund.id IS NOT NULL THEN
-      UPDATE public.guard_refunds SET
-        stripe_refund_id = coalesce(stripe_refund_id, p_object_id),
-        status = CASE
-          WHEN p_type = 'refund.failed' THEN 'FAILED'
-          WHEN NULLIF(payload->>'refundStatus','') IN ('succeeded','canceled') THEN upper(payload->>'refundStatus')
-          WHEN NULLIF(payload->>'refundStatus','') = 'pending' THEN 'PENDING'
-          WHEN p_type = 'charge.refunded' THEN 'SUCCEEDED'
-          ELSE status
-        END,
-        succeeded_at = CASE WHEN p_type = 'charge.refunded' OR payload->>'refundStatus' = 'succeeded' THEN coalesce(succeeded_at, now()) ELSE succeeded_at END,
-        failed_at = CASE WHEN p_type = 'refund.failed' THEN now() ELSE failed_at END,
-        failure_code = coalesce(NULLIF(payload->>'failureCode',''), failure_code)
-        WHERE id = refund.id RETURNING * INTO refund;
-      UPDATE public.guard_billing_adjustments SET status = refund.status WHERE id = refund.adjustment_id;
-      PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL,
-        CASE WHEN refund.status = 'FAILED' THEN 'REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'REFUND_SUCCEEDED' ELSE 'REFUND_SUBMITTED' END,
-        NULL, sub.lifecycle_state, 'Provider refund update', jsonb_build_object('refundId', refund.id, 'status', refund.status));
-      PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL,
-        CASE WHEN refund.status = 'FAILED' THEN 'GUARD_REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'GUARD_REFUND_SUCCEEDED' ELSE 'GUARD_REFUND_SUBMITTED' END,
-        refund.amount_minor, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
+    IF refund.id IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','refund_correlation_pending');
+    END IF;
+    IF refund.subscription_id IS DISTINCT FROM sub.id
+      OR (NULLIF(payload->>'amountMinor','') IS NOT NULL AND (payload->>'amountMinor')::integer IS DISTINCT FROM refund.amount_minor)
+      OR (NULLIF(payload->>'currency','') IS NOT NULL AND lower(payload->>'currency') IS DISTINCT FROM 'gbp')
+    THEN
+      RETURN jsonb_build_object('status','denied','reason','refund_scope_mismatch');
+    END IF;
+    UPDATE public.guard_refunds SET
+      stripe_refund_id = CASE WHEN p_object_id ~ '^re_' THEN coalesce(stripe_refund_id, p_object_id) ELSE stripe_refund_id END,
+      status = CASE
+        WHEN p_type = 'refund.failed' OR payload->>'refundStatus' = 'failed' THEN 'FAILED'
+        WHEN payload->>'refundStatus' = 'succeeded' THEN 'SUCCEEDED'
+        WHEN payload->>'refundStatus' IN ('canceled','cancelled') THEN 'CANCELED'
+        WHEN payload->>'refundStatus' IN ('pending','requires_action') THEN 'PENDING'
+        WHEN p_type = 'refund.created' AND status IN ('APPROVED','REQUESTED','SUBMITTED') THEN 'PENDING'
+        ELSE status
+      END,
+      succeeded_at = CASE WHEN payload->>'refundStatus' = 'succeeded' THEN coalesce(succeeded_at, now()) ELSE succeeded_at END,
+      failed_at = CASE WHEN p_type = 'refund.failed' OR payload->>'refundStatus' = 'failed' THEN now() ELSE failed_at END,
+      failure_code = coalesce(NULLIF(payload->>'failureCode',''), failure_code)
+      WHERE id = refund.id RETURNING * INTO refund;
+    UPDATE public.guard_billing_adjustments SET status = refund.status WHERE id = refund.adjustment_id;
+    PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL,
+      CASE WHEN refund.status = 'FAILED' THEN 'REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'REFUND_SUCCEEDED' ELSE 'REFUND_SUBMITTED' END,
+      NULL, sub.lifecycle_state, 'Provider refund update', jsonb_build_object('refundId', refund.id, 'status', refund.status));
+    PERFORM admin_private.write_payment_ledger_v1(sub.customer_id, sub.service_order_id, NULL,
+      CASE WHEN refund.status = 'FAILED' THEN 'GUARD_REFUND_FAILED' WHEN refund.status = 'SUCCEEDED' THEN 'GUARD_REFUND_SUCCEEDED' ELSE 'GUARD_REFUND_SUBMITTED' END,
+      refund.amount_minor, 'GBP', p_object_id, 'PROVIDER', NULL, p_type);
+  ELSIF p_type = 'charge.refunded' THEN
+    PERFORM admin_private.guard_subscription_append_v1(sub.id, 'SYSTEM', NULL, 'RECONCILIATION_MISMATCH', sub.lifecycle_state, sub.lifecycle_state,
+      'charge.refunded is supplemental and does not mark a refund succeeded', jsonb_build_object('objectId', p_object_id, 'chargeId', payload->>'chargeId'));
+  ELSIF p_type LIKE 'setup_intent.%' THEN
+    IF meta_sub IS DISTINCT FROM sub.id THEN
+      RETURN jsonb_build_object('status','denied','reason','setup_scope');
+    END IF;
+    IF p_type = 'setup_intent.succeeded' THEN
+      PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL, 'SUBSCRIPTION_CORRELATED', sub.lifecycle_state, sub.lifecycle_state,
+        'Guard recovery SetupIntent succeeded. Payment-method update still requires provider confirmation',
+        jsonb_build_object('setupIntentId', p_object_id, 'paymentMethodId', payload->>'paymentMethodId'));
     END IF;
   ELSIF p_type LIKE 'charge.dispute.%' THEN
+    IF NULLIF(payload->>'chargeId','') IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','dispute_charge_missing');
+    END IF;
+    SELECT * INTO inv FROM public.guard_subscription_invoices
+      WHERE subscription_id = sub.id AND stripe_charge_id = NULLIF(payload->>'chargeId','') LIMIT 1;
+    IF inv.id IS NULL THEN
+      RETURN jsonb_build_object('status','unmatched','reason','dispute_invoice_pending');
+    END IF;
     INSERT INTO public.guard_disputes(
       subscription_id, location_id, invoice_id, stripe_dispute_id, stripe_charge_id, amount_minor, currency, provider_status
     ) VALUES (
@@ -1984,65 +2460,313 @@ BEGIN
   RETURN jsonb_build_object('status','success','id', refund.id, 'refundStatus', refund.status);
 END; $$;
 
+CREATE FUNCTION admin_private.guard_end_coverage_for_immediate_cancel_v1(p_coverage uuid)
+RETURNS void LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE cov public.guard_coverages;
+BEGIN
+  SELECT * INTO cov FROM public.guard_coverages WHERE id = p_coverage FOR UPDATE;
+  IF cov.id IS NULL OR cov.state = 'ENDED' THEN RETURN; END IF;
+  IF cov.state IN (
+    'REQUESTED','AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED','AWAITING_PAYMENT','READY_TO_ACTIVATE'
+  ) THEN
+    cov := admin_private.guard_transition_coverage_v1(cov.id, 'PAUSED', 'SYSTEM', NULL, 'ENDED_FOR_CANCELLATION',
+      'Immediate cancellation ends this location only');
+  END IF;
+  IF cov.state IN ('ACTIVE','PAUSED') THEN
+    cov := admin_private.guard_transition_coverage_v1(cov.id, 'ENDING', 'SYSTEM', NULL, 'ENDED_FOR_CANCELLATION',
+      'Immediate cancellation ends this location only');
+  END IF;
+  IF cov.state = 'ENDING' THEN
+    PERFORM admin_private.guard_transition_coverage_v1(cov.id, 'ENDED', 'SYSTEM', NULL, 'ENDED_FOR_CANCELLATION',
+      'Immediate cancellation ended this location only');
+  END IF;
+  UPDATE public.guard_billing SET billing_state = 'ENDED', record_version = record_version + 1, updated_at = now()
+    WHERE coverage_id = p_coverage;
+END; $$;
+
+CREATE FUNCTION public.guard_confirm_immediate_cancellation_v1(p_operation uuid, p_object_id text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE op public.provider_operations; sub public.guard_subscriptions; recorded jsonb;
+BEGIN
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation AND kind = 'CANCEL_SUBSCRIPTION_IMMEDIATE' FOR UPDATE;
+  IF op.id IS NULL OR op.guard_subscription_id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  recorded := public.payment_record_provider_refs_v1(p_operation, p_object_id, 'subscription', 'SUCCEEDED');
+  IF recorded->>'status' IS DISTINCT FROM 'success' THEN RETURN recorded; END IF;
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = op.guard_subscription_id FOR UPDATE;
+  UPDATE public.guard_subscriptions SET
+    provider_status = 'canceled', lifecycle_state = 'CANCELED', canceled_at = coalesce(canceled_at, now()),
+    cancel_at_period_end = false
+    WHERE id = sub.id AND lifecycle_state NOT IN ('ENDED')
+    RETURNING * INTO sub;
+  IF sub.coverage_id IS NOT NULL THEN
+    PERFORM admin_private.guard_end_coverage_for_immediate_cancel_v1(sub.coverage_id);
+  END IF;
+  PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL, 'SUBSCRIPTION_ENDED', NULL, 'CANCELED',
+    'Provider confirmed immediate cancellation for this location only. No refund was created by this confirmation',
+    jsonb_build_object('subscriptionId', p_object_id));
+  UPDATE public.provider_operations SET status = 'SUCCEEDED' WHERE id = op.id AND status IN ('PENDING','SUBMITTED');
+  RETURN jsonb_build_object('status','success','id', sub.id, 'lifecycleState', sub.lifecycle_state);
+END; $$;
+
+CREATE FUNCTION public.guard_confirm_cancellation_v1(p_operation uuid, p_object_id text, p_cancel boolean, p_status text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE op public.provider_operations; recorded jsonb;
+BEGIN
+  recorded := public.payment_record_provider_refs_v1(p_operation, p_object_id, 'subscription',
+    CASE WHEN p_status IN ('SUCCEEDED','FAILED','CANCELLED','SUBMITTED') THEN p_status ELSE 'SUBMITTED' END);
+  IF recorded->>'status' IS DISTINCT FROM 'success' THEN RETURN recorded; END IF;
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation;
+  IF op.guard_subscription_id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  PERFORM admin_private.guard_confirm_cancel_flag_v1(op.guard_subscription_id, p_cancel);
+  UPDATE public.provider_operations SET status = 'SUCCEEDED' WHERE id = op.id AND status IN ('PENDING','SUBMITTED');
+  RETURN jsonb_build_object('status','success','id', op.guard_subscription_id, 'cancelAtPeriodEnd', p_cancel);
+END; $$;
+
+CREATE FUNCTION public.guard_record_price_schedule_v1(p_operation uuid, p_schedule_id text, p_subscription_item_id text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE op public.provider_operations; offer public.guard_price_change_offers; sub public.guard_subscriptions;
+BEGIN
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation AND kind = 'CREATE_SUBSCRIPTION_SCHEDULE' FOR UPDATE;
+  IF op.id IS NULL OR p_schedule_id IS NULL OR p_schedule_id !~ '^sub_sched_[A-Za-z0-9]+$' THEN
+    RETURN jsonb_build_object('status','invalid');
+  END IF;
+  PERFORM public.payment_record_provider_refs_v1(p_operation, p_schedule_id, 'subscription_schedule', 'SUCCEEDED');
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = op.guard_subscription_id FOR UPDATE;
+  SELECT * INTO offer FROM public.guard_price_change_offers
+    WHERE subscription_id = sub.id AND status IN ('ACCEPTED','SCHEDULE_PENDING')
+    ORDER BY accepted_at DESC NULLS LAST LIMIT 1 FOR UPDATE;
+  IF sub.cancel_at_period_end IS TRUE THEN
+    RETURN jsonb_build_object('status','denied','reason','cancel_at_period_end');
+  END IF;
+  UPDATE public.guard_subscriptions SET
+    stripe_schedule_id = coalesce(stripe_schedule_id, p_schedule_id),
+    stripe_subscription_item_id = coalesce(stripe_subscription_item_id, p_subscription_item_id)
+    WHERE id = sub.id;
+  IF offer.id IS NOT NULL THEN
+    UPDATE public.guard_price_change_offers SET
+      status = 'SCHEDULED', scheduled_at = now(), provider_operation_id = op.id
+      WHERE id = offer.id;
+  END IF;
+  PERFORM admin_private.guard_subscription_append_v1(sub.id, 'PROVIDER', NULL, 'PRICE_CHANGE_SCHEDULED', sub.lifecycle_state, sub.lifecycle_state,
+    'Provider schedule confirmed for next renewal', jsonb_build_object('scheduleId', p_schedule_id, 'subscriptionItemId', p_subscription_item_id));
+  RETURN jsonb_build_object('status','success','scheduleId', p_schedule_id);
+END; $$;
+
+CREATE FUNCTION public.guard_apply_recovery_setup_v1(
+  p_setup_intent text, p_customer text, p_payment_method text, p_guard_subscription uuid, p_operation uuid
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE sub public.guard_subscriptions; op public.provider_operations;
+BEGIN
+  IF p_setup_intent IS NULL OR p_customer IS NULL OR p_payment_method IS NULL OR p_payment_method !~ '^pm_'
+    OR p_guard_subscription IS NULL
+  THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = p_guard_subscription FOR UPDATE;
+  IF sub.id IS NULL OR sub.stripe_customer_id IS DISTINCT FROM p_customer THEN
+    RETURN jsonb_build_object('status','denied','reason','customer_mismatch');
+  END IF;
+  SELECT * INTO op FROM public.provider_operations
+    WHERE id = coalesce(p_operation, id) AND guard_subscription_id = sub.id
+      AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD' AND status IN ('PENDING','SUBMITTED')
+    ORDER BY created_at ASC LIMIT 1 FOR UPDATE;
+  IF op.id IS NULL THEN
+    INSERT INTO public.provider_operations(
+      idempotency_key, kind, purpose, customer_id, service_order_id, guard_subscription_id, status
+    ) VALUES (
+      coalesce(p_operation, extensions.gen_random_uuid()), 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD', 'GUARD_RECOVERY',
+      sub.customer_id, sub.service_order_id, sub.id, 'PENDING'
+    ) RETURNING * INTO op;
+  END IF;
+  RETURN jsonb_build_object(
+    'status','success','providerOperationId', op.id, 'idempotencyKey', op.idempotency_key,
+    'stripeSubscriptionId', sub.stripe_subscription_id, 'stripeCustomerId', sub.stripe_customer_id,
+    'paymentMethodId', p_payment_method, 'guardSubscriptionId', sub.id
+  );
+END; $$;
+
+CREATE FUNCTION public.guard_confirm_payment_method_v1(p_operation uuid, p_object_id text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE op public.provider_operations;
+BEGIN
+  SELECT * INTO op FROM public.provider_operations WHERE id = p_operation AND kind = 'UPDATE_SUBSCRIPTION_PAYMENT_METHOD' FOR UPDATE;
+  IF op.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  PERFORM public.payment_record_provider_refs_v1(p_operation, p_object_id, 'subscription', 'SUCCEEDED');
+  PERFORM admin_private.guard_subscription_append_v1(op.guard_subscription_id, 'PROVIDER', NULL, 'SUBSCRIPTION_CORRELATED', NULL, NULL,
+    'Default payment method updated after provider confirmation. Invoice remains unpaid until invoice.paid',
+    jsonb_build_object('subscriptionId', p_object_id));
+  RETURN jsonb_build_object('status','success','id', op.guard_subscription_id);
+END; $$;
+
+CREATE FUNCTION admin_private.guard_materialise_reconciliation_targets_v1(p_run uuid) RETURNS integer
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE n integer;
+BEGIN
+  INSERT INTO public.guard_reconciliation_targets(run_id, subscription_id, expected_stripe_subscription_id, status)
+  SELECT p_run, s.id, s.stripe_subscription_id, 'PENDING'
+    FROM public.guard_subscriptions s
+    WHERE s.lifecycle_state <> 'ENDED'
+  ON CONFLICT (run_id, subscription_id) DO NOTHING;
+  SELECT count(*)::int INTO n FROM public.guard_reconciliation_targets WHERE run_id = p_run;
+  UPDATE public.guard_reconciliation_runs SET expected_count = n WHERE id = p_run;
+  RETURN n;
+END; $$;
+
 CREATE FUNCTION public.guard_enqueue_daily_reconcile_v1() RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
-  service date; run public.guard_reconciliation_runs; outbox uuid;
+  service date; run public.guard_reconciliation_runs; outbox uuid; expected integer;
 BEGIN
   service := (timezone('Europe/London', now()))::date;
   SELECT * INTO run FROM public.guard_reconciliation_runs WHERE service_date = service;
   IF run.id IS NOT NULL THEN
-    RETURN jsonb_build_object('status','success','runId', run.id, 'serviceDate', service, 'duplicate', true);
+    PERFORM admin_private.guard_materialise_reconciliation_targets_v1(run.id);
+    RETURN jsonb_build_object('status','success','runId', run.id, 'serviceDate', service, 'duplicate', true, 'expectedCount', run.expected_count);
   END IF;
   INSERT INTO public.guard_reconciliation_runs(service_date, status) VALUES (service, 'STARTED') RETURNING * INTO run;
+  expected := admin_private.guard_materialise_reconciliation_targets_v1(run.id);
   outbox := admin_private.enqueue_outbox_v1(
     'reconcile-guard-billing:' || service::text, 'RECONCILE_GUARD_BILLING', 'guard_reconciliation', run.id,
     jsonb_build_object('runId', run.id, 'serviceDate', service), now()
   );
-  RETURN jsonb_build_object('status','success','runId', run.id, 'serviceDate', service, 'outboxId', outbox, 'duplicate', false);
+  RETURN jsonb_build_object('status','success','runId', run.id, 'serviceDate', service, 'outboxId', outbox, 'duplicate', false, 'expectedCount', expected);
 EXCEPTION WHEN unique_violation THEN
   SELECT * INTO run FROM public.guard_reconciliation_runs WHERE service_date = service;
+  PERFORM admin_private.guard_materialise_reconciliation_targets_v1(run.id);
   RETURN jsonb_build_object('status','success','runId', run.id, 'serviceDate', service, 'duplicate', true);
+END; $$;
+
+CREATE FUNCTION public.guard_list_reconciliation_targets_v1(p_run uuid, p_after uuid DEFAULT NULL, p_limit integer DEFAULT 25)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE rows jsonb; lim integer;
+BEGIN
+  lim := least(greatest(coalesce(p_limit, 25), 1), 50);
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'id', t.id, 'subscriptionId', t.subscription_id, 'expectedStripeSubscriptionId', t.expected_stripe_subscription_id,
+    'status', t.status, 'attempts', t.attempts, 'mismatchCount', t.mismatch_count
+  ) ORDER BY t.id), '[]'::jsonb) INTO rows
+  FROM (
+    SELECT * FROM public.guard_reconciliation_targets
+    WHERE run_id = p_run AND status IN ('PENDING','RETRY')
+      AND (p_after IS NULL OR id > p_after)
+    ORDER BY id
+    LIMIT lim
+  ) t;
+  RETURN jsonb_build_object('status','success','targets', rows, 'limit', lim);
+END; $$;
+
+CREATE FUNCTION public.guard_apply_reconciliation_target_v1(p_target uuid, p_payload jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+  target public.guard_reconciliation_targets; run public.guard_reconciliation_runs;
+  sub public.guard_subscriptions; payload jsonb; mismatches integer := 0;
+  next_status text;
+BEGIN
+  payload := coalesce(p_payload, '{}'::jsonb);
+  SELECT * INTO target FROM public.guard_reconciliation_targets WHERE id = p_target FOR UPDATE;
+  IF target.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  SELECT * INTO run FROM public.guard_reconciliation_runs WHERE id = target.run_id FOR UPDATE;
+  SELECT * INTO sub FROM public.guard_subscriptions WHERE id = target.subscription_id FOR UPDATE;
+  UPDATE public.guard_reconciliation_targets SET status = 'RUNNING', attempts = attempts + 1, updated_at = now() WHERE id = target.id;
+  IF payload->>'outcome' = 'PROVIDER_DISABLED' THEN
+    next_status := 'PROVIDER_DISABLED';
+    INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+    VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_DISABLED', jsonb_build_object('expectedStripeSubscriptionId', target.expected_stripe_subscription_id));
+    mismatches := 1;
+  ELSIF payload->>'outcome' = 'RETRY' THEN
+    next_status := 'RETRY';
+  ELSIF payload->>'outcome' = 'FAILED' THEN
+    next_status := 'FAILED';
+    INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+    VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_RETRIEVAL_FAILED', jsonb_build_object('error', payload->>'lastError'));
+    mismatches := 1;
+  ELSE
+    IF target.expected_stripe_subscription_id IS NOT NULL THEN
+      IF NULLIF(payload->>'subscriptionId','') IS DISTINCT FROM target.expected_stripe_subscription_id THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_SUBSCRIPTION_MISMATCH', jsonb_build_object('expected', target.expected_stripe_subscription_id, 'actual', payload->>'subscriptionId'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF NULLIF(payload->>'stripeCustomerId','') IS DISTINCT FROM sub.stripe_customer_id AND sub.stripe_customer_id IS NOT NULL THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_CUSTOMER_MISMATCH', jsonb_build_object('expected', sub.stripe_customer_id, 'actual', payload->>'stripeCustomerId'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF NULLIF(payload->>'subscriptionItemId','') IS DISTINCT FROM sub.stripe_subscription_item_id AND sub.stripe_subscription_item_id IS NOT NULL THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_ITEM_MISMATCH', jsonb_build_object('expected', sub.stripe_subscription_item_id, 'actual', payload->>'subscriptionItemId'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF NULLIF(payload->>'stripePriceId','') IS DISTINCT FROM sub.stripe_price_id AND payload ? 'stripePriceId' THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_PRICE_MISMATCH', jsonb_build_object('expected', sub.stripe_price_id, 'actual', payload->>'stripePriceId'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF NOT (payload ? 'quantity') OR NULLIF(payload->>'quantity','') IS NULL
+        OR NULLIF(payload->>'quantity','')::integer IS DISTINCT FROM 1 THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'QUANTITY_NOT_ONE', jsonb_build_object('quantity', payload->>'quantity'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF NULLIF(payload->>'livemode','') = 'true' THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'UNEXPECTED_LIVE_MODE', '{}'::jsonb);
+        mismatches := mismatches + 1;
+      END IF;
+      IF payload ? 'cancelAtPeriodEnd' THEN
+        PERFORM admin_private.guard_confirm_cancel_flag_v1(sub.id, (payload->>'cancelAtPeriodEnd')::boolean);
+      END IF;
+    ELSIF sub.stripe_subscription_id IS NULL AND sub.lifecycle_state IN ('ACTIVE','PAST_DUE','CANCEL_AT_PERIOD_END','INCOMPLETE') THEN
+      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+      VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_SUBSCRIPTION_MISSING', jsonb_build_object('lifecycle', sub.lifecycle_state));
+      mismatches := mismatches + 1;
+    END IF;
+    IF target.expected_stripe_subscription_id IS NULL THEN
+      IF NULLIF(payload->>'stripePriceId','') IS NOT NULL AND payload->>'stripePriceId' IS DISTINCT FROM sub.stripe_price_id THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_PRICE_MISMATCH', jsonb_build_object('expected', sub.stripe_price_id, 'actual', payload->>'stripePriceId'));
+        mismatches := mismatches + 1;
+      END IF;
+      IF payload ? 'quantity' AND NULLIF(payload->>'quantity','')::integer IS DISTINCT FROM 1 THEN
+        INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
+        VALUES (run.id, sub.id, sub.coverage_id, 'QUANTITY_NOT_ONE', jsonb_build_object('quantity', payload->>'quantity'));
+        mismatches := mismatches + 1;
+      END IF;
+    END IF;
+    next_status := 'SUCCEEDED';
+  END IF;
+  UPDATE public.guard_reconciliation_targets SET
+    status = next_status,
+    last_error = coalesce(payload->>'lastError', ''),
+    checked_at = now(),
+    mismatch_count = mismatches,
+    provider_evidence = payload,
+    updated_at = now()
+    WHERE id = target.id;
+  RETURN jsonb_build_object('status','success','targetStatus', next_status, 'mismatchCount', mismatches);
 END; $$;
 
 CREATE FUNCTION public.guard_reconcile_billing_v1(p_run uuid, p_payload jsonb DEFAULT '{}'::jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   run public.guard_reconciliation_runs; sub public.guard_subscriptions; cov public.guard_coverages;
-  bill public.guard_billing; offer public.guard_price_change_offers; policy public.guard_reminder_policies;
-  mismatches integer := 0; payload jsonb; paid_through timestamptz;
+  bill public.guard_billing; policy public.guard_reminder_policies; target public.guard_reconciliation_targets;
+  payload jsonb; paid_through timestamptz; pending integer; provider_disabled integer;
+  succeeded integer; retried integer; failed integer; mismatched integer;
 BEGIN
   payload := coalesce(p_payload, '{}'::jsonb);
   SELECT * INTO run FROM public.guard_reconciliation_runs WHERE id = p_run FOR UPDATE;
   IF run.id IS NULL THEN
     RETURN jsonb_build_object('status','invalid');
   END IF;
+  PERFORM admin_private.guard_materialise_reconciliation_targets_v1(run.id);
+  IF NULLIF(payload->>'guardSubscriptionId','') IS NOT NULL THEN
+    SELECT * INTO target FROM public.guard_reconciliation_targets
+      WHERE run_id = run.id AND subscription_id = (payload->>'guardSubscriptionId')::uuid;
+    IF target.id IS NOT NULL THEN
+      PERFORM public.guard_apply_reconciliation_target_v1(target.id, payload);
+    END IF;
+  END IF;
   FOR sub IN SELECT * FROM public.guard_subscriptions WHERE lifecycle_state NOT IN ('ENDED') FOR UPDATE
   LOOP
-    IF sub.stripe_subscription_id IS NULL AND sub.lifecycle_state IN ('ACTIVE','PAST_DUE','CANCEL_AT_PERIOD_END','INCOMPLETE') THEN
-      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
-      VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_SUBSCRIPTION_MISSING', jsonb_build_object('lifecycle', sub.lifecycle_state));
-      mismatches := mismatches + 1;
-      PERFORM admin_private.guard_subscription_append_v1(sub.id, 'SYSTEM', NULL, 'RECONCILIATION_MISMATCH', sub.lifecycle_state, sub.lifecycle_state,
-        'Local subscription is missing a provider subscription', '{}'::jsonb);
-    END IF;
-    IF NULLIF(payload->>'stripePriceId','') IS NOT NULL AND payload->>'stripePriceId' IS DISTINCT FROM sub.stripe_price_id
-      AND (payload->>'guardSubscriptionId')::uuid IS NOT DISTINCT FROM sub.id
-    THEN
-      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
-      VALUES (run.id, sub.id, sub.coverage_id, 'PROVIDER_PRICE_MISMATCH', jsonb_build_object('expected', sub.stripe_price_id, 'actual', payload->>'stripePriceId'));
-      mismatches := mismatches + 1;
-    END IF;
-    IF coalesce(NULLIF(payload->>'quantity','')::integer, 1) <> 1 AND (payload->>'guardSubscriptionId')::uuid IS NOT DISTINCT FROM sub.id THEN
-      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
-      VALUES (run.id, sub.id, sub.coverage_id, 'QUANTITY_NOT_ONE', jsonb_build_object('quantity', payload->>'quantity'));
-      mismatches := mismatches + 1;
-    END IF;
-    IF NULLIF(payload->>'livemode','') = 'true' THEN
-      INSERT INTO public.guard_reconciliation_issues(run_id, subscription_id, coverage_id, code, details)
-      VALUES (run.id, sub.id, sub.coverage_id, 'UNEXPECTED_LIVE_MODE', '{}'::jsonb);
-      mismatches := mismatches + 1;
-    END IF;
     IF sub.coverage_id IS NOT NULL THEN
       SELECT * INTO bill FROM public.guard_billing WHERE coverage_id = sub.coverage_id FOR UPDATE;
       SELECT * INTO cov FROM public.guard_coverages WHERE id = sub.coverage_id FOR UPDATE;
@@ -2111,10 +2835,40 @@ BEGIN
     ON CONFLICT (coverage_id, policy_id, offset_days) DO NOTHING;
   END IF;
 
-  UPDATE public.guard_reconciliation_runs
-    SET status = 'COMPLETED', completed_at = now(), mismatch_count = mismatches
-    WHERE id = run.id;
-  RETURN jsonb_build_object('status','success','runId', run.id, 'mismatchCount', mismatches, 'serviceDate', run.service_date);
+  SELECT
+    count(*) FILTER (WHERE status IN ('PENDING','RUNNING','RETRY')),
+    count(*) FILTER (WHERE status = 'SUCCEEDED'),
+    count(*) FILTER (WHERE status = 'RETRY'),
+    count(*) FILTER (WHERE status = 'FAILED'),
+    count(*) FILTER (WHERE status = 'PROVIDER_DISABLED'),
+    coalesce(sum(mismatch_count), 0)
+    INTO pending, succeeded, retried, failed, provider_disabled, mismatched
+    FROM public.guard_reconciliation_targets WHERE run_id = run.id;
+  UPDATE public.guard_reconciliation_runs SET
+    expected_count = (SELECT count(*) FROM public.guard_reconciliation_targets WHERE run_id = run.id),
+    succeeded_count = succeeded,
+    retry_count = retried,
+    failed_count = failed,
+    provider_disabled_count = provider_disabled,
+    mismatched_count = mismatched,
+    mismatch_count = mismatched,
+    status = CASE
+      WHEN pending = 0 AND provider_disabled = 0 AND failed = 0 THEN 'COMPLETED'
+      WHEN pending = 0 AND (provider_disabled > 0 OR failed > 0) THEN 'FAILED'
+      ELSE status
+    END,
+    completed_at = CASE
+      WHEN pending = 0 THEN now()
+      ELSE completed_at
+    END
+    WHERE id = run.id
+    RETURNING * INTO run;
+  RETURN jsonb_build_object(
+    'status', CASE WHEN run.status = 'COMPLETED' THEN 'success' WHEN pending > 0 THEN 'pending' ELSE 'failed' END,
+    'runId', run.id, 'runStatus', run.status, 'mismatchCount', mismatched,
+    'expectedCount', run.expected_count, 'succeededCount', succeeded, 'retryCount', retried,
+    'failedCount', failed, 'providerDisabledCount', provider_disabled, 'serviceDate', run.service_date
+  );
 END; $$;
 
 ALTER FUNCTION public.admin_guard_list_v1(text) RENAME TO admin_guard_list_core_v1;
@@ -2137,6 +2891,7 @@ BEGIN
         'currency', s.currency, 'stripePriceId', s.stripe_price_id, 'stripeSubscriptionId', s.stripe_subscription_id,
         'paidThroughAt', bill.paid_through_at, 'billingState', bill.billing_state, 'coverageState', g.state,
         'currentPeriodEnd', s.current_period_end, 'cancelAtPeriodEnd', s.cancel_at_period_end,
+        'requestedCancelAtPeriodEnd', s.requested_cancel_at_period_end,
         'latestPaidInvoiceId', s.latest_paid_invoice_id, 'latestInvoiceFailure', s.latest_invoice_failure,
         'priceChangeStatus', offer.status, 'disputeStatus', d.provider_status, 'refundStatus', r.status,
         'reconciliationOpen', EXISTS (
@@ -2152,7 +2907,7 @@ BEGIN
       JOIN public.locations loc ON loc.id = s.location_id
       LEFT JOIN public.guard_coverages g ON g.id = s.coverage_id
       LEFT JOIN public.guard_billing bill ON bill.coverage_id = s.coverage_id
-      LEFT JOIN public.guard_price_change_offers offer ON offer.subscription_id = s.id AND offer.status IN ('OFFERED','ACCEPTED','SCHEDULED')
+      LEFT JOIN public.guard_price_change_offers offer ON offer.subscription_id = s.id AND offer.status IN ('OFFERED','ACCEPTED','SCHEDULE_PENDING','SCHEDULED')
       LEFT JOIN LATERAL (
         SELECT provider_status FROM public.guard_disputes x WHERE x.subscription_id = s.id ORDER BY opened_at DESC LIMIT 1
       ) d ON true
@@ -2292,6 +3047,13 @@ REVOKE ALL ON FUNCTION public.guard_record_provider_price_map_v1(uuid, uuid, tex
 REVOKE ALL ON FUNCTION public.guard_record_refund_v1(uuid, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_enqueue_daily_reconcile_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_reconcile_billing_v1(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_list_reconciliation_targets_v1(uuid, uuid, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_apply_reconciliation_target_v1(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_confirm_cancellation_v1(uuid, text, boolean, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_confirm_immediate_cancellation_v1(uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_record_price_schedule_v1(uuid, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_apply_recovery_setup_v1(text, text, text, uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_confirm_payment_method_v1(uuid, text) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_guard_command_v1(text, uuid, text, jsonb, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_guard_list_v1(text) TO service_role;
@@ -2304,6 +3066,13 @@ GRANT EXECUTE ON FUNCTION public.guard_record_provider_price_map_v1(uuid, uuid, 
 GRANT EXECUTE ON FUNCTION public.guard_record_refund_v1(uuid, text, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.guard_enqueue_daily_reconcile_v1() TO service_role;
 GRANT EXECUTE ON FUNCTION public.guard_reconcile_billing_v1(uuid, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_list_reconciliation_targets_v1(uuid, uuid, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_apply_reconciliation_target_v1(uuid, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_confirm_cancellation_v1(uuid, text, boolean, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_confirm_immediate_cancellation_v1(uuid, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_record_price_schedule_v1(uuid, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_apply_recovery_setup_v1(text, text, text, uuid, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_confirm_payment_method_v1(uuid, text) TO service_role;
 
 COMMIT;
 

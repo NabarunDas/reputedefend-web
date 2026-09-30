@@ -74,6 +74,7 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
     }
     const providerOps = [
       "schedule_period_end_cancellation", "undo_scheduled_cancellation", "map_provider_price",
+      "approve_immediate_cancellation",
     ]
     if (providerOps.includes(operation) && !guardSubscriptionsEnabled()) {
       return reply("Guard subscriptions are disabled until the live subscription gate is enabled.", 403, { reason: "subscriptions_disabled" })
@@ -146,8 +147,22 @@ async function executeProviderFollowThrough(operation: string, result: {
       idempotencyKey: result.idempotencyKey,
       cancel: operation === "schedule_period_end_cancellation",
     })
-    await backend().rpc("guard_record_provider_refs_v1", {
-      p_operation: result.providerOperationId, p_object_id: updated.id, p_object_type: "subscription", p_status: updated.status,
+    await backend().rpc("guard_confirm_cancellation_v1", {
+      p_operation: result.providerOperationId,
+      p_object_id: updated.id,
+      p_cancel: updated.cancelAtPeriodEnd,
+      p_status: "SUCCEEDED",
+    })
+    return
+  }
+  if (operation === "approve_immediate_cancellation") {
+    if (!result.stripeSubscriptionId) return
+    const cancelled = await paymentProvider().cancelSubscriptionImmediate({
+      id: result.stripeSubscriptionId,
+      idempotencyKey: result.idempotencyKey,
+    })
+    await backend().rpc("guard_confirm_immediate_cancellation_v1", {
+      p_operation: result.providerOperationId, p_object_id: cancelled.id,
     })
     return
   }

@@ -36,6 +36,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   idempotency: Set<string>
   nextIntentStatus: string
   nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
+  nextRecurringInvoiceError: Error | null
   objects: Map<string, Record<string, unknown>>
 } {
   const customers = new Map<string, string>()
@@ -57,6 +58,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
     nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
+    nextRecurringInvoiceError: null as Error | null,
   }
 
   return {
@@ -74,6 +76,8 @@ export function createFakePaymentProvider(): PaymentProvider & {
     set nextIntentStatus(value: string) { state.nextIntentStatus = value },
     get nextOffSessionError() { return state.nextOffSessionError },
     set nextOffSessionError(value) { state.nextOffSessionError = value },
+    get nextRecurringInvoiceError() { return state.nextRecurringInvoiceError },
+    set nextRecurringInvoiceError(value) { state.nextRecurringInvoiceError = value },
     get objects() { return objects },
     async createCustomer({ idempotencyKey, customerId }) {
       state.idempotency.add(idempotencyKey)
@@ -353,10 +357,50 @@ export function createFakePaymentProvider(): PaymentProvider & {
         livemode: false,
       }
       sessions.set(input.idempotencyKey, created)
-      objects.set(created.id, { ...created, stripePriceId: input.stripePriceId, quantity: 1 })
+      objects.set(created.id, { ...created, stripePriceId: input.stripePriceId, quantity: 1, trialEnd: input.trialEnd ?? null })
       state.checkouts += 1
       state.idempotency.add(input.idempotencyKey)
       return { id: created.id, url: created.url, mode: "subscription", amountMinor: 0, livemode: false as const }
+    },
+    async createGuardRecoveryCheckout(input) {
+      const meta = guardMetadata(input.metadata)
+      assertSafeGuardMetadata(meta)
+      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      const setupId = `seti_guard_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`
+      const created: StoredCheckout = {
+        id: `cs_test_grec_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
+        url: `https://checkout.stripe.test/guard-recovery/${input.idempotencyKey}`,
+        mode: "setup",
+        amountMinor: 0,
+        status: "open",
+        paymentStatus: null,
+        paymentIntentId: null,
+        setupIntentId: setupId,
+        customerId: input.stripeCustomerId,
+        metadata: meta,
+        livemode: false,
+      }
+      sessions.set(input.idempotencyKey, created)
+      setups.set(setupId, {
+        id: setupId,
+        status: "requires_payment_method",
+        usage: "off_session",
+        customerId: input.stripeCustomerId,
+        paymentMethodId: null,
+        metadata: meta,
+      })
+      objects.set(created.id, created)
+      objects.set(setupId, setups.get(setupId)!)
+      state.setups += 1
+      state.idempotency.add(input.idempotencyKey)
+      return { id: created.id, url: created.url, mode: "setup", amountMinor: 0, livemode: false as const }
+    },
+    async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
+      state.idempotency.add(idempotencyKey)
+      const found = (objects.get(id) || { id, status: "active" }) as { id: string; status: string; defaultPaymentMethodId?: string }
+      found.defaultPaymentMethodId = paymentMethodId
+      objects.set(id, found)
+      return { id: found.id, status: found.status, cancelAtPeriodEnd: false, canceled: found.status === "canceled", livemode: false as const }
     },
     async retrieveSubscription(id) {
       const found = objects.get(id) as {
@@ -371,7 +415,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: found.customerId ?? null,
         priceId: found.priceId ?? null,
         subscriptionItemId: found.subscriptionItemId ?? null,
-        quantity: found.quantity ?? 1,
+        quantity: typeof found.quantity === "number" ? found.quantity : null,
         cancelAtPeriodEnd: found.cancelAtPeriodEnd === true,
         currentPeriodStart: found.currentPeriodStart ?? null,
         currentPeriodEnd: found.currentPeriodEnd ?? null,
@@ -381,11 +425,17 @@ export function createFakePaymentProvider(): PaymentProvider & {
       }
     },
     async retrieveRecurringInvoice(id) {
+      if (state.nextRecurringInvoiceError) {
+        const error = state.nextRecurringInvoiceError
+        state.nextRecurringInvoiceError = null
+        throw error
+      }
       const found = objects.get(id) as {
         id?: string; status?: string; customerId?: string; amountDueMinor?: number; amountPaidMinor?: number
         currency?: string; hostedInvoiceUrl?: string; metadata?: Record<string, string>
         subscriptionId?: string; subscriptionItemId?: string; priceId?: string; quantity?: number
         periodStart?: string; periodEnd?: string; paymentIntentId?: string; chargeId?: string
+        subscriptionMetadata?: Record<string, string>
       } | undefined
       if (!found) return null
       return {
@@ -394,18 +444,19 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: found.customerId ?? null,
         amountDueMinor: found.amountDueMinor ?? 0,
         amountPaidMinor: found.amountPaidMinor ?? 0,
-        currency: found.currency ?? "gbp",
+        currency: found.currency ?? "",
         hostedInvoiceUrl: found.hostedInvoiceUrl ?? null,
-        metadata: found.metadata ?? {},
+        metadata: { ...(found.subscriptionMetadata ?? {}), ...(found.metadata ?? {}) },
         livemode: false as const,
         subscriptionId: found.subscriptionId ?? null,
         subscriptionItemId: found.subscriptionItemId ?? null,
         priceId: found.priceId ?? null,
-        quantity: found.quantity ?? 1,
+        quantity: typeof found.quantity === "number" ? found.quantity : null,
         periodStart: found.periodStart ?? null,
         periodEnd: found.periodEnd ?? null,
         paymentIntentId: found.paymentIntentId ?? null,
         chargeId: found.chargeId ?? null,
+        subscriptionMetadata: found.subscriptionMetadata ?? {},
       }
     },
     async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {

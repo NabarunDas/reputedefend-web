@@ -533,9 +533,9 @@ describe("stripe payments SQL", () => {
     const { accepted } = await acceptQuote()
     const { session } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
     const checkout = await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_ensure_customer_map_v1", [customer, "cus_order_first"])
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_orderfirst"])
     expect(await rpc("payment_apply_provider_event_v1", ["evt_pi_first", "payment_intent.succeeded", "pi_before_checkout", {
-      paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_order_first",
+      paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_orderfirst",
       customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
       providerOperationId: checkout!.providerOperationId,
     }])).toMatchObject({ status: "success" })
@@ -618,9 +618,9 @@ describe("stripe payments SQL", () => {
     const opened = await issueAndOpen("issue_managed_setup_action", first.accepted!.orderId as string)
     await rpc("customer_payment_command_v1", [opened.session, key(), "confirm_consent", { accepted: true }])
     const setup = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_ensure_customer_map_v1", [customer, "cus_setup_once"])
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_setuponce"])
     expect(await rpc("payment_apply_provider_event_v1", ["evt_seti_first", "setup_intent.succeeded", "seti_first", {
-      stripeCustomerId: "cus_setup_once", paymentMethodId: "pm_once", usage: "off_session",
+      stripeCustomerId: "cus_setuponce", paymentMethodId: "pm_once", usage: "off_session",
       customerId: customer, serviceOrderId: first.accepted!.orderId, providerOperationId: setup!.providerOperationId,
     }])).toMatchObject({ status: "success" })
     expect(await rpc("payment_apply_provider_event_v1", ["evt_cs_setup", "checkout.session.completed", "cs_setup_once", {
@@ -630,7 +630,12 @@ describe("stripe payments SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_ledger where event='SETUP_RECORDED'")).rows[0].n).toBe(1)
     expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [opened.issued!.id])).rows[0].status).toBe("COMPLETED")
 
-    const second = await acceptQuote("MANAGED_RELAUNCH", { caseId: reviewCase })
+    const secondCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Second profile','2026-01-01',now(),now(),'UNDECIDED')",
+      [secondCase, customer, business, location],
+    )
+    const second = await acceptQuote("MANAGED_RELAUNCH", { caseId: secondCase })
     const opened2 = await issueAndOpen("issue_managed_setup_action", second.accepted!.orderId as string)
     await rpc("customer_payment_command_v1", [opened2.session, key(), "confirm_consent", { accepted: true }])
     const setup2 = await rpc("customer_payment_command_v1", [opened2.session, key(), "start_checkout", { idempotencyKey: key() }])
@@ -638,7 +643,7 @@ describe("stripe payments SQL", () => {
       setupIntentId: "seti_second", mode: "setup", providerOperationId: setup2!.providerOperationId,
     }])).toMatchObject({ status: "success" })
     expect(await rpc("payment_apply_provider_event_v1", ["evt_seti_second", "setup_intent.succeeded", "seti_second", {
-      stripeCustomerId: "cus_setup_once", paymentMethodId: "pm_once", usage: "off_session",
+      stripeCustomerId: "cus_setuponce", paymentMethodId: "pm_once", usage: "off_session",
       customerId: customer, serviceOrderId: second.accepted!.orderId, providerOperationId: setup2!.providerOperationId,
     }])).toMatchObject({ status: "success" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.saved_payment_methods")).rows[0].n).toBe(2)
@@ -652,9 +657,9 @@ describe("stripe payments SQL", () => {
     const opened = await issueAndOpen("issue_managed_setup_action", first.accepted!.orderId as string)
     await rpc("customer_payment_command_v1", [opened.session, key(), "confirm_consent", { accepted: true }])
     const setup = await rpc("customer_payment_command_v1", [opened.session, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_ensure_customer_map_v1", [customer, "cus_reuse_pm"])
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_reusepm"])
     await rpc("payment_apply_provider_event_v1", ["evt_pm_a1", "setup_intent.succeeded", "seti_a1", {
-      stripeCustomerId: "cus_reuse_pm", paymentMethodId: "pm_shared", usage: "off_session",
+      stripeCustomerId: "cus_reusepm", paymentMethodId: "pm_shared", usage: "off_session",
       customerId: customer, serviceOrderId: first.accepted!.orderId, providerOperationId: setup!.providerOperationId,
     }])
     await verify(otherCustomer, "other@example.com")
@@ -691,9 +696,9 @@ describe("stripe payments SQL", () => {
     await rpc("customer_action_finish_otp_v1", [otherPending2, otherSession2, otherAuth, "other@example.com"])
     await rpc("customer_payment_command_v1", [otherSession2, key(), "confirm_consent", { accepted: true }])
     const otherSetup = await rpc("customer_payment_command_v1", [otherSession2, key(), "start_checkout", { idempotencyKey: key() }])
-    await rpc("payment_ensure_customer_map_v1", [otherCustomer, "cus_other_person"])
+    await rpc("payment_ensure_customer_map_v1", [otherCustomer, "cus_otherperson"])
     expect(await rpc("payment_apply_provider_event_v1", ["evt_pm_stolen", "setup_intent.succeeded", "seti_stolen", {
-      stripeCustomerId: "cus_other_person", paymentMethodId: "pm_shared", usage: "off_session",
+      stripeCustomerId: "cus_otherperson", paymentMethodId: "pm_shared", usage: "off_session",
       customerId: otherCustomer, serviceOrderId: otherAccepted!.orderId, providerOperationId: otherSetup!.providerOperationId,
     }])).toMatchObject({ status: "denied", reason: "setup_mismatch" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.saved_payment_methods where customer_id=$1", [otherCustomer])).rows[0].n).toBe(0)
@@ -709,7 +714,12 @@ describe("stripe payments SQL", () => {
     expect(guidedReplace?.idempotencyKey).not.toBe(guidedCheckout?.idempotencyKey)
     expect((await db.query<{ status: string }>("select status from public.provider_operations where id=$1", [guidedCheckout!.providerOperationId])).rows[0].status).toBe("CANCELLED")
 
-    const managed = await acceptQuote("MANAGED_RELAUNCH", { caseId: reviewCase })
+    const managedCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Managed profile','2026-01-01',now(),now(),'UNDECIDED')",
+      [managedCase, customer, business, location],
+    )
+    const managed = await acceptQuote("MANAGED_RELAUNCH", { caseId: managedCase })
     const managedOpen = await issueAndOpen("issue_managed_setup_action", managed.accepted!.orderId as string)
     await rpc("customer_payment_command_v1", [managedOpen.session, key(), "confirm_consent", { accepted: true }])
     const setup = await rpc("customer_payment_command_v1", [managedOpen.session, key(), "start_checkout", { idempotencyKey: key() }])
@@ -722,8 +732,8 @@ describe("stripe payments SQL", () => {
       stripeCustomerId: "cus_replace", paymentMethodId: "pm_replace", usage: "off_session",
       customerId: customer, serviceOrderId: managed.accepted!.orderId, providerOperationId: setupReplace!.providerOperationId,
     }])
-    const evidenceId = await acceptedEvidence(reviewCase)
-    await db.query("update public.cases set outcome='REMOVED', work_stage='OUTCOME_REVIEW' where id=$1", [reviewCase])
+    const evidenceId = await acceptedEvidence(managedCase)
+    await db.query("update public.cases set outcome='RESTORED', work_stage='OUTCOME_REVIEW' where id=$1", [managedCase])
     const approved = await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", {
       serviceOrderId: managed.accepted!.orderId, outcomeEvidenceVersionId: evidenceId,
       evidenceNote: "Screenshot of the Google outcome page.", approvalReason: "Outcome matches the accepted success definition.",
@@ -784,9 +794,9 @@ describe("stripe payments SQL", () => {
     const { session } = await issueAndOpen("issue_guided_payment_action", accepted!.orderId as string)
     const checkout = await rpc("customer_payment_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
     await rpc("payment_record_provider_refs_v1", [checkout!.providerOperationId, "pi_paid_first", "payment_intent"])
-    await rpc("payment_ensure_customer_map_v1", [customer, "cus_paid_first"])
+    await rpc("payment_ensure_customer_map_v1", [customer, "cus_paidfirst"])
     await rpc("payment_apply_provider_event_v1", ["evt_pi_paid_first", "payment_intent.succeeded", "pi_paid_first", {
-      paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_paid_first",
+      paymentIntentStatus: "succeeded", amountMinor: 9900, currency: "gbp", stripeCustomerId: "cus_paidfirst",
       customerId: customer, serviceOrderId: accepted!.orderId, obligationId: accepted!.obligationId,
       providerOperationId: checkout!.providerOperationId,
     }])

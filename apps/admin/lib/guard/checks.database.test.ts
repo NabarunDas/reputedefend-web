@@ -496,6 +496,32 @@ describe("guard manual checks SQL", () => {
     )).rows[0].id
   }
 
+  async function insertScopedObligation(
+    coverageId: string,
+    serviceDate: string,
+    scheduleId: string,
+    rotaId: string,
+    windowCode = "MORNING",
+  ) {
+    return db.query<{ id: string }>(
+      `insert into public.guard_check_obligations(
+        coverage_id, customer_id, business_id, location_id, service_date, window_code,
+        schedule_version_id, rota_assignment_id, coverage_basis, timezone,
+        local_start, local_end, window_start_utc, window_end_utc
+      )
+      select g.id, g.customer_id, g.business_id, g.location_id, $2::date, $5,
+        $3, $4, g.coverage_basis, 'Europe/London',
+        case when $5 = 'MORNING' then '09:00'::time else '17:00'::time end,
+        case when $5 = 'MORNING' then '11:00'::time else '19:00'::time end,
+        admin_private.guard_local_window_utc_v1($2::date, case when $5 = 'MORNING' then '09:00'::time else '17:00'::time end, 'Europe/London'),
+        admin_private.guard_local_window_utc_v1($2::date, case when $5 = 'MORNING' then '11:00'::time else '19:00'::time end, 'Europe/London')
+      from public.guard_coverages g
+      where g.id = $1
+      returning id`,
+      [coverageId, serviceDate, scheduleId, rotaId, windowCode],
+    )
+  }
+
   async function setIncludedEnd(coverageId: string, endAt: string) {
     await db.exec("alter table public.guard_coverages disable trigger guard_coverages_protect")
     await db.query(
@@ -823,4 +849,166 @@ describe("guard manual checks SQL", () => {
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic='SEND_EMAIL'")).rows[0].n).toBe(0)
     expect((await db.query<{ n: number }>("select count(*)::int as n from information_schema.tables where table_schema='public' and table_name in ('guard_alerts','monitoring_alerts')")).rows[0].n).toBe(0)
   })
+
+  it("denies DRAFT, future and expired schedules for new obligations and keeps retired history readable", async () => {
+    const coverageId = await activateIncluded()
+    const rotaId = (await db.query<{ id: string }>("select id from public.guard_rota_assignments where coverage_id=$1 and status='ACTIVE'", [coverageId])).rows[0].id
+    const draft = await insertDraftSchedule("2020-01-01")
+    await expect(insertScopedObligation(coverageId, "2026-09-30", draft, rotaId)).rejects.toThrow(/approved applicable version/)
+
+    const future = await insertDraftSchedule("2026-10-01")
+    await db.query("update public.guard_check_schedule_versions set status='APPROVED', approved_at=now(), approved_by=$2 where id=$1", [future, uid])
+    await expect(insertScopedObligation(coverageId, "2026-09-30", future, rotaId)).rejects.toThrow(/approved applicable version/)
+
+    await db.query("update public.guard_check_schedule_versions set status='RETIRED', effective_to='2026-12-01', retired_at=now(), retired_by=$2 where id=$1", [future, uid])
+    const current = await insertDraftSchedule("2020-01-01")
+    await db.query(
+      "update public.guard_check_schedule_versions set status='APPROVED', approved_at=now(), approved_by=$2, effective_to='2026-09-30' where id=$1",
+      [current, uid],
+    )
+    await expect(insertScopedObligation(coverageId, "2026-09-30", current, rotaId)).rejects.toThrow(/approved applicable version/)
+    const created = await insertScopedObligation(coverageId, "2026-09-29", current, rotaId)
+    expect(created.rows[0].id).toBeTruthy()
+
+    await db.query("update public.guard_check_schedule_versions set status='RETIRED', retired_at=now(), retired_by=$2 where id=$1", [current, uid])
+    const detail = await rpc("admin_guard_check_detail_v1", [token, created.rows[0].id, "2026-09-29T08:00:00Z"]) as RpcResult & { obligation?: { id: string } }
+    expect(detail.obligation?.id).toBe(created.rows[0].id)
+    await expect(insertScopedObligation(coverageId, "2026-09-28", current, rotaId)).rejects.toThrow(/approved applicable version/)
+  })
+
+  it("requires an ACTIVE rota for new obligations and keeps history after supersession", async () => {
+    const coverageId = await activateIncluded()
+    await approveSchedule()
+    await maintain("2026-09-30T08:00:00Z", "2026-09-30")
+    const morning = (await obligations(coverageId, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const scheduleId = (await db.query<{ schedule_version_id: string }>("select schedule_version_id from public.guard_check_obligations where id=$1", [morning.id])).rows[0].schedule_version_id
+    const rotaId = (await db.query<{ rota_assignment_id: string }>("select rota_assignment_id from public.guard_check_obligations where id=$1", [morning.id])).rows[0].rota_assignment_id
+    expect((await db.query<{ status: string }>("select status from public.guard_rota_assignments where id=$1", [rotaId])).rows[0].status).toBe("ACTIVE")
+
+    await db.query("update public.guard_rota_assignments set status='SUPERSEDED' where id=$1", [rotaId])
+    await expect(insertScopedObligation(coverageId, "2026-09-29", scheduleId, rotaId)).rejects.toThrow(/rota is not active/)
+    const detail = await rpc("admin_guard_check_detail_v1", [token, morning.id, "2026-09-30T08:00:00Z"]) as RpcResult & { obligation?: { id: string; state: string } }
+    expect(detail.obligation).toMatchObject({ id: morning.id, state: "PENDING" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:05:00Z"])).toMatchObject({ status: "success" })
+  })
+
+  it("denies incomplete AVAILABLE CHANGE_DETECTED and does not fabricate change codes from absent facts", async () => {
+    const coverageId = await activateIncluded()
+    await approveSchedule()
+    await maintain("2026-09-30T08:00:00Z", "2026-09-30")
+    const [evening, morning] = await obligations(coverageId, "2026-09-30")
+    const claimed = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: morning.id }, morning.record_version, "2026-09-30T08:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: morning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", displayedBusinessName: "" }),
+    }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_comparable" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: morning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", reviewCount: null }),
+    }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_comparable" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: morning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", profileUrl: "" }),
+    }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_comparable" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: morning.id, ...healthyPayload({ classification: "CHANGE_DETECTED", locationIdentified: false }),
+    }, claimed!.version, "2026-09-30T08:12:00Z"])).toMatchObject({ status: "denied", reason: "incomplete_not_comparable" })
+
+    const incomplete = await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: morning.id, ...healthyPayload({
+        classification: "INCOMPLETE", displayedBusinessName: "", reviewCount: null, latestReviewReference: "",
+      }),
+    }, claimed!.version, "2026-09-30T08:14:00Z"])
+    expect(incomplete).toMatchObject({ status: "success" })
+    const incompleteCodes = (await db.query<{ change_codes: string[] }>("select change_codes from public.guard_check_observations where obligation_id=$1", [morning.id])).rows[0].change_codes
+    expect(incompleteCodes).toContain("OBSERVATION_INCOMPLETE")
+    expect(incompleteCodes).not.toContain("BUSINESS_NAME_CHANGED")
+    expect(incompleteCodes).not.toContain("LATEST_REVIEW_CHANGED")
+
+    const eveningClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T16:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "complete", {
+      obligationId: evening.id, ...healthyPayload({
+        classification: "CHANGE_DETECTED",
+        displayedBusinessName: "New Bakery",
+        reviewCount: 12,
+        rating: 4.1,
+        latestReviewReference: "",
+      }),
+    }, eveningClaim!.version, "2026-09-30T16:15:00Z"])).toMatchObject({ status: "success" })
+    const changeCodes = (await db.query<{ change_codes: string[] }>("select change_codes from public.guard_check_observations where obligation_id=$1", [evening.id])).rows[0].change_codes
+    expect(changeCodes).toEqual(expect.arrayContaining(["BUSINESS_NAME_CHANGED", "REVIEW_COUNT_INCREASED", "RATING_CHANGED"]))
+    expect(changeCodes).not.toContain("LATEST_REVIEW_CHANGED")
+  })
+
+  it("requires retirement attribution and keeps approved facts immutable after retirement", async () => {
+    const draft = await insertDraftSchedule()
+    await expect(db.query("update public.guard_check_schedule_versions set status='RETIRED' where id=$1", [draft])).rejects.toThrow()
+    await db.query("update public.guard_check_schedule_versions set status='APPROVED', approved_at=now(), approved_by=$2 where id=$1", [draft, uid])
+    const approved = (await db.query<{ approved_at: string; approved_by: string }>("select approved_at::text, approved_by from public.guard_check_schedule_versions where id=$1", [draft])).rows[0]
+    await expect(db.query("update public.guard_check_schedule_versions set status='RETIRED', effective_to='2026-10-01' where id=$1", [draft])).rejects.toThrow()
+    await db.query("update public.guard_check_schedule_versions set status='RETIRED', effective_to='2026-10-01', retired_at=now(), retired_by=$2 where id=$1", [draft, uid])
+    expect((await db.query<{ approved_at: string; approved_by: string; retired_by: string }>("select approved_at::text, approved_by, retired_by from public.guard_check_schedule_versions where id=$1", [draft])).rows[0]).toMatchObject({
+      approved_at: approved.approved_at,
+      approved_by: approved.approved_by,
+      retired_by: uid,
+    })
+    await expect(db.query("update public.guard_check_schedule_versions set approved_by=$2 where id=$1", [draft, customer])).rejects.toThrow(/retired schedule is immutable/)
+
+    const neverApproved = await insertDraftSchedule("2021-01-01")
+    await db.query("update public.guard_check_schedule_versions set status='RETIRED', retired_at=now(), retired_by=$2 where id=$1", [neverApproved, uid])
+    expect((await db.query<{ approved_at: string | null; retired_by: string }>("select approved_at::text, retired_by from public.guard_check_schedule_versions where id=$1", [neverApproved])).rows[0]).toMatchObject({
+      approved_at: null,
+      retired_by: uid,
+    })
+  })
+
+  it("denies ACTIVE coverage cancellation and records the actual prior state when coverage is inactive", async () => {
+    const coverageId = await activateIncluded()
+    const other = await activateIncluded(otherLocation)
+    await approveSchedule()
+    await maintain("2026-09-30T08:00:00Z", "2026-09-30")
+    const pending = (await obligations(coverageId, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const claimedRow = (await obligations(other, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const claimed = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: claimedRow.id }, claimedRow.record_version, "2026-09-30T08:10:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "cancel", { obligationId: pending.id, reason: "operator override" }, pending.record_version, "2026-09-30T08:15:00Z"])).toMatchObject({ status: "denied", reason: "coverage_still_active" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "cancel", { obligationId: claimedRow.id, reason: "operator override" }, claimed!.version, "2026-09-30T08:15:00Z"])).toMatchObject({ status: "denied", reason: "coverage_still_active" })
+    expect((await obligations(coverageId, "2026-09-30")).find(row => row.id === pending.id)?.state).toBe("PENDING")
+    expect((await obligations(other, "2026-09-30")).find(row => row.id === claimedRow.id)?.state).toBe("CLAIMED")
+
+    await db.query("update public.guard_coverages set state='PAUSED', paused_at=now() where id=$1", [coverageId])
+    await db.query("update public.guard_coverages set state='PAUSED', paused_at=now() where id=$1", [other])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "cancel", { obligationId: pending.id, reason: "coverage paused" }, pending.record_version, "2026-09-30T08:20:00Z"])).toMatchObject({ status: "success" })
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "cancel", { obligationId: claimedRow.id, reason: "coverage paused" }, claimed!.version, "2026-09-30T08:20:00Z"])).toMatchObject({ status: "success" })
+    expect((await db.query<{ from_state: string; to_state: string }>("select from_state, to_state from public.guard_check_obligation_events where obligation_id=$1 and event_type='CANCELLED'", [pending.id])).rows[0]).toEqual({
+      from_state: "PENDING", to_state: "CANCELLED",
+    })
+    expect((await db.query<{ from_state: string; to_state: string }>("select from_state, to_state from public.guard_check_obligation_events where obligation_id=$1 and event_type='CANCELLED'", [claimedRow.id])).rows[0]).toEqual({
+      from_state: "CLAIMED", to_state: "CANCELLED",
+    })
+    expect((await db.query<{ outcome: string }>("select outcome from public.guard_check_attempts where obligation_id=$1", [claimedRow.id])).rows[0].outcome).toBe("ABANDONED")
+  })
+
+  it("orders mixed TODAY windows as MORNING before EVENING and rejects an invalid cursor", async () => {
+    const first = await activateIncluded()
+    const second = await activateIncluded(otherLocation)
+    await approveSchedule()
+    await maintain("2026-09-30T08:00:00Z", "2026-09-30")
+    const today = await rpc("admin_guard_check_list_v1", [token, "2026-09-30T08:00:00Z", null, null, "TODAY", 50, null]) as RpcResult & { obligations?: Array<{ id: string; windowCode: string; coverageId: string }> }
+    expect((today.obligations || []).map(row => row.windowCode)).toEqual(["MORNING", "MORNING", "EVENING", "EVENING"])
+    expect(new Set((today.obligations || []).map(row => row.coverageId))).toEqual(new Set([first, second]))
+
+    const missing = await rpc("admin_guard_check_list_v1", [token, "2026-09-30T08:00:00Z", null, null, "TODAY", 50, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"])
+    expect(missing).toMatchObject({ status: "invalid", reason: "invalid_cursor" })
+    const evening = (today.obligations || []).find(row => row.windowCode === "EVENING")!
+    const wrongQueue = await rpc("admin_guard_check_list_v1", [token, "2026-09-30T08:00:00Z", null, null, "MORNING", 50, evening.id])
+    expect(wrongQueue).toMatchObject({ status: "invalid", reason: "invalid_cursor" })
+    const morning = (await obligations(first, "2026-09-30")).find(row => row.window_code === "MORNING")!
+    const otherDay = await rpc("admin_guard_check_list_v1", [token, "2026-09-29T08:00:00Z", "2026-09-29", null, "TODAY", 50, morning.id])
+    expect(otherDay).toMatchObject({ status: "invalid", reason: "invalid_cursor" })
+
+    const page = await rpc("admin_guard_check_list_v1", [token, "2026-09-30T08:00:00Z", null, null, "TODAY", 2, null]) as RpcResult & { obligations?: Array<{ id: string; windowCode: string }>; nextCursor?: string; hasMore?: boolean }
+    expect(page.hasMore).toBe(true)
+    expect((page.obligations || []).map(row => row.windowCode)).toEqual(["MORNING", "MORNING"])
+    const next = await rpc("admin_guard_check_list_v1", [token, "2026-09-30T08:00:00Z", null, null, "TODAY", 2, page.nextCursor]) as RpcResult & { obligations?: Array<{ id: string; windowCode: string }> }
+    expect((next.obligations || []).map(row => row.windowCode)).toEqual(["EVENING", "EVENING"])
+    expect((next.obligations || []).every(row => !(page.obligations || []).some(firstRow => firstRow.id === row.id))).toBe(true)
+  })
 })
+

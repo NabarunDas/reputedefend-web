@@ -35,10 +35,16 @@ function useCommand() {
   return { busy, message, run }
 }
 
-export function ClaimForm({ obligationId, version }: { obligationId: string; version: number }) {
+export function ClaimForm({
+  obligationId, version, label = "Claim check",
+}: {
+  obligationId: string
+  version: number
+  label?: string
+}) {
   const { busy, message, run } = useCommand()
   return <form onSubmit={event => { event.preventDefault(); void run("claim", { obligationId, version }) }}>
-    <button type="submit" disabled={busy}>Claim check</button>
+    <button type="submit" disabled={busy}>{label}</button>
     <p role="status">{message}</p>
   </form>
 }

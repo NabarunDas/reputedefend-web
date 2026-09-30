@@ -1,7 +1,14 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { loadGuardCheck } from "@/lib/guard/checks-queries"
-import { localWindowLabel, londonDateTime, obligationStateLabel, windowLabel } from "@/lib/guard/checks-model"
+import {
+  canCancelCheck,
+  claimedWorkSurface,
+  localWindowLabel,
+  londonDateTime,
+  obligationStateLabel,
+  windowLabel,
+} from "@/lib/guard/checks-model"
 import { Badge, PageHeader } from "../../../ui"
 import { CancelForm, ClaimForm, CompleteObservationForm, FailRetryForm, ReleaseForm } from "../forms"
 
@@ -13,6 +20,8 @@ export default async function GuardCheckDetailPage({ params }: { params: Promise
   const row = detail.obligation
   if (!row) notFound()
   const configured = detail.scheduleConfigured
+  const surface = claimedWorkSurface(row, detail.claimedByMe, detail.now)
+  const cancelAllowed = canCancelCheck(row) && surface !== "other"
   return <section className="page">
     <PageHeader
       title={`${row.locationName || "Location"} · ${windowLabel(row.windowCode)}`}
@@ -24,7 +33,7 @@ export default async function GuardCheckDetailPage({ params }: { params: Promise
       <p>{row.businessName} · {row.customerName}</p>
       <p>UK service date {row.serviceDate}. {localWindowLabel(row.localStart, row.localEnd, configured)}</p>
       <p>Window {londonDateTime(row.windowStartAt)} to {londonDateTime(row.windowEndAt)} Europe/London.</p>
-      <p><Badge>{obligationStateLabel(row.state)}</Badge> · {row.coverageBasis === "INCLUDED" ? "Included" : "Direct"}</p>
+      <p><Badge>{obligationStateLabel(row.state)}</Badge> · {row.coverageBasis === "INCLUDED" ? "Included" : "Direct"} · Coverage {row.coverageState || "unknown"}</p>
       <p>Attempts {row.attemptCount}. Retries {row.retryCount}.</p>
       <p>Queue wait {row.queueWaitSeconds ?? "—"}s. Handling {row.handlingSeconds ?? "—"}s.</p>
       {row.missedAt && <p>Missed at {londonDateTime(row.missedAt)}. Late history is kept if this is later completed.</p>}
@@ -38,12 +47,17 @@ export default async function GuardCheckDetailPage({ params }: { params: Promise
         ? <p className="muted">Upcoming. This window has not opened yet, so it cannot be claimed.</p>
         : null}
       {row.state === "PENDING" && !row.upcoming && row.windowOpen !== false && <ClaimForm obligationId={row.id} version={row.version} />}
-      {row.state === "CLAIMED" && <>
+      {surface === "expired" && <>
+        <p>Claim expired</p>
+        <ClaimForm obligationId={row.id} version={row.version} label="Reclaim check" />
+      </>}
+      {surface === "other" && <p className="muted">Claimed by another operator</p>}
+      {surface === "mine" && <>
         <ReleaseForm obligationId={row.id} version={row.version} />
         <CompleteObservationForm obligationId={row.id} version={row.version} />
         <FailRetryForm obligationId={row.id} version={row.version} />
-        <CancelForm obligationId={row.id} version={row.version} />
       </>}
+      {cancelAllowed && <CancelForm obligationId={row.id} version={row.version} />}
       {row.state === "CANCELLED" && <p className="muted">This check is cancelled. Historical observations are unchanged.</p>}
     </section>
     <section className="panel">

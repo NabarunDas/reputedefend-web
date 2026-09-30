@@ -1,32 +1,40 @@
 import Link from "next/link"
 import { loadGuardChecks } from "@/lib/guard/checks-queries"
 import {
+  guardCheckQueueHref,
   localWindowLabel,
   londonDateTime,
   obligationQueueLabel,
   windowLabel,
   type GuardCheckObligation,
+  type GuardCheckQueuePage,
+  type GuardCheckQueueParam,
 } from "@/lib/guard/checks-model"
 import { Badge, EmptyState, PageHeader } from "../../ui"
 
 export const metadata = { title: "Guard checks" }
 
 function Queue({
-  title, rows, actor,
+  title, page, actor, param, cursors,
 }: {
   title: string
-  rows: GuardCheckObligation[]
+  page: GuardCheckQueuePage
   actor?: string | null
+  param: GuardCheckQueueParam
+  cursors: Record<GuardCheckQueueParam, string | null>
 }) {
+  const rows = page.rows
   return <section className="panel">
     <h2>{title}</h2>
-    {!rows.length ? <EmptyState>No checks in this queue.</EmptyState> : <div className="table-scroll" role="region" aria-label={title} tabIndex={0}>
+    {page.invalidCursor && <p className="muted">That page is not valid for this queue. <Link href={guardCheckQueueHref(cursors, param, null)}>Back to the first page</Link></p>}
+    {!rows.length && !page.invalidCursor ? <EmptyState>No checks in this queue.</EmptyState> : null}
+    {rows.length ? <div className="table-scroll" role="region" aria-label={title} tabIndex={0}>
       <table>
         <thead><tr>
           <th>Location</th><th>Coverage</th><th>Window</th><th>Service date</th>
           <th>Status</th><th>Claim</th><th>Attempts</th><th>Baseline</th><th>Previous</th><th>Missed / late</th>
         </tr></thead>
-        <tbody>{rows.map(row => <tr key={row.id}>
+        <tbody>{rows.map((row: GuardCheckObligation) => <tr key={row.id}>
           <td>
             <Link href={`/guard/checks/${row.id}`}>{row.locationName}</Link>
             <br /><span className="muted">{row.businessName} · {row.customerName}</span>
@@ -48,13 +56,31 @@ function Queue({
           </td>
         </tr>)}</tbody>
       </table>
-    </div>}
+    </div> : null}
+    {(page.after || page.hasMore) && <p>
+      {page.after ? <Link href={guardCheckQueueHref(cursors, param, null)}>First page</Link> : null}
+      {page.after && page.hasMore ? " · " : null}
+      {page.hasMore && page.nextCursor ? <Link href={guardCheckQueueHref(cursors, param, page.nextCursor)}>View more</Link> : null}
+    </p>}
   </section>
 }
 
-export default async function GuardChecksPage() {
-  const checks = await loadGuardChecks()
+export default async function GuardChecksPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const params = await searchParams ?? {}
+  const checks = await loadGuardChecks(params)
   const actor = checks.claimedByMe
+  const cursors: Record<GuardCheckQueueParam, string | null> = {
+    morning: checks.morning.after ?? null,
+    evening: checks.evening.after ?? null,
+    claimed: checks.claimed.after ?? null,
+    retry: checks.retry.after ?? null,
+    missed: checks.missed.after ?? null,
+    completed: checks.completed.after ?? null,
+  }
   return <section className="page">
     <PageHeader
       title="Guard checks"
@@ -64,11 +90,11 @@ export default async function GuardChecksPage() {
       ? `Approved windows: morning ${localWindowLabel(checks.morningLocalStart, checks.morningLocalEnd)} · evening ${localWindowLabel(checks.eveningLocalStart, checks.eveningLocalEnd)}.`
       : "Schedule not configured."}</p>
     <p><Link href="/guard">Back to Guard onboarding</Link></p>
-    <Queue title="Morning" rows={checks.morning} actor={actor} />
-    <Queue title="Evening" rows={checks.evening} actor={actor} />
-    <Queue title="Claimed by me" rows={checks.claimed} actor={actor} />
-    <Queue title="Retry required" rows={checks.retry} actor={actor} />
-    <Queue title="Missed" rows={checks.missed} actor={actor} />
-    <Queue title="Completed today" rows={checks.completed} actor={actor} />
+    <Queue title="Morning" page={checks.morning} actor={actor} param="morning" cursors={cursors} />
+    <Queue title="Evening" page={checks.evening} actor={actor} param="evening" cursors={cursors} />
+    <Queue title="Claimed by me" page={checks.claimed} actor={actor} param="claimed" cursors={cursors} />
+    <Queue title="Retry required" page={checks.retry} actor={actor} param="retry" cursors={cursors} />
+    <Queue title="Missed" page={checks.missed} actor={actor} param="missed" cursors={cursors} />
+    <Queue title="Completed today" page={checks.completed} actor={actor} param="completed" cursors={cursors} />
   </section>
 }

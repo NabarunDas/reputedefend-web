@@ -50,6 +50,17 @@ CREATE TABLE public.guard_check_schedule_versions (
   retired_by uuid,
   record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1),
   CONSTRAINT guard_check_schedule_range CHECK (effective_to IS NULL OR effective_to > effective_from),
+  CONSTRAINT guard_check_schedule_approved_pair CHECK ((approved_at IS NULL) = (approved_by IS NULL)),
+  CONSTRAINT guard_check_schedule_retired_pair CHECK ((retired_at IS NULL) = (retired_by IS NULL)),
+  CONSTRAINT guard_check_schedule_draft CHECK (
+    status <> 'DRAFT'
+    OR (
+      approved_at IS NULL
+      AND approved_by IS NULL
+      AND retired_at IS NULL
+      AND retired_by IS NULL
+    )
+  ),
   CONSTRAINT guard_check_schedule_approved CHECK (
     status <> 'APPROVED'
     OR (
@@ -62,7 +73,13 @@ CREATE TABLE public.guard_check_schedule_versions (
       AND morning_end <= evening_start
       AND approved_at IS NOT NULL
       AND approved_by IS NOT NULL
+      AND retired_at IS NULL
+      AND retired_by IS NULL
     )
+  ),
+  CONSTRAINT guard_check_schedule_retired CHECK (
+    status <> 'RETIRED'
+    OR (retired_at IS NOT NULL AND retired_by IS NOT NULL)
   )
 );
 
@@ -218,6 +235,22 @@ CREATE TABLE public.guard_check_observations (
         'BUSINESS_NAME_CHANGED','REVIEW_COUNT_INCREASED','REVIEW_COUNT_DECREASED',
         'RATING_CHANGED','LATEST_REVIEW_CHANGED','PROFILE_UNAVAILABLE'
       ]::text[]
+    )
+  ),
+  CONSTRAINT guard_check_observation_available_complete CHECK (
+    profile_availability <> 'AVAILABLE'
+    OR classification NOT IN ('HEALTHY', 'CHANGE_DETECTED')
+    OR (
+      location_identified IS TRUE
+      AND char_length(btrim(displayed_business_name)) BETWEEN 1 AND 200
+      AND review_count IS NOT NULL
+      AND baseline_id IS NOT NULL
+      AND comparison_status = 'COMPARED'
+      AND char_length(btrim(profile_url)) BETWEEN 8 AND 500
+      AND (
+        (rating_available IS TRUE AND rating IS NOT NULL)
+        OR (rating_available IS FALSE AND rating IS NULL)
+      )
     )
   )
 );
@@ -400,8 +433,18 @@ BEGIN
   IF rota.id IS NULL OR rota.coverage_id IS DISTINCT FROM NEW.coverage_id THEN
     RAISE EXCEPTION 'obligation rota does not belong to coverage';
   END IF;
+  IF TG_OP = 'INSERT' AND rota.status IS DISTINCT FROM 'ACTIVE' THEN
+    RAISE EXCEPTION 'obligation rota is not active';
+  END IF;
   SELECT * INTO sched FROM public.guard_check_schedule_versions WHERE id = NEW.schedule_version_id;
   IF sched.id IS NULL THEN RAISE EXCEPTION 'obligation schedule does not exist'; END IF;
+  IF TG_OP = 'INSERT' AND (
+    sched.status IS DISTINCT FROM 'APPROVED'
+    OR sched.effective_from > NEW.service_date
+    OR (sched.effective_to IS NOT NULL AND NEW.service_date >= sched.effective_to)
+  ) THEN
+    RAISE EXCEPTION 'obligation schedule is not an approved applicable version';
+  END IF;
   IF NEW.timezone IS DISTINCT FROM sched.timezone THEN RAISE EXCEPTION 'obligation timezone mismatch'; END IF;
   IF NEW.window_code = 'MORNING' THEN
     expected_start := sched.morning_start;
@@ -822,6 +865,7 @@ DECLARE
   obl public.guard_check_obligations;
   cov public.guard_coverages;
   reason text;
+  prev_state text;
 BEGIN
   reason := btrim(coalesce(p_payload->>'reason', 'coverage_not_active'));
   SELECT * INTO obl FROM public.guard_check_obligations WHERE id = (p_payload->>'obligationId')::uuid FOR UPDATE;
@@ -830,9 +874,10 @@ BEGIN
   IF obl.state = 'COMPLETED' THEN RETURN jsonb_build_object('status','denied','reason','already_completed'); END IF;
   IF obl.state = 'CANCELLED' THEN RETURN jsonb_build_object('status','success','id', obl.id, 'version', obl.record_version); END IF;
   SELECT * INTO cov FROM public.guard_coverages WHERE id = obl.coverage_id;
-  IF cov.state = 'ACTIVE' AND obl.state = 'CLAIMED' THEN
+  IF cov.state = 'ACTIVE' THEN
     RETURN jsonb_build_object('status','denied','reason','coverage_still_active');
   END IF;
+  prev_state := obl.state;
   IF obl.state = 'CLAIMED' THEN
     PERFORM admin_private.guard_close_open_attempt_v1(obl.id, 'ABANDONED', reason, false, p_now);
   END IF;
@@ -845,7 +890,7 @@ BEGIN
         claim_expires_at = NULL
     WHERE id = obl.id
     RETURNING * INTO obl;
-  PERFORM admin_private.guard_check_append_event_v1(obl.id, p_actor, 'CANCELLED', 'CLAIMED', 'CANCELLED',
+  PERFORM admin_private.guard_check_append_event_v1(obl.id, p_actor, 'CANCELLED', prev_state, 'CANCELLED',
     jsonb_build_object('reason', reason));
   PERFORM admin_private.write_record_audit_v1(p_actor, 'GUARD_CHANGED', 'success', obl.id, p_request, 'guard_check_obligation',
     'Cancelled Guard check', jsonb_build_object('reason', reason));
@@ -868,7 +913,11 @@ BEGIN
     RETURN ARRAY['BASELINE_MISSING']::text[];
   END IF;
   IF p_availability = 'UNAVAILABLE' THEN codes := array_append(codes, 'PROFILE_UNAVAILABLE'); END IF;
-  IF p_name IS DISTINCT FROM btrim(p_baseline.displayed_business_name) THEN codes := array_append(codes, 'BUSINESS_NAME_CHANGED'); END IF;
+  IF char_length(btrim(coalesce(p_name, ''))) > 0
+    AND btrim(p_name) IS DISTINCT FROM btrim(p_baseline.displayed_business_name)
+  THEN
+    codes := array_append(codes, 'BUSINESS_NAME_CHANGED');
+  END IF;
   IF p_reviews IS NOT NULL AND p_baseline.review_count IS NOT NULL AND p_reviews > p_baseline.review_count THEN
     codes := array_append(codes, 'REVIEW_COUNT_INCREASED');
   END IF;
@@ -878,9 +927,13 @@ BEGIN
   IF p_rating_available IS TRUE AND p_rating IS NOT NULL AND p_baseline.rating IS NOT NULL AND p_rating IS DISTINCT FROM p_baseline.rating THEN
     codes := array_append(codes, 'RATING_CHANGED');
   END IF;
-  IF coalesce(p_latest_ref, '') IS DISTINCT FROM coalesce(p_baseline.latest_review_reference, '')
+  IF (
+    char_length(btrim(coalesce(p_latest_ref, ''))) > 0
+    OR p_latest_at IS NOT NULL
+  ) AND (
+    btrim(coalesce(p_latest_ref, '')) IS DISTINCT FROM coalesce(p_baseline.latest_review_reference, '')
     OR p_latest_at IS DISTINCT FROM p_baseline.latest_review_at
-  THEN
+  ) THEN
     codes := array_append(codes, 'LATEST_REVIEW_CHANGED');
   END IF;
   RETURN codes;
@@ -907,6 +960,7 @@ DECLARE
   requested_baseline uuid;
   codes text[];
   comparison text;
+  available_complete boolean;
   is_late boolean;
   v_seconds_late integer;
   v_handling integer;
@@ -959,11 +1013,31 @@ BEGIN
     RETURN jsonb_build_object('status','denied','reason','baseline_location_mismatch');
   END IF;
 
+  available_complete := (
+    location_ok IS TRUE
+    AND char_length(name) BETWEEN 1 AND 200
+    AND reviews IS NOT NULL
+    AND baseline.id IS NOT NULL
+    AND char_length(profile_url) BETWEEN 8 AND 500
+    AND (
+      (rating_available IS TRUE AND rating IS NOT NULL)
+      OR (rating_available IS FALSE AND rating IS NULL)
+    )
+  );
+  IF classification = 'CHANGE_DETECTED' AND baseline.id IS NULL THEN
+    RETURN jsonb_build_object('status','denied','reason','change_requires_baseline');
+  END IF;
+  IF classification IN ('HEALTHY', 'CHANGE_DETECTED') AND availability = 'AVAILABLE' AND available_complete IS NOT TRUE THEN
+    RETURN jsonb_build_object(
+      'status','denied',
+      'reason', CASE WHEN classification = 'HEALTHY' THEN 'incomplete_not_healthy' ELSE 'incomplete_not_comparable' END
+    );
+  END IF;
+
   codes := admin_private.guard_check_compare_v1(baseline, availability, name, reviews, rating, rating_available, latest_ref, latest_at);
   IF classification = 'HEALTHY' THEN
-    IF availability <> 'AVAILABLE' OR location_ok IS NOT TRUE OR char_length(name) < 1 OR reviews IS NULL
-      OR baseline.id IS NULL OR char_length(profile_url) < 8 OR (rating_available IS TRUE AND rating IS NULL)
-    THEN RETURN jsonb_build_object('status','denied','reason','incomplete_not_healthy'); END IF;
+    IF availability <> 'AVAILABLE' OR available_complete IS NOT TRUE THEN
+      RETURN jsonb_build_object('status','denied','reason','incomplete_not_healthy'); END IF;
     IF availability = 'UNAVAILABLE' THEN RETURN jsonb_build_object('status','denied','reason','unavailable_not_healthy'); END IF;
     IF baseline.id IS NULL THEN RETURN jsonb_build_object('status','denied','reason','baseline_missing'); END IF;
     IF codes <> '{}'::text[] THEN RETURN jsonb_build_object('status','denied','reason','changes_not_healthy'); END IF;
@@ -1066,6 +1140,7 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
     'businessName', b.display_name,
     'locationName', loc.location_name,
     'coverageBasis', o.coverage_basis,
+    'coverageState', g.state,
     'serviceDate', o.service_date,
     'windowCode', o.window_code,
     'state', o.state,
@@ -1109,7 +1184,13 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
   JOIN public.customers c ON c.id = o.customer_id
   JOIN public.businesses b ON b.id = o.business_id
   JOIN public.locations loc ON loc.id = o.location_id
+  JOIN public.guard_coverages g ON g.id = o.coverage_id
   WHERE o.id = p_id;
+$$;
+
+CREATE FUNCTION admin_private.guard_check_window_rank_v1(p_window text)
+RETURNS integer LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE p_window WHEN 'MORNING' THEN 1 WHEN 'EVENING' THEN 2 ELSE 3 END;
 $$;
 
 CREATE FUNCTION admin_private.guard_check_queue_match_v1(
@@ -1153,6 +1234,7 @@ DECLARE
   v_queue text;
   last_id uuid;
   has_more boolean := false;
+  cursor_obl public.guard_check_obligations;
 BEGIN
   IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
   actor := (public.admin_session_v1(p_token)->>'userId')::uuid;
@@ -1166,21 +1248,33 @@ BEGIN
     RETURN jsonb_build_object('status','invalid','reason','invalid_queue');
   END IF;
   v_limit := least(greatest(coalesce(p_limit, 50), 1), 100);
+  IF p_after IS NOT NULL THEN
+    SELECT * INTO cursor_obl FROM public.guard_check_obligations WHERE id = p_after;
+    IF cursor_obl.id IS NULL
+      OR NOT admin_private.guard_check_queue_match_v1(v_queue, p_window, service, actor, clock, cursor_obl)
+    THEN
+      RETURN jsonb_build_object(
+        'status','invalid','reason','invalid_cursor','serviceDate', service,
+        'timezone','Europe/London','queue', v_queue,'now', clock,
+        'obligations','[]'::jsonb,'hasMore', false,'nextCursor', NULL
+      );
+    END IF;
+  END IF;
   sched := admin_private.guard_resolve_schedule_v1(service);
-  SELECT coalesce(jsonb_agg(admin_private.guard_check_obligation_json_v1(q.id, clock) ORDER BY q.service_date, q.window_code, q.location_name, q.id), '[]'::jsonb)
+  SELECT coalesce(jsonb_agg(admin_private.guard_check_obligation_json_v1(q.id, clock) ORDER BY q.service_date, q.window_rank, q.location_name, q.id), '[]'::jsonb)
   INTO rows
   FROM (
-    SELECT o.id, o.service_date, o.window_code, loc.location_name
+    SELECT o.id, o.service_date, admin_private.guard_check_window_rank_v1(o.window_code) AS window_rank, loc.location_name
     FROM public.guard_check_obligations o
     JOIN public.locations loc ON loc.id = o.location_id
     WHERE admin_private.guard_check_queue_match_v1(v_queue, p_window, service, actor, clock, o)
-      AND (p_after IS NULL OR (o.service_date, o.window_code, loc.location_name, o.id) > (
-        SELECT x.service_date, x.window_code, xl.location_name, x.id
+      AND (p_after IS NULL OR (o.service_date, admin_private.guard_check_window_rank_v1(o.window_code), loc.location_name, o.id) > (
+        SELECT x.service_date, admin_private.guard_check_window_rank_v1(x.window_code), xl.location_name, x.id
         FROM public.guard_check_obligations x
         JOIN public.locations xl ON xl.id = x.location_id
         WHERE x.id = p_after
       ))
-    ORDER BY o.service_date, o.window_code, loc.location_name, o.id
+    ORDER BY o.service_date, admin_private.guard_check_window_rank_v1(o.window_code), loc.location_name, o.id
     LIMIT v_limit + 1
   ) q;
   IF jsonb_array_length(rows) > v_limit THEN

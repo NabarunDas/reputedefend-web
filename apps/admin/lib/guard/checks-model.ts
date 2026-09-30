@@ -12,6 +12,7 @@ export type GuardCheckObligation = {
   businessName?: string | null
   locationName?: string | null
   coverageBasis: string
+  coverageState?: string | null
   serviceDate: string
   windowCode: "MORNING" | "EVENING" | string
   state: string
@@ -88,16 +89,26 @@ export type GuardCheckList = {
   limit?: number
   hasMore?: boolean
   nextCursor?: string | null
+  status?: string
+  reason?: string
   obligations: GuardCheckObligation[]
 }
 
-export type GuardCheckQueues = Omit<GuardCheckList, "obligations" | "queue" | "nextCursor"> & {
-  morning: GuardCheckObligation[]
-  evening: GuardCheckObligation[]
-  claimed: GuardCheckObligation[]
-  retry: GuardCheckObligation[]
-  missed: GuardCheckObligation[]
-  completed: GuardCheckObligation[]
+export type GuardCheckQueuePage = {
+  rows: GuardCheckObligation[]
+  hasMore: boolean
+  nextCursor?: string | null
+  after?: string | null
+  invalidCursor?: boolean
+}
+
+export type GuardCheckQueues = Omit<GuardCheckList, "obligations" | "queue" | "nextCursor" | "hasMore"> & {
+  morning: GuardCheckQueuePage
+  evening: GuardCheckQueuePage
+  claimed: GuardCheckQueuePage
+  retry: GuardCheckQueuePage
+  missed: GuardCheckQueuePage
+  completed: GuardCheckQueuePage
 }
 
 export type GuardCheckDetail = Omit<GuardCheckList, "obligations"> & {
@@ -140,6 +151,22 @@ export function claimIsActive(obligation: GuardCheckObligation, now?: string | n
   return new Date(obligation.claimExpiresAt).getTime() > new Date(now).getTime()
 }
 
+export function canCancelCheck(obligation: GuardCheckObligation): boolean {
+  if (obligation.state !== "PENDING" && obligation.state !== "CLAIMED") return false
+  return Boolean(obligation.coverageState && obligation.coverageState !== "ACTIVE")
+}
+
+export function claimedWorkSurface(
+  obligation: GuardCheckObligation,
+  actor?: string | null,
+  now?: string | null,
+): "mine" | "other" | "expired" | "none" {
+  if (obligation.state !== "CLAIMED") return "none"
+  if (!claimIsActive(obligation, now)) return "expired"
+  if (obligation.claimedBy === actor) return "mine"
+  return "other"
+}
+
 export function queueFor(obligation: GuardCheckObligation, actor?: string | null, now?: string | null): string[] {
   const queues: string[] = []
   if (obligation.windowCode === "MORNING" && obligation.state !== "COMPLETED" && obligation.state !== "CANCELLED") queues.push("morning")
@@ -154,4 +181,55 @@ export function queueFor(obligation: GuardCheckObligation, actor?: string | null
 export function obligationQueueLabel(obligation: GuardCheckObligation): string {
   if (obligation.upcoming || obligation.windowOpen === false) return "Upcoming"
   return obligationStateLabel(obligation.state)
+}
+
+export const guardCheckQueueParams = {
+  morning: "MORNING",
+  evening: "EVENING",
+  claimed: "CLAIMED_BY_ME",
+  retry: "RETRY_REQUIRED",
+  missed: "MISSED",
+  completed: "COMPLETED_TODAY",
+} as const
+
+export type GuardCheckQueueParam = keyof typeof guardCheckQueueParams
+
+function firstQueryValue(value: string | string[] | undefined): string | null {
+  const text = Array.isArray(value) ? value[0] : value
+  return text && text.trim() ? text.trim() : null
+}
+
+export function parseCheckQueueCursors(
+  params: Record<string, string | string[] | undefined>,
+  isUuid: (value: string) => boolean,
+): Record<GuardCheckQueueParam, { after: string | null; invalid: boolean }> {
+  const read = (key: GuardCheckQueueParam) => {
+    const text = firstQueryValue(params[key])
+    if (!text) return { after: null, invalid: false }
+    if (!isUuid(text)) return { after: null, invalid: true }
+    return { after: text, invalid: false }
+  }
+  return {
+    morning: read("morning"),
+    evening: read("evening"),
+    claimed: read("claimed"),
+    retry: read("retry"),
+    missed: read("missed"),
+    completed: read("completed"),
+  }
+}
+
+export function guardCheckQueueHref(
+  current: Record<string, string | null | undefined>,
+  key: GuardCheckQueueParam,
+  cursor?: string | null,
+): string {
+  const next = new URLSearchParams()
+  for (const [name, value] of Object.entries(current)) {
+    if (name === key || !value) continue
+    next.set(name, value)
+  }
+  if (cursor) next.set(key, cursor)
+  const query = next.toString()
+  return query ? `/guard/checks?${query}` : "/guard/checks"
 }

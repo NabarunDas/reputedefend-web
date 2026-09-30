@@ -49,7 +49,9 @@ Guard coverage includes weekends and bank holidays. Obligation generation never 
 
 Generation is only for coverage in `ACTIVE` with an active Step 15 rota assignment. `PAUSED`, `ENDING`, `ENDED` and pre-activation states are excluded. Stripe/subscription status is not a separate truth. Included ACTIVE Guard is generated like paid ACTIVE Guard.
 
-The applicable rota assignment is snapshotted. Later rota changes do not rewrite historical obligations.
+A new obligation must reference an `APPROVED` schedule applicable to that service date (`effective_from <= service_date` and `effective_to` null or after the service date) and an `ACTIVE` rota for that coverage. Privileged inserts cannot use a DRAFT, future, expired, or RETIRED schedule, or a SUPERSEDED rota. The schedule and rota are snapshotted. Later retirement or rota supersession does not rewrite or invalidate historical obligations.
+
+Admin cancellation is for obligations that are no longer operationally eligible. `PENDING` and `CLAIMED` rows on still-`ACTIVE` coverage return `coverage_still_active`. Cancellation events record the actual prior state. Technical failure uses FAIL/RETRY, not cancel.
 
 ## Claim, attempts, missed and late
 
@@ -59,7 +61,11 @@ Missed is an immutable fact (`missed_at`), not a terminal state. On-time runs th
 
 ## Observations and baseline
 
-Capture method is MANUAL only. One completed attempt produces one authoritative observation. `HEALTHY` cannot be stored for an incomplete or unavailable profile. Rating may be explicitly not available. The Step 15 VERIFIED baseline remains the comparison authority and is never silently rewritten. Step 17 records bounded change candidates only. Step 18 will decide alerts.
+Capture method is MANUAL only. One completed attempt produces one authoritative observation. `AVAILABLE` observations classified `HEALTHY` or `CHANGE_DETECTED` require the complete operational set: correct location, displayed name, review count, valid profile URL, rating consistency, and the exact VERIFIED/AVAILABLE baseline. Missing comparison input is `INCOMPLETE`, not a fabricated business change. The comparison helper only compares facts that were genuinely captured, so a blank name or absent latest-review input cannot become `BUSINESS_NAME_CHANGED` or `LATEST_REVIEW_CHANGED`. Real captured review-count decreases remain visible. `PROFILE_UNAVAILABLE` stays a separate observation. Rating may be explicitly not available. The Step 15 VERIFIED baseline remains the comparison authority and is never silently rewritten. Step 17 records bounded change candidates only. Step 18 will decide alerts.
+
+Approved schedule attribution is authoritative: DRAFT has no approval or retirement facts; APPROVED requires `approved_at`/`approved_by` and no retirement facts; RETIRED requires `retired_at`/`retired_by`. Retiring a previously APPROVED schedule keeps the original approval facts and requires `effective_to`. A DRAFT may retire without approval, but retirement attribution is still required.
+
+Operational lists are bounded (default 50, max 100) and return `hasMore`/`nextCursor`. Mixed TODAY ordering uses explicit window rank (`MORNING` before `EVENING`). A cursor that does not exist or belongs to another queue or service-date context returns `invalid_cursor`. The Admin queues expose a first-page / view-more path and do not fetch all history client-side. An expired claim shows Reclaim, not complete/fail/release. Another operator's live claim exposes no mutations. Cancel is shown only where coverage is no longer ACTIVE.
 
 ## Daily job
 

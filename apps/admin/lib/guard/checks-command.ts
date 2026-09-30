@@ -46,6 +46,8 @@ function commandMessage(status: string | undefined, reason?: string): string {
   if (status === "denied" && reason === "change_requires_baseline") return "A verified baseline is required before recording a detected change."
   if (status === "denied" && reason === "change_requires_comparison") return "A detected change requires a real baseline comparison."
   if (status === "denied" && reason === "incomplete_not_healthy") return "Incomplete observations cannot be recorded as healthy."
+  if (status === "denied" && reason === "incomplete_not_comparable") return "Incomplete observations cannot be recorded as a detected change."
+  if (status === "denied" && reason === "coverage_still_active") return "This coverage is still active, so the check cannot be cancelled."
   if (status === "denied" && reason === "unavailable_not_healthy") return "An unavailable profile cannot be recorded as healthy."
   if (status === "denied" && reason === "baseline_missing") return "A verified baseline is required before a healthy observation."
   if (status === "denied" && reason === "baseline_location_mismatch") return "The baseline belongs to another location."

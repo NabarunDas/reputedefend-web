@@ -8,10 +8,21 @@ const mocks = vi.hoisted(() => {
     Disabled,
     provider: {
       mode: "disabled" as string,
-      createCustomer: vi.fn(async () => { throw new Disabled() }),
-      createPaymentCheckout: vi.fn(async () => { throw new Disabled() }),
-      createSetupCheckout: vi.fn(async () => { throw new Disabled() }),
-      retrieveCheckout: vi.fn(async () => null),
+      createCustomer: vi.fn(async (): Promise<{ id: string; livemode: false }> => { throw new Disabled() }),
+      createPaymentCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "payment"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
+      createSetupCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "setup"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
+      retrieveCheckout: vi.fn(async (): Promise<{
+        id: string
+        mode: "payment" | "setup"
+        status: string
+        paymentStatus: string | null
+        paymentIntentId: string | null
+        setupIntentId: string | null
+        customerId: string | null
+        url: string | null
+        metadata: Record<string, string>
+        livemode: false
+      } | null> => null),
     },
   }
 })

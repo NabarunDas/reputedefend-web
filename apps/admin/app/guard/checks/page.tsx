@@ -6,6 +6,7 @@ import {
   obligationStateLabel,
   queueFor,
   windowLabel,
+  type GuardCheckObligation,
 } from "@/lib/guard/checks-model"
 import { Badge, EmptyState, PageHeader } from "../../ui"
 
@@ -15,7 +16,7 @@ function Queue({
   title, rows, actor,
 }: {
   title: string
-  rows: ReturnType<typeof loadGuardChecks> extends Promise<infer T> ? T["obligations"] : never
+  rows: GuardCheckObligation[]
   actor?: string | null
 }) {
   return <section className="panel">

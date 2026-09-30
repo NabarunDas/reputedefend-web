@@ -388,7 +388,7 @@ describe("guard manual checks SQL", () => {
     expect((await obligations(coverageId, "2026-09-30")).find(row => row.id === morning.id)).toMatchObject({ late: false, missed_at: null })
     expect(completed?.handlingSeconds).toBe(600)
 
-    const eveningClaim = await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T17:30:00Z"])
+    expect(await rpc("admin_guard_check_command_v1", [token, key(), "claim", { obligationId: evening.id }, evening.record_version, "2026-09-30T17:30:00Z"])).toMatchObject({ status: "success" })
     await maintain("2026-09-30T18:01:00Z", "2026-09-30")
     const eveningAfterMiss = (await obligations(coverageId, "2026-09-30")).find(row => row.id === evening.id)!
     const late = await rpc("admin_guard_check_command_v1", [token, key(), "complete", { obligationId: evening.id, ...healthyPayload() }, eveningAfterMiss.record_version, "2026-09-30T18:10:00Z"])

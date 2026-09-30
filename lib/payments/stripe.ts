@@ -1,6 +1,6 @@
 import "server-only"
 import Stripe from "stripe"
-import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, stripeSecret, type PaymentEnv } from "./config"
+import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, type PaymentEnv } from "./config"
 import { assertSafeMetadata, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 

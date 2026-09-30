@@ -6,6 +6,7 @@ vi.mock("../../../../lib/payments", () => ({
   paymentProvider: () => fake,
 }))
 
+import type { JobRpc } from "../jobs/model"
 import { collectPaymentHandler, processStripeEventHandler } from "./handlers"
 
 const obligationId = "55555555-5555-4555-8555-555555555555"
@@ -15,24 +16,23 @@ const orderId = "33333333-3333-4333-8333-333333333333"
 const key = "44444444-4444-4444-8444-444444444444"
 
 function rpcMock() {
-  return {
-    rpc: vi.fn(async (name: string) => {
-      if (name === "payment_collect_prepare_v1") {
-        return {
-          status: "success",
-          idempotencyKey: key,
-          providerOperationId: operationId,
-          attemptId: obligationId,
-          amountMinor: 29900,
-          stripeCustomerId: "cus_test",
-          paymentMethodId: "pm_test_saved",
-          serviceOrderId: orderId,
-          customerId,
-        }
+  const rpc = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+    if (name === "payment_collect_prepare_v1") {
+      return {
+        status: "success",
+        idempotencyKey: key,
+        providerOperationId: operationId,
+        attemptId: obligationId,
+        amountMinor: 29900,
+        stripeCustomerId: "cus_test",
+        paymentMethodId: "pm_test_saved",
+        serviceOrderId: orderId,
+        customerId,
       }
-      return { status: "success" }
-    }),
-  }
+    }
+    return { status: "success" }
+  })
+  return { rpc, asJob: { rpc } as unknown as JobRpc }
 }
 
 beforeEach(() => {
@@ -47,7 +47,7 @@ describe("payment job handlers", () => {
     const result = await collectPaymentHandler().execute({
       idempotencyKey: key,
       payload: { obligationId },
-      rpc,
+      rpc: rpc.asJob,
     })
     expect(result).toEqual({ ok: false, retryable: true, error: "rate_limit" })
     expect(rpc.rpc.mock.calls.map(call => call[0])).toEqual(["payment_collect_prepare_v1"])
@@ -59,7 +59,7 @@ describe("payment job handlers", () => {
     const result = await collectPaymentHandler().execute({
       idempotencyKey: key,
       payload: { obligationId },
-      rpc,
+      rpc: rpc.asJob,
     })
     expect(result).toEqual({ ok: false, retryable: false, error: "card_declined" })
     expect(rpc.rpc.mock.calls.map(call => call[0])).toEqual([
@@ -75,7 +75,7 @@ describe("payment job handlers", () => {
     const result = await collectPaymentHandler().execute({
       idempotencyKey: key,
       payload: { obligationId },
-      rpc,
+      rpc: rpc.asJob,
     })
     expect(result).toEqual({ ok: true })
     expect(rpc.rpc.mock.calls[2][1]).toMatchObject({ p_type: "payment_intent.requires_action" })
@@ -86,7 +86,7 @@ describe("payment job handlers", () => {
     const result = await processStripeEventHandler().execute({
       idempotencyKey: key,
       payload: { eventId: "evt_live", eventType: "payment_intent.succeeded", objectId: "pi_live", livemode: true },
-      rpc,
+      rpc: rpc.asJob,
     })
     expect(result).toEqual({ ok: true })
     expect(rpc.rpc).toHaveBeenCalledWith("payment_apply_provider_event_v1", expect.objectContaining({

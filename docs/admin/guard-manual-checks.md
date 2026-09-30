@@ -1,8 +1,8 @@
 # Guard manual checks — Step 17
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE MONITORING DISABLED**
+Status: **DATABASE APPLIED / LIVE MONITORING DISABLED**
 
-The additive migration `20260930203750_guard_manual_checks_v1.sql` exists in source only after applied Step 16 `20260930180050_guard_subscriptions_billing_v1.sql`. It has not been applied. Do not apply it from this PR. Do not create another Step 17 migration. Do not modify already-applied SQL.
+The additive migration `20260930203750_guard_manual_checks_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 16 `20260930180050_guard_subscriptions_billing_v1.sql`. The database is ready for Step 17 manual-check operations, but live monitoring remains disabled. No APPROVED production schedule exists and `GUARD_CHECKS_ENABLED` remains unset. Do not replay or modify the applied migration.
 
 This step implements manual Guard monitoring checks: versioned Europe/London schedules, twice-daily MORNING/EVENING obligations, Admin claim/complete, immutable observations, baseline comparison, retries, missed/late history and handling-time metrics.
 
@@ -77,7 +77,7 @@ All new public Step 17 tables have RLS enabled. No direct CRUD for PUBLIC, anon,
 
 ## Out of scope
 
-- applying this migration
+- replaying or modifying this applied migration
 - approving or seeding production window times
 - enabling `GUARD_CHECKS_ENABLED`
 - Google API, scraping or browser automation

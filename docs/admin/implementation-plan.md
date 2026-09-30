@@ -460,6 +460,8 @@ Acceptance: pence arithmetic is correct; Guard discount yields £239.20/£119.20
 ## Step 14 Stripe upfront and success-fee payments
 Deliver: hosted Checkout, payment-method setup, fee obligations, webhook processing, payment ledger, invoices/receipts, authentication-required recovery and Finance approval of success fees.
 
+SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / STRIPE DISABLED. Additive `20260930132106_stripe_payments_v1.sql` is unapplied. Official Stripe Node SDK `22.6.2` (API version `2026-08-26.dahlia` from the SDK) is pinned. Provider mode defaults to `disabled`. Managed design is Checkout setup / SetupIntent now, then an off-session PaymentIntent only after a qualifying evidenced outcome and fresh-auth billing approval. There is no long-lived authorization/capture hold. Guided Checkout `mode=payment` uses the immutable Step 13 order amount. `/pay/return` cannot mark paid. Webhook `/api/webhooks/stripe` verifies the raw body and enqueues `PROCESS_STRIPE_EVENT`. No Stripe secrets are configured. No webhook is registered. No Stripe objects were created. No money moved. Live mode is disabled. Guard subscriptions are not implemented. Step 11/12 mail remain disabled. Cron remains daily. See stripe-payments.md.
+
 Acceptance: no charge before defined success for Managed; return page cannot mark paid; retries and duplicate webhooks create one collection; failing/SCA-required cards remain unpaid and actionable. Test mode only until finance launch gate. Depends on 10–13.
 
 

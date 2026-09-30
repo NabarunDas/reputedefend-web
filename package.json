@@ -1,7 +1,7 @@
 {
   "name": "v0-project",
   "version": "1.0.0",
-  "description": "ProfileRelaunch web application \u2013 Google Business Profile recovery and review protection",
+  "description": "ProfileRelaunch web application – Google Business Profile recovery and review protection",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
@@ -43,7 +43,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "resend": "^6.27.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

@@ -11,6 +11,14 @@ describe("guard alert validation", () => {
       .toMatchObject({ severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE" })
   })
 
+  it("requires a disposition to review new evidence", () => {
+    expect(isGuardAlertOperation("review_new_evidence")).toBe(true)
+    expect(guardAlertArgs("review_new_evidence", { alertId, version: 2, reason: "Reviewed the later observation." })).toBeNull()
+    expect(guardAlertArgs("review_new_evidence", {
+      alertId, version: 2, disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Reviewed the later observation.",
+    })).toMatchObject({ disposition: "CONFIRMED_CUSTOMER_ISSUE" })
+  })
+
   it("requires an explicit case type and rejects incomplete notification copy", () => {
     expect(guardAlertArgs("create_intervention_case", { alertId, version: 1 })).toBeNull()
     expect(guardAlertArgs("create_intervention_case", { alertId, version: 1, caseType: "PROFILE_RECOVERY" })?.caseType).toBe("PROFILE_RECOVERY")

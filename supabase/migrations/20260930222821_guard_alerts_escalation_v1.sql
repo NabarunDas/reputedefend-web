@@ -86,6 +86,7 @@ CREATE TABLE public.guard_alerts (
       AND dismissed_at IS NULL AND dismissed_by IS NULL
       AND review_disposition IN ('CONFIRMED_CUSTOMER_ISSUE','INTERNAL_ONLY')
       AND severity <> 'UNASSESSED'
+      AND needs_review IS FALSE
     )
   ),
   CONSTRAINT guard_alert_dismissed CHECK (
@@ -127,7 +128,7 @@ CREATE TABLE public.guard_alert_events (
   actor_type text NOT NULL CHECK (actor_type IN ('ADMIN','SYSTEM')),
   actor_id uuid,
   event text NOT NULL CHECK (event IN (
-    'ALERT_OPENED','OBSERVATION_ATTACHED','ACKNOWLEDGED','SEVERITY_CHANGED','ESCALATED',
+    'ALERT_OPENED','OBSERVATION_ATTACHED','ACKNOWLEDGED','EVIDENCE_REVIEWED','SEVERITY_CHANGED','ESCALATED',
     'NOTIFICATION_PREPARED','NOTIFICATION_APPROVED','NOTIFICATION_QUEUED','NOTIFICATION_DELIVERY_FAILED',
     'CASE_LINKED','SERVICE_ACTION_OPENED','COVERAGE_PAUSED','COVERAGE_RESUMED','RESOLVED','DISMISSED'
   )),
@@ -196,6 +197,10 @@ CREATE TABLE public.guard_service_actions (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT guard_service_action_details CHECK (length(details) <= 1000),
+  CONSTRAINT guard_service_action_kind_reason CHECK (
+    (kind = 'CONTACT_RECOVERY' AND reason_code IN ('EMAIL_FAILED_PHONE_AVAILABLE','NO_REACHABLE_VERIFIED_CONTACT'))
+    OR (kind = 'ACCESS_RECOVERY' AND reason_code = 'ACCESS_NOT_VERIFIED')
+  ),
   CONSTRAINT guard_service_action_open CHECK (
     state <> 'OPEN' OR (acknowledged_at IS NULL AND resolved_at IS NULL AND cancelled_at IS NULL)
   ),
@@ -301,6 +306,16 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   END;
 $$;
 
+CREATE FUNCTION admin_private.guard_alert_observation_is_customer_issue_v1(p_classification text, p_codes text[])
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT
+    p_classification = 'PROFILE_UNAVAILABLE'
+    OR (
+      p_classification = 'CHANGE_DETECTED'
+      AND coalesce(p_codes, '{}'::text[]) && admin_private.guard_alert_customer_issue_codes_v1()
+    );
+$$;
+
 CREATE FUNCTION admin_private.guard_alert_has_customer_issue_v1(p_alert uuid) RETURNS boolean
 LANGUAGE sql STABLE SET search_path='' AS $$
   SELECT EXISTS (
@@ -308,11 +323,36 @@ LANGUAGE sql STABLE SET search_path='' AS $$
     FROM public.guard_alert_observations link
     JOIN public.guard_check_observations obs ON obs.id = link.observation_id
     WHERE link.alert_id = p_alert
-      AND (
-        obs.classification IN ('CHANGE_DETECTED','PROFILE_UNAVAILABLE')
-        OR obs.change_codes && admin_private.guard_alert_customer_issue_codes_v1()
-      )
+      AND admin_private.guard_alert_observation_is_customer_issue_v1(obs.classification, obs.change_codes)
   );
+$$;
+
+CREATE FUNCTION admin_private.guard_alert_first_customer_issue_at_v1(p_alert uuid) RETURNS timestamptz
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT min(obs.observed_at)
+  FROM public.guard_alert_observations link
+  JOIN public.guard_check_observations obs ON obs.id = link.observation_id
+  WHERE link.alert_id = p_alert
+    AND admin_private.guard_alert_observation_is_customer_issue_v1(obs.classification, obs.change_codes);
+$$;
+
+CREATE FUNCTION admin_private.guard_alert_notification_allowed_v1(
+  p_kind text, p_state text, p_disposition text, p_needs_review boolean
+) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT
+    p_disposition = 'CONFIRMED_CUSTOMER_ISSUE'
+    AND (
+      (p_kind IN ('INITIAL','FOLLOW_UP') AND p_state = 'ACKNOWLEDGED' AND p_needs_review IS NOT TRUE)
+      OR (p_kind = 'RESOLUTION' AND p_state = 'RESOLVED')
+    );
+$$;
+
+CREATE FUNCTION admin_private.guard_alert_current_email_v1(p_customer uuid) RETURNS text
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT admin_private.normalize_email_v1(c.email)
+  FROM public.customers c
+  WHERE c.id = p_customer
+    AND admin_private.contact_verified_v1(c.id, 'email');
 $$;
 
 CREATE FUNCTION admin_private.guard_alert_scope_matches_v1(
@@ -329,7 +369,7 @@ $$;
 
 CREATE FUNCTION admin_private.guard_alert_validate_scope_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE cov public.guard_coverages; obs public.guard_check_observations;
+DECLARE cov public.guard_coverages; first_obs public.guard_check_observations; latest_obs public.guard_check_observations;
 BEGIN
   SELECT * INTO cov FROM public.guard_coverages WHERE id = NEW.coverage_id;
   IF cov.id IS NULL
@@ -337,13 +377,31 @@ BEGIN
     OR cov.business_id IS DISTINCT FROM NEW.business_id
     OR cov.location_id IS DISTINCT FROM NEW.location_id
   THEN RAISE EXCEPTION 'Guard alert scope must match coverage'; END IF;
-  SELECT * INTO obs FROM public.guard_check_observations WHERE id = NEW.first_observation_id;
-  IF obs.id IS NULL OR obs.coverage_id IS DISTINCT FROM NEW.coverage_id OR obs.location_id IS DISTINCT FROM NEW.location_id THEN
+  SELECT * INTO first_obs FROM public.guard_check_observations WHERE id = NEW.first_observation_id;
+  IF first_obs.id IS NULL OR first_obs.coverage_id IS DISTINCT FROM NEW.coverage_id OR first_obs.location_id IS DISTINCT FROM NEW.location_id THEN
     RAISE EXCEPTION 'Guard alert observation is outside coverage scope';
   END IF;
-  SELECT * INTO obs FROM public.guard_check_observations WHERE id = NEW.latest_observation_id;
-  IF obs.id IS NULL OR obs.coverage_id IS DISTINCT FROM NEW.coverage_id OR obs.location_id IS DISTINCT FROM NEW.location_id THEN
+  SELECT * INTO latest_obs FROM public.guard_check_observations WHERE id = NEW.latest_observation_id;
+  IF latest_obs.id IS NULL OR latest_obs.coverage_id IS DISTINCT FROM NEW.coverage_id OR latest_obs.location_id IS DISTINCT FROM NEW.location_id THEN
     RAISE EXCEPTION 'Guard alert observation is outside coverage scope';
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.first_observation_id IS DISTINCT FROM NEW.latest_observation_id
+      OR NEW.first_observed_at IS DISTINCT FROM first_obs.observed_at
+      OR NEW.latest_observed_at IS DISTINCT FROM first_obs.observed_at
+      OR NEW.issue_codes IS DISTINCT FROM first_obs.change_codes
+    THEN RAISE EXCEPTION 'Guard alert opening observation snapshot is invalid'; END IF;
+  ELSIF NEW.latest_observation_id IS DISTINCT FROM OLD.latest_observation_id THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.guard_alert_observations link
+      WHERE link.alert_id = NEW.id AND link.observation_id = NEW.latest_observation_id
+    ) THEN RAISE EXCEPTION 'Guard alert latest observation must already be linked'; END IF;
+    IF NEW.latest_observed_at IS DISTINCT FROM latest_obs.observed_at THEN
+      RAISE EXCEPTION 'Guard alert latest observed time must match the linked observation';
+    END IF;
+  ELSIF NEW.latest_observed_at IS DISTINCT FROM OLD.latest_observed_at
+    OR NEW.latest_observed_at IS DISTINCT FROM latest_obs.observed_at
+  THEN RAISE EXCEPTION 'Guard alert latest observed time must match the linked observation';
   END IF;
   RETURN NEW;
 END; $$;
@@ -360,10 +418,16 @@ BEGIN
     OR NEW.business_id IS DISTINCT FROM OLD.business_id
     OR NEW.location_id IS DISTINCT FROM OLD.location_id
     OR NEW.first_observation_id IS DISTINCT FROM OLD.first_observation_id
+    OR NEW.first_observed_at IS DISTINCT FROM OLD.first_observed_at
     OR NEW.opened_at IS DISTINCT FROM OLD.opened_at
   THEN RAISE EXCEPTION 'Guard alert identity is immutable'; END IF;
-  IF OLD.state IN ('RESOLVED','DISMISSED') AND NEW.state IS DISTINCT FROM OLD.state THEN
-    RAISE EXCEPTION 'Terminal Guard alerts cannot be reopened';
+  IF OLD.state IN ('RESOLVED','DISMISSED') THEN
+    IF NEW.state IS DISTINCT FROM OLD.state
+      OR NEW.resolved_at IS DISTINCT FROM OLD.resolved_at
+      OR NEW.resolved_by IS DISTINCT FROM OLD.resolved_by
+      OR NEW.dismissed_at IS DISTINCT FROM OLD.dismissed_at
+      OR NEW.dismissed_by IS DISTINCT FROM OLD.dismissed_by
+    THEN RAISE EXCEPTION 'Terminal Guard alerts cannot be reopened'; END IF;
   END IF;
   IF NEW.state = 'ACKNOWLEDGED' AND NEW.severity = 'UNASSESSED' THEN
     RAISE EXCEPTION 'Acknowledged Guard alerts cannot remain unassessed';
@@ -394,6 +458,9 @@ BEGIN
   THEN RAISE EXCEPTION 'Guard alert observation is outside coverage scope'; END IF;
   IF NEW.classification IS DISTINCT FROM obs.classification THEN
     RAISE EXCEPTION 'Guard alert observation classification snapshot mismatch';
+  END IF;
+  IF NEW.issue_codes IS DISTINCT FROM obs.change_codes THEN
+    RAISE EXCEPTION 'Guard alert observation issue-code snapshot mismatch';
   END IF;
   RETURN NEW;
 END; $$;
@@ -428,17 +495,25 @@ BEGIN
       OR NEW.approved_at IS NULL
       OR NEW.approved_by IS NULL
     THEN RAISE EXCEPTION 'Guard alert notifications are immutable'; END IF;
+    SELECT * INTO alert FROM public.guard_alerts WHERE id = NEW.alert_id;
+    IF NOT admin_private.guard_alert_notification_allowed_v1(
+      NEW.notification_kind, alert.state, alert.review_disposition, alert.needs_review
+    ) THEN RAISE EXCEPTION 'Guard alert notification kind is not valid for this alert state'; END IF;
     RETURN NEW;
   END IF;
   SELECT * INTO alert FROM public.guard_alerts WHERE id = NEW.alert_id;
   SELECT * INTO comm FROM public.communications WHERE id = NEW.communication_id;
   IF alert.id IS NULL OR comm.id IS NULL THEN RAISE EXCEPTION 'Guard alert notification is incomplete'; END IF;
-  IF comm.guard_alert_id IS DISTINCT FROM alert.id THEN
-    RAISE EXCEPTION 'Guard alert notification communication parent mismatch';
-  END IF;
-  IF alert.review_disposition IS DISTINCT FROM 'CONFIRMED_CUSTOMER_ISSUE' OR alert.state NOT IN ('ACKNOWLEDGED','RESOLVED') THEN
-    RAISE EXCEPTION 'Customer Guard alert notifications require a confirmed customer issue';
-  END IF;
+  IF comm.guard_alert_id IS DISTINCT FROM alert.id
+    OR comm.customer_id IS DISTINCT FROM alert.customer_id
+    OR comm.business_id IS DISTINCT FROM alert.business_id
+    OR comm.template_key IS DISTINCT FROM 'GUARD_ALERT'
+    OR comm.direction IS DISTINCT FROM 'OUTBOUND'
+    OR comm.recipient IS DISTINCT FROM admin_private.guard_alert_current_email_v1(alert.customer_id)
+  THEN RAISE EXCEPTION 'Guard alert notification communication parent mismatch'; END IF;
+  IF NOT admin_private.guard_alert_notification_allowed_v1(
+    NEW.notification_kind, alert.state, alert.review_disposition, alert.needs_review
+  ) THEN RAISE EXCEPTION 'Guard alert notification kind is not valid for this alert state'; END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER guard_alert_notifications_protect
@@ -455,13 +530,16 @@ BEGIN
   SELECT * INTO alert FROM public.guard_alerts WHERE id = NEW.alert_id;
   SELECT * INTO cs FROM public.cases WHERE id = NEW.case_id;
   IF alert.id IS NULL OR cs.id IS NULL THEN RAISE EXCEPTION 'Guard alert case link is incomplete'; END IF;
-  IF alert.review_disposition IS DISTINCT FROM 'CONFIRMED_CUSTOMER_ISSUE' OR alert.state NOT IN ('ACKNOWLEDGED','RESOLVED') THEN
-    RAISE EXCEPTION 'Intervention cases require a confirmed customer issue';
+  IF alert.review_disposition IS DISTINCT FROM 'CONFIRMED_CUSTOMER_ISSUE' OR alert.state IS DISTINCT FROM 'ACKNOWLEDGED' THEN
+    RAISE EXCEPTION 'Intervention cases require a confirmed acknowledged Guard alert';
   END IF;
   IF cs.customer_id IS DISTINCT FROM alert.customer_id
     OR cs.business_id IS DISTINCT FROM alert.business_id
     OR cs.location_id IS DISTINCT FROM alert.location_id
   THEN RAISE EXCEPTION 'Intervention case scope must match the Guard alert'; END IF;
+  IF cs.case_type NOT IN ('PROFILE_RECOVERY','REVIEW_PROTECTION') OR cs.status IN ('CLOSED','CANCELLED') THEN
+    RAISE EXCEPTION 'Intervention case is not suitable to link';
+  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER guard_alert_cases_protect
@@ -576,17 +654,16 @@ BEGIN
   THEN
     RETURN jsonb_build_object(
       'eligible', false, 'reason', 'no_confirmed_customer_issue', 'policy', 'PAID_GUARD_MANAGED_20',
-      'issueObservedAt', alert.first_observed_at, 'service', p_service
+      'issueObservedAt', NULL, 'service', p_service
     );
   END IF;
-  SELECT min(obs.observed_at) INTO issue_at
-  FROM public.guard_alert_observations link
-  JOIN public.guard_check_observations obs ON obs.id = link.observation_id
-  WHERE link.alert_id = alert.id
-    AND (
-      obs.classification IN ('CHANGE_DETECTED','PROFILE_UNAVAILABLE')
-      OR obs.change_codes && admin_private.guard_alert_customer_issue_codes_v1()
+  issue_at := admin_private.guard_alert_first_customer_issue_at_v1(alert.id);
+  IF issue_at IS NULL THEN
+    RETURN jsonb_build_object(
+      'eligible', false, 'reason', 'no_confirmed_customer_issue', 'policy', 'PAID_GUARD_MANAGED_20',
+      'issueObservedAt', NULL, 'service', p_service
     );
+  END IF;
   IF p_service IS NULL OR p_service NOT IN ('MANAGED_RELAUNCH','MANAGED_REVIEW') THEN
     RETURN jsonb_build_object(
       'eligible', false, 'reason', 'guided_or_undecided_not_eligible', 'policy', 'PAID_GUARD_MANAGED_20',
@@ -673,10 +750,18 @@ BEGIN
     'Guard alert email delivery failed. Do not automatically resend.',
     'SYSTEM', NULL
   );
-  PERFORM admin_private.guard_alert_append_event_v1(
-    alert.id, 'SYSTEM', NULL, 'NOTIFICATION_DELIVERY_FAILED', alert.state, alert.state, alert.severity, alert.severity,
-    comm.delivery_status, jsonb_build_object('communicationId', comm.id, 'deliveryStatus', comm.delivery_status, 'reasonCode', reason)
-  );
+  IF NOT EXISTS (
+    SELECT 1 FROM public.guard_alert_events e
+    WHERE e.alert_id = alert.id
+      AND e.event = 'NOTIFICATION_DELIVERY_FAILED'
+      AND e.details->>'communicationId' = comm.id::text
+      AND e.details->>'deliveryStatus' = comm.delivery_status
+  ) THEN
+    PERFORM admin_private.guard_alert_append_event_v1(
+      alert.id, 'SYSTEM', NULL, 'NOTIFICATION_DELIVERY_FAILED', alert.state, alert.state, alert.severity, alert.severity,
+      comm.delivery_status, jsonb_build_object('communicationId', comm.id, 'deliveryStatus', comm.delivery_status, 'reasonCode', reason)
+    );
+  END IF;
   RETURN action;
 END; $$;
 
@@ -735,8 +820,8 @@ BEGIN
     VALUES (alert.id, obs.id, obs.change_codes, obs.classification)
     ON CONFLICT (observation_id) DO NOTHING;
     UPDATE public.guard_alerts SET
-      latest_observation_id = obs.id,
-      latest_observed_at = GREATEST(latest_observed_at, obs.observed_at),
+      latest_observation_id = CASE WHEN obs.observed_at >= latest_observed_at THEN obs.id ELSE latest_observation_id END,
+      latest_observed_at = CASE WHEN obs.observed_at >= latest_observed_at THEN obs.observed_at ELSE latest_observed_at END,
       issue_codes = admin_private.guard_alert_union_codes_v1(issue_codes, obs.change_codes),
       needs_review = true,
       updated_at = now(),
@@ -768,8 +853,8 @@ BEGIN
     VALUES (created.id, obs.id, obs.change_codes, obs.classification)
     ON CONFLICT (observation_id) DO NOTHING;
     UPDATE public.guard_alerts SET
-      latest_observation_id = obs.id,
-      latest_observed_at = GREATEST(latest_observed_at, obs.observed_at),
+      latest_observation_id = CASE WHEN obs.observed_at >= latest_observed_at THEN obs.id ELSE latest_observation_id END,
+      latest_observed_at = CASE WHEN obs.observed_at >= latest_observed_at THEN obs.observed_at ELSE latest_observed_at END,
       issue_codes = admin_private.guard_alert_union_codes_v1(issue_codes, obs.change_codes),
       needs_review = true,
       updated_at = now(),
@@ -799,10 +884,11 @@ BEGIN
   RETURN admin_private.guard_process_alert_candidate_v1(p_observation);
 END; $$;
 
-CREATE FUNCTION admin_private.guard_maintain_alerts_v1(p_now timestamptz DEFAULT NULL)
+CREATE FUNCTION admin_private.guard_maintain_alerts_v1(p_now timestamptz DEFAULT NULL, p_batch integer DEFAULT 50)
 RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   clock timestamptz := coalesce(p_now, now());
+  batch integer := least(greatest(coalesce(p_batch, 50), 1), 100);
   obs public.guard_check_observations;
   cov public.guard_coverages;
   comm public.communications;
@@ -810,6 +896,10 @@ DECLARE
   recovered integer := 0;
   access_opened integer := 0;
   delivery integer := 0;
+  scanned integer := 0;
+  more_candidates boolean := false;
+  more_delivery boolean := false;
+  more_coverages boolean := false;
 BEGIN
   FOR obs IN
     SELECT o.*
@@ -817,7 +907,9 @@ BEGIN
     WHERE o.attention_candidate IS TRUE
       AND NOT EXISTS (SELECT 1 FROM public.guard_alert_observations l WHERE l.observation_id = o.id)
     ORDER BY o.observed_at, o.id
+    LIMIT batch + 1
   LOOP
+    IF processed >= batch THEN more_candidates := true; EXIT; END IF;
     PERFORM admin_private.guard_process_alert_candidate_v1(obs.id);
     processed := processed + 1;
   END LOOP;
@@ -826,7 +918,17 @@ BEGIN
     FROM public.communications c
     WHERE c.guard_alert_id IS NOT NULL
       AND c.delivery_status IN ('BOUNCED','COMPLAINED','SUPPRESSED','FAILED')
+      AND NOT EXISTS (
+        SELECT 1 FROM public.guard_alert_events e
+        WHERE e.alert_id = c.guard_alert_id
+          AND e.event = 'NOTIFICATION_DELIVERY_FAILED'
+          AND e.details->>'communicationId' = c.id::text
+          AND e.details->>'deliveryStatus' = c.delivery_status
+      )
+    ORDER BY c.id
+    LIMIT batch + 1
   LOOP
+    IF delivery >= batch THEN more_delivery := true; EXIT; END IF;
     PERFORM admin_private.guard_alert_handle_delivery_failure_v1(comm.id);
     delivery := delivery + 1;
   END LOOP;
@@ -834,9 +936,28 @@ BEGIN
     SELECT g.*
     FROM public.guard_coverages g
     WHERE g.state IN ('ACTIVE','PAUSED')
+      AND (
+        (
+          admin_private.guard_access_record_v1(g.business_id, g.location_id) IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM public.guard_service_actions sa
+            WHERE sa.coverage_id = g.id AND sa.kind = 'ACCESS_RECOVERY' AND sa.state IN ('OPEN','ACKNOWLEDGED')
+          )
+        )
+        OR (
+          NOT admin_private.guard_contact_ready_v1(g.customer_id)
+          AND NOT EXISTS (
+            SELECT 1 FROM public.guard_service_actions sa
+            WHERE sa.coverage_id = g.id AND sa.kind = 'CONTACT_RECOVERY' AND sa.state IN ('OPEN','ACKNOWLEDGED')
+          )
+        )
+      )
     ORDER BY g.id
+    LIMIT batch + 1
     FOR UPDATE
   LOOP
+    IF scanned >= batch THEN more_coverages := true; EXIT; END IF;
+    scanned := scanned + 1;
     IF admin_private.guard_access_record_v1(cov.business_id, cov.location_id) IS NULL THEN
       PERFORM admin_private.guard_alert_open_service_action_v1(
         cov.id, NULL, 'ACCESS_RECOVERY', 'ACCESS_NOT_VERIFIED',
@@ -860,14 +981,16 @@ BEGIN
     'deliveryFailures', delivery,
     'accessActions', access_opened,
     'contactActions', recovered,
+    'hasMore', more_candidates OR more_delivery OR more_coverages,
+    'batchSize', batch,
     'now', clock
   );
 END; $$;
 
-CREATE FUNCTION public.guard_maintain_alerts_v1(p_now timestamptz DEFAULT NULL)
+CREATE FUNCTION public.guard_maintain_alerts_v1(p_now timestamptz DEFAULT NULL, p_batch integer DEFAULT 50)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
-  RETURN admin_private.guard_maintain_alerts_v1(p_now);
+  RETURN admin_private.guard_maintain_alerts_v1(p_now, p_batch);
 END; $$;
 
 CREATE FUNCTION public.guard_enqueue_daily_alerts_v1() RETURNS jsonb
@@ -887,14 +1010,6 @@ BEGIN
 EXCEPTION WHEN unique_violation THEN
   RETURN jsonb_build_object('status','success','serviceDate', service, 'duplicate', true);
 END; $$;
-
-CREATE FUNCTION admin_private.guard_alert_current_email_v1(p_customer uuid) RETURNS text
-LANGUAGE sql STABLE SET search_path='' AS $$
-  SELECT admin_private.normalize_email_v1(c.email)
-  FROM public.customers c
-  WHERE c.id = p_customer
-    AND admin_private.contact_verified_v1(c.id, 'email');
-$$;
 
 CREATE FUNCTION admin_private.guard_alert_acknowledge_v1(
   p_actor uuid, p_request uuid, p_payload jsonb, p_version integer
@@ -944,6 +1059,48 @@ BEGIN
     jsonb_build_object('severity', v_severity, 'disposition', v_disposition)
   );
   RETURN jsonb_build_object('status','success','id', alert.id, 'version', alert.record_version, 'state', alert.state);
+END; $$;
+
+CREATE FUNCTION admin_private.guard_alert_review_new_evidence_v1(
+  p_actor uuid, p_request uuid, p_payload jsonb, p_version integer
+) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE
+  alert public.guard_alerts;
+  v_disposition text := btrim(coalesce(p_payload->>'disposition',''));
+  v_reason text := btrim(coalesce(p_payload->>'reason',''));
+BEGIN
+  SELECT * INTO alert FROM public.guard_alerts WHERE id = NULLIF(p_payload->>'alertId','')::uuid FOR UPDATE;
+  IF alert.id IS NULL THEN RETURN jsonb_build_object('status','invalid','reason','alert_missing'); END IF;
+  IF alert.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  IF alert.state <> 'ACKNOWLEDGED' THEN RETURN jsonb_build_object('status','denied','reason','not_acknowledged'); END IF;
+  IF alert.needs_review IS NOT TRUE THEN RETURN jsonb_build_object('status','denied','reason','no_new_evidence'); END IF;
+  IF v_disposition NOT IN ('CONFIRMED_CUSTOMER_ISSUE','INTERNAL_ONLY') THEN
+    RETURN jsonb_build_object('status','invalid','reason','disposition_required');
+  END IF;
+  IF length(v_reason) < 10 OR length(v_reason) > 500 THEN RETURN jsonb_build_object('status','invalid','reason','reason_required'); END IF;
+  IF v_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND NOT admin_private.guard_alert_has_customer_issue_v1(alert.id) THEN
+    RETURN jsonb_build_object('status','denied','reason','incomplete_only');
+  END IF;
+  UPDATE public.guard_alerts SET
+    review_disposition = v_disposition,
+    needs_review = false,
+    updated_at = now(),
+    record_version = record_version + 1
+    WHERE id = alert.id AND record_version = p_version
+    RETURNING * INTO alert;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','conflict'); END IF;
+  PERFORM admin_private.guard_alert_append_event_v1(
+    alert.id, 'ADMIN', p_actor, 'EVIDENCE_REVIEWED', alert.state, alert.state, alert.severity, alert.severity, v_reason,
+    jsonb_build_object('disposition', v_disposition)
+  );
+  PERFORM admin_private.write_record_audit_v1(
+    p_actor, 'GUARD_CHANGED', 'success', alert.id, p_request, 'guard_alert',
+    'Reviewed new Guard alert evidence', jsonb_build_object('disposition', v_disposition)
+  );
+  RETURN jsonb_build_object(
+    'status','success','id', alert.id, 'version', alert.record_version, 'state', alert.state,
+    'needsReview', false, 'acknowledgedAt', alert.acknowledged_at, 'acknowledgedBy', alert.acknowledged_by
+  );
 END; $$;
 
 CREATE FUNCTION admin_private.guard_alert_escalate_v1(
@@ -1037,6 +1194,7 @@ BEGIN
   IF alert.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
   IF alert.state NOT IN ('NEW','ACKNOWLEDGED') THEN RETURN jsonb_build_object('status','denied','reason','terminal'); END IF;
   IF alert.state = 'NEW' THEN RETURN jsonb_build_object('status','denied','reason','not_acknowledged'); END IF;
+  IF alert.needs_review IS TRUE THEN RETURN jsonb_build_object('status','denied','reason','needs_review'); END IF;
   IF length(reason) < 10 OR length(reason) > 500 THEN RETURN jsonb_build_object('status','invalid','reason','reason_required'); END IF;
   UPDATE public.guard_alerts SET
     state = 'RESOLVED', resolved_at = now(), resolved_by = p_actor, needs_review = false,
@@ -1108,10 +1266,13 @@ BEGIN
   SELECT * INTO alert FROM public.guard_alerts WHERE id = NULLIF(p_payload->>'alertId','')::uuid FOR UPDATE;
   IF alert.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF alert.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
-  IF alert.state <> 'ACKNOWLEDGED' OR alert.review_disposition <> 'CONFIRMED_CUSTOMER_ISSUE' OR alert.severity = 'UNASSESSED' THEN
-    RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
-  END IF;
   IF kind NOT IN ('INITIAL','FOLLOW_UP','RESOLUTION') THEN RETURN jsonb_build_object('status','invalid'); END IF;
+  IF alert.needs_review IS TRUE AND kind IN ('INITIAL','FOLLOW_UP') THEN
+    RETURN jsonb_build_object('status','denied','reason','needs_review');
+  END IF;
+  IF NOT admin_private.guard_alert_notification_allowed_v1(kind, alert.state, alert.review_disposition, alert.needs_review)
+    OR alert.severity = 'UNASSESSED'
+  THEN RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue'); END IF;
   IF kind = 'INITIAL' AND EXISTS (
     SELECT 1 FROM public.guard_alert_notifications n WHERE n.alert_id = alert.id AND n.notification_kind = 'INITIAL'
   ) THEN RETURN jsonb_build_object('status','denied','reason','initial_already_exists'); END IF;
@@ -1184,13 +1345,16 @@ BEGIN
   IF alert.id IS NULL OR alert.record_version IS DISTINCT FROM p_version THEN
     RETURN jsonb_build_object('status', CASE WHEN alert.id IS NULL THEN 'invalid' ELSE 'conflict' END);
   END IF;
-  IF alert.state <> 'ACKNOWLEDGED' OR alert.review_disposition <> 'CONFIRMED_CUSTOMER_ISSUE' THEN
-    RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
-  END IF;
   SELECT * INTO comm FROM public.communications WHERE id = NULLIF(p_payload->>'communicationId','')::uuid FOR UPDATE;
   SELECT * INTO note FROM public.guard_alert_notifications WHERE communication_id = comm.id AND alert_id = alert.id;
   IF comm.id IS NULL OR note.id IS NULL OR comm.guard_alert_id IS DISTINCT FROM alert.id THEN
     RETURN jsonb_build_object('status','unavailable');
+  END IF;
+  IF alert.needs_review IS TRUE AND note.notification_kind IN ('INITIAL','FOLLOW_UP') THEN
+    RETURN jsonb_build_object('status','denied','reason','needs_review');
+  END IF;
+  IF NOT admin_private.guard_alert_notification_allowed_v1(note.notification_kind, alert.state, alert.review_disposition, alert.needs_review) THEN
+    RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
   END IF;
   IF comm.lifecycle <> 'DRAFT' OR comm.content_locked THEN RETURN jsonb_build_object('status','denied'); END IF;
   IF comm.subject ~ '\{[a-z_]+\}' OR comm.body_text ~ '\{[a-z_]+\}' THEN
@@ -1240,11 +1404,17 @@ BEGIN
   IF alert.id IS NULL OR alert.record_version IS DISTINCT FROM p_version THEN
     RETURN jsonb_build_object('status', CASE WHEN alert.id IS NULL THEN 'invalid' ELSE 'conflict' END);
   END IF;
-  IF alert.state <> 'ACKNOWLEDGED' OR alert.review_disposition <> 'CONFIRMED_CUSTOMER_ISSUE' THEN
-    RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
-  END IF;
   SELECT * INTO comm FROM public.communications WHERE id = NULLIF(p_payload->>'communicationId','')::uuid FOR UPDATE;
   IF comm.id IS NULL OR comm.guard_alert_id IS DISTINCT FROM alert.id THEN RETURN jsonb_build_object('status','unavailable'); END IF;
+  IF alert.needs_review IS TRUE AND EXISTS (
+    SELECT 1 FROM public.guard_alert_notifications n
+    WHERE n.communication_id = comm.id AND n.alert_id = alert.id AND n.notification_kind IN ('INITIAL','FOLLOW_UP')
+  ) THEN RETURN jsonb_build_object('status','denied','reason','needs_review'); END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.guard_alert_notifications n
+    WHERE n.communication_id = comm.id AND n.alert_id = alert.id
+      AND admin_private.guard_alert_notification_allowed_v1(n.notification_kind, alert.state, alert.review_disposition, alert.needs_review)
+  ) THEN RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue'); END IF;
   IF comm.lifecycle = 'QUEUED' THEN
     RETURN jsonb_build_object('status','success','id', alert.id, 'version', alert.record_version, 'communicationId', comm.id, 'replay', true);
   END IF;
@@ -1294,11 +1464,7 @@ DECLARE
   case_type text := btrim(coalesce(p_payload->>'caseType',''));
   summary text;
   created public.cases;
-  quotes_before integer;
-  orders_before integer;
-  payments_before integer;
-  approvals_before integer;
-  ops_before integer;
+  evidence_at timestamptz;
 BEGIN
   SELECT * INTO alert FROM public.guard_alerts WHERE id = NULLIF(p_payload->>'alertId','')::uuid FOR UPDATE;
   IF alert.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
@@ -1306,25 +1472,22 @@ BEGIN
   IF alert.state <> 'ACKNOWLEDGED' OR alert.review_disposition <> 'CONFIRMED_CUSTOMER_ISSUE' THEN
     RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
   END IF;
+  IF alert.needs_review IS TRUE THEN RETURN jsonb_build_object('status','denied','reason','needs_review'); END IF;
   IF alert.linked_primary_case_id IS NOT NULL THEN
     RETURN jsonb_build_object('status','success','id', alert.id, 'version', alert.record_version, 'caseId', alert.linked_primary_case_id, 'replay', true);
   END IF;
   IF case_type NOT IN ('PROFILE_RECOVERY','REVIEW_PROTECTION') THEN
     RETURN jsonb_build_object('status','invalid','reason','case_type_required');
   END IF;
-  SELECT count(*) INTO quotes_before FROM public.quotes;
-  SELECT count(*) INTO orders_before FROM public.service_orders;
-  SELECT count(*) INTO payments_before FROM public.payment_obligations;
-  SELECT count(*) INTO approvals_before FROM public.success_fee_approvals;
-  SELECT count(*) INTO ops_before FROM public.provider_operations;
   summary := left('Guard alert ' || array_to_string(alert.issue_codes, ', '), 500);
   IF length(btrim(summary)) < 1 THEN summary := 'Guard alert requiring reviewed intervention.'; END IF;
+  evidence_at := coalesce(admin_private.guard_alert_first_customer_issue_at_v1(alert.id), alert.latest_observed_at, alert.first_observed_at);
   INSERT INTO public.cases(
     public_ref, case_type, customer_id, business_id, location_id, source, issue_description,
     information_accurate_at, privacy_accepted_at, service_track, work_stage, status
   ) VALUES (
     public.generate_case_public_ref(case_type), case_type, alert.customer_id, alert.business_id, alert.location_id,
-    'GUARD_ALERT', summary, now(), now(), 'UNDECIDED', 'INITIAL_REVIEW', 'RECEIVED'
+    'GUARD_ALERT', summary, evidence_at, NULL, 'UNDECIDED', 'INITIAL_REVIEW', 'RECEIVED'
   ) RETURNING * INTO created;
   INSERT INTO public.case_events(case_id, event_type, actor_type, event_data)
   VALUES (created.id, 'CASE_RECEIVED', 'ADMIN', jsonb_build_object('source','GUARD_ALERT','alertId', alert.id));
@@ -1334,12 +1497,6 @@ BEGIN
     linked_primary_case_id = created.id, updated_at = now(), record_version = record_version + 1
     WHERE id = alert.id
     RETURNING * INTO alert;
-  IF (SELECT count(*) FROM public.quotes) <> quotes_before
-    OR (SELECT count(*) FROM public.service_orders) <> orders_before
-    OR (SELECT count(*) FROM public.payment_obligations) <> payments_before
-    OR (SELECT count(*) FROM public.success_fee_approvals) <> approvals_before
-    OR (SELECT count(*) FROM public.provider_operations) <> ops_before
-  THEN RAISE EXCEPTION 'Guard intervention case must not create financial artefacts'; END IF;
   PERFORM admin_private.guard_alert_append_event_v1(
     alert.id, 'ADMIN', p_actor, 'CASE_LINKED', alert.state, alert.state, alert.severity, alert.severity,
     'Created intervention case', jsonb_build_object('caseId', created.id, 'caseType', case_type, 'publicRef', created.public_ref)
@@ -1364,12 +1521,16 @@ BEGIN
   IF alert.state <> 'ACKNOWLEDGED' OR alert.review_disposition <> 'CONFIRMED_CUSTOMER_ISSUE' THEN
     RETURN jsonb_build_object('status','denied','reason','not_confirmed_customer_issue');
   END IF;
+  IF alert.needs_review IS TRUE THEN RETURN jsonb_build_object('status','denied','reason','needs_review'); END IF;
   SELECT * INTO cs FROM public.cases WHERE id = NULLIF(p_payload->>'caseId','')::uuid FOR UPDATE;
   IF cs.id IS NULL THEN RETURN jsonb_build_object('status','invalid','reason','case_missing'); END IF;
   IF cs.customer_id IS DISTINCT FROM alert.customer_id
     OR cs.business_id IS DISTINCT FROM alert.business_id
     OR cs.location_id IS DISTINCT FROM alert.location_id
   THEN RETURN jsonb_build_object('status','denied','reason','case_scope_mismatch'); END IF;
+  IF cs.case_type NOT IN ('PROFILE_RECOVERY','REVIEW_PROTECTION') OR cs.status IN ('CLOSED','CANCELLED') THEN
+    RETURN jsonb_build_object('status','denied','reason','case_not_usable');
+  END IF;
   IF EXISTS (SELECT 1 FROM public.guard_alert_cases l WHERE l.alert_id = alert.id AND l.case_id = cs.id) THEN
     RETURN jsonb_build_object('status','success','id', alert.id, 'version', alert.record_version, 'caseId', cs.id, 'replay', true);
   END IF;
@@ -1417,8 +1578,14 @@ BEGIN
   IF action.id IS NULL OR action.state NOT IN ('OPEN','ACKNOWLEDGED') THEN
     RETURN jsonb_build_object('status','denied','reason','service_action_required');
   END IF;
+  IF action.kind = 'CONTACT_RECOVERY' AND admin_private.guard_contact_ready_v1(cov.customer_id) THEN
+    RETURN jsonb_build_object('status','denied','reason','stale_service_action');
+  END IF;
+  IF action.kind = 'ACCESS_RECOVERY' AND (admin_private.guard_access_record_v1(cov.business_id, cov.location_id)).id IS NOT NULL THEN
+    RETURN jsonb_build_object('status','denied','reason','stale_service_action');
+  END IF;
   IF admin_private.guard_contact_ready_v1(cov.customer_id)
-    AND admin_private.guard_access_record_v1(cov.business_id, cov.location_id) IS NOT NULL
+    AND (admin_private.guard_access_record_v1(cov.business_id, cov.location_id)).id IS NOT NULL
   THEN RETURN jsonb_build_object('status','denied','reason','recovery_pause_not_justified'); END IF;
   IF length(reason) < 10 OR length(reason) > 500 THEN RETURN jsonb_build_object('status','invalid','reason','reason_required'); END IF;
   activated := cov.activated_at;
@@ -1503,6 +1670,14 @@ BEGIN
       RETURNING * INTO action;
   ELSIF p_operation = 'resolve_service_action' THEN
     IF action.state NOT IN ('OPEN','ACKNOWLEDGED') THEN RETURN jsonb_build_object('status','denied'); END IF;
+    IF action.kind = 'ACCESS_RECOVERY'
+      AND admin_private.guard_access_record_v1(action.business_id, action.location_id) IS NULL
+    THEN RETURN jsonb_build_object('status','denied','reason','access_still_missing'); END IF;
+    IF action.kind = 'CONTACT_RECOVERY'
+      AND action.reason_code = 'NO_REACHABLE_VERIFIED_CONTACT'
+      AND NOT admin_private.contact_verified_v1(action.customer_id, 'email')
+      AND NOT admin_private.contact_verified_v1(action.customer_id, 'phone')
+    THEN RETURN jsonb_build_object('status','denied','reason','contact_still_missing'); END IF;
     UPDATE public.guard_service_actions SET
       state = 'RESOLVED', resolved_at = now(), resolved_by = p_actor,
       acknowledged_at = coalesce(acknowledged_at, now()), acknowledged_by = coalesce(acknowledged_by, p_actor),
@@ -1534,7 +1709,7 @@ BEGIN
     RETURN jsonb_build_object('status','invalid');
   END IF;
   IF p_operation NOT IN (
-    'acknowledge','dismiss','escalate','correct_severity','resolve',
+    'acknowledge','dismiss','escalate','correct_severity','resolve','review_new_evidence',
     'prepare_notification','approve_notification','queue_notification',
     'create_intervention_case','link_existing_case','pause_for_recovery','resume',
     'acknowledge_service_action','resolve_service_action'
@@ -1547,6 +1722,7 @@ BEGIN
   END IF;
   result := CASE p_operation
     WHEN 'acknowledge' THEN admin_private.guard_alert_acknowledge_v1(actor, p_request, p_payload, p_version)
+    WHEN 'review_new_evidence' THEN admin_private.guard_alert_review_new_evidence_v1(actor, p_request, p_payload, p_version)
     WHEN 'dismiss' THEN admin_private.guard_alert_dismiss_v1(actor, p_request, p_payload, p_version)
     WHEN 'escalate' THEN admin_private.guard_alert_escalate_v1(actor, p_request, p_payload, p_version)
     WHEN 'correct_severity' THEN admin_private.guard_alert_correct_severity_v1(actor, p_request, p_payload, p_version)
@@ -1584,6 +1760,8 @@ LANGUAGE sql STABLE SET search_path='' AS $$
     'reviewDisposition', a.review_disposition,
     'issueCodes', to_jsonb(a.issue_codes),
     'needsReview', a.needs_review,
+    'acknowledgedAt', a.acknowledged_at,
+    'acknowledgedBy', a.acknowledged_by,
     'openedAt', a.opened_at,
     'firstObservedAt', a.first_observed_at,
     'latestObservedAt', a.latest_observed_at,
@@ -1749,16 +1927,29 @@ BEGIN
     'observations', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
         'id', obs.id,
-        'attached', link.id IS NOT NULL,
+        'attached', true,
         'classification', obs.classification,
-        'issueCodes', to_jsonb(obs.change_codes),
+        'issueCodes', to_jsonb(link.issue_codes),
         'observedAt', obs.observed_at,
         'attentionCandidate', obs.attention_candidate,
         'profileAvailability', obs.profile_availability
       ) ORDER BY obs.observed_at, obs.id)
-      FROM public.guard_check_observations obs
-      LEFT JOIN public.guard_alert_observations link ON link.observation_id = obs.id AND link.alert_id = alert.id
-      WHERE obs.coverage_id = alert.coverage_id
+      FROM public.guard_alert_observations link
+      JOIN public.guard_check_observations obs ON obs.id = link.observation_id
+      WHERE link.alert_id = alert.id
+    ), '[]'::jsonb),
+    'recentCoverageObservations', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', x.id, 'classification', x.classification, 'issueCodes', to_jsonb(x.change_codes),
+        'observedAt', x.observed_at, 'attentionCandidate', x.attention_candidate
+      ) ORDER BY x.observed_at DESC, x.id DESC)
+      FROM (
+        SELECT obs.id, obs.classification, obs.change_codes, obs.observed_at, obs.attention_candidate
+        FROM public.guard_check_observations obs
+        WHERE obs.coverage_id = alert.coverage_id
+        ORDER BY obs.observed_at DESC, obs.id DESC
+        LIMIT 10
+      ) x
     ), '[]'::jsonb),
     'events', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
@@ -1767,7 +1958,12 @@ BEGIN
         'previousSeverity', e.previous_severity, 'newSeverity', e.new_severity,
         'createdAt', e.created_at, 'details', e.details
       ) ORDER BY e.created_at, e.id)
-      FROM public.guard_alert_events e WHERE e.alert_id = alert.id
+      FROM (
+        SELECT ev.* FROM public.guard_alert_events ev
+        WHERE ev.alert_id = alert.id
+        ORDER BY ev.created_at DESC, ev.id DESC
+        LIMIT 100
+      ) e
     ), '[]'::jsonb),
     'notifications', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
@@ -1784,16 +1980,20 @@ BEGIN
       SELECT jsonb_agg(jsonb_build_object(
         'id', sa.id, 'kind', sa.kind, 'state', sa.state, 'reasonCode', sa.reason_code,
         'details', sa.details, 'openedAt', sa.opened_at, 'version', sa.record_version
-      ) ORDER BY sa.opened_at, sa.id)
-      FROM public.guard_service_actions sa
-      WHERE sa.coverage_id = alert.coverage_id
+      ) ORDER BY sa.opened_at DESC, sa.id DESC)
+      FROM (
+        SELECT s.* FROM public.guard_service_actions s
+        WHERE s.coverage_id = alert.coverage_id
+        ORDER BY s.opened_at DESC, s.id DESC
+        LIMIT 20
+      ) sa
     ), '[]'::jsonb),
     'contact', jsonb_build_object(
       'emailVerified', admin_private.contact_verified_v1(alert.customer_id, 'email'),
       'phoneVerified', admin_private.contact_verified_v1(alert.customer_id, 'phone')
     ),
     'access', jsonb_build_object(
-      'verified', admin_private.guard_access_record_v1(alert.business_id, alert.location_id) IS NOT NULL
+      'verified', (admin_private.guard_access_record_v1(alert.business_id, alert.location_id)).id IS NOT NULL
     ),
     'coverage', jsonb_build_object(
       'id', coverage.id, 'state', coverage.state, 'basis', coverage.coverage_basis,
@@ -1808,11 +2008,13 @@ BEGIN
     'permittedActions', jsonb_build_object(
       'acknowledge', alert.state = 'NEW',
       'dismiss', alert.state = 'NEW',
+      'reviewNewEvidence', alert.state = 'ACKNOWLEDGED' AND alert.needs_review IS TRUE,
       'escalate', alert.state = 'ACKNOWLEDGED' AND alert.severity <> 'CRITICAL' AND alert.severity <> 'UNASSESSED',
-      'resolve', alert.state = 'ACKNOWLEDGED',
-      'prepareNotification', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.severity <> 'UNASSESSED',
-      'createInterventionCase', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.linked_primary_case_id IS NULL,
-      'linkExistingCase', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.linked_primary_case_id IS NULL,
+      'resolve', alert.state = 'ACKNOWLEDGED' AND alert.needs_review IS NOT TRUE,
+      'prepareNotification', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.severity <> 'UNASSESSED' AND alert.needs_review IS NOT TRUE,
+      'prepareResolutionNotification', alert.state = 'RESOLVED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE',
+      'createInterventionCase', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.linked_primary_case_id IS NULL AND alert.needs_review IS NOT TRUE,
+      'linkExistingCase', alert.state = 'ACKNOWLEDGED' AND alert.review_disposition = 'CONFIRMED_CUSTOMER_ISSUE' AND alert.linked_primary_case_id IS NULL AND alert.needs_review IS NOT TRUE,
       'pauseForRecovery', coverage.state = 'ACTIVE'
         AND (
           NOT admin_private.guard_contact_ready_v1(alert.customer_id)
@@ -1843,13 +2045,13 @@ ALTER TABLE public.guard_service_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_private.guard_alert_receipts ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON FUNCTION public.guard_process_alert_candidate_v1(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.guard_maintain_alerts_v1(timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_maintain_alerts_v1(timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_enqueue_daily_alerts_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_guard_alert_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_guard_alert_list_v1(text, text, integer, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_guard_alert_detail_v1(text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.guard_process_alert_candidate_v1(uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.guard_maintain_alerts_v1(timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.guard_maintain_alerts_v1(timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.guard_enqueue_daily_alerts_v1() TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_guard_alert_command_v1(text, uuid, text, jsonb, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_guard_alert_list_v1(text, text, integer, uuid) TO service_role;

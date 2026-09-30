@@ -5,7 +5,7 @@ import { alertSeverityLabel, alertStateLabel, canEscalate, deliveryStatusLabel }
 import { Badge, PageHeader } from "../../../ui"
 import {
   AcknowledgeForm, CreateCaseForm, EscalateForm, LinkCaseForm, NotificationActionForm,
-  PrepareNotificationForm, ReasonForm, ServiceActionForm,
+  PrepareNotificationForm, ReasonForm, ReviewNewEvidenceForm, ServiceActionForm,
 } from "../forms"
 
 export const metadata = { title: "Guard alert" }
@@ -20,7 +20,10 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
   const notifications = detail.notifications || []
   const actions = detail.serviceActions || []
   const observations = detail.observations || []
+  const recentCoverage = detail.recentCoverageObservations || []
   const events = detail.events || []
+  const needsReview = alert.needsReview === true
+  const reviewedEvidence = events.filter(item => item.event === "EVIDENCE_REVIEWED")
   const discount = detail.discount || {}
   const enabled = detail.enabled === true
   const openRecovery = actions.find(item => item.state === "OPEN" || item.state === "ACKNOWLEDGED")
@@ -32,6 +35,9 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
       <p>Coverage {alert.coverageBasis} · {alert.coverageState}</p>
       <p>Issue codes: {alert.issueCodes?.join(", ") || "None"}</p>
       <p>Linked case: {alert.linkedCaseRef || "None"}</p>
+      <p>Original acknowledgement: {alert.acknowledgedAt || "Not acknowledged"}</p>
+      {needsReview && <p role="status">Later evidence requires review. Customer-facing actions are blocked until that review is recorded.</p>}
+      <p>Latest reviewed evidence: {reviewedEvidence.at(-1)?.createdAt || (alert.acknowledgedAt ? "Original acknowledgement" : "None")}</p>
       <p>Activation clock: {coverage.activatedAt || "—"}</p>
     </section>
     <section className="panel">
@@ -42,8 +48,15 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
     </section>
     <section className="panel">
       <h2>Observation timeline</h2>
-      {!observations.length ? <p className="muted">No observations for this coverage.</p> : observations.map(item => (
-        <p key={item.id}>{item.observedAt} · {item.classification} · {(item.issueCodes || []).join(", ") || "no codes"} · {item.attached ? "Attached" : "Recovery evidence only"}</p>
+      {!observations.length ? <p className="muted">No observations are attached to this alert episode.</p> : observations.map(item => (
+        <p key={item.id}>{item.observedAt} · {item.classification} · {(item.issueCodes || []).join(", ") || "no codes"} · Attached</p>
+      ))}
+    </section>
+    <section className="panel">
+      <h2>Recent coverage observations</h2>
+      <p className="muted">Bounded recovery context only. This is not the alert episode timeline.</p>
+      {!recentCoverage.length ? <p className="muted">No recent coverage observations.</p> : recentCoverage.map(item => (
+        <p key={item.id}>{item.observedAt} · {item.classification} · {(item.issueCodes || []).join(", ") || "no codes"}</p>
       ))}
     </section>
     <section className="panel">
@@ -79,10 +92,12 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
       ))}
     </section>
     {enabled && permitted.acknowledge && <section className="panel"><h2>Acknowledge</h2><AcknowledgeForm alertId={alert.id} version={alert.version} /></section>}
+    {enabled && permitted.reviewNewEvidence && <section className="panel"><h2>Review new evidence</h2><ReviewNewEvidenceForm alertId={alert.id} version={alert.version} /></section>}
     {enabled && permitted.dismiss && <section className="panel"><h2>Dismiss</h2><ReasonForm alertId={alert.id} version={alert.version} operation="dismiss" label="Dismiss as false positive" /></section>}
     {enabled && permitted.escalate && canEscalate(alert.severity, alert.state) && <section className="panel"><h2>Escalate</h2><EscalateForm alertId={alert.id} version={alert.version} current={alert.severity} /></section>}
     {enabled && permitted.resolve && <section className="panel"><h2>Resolve</h2><ReasonForm alertId={alert.id} version={alert.version} operation="resolve" label="Resolve alert" /></section>}
-    {enabled && permitted.prepareNotification && <section className="panel"><h2>Prepare notification</h2><PrepareNotificationForm alertId={alert.id} version={alert.version} /></section>}
+    {enabled && permitted.prepareNotification && <section className="panel"><h2>Prepare notification</h2><PrepareNotificationForm alertId={alert.id} version={alert.version} kinds={["INITIAL", "FOLLOW_UP"]} /></section>}
+    {enabled && permitted.prepareResolutionNotification && <section className="panel"><h2>Prepare resolution notification</h2><PrepareNotificationForm alertId={alert.id} version={alert.version} kinds={["RESOLUTION"]} /></section>}
     {enabled && permitted.createInterventionCase && <section className="panel"><h2>Intervention case</h2><CreateCaseForm alertId={alert.id} version={alert.version} /><LinkCaseForm alertId={alert.id} version={alert.version} /></section>}
     {enabled && permitted.pauseForRecovery && openRecovery && <section className="panel"><h2>Pause for recovery</h2><ReasonForm alertId={alert.id} version={alert.version} operation="pause_for_recovery" label="Pause coverage" extra={{ serviceActionId: openRecovery.id }} /></section>}
     {enabled && permitted.resume && <section className="panel"><h2>Resume</h2><p>{coverage.resumeReady ? "Readiness currently appears restored." : "Resume remains denied until access, contact and billing readiness are restored."}</p><ReasonForm alertId={alert.id} version={alert.version} operation="resume" label="Resume coverage" /></section>}

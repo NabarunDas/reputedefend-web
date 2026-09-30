@@ -28,6 +28,12 @@ export function guardAlertArgs(operation: GuardAlertOperation, body: Record<stri
     if (disposition !== "CONFIRMED_CUSTOMER_ISSUE" && disposition !== "INTERNAL_ONLY" && disposition !== "FALSE_POSITIVE") return null
     return { alertId: body.alertId, version: body.version, severity, disposition, reason }
   }
+  if (operation === "review_new_evidence") {
+    const reason = text(body.reason, 10, 500)
+    if (!reason) return null
+    if (body.disposition !== "CONFIRMED_CUSTOMER_ISSUE" && body.disposition !== "INTERNAL_ONLY") return null
+    return { alertId: body.alertId, version: body.version, disposition: body.disposition, reason }
+  }
   if (operation === "dismiss" || operation === "resolve" || operation === "pause_for_recovery" || operation === "resume" || operation === "escalate" || operation === "correct_severity") {
     const reason = text(body.reason, 10, 500)
     if (!reason) return null

@@ -117,7 +117,39 @@ export function EscalateForm({ alertId, version, current }: { alertId: string; v
   </form>
 }
 
-export function PrepareNotificationForm({ alertId, version }: { alertId: string; version: number }) {
+export function ReviewNewEvidenceForm({ alertId, version }: { alertId: string; version: number }) {
+  const { busy, message, run } = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    await run("review_new_evidence", {
+      alertId, version,
+      disposition: String(data.get("disposition") || ""),
+      reason: String(data.get("reason") || ""),
+    })
+  }
+  return <form onSubmit={submit}>
+    <label>Updated disposition
+      <select name="disposition" required>
+        <option value="CONFIRMED_CUSTOMER_ISSUE">Confirmed customer issue</option>
+        <option value="INTERNAL_ONLY">Internal only</option>
+      </select>
+    </label>
+    <label>Review note
+      <textarea name="reason" required minLength={10} maxLength={500} />
+    </label>
+    <button type="submit" disabled={busy}>Review new evidence</button>
+    <p role="status">{message}</p>
+  </form>
+}
+
+export function PrepareNotificationForm({
+  alertId, version, kinds = ["INITIAL", "FOLLOW_UP"],
+}: {
+  alertId: string
+  version: number
+  kinds?: Array<"INITIAL" | "FOLLOW_UP" | "RESOLUTION">
+}) {
   const { busy, message, run } = useCommand()
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -134,9 +166,9 @@ export function PrepareNotificationForm({ alertId, version }: { alertId: string;
   return <form onSubmit={submit}>
     <label>Kind
       <select name="notificationKind">
-        <option value="INITIAL">Initial</option>
-        <option value="FOLLOW_UP">Follow-up</option>
-        <option value="RESOLUTION">Resolution</option>
+        {kinds.includes("INITIAL") && <option value="INITIAL">Initial</option>}
+        {kinds.includes("FOLLOW_UP") && <option value="FOLLOW_UP">Follow-up</option>}
+        {kinds.includes("RESOLUTION") && <option value="RESOLUTION">Resolution</option>}
       </select>
     </label>
     <label>Fact<textarea name="fact" required minLength={10} maxLength={400} /></label>

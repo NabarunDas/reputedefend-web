@@ -1,5 +1,5 @@
 export const guardAlertOperations = [
-  "acknowledge", "dismiss", "escalate", "correct_severity", "resolve",
+  "acknowledge", "dismiss", "escalate", "correct_severity", "resolve", "review_new_evidence",
   "prepare_notification", "approve_notification", "queue_notification",
   "create_intervention_case", "link_existing_case", "pause_for_recovery", "resume",
   "acknowledge_service_action", "resolve_service_action",
@@ -33,6 +33,8 @@ export type GuardAlertRow = {
   reviewDisposition?: string
   issueCodes?: string[]
   needsReview?: boolean
+  acknowledgedAt?: string | null
+  acknowledgedBy?: string | null
   firstObservedAt?: string
   latestObservedAt?: string
   notificationStatus?: string | null
@@ -99,6 +101,13 @@ export type GuardAlertDetail = {
     issueCodes: string[]
     observedAt: string
     attached: boolean
+  }>
+  recentCoverageObservations?: Array<{
+    id: string
+    classification: string
+    issueCodes: string[]
+    observedAt: string
+    attentionCandidate?: boolean
   }>
   events?: Array<{ event: string; reason: string; createdAt: string }>
   discount?: Record<string, { eligible?: boolean; reason?: string }>

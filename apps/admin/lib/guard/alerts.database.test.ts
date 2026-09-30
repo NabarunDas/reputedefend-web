@@ -537,8 +537,9 @@ describe("guard alerts SQL", () => {
     expect(await count("public.success_fee_approvals")).toBe(approvals)
     expect(await count("public.provider_operations")).toBe(ops)
     expect(await count("public.quote_discount_snapshots")).toBe(snapshots)
-    const cs = (await db.query<{ source: string; service_track: string; work_stage: string; location_id: string }>("select source, service_track, work_stage, location_id from public.cases where id=$1", [created!.caseId])).rows[0]
+    const cs = (await db.query<{ source: string; service_track: string; work_stage: string; location_id: string; privacy_accepted_at: string | null }>("select source, service_track, work_stage, location_id, privacy_accepted_at::text from public.cases where id=$1", [created!.caseId])).rows[0]
     expect(cs).toMatchObject({ source: "GUARD_ALERT", service_track: "UNDECIDED", work_stage: "INITIAL_REVIEW", location_id: location })
+    expect(cs.privacy_accepted_at).toBeNull()
     expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
       alertId: alert!.id, caseId,
     }, created!.version])).toMatchObject({ status: "denied", reason: "primary_already_linked" })
@@ -762,5 +763,347 @@ describe("guard alerts SQL", () => {
     expect((includedDetail!.discount as { managedRelaunch: { eligible: boolean; reason: string } }).managedRelaunch)
       .toMatchObject({ eligible: false, reason: "included_guard_not_eligible" })
     expect(await count("public.quote_discount_snapshots")).toBe(includedSnapshots)
+  })
+
+  it("reviews new evidence, bounds maintenance, and hardens notification and recovery invariants", async () => {
+    const coverageId = await activateIncluded()
+    const [, morning] = await openWindow(coverageId)
+    const incomplete = await completeWindow(morning.id, morning.record_version, healthyPayload({
+      classification: "INCOMPLETE", profileAvailability: "UNKNOWN", locationIdentified: false,
+      displayedBusinessName: "", reviewCount: null, ratingAvailable: false, rating: null,
+    }))
+    await db.exec("alter table public.guard_check_observations disable trigger guard_check_observations_immutable")
+    await db.query("update public.guard_check_observations set change_codes=array['BUSINESS_NAME_CHANGED','REVIEW_COUNT_DECREASED']::text[] where id=$1", [incomplete!.observationId])
+    await db.exec("alter table public.guard_check_observations enable trigger guard_check_observations_immutable")
+    const incompleteAlert = await process(String(incomplete!.observationId))
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: incompleteAlert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "INCOMPLETE codes must not become a customer issue.",
+    }, incompleteAlert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
+
+    const evening = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and window_code='EVENING'",
+      [coverageId],
+    )).rows[0]
+    const increased = await completeWindow(evening.id, evening.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", reviewCount: 12,
+    }), "2026-09-30T16:15:00Z")
+    const increaseAlert = await process(String(increased!.observationId))
+    expect(increaseAlert?.id).toBe(incompleteAlert?.id)
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: increaseAlert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Review count went up and should stay interpretive.",
+    }, increaseAlert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
+
+    await rpc("guard_maintain_checks_v1", ["2026-10-01T08:00:00Z", "2026-10-01"])
+    const validWindow = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date='2026-10-01' and window_code='MORNING'",
+      [coverageId],
+    )).rows[0]
+    const valid = await completeWindow(validWindow.id, validWindow.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
+    }), "2026-10-01T08:15:00Z")
+    const oct1Evening = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date='2026-10-01' and window_code='EVENING'",
+      [coverageId],
+    )).rows[0]
+    const unprocessed = await completeWindow(oct1Evening.id, oct1Evening.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "Even Newer Bakery",
+    }), "2026-10-01T16:15:00Z")
+    const attached = await process(String(valid!.observationId))
+    const ack = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: attached!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "A later valid name change is customer-issue evidence.",
+    }, attached!.version])
+    expect(ack).toMatchObject({ status: "success" })
+    const acknowledgedAt = (await db.query<{ acknowledged_at: string; acknowledged_by: string }>("select acknowledged_at::text, acknowledged_by::text from public.guard_alerts where id=$1", [attached!.id])).rows[0]
+    const prepared = await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "INITIAL", fact: "The displayed business name has changed.", effect: "Customers may see a different listing name.", nextStep: "Please check the Google Business Profile for this location.",
+    }, ack!.version])
+    expect(prepared).toMatchObject({ status: "success" })
+
+    await rpc("guard_maintain_checks_v1", ["2026-10-02T08:00:00Z", "2026-10-02"])
+    const nextMorning = (await db.query<{ id: string; record_version: number }>("select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date='2026-10-02' and window_code='MORNING'", [coverageId])).rows[0]
+    const extra = await completeWindow(nextMorning.id, nextMorning.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", reviewCount: 8,
+    }), "2026-10-02T08:15:00Z")
+    const needsReview = await process(String(extra!.observationId))
+    expect((await db.query<{ needs_review: boolean }>("select needs_review from public.guard_alerts where id=$1", [attached!.id])).rows[0].needs_review).toBe(true)
+    const usableCase = crypto.randomUUID()
+    await db.query("insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Usable intervention case','2026-01-01',now(),now(),'UNDECIDED','RECEIVED')", [usableCase, customer, business, location])
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "FOLLOW_UP", fact: "The listing name is still changed.", effect: "Customers may still see a different listing name.", nextStep: "Please check the Google Business Profile again.", reason: "A follow-up is needed after the first reviewed message.",
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "approve_notification", {
+      alertId: attached!.id, communicationId: prepared!.communicationId, fromAddress: "alerts@profilerelaunch.com",
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "queue_notification", {
+      alertId: attached!.id, communicationId: prepared!.communicationId, sendEnabled: true, notificationsEnabled: true,
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "create_intervention_case", {
+      alertId: attached!.id, caseType: "PROFILE_RECOVERY",
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
+      alertId: attached!.id, caseId: usableCase,
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "resolve", {
+      alertId: attached!.id, reason: "Trying to resolve before reviewing the later evidence.",
+    }, needsReview!.version])).toMatchObject({ status: "denied", reason: "needs_review" })
+
+    const reviewed = await rpc("admin_guard_alert_command_v1", [token, key(), "review_new_evidence", {
+      alertId: attached!.id, disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "The later decrease remains a customer issue.",
+    }, needsReview!.version])
+    expect(reviewed).toMatchObject({ status: "success", needsReview: false })
+    const afterReview = (await db.query<{ acknowledged_at: string; acknowledged_by: string; needs_review: boolean }>("select acknowledged_at::text, acknowledged_by::text, needs_review from public.guard_alerts where id=$1", [attached!.id])).rows[0]
+    expect(afterReview.acknowledged_at).toBe(acknowledgedAt.acknowledged_at)
+    expect(afterReview.acknowledged_by).toBe(acknowledgedAt.acknowledged_by)
+    expect(afterReview.needs_review).toBe(false)
+    expect(await count("public.guard_alert_events", `where alert_id='${attached!.id}' and event='EVIDENCE_REVIEWED'`)).toBe(1)
+
+    const followUp = await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "FOLLOW_UP", fact: "The listing name is still changed.", effect: "Customers may still see a different listing name.", nextStep: "Please check the Google Business Profile again.", reason: "A follow-up is needed after the first reviewed message.",
+    }, reviewed!.version])
+    expect(followUp).toMatchObject({ status: "success" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "RESOLUTION", fact: "The listing name is now restored.", effect: "Customers should see the original name.", nextStep: "No further action is needed.", reason: "Trying to send a resolution before the alert is resolved.",
+    }, followUp!.version])).toMatchObject({ status: "denied" })
+
+    const resolved = await rpc("admin_guard_alert_command_v1", [token, key(), "resolve", {
+      alertId: attached!.id, reason: "The listing was restored after explicit review.",
+    }, followUp!.version])
+    expect(resolved).toMatchObject({ status: "success", state: "RESOLVED" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "INITIAL", fact: "The displayed business name has changed.", effect: "Customers may see a different listing name.", nextStep: "Please check the Google Business Profile for this location.",
+    }, resolved!.version])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "FOLLOW_UP", fact: "The listing name is still changed.", effect: "Customers may still see a different listing name.", nextStep: "Please check the Google Business Profile again.", reason: "Follow-up cannot be prepared after the alert is resolved.",
+    }, resolved!.version])).toMatchObject({ status: "denied" })
+    const resolution = await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: attached!.id, notificationKind: "RESOLUTION", fact: "The listing name is now restored.", effect: "Customers should see the original name.", nextStep: "No further action is needed.", reason: "Customer should hear that the reviewed issue is closed.",
+    }, resolved!.version])
+    expect(resolution).toMatchObject({ status: "success" })
+    const approved = await rpc("admin_guard_alert_command_v1", [token, key(), "approve_notification", {
+      alertId: attached!.id, communicationId: resolution!.communicationId, fromAddress: "alerts@profilerelaunch.com",
+    }, resolution!.version])
+    expect(approved?.status).toBe("success")
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "queue_notification", {
+      alertId: attached!.id, communicationId: resolution!.communicationId, sendEnabled: true, notificationsEnabled: true,
+    }, approved!.version])).toMatchObject({ status: "success" })
+
+    const strayComm = crypto.randomUUID()
+    await db.query(
+      "insert into public.communications(id, guard_alert_id, customer_id, business_id, communication_type, direction, recipient, subject, body_text, status, lifecycle, delivery_status, template_key, template_version, author_id, content_version, record_version) values($1,$2,$3,$4,'GUARD_ALERT','OUTBOUND','alex@example.com','Relaunch Guard update for High Street','fact', 'PENDING','DRAFT','NONE','GUARD_ALERT',1,$5,1,1)",
+      [strayComm, attached!.id, customer, business, uid],
+    )
+    await expect(db.query(
+      "insert into public.guard_alert_notifications(alert_id, communication_id, notification_kind, sequence_number) values($1,$2,'INITIAL',99)",
+      [attached!.id, strayComm],
+    )).rejects.toThrow()
+    const wrongRecipient = crypto.randomUUID()
+    await db.query(
+      "insert into public.communications(id, guard_alert_id, customer_id, business_id, communication_type, direction, recipient, subject, body_text, status, lifecycle, delivery_status, template_key, template_version, author_id, content_version, record_version) values($1,$2,$3,$4,'GUARD_ALERT','OUTBOUND','other@example.com','Relaunch Guard update for High Street','fact', 'PENDING','DRAFT','NONE','GUARD_ALERT',1,$5,1,1)",
+      [wrongRecipient, attached!.id, customer, business, uid],
+    )
+    await expect(db.query(
+      "insert into public.guard_alert_notifications(alert_id, communication_id, notification_kind, sequence_number) values($1,$2,'RESOLUTION',100)",
+      [attached!.id, wrongRecipient],
+    )).rejects.toThrow()
+    await expect(db.query("update public.guard_alerts set first_observation_id=$2 where id=$1", [attached!.id, extra!.observationId])).rejects.toThrow()
+    await expect(db.query("update public.guard_alerts set first_observed_at=now() where id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query("update public.guard_alerts set opened_at=now() where id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query("update public.guard_alerts set resolved_at=now() + interval '1 day' where id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query("update public.guard_alerts set state='ACKNOWLEDGED' where id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query("update public.guard_alert_events set reason='rewritten' where alert_id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query("update public.guard_alert_observations set classification='INCOMPLETE' where alert_id=$1", [attached!.id])).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_alert_observations(alert_id, observation_id, issue_codes, classification) values($1,$2,$3,'CHANGE_DETECTED')",
+      [attached!.id, unprocessed!.observationId, ["NOT_A_REAL_CODE"]],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_alert_observations(alert_id, observation_id, issue_codes, classification) values($1,$2,$3,'INCOMPLETE')",
+      [attached!.id, unprocessed!.observationId, ["BUSINESS_NAME_CHANGED"]],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set latest_observation_id=$2, latest_observed_at=now() where id=$1",
+      [attached!.id, unprocessed!.observationId],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set latest_observed_at=now() + interval '2 days' where id=$1",
+      [attached!.id],
+    )).rejects.toThrow()
+
+    const closed = crypto.randomUUID()
+    await db.query("insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Closed case','2026-01-01',now(),now(),'UNDECIDED','CLOSED')", [closed, customer, business, location])
+    const otherCoverage = await activateIncluded(otherLocation)
+    const otherWindows = await openWindow(otherCoverage, "2026-10-02")
+    const otherObs = await completeWindow(otherWindows[1].id, otherWindows[1].record_version, healthyPayload({
+      classification: "PROFILE_UNAVAILABLE", profileAvailability: "UNAVAILABLE", locationIdentified: false, ratingAvailable: false, rating: null,
+    }), "2026-10-02T08:15:00Z")
+    const otherAlert = await process(String(otherObs!.observationId))
+    const otherAck = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: otherAlert!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Profile is currently unavailable.",
+    }, otherAlert!.version])
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
+      alertId: otherAlert!.id, caseId: closed,
+    }, otherAck!.version])).toMatchObject({ status: "denied", reason: "case_scope_mismatch" })
+    const sameClosed = crypto.randomUUID()
+    await db.query("insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Closed same location','2026-01-01',now(),now(),'UNDECIDED','CLOSED')", [sameClosed, customer, business, otherLocation])
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
+      alertId: otherAlert!.id, caseId: sameClosed,
+    }, otherAck!.version])).toMatchObject({ status: "denied", reason: "case_not_usable" })
+    const cancelled = crypto.randomUUID()
+    await db.query("insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status) values($1,'REVIEW_PROTECTION',$2,$3,$4,'Cancelled same location','2026-01-01',now(),now(),'UNDECIDED','CANCELLED')", [cancelled, customer, business, otherLocation])
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
+      alertId: otherAlert!.id, caseId: cancelled,
+    }, otherAck!.version])).toMatchObject({ status: "denied", reason: "case_not_usable" })
+    await expect(db.query(
+      "insert into public.guard_alert_cases(alert_id, case_id, role, created_by) values($1,$2,'PRIMARY',$3)",
+      [otherAlert!.id, sameClosed, uid],
+    )).rejects.toThrow()
+
+    await expect(db.query(
+      "insert into public.guard_service_actions(coverage_id,customer_id,business_id,location_id,kind,reason_code,details) values($1,$2,$3,$4,'CONTACT_RECOVERY','ACCESS_NOT_VERIFIED','bad')",
+      [otherCoverage, customer, business, otherLocation],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_service_actions(coverage_id,customer_id,business_id,location_id,kind,reason_code,details) values($1,$2,$3,$4,'ACCESS_RECOVERY','EMAIL_FAILED_PHONE_AVAILABLE','bad')",
+      [otherCoverage, customer, business, otherLocation],
+    )).rejects.toThrow()
+
+    await db.query("delete from public.customer_contact_verifications where customer_id=$1", [customer])
+    await rpc("guard_maintain_alerts_v1", [null])
+    const contactAction = (await db.query<{ id: string; record_version: number }>("select id, record_version from public.guard_service_actions where coverage_id=$1 and kind='CONTACT_RECOVERY' and state in ('OPEN','ACKNOWLEDGED')", [otherCoverage])).rows[0]
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "resolve_service_action", {
+      serviceActionId: contactAction.id, reason: "Trying to close contact recovery with no verified contact.",
+    }, contactAction.record_version])).toMatchObject({ status: "denied", reason: "contact_still_missing" })
+    const staleAccess = crypto.randomUUID()
+    await db.query(
+      "insert into public.guard_service_actions(id,coverage_id,customer_id,business_id,location_id,kind,reason_code,details) values($1,$2,$3,$4,$5,'ACCESS_RECOVERY','ACCESS_NOT_VERIFIED','Stale access action while access is still present')",
+      [staleAccess, otherCoverage, customer, business, otherLocation],
+    )
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "pause_for_recovery", {
+      alertId: otherAlert!.id, serviceActionId: staleAccess, reason: "Access is already present so this action is stale.",
+    }, otherAck!.version])).toMatchObject({ status: "denied", reason: "stale_service_action" })
+    await db.query("update public.location_manager_access set status='REVOKED', revoked_at=now(), revoked_by=$2, revocation_reason='Lost manager access after review' where location_id=$1", [otherLocation, uid])
+    await rpc("guard_maintain_alerts_v1", [null])
+    const accessAction = (await db.query<{ id: string; record_version: number }>("select id, record_version from public.guard_service_actions where coverage_id=$1 and kind='ACCESS_RECOVERY' and state in ('OPEN','ACKNOWLEDGED')", [otherCoverage])).rows[0]
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "resolve_service_action", {
+      serviceActionId: accessAction.id, reason: "Trying to close access recovery while access is still missing.",
+    }, accessAction.record_version])).toMatchObject({ status: "denied", reason: "access_still_missing" })
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "pause_for_recovery", {
+      alertId: otherAlert!.id, serviceActionId: accessAction.id, reason: "Access is missing so this pause should use the access action.",
+    }, otherAck!.version])).toMatchObject({ status: "success" })
+
+    const detail = await rpc("admin_guard_alert_detail_v1", [token, attached!.id])
+    const observations = (detail!.observations as Array<{ classification: string }>) || []
+    expect(observations.every(item => item.classification !== "HEALTHY")).toBe(true)
+    expect(((detail!.recentCoverageObservations as unknown[]) || []).length).toBeLessThanOrEqual(10)
+    expect(((detail!.events as unknown[]) || []).length).toBeLessThanOrEqual(100)
+
+    const discount = detail!.discount as { managedRelaunch: { eligible: boolean; issueObservedAt?: string | null } }
+    expect(discount.managedRelaunch.eligible).toBe(false)
+    expect(discount.managedRelaunch.issueObservedAt).toBeTruthy()
+    const validObservedAt = (await db.query<{ observed_at: string }>("select observed_at::text from public.guard_check_observations where id=$1", [valid!.observationId])).rows[0].observed_at
+    expect(new Date(String(discount.managedRelaunch.issueObservedAt)).toISOString()).toBe(new Date(validObservedAt).toISOString())
+
+    const createCaseSql = (await db.query<{ src: string }>(
+      "select pg_get_functiondef(p.oid) as src from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='admin_private' and p.proname='guard_alert_create_case_v1'",
+    )).rows[0].src
+    expect(createCaseSql.toLowerCase()).not.toMatch(/count\(\*\)/)
+
+    await db.query("update public.communications set lifecycle='QUEUED', content_locked=true, sender_address='alerts@profilerelaunch.com', delivery_status='PROVIDER_ACCEPTED' where id=$1", [resolution!.communicationId])
+    await db.query("update public.communications set delivery_status='BOUNCED' where id=$1", [resolution!.communicationId])
+    const failureEvents = await count("public.guard_alert_events", `where alert_id='${attached!.id}' and event='NOTIFICATION_DELIVERY_FAILED'`)
+    expect(failureEvents).toBe(1)
+    await db.query("update public.communications set delivery_status='BOUNCED' where id=$1", [resolution!.communicationId])
+    await rpc("guard_maintain_alerts_v1", [null])
+    await rpc("guard_maintain_alerts_v1", [null])
+    expect(await count("public.guard_alert_events", `where alert_id='${attached!.id}' and event='NOTIFICATION_DELIVERY_FAILED'`)).toBe(1)
+    expect(await count("public.guard_service_actions", `where alert_id='${attached!.id}' and kind='CONTACT_RECOVERY'`)).toBe(1)
+  })
+
+  it("bounds maintenance batches and continues remaining work without duplicates", async () => {
+    const first = await activateIncluded()
+    const second = await activateIncluded(otherLocation)
+    const firstWindows = await openWindow(first)
+    const a = await completeWindow(firstWindows[1].id, firstWindows[1].record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
+    }))
+    const secondWindows = await openWindow(second, "2026-10-02")
+    const b = await completeWindow(secondWindows[1].id, secondWindows[1].record_version, healthyPayload({
+      classification: "PROFILE_UNAVAILABLE", profileAvailability: "UNAVAILABLE", locationIdentified: false, ratingAvailable: false, rating: null,
+    }), "2026-10-02T08:15:00Z")
+    expect(a?.status).toBe("success")
+    expect(b?.status).toBe("success")
+    expect(await count("public.guard_alerts")).toBe(0)
+    const pending = await count(
+      "public.guard_check_observations",
+      "where attention_candidate is true and not exists (select 1 from public.guard_alert_observations l where l.observation_id=guard_check_observations.id)",
+    )
+    expect(pending).toBeGreaterThan(1)
+    const batch1 = await rpc("guard_maintain_alerts_v1", [null, 1])
+    expect(batch1).toMatchObject({ status: "success", processedCandidates: 1, hasMore: true })
+    expect(await count("public.guard_alerts")).toBe(1)
+    const remaining = await count(
+      "public.guard_check_observations",
+      "where attention_candidate is true and not exists (select 1 from public.guard_alert_observations l where l.observation_id=guard_check_observations.id)",
+    )
+    expect(remaining).toBe(pending - 1)
+    const batch2 = await rpc("guard_maintain_alerts_v1", [null, 1])
+    expect(batch2).toMatchObject({ status: "success", processedCandidates: 1 })
+    expect(await count("public.guard_alerts")).toBe(2)
+    const batch3 = await rpc("guard_maintain_alerts_v1", [null, 1])
+    expect(batch3).toMatchObject({ status: "success", processedCandidates: 0 })
+    expect(await count("public.guard_alert_observations", `where observation_id in ('${a!.observationId}','${b!.observationId}')`)).toBe(2)
+    expect(await count("public.guard_alerts")).toBe(2)
+  })
+
+  it("uses only valid customer-issue evidence for the paid discount timestamp", async () => {
+    const coverageId = await activateDirectPaid()
+    const [, morning] = await openWindow(coverageId)
+    const incomplete = await completeWindow(morning.id, morning.record_version, healthyPayload({
+      classification: "INCOMPLETE", profileAvailability: "UNKNOWN", locationIdentified: false,
+      displayedBusinessName: "", reviewCount: null, ratingAvailable: false, rating: null,
+    }))
+    await db.exec("alter table public.guard_check_observations disable trigger guard_check_observations_immutable")
+    await db.query("update public.guard_check_observations set change_codes=array['BUSINESS_NAME_CHANGED']::text[] where id=$1", [incomplete!.observationId])
+    await db.exec("alter table public.guard_check_observations enable trigger guard_check_observations_immutable")
+    const alert = await process(String(incomplete!.observationId))
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: alert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Incomplete evidence cannot qualify a discount.",
+    }, alert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
+    const incompleteDetail = await rpc("admin_guard_alert_detail_v1", [token, alert!.id])
+    expect((incompleteDetail!.discount as { managedRelaunch: { eligible: boolean; issueObservedAt?: string | null } }).managedRelaunch)
+      .toMatchObject({ eligible: false, reason: "no_confirmed_customer_issue", issueObservedAt: null })
+
+    const evening = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and window_code='EVENING'",
+      [coverageId],
+    )).rows[0]
+    const increased = await completeWindow(evening.id, evening.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", reviewCount: 12,
+    }), "2026-09-30T16:15:00Z")
+    const increaseAlert = await process(String(increased!.observationId))
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: increaseAlert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "A review-count increase alone cannot qualify a discount.",
+    }, increaseAlert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
+
+    await rpc("guard_maintain_checks_v1", ["2026-10-01T08:00:00Z", "2026-10-01"])
+    const validWindow = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date='2026-10-01' and window_code='MORNING'",
+      [coverageId],
+    )).rows[0]
+    const valid = await completeWindow(validWindow.id, validWindow.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
+    }), "2026-10-01T08:15:00Z")
+    const attached = await process(String(valid!.observationId))
+    const ack = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: attached!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "The later name change is the first valid customer issue.",
+    }, attached!.version])
+    expect(ack).toMatchObject({ status: "success" })
+    const validObservedAt = (await db.query<{ observed_at: string }>("select observed_at::text from public.guard_check_observations where id=$1", [valid!.observationId])).rows[0].observed_at
+    const snapshots = await count("public.quote_discount_snapshots")
+    const detail = await rpc("admin_guard_alert_detail_v1", [token, attached!.id])
+    const discount = detail!.discount as { managedRelaunch: { eligible: boolean; issueObservedAt?: string | null } }
+    expect(discount.managedRelaunch.eligible).toBe(true)
+    expect(new Date(String(discount.managedRelaunch.issueObservedAt)).toISOString()).toBe(new Date(validObservedAt).toISOString())
+    expect(await count("public.quote_discount_snapshots")).toBe(snapshots)
   })
 })

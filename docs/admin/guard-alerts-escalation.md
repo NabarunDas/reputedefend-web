@@ -73,10 +73,15 @@ Acknowledgement requires exact version, `NEW` state, severity, disposition and a
 - `INTERNAL_ONLY` may be acknowledged or resolved; customer notification, intervention-case creation and discount qualification are denied
 - only `CONFIRMED_CUSTOMER_ISSUE` may notify, create/link a case, or be assessed for the paid-Guard discount
 - `INCOMPLETE`-only evidence cannot become `CONFIRMED_CUSTOMER_ISSUE`
+- `REVIEW_COUNT_INCREASED` alone cannot become `CONFIRMED_CUSTOMER_ISSUE`
+
+Valid customer-issue evidence is `PROFILE_UNAVAILABLE`, or `CHANGE_DETECTED` with at least one customer-facing issue code. Acknowledgement, notification readiness, intervention-case readiness and discount assessment share that helper.
 
 Customer-facing factual issue codes: `PROFILE_UNAVAILABLE`, `BUSINESS_NAME_CHANGED`, `REVIEW_COUNT_DECREASED`, `RATING_CHANGED`, `LATEST_REVIEW_CHANGED`.
 
 Interpretation-only: `REVIEW_COUNT_INCREASED`, `OBSERVATION_INCOMPLETE`, `BASELINE_MISSING`.
+
+When an acknowledged alert receives another attention observation, `needs_review` becomes true. Customer notification, case create/link and resolution stay blocked until Admin records `review_new_evidence`. Original `acknowledged_at` / `acknowledged_by` are preserved. Severity still changes only through escalate/correct.
 
 The alert stores the union of issue evidence. Original observation-level codes are not rewritten.
 
@@ -94,7 +99,7 @@ After a successful Step 17 observation completion, if `GUARD_ALERTS_ENABLED === 
 
 Daily repair uses existing Step 10 worker job `MAINTAIN_GUARD_ALERTS`. No second Vercel Cron. Cron remains `0 4 * * *`. When the alert gate is disabled, the worker does not even enqueue the job.
 
-Maintenance finds unprocessed attention candidates, delivery failures that need a service action, and ACTIVE/PAUSED coverages whose current Manager/Owner access or verified contact is missing.
+Maintenance is bounded and continuation-safe. Each call processes a limited batch of unprocessed candidates, unrecorded delivery failures, and coverages that still need a recovery action. The worker repeats the RPC until `hasMore` is false. Retry remains idempotent. No second Cron.
 
 The processor is idempotent and concurrency-safe. Coverage and observation advisory locks plus the one-open-alert unique index prevent duplicate unresolved episodes.
 
@@ -114,7 +119,7 @@ Reviewed/queued content must contain no unresolved `{placeholder}` text. The tem
 
 ## Notification approval
 
-An alert email may be prepared only when the alert is unresolved, `ACKNOWLEDGED`, `CONFIRMED_CUSTOMER_ISSUE`, severity is assessed, a current verified email exists, the address is not suppressed, and coverage/location scope is valid.
+INITIAL and FOLLOW_UP may be prepared only while the alert is `ACKNOWLEDGED`, `CONFIRMED_CUSTOMER_ISSUE`, `needs_review` is false, severity is assessed, a current verified email exists, the address is not suppressed, and coverage/location scope is valid. RESOLUTION may be prepared only after the alert is `RESOLVED`. A resolution message cannot be sent before the alert is resolved, and INITIAL/FOLLOW_UP cannot be created against a resolved alert.
 
 No observation automatically sends customer email.
 
@@ -152,7 +157,7 @@ Resume preserves `activated_at` and included timestamps. The original activation
 
 `create_intervention_case` and `link_existing_case` are allowed only when the alert is `ACKNOWLEDGED` and `CONFIRMED_CUSTOMER_ISSUE`. Scope must match customer, business and location. Case type is explicit: `PROFILE_RECOVERY` or `REVIEW_PROTECTION`. No automatic inference from one change code.
 
-Created cases use existing public-ref generation, `source = GUARD_ALERT`, a bounded factual summary, `service_track = UNDECIDED`, `work_stage = INITIAL_REVIEW`, and no commercial decision.
+Created cases use existing public-ref generation, `source = GUARD_ALERT`, a bounded factual summary, `service_track = UNDECIDED`, `work_stage = INITIAL_REVIEW`, and no commercial decision. `privacy_accepted_at` stays NULL. `information_accurate_at` is the earliest valid customer-issue observation time. CLOSED and CANCELLED cases cannot become the active PRIMARY intervention case.
 
 At most one PRIMARY intervention case per alert. Multiple alerts may link to the same suitable case when scope matches and Admin chooses it.
 
@@ -162,7 +167,7 @@ Case create/link must not create a quote, quote version, acceptance, service ord
 
 Reuse `admin_private.paid_guard_discount_ready_v1` and policy `PAID_GUARD_MANAGED_20`. Do not reimplement the maths.
 
-Eligibility uses the first relevant customer-issue observed time, not review time, case-creation time or email time.
+Eligibility uses the earliest valid customer-issue observation time from the shared evidence helper. `INCOMPLETE` and `REVIEW_COUNT_INCREASED`-only evidence cannot establish `issueObservedAt`.
 
 Included Guard, Guided service, issues before paid coverage, and wrong location are not eligible. The assessment itself creates no snapshot. Later quote preparation still uses `admin_quote_command_v1(... record_qualification ...)`.
 

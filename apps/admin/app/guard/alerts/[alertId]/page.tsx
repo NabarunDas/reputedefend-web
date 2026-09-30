@@ -14,24 +14,14 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
   const { alertId } = await params
   const detail = await loadGuardAlert(alertId)
   if (!detail) notFound()
-  const alert = detail.alert as {
-    id: string; version: number; state: string; severity: string; reviewDisposition: string
-    customerName?: string; businessName?: string; locationName?: string; coverageBasis?: string
-    coverageState?: string; issueCodes?: string[]; linkedCaseRef?: string | null
-  }
-  const permitted = (detail.permittedActions || {}) as Record<string, boolean>
-  const coverage = (detail.coverage || {}) as { state?: string; activatedAt?: string; resumeReady?: boolean }
-  const notifications = (detail.notifications || []) as Array<{
-    id: string; communicationId: string; kind: string; lifecycle: string; deliveryStatus: string; subject: string
-  }>
-  const actions = (detail.serviceActions || []) as Array<{
-    id: string; kind: string; state: string; reasonCode: string; details: string; version: number
-  }>
-  const observations = (detail.observations || []) as Array<{
-    id: string; classification: string; issueCodes: string[]; observedAt: string; attached: boolean
-  }>
-  const events = (detail.events || []) as Array<{ event: string; reason: string; createdAt: string }>
-  const discount = (detail.discount || {}) as Record<string, { eligible?: boolean; reason?: string }>
+  const alert = detail.alert
+  const permitted = detail.permittedActions || {}
+  const coverage = detail.coverage || {}
+  const notifications = detail.notifications || []
+  const actions = detail.serviceActions || []
+  const observations = detail.observations || []
+  const events = detail.events || []
+  const discount = detail.discount || {}
   const enabled = detail.enabled === true
   const openRecovery = actions.find(item => item.state === "OPEN" || item.state === "ACKNOWLEDGED")
   return <section className="page">
@@ -46,9 +36,9 @@ export default async function GuardAlertDetailPage({ params }: { params: Promise
     </section>
     <section className="panel">
       <h2>Contact and access</h2>
-      <p>Email verified: {String((detail.contact as { emailVerified?: boolean })?.emailVerified === true)}</p>
-      <p>Phone verified: {String((detail.contact as { phoneVerified?: boolean })?.phoneVerified === true)}</p>
-      <p>Manager/Owner access verified: {String((detail.access as { verified?: boolean })?.verified === true)}</p>
+      <p>Email verified: {String(detail.contact?.emailVerified === true)}</p>
+      <p>Phone verified: {String(detail.contact?.phoneVerified === true)}</p>
+      <p>Manager/Owner access verified: {String(detail.access?.verified === true)}</p>
     </section>
     <section className="panel">
       <h2>Observation timeline</h2>

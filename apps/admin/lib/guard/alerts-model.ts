@@ -63,6 +63,49 @@ export type GuardAlertList = {
   nextCursor?: string | null
 }
 
+export type GuardAlertDetail = {
+  status?: string
+  enabled: boolean
+  alert: GuardAlertRow & {
+    reviewDisposition?: string
+    customerName?: string
+    businessName?: string
+    locationName?: string
+    coverageBasis?: string
+    coverageState?: string
+    linkedCaseRef?: string | null
+  }
+  permittedActions?: Record<string, boolean>
+  coverage?: { state?: string; activatedAt?: string; resumeReady?: boolean }
+  notifications?: Array<{
+    id: string
+    communicationId: string
+    kind: string
+    lifecycle: string
+    deliveryStatus: string
+    subject: string
+  }>
+  serviceActions?: Array<{
+    id: string
+    kind: string
+    state: string
+    reasonCode: string
+    details: string
+    version: number
+  }>
+  observations?: Array<{
+    id: string
+    classification: string
+    issueCodes: string[]
+    observedAt: string
+    attached: boolean
+  }>
+  events?: Array<{ event: string; reason: string; createdAt: string }>
+  discount?: Record<string, { eligible?: boolean; reason?: string }>
+  contact?: { emailVerified?: boolean; phoneVerified?: boolean }
+  access?: { verified?: boolean }
+}
+
 export function alertStateLabel(state: string): string {
   if (state === "NEW") return "New review"
   if (state === "ACKNOWLEDGED") return "Acknowledged"

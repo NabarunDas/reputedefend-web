@@ -348,12 +348,33 @@ describe("guard alerts SQL", () => {
     expect(await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
       alertId: alert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Trying to treat incomplete capture as a customer issue.",
     }, alert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
+    const evening = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and window_code='EVENING'",
+      [coverageId],
+    )).rows[0]
+    const later = await completeWindow(evening.id, evening.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
+    }), "2026-09-30T16:15:00Z")
+    const attached = await process(String(later!.observationId))
+    expect(attached).toMatchObject({ status: "success", id: alert!.id })
+    const confirmed = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: alert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Later complete observation supplies customer-issue evidence.",
+    }, attached!.version])
+    expect(confirmed).toMatchObject({ status: "success", state: "ACKNOWLEDGED" })
+
+    const coverageId2 = await activateIncluded(otherLocation)
+    const [, morning2] = await openWindow(coverageId2, "2026-10-02")
+    const incomplete2 = await completeWindow(morning2.id, morning2.record_version, healthyPayload({
+      classification: "INCOMPLETE", profileAvailability: "UNKNOWN", locationIdentified: false,
+      displayedBusinessName: "", reviewCount: null, ratingAvailable: false, rating: null,
+    }), "2026-10-02T08:15:00Z")
+    const internalAlert = await process(String(incomplete2!.observationId))
     const internal = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
-      alertId: alert!.id, severity: "LOW", disposition: "INTERNAL_ONLY", reason: "Incomplete capture stays internal.",
-    }, alert!.version])
+      alertId: internalAlert!.id, severity: "LOW", disposition: "INTERNAL_ONLY", reason: "Incomplete capture stays internal.",
+    }, internalAlert!.version])
     expect(internal).toMatchObject({ status: "success" })
     expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
-      alertId: alert!.id, notificationKind: "INITIAL", fact: "The capture was incomplete today.", effect: "We have not confirmed a customer-facing change.", nextStep: "We will review the next complete observation.",
+      alertId: internalAlert!.id, notificationKind: "INITIAL", fact: "The capture was incomplete today.", effect: "We have not confirmed a customer-facing change.", nextStep: "We will review the next complete observation.",
     }, internal!.version])).toMatchObject({ status: "denied", reason: "not_confirmed_customer_issue" })
   })
 
@@ -377,6 +398,9 @@ describe("guard alerts SQL", () => {
       alertId: alert!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Name change is visible on the live profile.",
     }, alert!.version])).toMatchObject({ replay: true })
 
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: alert!.id, notificationKind: "INITIAL", fact: "The displayed name is {not_a_real_placeholder}.", effect: "Customers may see a different listing name.", nextStep: "Please check the Google Business Profile for this location.",
+    }, ack!.version])).toMatchObject({ status: "invalid", reason: "unresolved_placeholders" })
     const prepared = await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
       alertId: alert!.id, notificationKind: "INITIAL", fact: "The displayed business name has changed.", effect: "Customers may see a different listing name.", nextStep: "Please check the Google Business Profile for this location.",
     }, ack!.version])
@@ -516,8 +540,16 @@ describe("guard alerts SQL", () => {
     const cs = (await db.query<{ source: string; service_track: string; work_stage: string; location_id: string }>("select source, service_track, work_stage, location_id from public.cases where id=$1", [created!.caseId])).rows[0]
     expect(cs).toMatchObject({ source: "GUARD_ALERT", service_track: "UNDECIDED", work_stage: "INITIAL_REVIEW", location_id: location })
     expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
-      alertId: alert!.id, caseId, 
-    }, created!.version])).toMatchObject({ status: "denied" })
+      alertId: alert!.id, caseId,
+    }, created!.version])).toMatchObject({ status: "denied", reason: "primary_already_linked" })
+    const otherCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Other location','2026-01-01',now(),now(),'UNDECIDED')",
+      [otherCase, customer, business, otherLocation],
+    )
+    expect(await rpc("admin_guard_alert_command_v1", [token, key(), "link_existing_case", {
+      alertId: alert!.id, caseId: otherCase,
+    }, created!.version])).toMatchObject({ status: "denied", reason: "case_scope_mismatch" })
 
     const detail = await rpc("admin_guard_alert_detail_v1", [token, alert!.id])
     const discount = detail!.discount as { managedRelaunch: { eligible: boolean }; guided: { eligible: boolean } }
@@ -714,5 +746,21 @@ describe("guard alerts SQL", () => {
     const detail = await rpc("admin_guard_alert_detail_v1", [token, second!.id])
     expect((detail!.discount as { managedRelaunch: { eligible: boolean } }).managedRelaunch.eligible).toBe(true)
     expect(await count("public.quote_discount_snapshots")).toBe(snapshots)
+
+    const included = await activateIncluded(otherLocation)
+    const includedWindows = await openWindow(included, "2026-10-02")
+    const includedObs = await completeWindow(includedWindows[1].id, includedWindows[1].record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "Side Bakery",
+    }), "2026-10-02T08:15:00Z")
+    const includedAlert = await process(String(includedObs!.observationId))
+    const includedAck = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: includedAlert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Included Guard change stays ineligible for paid discount.",
+    }, includedAlert!.version])
+    expect(includedAck?.status).toBe("success")
+    const includedSnapshots = await count("public.quote_discount_snapshots")
+    const includedDetail = await rpc("admin_guard_alert_detail_v1", [token, includedAlert!.id])
+    expect((includedDetail!.discount as { managedRelaunch: { eligible: boolean; reason: string } }).managedRelaunch)
+      .toMatchObject({ eligible: false, reason: "included_guard_not_eligible" })
+    expect(await count("public.quote_discount_snapshots")).toBe(includedSnapshots)
   })
 })

@@ -96,10 +96,10 @@ export function ReasonForm({
 }
 
 export function EscalateForm({ alertId, version, current }: { alertId: string; version: number; current: string }) {
+  const { busy, message, run } = useCommand()
   const ranks = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
   const next = ranks.filter(item => ranks.indexOf(item) > ranks.indexOf(current))
   if (!next.length) return null
-  const { busy, message, run } = useCommand()
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)

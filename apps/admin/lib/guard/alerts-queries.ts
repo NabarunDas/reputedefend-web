@@ -9,6 +9,7 @@ import { guardAlertsEnabled } from "./gate"
 import {
   guardAlertQueueParams,
   parseAlertQueueCursors,
+  type GuardAlertDetail,
   type GuardAlertList,
   type GuardAlertQueuePage,
   type GuardAlertQueueParam,
@@ -69,15 +70,15 @@ export async function loadGuardAlerts(
   }
 }
 
-export async function loadGuardAlert(alertId: string) {
+export async function loadGuardAlert(alertId: string): Promise<GuardAlertDetail | null> {
   await requireStaff()
   if (!isUuid(alertId)) return null
   const token = (await cookies()).get(sessionCookie)!.value
-  const result = await backend().rpc<Record<string, unknown> | null>("admin_guard_alert_detail_v1", {
-    p_token: tokenHash(token),
-    p_alert: alertId,
-  })
+  const result = await backend().rpc<(Omit<GuardAlertDetail, "enabled"> & { status?: string }) | null>(
+    "admin_guard_alert_detail_v1",
+    { p_token: tokenHash(token), p_alert: alertId },
+  )
   if (result === null) redirect("/login")
-  if (result.status !== "success") return null
+  if (result.status !== "success" || !result.alert) return null
   return { ...result, enabled: guardAlertsEnabled() }
 }

@@ -63,6 +63,15 @@ type Session = {
     invoiceStatus?: string | null
     hostedInvoiceUrl?: string | null
   } | null
+  guard?: {
+    coverageId: string
+    coverageBasis: string
+    permissionVersion: string
+    permissionText: string
+    includedDays?: number | null
+    includedOfferId?: string | null
+    includedOfferStatus?: string | null
+  } | null
 }
 
 function formatGbp(minor: number): string {
@@ -246,6 +255,26 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
         <button type="submit">Continue securely with Stripe</button>
       </form>
+      <p role="status">{message}</p>
+    </section>
+  }
+  if (session?.kind === "GUARD_PERMISSION" && session.guard) {
+    const guard = session.guard
+    return <section>
+      <h1>Guard monitoring permission</h1>
+      <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
+      {guard.coverageBasis === "INCLUDED" && <p>This also records your choice to take the included {guard.includedDays || 30}-day Relaunch Guard offer. The 30 days start only when Guard is activated, not when you accept this permission.</p>}
+      {guard.coverageBasis !== "INCLUDED" && <p>You already accepted the commercial quote. This is a separate operational permission for this location. It does not take payment or start monitoring.</p>}
+      <h2>Permission wording</h2>
+      <p className="preserve-lines">{guard.permissionText}</p>
+      <p>Opening this link or verifying the one-time code is not acceptance.</p>
+      <div className="button-row">
+        <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true", permissionVersion: guard.permissionVersion }) }}>
+          <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact permission text ({guard.permissionVersion}).</label>
+          <button type="submit">Accept Guard permission</button>
+        </form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+      </div>
       <p role="status">{message}</p>
     </section>
   }

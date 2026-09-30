@@ -256,6 +256,39 @@ describe("customer action page", () => {
     expect(screen.queryByRole("button", { name: /mark paid/i })).toBeNull()
   })
 
+  it("requires a positive Guard permission choice after OTP", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "GUARD_PERMISSION",
+          agreement: null,
+          guard: {
+            coverageId: actionId,
+            coverageBasis: "INCLUDED",
+            permissionVersion: "GUARD_PERMISSION_V1",
+            permissionText: "I choose the included 30-day Relaunch Guard offer for this restored location.",
+            includedDays: 30,
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept Guard permission" })).toBeTruthy())
+    expect(screen.getByText(/30 days start only when Guard is activated/)).toBeTruthy()
+    expect(screen.getByText(/Opening this link or verifying the one-time code is not acceptance/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox"))
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok" }) })
+    fireEvent.click(screen.getByRole("button", { name: "Accept Guard permission" }))
+    await waitFor(() => expect(screen.getByText("This action is complete.")).toBeTruthy())
+    expect(JSON.stringify(fetchMock.mock.calls.at(-1)?.[1].body)).toContain("GUARD_PERMISSION_V1")
+  })
+
   it("does not claim a code was sent when the provider fails", async () => {
     await renderAfterExchange()
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }) })

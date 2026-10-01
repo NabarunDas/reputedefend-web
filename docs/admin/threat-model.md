@@ -90,4 +90,30 @@ of configuration. See google-integration-readiness.md.
 | Secrets rendered in Admin | The integration surface shows fixed labels, classifications and timestamps only; no client secret, token, encrypted payload, raw provider body or environment value |
 | Direct table access | RLS enabled on all three new tables with grants revoked from PUBLIC/anon/authenticated/service_role; both public RPCs are `SECURITY DEFINER` with empty `search_path`, service-role-only, and require a fresh re-authentication |
 
+## Migration rehearsal and recovery tooling (Step 22A)
+
+Recovery tooling is attractive to misuse precisely because it exists to touch everything.
+These controls make the dangerous operations unreachable from the application rather than
+merely discouraged. See migration-recovery-rehearsal.md.
+
+| Threat | Mitigation |
+| --- | --- |
+| Recovery code reaching real evidence objects | The reconciliation module holds no AWS client and has no list, read, presign or delete path. An operator collects an inventory out of band and passes it in, so the application cannot be induced to touch a real object |
+| A baseline migration replayed against live data | Foundation migrations are flagged in the manifest, `safeToReplay` is the literal `false` for every applied entry and cannot be set true, and the validator reports both `replay_of_applied_migration` and `foundation_treated_as_new` for such a candidate |
+| An applied migration silently renamed or renumbered | The validator compares repository filenames, the manifest and remote history independently; a rename is `applied_migration_renamed` and a changed version is `version_drift` |
+| Unknown remote state treated as safe | The validator fails closed: absent or malformed remote history yields `blocked`, never `clean`, and `mayApplyMigrations` returns true only for `clean` |
+| Tooling repairing the chain on its own | The validator reports findings and holds no database connection. It never applies, repairs, reorders or renames |
+| A secret, token or presigned URL leaking through a recovery report | `assertReportIsSafe` runs over both rendered forms and throws on presigned-URL signatures, AWS access key ids, evidence storage keys, Google tokens and client secrets, Stripe secret keys, bearer tokens, session token hash fields, email addresses and UK telephone numbers. It throws rather than redacting, so a leak is a test failure |
+| Storage keys disclosed by reconciliation output | Rows carry a 16-character irreversible digest of bucket and key. The key itself never enters a report |
+| Customer data entering a rehearsal | The dataset is deterministic and synthetic, marked `SYNTHETIC_REHEARSAL_DATASET_V1`, using reserved `@rehearsal.invalid` addresses, the Ofcom drama number range and a synthetic bucket. Reports carry a permanent `syntheticData` marker |
+| Fingerprints disclosing customer data | A fingerprint holds counts, synthetic identifiers and SHA-256 digests of an allowlisted column set only; no plaintext value is recorded |
+| An unproven recovery reported as successful | `DATABASE_ONLY`, `OBJECT_ONLY`, `METADATA_MISMATCH` and `CHECKSUM_MISMATCH` all block, and so does an inventory that could not be collected: not knowing is never a pass. A size and content-type match is reported as `checksum_unavailable` and `byteIntegrityProven: false`, not as proven integrity. A version whose upload never finished is counted separately and cannot contribute to a recovered total |
+| A correctly executed rehearsal mistaken for a verified recovery | Execution and verification are separate typed statuses. `recoveryVerification` is derived once in `deriveRecoveryVerification` from facts the domain modules expose, appears explicitly in both rendered forms, and reaches `VERIFIED` only when every in-scope domain came back clean |
+| Nested evidence silently dropped from the machine-readable report | JSON is produced by a deep stable transform rather than a `JSON.stringify` replacer array, which applies at every depth and would omit nested keys. Round-trip tests assert that check, fingerprint, storage, pack, job and signoff fields all survive |
+| A prepared pack quietly rebound to newer evidence | Pack validation compares the pinned version and its metadata snapshot. `DOCUMENT_REBOUND` and `VERSION_MISSING` are failures; there is no repair path that repoints an item |
+| A restored queue repeating a provider effect | Completed work is protected by its idempotency key, dead letters are retained, gates are reported rather than changed, and `blindReplayPermitted` is the literal `false`, so no bulk replay path exists |
+| A second Admin identity created during recovery | `admin_identity` remains a singleton with the Step 20 protection trigger. Recovery adds no staff account, no invitation and no backup Owner |
+| Session material surviving into a report | Sessions are expected to require reauthentication after a restore; a `token_hash` field in a rendered report is rejected outright |
+| A rehearsal timing becoming a production promise | Reports state that measurements are synthetic and not an approved target, and signoff is always `approvedBy: null` |
+
 Related controls from earlier steps remain in force: exact-origin CSRF, opaque Admin session cookies, hashed token RPCs, revoked anon/authenticated table grants, append-only Admin audit, no localStorage/sessionStorage for evidence, action secrets or auth state.

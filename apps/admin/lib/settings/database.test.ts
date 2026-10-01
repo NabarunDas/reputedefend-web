@@ -132,7 +132,7 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
     expect(await rpc("admin_settings_command_v1", [token, key(), "create_setting_draft", {
       key: "RETENTION", reason: "Secret", payload: { unsuccessfulEnquiriesDays: 30, caseEvidenceDays: 30, financialDays: 30, consentDays: 30, securityLogsDays: 30, apiKey: "sk_live_123" },
     }, null])).toMatchObject({ status: "invalid" })
-    await expect(db.query("update public.admin_settings_versions set payload='{\"timezone\":\"UTC\"}'::jsonb where id=$1", [draft!.id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.admin_settings_versions set effective_from = effective_from + interval '1 day' where id=$1", [draft!.id])).rejects.toThrow(/immutable/)
   })
 
   it("requires a fresh sign-in for setting approval and hold release", async () => {

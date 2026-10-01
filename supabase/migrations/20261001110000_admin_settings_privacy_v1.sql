@@ -495,7 +495,7 @@ DECLARE
   s jsonb; actor uuid; fp text; cached jsonb; result jsonb;
   want_key text; row public.admin_settings_versions; prev public.admin_settings_versions;
   draft admin_private.communication_template_drafts; next_ver integer;
-  hold public.legal_holds; req public.privacy_requests; preview jsonb;
+  hold public.legal_holds; req public.privacy_requests; preview_json jsonb;
   incident public.operational_incidents; sched public.guard_check_schedule_versions;
   clock timestamptz := now(); london_day date;
 BEGIN
@@ -696,12 +696,12 @@ BEGIN
     ELSIF req.record_version IS DISTINCT FROM p_version THEN result := jsonb_build_object('status','conflict');
     ELSIF req.status NOT IN ('RECEIVED','VERIFIED','IN_REVIEW') THEN result := jsonb_build_object('status','invalid');
     ELSE
-      preview := admin_private.privacy_preview_v1(req.customer_id);
+      preview_json := admin_private.privacy_preview_v1(req.customer_id);
       UPDATE public.privacy_requests
         SET status = CASE WHEN req.status = 'RECEIVED' THEN 'IN_REVIEW' ELSE req.status END,
-            preview = preview, record_version = record_version + 1
+            preview = preview_json, record_version = record_version + 1
       WHERE id = req.id RETURNING * INTO req;
-      result := jsonb_build_object('status','success','id', req.id, 'version', req.record_version, 'preview', preview);
+      result := jsonb_build_object('status','success','id', req.id, 'version', req.record_version, 'preview', preview_json);
     END IF;
 
   ELSIF p_operation = 'complete_privacy_request' THEN
@@ -713,20 +713,20 @@ BEGIN
       ELSIF req.record_version IS DISTINCT FROM p_version THEN result := jsonb_build_object('status','conflict');
       ELSIF req.status NOT IN ('VERIFIED','IN_REVIEW') THEN result := jsonb_build_object('status','invalid');
       ELSE
-        preview := admin_private.privacy_preview_v1(req.customer_id);
-        IF req.kind = 'DELETION' AND (preview->>'blockedByHold')::boolean THEN
+        preview_json := admin_private.privacy_preview_v1(req.customer_id);
+        IF req.kind = 'DELETION' AND (preview_json->>'blockedByHold')::boolean THEN
           UPDATE public.privacy_requests
-            SET status = 'REFUSED', preview = preview, outcome_note = 'Legal hold blocks deletion. Financial and audit records remain.',
+            SET status = 'REFUSED', preview = preview_json, outcome_note = 'Legal hold blocks deletion. Financial and audit records remain.',
                 record_version = record_version + 1
           WHERE id = req.id RETURNING * INTO req;
-          result := jsonb_build_object('status','denied','reason','legal_hold','id', req.id, 'preview', preview);
+          result := jsonb_build_object('status','denied','reason','legal_hold','id', req.id, 'preview', preview_json);
         ELSE
           UPDATE public.privacy_requests
-            SET status = 'COMPLETED', preview = preview,
+            SET status = 'COMPLETED', preview = preview_json,
                 outcome_note = left(btrim(coalesce(p_payload->>'outcomeNote','Reviewed. Financial and audit records are retained.')), 1000),
                 record_version = record_version + 1
           WHERE id = req.id RETURNING * INTO req;
-          result := jsonb_build_object('status','success','id', req.id, 'version', req.record_version, 'preview', preview);
+          result := jsonb_build_object('status','success','id', req.id, 'version', req.record_version, 'preview', preview_json);
         END IF;
       END IF;
     END IF;

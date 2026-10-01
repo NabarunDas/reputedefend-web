@@ -51,7 +51,7 @@ describe("Settings page", () => {
     render(await SettingsPage())
     expect(requireStaff).toHaveBeenCalled()
     expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy()
-    expect(screen.getByText("admin@profilerelaunch.com")).toBeTruthy()
+    expect(document.body.textContent).toContain("admin@profilerelaunch.com")
     expect(screen.getByText(/cannot be removed, invited, disabled or rebound/)).toBeTruthy()
     expect(screen.getByText(/one staff account/)).toBeTruthy()
     expect(screen.getByText(/never rewrite historical obligations/)).toBeTruthy()

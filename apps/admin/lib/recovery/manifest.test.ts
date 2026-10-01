@@ -16,12 +16,12 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("separates the repository head from the migration the dev project has received", () => {
-    expect(migrationHead.filename).toBe("20261001200000_quote_surface_fixes_v1.sql")
+  it("records the applied Step 23 migration as both repository and dev head", () => {
+    expect(migrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
     expect(migrationHead.step).toBe("Step 23 quote surface fixes")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261001175315_google_integration_readiness_v1.sql")
-    expect(appliedMigrationHead.step).toBe("Step 21 Google integration readiness")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
+    expect(appliedMigrationHead.step).toBe("Step 23 quote surface fixes")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
   })
 
@@ -29,8 +29,8 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("lists the reviewed migrations that are still waiting to be applied", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261001200000"])
+  it("has no reviewed migration still waiting to be applied", () => {
+    expect(pendingMigrations()).toEqual([])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

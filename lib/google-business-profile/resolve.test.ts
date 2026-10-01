@@ -114,13 +114,21 @@ describe("provider resolution", () => {
   })
 
   it("is not imported by any non-test source file", () => {
+    // Only a module specifier pulls the mock into a build, so this looks for
+    // the import rather than the name: a readiness catalogue may record which
+    // file reads a variable without that record making the mock reachable.
+    const imported = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)["'`][^"'`]*(?:mock-adapter|testing\/mock)/
     const offenders: string[] = []
     for (const path of sourceFiles(repoRoot)) {
       const name = relative(repoRoot, path)
       if (/\.test\.tsx?$/.test(name)) continue
       if (name.includes(join("google-business-profile", "testing"))) continue
-      if (/mock-adapter|testing\/mock/.test(readFileSync(path, "utf8"))) offenders.push(name)
+      if (imported.test(readFileSync(path, "utf8"))) offenders.push(name)
     }
     expect(offenders).toEqual([])
+
+    expect(imported.test(`import { mock } from "./testing/mock-adapter"`)).toBe(true)
+    expect(imported.test(`const m = await import("../google-business-profile/testing/mock-adapter")`)).toBe(true)
+    expect(imported.test(`readBy: ["lib/google-business-profile/testing/mock-adapter.ts"]`)).toBe(false)
   })
 })

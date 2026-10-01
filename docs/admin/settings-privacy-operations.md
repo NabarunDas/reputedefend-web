@@ -91,6 +91,8 @@ Retention versions follow the same effective-range invariant as versioned settin
 
 `public.privacy_requests` and `public.privacy_request_dispositions` track ACCESS / EXPORT / CORRECTION / DELETION through a strict transition matrix. Identity must be `VERIFIED_CONTACT` or `VERIFIED_MANUAL` before export or deletion. Manual verification requires fresh auth and a meaningful evidence note. A phone conversation alone is not enough.
 
+ACCESS/EXPORT completion requires identity verification, preview, review to `READY_FOR_ACTION`, and a reviewed export receipt. Missing retention policies and stored case evidence do not block access or export. Those are deletion-only gates. `deletion_blocked_v1` compares `external_deletion_outstanding_v1(...) > 0` explicitly.
+
 Deletion preview separates eligible, retained, hold-blocked, no-policy-blocked, external-storage and manual-review records. Financial, audit and consent history are not hidden. There is no generic cascade delete.
 
 Completion is gated in the database for every request kind, not only deletion. A request reaches `READY_FOR_ACTION` and then `COMPLETED` only when identity is verified, a preview exists, disposition work exists, no disposition is PENDING or BLOCKED, every delete/correct/manual-review disposition has been reviewed, no applicable legal hold remains, no outstanding external deletion applies, and a meaningful resolution is written. `VERIFIED` and `REVIEWING` can no longer jump to `COMPLETED`. Refreshing a preview clears the recorded reviews, so new facts always require a new review.

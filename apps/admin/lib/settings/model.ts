@@ -83,6 +83,7 @@ export function commandMessage(status?: string, reason?: string) {
   if (status === "denied" && reason === "cross_customer") return "That identifier does not belong to this customer."
   if (status === "denied" && reason === "retention_required") return "Deletion needs an approved elapsed retention policy."
   if (status === "denied" && reason === "blocked_disposition") return "This request still has blocked or pending disposition work."
+  if (status === "denied" && reason === "export_required") return "Download the reviewed export before completing an access or export request."
   if (status === "denied" && reason === "pending_disposition") return "Review every category before this request can move on."
   if (status === "denied" && reason === "review_required") return "Review the proposed dispositions before this request can move on."
   if (status === "denied" && reason === "preview_required") return "Refresh the preview before reviewing or deleting anything."

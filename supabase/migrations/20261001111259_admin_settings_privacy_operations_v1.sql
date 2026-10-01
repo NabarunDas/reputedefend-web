@@ -439,14 +439,6 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'overlapping approved retention';
   END IF;
-  IF NEW.status IN ('APPROVED','RETIRED') AND EXISTS (
-    SELECT 1 FROM public.retention_policy_versions o
-    WHERE o.category = NEW.category AND o.id <> NEW.id
-      AND o.status IN ('APPROVED','RETIRED')
-      AND tstzrange(o.effective_from, o.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
-  ) THEN
-    RAISE EXCEPTION 'overlapping approved retention';
-  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER retention_policy_versions_protect
@@ -1122,41 +1114,57 @@ BEGIN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,unsuccessfulEnquiries}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,unsuccessfulEnquiries}')::boolean, false);
       eligible := coalesce((p_preview#>>'{eligible,unsuccessfulEnquiries}')::int, 0);
-      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
-      st := CASE WHEN hold OR no_ret THEN 'BLOCKED' ELSE 'READY' END;
-      blocked := CASE WHEN hold THEN 'Legal hold' WHEN no_ret THEN 'No approved retention policy' ELSE '' END;
+      IF p_kind IN ('ACCESS','EXPORT') THEN
+        action := 'EXPORT';
+        st := 'READY';
+      ELSIF p_kind = 'CORRECTION' THEN
+        action := 'CORRECT';
+        st := 'PENDING';
+      ELSE
+        action := 'DELETE';
+        st := CASE WHEN hold OR no_ret THEN 'BLOCKED' ELSE 'READY' END;
+        blocked := CASE WHEN hold THEN 'Legal hold' WHEN no_ret THEN 'No approved retention policy' ELSE '' END;
+      END IF;
     ELSIF cat = 'CASE_EVIDENCE' THEN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,caseEvidence}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,caseEvidence}')::boolean, false);
       eligible := admin_private.external_deletion_outstanding_v1(cust);
-      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
-      external := CASE WHEN action = 'DELETE' THEN eligible ELSE 0 END;
-      st := CASE
-        WHEN hold OR no_ret OR external > 0 THEN 'BLOCKED'
-        WHEN action = 'CORRECT' THEN 'PENDING'
-        ELSE 'READY'
-      END;
-      blocked := CASE
-        WHEN hold THEN 'Legal hold'
-        WHEN no_ret THEN 'No approved retention policy'
-        WHEN external > 0 THEN 'BLOCKED_EXTERNAL_DELETION: '
-          || coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'storage delete is not granted')
-        ELSE ''
-      END;
+      IF p_kind IN ('ACCESS','EXPORT') THEN
+        action := 'EXPORT';
+        st := 'READY';
+      ELSIF p_kind = 'CORRECTION' THEN
+        action := 'CORRECT';
+        st := 'PENDING';
+      ELSE
+        action := 'DELETE';
+        st := CASE WHEN hold OR no_ret OR eligible > 0 THEN 'BLOCKED' ELSE 'READY' END;
+        blocked := CASE
+          WHEN hold THEN 'Legal hold'
+          WHEN no_ret THEN 'No approved retention policy'
+          WHEN eligible > 0 THEN 'BLOCKED_EXTERNAL_DELETION: '
+            || coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'storage delete is not granted')
+          ELSE ''
+        END;
+      END IF;
     ELSIF cat = 'FINANCIAL_RECORDS' THEN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,financialRecords}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,financialRecords}')::boolean, false);
       retained := coalesce((p_preview#>>'{retained,paymentReceipts}')::int, 0)
         + coalesce((p_preview#>>'{retained,paymentObligations}')::int, 0);
-      action := 'RETAIN';
+      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' ELSE 'RETAIN' END;
       st := 'READY';
     ELSIF cat = 'CONSENT_RECORDS' THEN
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,consentRecords}')::boolean, false);
-      action := 'MANUAL_REVIEW';
-      st := 'PENDING';
+      IF p_kind IN ('ACCESS','EXPORT') THEN
+        action := 'EXPORT';
+        st := 'READY';
+      ELSE
+        action := CASE WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'MANUAL_REVIEW' END;
+        st := 'PENDING';
+      END IF;
     ELSE
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,securityLogs}')::boolean, false);
-      action := 'RETAIN';
+      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' ELSE 'RETAIN' END;
       st := 'READY';
     END IF;
     INSERT INTO public.privacy_request_dispositions(
@@ -1234,15 +1242,13 @@ BEGIN
       WHERE d.privacy_request_id = p_req.id AND d.legal_hold_blocker
     )
   THEN RETURN 'legal_hold'; END IF;
-  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id)
-    OR EXISTS (
-      SELECT 1 FROM public.privacy_request_dispositions d
-      WHERE d.privacy_request_id = p_req.id
-        AND d.category = 'CASE_EVIDENCE'
-        AND (d.blocked_reason = 'BLOCKED_EXTERNAL_DELETION' OR d.status = 'BLOCKED')
-        AND d.proposed_action = 'DELETE'
-    )
-  THEN RETURN 'external_deletion'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id
+      AND d.category = 'CASE_EVIDENCE'
+      AND d.blocked_reason LIKE 'BLOCKED_EXTERNAL_DELETION%'
+      AND d.proposed_action = 'DELETE'
+  ) THEN RETURN 'external_deletion'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.privacy_request_dispositions d WHERE d.privacy_request_id = p_req.id)
     OR EXISTS (
       SELECT 1 FROM public.privacy_request_dispositions d
@@ -1867,6 +1873,12 @@ BEGIN
       OR note ~* '^\s*(ok|okay|done|n/?a|none|fixed|complete[d]?|closed)\s*[.!]?\s*$'
     THEN RETURN jsonb_build_object('status','invalid','reason','meaningful_resolution_required'); END IF;
     block_reason := admin_private.privacy_blockers_v1(req);
+    IF block_reason IS NULL AND req.kind IN ('ACCESS','EXPORT')
+      AND NOT EXISTS (
+        SELECT 1 FROM admin_private.privacy_export_receipts r
+        WHERE r.privacy_request_id = req.id AND r.result->>'status' = 'success'
+      )
+    THEN block_reason := 'export_required'; END IF;
     IF block_reason IS NULL AND req.kind = 'DELETION' THEN
       block_reason := admin_private.deletion_blocked_v1(req);
     END IF;

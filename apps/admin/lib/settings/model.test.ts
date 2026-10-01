@@ -42,6 +42,7 @@ describe("settings model", () => {
     expect(commandMessage("denied", "legal_hold")).toMatch(/legal hold/i)
     expect(commandMessage("denied", "email_not_verified")).toMatch(/current email/)
     expect(commandMessage("denied", "deletion_disabled")).toMatch(/Physical deletion is disabled/)
+    expect(commandMessage("denied", "export_required")).toMatch(/reviewed export/)
     expect(commandMessage("invalid", "retroactive_effective_from")).toMatch(/cannot start in the past/)
     expect(commandMessage("conflict")).toMatch(/changed/)
     expect(commandMessage("success")).toBe("Saved.")

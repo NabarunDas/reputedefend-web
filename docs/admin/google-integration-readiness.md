@@ -171,13 +171,21 @@ attempt. Consuming by guess would be worse than leaving it: it would let anyone 
 somebody else's authorization.
 
 `provider_oauth_consume_v1` proves actor, initiating session binding and exact redirect URI
-before it writes anything, and the distinction between a code callback and a cancellation
-decides what happens on a mismatch:
+before any terminal mutation. Context binding is authoritative and what the callback
+carried does not change who may act on it: a code is no more a licence to end somebody
+else's attempt than a cancellation is. A caller that fails any of the three checks gets a
+fixed rejection and touches nothing — no `consumed_at`, no outcome, no rejection reason and
+no callback event — so the session that began the attempt is still free to finish or
+abandon it.
 
 | Callback | Context matches | Context does not match |
 | --- | --- | --- |
-| Carries a code | Consumed as `ACCEPTED`, or `REJECTED` if expired | Consumed as `REJECTED`; a mismatched exchange attempt is an attack and the attempt should not survive it |
-| Cancellation or no code | Consumed as `CANCELLED` with the fixed reason | Refused, and the row is left untouched, so one Admin session cannot end another's attempt |
+| Carries a code | Consumed as `ACCEPTED`, or `REJECTED` if expired | `context_mismatch` or `redirect_mismatch`; the attempt is untouched |
+| Cancellation or no code | Consumed as `CANCELLED` with the fixed reason | `context_mismatch` or `redirect_mismatch`; the attempt is untouched |
+
+Expiry is checked only after binding passes. An expired attempt presented by the right
+context is consumed terminally as `REJECTED` with `state_expired`; the wrong context still
+cannot mutate it merely because it has lapsed.
 
 `provider_oauth_cancel_v1` is the Admin abandoning their own attempt. It is the same
 context-bound operation with the single reason this surface may record, so it inherits all

@@ -303,11 +303,13 @@ to the audit action check.
 
 `provider_oauth_consume_v1` is the single terminal operation for an attempt. It takes an
 optional reason from the four-value terminal set and refuses anything else with
-`reason_not_normalised`. It verifies actor, session binding and exact redirect before
-writing: a mismatched code callback is still consumed, because a mismatched exchange
-attempt should not survive, while a mismatched cancellation is refused with the row left
-untouched, so one session cannot end another's attempt. `provider_oauth_cancel_v1` is a
-thin wrapper over it carrying `cancelled_by_admin`.
+`reason_not_normalised`. Actor, session binding and exact redirect are verified before any
+terminal mutation, and that binding is authoritative regardless of what the callback
+carried: a caller that fails it gets `context_mismatch` or `redirect_mismatch` and sets no
+`consumed_at`, no outcome, no rejection reason and no event, so one session can neither
+consume nor cancel another's attempt and the rightful session can still finish it. Expiry
+is evaluated only after binding passes. `provider_oauth_cancel_v1` is a thin wrapper over
+it carrying `cancelled_by_admin`.
 
 RLS is enabled on all three tables with no direct policies and all CRUD revoked from
 `PUBLIC`, `anon`, `authenticated` and `service_role`. The public RPCs are granted to

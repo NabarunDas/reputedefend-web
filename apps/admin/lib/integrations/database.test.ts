@@ -201,18 +201,6 @@ describe("provider oauth state storage", () => {
     expect(row.rows[0].outcome).toBe("REJECTED")
   })
 
-  it("rejects a callback from a different session or a different redirect", async () => {
-    for (const [field, value, reason] of [
-      ["sessionBinding", createHash("sha256").update("other").digest("hex"), "context_mismatch"],
-      ["redirectUri", "https://admin.example.com/other", "redirect_mismatch"],
-    ] as const) {
-      const { state, payload } = beginPayload()
-      await command("begin_connect", payload)
-      const consume = { stateHash: hashOAuthState(state), sessionBinding, redirectUri, [field]: value }
-      expect(await command("consume_state", consume), field).toMatchObject({ status: "rejected", reason })
-    }
-  })
-
   // Findings E and F. A denial and a codeless redirect are terminal outcomes,
   // not reasons to leave an attempt alive until it expires.
   it("makes a denial and a codeless callback terminal and single use", async () => {
@@ -264,17 +252,108 @@ describe("provider oauth state storage", () => {
     expect(row.rows[0]).toEqual({ outcome: "CANCELLED", rejection_reason: "cancelled_by_admin" })
   })
 
-  it("still burns a state when a code arrives from the wrong context", async () => {
-    const { state, payload } = beginPayload()
-    await command("begin_connect", payload)
-    expect(await command("consume_state", {
-      stateHash: hashOAuthState(state), sessionBinding: otherBinding, redirectUri,
-    })).toMatchObject({ status: "rejected", reason: "context_mismatch" })
-    const row = await db.query<{ consumed_at: string | null; outcome: string }>(
-      "select consumed_at, outcome from public.provider_oauth_states",
-    )
-    expect(row.rows[0].consumed_at).not.toBeNull()
-    expect(row.rows[0].outcome).toBe("REJECTED")
+  // Context binding is authoritative. A caller that cannot prove the attempt
+  // is theirs must not be able to end it, whatever the callback carried: a
+  // code is not a licence to burn somebody else's state any more than a
+  // cancellation is.
+  describe("a callback that fails context binding never mutates the attempt", () => {
+    // The actor comes from the session, and this deployment has one Admin
+    // identity, so the actor branch is exercised at the function boundary
+    // directly rather than through a second signed-in session.
+    async function consumeAs(
+      actor: string, stateHash: string, binding: string, redirect: string, reason: string | null,
+    ) {
+      return (await db.query<{ value: Json }>(
+        "select admin_private.provider_oauth_consume_v1($1,$2,$3,$4,$5) as value",
+        [actor, stateHash, binding, redirect, reason],
+      )).rows[0].value
+    }
+
+    const attacks: Array<[string, { actor?: string; binding?: string; redirect?: string }, string]> = [
+      ["a different actor", { actor: "99999999-9999-4999-8999-999999999999" }, "context_mismatch"],
+      ["a different session binding", { binding: otherBinding }, "context_mismatch"],
+      ["a different redirect", { redirect: "https://admin.example.com/other" }, "redirect_mismatch"],
+    ]
+
+    // Every callback form, not only the cancellations.
+    const callbacks: Array<string | null> = [
+      null, "access_denied", "authorization_failed", "code_missing", "cancelled_by_admin",
+    ]
+
+    it.each(attacks)("refuses %s and leaves the state untouched", async (_name, attack, expected) => {
+      for (const reason of callbacks) {
+        await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+          delete from public.provider_oauth_states;
+          alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;
+          alter table public.provider_connection_events disable trigger provider_connection_events_protect;
+          delete from public.provider_connection_events;
+          alter table public.provider_connection_events enable trigger provider_connection_events_protect;`)
+        const { state, payload } = beginPayload()
+        await command("begin_connect", payload)
+        const stateHash = hashOAuthState(state)
+        const label = `${_name} / ${reason ?? "code"}`
+
+        expect(await consumeAs(
+          attack.actor ?? uid, stateHash, attack.binding ?? sessionBinding,
+          attack.redirect ?? redirectUri, reason,
+        ), label).toMatchObject({ status: "rejected", reason: expected })
+
+        const row = await db.query<{ consumed_at: null; outcome: null; rejection_reason: null }>(
+          "select consumed_at, outcome, rejection_reason from public.provider_oauth_states",
+        )
+        expect(row.rows[0], label).toEqual({ consumed_at: null, outcome: null, rejection_reason: null })
+        // No terminal event is recorded against an attempt the caller could
+        // not prove was theirs.
+        const events = await db.query<{ kind: string }>(
+          "select kind from public.provider_connection_events where kind = 'CALLBACK_REJECTED'",
+        )
+        expect(events.rows, label).toEqual([])
+
+        // The rightful session is unharmed and can still finish the attempt.
+        const finish = reason === null
+          ? await command("consume_state", { stateHash, sessionBinding, redirectUri })
+          : await command("consume_state", { stateHash, sessionBinding, redirectUri, reason })
+        expect(finish, label).toMatchObject(
+          reason === null ? { status: "accepted" } : { status: "cancelled", reason },
+        )
+        expect(await command("consume_state", { stateHash, sessionBinding, redirectUri }), label)
+          .toMatchObject({ status: "rejected", reason: "state_replayed" })
+      }
+    })
+
+    it("will not let the wrong context mutate an attempt merely because it expired", async () => {
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      const stateHash = hashOAuthState(state)
+      await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+        update public.provider_oauth_states
+          set created_at = now() - interval '1 hour', expires_at = now() - interval '1 minute';
+        alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;`)
+      expect(await consumeAs(uid, stateHash, otherBinding, redirectUri, null))
+        .toMatchObject({ status: "rejected", reason: "context_mismatch" })
+      const untouched = await db.query<{ consumed_at: null }>(
+        "select consumed_at from public.provider_oauth_states",
+      )
+      expect(untouched.rows[0].consumed_at).toBeNull()
+      // The initiating session still gets the terminal expiry answer.
+      expect(await command("consume_state", { stateHash, sessionBinding, redirectUri }))
+        .toMatchObject({ status: "rejected", reason: "state_expired" })
+      const consumed = await db.query<{ consumed_at: string; outcome: string; rejection_reason: string }>(
+        "select consumed_at, outcome, rejection_reason from public.provider_oauth_states",
+      )
+      expect(consumed.rows[0].consumed_at).not.toBeNull()
+      expect(consumed.rows[0].outcome).toBe("REJECTED")
+      expect(consumed.rows[0].rejection_reason).toBe("state_expired")
+    })
+
+    it("still refuses a reason outside the fixed set before checking anything else", async () => {
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      expect(await consumeAs(uid, hashOAuthState(state), otherBinding, redirectUri, "Google said no"))
+        .toMatchObject({ status: "invalid", reason: "reason_not_normalised" })
+      const row = await db.query<{ consumed_at: null }>("select consumed_at from public.provider_oauth_states")
+      expect(row.rows[0].consumed_at).toBeNull()
+    })
   })
 
   // The route and the database are tested separately elsewhere, so this
@@ -605,13 +684,19 @@ describe("provider connection history and audit", () => {
     const events = await db.query<{ kind: string; detail: string }>("select kind, detail from public.provider_connection_events")
     // An unknown state is rejected before any row exists, so nothing is logged.
     expect(events.rows).toEqual([])
+    // A rejection is only recorded for an attempt the caller proved was
+    // theirs, so this uses the initiating context and an expired state.
     const { state, payload } = beginPayload()
     await command("begin_connect", payload)
-    await command("consume_state", { stateHash: hashOAuthState(state), sessionBinding, redirectUri: "https://admin.example.com/other" })
+    await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+      update public.provider_oauth_states
+        set created_at = now() - interval '1 hour', expires_at = now() - interval '1 minute';
+      alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;`)
+    await command("consume_state", { stateHash: hashOAuthState(state), sessionBinding, redirectUri })
     const after = await db.query<{ kind: string; detail: string }>(
       "select kind, detail from public.provider_connection_events where kind = 'CALLBACK_REJECTED'",
     )
-    expect(after.rows[0]).toEqual({ kind: "CALLBACK_REJECTED", detail: "redirect_mismatch" })
+    expect(after.rows[0]).toEqual({ kind: "CALLBACK_REJECTED", detail: "state_expired" })
   })
 
   it("audits the operation and outcome but never a code, token or ciphertext", async () => {

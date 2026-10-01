@@ -302,12 +302,13 @@ END; $$;
 -- of alive until expiry.
 --
 -- p_reason is NULL when a code arrived and an exchange could be attempted, and
--- otherwise one of four fixed terminal classifications. The distinction
--- matters for context failures. A callback carrying a code is an exchange
--- attempt, so a mismatched one is burnt: that is an attack, and the attempt
--- should not survive it. A cancellation is not, so a mismatched one is refused
--- and the row is left untouched. Otherwise any Admin session that learned a
--- state value could end another session's attempt at will.
+-- otherwise one of four fixed terminal classifications. It does not affect who
+-- may end the attempt. Context binding is authoritative: actor, initiating
+-- session binding and exact redirect URI are proved before any terminal
+-- mutation, and a caller that fails any of them never touches the row,
+-- whatever its callback carried. Only the session that began an attempt may
+-- finish or abandon it, so one Admin session cannot consume, cancel or burn
+-- another's, and a failed attack leaves the rightful session able to carry on.
 CREATE FUNCTION admin_private.provider_oauth_consume_v1(
   p_actor uuid, p_state_hash text, p_session_binding text, p_redirect_uri text, p_reason text
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
@@ -328,18 +329,19 @@ BEGIN
   IF row.consumed_at IS NOT NULL THEN
     RETURN jsonb_build_object('status','rejected','reason','state_replayed');
   END IF;
-  -- Actor, initiating session and exact redirect are all proved before
-  -- anything is written.
   mismatch := CASE
     WHEN row.actor_id IS DISTINCT FROM p_actor THEN 'context_mismatch'
     WHEN row.session_binding IS DISTINCT FROM p_session_binding THEN 'context_mismatch'
     WHEN row.redirect_uri IS DISTINCT FROM p_redirect_uri THEN 'redirect_mismatch'
     ELSE NULL
   END;
-  IF mismatch IS NOT NULL AND p_reason IS NOT NULL THEN
+  -- Nothing is written and no event is recorded for an attempt the caller
+  -- cannot prove is theirs. An expired state is no exception: expiry is not a
+  -- licence for the wrong context to mutate it.
+  IF mismatch IS NOT NULL THEN
     RETURN jsonb_build_object('status','rejected','reason', mismatch);
   END IF;
-  reason := coalesce(mismatch, CASE WHEN row.expires_at <= now() THEN 'state_expired' ELSE p_reason END);
+  reason := CASE WHEN row.expires_at <= now() THEN 'state_expired' ELSE p_reason END;
   UPDATE public.provider_oauth_states SET
     consumed_at = now(),
     outcome = CASE

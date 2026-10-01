@@ -4,7 +4,7 @@ Status: **DATABASE APPLIED / DESTRUCTIVE PRIVACY ACTIONS DISABLED**
 
 Additive migration: `20261001141218_admin_settings_privacy_operations_v1.sql`
 
-Applied to `profilerelaunch-dev` exactly once as `20261001141218 admin_settings_privacy_operations_v1` after independent SQL review. Do not replay or modify the applied migration. Do not request Supabase credentials. Do not replay or modify applied Steps 10–19. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`. `PRIVACY_DELETION_ENABLED` remains unset.
+Applied to `profilerelaunch-dev` exactly once as `20261001141218 admin_settings_privacy_operations_v1` after independent SQL review. Do not replay or modify the applied migration. The SQL file is now frozen; its generation-time header is historical and must not be edited to restate post-apply status. Do not request Supabase credentials. Do not replay or modify applied Steps 10–19. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`. `PRIVACY_DELETION_ENABLED` remains unset.
 
 ## Single staff identity
 

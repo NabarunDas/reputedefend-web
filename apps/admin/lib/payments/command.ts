@@ -125,13 +125,22 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
               orderRef: prepared.orderRef,
             },
           })
-          const recorded = await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
-            p_operation: prepared.providerOperationId,
-            p_provider_invoice_id: invoice.id,
-            p_hosted_url: invoice.hostedInvoiceUrl,
-            p_amount_due: invoice.amountDueMinor,
-            p_currency: invoice.currency,
-          })
+          const recorded = invoice.dueAt
+            ? await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
+              p_operation: prepared.providerOperationId,
+              p_provider_invoice_id: invoice.id,
+              p_hosted_url: invoice.hostedInvoiceUrl,
+              p_amount_due: invoice.amountDueMinor,
+              p_currency: invoice.currency,
+              p_due_at: invoice.dueAt,
+            })
+            : await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
+              p_operation: prepared.providerOperationId,
+              p_provider_invoice_id: invoice.id,
+              p_hosted_url: invoice.hostedInvoiceUrl,
+              p_amount_due: invoice.amountDueMinor,
+              p_currency: invoice.currency,
+            })
           if (recorded.status !== "success") return reply("The TEST-MODE hosted invoice could not be recorded.", 409)
         } catch (error) {
           if (error instanceof PaymentsDisabledError) {

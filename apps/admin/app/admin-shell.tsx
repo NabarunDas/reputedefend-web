@@ -45,6 +45,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <span>Admin Portal</span>
       </Link>
       <div className="header-actions">
+        <form action="/search" method="get" role="search" className="header-search">
+          <label className="sr-only" htmlFor="global-search">Search records</label>
+          <input id="global-search" name="q" minLength={2} maxLength={100} placeholder="Search" autoComplete="off" />
+          <button>Search</button>
+        </form>
         <SignOut variant="header" />
       </div>
     </header>

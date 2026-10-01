@@ -90,6 +90,14 @@ button, input, textarea, select { font: inherit; }
   align-items: center;
   gap: .75rem;
 }
+.header-search {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.header-search input {
+  min-width: 10rem;
+}
 
 .header-sign-out {
   display: flex;

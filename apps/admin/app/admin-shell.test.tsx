@@ -39,7 +39,10 @@ describe("admin shell", () => {
     expect(container.textContent).not.toContain("admin@profilerelaunch.com")
     expect(container.textContent).toContain("ProfileRelaunch Administrator")
     expect(screen.getByRole("link", { name: "Communications" })).toHaveAttribute("href", "/communications")
-    expect(container.textContent).not.toMatch(/Payments|Reports/)
+    expect(screen.getByRole("search")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports")
+    expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search")
+    expect(container.textContent).not.toMatch(/Payments/)
   })
 
   it("opens and closes the mobile navigation without leaving a horizontal menu", () => {

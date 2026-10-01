@@ -1,5 +1,10 @@
-import type { ProviderMode } from "./capability"
 import {
+  capabilityLabel,
+  type ProviderCapabilityState,
+  type ProviderMode,
+} from "./capability"
+import {
+  googleBusinessProfileApiEnabled,
   type GoogleBusinessProfileEnv,
   googleBusinessProfileMode,
   googleLiveReadiness,
@@ -47,4 +52,23 @@ export function resolveGoogleBusinessProfileProvider(options: ResolveOptions = {
     return { provider: manual, requestedMode, readiness, fallbackReason: "live_provider_rejected" }
   }
   return { provider: options.liveProvider, requestedMode, readiness, fallbackReason: null }
+}
+
+// The capability implied by configuration alone, with no adapter constructed
+// and no provider call. Used by the synchronous Admin system-configuration
+// list so it reports the same thing the resolver would.
+export function configuredCapabilityState(env: GoogleBusinessProfileEnv = process.env): ProviderCapabilityState {
+  if (googleBusinessProfileMode(env) !== "google") return "MANUAL"
+  return "NOT_CONFIGURED"
+}
+
+export type ConfiguredStatusLabel = "Manual mode" | "Disabled" | "Not configured"
+
+// Admin-facing label for the system configuration list. "Disabled" is shown
+// only when Google was asked for and the API gate is the thing holding it
+// back, so an Admin can tell "never set up" from "set up but switched off".
+export function configuredStatusLabel(env: GoogleBusinessProfileEnv = process.env): ConfiguredStatusLabel {
+  if (googleBusinessProfileMode(env) !== "google") return capabilityLabel("MANUAL") as "Manual mode"
+  if (!googleBusinessProfileApiEnabled(env)) return "Disabled"
+  return capabilityLabel("NOT_CONFIGURED") as "Not configured"
 }

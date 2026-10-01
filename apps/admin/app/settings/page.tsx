@@ -3,9 +3,11 @@ import { requireStaff } from "@/lib/require-staff"
 import { ukDate } from "@/lib/admin/activity"
 import { isSettingsSection } from "@/lib/settings/model"
 import { loadRetentionPolicies, loadSessions, loadSettingVersions, loadSettingsOverview, loadSystemConfiguration } from "@/lib/settings/queries"
+import { loadGoogleIntegrationHealth } from "@/lib/integrations/queries"
 import { EmptyState, PageHeader } from "../ui"
 import { SignOut } from "../sign-out"
 import { RevokeSession } from "../revoke-session"
+import { IntegrationPanel } from "./integrations"
 import { ApproveButton, HoursForm, ResponseTargetsForm, RetentionForm, SettingsActionForm } from "./forms"
 
 export const metadata = { title: "Settings" }
@@ -18,6 +20,7 @@ const sections = [
   { id: "privacy", label: "Privacy & retention" },
   { id: "complaints", label: "Complaints" },
   { id: "incidents", label: "Incidents" },
+  { id: "integrations", label: "Integrations" },
   { id: "system", label: "System configuration" },
 ] as const
 
@@ -56,12 +59,13 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
   const query = searchParams ? await searchParams : {}
   const raw = Array.isArray(query.section) ? query.section[0] : query.section
   const section = isSettingsSection(raw) ? raw : "account"
-  const [overview, hours, targets, retention, sessions] = await Promise.all([
+  const [overview, hours, targets, retention, sessions, integration] = await Promise.all([
     loadSettingsOverview() as Promise<Overview>,
     loadSettingVersions("SERVICE_HOURS"),
     loadSettingVersions("RESPONSE_TARGETS"),
     loadRetentionPolicies(),
     loadSessions(),
+    loadGoogleIntegrationHealth(),
   ])
   const system = loadSystemConfiguration()
   const staff = overview.staff || {}
@@ -201,6 +205,7 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
       <p>Open incidents: {overview.openIncidents ?? 0}. <Link href="/incidents">Incidents</Link></p>
       <p className="muted">Incidents record operational evidence only. They do not restart providers, enable Guard, send customer email or refund money.</p>
     </section>
+    <IntegrationPanel health={integration} />
     <section id="system" className="panel">
       <h2>System configuration</h2>
       <ul>

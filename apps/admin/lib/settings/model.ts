@@ -25,7 +25,7 @@ export const settingsOperations = [
 ] as const
 export type SettingsOperation = (typeof settingsOperations)[number]
 export const settingsSections = [
-  "account", "service", "guard", "templates", "privacy", "complaints", "incidents", "system",
+  "account", "service", "guard", "templates", "privacy", "complaints", "incidents", "integrations", "system",
 ] as const
 export type SettingsSection = (typeof settingsSections)[number]
 

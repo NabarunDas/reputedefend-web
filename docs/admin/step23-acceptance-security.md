@@ -121,7 +121,7 @@ layer, and then re-run.
 
 ### 1. A quote acceptance action could be revoked through the wrong quote
 
-`public.admin_quote_command_v1` `revoke_action` loaded the target customer action by its
+The quote command's `revoke_action` branch loaded the target customer action by its
 identifier alone. It checked the action's kind and status but never checked that the action
 belonged to the quote named in the same request. Supplying quote A's identifier with an
 open acceptance action belonging to quote B revoked quote B's action, deleted quote B's
@@ -130,8 +130,13 @@ a cross-record mutation with a mis-attributed audit entry.
 
 The payments branch already verified the equivalent link. The fix brings the quote branch
 to the same standard, accepting any version of the loaded quote so an action issued against
-a previously offered version stays revocable. Regression test in
-`apps/admin/lib/commerce/database.test.ts`.
+a previously offered version stays revocable.
+
+The fix is applied to `admin_private.admin_quote_command_core_v1`, not to
+`public.admin_quote_command_v1`. See "Which function actually holds the quote command"
+below: the public name is a Step 15 wrapper, and the branch carrying this defect lives in
+the private core behind it. Regression test in
+`apps/admin/lib/commerce/quote-surface-fixes.database.test.ts`, which runs the whole chain.
 
 ### 2. The quotes list raised instead of returning
 
@@ -360,13 +365,92 @@ is given, so no message, digest or parameter value reaches the screen or the DOM
 request to a page redirects to `/login` while an unauthenticated request to an API path
 returns 401 JSON.
 
+## Which function actually holds the quote command
+
+The first version of this migration replaced `public.admin_quote_command_v1` with the
+Step 13 body plus the revoke guard. That was wrong, and independent review caught it before
+anything was applied. The correction is worth recording in full, because the mistake was
+not a typo — it came from reading the Step 13 migration and assuming the public name still
+meant what it meant then.
+
+Step 13 (`20260929233953_catalogue_quotes_orders_v1.sql`) created the quote command as
+`public.admin_quote_command_v1`. Step 15 (`20260930164529_guard_onboarding_activation_v1.sql`)
+then rearranged it:
+
+1. renamed that function to `admin_quote_command_core_v1`;
+2. moved it into `admin_private` and revoked it from PUBLIC, `anon`, `authenticated` **and**
+   `service_role`, so no role can call it directly;
+3. created a new `public.admin_quote_command_v1` wrapper, granted to `service_role`, which
+   delegates every operation except `record_qualification` to the private core and routes
+   `record_qualification` to `admin_private.record_guard_linked_qualification_v1`.
+
+That Guard-linked path is the point of the rearrangement. The Step 13 branch decided
+whether a 20% paid-Guard discount applied by reading `coverageBasis`, `coverageStatus`,
+`coverageType`, `paidVsIncluded` and `issuePredatesPaidCoverage` straight out of the request
+payload. The Step 15 path ignores those strings and asks the database instead, through
+`admin_private.paid_guard_discount_ready_v1`, which requires an ACTIVE `DIRECT_GUARD`
+coverage at that location, activated before the issue was observed, with provider billing
+in `CURRENT` state and paid into the future.
+
+Replacing the public wrapper with the Step 13 body would therefore have put the
+payload-trusting branch back in front of the database-checking one. Step 15 also added a
+`BEFORE INSERT` trigger on `quote_discount_snapshots` that runs the same coverage check, so
+a spoofed qualification would still not have been stored — the regression would not have
+produced a fraudulent discount. What it would have produced is the loss of the
+request-level control, the loss of the `coverageId` handling, and a raw
+`Qualified Guard discount requires an authoritative coverage` database exception reaching
+the operator in place of a clean `denied`. That is a real regression in a money-adjacent
+control and it must not be applied, but the data-integrity backstop is worth stating
+accurately rather than overstating the exposure.
+
+The corrected migration replaces `admin_private.admin_quote_command_core_v1`, carries over
+every other line of the core body unchanged — including the now-unreachable Step 13
+`record_qualification` branch, which the wrapper intercepts before the core is reached —
+restates the revoke of the core from PUBLIC, `anon`, `authenticated` and `service_role`,
+and does not mention `public.admin_quote_command_v1` at all.
+
+### Why the existing tests did not catch it
+
+`apps/admin/lib/commerce/database.test.ts` applies the chain only as far as the Step 13
+catalogue and quote migration, which is the schema the rest of its assertions were written
+against, and then applied the Step 23 file directly on top. On that truncated chain Step 15
+never runs, so `public.admin_quote_command_v1` really is the Step 13 function and replacing
+it looks correct. The suite passed on an arrangement that exists nowhere.
+
+That is fixed in two parts. The Step 23 migration is no longer appended to the Step 13
+list, with a comment in the file saying why a later migration must not be added there. And
+`apps/admin/lib/commerce/quote-surface-fixes.database.test.ts` runs the complete chain
+through Step 23 using the Step 22A recovery harness and proves, against the real schema:
+
+- `public.admin_quote_command_v1` and `admin_private.admin_quote_command_core_v1` both
+  exist, both are `SECURITY DEFINER` with a pinned empty `search_path`, and the wrapper's
+  body still names both the core and the Guard-linked qualification function;
+- the core is executable by no role at all, including `service_role`, and the wrapper is
+  executable by `service_role` only;
+- a `record_qualification` carrying `coverageBasis=PAID`, `coverageStatus=ACTIVE`,
+  `coverageType=PAID_GUARD`, `paidVsIncluded=PAID` and `issuePredatesPaidCoverage=false`
+  with no real coverage behind it returns `denied` and stores no qualified snapshot;
+- the same call against a genuine coverage — built through the actual acceptance flow into
+  an `ACCEPTED_RECURRING` Guard order, an ACTIVE `DIRECT_GUARD` coverage and `CURRENT`
+  provider billing — succeeds with the 20% `PAID_GUARD_MANAGED_20` policy, and is refused
+  again when the location does not match;
+- the cross-quote revoke returns `conflict` and leaves the action `OPEN` with its
+  challenges, its events and the other quote's audit trail untouched;
+- the own-quote revoke still succeeds and writes exactly one audit row;
+- `admin_quote_list_v1` returns rather than raising, and filters by status.
+
+The suite was verified against the defect it exists for: with the migration temporarily
+pointed back at the public wrapper, three of its tests fail, including both behavioural
+Guard ones.
+
 ## The one migration
 
 `supabase/migrations/20261001200000_quote_surface_fixes_v1.sql` is the only migration
 created by Step 23. It is forward-only, replaces two function bodies with
-`CREATE OR REPLACE`, edits no applied migration, and contains no data change. It carries
-both quote defects described above, because both are in the same feature and applying one
-file at cutover is simpler to review and safer to sequence than applying two.
+`CREATE OR REPLACE` — `admin_private.admin_quote_command_core_v1` and
+`public.admin_quote_list_v1` — edits no applied migration, and contains no data change. It
+carries both quote defects described above, because both are in the same feature and
+applying one file at cutover is simpler to review and safer to sequence than applying two.
 
 It is **source-only and has not been applied**. `appliedToDev: false` in the recovery
 manifest, and the manifest now distinguishes `migrationHead` — the newest migration in the
@@ -392,7 +476,24 @@ cleanly onto the real chain.
    they must be removed as a cutover task.
 4. **Leaked-password protection** is a Supabase Auth project setting and must be enabled
    there. It does not affect the Admin account, which has no password.
-5. **The live gates are still closed by design.** Stripe, outgoing mail, inbound mail, the
+5. **The repository chain and the remote migration ledger do not start in the same place.**
+   Supabase's migration history on `profilerelaunch-dev` begins at
+   `20260917080553_single_admin_auth_v1`. The three foundation migrations before it —
+   `20260915120000_core_data_foundation_v1.sql`, `20260915193000_case_intake_transaction_v1.sql`
+   and `20260916000000_relaunch_guard_data_foundation_v1.sql` — are present in the live
+   schema but are not recorded as applied in the remote ledger. Nothing is wrong with the
+   database; the ledger simply does not describe how it was built.
+
+   This was **not** repaired in Step 23 and must not be. Those migrations must not be
+   replayed or reapplied, their history rows must not be fabricated, they must not be
+   renamed, and they must not be marked pending. The consequence to carry forward is that
+   the Step 22A history validator cannot be assumed to read `clean` against the live
+   project: it compares the repository, the manifest and the remote ledger, and the ledger
+   is missing its first three entries. Before final production sign-off a decision is
+   required on how the canonical repository chain and the historical development ledger are
+   reconciled — whether production is rebuilt from the full chain, or the existing ledger is
+   adopted with its origin documented. That decision belongs to Step 22B and Step 24.
+6. **The live gates are still closed by design.** Stripe, outgoing mail, inbound mail, the
    Google API, Guard automation and privacy deletion are all off, and the five
    `DEFERRED_EXTERNAL` matrix rows record what each one would still need.
 

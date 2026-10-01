@@ -284,7 +284,13 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     persistence: "quote_events is append-only and admin_audit_events records COMMERCE_CHANGED.",
     negative:
       "A retired or non-current price is refused, an acceptance action belonging to another quote cannot be revoked, and the order list stays empty until an acceptance actually happens.",
-    evidence: ["lib/commerce/database.test.ts", "lib/commerce/command.test.ts", "app/commercial/page.test.tsx", "lib/workday.database.test.ts"],
+    evidence: [
+      "lib/commerce/database.test.ts",
+      "lib/commerce/quote-surface-fixes.database.test.ts",
+      "lib/commerce/command.test.ts",
+      "app/commercial/page.test.tsx",
+      "lib/workday.database.test.ts",
+    ],
     status: "PASS",
   },
   {
@@ -566,6 +572,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "An expired, revoked or already-used action is refused, a session for one action cannot act on another, and an action cannot be revoked through a different quote or order.",
     evidence: [
       "lib/commerce/database.test.ts",
+      "lib/commerce/quote-surface-fixes.database.test.ts",
       "lib/payments/database.test.ts",
       "lib/authorization/customer-evidence.database.test.ts",
       "lib/packs/database.test.ts",

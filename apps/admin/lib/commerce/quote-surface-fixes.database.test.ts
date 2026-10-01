@@ -59,8 +59,7 @@ async function priceId(serviceCode: string): Promise<string> {
 
 async function createDraft(overrides: Record<string, unknown> = {}): Promise<Json | null> {
   const serviceCode = String(overrides.serviceCode ?? "GUIDED_RELAUNCH")
-  return rpc("admin_quote_command_v1", [token, key(), "create_draft", {
-    serviceCode,
+  const payload: Record<string, unknown> = {
     customerId: customer,
     businessId: business,
     caseId: relaunchCase,
@@ -72,7 +71,8 @@ async function createDraft(overrides: Record<string, unknown> = {}): Promise<Jso
     priceVersionId: await priceId(serviceCode),
     ...overrides,
     serviceCode,
-  }, null])
+  }
+  return rpc("admin_quote_command_v1", [token, key(), "create_draft", payload, null])
 }
 
 const setTax = (quoteId: string, version: number) =>

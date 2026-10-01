@@ -1,6 +1,6 @@
 # Google Business Profile integration readiness (Step 21)
 
-SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / GOOGLE API ACCESS DISABLED.
+DATABASE APPLIED / GOOGLE API ACCESS DISABLED.
 
 This step builds the integration boundary so ProfileRelaunch can later switch from the
 manual operating model to Google Business Profile API automation without rewriting Guard,
@@ -16,8 +16,8 @@ alerts or the customer/business model. It does not turn any of that on.
   outside a test runtime.
 - **There is no production mock data.** No synthetic account, location, profile or review can
   reach a production or preview database.
-- **OAuth and token storage are ready but inactive.** The schema exists only as unapplied
-  migration source; no connection row, state row or token has ever been written.
+- **OAuth and token storage are database-ready but inactive.** The schema is applied to
+  `profilerelaunch-dev`; live verification found zero connection, OAuth-state and provider-event rows after application.
 - **The connection flow cannot be executed in this build at all.** There is no token
   exchange and no live transport, and that is a property of the code rather than of
   configuration, so setting every Google environment variable still cannot start OAuth.
@@ -277,9 +277,7 @@ provider call. No real Google credential was needed to complete this step.
 
 ## Migration
 
-`supabase/migrations/20261001153235_google_integration_readiness_v1.sql` was generated with
-`npx supabase migration new google_integration_readiness_v1`. It is SOURCE ONLY and has not
-been applied to any environment.
+`supabase/migrations/20261001175315_google_integration_readiness_v1.sql` was generated from the reviewed Step 21 migration source and applied to `profilerelaunch-dev` exactly once as `20261001175315 google_integration_readiness_v1`. The migration is now frozen; do not replay or modify it.
 
 It is additive: three new tables (`provider_oauth_states`, `provider_connections`,
 `provider_connection_events`), their protective triggers, the supporting `admin_private`

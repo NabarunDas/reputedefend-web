@@ -231,10 +231,10 @@ RLS is enabled with no direct policies on evidence or pack tables. That is inten
 
 # Google Business Profile integration readiness (Step 21)
 
-These three tables exist only as unapplied migration source in
-`supabase/migrations/20261001153235_google_integration_readiness_v1.sql`. No environment has
-them, no row has ever been written and no Google credential exists. See
-google-integration-readiness.md.
+These three tables are deployed to `profilerelaunch-dev` through the applied migration
+`supabase/migrations/20261001175315_google_integration_readiness_v1.sql`. Live verification
+found zero OAuth-state, provider-connection and provider-event rows immediately after
+application. Google OAuth/API execution remains disabled in code. See google-integration-readiness.md.
 
 ## public.provider_oauth_states
 

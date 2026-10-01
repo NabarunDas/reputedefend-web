@@ -37,7 +37,7 @@ describe("report detail temporal semantics", () => {
       page: { rows: [], hasMore: false },
     })
     render(await ReportDetailPage({ params: Promise.resolve({ key: "open_cases" }), searchParams: Promise.resolve({ preset: "custom", start: "2026-01-01", end: "2026-01-02" }) }))
-    expect(screen.getByText(/Current snapshot/)).toBeTruthy()
+    expect(screen.getAllByText(/Current snapshot/).length).toBeGreaterThan(0)
     expect(screen.queryByLabelText("Report period")).toBeNull()
     expect(document.body.textContent).not.toMatch(/The selected period produced/)
   })

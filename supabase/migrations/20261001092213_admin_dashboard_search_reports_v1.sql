@@ -71,8 +71,7 @@ CREATE INDEX quote_versions_offered_at_idx
 CREATE INDEX service_orders_accepted_at_idx ON public.service_orders (accepted_at DESC, id DESC);
 CREATE INDEX cases_open_submitted_idx ON public.cases (submitted_at, id)
   WHERE status NOT IN ('CLOSED','CANCELLED');
-CREATE INDEX customers_name_search_idx ON public.customers (lower(btrim(full_name)));
-CREATE INDEX businesses_name_search_idx ON public.businesses (lower(btrim(display_name)));
+-- Customer/business name prefix indexes already exist from the client workspace migration.
 CREATE INDEX locations_name_search_idx ON public.locations (lower(btrim(location_name)));
 CREATE INDEX payment_invoices_provider_ref_idx
   ON public.payment_invoices (lower(provider_invoice_id))
@@ -1071,23 +1070,26 @@ CREATE FUNCTION admin_private.decode_report_cursor_v1(
   p_cursor text, p_key text, p_start timestamptz, p_end timestamptz, p_now timestamptz,
   OUT occurred_at timestamptz, OUT row_id uuid
 ) LANGUAGE plpgsql STABLE SET search_path='' AS $$
-DECLARE parts text[]; expected text;
+DECLARE parts text[]; expected text; live timestamptz; cur_id uuid;
 BEGIN
   IF p_cursor IS NULL OR btrim(p_cursor) = '' THEN RETURN; END IF;
   parts := string_to_array(p_cursor, '|');
   IF array_length(parts, 1) <> 3 THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
-  occurred_at := parts[1]::timestamptz;
-  row_id := parts[2]::uuid;
+  BEGIN
+    cur_id := parts[2]::uuid;
+  EXCEPTION WHEN others THEN
+    RAISE EXCEPTION 'invalid_cursor';
+  END;
   expected := admin_private.report_cursor_fingerprint_v1(p_key, p_start, p_end);
   IF parts[3] IS DISTINCT FROM expected THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
-    WHERE r.row_id = row_id AND r.occurred_at = occurred_at
-  ) THEN
-    RAISE EXCEPTION 'invalid_cursor';
-  END IF;
-EXCEPTION WHEN others THEN
-  RAISE EXCEPTION 'invalid_cursor';
+  -- Bind the cursor to the exact current predicate. Use the live occurred_at so
+  -- JSON timestamp formatting cannot reject a legitimate next page.
+  SELECT r.occurred_at INTO live
+  FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+  WHERE r.row_id = cur_id;
+  IF live IS NULL THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
+  row_id := cur_id;
+  occurred_at := live;
 END; $$;
 
 CREATE FUNCTION admin_private.report_detail_page_v1(

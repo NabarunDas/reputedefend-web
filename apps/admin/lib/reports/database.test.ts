@@ -158,7 +158,7 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     await addEnquiry("2026-03-29T10:00:00Z", "new")
     await addEnquiry("2026-03-29T11:00:00Z", "closed")
     await addEnquiry("2026-03-29T11:30:00Z", "spam")
-    const converted = await addEnquiry("2026-03-29T12:00:00Z")
+    const converted = await addEnquiry("2026-03-29T12:00:00Z", "new", false, { email: "converted-distinct@example.com" })
     await db.query("update public.enquiries set status='converted', case_id=$2, assigned=true where id=$1", [converted, caseId])
     const dash = await rpc("admin_dashboard_today_v1", [token, "custom", "2026-03-01", "2026-03-31", clock])
     expect(dash?.metrics?.clientsTotal?.count).toBe(2)
@@ -516,7 +516,7 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     const withdrawn = key()
     await db.exec("set session_replication_role = replica")
     await db.query(
-      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status,outcome,closed_at) values($1,'REVIEW_PROTECTION',$2,$3,$4,'Review issue','2026-03-20',now(),now(),'MANAGED','CANCELLED','WITHDRAWN','2026-03-29T12:00:00Z')",
+      "insert into public.cases(id,public_ref,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status,outcome,closed_at) values($1,'RV-26-AAAAAA','REVIEW_PROTECTION',$2,$3,$4,'Review issue','2026-03-20',now(),now(),'MANAGED','CANCELLED','WITHDRAWN','2026-03-29T12:00:00Z')",
       [withdrawn, customer, business, location],
     )
     await db.query(

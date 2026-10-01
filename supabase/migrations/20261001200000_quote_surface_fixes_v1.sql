@@ -1,18 +1,46 @@
 -- Step 23 acceptance and security hardening: two quote surface defects.
+-- Patches admin_private.admin_quote_command_core_v1 and public.admin_quote_list_v1.
+-- Deliberately does NOT redefine public.admin_quote_command_v1: see the note below.
 -- SOURCE IMPLEMENTED / MIGRATION NOT APPLIED
 -- Generated with: npx supabase migration new quote_surface_fixes_v1
 -- Do not apply from this PR. Do not replay or modify applied migrations (Steps 1-21).
 --
 -- ---------------------------------------------------------------------------
+-- Which function carries the quote command, and why this file patches the
+-- private core rather than the public entry point.
+--
+-- Step 13 (20260929233953_catalogue_quotes_orders_v1.sql) created the quote
+-- command as public.admin_quote_command_v1. Step 15
+-- (20260930164529_guard_onboarding_activation_v1.sql) then changed that
+-- arrangement: it renamed the Step 13 function to admin_quote_command_core_v1,
+-- moved it into admin_private, revoked it from PUBLIC, anon, authenticated AND
+-- service_role, and created a NEW public.admin_quote_command_v1 wrapper in its
+-- place. The wrapper delegates every operation except 'record_qualification' to
+-- the private core, and routes 'record_qualification' to
+-- admin_private.record_guard_linked_qualification_v1, which proves a genuine
+-- paid Guard coverage relationship through
+-- admin_private.paid_guard_discount_ready_v1 instead of trusting the
+-- coverage fields in the request payload.
+--
+-- So the function that still holds the Step 13 command body — and therefore the
+-- revoke defect below — is admin_private.admin_quote_command_core_v1. This file
+-- replaces that private core and MUST NOT redefine public.admin_quote_command_v1:
+-- doing so would overwrite the Step 15 wrapper and silently reinstate the
+-- Step 13 qualification branch, which accepts caller-supplied PAID/ACTIVE
+-- strings as proof of coverage and would hand out the 20% Guard discount
+-- without any qualifying Guard relationship. The Step 15 wrapper, its ACL and
+-- the Guard-linked qualification path are all left untouched.
+--
+-- ---------------------------------------------------------------------------
 -- Defect 1: cross-quote action revocation.
 -- Found by Step 23 adversarial authorization testing.
 --
--- public.admin_quote_command_v1 'revoke_action' loaded the target customer action
--- by its identifier alone. It checked kind and status but never checked that the
--- action belonged to the quote named in the same request. An operator who supplied
--- quote A's identifier together with an OPEN QUOTE_ACCEPTANCE action identifier
--- belonging to quote B therefore revoked quote B's action, deleted quote B's
--- customer action challenges and sessions, and wrote the audit row against quote A.
+-- The 'revoke_action' branch loaded the target customer action by its identifier
+-- alone. It checked kind and status but never checked that the action belonged
+-- to the quote named in the same request. An operator who supplied quote A's
+-- identifier together with an OPEN QUOTE_ACCEPTANCE action identifier belonging
+-- to quote B therefore revoked quote B's action, deleted quote B's customer
+-- action challenges and sessions, and wrote the audit row against quote A.
 -- That is a cross-record mutation and a mis-attributed audit entry.
 --
 -- The equivalent payments branch (admin_payment_command_v1 'revoke_action') already
@@ -21,13 +49,18 @@
 -- the loaded quote. Any version of the quote is accepted, not only the current one,
 -- so an action issued against a previously offered version stays revocable.
 --
--- Replacement is restricted to that single guard. The rest of the function body is
--- carried over unchanged from 20260929233953_catalogue_quotes_orders_v1.sql.
--- CREATE OR REPLACE keeps the existing owner and privileges; the REVOKE/GRANT pair
--- below is restated so the permission model is explicit in this file too.
+-- Replacement is restricted to that single guard. Every other line of the core
+-- body is carried over unchanged from its current definition, including the
+-- 'record_qualification' branch, which the Step 15 wrapper intercepts before the
+-- core is ever reached. CREATE OR REPLACE keeps the existing owner, SECURITY
+-- DEFINER marking and pinned empty search_path; the REVOKE below restates that
+-- the core stays internal, with no service_role grant, because the public
+-- wrapper is the only intended entry point.
 --
--- Regression test: apps/admin/lib/commerce/database.test.ts
---   "refuses to revoke a quote acceptance action that belongs to another quote".
+-- Regression tests: apps/admin/lib/commerce/quote-surface-fixes.database.test.ts
+--   (full migration chain, Step 15 wrapper preserved, spoofed Guard
+--   qualification denied, cross-quote revoke refused, own-quote revoke allowed)
+--   and apps/admin/lib/commerce/database.test.ts.
 --
 -- ---------------------------------------------------------------------------
 -- Defect 2: the quote list raises instead of returning.
@@ -45,12 +78,15 @@
 -- The fix parenthesises the composite reference. Ordering, filtering and the
 -- returned shape are otherwise unchanged.
 --
--- Regression test: apps/admin/lib/workday.database.test.ts
---   "carries one enquiry through triage, a case, evidence, a pack and a quote".
+-- This one is on the public function, which Step 15 did not touch.
+--
+-- Regression tests: apps/admin/lib/workday.database.test.ts
+--   "carries one enquiry through triage, a case, evidence, a pack and a quote"
+--   and apps/admin/lib/commerce/quote-surface-fixes.database.test.ts.
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.admin_quote_command_v1(p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer)
+CREATE OR REPLACE FUNCTION admin_private.admin_quote_command_core_v1(p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   s jsonb; actor uuid; data jsonb; fp text; cached jsonb; result jsonb;
@@ -369,9 +405,13 @@ BEGIN
   RETURN jsonb_build_object('quotes', items);
 END; $$;
 
-REVOKE ALL ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
+-- The private core stays unreachable from every role, including service_role.
+-- Step 15 revoked it on exactly these terms and the Step 15 public wrapper,
+-- whose own service-role grant this file does not touch, is the way in.
+REVOKE ALL ON FUNCTION admin_private.admin_quote_command_core_v1(text, uuid, text, jsonb, integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 REVOKE ALL ON FUNCTION public.admin_quote_list_v1(text, text, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_quote_list_v1(text, text, text) TO service_role;
 
 COMMIT;

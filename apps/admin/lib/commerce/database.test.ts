@@ -52,6 +52,15 @@ async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null
   return (await db.query<{ value: RpcResult | null }>(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(",")}) as value`, args)).rows[0].value
 }
 
+/**
+ * This suite stops at the Step 13 catalogue and quote migration, which is the
+ * schema its assertions were written against. Step 15 later moved the quote
+ * command into admin_private behind a Guard-aware public wrapper, so anything
+ * that depends on the current function architecture — including the Step 23
+ * migration — belongs in quote-surface-fixes.database.test.ts, which runs the
+ * whole chain. Do not append a later migration to the list below: applying one
+ * onto a Step 13 schema tests an arrangement that exists nowhere.
+ */
 beforeAll(async () => {
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const dir = new URL("../../../../supabase/migrations/", import.meta.url)
@@ -74,7 +83,6 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_catalogue_quotes_orders_v1.sql"))!,
-    readdirSync(dir).find(n => n.endsWith("_quote_surface_fixes_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 45000)
 
@@ -355,38 +363,6 @@ describe("catalogue quotes and orders SQL", () => {
     expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ email: "alex@example.com" })
     const otherSession = secretHash()
     expect(await rpc("customer_action_finish_otp_v1", [pending, otherSession, otherAuth, "other@example.com"])).toEqual({ status: "unavailable" })
-  })
-
-  it("refuses to revoke a quote acceptance action that belongs to another quote", async () => {
-    await verify()
-    const target = await createDraft()
-    await setTax(target!.id!, target!.version!)
-    await offer(target!.id!, target!.version! + 1)
-    const targetAction = await issue(target!.id!)
-    expect(targetAction.result?.status).toBe("success")
-
-    const attacker = await createDraft({ serviceCode: "GUIDED_REVIEW", caseId: reviewCase, priceVersionId: await priceId("GUIDED_REVIEW") })
-    await setTax(attacker!.id!, attacker!.version!)
-    await offer(attacker!.id!, attacker!.version! + 1)
-
-    const crossed = await rpc("admin_quote_command_v1", [token, key(), "revoke_action", {
-      quoteId: attacker?.id, actionId: targetAction.result?.id, reason: "Attempting to revoke another quote's action.",
-    }, null])
-    expect(crossed?.status).toBe("conflict")
-
-    const untouched = await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [targetAction.result?.id])
-    expect(untouched.rows[0].status).toBe("OPEN")
-    const misattributed = await db.query<{ n: number }>(
-      "select count(*)::int as n from public.admin_audit_events where target_id=$1 and reason='Quote acceptance action revoked'",
-      [attacker?.id],
-    )
-    expect(misattributed.rows[0].n).toBe(0)
-
-    const owned = await rpc("admin_quote_command_v1", [token, key(), "revoke_action", {
-      quoteId: target?.id, actionId: targetAction.result?.id, reason: "The customer asked us to withdraw this quote link.",
-    }, null])
-    expect(owned?.status).toBe("success")
-    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [targetAction.result?.id])).rows[0].status).toBe("REVOKED")
   })
 
   it("accepts a taxable Guided quote once and returns the same order on retry or race", async () => {

@@ -26,6 +26,23 @@ function sourceFiles(directory: URL, extensions = [".ts", ".tsx"]): string[] {
 const read = (file: string) => readFileSync(file, "utf8")
 const relative = (file: string) => file.replace(new URL(".", adminRoot).pathname, "")
 
+const withoutComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[^\n"'`]*\/\/.*$/gm, " ")
+
+// A variable only reaches a bundle, or a module, when something reads it, so
+// these checks look for a read rather than a mention. The three forms below
+// are every way the workspace reaches the environment: dotted access, bracket
+// access and destructuring. A catalogue that names a variable without reading
+// it — the release environment contract — holds nothing and publishes nothing.
+function readsVariable(source: string, name: string): boolean {
+  const bare = withoutComments(source)
+  return (
+    new RegExp(`(?:process\\.env|\\benv)\\s*\\.\\s*${name}\\b`).test(bare) ||
+    new RegExp(`(?:process\\.env|\\benv)\\s*\\[\\s*["'\`]${name}`).test(bare) ||
+    new RegExp(`\\{[^{}]*\\b${name}\\b[^{}]*\\}\\s*=\\s*(?:process\\.env|\\benv\\b)`).test(bare)
+  )
+}
+
 const allSources = [...sourceFiles(new URL("app/", adminRoot)), ...sourceFiles(new URL("lib/", adminRoot))]
 const clientComponents = allSources.filter(file => /^(?:"use client"|'use client')/.test(read(file).trimStart()))
 
@@ -48,14 +65,30 @@ describe("client boundary", () => {
   })
 
   it("publishes nothing through NEXT_PUBLIC_, anywhere in the workspace", () => {
-    expect(allSources.filter(file => /NEXT_PUBLIC_/.test(read(file))).map(relative)).toEqual([])
+    expect(allSources.filter(file => readsVariable(read(file), "NEXT_PUBLIC_[A-Z0-9_]*")).map(relative)).toEqual([])
   })
 
   it("marks every module that holds the service key as server-only", () => {
     // `import "server-only"` makes the mistake a build failure rather than a
     // disclosure, so the modules that can reach Supabase must all carry it.
-    const privileged = allSources.filter(file => /SUPABASE_SECRET_KEY|createClient\(/.test(read(file)))
+    const privileged = allSources.filter(
+      file => readsVariable(read(file), "SUPABASE_SECRET_KEY") || /createClient\(/.test(read(file)),
+    )
     expect(privileged.length).toBeGreaterThan(0)
     expect(privileged.filter(file => !/server-only/.test(read(file))).map(relative)).toEqual([])
+  })
+
+  it("still recognises the reads these two checks exist to catch", () => {
+    // Keying on a read rather than a mention is only safe while the read forms
+    // the workspace actually uses are still recognised, so the real service
+    // key reader is asserted here and each form is driven directly.
+    const privileged = allSources.filter(file => readsVariable(read(file), "SUPABASE_SECRET_KEY")).map(relative)
+    expect(privileged).toContain("lib/auth/config.ts")
+
+    expect(readsVariable(`const a = process.env.SUPABASE_SECRET_KEY`, "SUPABASE_SECRET_KEY")).toBe(true)
+    expect(readsVariable(`const a = env["SUPABASE_SECRET_KEY"]`, "SUPABASE_SECRET_KEY")).toBe(true)
+    expect(readsVariable(`const { SUPABASE_SECRET_KEY } = process.env`, "SUPABASE_SECRET_KEY")).toBe(true)
+    expect(readsVariable(`const id = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID`, "NEXT_PUBLIC_[A-Z0-9_]*")).toBe(true)
+    expect(readsVariable(`{ name: "SUPABASE_SECRET_KEY" }`, "SUPABASE_SECRET_KEY")).toBe(false)
   })
 })

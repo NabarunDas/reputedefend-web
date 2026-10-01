@@ -65,7 +65,11 @@ export async function reportExportCommand(request: NextRequest): Promise<NextRes
   if (result.status === "denied") return json("Narrow the date range. This export exceeds the 5,000-row limit.", 400, { reason: result.reason, count: result.count })
   if (result.status !== "success") return json("Check the report and date range.", 400)
   const rows = (result.rows as Array<Record<string, unknown>>) || []
-  const csv = toCsv(
+  const temporalMode = result.temporalMode === "CURRENT" ? "CURRENT" : "PERIOD"
+  const meta = temporalMode === "CURRENT"
+    ? "# temporalMode=CURRENT\r\n# period=current snapshot (not a selected-period population)\r\n"
+    : `# temporalMode=PERIOD\r\n# timezone=Europe/London\r\n`
+  const csv = meta + toCsv(
     ["id", "occurredAt", "label", "amountMinor", "currency", "elapsedSeconds"],
     rows.map(row => [row.id, row.occurredAt, row.label, row.amountMinor, row.currency, row.elapsedSeconds]),
     [3, 5],

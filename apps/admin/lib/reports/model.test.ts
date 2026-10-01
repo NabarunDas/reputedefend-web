@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageLabel, isReportKey, netAmounts, parsePeriod } from "./model"
+import { coverageLabel, formatAmountGroups, isReportKey, netAmounts, parsePeriod, reportTemporalMode, savedFilterHref } from "./model"
 
 describe("report period and labels", () => {
   it("accepts presets and rejects malformed custom ranges", () => {
@@ -27,5 +27,10 @@ describe("report period and labels", () => {
       { currency: "EUR", amountMinor: 200 },
       { currency: "GBP", amountMinor: 750 },
     ])
+    expect(formatAmountGroups([])).toBe("No confirmed collections")
+    expect(formatAmountGroups([{ currency: "USD", amountMinor: 100 }])).toBe("1.00 USD")
+    expect(reportTemporalMode("open_cases")).toBe("CURRENT")
+    expect(reportTemporalMode("collected_net")).toBe("PERIOD")
+    expect(savedFilterHref({ reportKey: "collected_net", preset: "last_7_days" })).toBe("/reports/collected_net?preset=last_7_days")
   })
 })

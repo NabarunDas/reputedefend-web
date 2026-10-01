@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
 import { ukDate } from "@/lib/admin/activity"
-import { coverageLabel, formatMinor, netAmounts, parsePeriod, periodHref, reportLabels, type ReportKey } from "@/lib/reports/model"
+import { coverageLabel, formatAmountGroups, formatMinor, parsePeriod, periodHref, reportLabels, reportTemporalMode, type ReportKey } from "@/lib/reports/model"
 import { loadDashboard } from "@/lib/reports/queries"
 import { PeriodForm } from "./reports/forms"
 import { EmptyState, PageHeader } from "./ui"
@@ -22,9 +22,10 @@ type Dashboard = {
     caseMix?: Array<{ type: string; track: string; count: number }>
     upcomingDeadlines?: Array<{ id: string; title: string; dueAt: string; caseId: string; reference: string }>
     workload?: Array<{ owner: string; count: number }>
-    recentPayments?: Array<{ id: string; paidAt: string; amountMinor: number; currency: string }>
+    recentPayments?: Array<{ id: string; paidAt: string; amountMinor: number; currency: string; kind?: string }>
     todayWindows?: Array<{ id: string; windowCode: string; state: string }>
   }
+  temporalNote?: string
 }
 
 const attention: Array<[keyof NonNullable<Dashboard["needsAttention"]>, ReportKey]> = [
@@ -63,6 +64,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
     <PageHeader title="Today" description="Exact operational counts from the same predicates as the drill-down reports. Timezone: Europe/London." />
     <PeriodForm preset={period.preset} startDate={period.startDate} endDate={period.endDate} />
     <p className="muted" role="status">Refreshed {data.computedAt ? ukDate(data.computedAt) : "now"} · {data.timezone}. Worker heartbeat: {data.freshness?.status || "unknown"}{data.freshness?.status === "LATE" ? " — the existing Step 10 late threshold has been exceeded." : ""}.</p>
+    <p className="muted">{data.temporalNote || "Needs Attention, client, Guard-state and outstanding-money cards are current snapshots. Collections, check coverage and history use the selected Europe/London period."}</p>
     <section className="panel" aria-labelledby="needs-attention">
       <h2 id="needs-attention">Needs attention</h2>
       <div className="summary-grid">
@@ -70,6 +72,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
           <Link key={key} className="panel summary-card" href={periodHref(`/reports/${key}`, period)}>
             <p className="label">{reportLabels[key]}</p>
             <p className="count">{countText(needs[field])}</p>
+            {reportTemporalMode(key) === "CURRENT" && <p className="muted">Current snapshot</p>}
             <p className="action">Open exact records</p>
           </Link>
         ))}
@@ -78,23 +81,23 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
     <section className="panel" aria-labelledby="core-metrics">
       <h2 id="core-metrics">Core metrics</h2>
       <div className="summary-grid">
-        <Link className="panel summary-card" href={periodHref("/reports/clients_total", period)}><p className="label">Client records</p><p className="count">{countText(metrics.clientsTotal)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/clients_active_service", period)}><p className="label">Active service clients</p><p className="count">{countText(metrics.clientsActiveService)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/contacts_enquiry_only", period)}><p className="label">Enquiry-only contacts</p><p className="count">{countText(metrics.contactsEnquiryOnly)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/open_enquiries", period)}><p className="label">Open enquiries</p><p className="count">{countText(metrics.openEnquiries)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/open_cases", period)}><p className="label">Open cases</p><p className="count">{countText(metrics.openCases)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/collected_gross", period)}><p className="label">Gross collections</p><p className="count">{countText(metrics.collectedGross)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/collected_refunds", period)}><p className="label">Refunds</p><p className="count">{countText(metrics.collectedRefunds)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/collected_gross", period)}><p className="label">Net collections</p><p className="count">{netAmounts(metrics.collectedGross?.amounts, metrics.collectedRefunds?.amounts).map(row => formatMinor(row.amountMinor, row.currency)).join(" · ") || "0.00 GBP"}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/outstanding_money", period)}><p className="label">Outstanding money</p><p className="count">{countText(metrics.outstandingMoney)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_requested", period)}><p className="label">Guard requested</p><p className="count">{countText(metrics.guardRequested)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_onboarding", period)}><p className="label">Guard onboarding</p><p className="count">{countText(metrics.guardOnboarding)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_paid_active", period)}><p className="label">Paid active Guard</p><p className="count">{countText(metrics.guardPaidActive)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_included_active", period)}><p className="label">Included active Guard</p><p className="count">{countText(metrics.guardIncludedActive)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_paused", period)}><p className="label">Paused Guard</p><p className="count">{countText(metrics.guardPaused)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_ending", period)}><p className="label">Ending Guard</p><p className="count">{countText(metrics.guardEnding)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_ended", period)}><p className="label">Ended Guard</p><p className="count">{countText(metrics.guardEnded)}</p></Link>
-        <Link className="panel summary-card" href={periodHref("/reports/guard_recurring", period)}><p className="label">Guard recurring GBP/month</p><p className="count">{countText(metrics.guardRecurring)}</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/clients_total", period)}><p className="label">Client records</p><p className="count">{countText(metrics.clientsTotal)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/clients_active_service", period)}><p className="label">Active service clients</p><p className="count">{countText(metrics.clientsActiveService)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/contacts_enquiry_only", period)}><p className="label">Enquiry-only contacts</p><p className="count">{countText(metrics.contactsEnquiryOnly)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/open_enquiries", period)}><p className="label">Open enquiries</p><p className="count">{countText(metrics.openEnquiries)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/open_cases", period)}><p className="label">Open cases</p><p className="count">{countText(metrics.openCases)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/collected_gross", period)}><p className="label">Gross collections</p><p className="count">{formatAmountGroups(metrics.collectedGross?.amounts)}</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/collected_refunds", period)}><p className="label">Refunds</p><p className="count">{formatAmountGroups(metrics.collectedRefunds?.amounts, "No confirmed refunds")}</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/collected_net", period)}><p className="label">Net collections</p><p className="count">{formatAmountGroups(metrics.collectedNet?.amounts)}</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/outstanding_money", period)}><p className="label">Outstanding money</p><p className="count">{countText(metrics.outstandingMoney)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_requested", period)}><p className="label">Guard requested</p><p className="count">{countText(metrics.guardRequested)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_onboarding", period)}><p className="label">Guard onboarding</p><p className="count">{countText(metrics.guardOnboarding)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_paid_active", period)}><p className="label">Paid active Guard</p><p className="count">{countText(metrics.guardPaidActive)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_included_active", period)}><p className="label">Included active Guard</p><p className="count">{countText(metrics.guardIncludedActive)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_paused", period)}><p className="label">Paused Guard</p><p className="count">{countText(metrics.guardPaused)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_ending", period)}><p className="label">Ending Guard</p><p className="count">{countText(metrics.guardEnding)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_locations_ended", period)}><p className="label">Ended Guard</p><p className="count">{countText(metrics.guardEnded)}</p><p className="muted">Current snapshot</p></Link>
+        <Link className="panel summary-card" href={periodHref("/reports/guard_recurring", period)}><p className="label">Guard recurring commitment / month</p><p className="count">{formatAmountGroups(metrics.guardRecurring?.amounts, "No current commitment")}</p><p className="muted">Current snapshot</p></Link>
         <Link className="panel summary-card" href={periodHref("/reports/check_coverage_due", period)}><p className="label">Checks due</p><p className="count">{countText(metrics.checkDue)}</p></Link>
         <Link className="panel summary-card" href={periodHref("/reports/check_coverage_completed", period)}><p className="label">Check coverage</p><p className="count">{coverageLabel(metrics.checkCoverage)}</p></Link>
       </div>
@@ -113,7 +116,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
     </section>
     <section className="panel">
       <h2>Recent confirmed payments</h2>
-      {!data.secondary?.recentPayments?.length ? <EmptyState>No confirmed receipts.</EmptyState> : <ul>{data.secondary.recentPayments.map(row => <li key={row.id}>{formatMinor(row.amountMinor, row.currency)} · {ukDate(row.paidAt)}</li>)}</ul>}
+      {!data.secondary?.recentPayments?.length ? <EmptyState>No confirmed collections or refunds.</EmptyState> : <ul>{data.secondary.recentPayments.map(row => <li key={row.id}>{row.kind || "Collection"} · {formatMinor(row.amountMinor, row.currency)} · {ukDate(row.paidAt)}</li>)}</ul>}
     </section>
     <section className="panel">
       <h2>Today&apos;s Guard monitoring windows</h2>

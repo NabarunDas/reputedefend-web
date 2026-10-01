@@ -14,12 +14,12 @@ ALTER TABLE public.admin_audit_events ADD CONSTRAINT admin_audit_events_action_c
   'PAYMENT_CHANGED','GUARD_CHANGED','REPORT_CHANGED'
 ));
 
+-- Saved filters are REPORTS-only in Step 19. Other modules are not wired in Admin UI
+-- and must not be exposed as dead backend capability. Step 20 can widen the CHECK.
 CREATE TABLE public.admin_saved_filters (
   id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   actor_id uuid NOT NULL,
-  module text NOT NULL CHECK (module IN (
-    'ENQUIRIES','CASES','TASKS','GUARD_CHECKS','GUARD_ALERTS','MONEY','REPORTS'
-  )),
+  module text NOT NULL CHECK (module IN ('REPORTS')),
   name text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 80),
   filter jsonb NOT NULL CHECK (jsonb_typeof(filter) = 'object' AND octet_length(filter::text) <= 4096),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -31,6 +31,7 @@ CREATE INDEX admin_saved_filters_actor_idx ON public.admin_saved_filters (actor_
 ALTER TABLE public.admin_saved_filters ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.admin_saved_filters FROM PUBLIC, anon, authenticated, service_role;
 
+-- Export receipts store bounded metadata only. result must never contain export rows or PII labels.
 CREATE TABLE admin_private.report_export_receipts (
   request_id uuid PRIMARY KEY,
   actor_id uuid NOT NULL,
@@ -46,6 +47,7 @@ CREATE TABLE admin_private.report_export_receipts (
   requested_at timestamptz NOT NULL DEFAULT now(),
   result jsonb NOT NULL DEFAULT '{}'::jsonb
 );
+ALTER TABLE admin_private.report_export_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.report_export_receipts FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TABLE admin_private.report_command_receipts (
@@ -55,8 +57,10 @@ CREATE TABLE admin_private.report_command_receipts (
   result jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE admin_private.report_command_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.report_command_receipts FROM PUBLIC, anon, authenticated, service_role;
 
+-- Prefix-friendly btree indexes. Contains-search (%q%) cannot use these; search uses prefix.
 CREATE INDEX payment_receipts_paid_at_idx ON public.payment_receipts (paid_at DESC, id DESC);
 CREATE INDEX guard_subscription_invoices_paid_created_idx
   ON public.guard_subscription_invoices (created_at DESC, id DESC) WHERE status = 'PAID';
@@ -67,10 +71,17 @@ CREATE INDEX quote_versions_offered_at_idx
 CREATE INDEX service_orders_accepted_at_idx ON public.service_orders (accepted_at DESC, id DESC);
 CREATE INDEX cases_open_submitted_idx ON public.cases (submitted_at, id)
   WHERE status NOT IN ('CLOSED','CANCELLED');
+CREATE INDEX customers_name_search_idx ON public.customers (lower(btrim(full_name)));
+CREATE INDEX businesses_name_search_idx ON public.businesses (lower(btrim(display_name)));
 CREATE INDEX locations_name_search_idx ON public.locations (lower(btrim(location_name)));
 CREATE INDEX payment_invoices_provider_ref_idx
   ON public.payment_invoices (lower(provider_invoice_id))
   WHERE provider_invoice_id IS NOT NULL;
+CREATE INDEX guard_subscription_invoices_stripe_ref_idx
+  ON public.guard_subscription_invoices (lower(stripe_invoice_id));
+
+-- Authoritative invoice due timestamp. Populated only from confirmed Stripe due_date. Never inferred.
+ALTER TABLE public.payment_invoices ADD COLUMN due_at timestamptz;
 
 CREATE FUNCTION admin_private.report_export_limit_v1() RETURNS integer
 LANGUAGE sql IMMUTABLE SET search_path='' AS $$ SELECT 5000; $$;
@@ -82,7 +93,7 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
     'guard_alerts_needs_review','failed_customer_email','access_recovery','contact_recovery',
     'payment_exceptions','guard_billing_exceptions','failed_jobs',
     'clients_total','clients_active_service','contacts_enquiry_only','open_enquiries','open_cases',
-    'collected_gross','collected_refunds','outstanding_money',
+    'collected_gross','collected_refunds','collected_net','outstanding_money',
     'guard_locations_requested','guard_locations_onboarding','guard_locations_paid_active',
     'guard_locations_included_active','guard_locations_paused','guard_locations_ending','guard_locations_ended',
     'guard_recurring','check_coverage_due','check_coverage_completed',
@@ -92,15 +103,52 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   );
 $$;
 
-CREATE FUNCTION admin_private.saved_filter_keys_allowed_v1(p_module text, p_filter jsonb) RETURNS boolean
+-- Module-specific key/value validation. Step 19 implements REPORTS only.
+CREATE FUNCTION admin_private.saved_filter_date_ok_v1(p_value text) RETURNS boolean
 LANGUAGE sql IMMUTABLE SET search_path='' AS $$
-  SELECT jsonb_typeof(p_filter) = 'object'
-    AND octet_length(p_filter::text) <= 4096
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_object_keys(p_filter) k
-      WHERE k NOT IN (
-        'q','state','filter','status','queue','reportKey','preset','startDate','endDate','sort'
-      )
+  SELECT p_value IS NULL OR p_value ~ '^\d{4}-\d{2}-\d{2}$';
+$$;
+
+CREATE FUNCTION admin_private.saved_filter_keys_allowed_v1(p_module text, p_filter jsonb) RETURNS boolean
+LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
+DECLARE k text; v text;
+BEGIN
+  IF p_module IS DISTINCT FROM 'REPORTS' THEN RETURN false; END IF;
+  IF p_filter IS NULL OR jsonb_typeof(p_filter) <> 'object' OR octet_length(p_filter::text) > 4096 THEN
+    RETURN false;
+  END IF;
+  FOR k IN SELECT jsonb_object_keys(p_filter) LOOP
+    IF k NOT IN ('reportKey','preset','startDate','endDate') THEN RETURN false; END IF;
+    IF jsonb_typeof(p_filter -> k) <> 'string' THEN RETURN false; END IF;
+    v := p_filter ->> k;
+    IF k = 'reportKey' AND NOT admin_private.report_key_allowed_v1(v) THEN RETURN false; END IF;
+    IF k = 'preset' AND v NOT IN ('today','last_7_days','current_month','custom') THEN RETURN false; END IF;
+    IF k IN ('startDate','endDate') AND NOT admin_private.saved_filter_date_ok_v1(v) THEN RETURN false; END IF;
+  END LOOP;
+  RETURN true;
+END; $$;
+
+-- Current Admin identity. Step 20 should extend saved_filter_actor_is_staff_v1
+-- rather than rewriting the saved-filter model.
+CREATE FUNCTION admin_private.saved_filter_actor_is_admin_v1(p_actor uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_identity i
+    WHERE i.auth_user_id = p_actor
+  );
+$$;
+
+CREATE FUNCTION admin_private.saved_filter_actor_is_staff_v1(p_actor uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT false;
+$$;
+
+CREATE FUNCTION admin_private.saved_filter_actor_valid_v1(p_actor uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT p_actor IS NOT NULL
+    AND (
+      admin_private.saved_filter_actor_is_admin_v1(p_actor)
+      OR admin_private.saved_filter_actor_is_staff_v1(p_actor)
     );
 $$;
 
@@ -149,6 +197,11 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   SELECT replace(replace(replace(coalesce(p_q, ''), '\', '\\'), '%', '\%'), '_', '\_');
 $$;
 
+-- Active-service client = current operational relationship only.
+-- Open case, or Guard coverage in a current relationship state:
+-- ACTIVE (live service), PAUSED (paused but still a current customer),
+-- ENDING (still winding down). ENDED is historical. An accepted order alone
+-- is not permanent active-service evidence.
 CREATE FUNCTION admin_private.customer_is_active_service_v1(p_customer uuid) RETURNS boolean
 LANGUAGE sql STABLE SET search_path='' AS $$
   SELECT EXISTS (
@@ -156,12 +209,93 @@ LANGUAGE sql STABLE SET search_path='' AS $$
     WHERE c.customer_id = p_customer AND c.status NOT IN ('CLOSED','CANCELLED')
   ) OR EXISTS (
     SELECT 1 FROM public.guard_coverages g
-    WHERE g.customer_id = p_customer AND g.state = 'ACTIVE'
-  ) OR EXISTS (
-    SELECT 1 FROM public.service_orders o
-    WHERE o.customer_id = p_customer
-      AND o.state IN ('ACCEPTED_AWAITING_PAYMENT','ACCEPTED_SUCCESS_FEE','ACCEPTED_RECURRING')
+    WHERE g.customer_id = p_customer AND g.state IN ('ACTIVE','PAUSED','ENDING')
   );
+$$;
+
+CREATE FUNCTION admin_private.guard_paid_entitlement_current_v1(p_coverage uuid, p_now timestamptz) RETURNS boolean
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.guard_coverages g
+    JOIN public.guard_billing b ON b.coverage_id = g.id
+    WHERE g.id = p_coverage
+      AND g.state = 'ACTIVE'
+      AND g.coverage_basis = 'DIRECT_GUARD'
+      AND b.billing_state = 'CURRENT'
+      AND b.entitlement_source = 'PROVIDER'
+      AND b.paid_through_at IS NOT NULL
+      AND b.paid_through_at > coalesce(p_now, now())
+  );
+$$;
+
+-- Distinct enquiry-contact identity: normalized email, else normalized phone,
+-- else the enquiry id as a bounded anonymous fallback (one row, not a guessed person).
+CREATE FUNCTION admin_private.enquiry_contact_identity_v1(p_payload jsonb, p_enquiry uuid) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN nullif(lower(btrim(coalesce(p_payload->>'email', ''))), '') IS NOT NULL
+      THEN 'email:' || lower(btrim(p_payload->>'email'))
+    WHEN nullif(regexp_replace(coalesce(p_payload->>'phone', ''), '[^0-9+]', '', 'g'), '') IS NOT NULL
+      THEN 'phone:' || regexp_replace(p_payload->>'phone', '[^0-9+]', '', 'g')
+    ELSE 'enquiry:' || p_enquiry::text
+  END;
+$$;
+
+-- Formal case-service enquiries that can become PROFILE_RECOVERY or REVIEW_PROTECTION.
+-- Values are the real marketing form payload.service allowlist, not guessed codes.
+CREATE FUNCTION admin_private.enquiry_is_case_service_v1(p_payload jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT lower(btrim(coalesce(p_payload->>'service', ''))) IN (
+    'profile-recovery', 'profile-access', 'review-protection'
+  );
+$$;
+
+CREATE FUNCTION admin_private.enquiry_exclusion_bucket_v1(p_status text, p_monitoring uuid, p_payload jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN p_status = 'spam' THEN 'spam'
+    WHEN p_monitoring IS NOT NULL THEN 'monitoring'
+    WHEN admin_private.enquiry_is_case_service_v1(p_payload) THEN 'case_service'
+    WHEN lower(btrim(coalesce(p_payload->>'service', ''))) = 'general' THEN 'general'
+    ELSE 'non_case_contact'
+  END;
+$$;
+
+CREATE FUNCTION admin_private.report_temporal_mode_v1(p_key text) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN p_key IN (
+      'collected_gross','collected_refunds','collected_net',
+      'check_coverage_due','check_coverage_completed',
+      'enquiry_to_case','quote_conversion','service_mix','first_response','outcomes',
+      'evidence_turnaround','guard_activation','guard_churn','guard_coverage_failures','handling_time'
+    ) THEN 'PERIOD'
+    ELSE 'CURRENT'
+  END;
+$$;
+
+CREATE FUNCTION admin_private.preview_limit_v1() RETURNS integer
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$ SELECT 50; $$;
+
+CREATE FUNCTION admin_private.guard_coverage_failure_category_v1(p_obligation uuid, p_now timestamptz) RETURNS text
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT CASE
+    WHEN o.missed_at IS NOT NULL THEN 'MISSED'
+    WHEN EXISTS (
+      SELECT 1 FROM public.guard_check_observations obs
+      WHERE obs.obligation_id = o.id AND obs.classification = 'INCOMPLETE'
+    ) THEN 'INCOMPLETE'
+    WHEN o.state = 'PENDING' AND o.retry_count > 0 THEN 'RETRY_REQUIRED'
+    WHEN EXISTS (
+      SELECT 1 FROM public.guard_check_attempts a
+      WHERE a.obligation_id = o.id AND a.outcome = 'FAILED'
+    ) AND o.state <> 'COMPLETED' THEN 'TECHNICAL_FAILURE'
+    WHEN o.window_end_utc < coalesce(p_now, now()) AND o.state <> 'COMPLETED' THEN 'UNCOMPLETED_AFTER_WINDOW'
+    ELSE 'UNCOMPLETED_AFTER_WINDOW'
+  END
+  FROM public.guard_check_obligations o
+  WHERE o.id = p_obligation;
 $$;
 
 CREATE FUNCTION admin_private.verified_current_email_v1(p_customer uuid) RETURNS text
@@ -207,12 +341,18 @@ BEGIN
     FROM public.enquiries e
     WHERE e.status IN ('new','open','waiting') AND e.assigned IS NOT TRUE;
   ELSIF p_key = 'missed_guard_checks' THEN
+    -- Live operational queue: missed windows and retry-required failed attempts.
+    -- Completed/cancelled work is history, not Needs Attention. One row per obligation.
     RETURN QUERY
     SELECT o.id, coalesce(o.missed_at, o.window_end_utc), 0::bigint, NULL::text, o.window_code,
            '/guard/checks/' || o.id::text, NULL::integer
     FROM public.guard_check_obligations o
     WHERE o.state NOT IN ('COMPLETED','CANCELLED')
-      AND (o.missed_at IS NOT NULL OR o.window_end_utc < clock);
+      AND (
+        o.missed_at IS NOT NULL
+        OR o.window_end_utc < clock
+        OR (o.state = 'PENDING' AND o.retry_count > 0)
+      );
   ELSIF p_key = 'unreviewed_guard_alerts' THEN
     RETURN QUERY
     SELECT a.id, a.opened_at, 0::bigint, NULL::text, a.state, '/guard/alerts/' || a.id::text, NULL::integer
@@ -242,20 +382,35 @@ BEGIN
     FROM public.guard_service_actions s
     WHERE s.kind = 'CONTACT_RECOVERY' AND s.state IN ('OPEN','ACKNOWLEDGED');
   ELSIF p_key = 'payment_exceptions' THEN
+    -- Genuine collection exceptions for UPFRONT and earned SUCCESS_FEE.
+    -- Guard recurring billing exceptions stay in guard_billing_exceptions.
     RETURN QUERY
-    SELECT o.id, o.created_at, o.amount_minor::bigint, o.currency, o.state,
+    SELECT o.id, o.created_at, o.amount_minor::bigint, o.currency, o.kind || '/' || o.state,
            '/money', NULL::integer
     FROM public.payment_obligations o
     WHERE o.state IN ('FAILED','AUTHENTICATION_REQUIRED')
+      AND o.kind IN ('UPFRONT','SUCCESS_FEE')
     UNION ALL
     SELECT d.id, d.opened_at, d.amount_minor::bigint, d.currency, d.finance_work_status,
            '/money', NULL::integer
     FROM public.guard_disputes d
     WHERE d.finance_work_status IN ('OPEN','ACKNOWLEDGED');
   ELSIF p_key = 'guard_billing_exceptions' THEN
+    -- Current unresolved billing work only. Historical reconciliation issues remain
+    -- in guard_reconciliation_issues as evidence and are not a permanent queue.
     RETURN QUERY
-    SELECT md5('recon:' || i.id::text)::uuid, i.created_at, 0::bigint, NULL::text, i.code, '/money', NULL::integer
-    FROM public.guard_reconciliation_issues i
+    SELECT t.id, t.updated_at, 0::bigint, NULL::text, t.status,
+           '/money', NULL::integer
+    FROM public.guard_reconciliation_targets t
+    JOIN public.guard_reconciliation_runs r ON r.id = t.run_id
+    WHERE t.mismatch_count > 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.guard_reconciliation_targets later
+        JOIN public.guard_reconciliation_runs later_run ON later_run.id = later.run_id
+        WHERE later.subscription_id = t.subscription_id
+          AND (later_run.service_date, later.updated_at, later.id) > (r.service_date, t.updated_at, t.id)
+      )
     UNION ALL
     SELECT b.coverage_id, coalesce(b.updated_at, now()), 0::bigint, NULL::text, b.billing_state,
            '/guard', NULL::integer
@@ -283,12 +438,34 @@ BEGIN
     WHERE admin_private.customer_is_active_service_v1(c.id);
   ELSIF p_key = 'contacts_enquiry_only' THEN
     RETURN QUERY
-    SELECT e.id, e.created_at, 0::bigint, NULL::text, left(coalesce(e.payload->>'email', e.source), 200),
-           '/enquiries/' || e.id::text, NULL::integer
-    FROM public.enquiries e
-    WHERE e.status NOT IN ('converted','spam')
-      AND e.case_id IS NULL
-      AND e.monitoring_request_id IS NULL;
+    SELECT md5('enquiry_contact:' || ident.identity)::uuid,
+           ident.first_at,
+           0::bigint,
+           NULL::text,
+           left(ident.identity, 200),
+           '/enquiries/' || ident.enquiry_id::text,
+           NULL::integer
+    FROM (
+      SELECT DISTINCT ON (admin_private.enquiry_contact_identity_v1(e.payload, e.id))
+        admin_private.enquiry_contact_identity_v1(e.payload, e.id) AS identity,
+        e.id AS enquiry_id,
+        e.created_at AS first_at
+      FROM public.enquiries e
+      WHERE e.status NOT IN ('converted','spam')
+        AND e.case_id IS NULL
+        AND e.monitoring_request_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.enquiries converted
+          WHERE converted.status = 'converted'
+            AND admin_private.enquiry_contact_identity_v1(converted.payload, converted.id)
+              = admin_private.enquiry_contact_identity_v1(e.payload, e.id)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM public.customers c
+          WHERE admin_private.enquiry_contact_identity_v1(e.payload, e.id) = 'email:' || lower(c.email)
+        )
+      ORDER BY admin_private.enquiry_contact_identity_v1(e.payload, e.id), e.created_at, e.id
+    ) ident;
   ELSIF p_key = 'open_enquiries' THEN
     RETURN QUERY
     SELECT e.id, e.created_at, 0::bigint, NULL::text, e.status, '/enquiries/' || e.id::text, NULL::integer
@@ -313,18 +490,42 @@ BEGIN
     SELECT r.id, r.succeeded_at, r.amount_minor::bigint, r.currency, 'refund', '/money', NULL::integer
     FROM public.guard_refunds r
     WHERE r.status = 'SUCCEEDED' AND r.succeeded_at >= p_start AND r.succeeded_at < p_end;
+  ELSIF p_key = 'collected_net' THEN
+    -- Signed financial effect: confirmed collections positive, confirmed refunds negative.
+    -- No FX. Empty set stays empty; callers must not invent 0.00 GBP.
+    RETURN QUERY
+    SELECT r.id, r.paid_at, r.amount_minor::bigint, r.currency, 'collection', '/money', NULL::integer
+    FROM public.payment_receipts r
+    WHERE r.paid_at >= p_start AND r.paid_at < p_end
+    UNION ALL
+    SELECT i.id, i.created_at, i.amount_paid_minor::bigint, i.currency, 'guard_collection', '/money', NULL::integer
+    FROM public.guard_subscription_invoices i
+    WHERE i.status = 'PAID' AND i.created_at >= p_start AND i.created_at < p_end
+    UNION ALL
+    SELECT r.id, r.succeeded_at, (-r.amount_minor)::bigint, r.currency, 'refund', '/money', NULL::integer
+    FROM public.guard_refunds r
+    WHERE r.status = 'SUCCEEDED' AND r.succeeded_at >= p_start AND r.succeeded_at < p_end;
   ELSIF p_key = 'outstanding_money' THEN
+    -- Unpaid due obligations. SUCCESS_FEE exists only after the Step 14 approval/evidence gate,
+    -- so those rows are already earned. Hypothetical/unearned Managed fees never create an obligation.
     RETURN QUERY
     SELECT o.id, o.created_at, o.amount_minor::bigint, o.currency, o.kind, '/money', NULL::integer
     FROM public.payment_obligations o
     WHERE o.state IN ('DUE','COLLECTING','AUTHENTICATION_REQUIRED','FAILED')
-      AND o.kind = 'UPFRONT';
+      AND o.kind IN ('UPFRONT','SUCCESS_FEE')
+      AND o.state <> 'VOID'
+      AND o.state <> 'PAID';
   ELSIF p_key = 'overdue_invoices' THEN
+    -- Overdue only when an authoritative Stripe due_at exists and is in the past.
+    -- Issued unpaid invoices without due_at are unknown, not overdue.
     RETURN QUERY
-    SELECT i.id, i.created_at, i.amount_minor::bigint, i.currency, i.status, '/money', NULL::integer
+    SELECT i.id, i.due_at, i.amount_minor::bigint, i.currency, i.status, '/money', NULL::integer
     FROM public.payment_invoices i
     JOIN public.payment_obligations o ON o.id = i.obligation_id
-    WHERE i.status = 'ISSUED' AND o.kind = 'UPFRONT' AND i.created_at < clock;
+    WHERE i.status = 'ISSUED'
+      AND o.state <> 'PAID'
+      AND i.due_at IS NOT NULL
+      AND i.due_at < clock;
   ELSIF p_key LIKE 'guard_locations_%' THEN
     RETURN QUERY
     SELECT g.id, coalesce(g.activated_at, g.created_at), 0::bigint, NULL::text, g.state,
@@ -334,7 +535,7 @@ BEGIN
        OR (p_key = 'guard_locations_onboarding' AND g.state IN (
             'AWAITING_AUTHORIZATION','VERIFYING_ACCESS','BASELINE_REQUIRED','AWAITING_PAYMENT','READY_TO_ACTIVATE'
           ))
-       OR (p_key = 'guard_locations_paid_active' AND g.state = 'ACTIVE' AND g.coverage_basis = 'DIRECT_GUARD')
+       OR (p_key = 'guard_locations_paid_active' AND admin_private.guard_paid_entitlement_current_v1(g.id, clock))
        OR (p_key = 'guard_locations_included_active' AND g.state = 'ACTIVE' AND g.coverage_basis = 'INCLUDED')
        OR (p_key = 'guard_locations_paused' AND g.state = 'PAUSED')
        OR (p_key = 'guard_locations_ending' AND g.state = 'ENDING')
@@ -376,8 +577,7 @@ BEGIN
            '/enquiries/' || e.id::text, NULL::integer
     FROM public.enquiries e
     WHERE e.created_at >= p_start AND e.created_at < p_end
-      AND e.status <> 'spam'
-      AND e.monitoring_request_id IS NULL;
+      AND admin_private.enquiry_exclusion_bucket_v1(e.status, e.monitoring_request_id, e.payload) = 'case_service';
   ELSIF p_key = 'quote_conversion' THEN
     RETURN QUERY
     SELECT q.id, first_offered.offered_at, 0::bigint, NULL::text, q.status,
@@ -420,12 +620,14 @@ BEGIN
     FROM public.cases c
     WHERE c.status NOT IN ('CLOSED','CANCELLED');
   ELSIF p_key = 'outcomes' THEN
+    -- Cohort: decided outcomes whose closed_at (or updated_at fallback) is in the period.
+    -- WITHDRAWN is included as withdrawn, not as failure. Open cases are not in this predicate.
     RETURN QUERY
-    SELECT c.id, coalesce(c.closed_at, c.updated_at), 0::bigint, NULL::text, coalesce(c.outcome, 'UNDECIDED'),
+    SELECT c.id, coalesce(c.closed_at, c.updated_at), 0::bigint, NULL::text,
+           c.case_type || '/' || coalesce(c.service_track, 'UNDECIDED') || '/' || c.outcome,
            '/cases/' || c.id::text, NULL::integer
     FROM public.cases c
     WHERE c.outcome IS NOT NULL
-      AND c.status = 'CLOSED'
       AND coalesce(c.closed_at, c.updated_at) >= p_start
       AND coalesce(c.closed_at, c.updated_at) < p_end;
   ELSIF p_key = 'evidence_turnaround' THEN
@@ -455,7 +657,8 @@ BEGIN
       AND e.created_at >= p_start AND e.created_at < p_end;
   ELSIF p_key = 'guard_coverage_failures' THEN
     RETURN QUERY
-    SELECT o.id, o.window_start_utc, 0::bigint, NULL::text, o.state,
+    SELECT o.id, o.window_start_utc, 0::bigint, NULL::text,
+           admin_private.guard_coverage_failure_category_v1(o.id, clock),
            '/guard/checks/' || o.id::text, NULL::integer
     FROM public.guard_check_obligations o
     WHERE o.window_start_utc >= p_start AND o.window_start_utc < p_end
@@ -515,10 +718,54 @@ DECLARE
   denominator integer;
 BEGIN
   SELECT count(*)::int INTO total FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now);
-  IF p_key IN ('collected_gross','collected_refunds','outstanding_money','overdue_invoices','guard_recurring','service_mix') THEN
+  IF p_key IN ('collected_gross','collected_refunds','collected_net','outstanding_money','overdue_invoices','guard_recurring') THEN
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total,
-      'amounts', admin_private.report_amount_groups_v1(p_key, p_start, p_end, p_now)
+      'key', p_key, 'count', total, 'temporalMode', admin_private.report_temporal_mode_v1(p_key),
+      'amounts', admin_private.report_amount_groups_v1(p_key, p_start, p_end, p_now),
+      'unknownDueDateCount', CASE WHEN p_key = 'overdue_invoices' THEN (
+        SELECT count(*)::int FROM public.payment_invoices i
+        JOIN public.payment_obligations o ON o.id = i.obligation_id
+        WHERE i.status = 'ISSUED' AND o.state <> 'PAID' AND i.due_at IS NULL
+      ) ELSE NULL END
+    );
+  END IF;
+  IF p_key = 'service_mix' THEN
+    RETURN jsonb_build_object(
+      'key', p_key, 'count', total, 'temporalMode', 'PERIOD',
+      'amounts', admin_private.report_amount_groups_v1(p_key, p_start, p_end, p_now),
+      'mix', (
+        SELECT coalesce(jsonb_agg(jsonb_build_object('code', code, 'label', label, 'count', n) ORDER BY code), '[]')
+        FROM (
+          SELECT o.service_code AS code,
+            CASE o.service_code
+              WHEN 'GUIDED_RELAUNCH' THEN 'Guided Relaunch'
+              WHEN 'MANAGED_RELAUNCH' THEN 'Managed Relaunch'
+              WHEN 'GUIDED_REVIEW' THEN 'Guided Review'
+              WHEN 'MANAGED_REVIEW' THEN 'Managed Review'
+              WHEN 'RELAUNCH_GUARD' THEN 'Relaunch Guard'
+              ELSE o.service_code
+            END AS label,
+            count(*)::int AS n
+          FROM public.service_orders o
+          WHERE o.accepted_at >= p_start AND o.accepted_at < p_end
+          GROUP BY o.service_code
+        ) x
+      ),
+      'groups', (
+        SELECT coalesce(jsonb_agg(jsonb_build_object('group', grp, 'count', n) ORDER BY grp), '[]')
+        FROM (
+          SELECT CASE
+            WHEN o.service_code IN ('GUIDED_RELAUNCH','GUIDED_REVIEW') THEN 'Guided'
+            WHEN o.service_code IN ('MANAGED_RELAUNCH','MANAGED_REVIEW') THEN 'Managed'
+            WHEN o.service_code = 'RELAUNCH_GUARD' THEN 'Guard'
+            ELSE 'Other'
+          END AS grp,
+          count(*)::int AS n
+          FROM public.service_orders o
+          WHERE o.accepted_at >= p_start AND o.accepted_at < p_end
+          GROUP BY 1
+        ) x
+      )
     );
   END IF;
   IF p_key IN ('first_response','evidence_turnaround','handling_time') THEN
@@ -527,32 +774,81 @@ BEGIN
     WHERE elapsed_seconds IS NOT NULL;
     measured := coalesce(array_length(elapsed, 1), 0);
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total, 'measured', measured, 'excluded', total - measured,
+      'key', p_key, 'count', total, 'temporalMode', admin_private.report_temporal_mode_v1(p_key),
+      'measured', measured, 'excluded', total - measured,
       'medianSeconds', admin_private.percentile_seconds_v1(elapsed, 0.5),
-      'p90Seconds', admin_private.percentile_seconds_v1(elapsed, 0.9)
+      'p90Seconds', admin_private.percentile_seconds_v1(elapsed, 0.9),
+      'enquiry', CASE WHEN p_key = 'first_response' THEN (
+        SELECT jsonb_build_object(
+          'count', count(*),
+          'measured', count(elapsed_seconds),
+          'excluded', count(*) - count(elapsed_seconds),
+          'medianSeconds', admin_private.percentile_seconds_v1(coalesce(array_agg(elapsed_seconds) FILTER (WHERE elapsed_seconds IS NOT NULL), '{}'), 0.5),
+          'p90Seconds', admin_private.percentile_seconds_v1(coalesce(array_agg(elapsed_seconds) FILTER (WHERE elapsed_seconds IS NOT NULL), '{}'), 0.9)
+        )
+        FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+        WHERE r.label = 'enquiry'
+      ) ELSE NULL END,
+      'case', CASE WHEN p_key = 'first_response' THEN (
+        SELECT jsonb_build_object(
+          'count', count(*),
+          'measured', count(elapsed_seconds),
+          'excluded', count(*) - count(elapsed_seconds),
+          'medianSeconds', admin_private.percentile_seconds_v1(coalesce(array_agg(elapsed_seconds) FILTER (WHERE elapsed_seconds IS NOT NULL), '{}'), 0.5),
+          'p90Seconds', admin_private.percentile_seconds_v1(coalesce(array_agg(elapsed_seconds) FILTER (WHERE elapsed_seconds IS NOT NULL), '{}'), 0.9)
+        )
+        FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+        WHERE r.label = 'case'
+      ) ELSE NULL END,
+      'note', CASE WHEN p_key = 'first_response'
+        THEN 'Enquiry triage and case work are two operational response populations. A converted enquiry that later becomes a case can appear in both. Missing events are excluded, never zero. No SLA.'
+        ELSE NULL END
     );
   END IF;
   IF p_key = 'check_coverage_completed' THEN
     SELECT count(*)::int INTO numerator FROM admin_private.report_rows_v1('check_coverage_completed', p_start, p_end, p_now);
     SELECT count(*)::int INTO denominator FROM admin_private.report_rows_v1('check_coverage_due', p_start, p_end, p_now);
     RETURN jsonb_build_object(
-      'key', p_key, 'count', numerator, 'numerator', numerator, 'denominator', denominator,
+      'key', p_key, 'count', numerator, 'temporalMode', 'PERIOD',
+      'numerator', numerator, 'denominator', denominator,
       'percentage', CASE WHEN denominator = 0 THEN NULL ELSE round((numerator::numeric / denominator) * 100, 1) END
     );
   END IF;
   IF p_key = 'enquiry_to_case' THEN
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total,
+      'key', p_key, 'count', total, 'temporalMode', 'PERIOD',
       'eligible', total,
-      'converted', (SELECT count(*) FROM public.enquiries e WHERE e.created_at >= p_start AND e.created_at < p_end AND e.status <> 'spam' AND e.monitoring_request_id IS NULL AND e.case_id IS NOT NULL),
-      'monitoring', (SELECT count(*) FROM public.enquiries e WHERE e.created_at >= p_start AND e.created_at < p_end AND e.monitoring_request_id IS NOT NULL),
-      'notYetConverted', (SELECT count(*) FROM public.enquiries e WHERE e.created_at >= p_start AND e.created_at < p_end AND e.monitoring_request_id IS NULL AND e.status IN ('new','open','waiting','closed')),
-      'excludedSpam', (SELECT count(*) FROM public.enquiries e WHERE e.created_at >= p_start AND e.created_at < p_end AND e.status = 'spam')
+      'converted', (
+        SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+        JOIN public.enquiries e ON e.id = r.row_id WHERE e.case_id IS NOT NULL
+      ),
+      'notYetConverted', (
+        SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+        JOIN public.enquiries e ON e.id = r.row_id WHERE e.case_id IS NULL
+      ),
+      'excluded', (
+        SELECT jsonb_build_object(
+          'spam', count(*) FILTER (WHERE admin_private.enquiry_exclusion_bucket_v1(e.status, e.monitoring_request_id, e.payload) = 'spam'),
+          'monitoring', count(*) FILTER (WHERE admin_private.enquiry_exclusion_bucket_v1(e.status, e.monitoring_request_id, e.payload) = 'monitoring'),
+          'general', count(*) FILTER (WHERE admin_private.enquiry_exclusion_bucket_v1(e.status, e.monitoring_request_id, e.payload) = 'general'),
+          'nonCaseContact', count(*) FILTER (WHERE admin_private.enquiry_exclusion_bucket_v1(e.status, e.monitoring_request_id, e.payload) = 'non_case_contact')
+        )
+        FROM public.enquiries e
+        WHERE e.created_at >= p_start AND e.created_at < p_end
+      ),
+      'excludedSpam', (
+        SELECT count(*) FROM public.enquiries e
+        WHERE e.created_at >= p_start AND e.created_at < p_end AND e.status = 'spam'
+      ),
+      'monitoring', (
+        SELECT count(*) FROM public.enquiries e
+        WHERE e.created_at >= p_start AND e.created_at < p_end AND e.monitoring_request_id IS NOT NULL AND e.status <> 'spam'
+      )
     );
   END IF;
   IF p_key = 'quote_conversion' THEN
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total,
+      'key', p_key, 'count', total, 'temporalMode', 'PERIOD',
       'offered', total,
       'accepted', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r JOIN public.quotes q ON q.id = r.row_id WHERE q.status = 'ACCEPTED'),
       'closedOther', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r JOIN public.quotes q ON q.id = r.row_id WHERE q.status IN ('DECLINED','CANCELLED','SUPERSEDED','EXPIRED')),
@@ -561,14 +857,68 @@ BEGIN
   END IF;
   IF p_key = 'outcomes' THEN
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total,
-      'success', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.label IN ('RESTORED','REMOVED')),
-      'excludedOpen', (SELECT count(*) FROM public.cases c WHERE c.status NOT IN ('CLOSED','CANCELLED') OR c.outcome IS NULL)
+      'key', p_key, 'count', total, 'temporalMode', 'PERIOD',
+      'cohort', 'Cases with a decided outcome whose closed_at (fallback updated_at) is in the selected Europe/London period',
+      'eventDate', 'closed_at',
+      'success', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.label LIKE '%/RESTORED' OR r.label LIKE '%/REMOVED'),
+      'partial', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.label LIKE '%/PARTIALLY_RESTORED' OR r.label LIKE '%/RESPONSE_RECOMMENDED'),
+      'unsuccessful', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.label LIKE '%/NOT_RESTORED' OR r.label LIKE '%/NOT_REMOVED'),
+      'withdrawn', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.label LIKE '%/WITHDRAWN'),
+      'denominator', (
+        SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+        WHERE r.label NOT LIKE '%/WITHDRAWN'
+      ),
+      'successRate', (
+        SELECT CASE WHEN count(*) FILTER (WHERE r.label NOT LIKE '%/WITHDRAWN') = 0 THEN NULL
+          ELSE round((count(*) FILTER (WHERE r.label LIKE '%/RESTORED' OR r.label LIKE '%/REMOVED')::numeric
+            / count(*) FILTER (WHERE r.label NOT LIKE '%/WITHDRAWN')) * 100, 1) END
+        FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+      ),
+      'openInIntake', (
+        SELECT count(*) FROM public.cases c
+        WHERE c.submitted_at >= p_start AND c.submitted_at < p_end
+          AND c.status NOT IN ('CLOSED','CANCELLED') AND c.outcome IS NULL
+      ),
+      'byType', (
+        SELECT coalesce(jsonb_agg(jsonb_build_object('caseType', case_type, 'outcome', outcome, 'count', n) ORDER BY case_type, outcome), '[]')
+        FROM (
+          SELECT c.case_type, c.outcome, count(*)::int AS n
+          FROM public.cases c
+          WHERE c.outcome IS NOT NULL
+            AND coalesce(c.closed_at, c.updated_at) >= p_start
+            AND coalesce(c.closed_at, c.updated_at) < p_end
+          GROUP BY c.case_type, c.outcome
+        ) x
+      ),
+      'byTrack', (
+        SELECT coalesce(jsonb_agg(jsonb_build_object('track', coalesce(service_track, 'UNDECIDED'), 'outcome', outcome, 'count', n) ORDER BY service_track, outcome), '[]')
+        FROM (
+          SELECT c.service_track, c.outcome, count(*)::int AS n
+          FROM public.cases c
+          WHERE c.outcome IS NOT NULL
+            AND coalesce(c.closed_at, c.updated_at) >= p_start
+            AND coalesce(c.closed_at, c.updated_at) < p_end
+          GROUP BY c.service_track, c.outcome
+        ) x
+      )
+    );
+  END IF;
+  IF p_key = 'guard_coverage_failures' THEN
+    RETURN jsonb_build_object(
+      'key', p_key, 'count', total, 'temporalMode', 'PERIOD',
+      'categories', (
+        SELECT coalesce(jsonb_object_agg(label, n), '{}'::jsonb)
+        FROM (
+          SELECT r.label, count(*)::int AS n
+          FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+          GROUP BY r.label
+        ) x
+      )
     );
   END IF;
   IF p_key = 'case_age' THEN
     RETURN jsonb_build_object(
-      'key', p_key, 'count', total,
+      'key', p_key, 'count', total, 'temporalMode', 'CURRENT',
       'buckets', jsonb_build_object(
         'under1Day', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.elapsed_seconds < 86400),
         'days1to3', (SELECT count(*) FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r WHERE r.elapsed_seconds >= 86400 AND r.elapsed_seconds < 4 * 86400),
@@ -579,7 +929,7 @@ BEGIN
       )
     );
   END IF;
-  RETURN jsonb_build_object('key', p_key, 'count', total);
+  RETURN jsonb_build_object('key', p_key, 'count', total, 'temporalMode', admin_private.report_temporal_mode_v1(p_key));
 END; $$;
 
 CREATE FUNCTION admin_private.dashboard_today_v1(p_preset text, p_start_date date, p_end_date date, p_now timestamptz)
@@ -603,7 +953,7 @@ BEGIN
     SELECT 1 FROM public.guard_check_schedule_versions s
     WHERE s.status = 'APPROVED'
       AND s.effective_from <= (clock AT TIME ZONE 'Europe/London')::date
-      AND (s.effective_to IS NULL OR s.effective_to >= (clock AT TIME ZONE 'Europe/London')::date)
+      AND (s.effective_to IS NULL OR (clock AT TIME ZONE 'Europe/London')::date < s.effective_to)
   ) INTO schedule_ok;
   RETURN jsonb_build_object(
     'computedAt', clock,
@@ -618,6 +968,7 @@ BEGIN
       'lateAfterSeconds', late
     ),
     'monitoringScheduleConfigured', schedule_ok,
+    'temporalNote', 'Needs Attention, client, Guard-state and outstanding-money cards are current snapshots. Collections, check coverage and history use the selected Europe/London period.',
     'needsAttention', jsonb_build_object(
       'overdueWork', admin_private.report_summary_payload_v1('overdue_work', period.start_at, period.end_at, clock),
       'unassignedEnquiries', admin_private.report_summary_payload_v1('unassigned_enquiries', period.start_at, period.end_at, clock),
@@ -639,6 +990,7 @@ BEGIN
       'openCases', admin_private.report_summary_payload_v1('open_cases', period.start_at, period.end_at, clock),
       'collectedGross', admin_private.report_summary_payload_v1('collected_gross', period.start_at, period.end_at, clock),
       'collectedRefunds', admin_private.report_summary_payload_v1('collected_refunds', period.start_at, period.end_at, clock),
+      'collectedNet', admin_private.report_summary_payload_v1('collected_net', period.start_at, period.end_at, clock),
       'outstandingMoney', admin_private.report_summary_payload_v1('outstanding_money', period.start_at, period.end_at, clock),
       'guardRequested', admin_private.report_summary_payload_v1('guard_locations_requested', period.start_at, period.end_at, clock),
       'guardOnboarding', admin_private.report_summary_payload_v1('guard_locations_onboarding', period.start_at, period.end_at, clock),
@@ -677,9 +1029,20 @@ BEGIN
       ),
       'recentPayments', (
         SELECT coalesce(jsonb_agg(jsonb_build_object(
-          'id', r.id, 'paidAt', r.paid_at, 'amountMinor', r.amount_minor, 'currency', r.currency
-        ) ORDER BY r.paid_at DESC, r.id DESC), '[]')
-        FROM (SELECT * FROM public.payment_receipts ORDER BY paid_at DESC, id DESC LIMIT 10) r
+          'id', x.id, 'paidAt', x.occurred_at, 'amountMinor', x.amount_minor, 'currency', x.currency, 'kind', x.kind
+        ) ORDER BY x.occurred_at DESC, x.id DESC), '[]')
+        FROM (
+          SELECT r.id, r.paid_at AS occurred_at, r.amount_minor::bigint AS amount_minor, r.currency, 'Collection' AS kind
+          FROM public.payment_receipts r
+          UNION ALL
+          SELECT i.id, i.created_at, i.amount_paid_minor::bigint, i.currency, 'Guard collection'
+          FROM public.guard_subscription_invoices i WHERE i.status = 'PAID'
+          UNION ALL
+          SELECT rf.id, rf.succeeded_at, (-rf.amount_minor)::bigint, rf.currency, 'Refund'
+          FROM public.guard_refunds rf WHERE rf.status = 'SUCCEEDED'
+          ORDER BY 2 DESC, 1 DESC
+          LIMIT 10
+        ) x
       ),
       'todayWindows', CASE WHEN schedule_ok THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -692,15 +1055,37 @@ BEGIN
   );
 END; $$;
 
-CREATE FUNCTION admin_private.decode_report_cursor_v1(p_cursor text, OUT occurred_at timestamptz, OUT row_id uuid)
-LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
-DECLARE parts text[];
+CREATE FUNCTION admin_private.report_cursor_fingerprint_v1(
+  p_key text, p_start timestamptz, p_end timestamptz
+) RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT md5(
+    p_key || '|' || admin_private.report_temporal_mode_v1(p_key) || '|' ||
+    CASE WHEN admin_private.report_temporal_mode_v1(p_key) = 'PERIOD'
+      THEN coalesce(p_start::text, '') || '|' || coalesce(p_end::text, '')
+      ELSE 'CURRENT'
+    END
+  );
+$$;
+
+CREATE FUNCTION admin_private.decode_report_cursor_v1(
+  p_cursor text, p_key text, p_start timestamptz, p_end timestamptz, p_now timestamptz,
+  OUT occurred_at timestamptz, OUT row_id uuid
+) LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE parts text[]; expected text;
 BEGIN
   IF p_cursor IS NULL OR btrim(p_cursor) = '' THEN RETURN; END IF;
   parts := string_to_array(p_cursor, '|');
-  IF array_length(parts, 1) <> 2 THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
+  IF array_length(parts, 1) <> 3 THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
   occurred_at := parts[1]::timestamptz;
   row_id := parts[2]::uuid;
+  expected := admin_private.report_cursor_fingerprint_v1(p_key, p_start, p_end);
+  IF parts[3] IS DISTINCT FROM expected THEN RAISE EXCEPTION 'invalid_cursor'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM admin_private.report_rows_v1(p_key, p_start, p_end, p_now) r
+    WHERE r.row_id = row_id AND r.occurred_at = occurred_at
+  ) THEN
+    RAISE EXCEPTION 'invalid_cursor';
+  END IF;
 EXCEPTION WHEN others THEN
   RAISE EXCEPTION 'invalid_cursor';
 END; $$;
@@ -715,9 +1100,11 @@ DECLARE
   cur_id uuid;
   rows jsonb;
   n integer;
+  fp text := admin_private.report_cursor_fingerprint_v1(p_key, p_start, p_end);
 BEGIN
   IF p_cursor IS NOT NULL THEN
-    SELECT * INTO cur_at, cur_id FROM admin_private.decode_report_cursor_v1(p_cursor);
+    SELECT d.occurred_at, d.row_id INTO cur_at, cur_id
+    FROM admin_private.decode_report_cursor_v1(p_cursor, p_key, p_start, p_end, p_now) d;
   END IF;
   SELECT coalesce(jsonb_agg(jsonb_build_object(
     'id', x.row_id, 'occurredAt', x.occurred_at, 'amountMinor', x.amount_minor,
@@ -733,6 +1120,7 @@ BEGIN
   ) x;
   RETURN jsonb_build_object(
     'key', p_key,
+    'temporalMode', admin_private.report_temporal_mode_v1(p_key),
     'rows', coalesce((
       SELECT jsonb_agg(elem) FROM (
         SELECT elem FROM jsonb_array_elements(rows) WITH ORDINALITY z(elem, ord) WHERE ord <= lim
@@ -740,7 +1128,7 @@ BEGIN
     ), '[]'),
     'hasMore', n > lim,
     'nextCursor', CASE WHEN n > lim THEN
-      (SELECT (elem->>'occurredAt') || '|' || (elem->>'id')
+      (SELECT (elem->>'occurredAt') || '|' || (elem->>'id') || '|' || fp
        FROM jsonb_array_elements(rows) WITH ORDINALITY z(elem, ord) WHERE ord = lim)
     ELSE NULL END
   );
@@ -750,8 +1138,16 @@ CREATE FUNCTION admin_private.saved_filters_protect_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  IF NOT admin_private.saved_filter_actor_valid_v1(NEW.actor_id) THEN
+    RAISE EXCEPTION 'Saved filter actor is not a valid Admin identity';
+  END IF;
   IF NOT admin_private.saved_filter_keys_allowed_v1(NEW.module, NEW.filter) THEN
     RAISE EXCEPTION 'Guard saved filter payload is invalid';
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.record_version IS DISTINCT FROM 1 THEN
+      RAISE EXCEPTION 'Saved filter insert must start at version 1';
+    END IF;
   END IF;
   IF TG_OP = 'UPDATE' THEN
     IF NEW.actor_id IS DISTINCT FROM OLD.actor_id
@@ -826,6 +1222,7 @@ BEGIN
   END;
   RETURN jsonb_build_object(
     'status','success',
+    'temporalMode', admin_private.report_temporal_mode_v1(p_key),
     'period', jsonb_build_object('preset', period.preset, 'start', period.start_at, 'end', period.end_at, 'timezone', period.timezone),
     'summary', admin_private.report_summary_payload_v1(p_key, period.start_at, period.end_at, p_now)
   );
@@ -852,6 +1249,7 @@ BEGIN
   END;
   RETURN jsonb_build_object(
     'status','success',
+    'temporalMode', admin_private.report_temporal_mode_v1(p_key),
     'period', jsonb_build_object('preset', period.preset, 'start', period.start_at, 'end', period.end_at, 'timezone', period.timezone),
     'summary', admin_private.report_summary_payload_v1(p_key, period.start_at, period.end_at, p_now),
     'page', page
@@ -869,16 +1267,25 @@ DECLARE
   cur_id uuid;
   rows jsonb := '[]'::jsonb;
   n integer := 0;
+  cursor_ok boolean := true;
 BEGIN
   IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
   IF char_length(q) < 2 OR char_length(q) > 100 THEN
     RETURN jsonb_build_object('status','invalid','reason','invalid_query');
   END IF;
   escaped := admin_private.search_escape_v1(q);
+  -- Prefix match on normalized lower(btrim(name)) / refs. Contains-search is not used
+  -- because ordinary btree indexes cannot serve %q%. Case and invoice refs stay prefix.
   IF p_cursor IS NOT NULL THEN
     BEGIN
+      IF array_length(string_to_array(p_cursor, '|'), 1) <> 3 THEN
+        RETURN jsonb_build_object('status','invalid','reason','invalid_cursor');
+      END IF;
       cur_rank := split_part(p_cursor, '|', 1)::integer;
       cur_id := split_part(p_cursor, '|', 2)::uuid;
+      IF split_part(p_cursor, '|', 3) IS DISTINCT FROM md5(q) THEN
+        RETURN jsonb_build_object('status','invalid','reason','invalid_cursor');
+      END IF;
     EXCEPTION WHEN others THEN
       RETURN jsonb_build_object('status','invalid','reason','invalid_cursor');
     END;
@@ -890,35 +1297,49 @@ BEGIN
     UNION ALL
     SELECT 2, cu.id, cu.full_name, 'client', '/records/client/' || cu.id::text, cu.created_at
     FROM public.customers cu
-    WHERE lower(btrim(cu.full_name)) LIKE '%' || escaped || '%' ESCAPE '\'
+    WHERE lower(btrim(cu.full_name)) LIKE escaped || '%' ESCAPE '\'
     UNION ALL
     SELECT 3, cu.id, admin_private.verified_current_email_v1(cu.id), 'email', '/records/client/' || cu.id::text, cu.created_at
     FROM public.customers cu
     WHERE admin_private.verified_current_email_v1(cu.id) IS NOT NULL
-      AND admin_private.verified_current_email_v1(cu.id) LIKE '%' || escaped || '%' ESCAPE '\'
+      AND admin_private.verified_current_email_v1(cu.id) LIKE escaped || '%' ESCAPE '\'
     UNION ALL
     SELECT 4, b.id, b.display_name, 'business', '/records/business/' || b.id::text, b.created_at
     FROM public.businesses b
-    WHERE lower(btrim(b.display_name)) LIKE '%' || escaped || '%' ESCAPE '\'
+    WHERE lower(btrim(b.display_name)) LIKE escaped || '%' ESCAPE '\'
     UNION ALL
     SELECT 5, l.id, l.location_name, 'location', '/records/location/' || l.id::text, l.created_at
     FROM public.locations l
-    WHERE lower(btrim(l.location_name)) LIKE '%' || escaped || '%' ESCAPE '\'
+    WHERE lower(btrim(l.location_name)) LIKE escaped || '%' ESCAPE '\'
     UNION ALL
     SELECT 6, i.id, coalesce(i.provider_invoice_id, i.id::text), 'invoice', '/money', i.created_at
     FROM public.payment_invoices i
     WHERE i.provider_invoice_id IS NOT NULL AND lower(i.provider_invoice_id) LIKE escaped || '%' ESCAPE '\'
+    UNION ALL
+    SELECT 7, gi.id, gi.stripe_invoice_id, 'guard_invoice', '/money', gi.created_at
+    FROM public.guard_subscription_invoices gi
+    WHERE lower(gi.stripe_invoice_id) LIKE escaped || '%' ESCAPE '\'
   ), ordered AS (
     SELECT * FROM hits
     WHERE cur_rank IS NULL OR (rank, id) > (cur_rank, cur_id)
     ORDER BY rank, id
     LIMIT lim + 1
   )
-  SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'id', o.id, 'label', o.label, 'category', o.category, 'href', o.href, 'rank', o.rank
-  ) ORDER BY o.rank, o.id), '[]'), count(*)::int
-  INTO rows, n
-  FROM ordered o;
+  SELECT
+    coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', o.id, 'label', o.label, 'category', o.category, 'href', o.href, 'rank', o.rank
+      ) ORDER BY o.rank, o.id)
+      FROM ordered o
+    ), '[]'),
+    (SELECT count(*)::int FROM ordered),
+    CASE WHEN cur_rank IS NULL THEN true
+      ELSE EXISTS (SELECT 1 FROM hits h WHERE h.rank = cur_rank AND h.id = cur_id)
+    END
+  INTO rows, n, cursor_ok;
+  IF cursor_ok IS NOT TRUE THEN
+    RETURN jsonb_build_object('status','invalid','reason','invalid_cursor');
+  END IF;
   RETURN jsonb_build_object(
     'status','success',
     'results', coalesce((
@@ -928,7 +1349,7 @@ BEGIN
     ), '[]'),
     'hasMore', n > lim,
     'nextCursor', CASE WHEN n > lim THEN
-      (SELECT (elem->>'rank') || '|' || (elem->>'id')
+      (SELECT (elem->>'rank') || '|' || (elem->>'id') || '|' || md5(q)
        FROM jsonb_array_elements(rows) WITH ORDINALITY z(elem, ord) WHERE ord = lim)
     ELSE NULL END
   );
@@ -941,7 +1362,7 @@ BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN NULL; END IF;
   actor := (s->>'userId')::uuid;
-  IF p_module IS NULL OR p_module NOT IN ('ENQUIRIES','CASES','TASKS','GUARD_CHECKS','GUARD_ALERTS','MONEY','REPORTS') THEN
+  IF p_module IS NULL OR p_module IS DISTINCT FROM 'REPORTS' THEN
     RETURN jsonb_build_object('status','invalid');
   END IF;
   RETURN jsonb_build_object(
@@ -961,7 +1382,7 @@ CREATE FUNCTION public.admin_saved_filter_command_v1(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   s jsonb; actor uuid; fp text; cached jsonb; result jsonb; row public.admin_saved_filters;
-  filter_module text; fname text;
+  filter_module text; fname text; filter_id uuid;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status','unauthorized'); END IF;
@@ -974,22 +1395,31 @@ BEGIN
   IF cached IS NOT NULL THEN RETURN cached; END IF;
   filter_module := p_payload->>'module';
   fname := btrim(coalesce(p_payload->>'name', ''));
+  IF p_payload ? 'id' AND nullif(p_payload->>'id', '') IS NOT NULL THEN
+    BEGIN
+      filter_id := (p_payload->>'id')::uuid;
+    EXCEPTION WHEN others THEN
+      RETURN jsonb_build_object('status','invalid','reason','invalid_id');
+    END;
+  END IF;
   IF p_operation = 'create' THEN
     IF filter_module IS NULL
-      OR filter_module NOT IN ('ENQUIRIES','CASES','TASKS','GUARD_CHECKS','GUARD_ALERTS','MONEY','REPORTS')
+      OR filter_module IS DISTINCT FROM 'REPORTS'
       OR NOT admin_private.saved_filter_keys_allowed_v1(filter_module, coalesce(p_payload->'filter', '{}'::jsonb))
       OR length(fname) NOT BETWEEN 1 AND 80
-    THEN result := jsonb_build_object('status','invalid'); 
-    ELSIF EXISTS (SELECT 1 FROM public.admin_saved_filters f WHERE f.actor_id = actor AND f.module = filter_module AND f.name = fname) THEN
-      result := jsonb_build_object('status','conflict','reason','duplicate_name');
+    THEN result := jsonb_build_object('status','invalid');
     ELSE
-      INSERT INTO public.admin_saved_filters(actor_id, module, name, filter)
-      VALUES (actor, filter_module, fname, coalesce(p_payload->'filter', '{}'::jsonb))
-      RETURNING * INTO row;
-      result := jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
+      BEGIN
+        INSERT INTO public.admin_saved_filters(actor_id, module, name, filter)
+        VALUES (actor, filter_module, fname, coalesce(p_payload->'filter', '{}'::jsonb))
+        RETURNING * INTO row;
+        result := jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
+      EXCEPTION WHEN unique_violation THEN
+        result := jsonb_build_object('status','conflict','reason','duplicate_name');
+      END;
     END IF;
   ELSIF p_operation IN ('rename','replace','delete') THEN
-    SELECT * INTO row FROM public.admin_saved_filters WHERE id = NULLIF(p_payload->>'id','')::uuid FOR UPDATE;
+    SELECT * INTO row FROM public.admin_saved_filters WHERE id = filter_id FOR UPDATE;
     IF row.id IS NULL THEN result := jsonb_build_object('status','invalid');
     ELSIF row.actor_id IS DISTINCT FROM actor THEN result := jsonb_build_object('status','denied');
     ELSIF row.record_version IS DISTINCT FROM p_version THEN result := jsonb_build_object('status','conflict');
@@ -1001,8 +1431,12 @@ BEGIN
       ELSIF EXISTS (SELECT 1 FROM public.admin_saved_filters f WHERE f.actor_id = actor AND f.module = row.module AND f.name = fname AND f.id <> row.id) THEN
         result := jsonb_build_object('status','conflict','reason','duplicate_name');
       ELSE
-        UPDATE public.admin_saved_filters SET name = fname, record_version = record_version + 1 WHERE id = row.id RETURNING * INTO row;
-        result := jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
+        BEGIN
+          UPDATE public.admin_saved_filters SET name = fname, record_version = record_version + 1 WHERE id = row.id RETURNING * INTO row;
+          result := jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
+        EXCEPTION WHEN unique_violation THEN
+          result := jsonb_build_object('status','conflict','reason','duplicate_name');
+        END;
       END IF;
     ELSE
       IF NOT admin_private.saved_filter_keys_allowed_v1(row.module, coalesce(p_payload->'filter', '{}'::jsonb)) THEN
@@ -1045,10 +1479,27 @@ BEGIN
     RETURN jsonb_build_object('status','invalid','reason','invalid_period');
   END;
   fp := md5(jsonb_build_array(p_key, period.start_at, period.end_at, period.timezone)::text);
+  -- Request-level serialization: same request_id cannot race into a unique violation.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request::text, 0));
   SELECT * INTO receipt FROM admin_private.report_export_receipts WHERE request_id = p_request;
   IF receipt.request_id IS NOT NULL THEN
     IF receipt.actor_id IS DISTINCT FROM actor OR receipt.fingerprint IS DISTINCT FROM fp THEN
       RETURN jsonb_build_object('status','conflict','reason','idempotency_conflict');
+    END IF;
+    -- Replay reconstructs rows from the shared predicate. Receipt stores metadata only.
+    -- No second audit event.
+    IF receipt.outcome = 'success' THEN
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', r.row_id, 'occurredAt', r.occurred_at, 'amountMinor', r.amount_minor,
+        'currency', r.currency, 'label', r.label, 'elapsedSeconds', r.elapsed_seconds
+      ) ORDER BY r.occurred_at DESC, r.row_id DESC), '[]')
+      INTO rows
+      FROM admin_private.report_rows_v1(p_key, period.start_at, period.end_at, p_now) r;
+      RETURN jsonb_build_object(
+        'status','success', 'reportKey', p_key, 'rowCount', receipt.row_count, 'rows', rows,
+        'temporalMode', admin_private.report_temporal_mode_v1(p_key),
+        'period', jsonb_build_object('start', period.start_at, 'end', period.end_at, 'timezone', period.timezone)
+      );
     END IF;
     RETURN receipt.result;
   END IF;
@@ -1056,8 +1507,15 @@ BEGIN
   IF n > admin_private.report_export_limit_v1() THEN
     result := jsonb_build_object('status','denied','reason','export_limit', 'limit', admin_private.report_export_limit_v1(), 'count', n);
     INSERT INTO admin_private.report_export_receipts(
-      request_id, actor_id, fingerprint, report_key, period_start, period_end, timezone, row_count, outcome, reason, result
-    ) VALUES (p_request, actor, fp, p_key, period.start_at, period.end_at, period.timezone, n, 'denied', 'export_limit', result);
+      request_id, actor_id, fingerprint, report_key, period_start, period_end, timezone, filters, row_count, outcome, reason, result
+    ) VALUES (
+      p_request, actor, fp, p_key, period.start_at, period.end_at, period.timezone,
+      jsonb_build_object(
+        'reportKey', p_key, 'preset', period.preset, 'timezone', period.timezone,
+        'temporalMode', admin_private.report_temporal_mode_v1(p_key)
+      ),
+      n, 'denied', 'export_limit', result
+    );
     PERFORM admin_private.write_record_audit_v1(
       actor, 'REPORT_CHANGED', 'denied', NULL, p_request, 'report_export',
       'CSV export exceeded row limit', jsonb_build_object('reportKey', p_key, 'rowCount', n)
@@ -1071,17 +1529,25 @@ BEGIN
   INTO rows
   FROM admin_private.report_rows_v1(p_key, period.start_at, period.end_at, p_now) r;
   result := jsonb_build_object(
-    'status','success', 'reportKey', p_key, 'rowCount', n, 'rows', rows,
+    'status','success', 'reportKey', p_key, 'rowCount', n,
+    'temporalMode', admin_private.report_temporal_mode_v1(p_key),
     'period', jsonb_build_object('start', period.start_at, 'end', period.end_at, 'timezone', period.timezone)
   );
   INSERT INTO admin_private.report_export_receipts(
-    request_id, actor_id, fingerprint, report_key, period_start, period_end, timezone, row_count, outcome, result
-  ) VALUES (p_request, actor, fp, p_key, period.start_at, period.end_at, period.timezone, n, 'success', result);
+    request_id, actor_id, fingerprint, report_key, period_start, period_end, timezone, filters, row_count, outcome, result
+  ) VALUES (
+    p_request, actor, fp, p_key, period.start_at, period.end_at, period.timezone,
+    jsonb_build_object(
+      'reportKey', p_key, 'preset', period.preset, 'timezone', period.timezone,
+      'temporalMode', admin_private.report_temporal_mode_v1(p_key)
+    ),
+    n, 'success', result
+  );
   PERFORM admin_private.write_record_audit_v1(
     actor, 'REPORT_CHANGED', 'success', NULL, p_request, 'report_export',
     'CSV export requested', jsonb_build_object('reportKey', p_key, 'rowCount', n)
   );
-  RETURN result;
+  RETURN result || jsonb_build_object('rows', rows);
 END; $$;
 
 CREATE FUNCTION public.admin_customer_preview_v1(p_token text, p_customer uuid)
@@ -1121,49 +1587,140 @@ BEGIN
         'id', cs.id, 'reference', cs.public_ref, 'type', cs.case_type, 'status', cs.status,
         'notes', coalesce((
           SELECT jsonb_agg(w.note ORDER BY w.id)
-          FROM public.case_work_events w WHERE w.case_id = cs.id AND w.visibility = 'CUSTOMER'
+          FROM (
+            SELECT note, id FROM public.case_work_events
+            WHERE case_id = cs.id AND visibility = 'CUSTOMER'
+            ORDER BY id DESC LIMIT admin_private.preview_limit_v1()
+          ) w
         ), '[]')
       ) ORDER BY cs.submitted_at DESC)
-      FROM public.cases cs WHERE cs.customer_id = c.id
+      FROM (
+        SELECT * FROM public.cases scoped
+        WHERE scoped.customer_id = c.id
+          AND admin_private.customer_business_projection_v1(c.id, scoped.business_id) IS NOT NULL
+        ORDER BY scoped.submitted_at DESC
+        LIMIT admin_private.preview_limit_v1()
+      ) cs
     ), '[]'),
     'evidenceRequests', coalesce((
       SELECT jsonb_agg(jsonb_build_object('id', r.id, 'title', r.title, 'dueAt', r.due_at, 'status', r.status) ORDER BY r.created_at DESC)
-      FROM public.evidence_requests r
-      JOIN public.cases cs ON cs.id = r.case_id
-      WHERE cs.customer_id = c.id AND r.status = 'OPEN'
+      FROM (
+        SELECT r.id, r.title, r.due_at, r.status, r.created_at
+        FROM public.evidence_requests r
+        JOIN public.cases cs ON cs.id = r.case_id
+        WHERE cs.customer_id = c.id AND r.status = 'OPEN'
+          AND admin_private.customer_business_projection_v1(c.id, cs.business_id) IS NOT NULL
+        ORDER BY r.created_at DESC
+        LIMIT admin_private.preview_limit_v1()
+      ) r
     ), '[]'),
     'visibleDocuments', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
-        'title', d.title, 'filename', v.original_filename, 'contentType', v.declared_content_type
-      ) ORDER BY v.created_at DESC)
-      FROM public.case_documents d
-      JOIN public.case_document_versions v ON v.document_id = d.id
-      JOIN public.cases cs ON cs.id = d.case_id
-      WHERE cs.customer_id = c.id AND v.customer_visible IS TRUE
+        'title', d.title, 'filename', d.original_filename, 'contentType', d.declared_content_type
+      ) ORDER BY d.created_at DESC)
+      FROM (
+        SELECT doc.title, v.original_filename, v.declared_content_type, v.created_at
+        FROM public.case_documents doc
+        JOIN public.case_document_versions v ON v.document_id = doc.id
+        JOIN public.cases cs ON cs.id = doc.case_id
+        WHERE cs.customer_id = c.id AND v.customer_visible IS TRUE
+          AND admin_private.customer_business_projection_v1(c.id, cs.business_id) IS NOT NULL
+        ORDER BY v.created_at DESC
+        LIMIT admin_private.preview_limit_v1()
+      ) d
     ), '[]'),
     'orders', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
         'reference', o.public_ref, 'serviceCode', o.service_code, 'amountMinor', o.amount_minor, 'currency', o.currency
       ) ORDER BY o.accepted_at DESC)
-      FROM public.service_orders o WHERE o.customer_id = c.id
+      FROM (
+        SELECT so.public_ref, so.service_code, so.amount_minor, so.currency, so.accepted_at
+        FROM public.service_orders so
+        WHERE so.customer_id = c.id
+          AND admin_private.customer_business_projection_v1(c.id, so.business_id) IS NOT NULL
+        ORDER BY so.accepted_at DESC
+        LIMIT admin_private.preview_limit_v1()
+      ) o
     ), '[]')
   );
+END; $$;
+
+CREATE OR REPLACE FUNCTION admin_private.protect_payment_invoice_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  IF NEW.obligation_id IS DISTINCT FROM OLD.obligation_id
+    OR NEW.service_order_id IS DISTINCT FROM OLD.service_order_id
+    OR NEW.customer_id IS DISTINCT FROM OLD.customer_id
+    OR NEW.provider_operation_id IS DISTINCT FROM OLD.provider_operation_id
+    OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+    OR NEW.currency IS DISTINCT FROM OLD.currency
+    OR NEW.tax_behaviour IS DISTINCT FROM OLD.tax_behaviour
+    OR NEW.tax_amount_minor IS DISTINCT FROM OLD.tax_amount_minor
+  THEN RAISE EXCEPTION 'Payment invoice commercial snapshot is immutable'; END IF;
+  IF OLD.provider_invoice_id IS NOT NULL AND NEW.provider_invoice_id IS DISTINCT FROM OLD.provider_invoice_id THEN
+    RAISE EXCEPTION 'Invoice provider identity is set-once';
+  END IF;
+  IF OLD.due_at IS NOT NULL AND NEW.due_at IS DISTINCT FROM OLD.due_at THEN
+    RAISE EXCEPTION 'Invoice due date is set-once';
+  END IF;
+  IF OLD.status = 'PAID' AND NEW.status IS DISTINCT FROM 'PAID' THEN
+    RAISE EXCEPTION 'Paid invoices cannot regress';
+  END IF;
+  IF OLD.status = 'VOID' AND NEW.status IS DISTINCT FROM 'VOID' THEN
+    RAISE EXCEPTION 'Void invoices cannot become payable';
+  END IF;
+  IF OLD.status = 'DRAFT' AND NEW.status NOT IN ('DRAFT','ISSUED','VOID') THEN
+    RAISE EXCEPTION 'Invalid invoice status transition';
+  END IF;
+  IF OLD.status = 'ISSUED' AND NEW.status NOT IN ('ISSUED','PAID','VOID') THEN
+    RAISE EXCEPTION 'Invalid invoice status transition';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+-- Additive overload: record Stripe's confirmed due_date when the provider supplied it.
+-- The existing 5-argument function remains for current callers.
+CREATE FUNCTION public.payment_record_invoice_v1(
+  p_operation uuid, p_provider_invoice_id text, p_hosted_url text, p_amount_due integer, p_currency text,
+  p_due_at timestamptz
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE recorded jsonb;
+BEGIN
+  recorded := public.payment_record_invoice_v1(p_operation, p_provider_invoice_id, p_hosted_url, p_amount_due, p_currency);
+  IF recorded->>'status' = 'success' AND p_due_at IS NOT NULL THEN
+    UPDATE public.payment_invoices
+      SET due_at = coalesce(due_at, p_due_at)
+      WHERE provider_operation_id = p_operation AND due_at IS NULL;
+  END IF;
+  RETURN recorded;
 END; $$;
 
 REVOKE ALL ON FUNCTION
   admin_private.report_export_limit_v1(),
   admin_private.report_key_allowed_v1(text),
+  admin_private.saved_filter_date_ok_v1(text),
   admin_private.saved_filter_keys_allowed_v1(text, jsonb),
+  admin_private.saved_filter_actor_is_admin_v1(uuid),
+  admin_private.saved_filter_actor_is_staff_v1(uuid),
+  admin_private.saved_filter_actor_valid_v1(uuid),
   admin_private.report_period_v1(text, date, date, timestamptz),
   admin_private.search_escape_v1(text),
   admin_private.customer_is_active_service_v1(uuid),
+  admin_private.guard_paid_entitlement_current_v1(uuid, timestamptz),
+  admin_private.enquiry_contact_identity_v1(jsonb, uuid),
+  admin_private.enquiry_is_case_service_v1(jsonb),
+  admin_private.enquiry_exclusion_bucket_v1(text, uuid, jsonb),
+  admin_private.report_temporal_mode_v1(text),
+  admin_private.preview_limit_v1(),
+  admin_private.guard_coverage_failure_category_v1(uuid, timestamptz),
   admin_private.verified_current_email_v1(uuid),
   admin_private.report_rows_v1(text, timestamptz, timestamptz, timestamptz),
   admin_private.report_amount_groups_v1(text, timestamptz, timestamptz, timestamptz),
   admin_private.percentile_seconds_v1(integer[], double precision),
   admin_private.report_summary_payload_v1(text, timestamptz, timestamptz, timestamptz),
   admin_private.dashboard_today_v1(text, date, date, timestamptz),
-  admin_private.decode_report_cursor_v1(text),
+  admin_private.report_cursor_fingerprint_v1(text, timestamptz, timestamptz),
+  admin_private.decode_report_cursor_v1(text, text, timestamptz, timestamptz, timestamptz),
   admin_private.report_detail_page_v1(text, timestamptz, timestamptz, timestamptz, text, integer),
   admin_private.saved_filters_protect_v1(),
   admin_private.report_export_receipts_immutable_v1(),
@@ -1179,7 +1736,8 @@ REVOKE ALL ON FUNCTION
   public.admin_saved_filter_list_v1(text, text),
   public.admin_saved_filter_command_v1(text, uuid, text, jsonb, integer),
   public.admin_report_export_v1(text, uuid, text, text, date, date, timestamptz),
-  public.admin_customer_preview_v1(text, uuid)
+  public.admin_customer_preview_v1(text, uuid),
+  public.payment_record_invoice_v1(uuid, text, text, integer, text, timestamptz)
 FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
@@ -1190,7 +1748,8 @@ GRANT EXECUTE ON FUNCTION
   public.admin_saved_filter_list_v1(text, text),
   public.admin_saved_filter_command_v1(text, uuid, text, jsonb, integer),
   public.admin_report_export_v1(text, uuid, text, text, date, date, timestamptz),
-  public.admin_customer_preview_v1(text, uuid)
+  public.admin_customer_preview_v1(text, uuid),
+  public.payment_record_invoice_v1(uuid, text, text, integer, text, timestamptz)
 TO service_role;
 
 COMMIT;

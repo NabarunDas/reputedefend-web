@@ -298,6 +298,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         currency: (finalized.currency || "gbp").toLowerCase(),
         status: finalized.status || "open",
         livemode: false as const,
+        dueAt: finalized.due_date ? new Date(finalized.due_date * 1000).toISOString() : null,
       }
     },
     async createRecurringPrice(input) {

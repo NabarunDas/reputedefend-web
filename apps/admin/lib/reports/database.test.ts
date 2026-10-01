@@ -103,10 +103,17 @@ beforeEach(async () => {
 
 async function addEnquiry(at: string, status = "new", assigned = false, extras: Record<string, unknown> = {}) {
   const id = key()
+  const payload = {
+    name: "Pat",
+    email: extras.email ?? "pat@example.com",
+    phone: extras.phone ?? "",
+    service: extras.service ?? "profile-recovery",
+    subject: extras.subject ?? "",
+  }
   await db.query(
-    `insert into public.enquiries(id,submission_key,fingerprint,source,payload,assigned,internal_status,ack_status,status,created_at)
-     values($1,$2,$3,'phone',$4,$5,'SKIPPED','SKIPPED',$6,$7::timestamptz)`,
-    [id, key(), `fp-${id}`, { name: "Pat", email: "pat@example.com" }, assigned, status, at],
+    `insert into public.enquiries(id,submission_key,fingerprint,source,payload,assigned,internal_status,ack_status,status,created_at,monitoring_request_id)
+     values($1,$2,$3,$4,$5,$6,'SKIPPED','SKIPPED',$7,$8::timestamptz,$9)`,
+    [id, key(), `fp-${id}`, extras.source || "homepage", payload, assigned, status, at, extras.monitoringId || null],
   )
   if (extras.caseId) {
     await db.query("update public.enquiries set status='converted', case_id=$2, assigned=true where id=$1", [id, extras.caseId])
@@ -157,7 +164,7 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     expect(dash?.metrics?.clientsTotal?.count).toBe(2)
     expect(dash?.metrics?.clientsActiveService?.count).toBe(1)
     expect(dash?.metrics?.openEnquiries?.count).toBe(1)
-    expect(dash?.metrics?.contactsEnquiryOnly?.count).toBe(2)
+    expect(dash?.metrics?.contactsEnquiryOnly?.count).toBe(1)
     expect(dash?.metrics?.openCases?.count).toBe(1)
     const conversion = await rpc("admin_report_summary_v1", [token, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock])
     expect(conversion?.summary).toMatchObject({ eligible: 3, converted: 1 })
@@ -201,10 +208,13 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     const second = await rpc("admin_saved_filter_command_v1", [token, replay, "rename", { id: created!.id, name: "Renamed" }, 1])
     expect(first).toEqual(second)
     expect(await rpc("admin_saved_filter_command_v1", [token, key(), "rename", { id: created!.id, name: "Stale" }, 1])).toMatchObject({ status: "conflict" })
-    const foreign = (await db.query<{ id: string }>("insert into public.admin_saved_filters(actor_id,module,name,filter) values($1,'REPORTS','Theirs','{}'::jsonb) returning id", [otherActor])).rows[0].id
-    expect(await rpc("admin_saved_filter_command_v1", [token, key(), "delete", { id: foreign }, 1])).toMatchObject({ status: "denied" })
+    await expect(db.query("insert into public.admin_saved_filters(actor_id,module,name,filter) values($1,'REPORTS','Theirs','{}'::jsonb)", [otherActor])).rejects.toThrow(/valid Admin identity/)
+    await expect(db.query("insert into public.admin_saved_filters(actor_id,module,name,filter,record_version) values($1,'REPORTS','direct','{\"preset\":\"today\"}'::jsonb,50)", [uid])).rejects.toThrow(/version 1/)
     await expect(db.query("insert into public.admin_saved_filters(actor_id,module,name,filter) values($1,'REPORTS','direct','[]'::jsonb)", [uid])).rejects.toThrow()
     await expect(db.query("update public.admin_saved_filters set actor_id=$1 where id=$2", [otherActor, created!.id])).rejects.toThrow()
+    expect(await rpc("admin_saved_filter_command_v1", [token, key(), "delete", { id: "not-a-uuid" }, 1])).toMatchObject({ status: "invalid", reason: "invalid_id" })
+    expect(await rpc("admin_saved_filter_command_v1", [token, key(), "create", { module: "CASES", name: "Case view", filter: { reportKey: "open_cases" } }, null])).toMatchObject({ status: "invalid" })
+    expect(await rpc("admin_saved_filter_command_v1", [token, key(), "create", { module: "REPORTS", name: "Guard in reports", filter: { queue: "TODAY" } }, null])).toMatchObject({ status: "invalid" })
   })
 
   it("audits exports, rejects over-limit and conflicting replays, and does not store CSV text", async () => {
@@ -213,8 +223,14 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     const first = await rpc("admin_report_export_v1", [token, request, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock])
     expect(first?.status).toBe("success")
     expect(first?.rowCount).toBeGreaterThan(0)
+    expect(first?.rows).toBeTruthy()
+    const stored = await db.query<{ result: Record<string, unknown>; filters: Record<string, unknown> }>("select result, filters from admin_private.report_export_receipts where request_id=$1", [request])
+    expect(JSON.stringify(stored.rows[0].result)).not.toMatch(/pat@example.com|Alex Baker|rows/)
+    expect(stored.rows[0].filters.reportKey).toBe("enquiry_to_case")
     const replay = await rpc("admin_report_export_v1", [token, request, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock])
-    expect(replay).toEqual(first)
+    expect(replay?.status).toBe("success")
+    expect(replay?.rowCount).toBe(first?.rowCount)
+    expect(replay?.rows).toEqual(first?.rows)
     expect(await rpc("admin_report_export_v1", [token, request, "open_cases", "today", null, null, clock])).toMatchObject({ status: "conflict" })
     await db.exec("create or replace function admin_private.report_export_limit_v1() returns integer language sql immutable set search_path='' as $$ select 5; $$;")
     const denied = await rpc("admin_report_export_v1", [token, key(), "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock])
@@ -231,14 +247,322 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     await db.query("insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence) values($1,$2,'pending',null,null,'Awaiting authority check')", [customer, otherBusiness])
     await db.query("insert into public.case_work_events(case_id,actor_id,event,note,visibility) values($1,$2,'note','Internal staff note that must stay hidden','INTERNAL')", [caseId, uid])
     await db.query("insert into public.case_work_events(case_id,actor_id,event,note,visibility) values($1,$2,'note','Customer can read this approved note.','CUSTOMER')", [caseId, uid])
+    const hidden = await rpc("admin_customer_preview_v1", [token, customer])
+    expect(hidden?.status).toBe("success")
+    expect(hidden?.cases || []).toEqual([])
+    expect(JSON.stringify(hidden)).not.toContain("Customer can read this approved note.")
+    await db.query("insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence) values($1,$2,'verified',now(),$3,'Verified owner from a live call.')", [customer, business, uid])
     const preview = await rpc("admin_customer_preview_v1", [token, customer])
     expect(preview?.status).toBe("success")
     expect(preview?.customer).toMatchObject({ email: "alex@example.com", emailVerified: true })
     expect(JSON.stringify(preview)).toContain("Customer can read this approved note.")
     expect(JSON.stringify(preview)).not.toMatch(/Internal staff note|stripe|sk_live|otp|severity|job_outbox/)
-    expect(preview?.memberships || []).toEqual([])
+    expect(preview?.memberships?.some(item => item.businessId === business)).toBe(true)
+    expect(preview?.memberships?.some(item => item.businessId === otherBusiness)).toBe(false)
+    expect(preview?.cases?.some(item => item.id === caseId)).toBe(true)
     expect(await rpc("admin_customer_preview_v1", [token, "00000000-0000-4000-8000-000000000000"])).toMatchObject({ status: "denied" })
     expect(await rpc("admin_customer_preview_v1", ["nope", customer])).toBeNull()
+  })
+
+  it("counts distinct enquiry contacts and excludes converted or spam identities", async () => {
+    await addEnquiry("2026-03-29T10:00:00Z", "new", false, { email: "Same@Example.com" })
+    await addEnquiry("2026-03-29T10:05:00Z", "open", false, { email: "same@example.com" })
+    await addEnquiry("2026-03-29T10:10:00Z", "closed", false, { email: " SAME@example.com " })
+    await addEnquiry("2026-03-29T10:15:00Z", "new", false, { email: "", phone: "+44 1234 567 890" })
+    await addEnquiry("2026-03-29T10:16:00Z", "open", false, { email: "", phone: "+441234567890" })
+    const converted = await addEnquiry("2026-03-29T10:20:00Z", "new", false, { email: "converted@example.com" })
+    await db.query("update public.enquiries set status='converted', case_id=$2, assigned=true where id=$1", [converted, caseId])
+    await addEnquiry("2026-03-29T10:25:00Z", "spam", false, { email: "spam@example.com" })
+    const dash = await rpc("admin_dashboard_today_v1", [token, "today", null, null, clock])
+    expect(dash?.metrics?.contactsEnquiryOnly?.count).toBe(2)
+    const { ids } = await allDetail("contacts_enquiry_only", "today", null as never, null as never, 10)
+    expect(ids).toHaveLength(2)
+  })
+
+  it("uses a case-service enquiry cohort and reports excluded categories", async () => {
+    await addEnquiry("2026-03-29T10:00:00Z", "new", false, { service: "profile-recovery" })
+    await addEnquiry("2026-03-29T10:01:00Z", "new", false, { service: "review-protection" })
+    await addEnquiry("2026-03-29T10:02:00Z", "new", false, { service: "general" })
+    await addEnquiry("2026-03-29T10:03:00Z", "new", false, { service: "", subject: "partnership", source: "contact" })
+    await addEnquiry("2026-03-29T10:04:00Z", "spam", false, { service: "profile-recovery" })
+    const summary = await rpc("admin_report_summary_v1", [token, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock])
+    expect(summary?.summary).toMatchObject({ eligible: 2 })
+    expect((summary?.summary as { excluded?: Record<string, number> }).excluded).toMatchObject({
+      general: 1, nonCaseContact: 1, spam: 1,
+    })
+  })
+
+  it("binds report and search cursors to their exact context", async () => {
+    for (let i = 0; i < 3; i++) await addEnquiry(`2026-03-29T10:0${i}:00Z`, "new", false, { email: `page${i}@example.com` })
+    const first = await rpc("admin_report_detail_v1", [token, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", null, 1, clock])
+    const cursor = first?.page?.nextCursor
+    expect(cursor).toBeTruthy()
+    expect(await rpc("admin_report_detail_v1", [token, "open_cases", "custom", "2026-03-01", "2026-03-31", cursor, 1, clock])).toMatchObject({
+      status: "invalid", reason: "invalid_cursor",
+    })
+    expect(await rpc("admin_report_detail_v1", [token, "enquiry_to_case", "custom", "2026-02-01", "2026-02-28", cursor, 1, clock])).toMatchObject({
+      status: "invalid", reason: "invalid_cursor",
+    })
+    expect(await rpc("admin_report_detail_v1", [token, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", `${clock}|${key()}|deadbeef`, 1, clock])).toMatchObject({
+      status: "invalid", reason: "invalid_cursor",
+    })
+    const next = await rpc("admin_report_detail_v1", [token, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", cursor, 1, clock])
+    expect(next?.status).toBe("success")
+    expect(next?.page?.rows?.[0]?.id).not.toBe(first?.page?.rows?.[0]?.id)
+    const search = await rpc("admin_global_search_v1", [token, "alex baker", null, 1])
+    const searchCursor = (search as { nextCursor?: string })?.nextCursor
+    expect(await rpc("admin_global_search_v1", [token, "bakery", searchCursor, 1])).toMatchObject({ status: "invalid", reason: "invalid_cursor" })
+    expect(await rpc("admin_global_search_v1", [token, "alex baker", `2|${key()}|${"x".repeat(32)}`, 1])).toMatchObject({
+      status: "invalid", reason: "invalid_cursor",
+    })
+    const searchNext = await rpc("admin_global_search_v1", [token, "alex baker", searchCursor, 1])
+    expect(searchNext?.status).toBe("success")
+  })
+
+  it("returns current vs period metadata and a dedicated net collections report", async () => {
+    const current = await rpc("admin_report_summary_v1", [token, "open_cases", "custom", "2026-01-01", "2026-01-02", clock])
+    expect((current as { temporalMode?: string }).temporalMode).toBe("CURRENT")
+    const period = await rpc("admin_report_summary_v1", [token, "collected_net", "custom", "2026-03-01", "2026-03-31", clock])
+    expect((period as { temporalMode?: string }).temporalMode).toBe("PERIOD")
+    expect(period?.summary?.amounts || []).toEqual([])
+    const dash = await rpc("admin_dashboard_today_v1", [token, "custom", "2026-03-01", "2026-03-31", clock])
+    expect((dash as { temporalNote?: string }).temporalNote).toMatch(/current snapshots/)
+    expect((dash?.metrics as { collectedNet?: { amounts?: unknown[] } })?.collectedNet?.amounts || []).toEqual([])
+  })
+
+  it("reconciles net collections across more than one page and searches Guard invoice refs", async () => {
+    await db.exec("set session_replication_role = replica")
+    const receiptIds: string[] = []
+    for (let i = 0; i < 12; i++) {
+      const id = key()
+      receiptIds.push(id)
+      await db.query(
+        "insert into public.payment_receipts(id,obligation_id,service_order_id,customer_id,payment_attempt_id,amount_minor,currency,tax_behaviour,tax_amount_minor,paid_at) values($1,$2,$2,$3,$2,1000,'GBP','NOT_APPLICABLE',0,$4)",
+        [id, key(), customer, `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`],
+      )
+    }
+    const guardInvoice = key()
+    await db.query(
+      "insert into public.guard_subscription_invoices(id,subscription_id,stripe_invoice_id,amount_paid_minor,currency,kind,status,created_at) values($1,$2,'in_guardnet1',4900,'GBP','RENEWAL','PAID','2026-03-29T11:00:00Z')",
+      [guardInvoice, key()],
+    )
+    const refund = key()
+    await db.query(
+      "insert into public.guard_refunds(id,adjustment_id,subscription_id,invoice_id,amount_minor,currency,status,succeeded_at) values($1,$2,$2,$3,1500,'GBP','SUCCEEDED','2026-03-29T12:00:00Z')",
+      [refund, key(), guardInvoice],
+    )
+    await db.exec("set session_replication_role = origin")
+    const dash = await rpc("admin_dashboard_today_v1", [token, "custom", "2026-03-01", "2026-03-31", clock])
+    expect(dash?.metrics?.collectedNet?.amounts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ currency: "GBP", amountMinor: 15400 }),
+    ]))
+    const { ids, data } = await allDetail("collected_net", "custom", "2026-03-01", "2026-03-31", 5)
+    expect(data?.summary?.amounts).toEqual(dash?.metrics?.collectedNet?.amounts)
+    expect(ids).toHaveLength(14)
+    expect(new Set(ids).size).toBe(14)
+    const kinds = (await rpc("admin_report_detail_v1", [token, "collected_net", "custom", "2026-03-01", "2026-03-31", null, 50, clock]))
+      ?.page?.rows?.map(row => (row as { label?: string }).label)
+    expect(kinds).toEqual(expect.arrayContaining(["collection", "guard_collection", "refund"]))
+    const search = await rpc("admin_global_search_v1", [token, "in_guardnet1", null, 20])
+    expect(search?.results?.some(row => row.category === "guard_invoice" && row.id === guardInvoice)).toBe(true)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_refunds where id=$1", [refund])
+    await db.query("delete from public.guard_subscription_invoices where id=$1", [guardInvoice])
+    await db.query("delete from public.payment_receipts where id = any($1::uuid[])", [receiptIds])
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("includes earned success-fee obligations and authoritative overdue invoices only", async () => {
+    await db.exec("set session_replication_role = replica")
+    const upfront = key()
+    const success = key()
+    const dueOb = key()
+    const unknownOb = key()
+    const issuedDue = key()
+    const issuedUnknown = key()
+    await db.query(
+      "insert into public.payment_obligations(id,service_order_id,quote_id,quote_version_id,customer_id,kind,state,amount_minor,currency,tax_behaviour,tax_amount_minor) values($1,$2,$2,$2,$3,'UPFRONT','FAILED',1000,'GBP','NOT_APPLICABLE',0)",
+      [upfront, key(), customer],
+    )
+    await db.query(
+      "insert into public.payment_obligations(id,service_order_id,quote_id,quote_version_id,customer_id,kind,state,amount_minor,currency,tax_behaviour,tax_amount_minor,success_fee_approval_id) values($1,$2,$2,$2,$3,'SUCCESS_FEE','AUTHENTICATION_REQUIRED',29900,'GBP','NOT_APPLICABLE',0,$4)",
+      [success, key(), customer, key()],
+    )
+    await db.query(
+      "insert into public.payment_obligations(id,service_order_id,quote_id,quote_version_id,customer_id,kind,state,amount_minor,currency,tax_behaviour,tax_amount_minor) values($1,$2,$2,$2,$3,'UPFRONT','DUE',1500,'GBP','NOT_APPLICABLE',0)",
+      [dueOb, key(), customer],
+    )
+    await db.query(
+      "insert into public.payment_obligations(id,service_order_id,quote_id,quote_version_id,customer_id,kind,state,amount_minor,currency,tax_behaviour,tax_amount_minor) values($1,$2,$2,$2,$3,'UPFRONT','DUE',1600,'GBP','NOT_APPLICABLE',0)",
+      [unknownOb, key(), customer],
+    )
+    await db.query(
+      "insert into public.payment_invoices(id,obligation_id,service_order_id,customer_id,provider_operation_id,amount_minor,currency,tax_behaviour,tax_amount_minor,status,due_at) values($1,$2,$2,$3,$4,1500,'GBP','NOT_APPLICABLE',0,'ISSUED','2026-03-01T00:00:00Z')",
+      [issuedDue, dueOb, customer, key()],
+    )
+    await db.query(
+      "insert into public.payment_invoices(id,obligation_id,service_order_id,customer_id,provider_operation_id,amount_minor,currency,tax_behaviour,tax_amount_minor,status,due_at) values($1,$2,$2,$3,$4,1600,'GBP','NOT_APPLICABLE',0,'ISSUED',null)",
+      [issuedUnknown, unknownOb, customer, key()],
+    )
+    await db.exec("set session_replication_role = origin")
+    const outstanding = await rpc("admin_report_summary_v1", [token, "outstanding_money", "today", null, null, clock])
+    expect(outstanding?.summary?.count).toBe(4)
+    const exceptions = await rpc("admin_report_summary_v1", [token, "payment_exceptions", "today", null, null, clock])
+    expect(exceptions?.summary?.count).toBe(2)
+    const overdue = await rpc("admin_report_summary_v1", [token, "overdue_invoices", "today", null, null, clock])
+    expect(overdue?.summary?.count).toBe(1)
+    expect((overdue?.summary as { unknownDueDateCount?: number }).unknownDueDateCount).toBe(1)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.payment_invoices where id in ($1,$2)", [issuedDue, issuedUnknown])
+    await db.query("delete from public.payment_obligations where id in ($1,$2,$3,$4)", [upfront, success, dueOb, unknownOb])
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("uses current Guard reconciliation and paid entitlement, not historical leftovers", async () => {
+    await db.exec("set session_replication_role = replica")
+    const coverage = key()
+    const sub = key()
+    const oldRun = key()
+    const newRun = key()
+    const oldTarget = key()
+    const newTarget = key()
+    await db.query(
+      "insert into public.guard_coverages(id,customer_id,business_id,location_id,service_order_id,coverage_basis,coverage_origin,state,activated_at) values($1,$2,$3,$4,$5,'DIRECT_GUARD','DIRECT_GUARD','ACTIVE','2026-03-01')",
+      [coverage, customer, business, location, key()],
+    )
+    await db.query(
+      "insert into public.guard_billing(coverage_id,billing_state,entitlement_source,paid_through_at) values($1,'CURRENT','PROVIDER','2026-04-01T00:00:00Z')",
+      [coverage],
+    )
+    const price = (await db.query<{ id: string }>("select id from public.price_versions where service_code='RELAUNCH_GUARD' limit 1")).rows[0].id
+    await db.query(
+      "insert into public.guard_subscriptions(id,coverage_id,location_id,customer_id,business_id,service_order_id,price_version_id,lifecycle_state,amount_minor,currency,tax_behaviour) values($1,$2,$3,$4,$5,$6,$7,'ACTIVE',4900,'GBP','NOT_APPLICABLE')",
+      [sub, coverage, location, customer, business, key(), price],
+    )
+    await db.query("insert into public.guard_reconciliation_runs(id,service_date,status,mismatch_count) values($1,'2026-03-01','COMPLETED',1)", [oldRun])
+    await db.query("insert into public.guard_reconciliation_runs(id,service_date,status,mismatch_count) values($1,'2026-03-28','COMPLETED',0)", [newRun])
+    await db.query("insert into public.guard_reconciliation_targets(id,run_id,subscription_id,status,mismatch_count) values($1,$2,$3,'FAILED',1)", [oldTarget, oldRun, sub])
+    await db.query("insert into public.guard_reconciliation_targets(id,run_id,subscription_id,status,mismatch_count) values($1,$2,$3,'SUCCEEDED',0)", [newTarget, newRun, sub])
+    await db.query("insert into public.guard_reconciliation_issues(run_id,subscription_id,coverage_id,code) values($1,$2,$3,'AMOUNT')", [oldRun, sub, coverage])
+    await db.exec("set session_replication_role = origin")
+    expect((await rpc("admin_report_summary_v1", [token, "guard_billing_exceptions", "today", null, null, clock]))?.summary?.count).toBe(0)
+    expect((await rpc("admin_report_summary_v1", [token, "guard_locations_paid_active", "today", null, null, clock]))?.summary?.count).toBe(1)
+    await db.exec("set session_replication_role = replica")
+    await db.query("update public.guard_reconciliation_targets set mismatch_count=2, status='FAILED' where id=$1", [newTarget])
+    await db.query("update public.guard_billing set billing_state='PAST_DUE' where coverage_id=$1", [coverage])
+    await db.exec("set session_replication_role = origin")
+    expect((await rpc("admin_report_summary_v1", [token, "guard_billing_exceptions", "today", null, null, clock]))?.summary?.count).toBeGreaterThanOrEqual(2)
+    expect((await rpc("admin_report_summary_v1", [token, "guard_locations_paid_active", "today", null, null, clock]))?.summary?.count).toBe(0)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_reconciliation_issues")
+    await db.query("delete from public.guard_reconciliation_targets")
+    await db.query("delete from public.guard_reconciliation_runs")
+    await db.query("delete from public.guard_subscriptions where id=$1", [sub])
+    await db.query("delete from public.guard_billing where coverage_id=$1", [coverage])
+    await db.query("delete from public.guard_coverages where id=$1", [coverage])
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("classifies Guard coverage failures and keeps late completions as history", async () => {
+    await db.exec("set session_replication_role = replica")
+    const missed = key()
+    const incomplete = key()
+    const cov = key()
+    await db.query(
+      "insert into public.guard_check_obligations(id,coverage_id,customer_id,business_id,location_id,service_date,window_code,schedule_version_id,rota_assignment_id,coverage_basis,timezone,local_start,local_end,window_start_utc,window_end_utc,state,completed_at,missed_at,late,seconds_late) values($1,$2,$3,$4,$5,'2026-03-29','MORNING',$6,$6,'DIRECT_GUARD','Europe/London','08:00','10:00','2026-03-29T08:00:00Z','2026-03-29T10:00:00Z','COMPLETED','2026-03-29T10:06:00Z','2026-03-29T10:05:00Z',true,360)",
+      [missed, cov, customer, business, location, key()],
+    )
+    await db.query(
+      "insert into public.guard_check_obligations(id,coverage_id,customer_id,business_id,location_id,service_date,window_code,schedule_version_id,rota_assignment_id,coverage_basis,timezone,local_start,local_end,window_start_utc,window_end_utc,state,retry_count) values($1,$2,$3,$4,$5,'2026-03-29','EVENING',$6,$6,'DIRECT_GUARD','Europe/London','16:00','18:00','2026-03-29T16:00:00Z','2026-03-29T18:00:00Z','PENDING',2)",
+      [incomplete, key(), customer, business, location, key()],
+    )
+    await db.exec("set session_replication_role = origin")
+    const detail = await rpc("admin_report_detail_v1", [token, "guard_coverage_failures", "custom", "2026-03-29", "2026-03-29", null, 50, clock])
+    const labels = (detail?.page?.rows || []).map(row => (row as { label?: string }).label)
+    expect(labels).toEqual(expect.arrayContaining(["MISSED", "RETRY_REQUIRED"]))
+    expect(labels).not.toContain("COMPLETED")
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_check_obligations where id in ($1,$2)", [missed, incomplete])
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("treats schedule effective_to as end-exclusive like Step 17", async () => {
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_check_schedule_versions")
+    await db.query(
+      "insert into public.guard_check_schedule_versions(id,status,effective_from,effective_to,morning_start,morning_end,evening_start,evening_end,created_by,approved_at,approved_by) values($1,'APPROVED','2026-03-01','2026-03-29','08:00','10:00','16:00','18:00',$2,now(),$2)",
+      [key(), uid],
+    )
+    await db.exec("set session_replication_role = origin")
+    const dash = await rpc("admin_dashboard_today_v1", [token, "today", null, null, clock])
+    expect(dash?.monitoringScheduleConfigured).toBe(false)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_check_schedule_versions")
+    await db.query(
+      "insert into public.guard_check_schedule_versions(id,status,effective_from,effective_to,morning_start,morning_end,evening_start,evening_end,created_by,approved_at,approved_by) values($1,'APPROVED','2026-03-01','2026-03-30','08:00','10:00','16:00','18:00',$2,now(),$2)",
+      [key(), uid],
+    )
+    await db.exec("set session_replication_role = origin")
+    expect((await rpc("admin_dashboard_today_v1", [token, "today", null, null, clock]))?.monitoringScheduleConfigured).toBe(true)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.guard_check_schedule_versions")
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("implements outcomes, first-response breakdown and service-mix counts", async () => {
+    await db.exec("alter table public.cases disable trigger cases_workflow_version")
+    await db.query("update public.cases set status='CLOSED', outcome='RESTORED', closed_at='2026-03-29T11:00:00Z', service_track='GUIDED' where id=$1", [caseId])
+    await db.exec("alter table public.cases enable trigger cases_workflow_version")
+    const withdrawn = key()
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track,status,outcome,closed_at) values($1,'REVIEW_PROTECTION',$2,$3,$4,'Review issue','2026-03-20',now(),now(),'MANAGED','CANCELLED','WITHDRAWN','2026-03-29T12:00:00Z')",
+      [withdrawn, customer, business, location],
+    )
+    await db.query(
+      "insert into public.service_orders(id,public_ref,quote_id,quote_version_id,quote_acceptance_id,customer_id,business_id,service_code,amount_minor,currency,payment_model,tax_behaviour,tax_amount_minor,state,accepted_at) values($1,'SO-26-AAAAAA',$2,$2,$2,$3,$4,'GUIDED_RELAUNCH',9900,'GBP','UPFRONT','NOT_APPLICABLE',0,'ACCEPTED_AWAITING_PAYMENT','2026-03-29T09:00:00Z')",
+      [key(), key(), customer, business],
+    )
+    await db.exec("set session_replication_role = origin")
+    await addEnquiry("2026-03-29T09:00:00Z")
+    await db.query("insert into public.enquiry_events(enquiry_id,event,note) select id, 'triaged', 'Triaged' from public.enquiries limit 1")
+    const outcomes = await rpc("admin_report_summary_v1", [token, "outcomes", "custom", "2026-03-01", "2026-03-31", clock])
+    expect(outcomes?.summary).toMatchObject({ success: 1, withdrawn: 1, denominator: 1 })
+    expect((outcomes?.summary as { successRate?: number }).successRate).toBe(100)
+    const first = await rpc("admin_report_summary_v1", [token, "first_response", "custom", "2026-03-01", "2026-03-31", clock])
+    expect((first?.summary as { enquiry?: { measured?: number }; case?: { measured?: number } }).enquiry?.measured).toBeGreaterThan(0)
+    expect((first?.summary as { note?: string }).note).toMatch(/two operational response populations/i)
+    const mix = await rpc("admin_report_summary_v1", [token, "service_mix", "custom", "2026-03-01", "2026-03-31", clock])
+    expect((mix?.summary as { groups?: Array<{ group: string; count: number }> }).groups?.some(row => row.group === "Guided" && row.count === 1)).toBe(true)
+    await db.exec("set session_replication_role = replica")
+    await db.query("delete from public.service_orders")
+    await db.query("delete from public.cases where id=$1", [withdrawn])
+    await db.exec("set session_replication_role = origin")
+  })
+
+  it("replays the same export request concurrently with one audit event and no stored rows", async () => {
+    await addEnquiry("2026-03-29T10:00:00Z")
+    const request = key()
+    const [a, b] = await Promise.all([
+      rpc("admin_report_export_v1", [token, request, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock]),
+      rpc("admin_report_export_v1", [token, request, "enquiry_to_case", "custom", "2026-03-01", "2026-03-31", clock]),
+    ])
+    expect(a?.status).toBe("success")
+    expect(b?.status).toBe("success")
+    const audits = await db.query<{ n: number }>("select count(*)::int as n from public.admin_audit_events where action='REPORT_CHANGED' and request_id=$1", [request])
+    expect(audits.rows[0].n).toBe(1)
+    const receipt = await db.query<{ result: Record<string, unknown> }>("select result from admin_private.report_export_receipts where request_id=$1", [request])
+    expect(JSON.stringify(receipt.rows[0].result)).not.toMatch(/@example.com|"rows"/)
+  })
+
+  it("creates saved filters concurrently without a unique-violation 500", async () => {
+    const [a, b] = await Promise.all([
+      rpc("admin_saved_filter_command_v1", [token, key(), "create", { module: "REPORTS", name: "Same name", filter: { preset: "today" } }, null]),
+      rpc("admin_saved_filter_command_v1", [token, key(), "create", { module: "REPORTS", name: "Same name", filter: { preset: "today" } }, null]),
+    ])
+    const statuses = [a?.status, b?.status].sort()
+    expect(statuses).toEqual(["conflict", "success"])
+    expect([a, b].some(row => row?.reason === "duplicate_name" || row?.status === "success")).toBe(true)
   })
 
   it("denies direct CRUD and privilege escalation on new tables and RPCs", async () => {

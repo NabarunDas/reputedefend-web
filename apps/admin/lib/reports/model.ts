@@ -3,7 +3,7 @@ export const reportKeys = [
   "guard_alerts_needs_review", "failed_customer_email", "access_recovery", "contact_recovery",
   "payment_exceptions", "guard_billing_exceptions", "failed_jobs",
   "clients_total", "clients_active_service", "contacts_enquiry_only", "open_enquiries", "open_cases",
-  "collected_gross", "collected_refunds", "outstanding_money",
+  "collected_gross", "collected_refunds", "collected_net", "outstanding_money",
   "guard_locations_requested", "guard_locations_onboarding", "guard_locations_paid_active",
   "guard_locations_included_active", "guard_locations_paused", "guard_locations_ending", "guard_locations_ended",
   "guard_recurring", "check_coverage_due", "check_coverage_completed",
@@ -15,7 +15,24 @@ export const reportKeys = [
 export type ReportKey = (typeof reportKeys)[number]
 export const reportPresets = ["today", "last_7_days", "current_month", "custom"] as const
 export type ReportPreset = (typeof reportPresets)[number]
-export const savedFilterModules = ["ENQUIRIES", "CASES", "TASKS", "GUARD_CHECKS", "GUARD_ALERTS", "MONEY", "REPORTS"] as const
+export const savedFilterModules = ["REPORTS"] as const
+export type SavedFilterModule = (typeof savedFilterModules)[number]
+export type TemporalMode = "CURRENT" | "PERIOD"
+
+export const currentReportKeys = new Set<ReportKey>([
+  "overdue_work", "unassigned_enquiries", "missed_guard_checks", "unreviewed_guard_alerts",
+  "guard_alerts_needs_review", "failed_customer_email", "access_recovery", "contact_recovery",
+  "payment_exceptions", "guard_billing_exceptions", "failed_jobs",
+  "clients_total", "clients_active_service", "contacts_enquiry_only", "open_enquiries", "open_cases",
+  "outstanding_money",
+  "guard_locations_requested", "guard_locations_onboarding", "guard_locations_paid_active",
+  "guard_locations_included_active", "guard_locations_paused", "guard_locations_ending", "guard_locations_ended",
+  "guard_recurring", "case_age", "overdue_invoices",
+])
+
+export function reportTemporalMode(key: ReportKey): TemporalMode {
+  return currentReportKeys.has(key) ? "CURRENT" : "PERIOD"
+}
 
 export const reportLabels: Record<ReportKey, string> = {
   overdue_work: "Overdue work",
@@ -36,6 +53,7 @@ export const reportLabels: Record<ReportKey, string> = {
   open_cases: "Open cases",
   collected_gross: "Gross confirmed collections",
   collected_refunds: "Confirmed refunds",
+  collected_net: "Net collections",
   outstanding_money: "Outstanding money",
   guard_locations_requested: "Guard requested",
   guard_locations_onboarding: "Guard onboarding",
@@ -107,6 +125,19 @@ export function formatMinor(amount: number | null | undefined, currency: string 
   if (amount == null) return "—"
   const code = currency || "GBP"
   return `${(amount / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${code}`
+}
+
+export function formatAmountGroups(amounts?: Array<{ currency: string; amountMinor: number }> | null, empty = "No confirmed collections") {
+  if (!amounts?.length) return empty
+  return amounts.map(row => formatMinor(row.amountMinor, row.currency)).join(" · ")
+}
+
+export function savedFilterHref(filter: Record<string, unknown>) {
+  const preset = typeof filter.preset === "string" && isPreset(filter.preset) ? filter.preset : "today"
+  const startDate = typeof filter.startDate === "string" ? parseDateOnly(filter.startDate) : null
+  const endDate = typeof filter.endDate === "string" ? parseDateOnly(filter.endDate) : null
+  const reportKey = typeof filter.reportKey === "string" && isReportKey(filter.reportKey) ? filter.reportKey : null
+  return periodHref(reportKey ? `/reports/${reportKey}` : "/reports", { preset, startDate, endDate })
 }
 
 export function coverageLabel(summary: { numerator?: number; denominator?: number; percentage?: number | null } | undefined) {

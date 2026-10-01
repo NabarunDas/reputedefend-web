@@ -49,10 +49,12 @@ describe("Today home", () => {
         openCases: { count: 1 },
         collectedGross: { count: 1, amounts: [{ currency: "GBP", amountMinor: 24900 }] },
         collectedRefunds: { count: 0, amounts: [] },
+        collectedNet: { count: 1, amounts: [{ currency: "GBP", amountMinor: 24900 }] },
         outstandingMoney: { count: 0, amounts: [] },
         checkCoverage: { numerator: 0, denominator: 0, percentage: null },
       },
       secondary: {},
+      temporalNote: "Needs Attention, client, Guard-state and outstanding-money cards are current snapshots. Collections, check coverage and history use the selected Europe/London period.",
     })
     render(await AdminHome({ searchParams: Promise.resolve({}) }))
     expect(requireStaff).toHaveBeenCalled()
@@ -61,6 +63,9 @@ describe("Today home", () => {
     expect(screen.getByText("61")).toBeTruthy()
     expect(document.body.textContent).not.toContain("50+")
     expect(screen.getByRole("link", { name: /Overdue work/ })).toHaveAttribute("href", expect.stringContaining("/reports/overdue_work"))
+    expect(screen.getByRole("link", { name: /Net collections/ })).toHaveAttribute("href", expect.stringContaining("/reports/collected_net"))
+    expect(screen.getByText(/Guard recurring commitment \/ month/)).toBeTruthy()
+    expect(screen.getByText(/current snapshots/)).toBeTruthy()
     expect(screen.getByText("Monitoring schedule not configured")).toBeTruthy()
     expect(screen.getAllByText(/Europe\/London/).length).toBeGreaterThan(0)
     expect(document.body.textContent).not.toContain("admin@profilerelaunch.com")

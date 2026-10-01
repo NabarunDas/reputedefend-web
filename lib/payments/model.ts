@@ -285,6 +285,7 @@ export type ProviderInvoice = {
   currency: string
   status: string
   livemode: false
+  dueAt?: string | null
 }
 
 export type RetrievedSetupIntent = {

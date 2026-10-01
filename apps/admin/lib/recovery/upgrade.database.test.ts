@@ -61,7 +61,7 @@ describe("upgrading a database that is already running", () => {
     expect(pending[0].version).toBe("20260929210000")
     // The tail now carries the reviewed Step 23 fix, so this rehearsal also
     // proves that migration applies cleanly onto the real chain.
-    expect(pending.at(-1)?.version).toBe("20261001200000")
+    expect(pending.at(-1)?.version).toBe("20261001220255")
     expect(upgradeMs).toBeGreaterThan(0)
     expect(await count(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name = 'provider_oauth_states'",

@@ -1,10 +1,10 @@
 # Settings, staff/session operations, template lifecycle, privacy, complaints and incidents
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / DESTRUCTIVE PRIVACY ACTIONS DISABLED**
+Status: **DATABASE APPLIED / DESTRUCTIVE PRIVACY ACTIONS DISABLED**
 
-Additive migration: `20261001111259_admin_settings_privacy_operations_v1.sql`
+Additive migration: `20261001141218_admin_settings_privacy_operations_v1.sql`
 
-Generated with `npx supabase migration new admin_settings_privacy_operations_v1`. Do not apply this migration from the PR. ChatGPT reviews the SQL independently before Supabase is changed. Do not request Supabase credentials. Do not replay or modify applied Steps 10–19. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`. `PRIVACY_DELETION_ENABLED` remains unset.
+Applied to `profilerelaunch-dev` exactly once as `20261001141218 admin_settings_privacy_operations_v1` after independent SQL review. Do not replay or modify the applied migration. Do not request Supabase credentials. Do not replay or modify applied Steps 10–19. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`. `PRIVACY_DELETION_ENABLED` remains unset.
 
 ## Single staff identity
 

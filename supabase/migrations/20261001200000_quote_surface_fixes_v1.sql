@@ -1,9 +1,11 @@
--- Step 23 acceptance and security hardening: quote acceptance action scope fix.
+-- Step 23 acceptance and security hardening: two quote surface defects.
 -- SOURCE IMPLEMENTED / MIGRATION NOT APPLIED
--- Generated with: npx supabase migration new quote_action_scope_fix_v1
+-- Generated with: npx supabase migration new quote_surface_fixes_v1
 -- Do not apply from this PR. Do not replay or modify applied migrations (Steps 1-21).
 --
--- Defect found by Step 23 adversarial authorization testing.
+-- ---------------------------------------------------------------------------
+-- Defect 1: cross-quote action revocation.
+-- Found by Step 23 adversarial authorization testing.
 --
 -- public.admin_quote_command_v1 'revoke_action' loaded the target customer action
 -- by its identifier alone. It checked kind and status but never checked that the
@@ -26,6 +28,25 @@
 --
 -- Regression test: apps/admin/lib/commerce/database.test.ts
 --   "refuses to revoke a quote acceptance action that belongs to another quote".
+--
+-- ---------------------------------------------------------------------------
+-- Defect 2: the quote list raises instead of returning.
+-- Found by the Step 23 simulated Admin workday, which is the first test to
+-- call public.admin_quote_list_v1 at all.
+--
+-- The aggregate ordered by `row.quote.created_at`. PostgreSQL reads a
+-- three-part qualified name as schema.table.column, so it looked for a table
+-- named `quote` and raised `missing FROM-clause entry for table "quote"`. The
+-- plan is built the first time the statement runs, so every call failed
+-- regardless of how many quotes existed, and the /commercial page returned an
+-- error for the operator rather than the quote list. The existing page test
+-- mocks loadQuotes, so nothing exercised the SQL.
+--
+-- The fix parenthesises the composite reference. Ordering, filtering and the
+-- returned shape are otherwise unchanged.
+--
+-- Regression test: apps/admin/lib/workday.database.test.ts
+--   "carries one enquiry through triage, a case, evidence, a pack and a quote".
 
 BEGIN;
 
@@ -324,7 +345,33 @@ BEGIN
   RETURN result;
 END; $$;
 
+CREATE OR REPLACE FUNCTION public.admin_quote_list_v1(p_token text, p_status text DEFAULT NULL, p_q text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE items jsonb; q text;
+BEGIN
+  IF public.admin_session_v1(p_token) IS NULL THEN RETURN NULL; END IF;
+  IF p_status IS NOT NULL AND p_status NOT IN ('DRAFT','OFFERED','ACCEPTED','DECLINED','EXPIRED','SUPERSEDED','CANCELLED') THEN
+    RAISE EXCEPTION 'Invalid quote filter';
+  END IF;
+  q := nullif(btrim(coalesce(p_q, '')), '');
+  IF q IS NOT NULL AND char_length(q) > 80 THEN RAISE EXCEPTION 'Invalid quote filter'; END IF;
+  SELECT coalesce(jsonb_agg(admin_private.quote_json_v1(row.quote, row.version) ORDER BY (row.quote).created_at DESC), '[]')
+  INTO items
+  FROM (
+    SELECT qu AS quote, qv AS version
+    FROM public.quotes qu
+    JOIN public.quote_versions qv ON qv.id = qu.current_version_id
+    WHERE (p_status IS NULL OR qu.status = p_status)
+      AND (q IS NULL OR qu.public_ref ILIKE ('%' || q || '%') OR qv.service_name ILIKE ('%' || q || '%'))
+    ORDER BY qu.created_at DESC
+    LIMIT 100
+  ) row;
+  RETURN jsonb_build_object('quotes', items);
+END; $$;
+
 REVOKE ALL ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_quote_list_v1(text, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_quote_command_v1(text, uuid, text, jsonb, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_quote_list_v1(text, text, text) TO service_role;
 
 COMMIT;

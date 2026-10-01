@@ -298,13 +298,13 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     version: "20261001200000",
-    filename: "20261001200000_quote_action_scope_fix_v1.sql",
-    step: "Step 23 quote acceptance action scope fix",
+    filename: "20261001200000_quote_surface_fixes_v1.sql",
+    step: "Step 23 quote surface fixes",
     kind: "additive",
     appliedToDev: false,
     containsDataChange: false,
     safeToReplay: false,
-    verification: { category: "quote action scope", probe: "public.admin_quote_command_v1" },
+    verification: { category: "quote action scope and quote list", probe: "public.admin_quote_list_v1" },
   },
 ]
 

@@ -17,8 +17,8 @@ describe("the migration chain manifest", () => {
   })
 
   it("separates the repository head from the migration the dev project has received", () => {
-    expect(migrationHead.filename).toBe("20261001200000_quote_action_scope_fix_v1.sql")
-    expect(migrationHead.step).toBe("Step 23 quote acceptance action scope fix")
+    expect(migrationHead.filename).toBe("20261001200000_quote_surface_fixes_v1.sql")
+    expect(migrationHead.step).toBe("Step 23 quote surface fixes")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.filename).toBe("20261001175315_google_integration_readiness_v1.sql")
     expect(appliedMigrationHead.step).toBe("Step 21 Google integration readiness")

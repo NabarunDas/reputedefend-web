@@ -74,7 +74,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_catalogue_quotes_orders_v1.sql"))!,
-    readdirSync(dir).find(n => n.endsWith("_quote_action_scope_fix_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_quote_surface_fixes_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 45000)
 

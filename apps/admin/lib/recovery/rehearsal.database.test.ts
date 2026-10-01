@@ -49,10 +49,10 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(27)
-    // A project rebuilt from source receives the reviewed Step 23 fix too, so
-    // the rebuild head runs ahead of the migration the dev project has applied.
-    expect(migrationHead.version).toBe("20261001200000")
-    expect(appliedMigrationHead.version).toBe("20261001175315")
+    // The reviewed Step 23 fix is now applied to dev too, so source and dev
+    // share the same schema head.
+    expect(migrationHead.version).toBe("20261001220255")
+    expect(appliedMigrationHead.version).toBe("20261001220255")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {
@@ -287,7 +287,7 @@ describe("the recovery fingerprint", () => {
     expect(fingerprint.jobStateCounts["jobs.status=DEAD_LETTER"]).toBe(1)
     expect(fingerprint.outboxCounts).toEqual({ promoted: 1, unpromoted: 1 })
     expect(fingerprint.migrationSequence).toEqual(sequence)
-    expect(fingerprint.schemaHead).toBe("20261001200000")
+    expect(fingerprint.schemaHead).toBe("20261001220255")
   })
 
   it("carries no plaintext customer data", () => {

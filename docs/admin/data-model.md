@@ -162,6 +162,8 @@ One immutable storage object per version.
 
 Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`. At most one active `CUSTOMER` version per evidence request (`PENDING_UPLOAD` or `UPLOADED`). Historical `FAILED` customer attempts do not occupy that slot. Customer provenance columns are server-controlled and never accepted from the browser.
 
+There is no content hash column. `declared_size_bytes` and `declared_content_type` are the only object attributes the database can compare against storage, so after a restore a reconciliation match proves structure rather than bytes. Adding a checksum is a Step 22B prerequisite for proving byte-level evidence integrity. See database-restore-runbook.md.
+
 ## public.case_document_events
 
 Append-only. Events: `UPLOAD_BEGUN`, `UPLOAD_FINALIZED`, `UPLOAD_FAILED`, `SCAN_REFRESHED`, `REVIEW_ACCEPTED`, `REVIEW_REJECTED`, `VERSION_SUPERSEDED`, `VISIBILITY_CHANGED`, `ACCESS_VIEWED`, `ACCESS_DOWNLOADED`. Details are bounded JSON without file bytes, OTPs, AWS tokens, presigned URLs or secrets. Covering index on `version_id`.

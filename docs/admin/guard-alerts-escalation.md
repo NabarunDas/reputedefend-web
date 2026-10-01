@@ -1,8 +1,8 @@
 # Guard alerts, escalation and linked cases — Step 18
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED**
+Status: **DATABASE APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED**
 
-The additive migration is `supabase/migrations/20260930222821_guard_alerts_escalation_v1.sql`. ChatGPT will independently review it before anything touches Supabase. Do not apply this migration from this PR. Do not request Supabase credentials. Do not create a second Step 18 migration. Do not modify applied migrations, including Step 17 `20260930203750_guard_manual_checks_v1.sql`.
+The additive migration `supabase/migrations/20260930222821_guard_alerts_escalation_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 17 as `20260930222821 guard_alerts_escalation_v1`. The database is ready for Step 18 alert/recovery workflows, but live alerts and notifications remain disabled. `GUARD_ALERTS_ENABLED`, `GUARD_ALERT_NOTIFICATIONS_ENABLED`, `GUARD_CHECKS_ENABLED` and `GUARD_ACTIVATION_ENABLED` remain unset. No live alert, communication, service action, intervention case or alert job was created by rollout. Do not replay or modify the applied migration.
 
 Step 17 remains the observation authority. It produces immutable observations (`HEALTHY`, `CHANGE_DETECTED`, `PROFILE_UNAVAILABLE`, `INCOMPLETE`) with `attention_candidate`. It does not create alerts. No production monitoring schedule exists. `GUARD_CHECKS_ENABLED` remains unset, so production has no live observations.
 
@@ -193,7 +193,7 @@ Audit uses existing `GUARD_CHANGED` for acknowledgement, severity change, escala
 
 ## Out of scope
 
-- applying this migration
+- replaying or modifying this applied migration
 - requesting Supabase credentials
 - enabling `GUARD_ALERTS_ENABLED`, `GUARD_ALERT_NOTIFICATIONS_ENABLED`, `GUARD_CHECKS_ENABLED` or `GUARD_ACTIVATION_ENABLED`
 - enabling Stripe, Step 11 live sending, Step 12 inbound, Resend or Google API

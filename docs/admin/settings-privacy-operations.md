@@ -46,9 +46,15 @@ Lifecycle: `DRAFT` → `APPROVED` → `RETIRED`.
 - no approved production seeds are created
 - the UI shows `Not configured` when no approved version exists
 
+Retirement closes the interval. A version retired after it took effect keeps its history and ends at the retirement instant. A version retired *before* its effective date closes as an empty interval (`effective_to = effective_from`) so it can never become current later. The database rejects any RETIRED row with an open interval, and a retired row may only stay applicable in the future when a scheduled replacement starts exactly at its `effective_to`.
+
+A scheduled replacement therefore preserves the currently applicable earlier policy until that `effective_to`. Response targets are approved against the service-hours version applicable at the target's own effective instant, including an earlier version that has already been superseded for a later date.
+
 Service hours are Europe/London structured weekly windows with explicit weekend and bank-holiday policy. Bank holidays cannot be excluded without configured dates. DST uses timezone conversion, not a fixed UTC offset. Response targets are separate from Guard monitoring windows and require an approved service-hours version. No two-hour response promise is invented.
 
 `public.service_response_obligations` snapshots due dates only for work created after an approved policy is effective. Changing a later policy does not rewrite an existing obligation. If no approved policy exists, no obligation is created. Step 19 raw first-response reporting is unchanged.
+
+The snapshot is an immutable historical fact. `target_type`, `enquiry_id`, `case_id`, `policy_version_id`, `hours_version_id`, `opened_at`, `due_at`, `timezone`, `target_hours` and `created_at` cannot be rewritten after creation, and rows cannot be deleted. Only fulfilment may change, through `OPEN → FULFILLED` or `OPEN → CANCELLED`, and `fulfilled_at` is required for `FULFILLED` and immutable once set.
 
 ## Guard schedule and rota
 
@@ -79,13 +85,19 @@ New approvals must set `approval_source = ADMIN` and `approved_by` to the active
 
 Modes: `RETAIN_FOR_PERIOD`, `RETAIN_INDEFINITELY`, `MANUAL_REVIEW`. NULL is not an approved decision. The UI shows `Retention policy not approved` until an Owner approves a version. No deletion automation may operate without a current APPROVED policy.
 
+Retention versions follow the same effective-range invariant as versioned settings. Two applicable APPROVED or RETIRED versions for one category can never overlap, and the rule is a table trigger rather than an approval-path check, so a malformed direct SQL mutation is rejected too. Retirement closes the interval with the same before/after effective-date semantics.
+
 `public.legal_holds` are immutable-history `ACTIVE` / `RELEASED` records with a real customer, business, case or category scope. An active hold is a hard `deletion_blocked` condition in the database, not only a UI warning. Released holds remain as history.
 
 `public.privacy_requests` and `public.privacy_request_dispositions` track ACCESS / EXPORT / CORRECTION / DELETION through a strict transition matrix. Identity must be `VERIFIED_CONTACT` or `VERIFIED_MANUAL` before export or deletion. Manual verification requires fresh auth and a meaningful evidence note. A phone conversation alone is not enough.
 
 Deletion preview separates eligible, retained, hold-blocked, no-policy-blocked, external-storage and manual-review records. Financial, audit and consent history are not hidden. There is no generic cascade delete.
 
-Physical deletion is application-gated by server-only `PRIVACY_DELETION_ENABLED` exactly `"true"`. Default/unset is disabled. Previews and review still work. The only automated candidate, when the gate is later enabled, is an unsuccessful enquiry that is not converted, has no case or monitoring request, has elapsed approved retention, has no applicable hold, and belongs to a verified deletion request. Case evidence requiring S3 delete remains `BLOCKED_EXTERNAL_DELETION`. Execution re-checks all conditions and is idempotent. Audit stores request id, category, action, count and outcome — never deleted content or full PII.
+Completion is gated in the database for every request kind, not only deletion. A request reaches `READY_FOR_ACTION` and then `COMPLETED` only when identity is verified, a preview exists, disposition work exists, no disposition is PENDING or BLOCKED, every delete/correct/manual-review disposition has been reviewed, no applicable legal hold remains, no outstanding external deletion applies, and a meaningful resolution is written. `VERIFIED` and `REVIEWING` can no longer jump to `COMPLETED`. Refreshing a preview clears the recorded reviews, so new facts always require a new review.
+
+External storage deletion is a system-derived blocker that an Admin cannot edit away. While stored evidence objects exist for the customer, a `CASE_EVIDENCE` deletion disposition stays `BLOCKED_EXTERNAL_DELETION`: `review_disposition` refuses to move it to READY, a trigger rejects the same change made with direct SQL, and the request cannot claim deletion completed. The same trigger refuses to clear a legal-hold blocker while the hold is still active. No broad storage delete permission is introduced by this step.
+
+Physical deletion is application-gated by server-only `PRIVACY_DELETION_ENABLED` exactly `"true"`. Default/unset is disabled. Previews and review still work. The only automated candidate, when the gate is later enabled, is an unsuccessful enquiry that is not converted, has no case or monitoring request, has elapsed approved retention, has no applicable hold, and belongs to a verified deletion request. Execution additionally requires the request to be in a reviewed state (`REVIEWING` or `READY_FOR_ACTION`, never a freshly `VERIFIED` request), a preview that still matches today's facts, a reviewed `UNSUCCESSFUL_ENQUIRIES` disposition that is READY to DELETE against the same approved retention version, a UUID idempotency key, and an exact expected `record_version`. A missing `p_version` fails closed as a conflict. Execution re-checks all conditions and is idempotent. Audit stores request id, category, action, count and outcome — never deleted content or full PII.
 
 Exports use an allowlist, Step 19 CSV formula neutralisation, `Cache-Control: no-store`, and metadata-only receipts. They are not emailed.
 

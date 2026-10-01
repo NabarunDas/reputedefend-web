@@ -626,9 +626,13 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
       "select retention_policy_id::text as policy from public.privacy_request_dispositions where privacy_request_id=$1 and category='UNSUCCESSFUL_ENQUIRIES'",
       [request!.id],
     )).rows[0].policy).toBe(retention.id)
-    expect(await step("execute_deletion", { enquiryId })).toMatchObject({ status: "success" })
+    const replay = key()
+    const executed = await rpc("admin_settings_command_v1", [token, replay, "execute_deletion", { id: request!.id, enquiryId }, current])
+    expect(executed).toMatchObject({ status: "success" })
+    expect(await rpc("admin_settings_command_v1", [token, replay, "execute_deletion", { id: request!.id, enquiryId }, current])).toEqual(executed)
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.enquiries where id=$1", [enquiryId])).rows[0].n).toBe(0)
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.customers where id=$1", [customer])).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_receipts where customer_id=$1", [customer])).rows[0].n).toBe(0)
   })
 
   it("keeps a legal hold blocker that an Admin cannot edit away", async () => {

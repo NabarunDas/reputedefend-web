@@ -1118,7 +1118,11 @@ BEGIN
       no_ret := action = 'DELETE'
         AND coalesce((p_preview#>>'{blockedNoApprovedRetention,unsuccessfulEnquiries}')::boolean, false);
       eligible := coalesce((p_preview#>>'{eligible,unsuccessfulEnquiries}')::int, 0);
-      st := CASE WHEN hold OR no_ret THEN 'BLOCKED' ELSE 'READY' END;
+      st := CASE
+        WHEN hold OR no_ret THEN 'BLOCKED'
+        WHEN action = 'CORRECT' THEN 'PENDING'
+        ELSE 'READY'
+      END;
       blocked := CASE WHEN hold THEN 'Legal hold' WHEN no_ret THEN 'No approved retention policy' ELSE '' END;
     ELSIF cat = 'CASE_EVIDENCE' THEN
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
@@ -1148,10 +1152,10 @@ BEGIN
       action := 'RETAIN';
       st := 'READY';
     ELSIF cat = 'CONSENT_RECORDS' THEN
-      -- Changing or erasing consent history is a genuine manual review. Reading it back is
-      -- an ordinary export, so an access request does not manufacture a review step.
-      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'MANUAL_REVIEW' END;
-      st := CASE WHEN action = 'EXPORT' THEN 'READY' ELSE 'PENDING' END;
+      -- Consent history is not in the export allowlist, so an access request neither
+      -- exports it nor manufactures a review. Changing or erasing it is a real decision.
+      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'RETAIN' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'MANUAL_REVIEW' END;
+      st := CASE WHEN action = 'RETAIN' THEN 'READY' ELSE 'PENDING' END;
     ELSE
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,securityLogs}')::boolean, false);
       action := 'RETAIN';
@@ -1163,7 +1167,7 @@ BEGIN
     ) VALUES (
       p_request, cat, action, st, policy, hold, eligible, retained, blocked,
       CASE WHEN cat IN ('FINANCIAL_RECORDS','SECURITY_LOGS') THEN 'Retained. Financial and audit records are not deleted by a privacy request.'
-           WHEN cat = 'CONSENT_RECORDS' AND action = 'EXPORT' THEN 'Consent history is included in the export.'
+           WHEN cat = 'CONSENT_RECORDS' AND action = 'RETAIN' THEN 'Retained. Consent history is not part of the export allowlist.'
            WHEN cat = 'CONSENT_RECORDS' THEN 'Consent history is retained or sent to manual review.'
            ELSE '' END
     )
@@ -1867,6 +1871,13 @@ BEGIN
       OR note ~* '^\s*(ok|okay|done|n/?a|none|fixed|complete[d]?|closed)\s*[.!]?\s*$'
     THEN RETURN jsonb_build_object('status','invalid','reason','meaningful_resolution_required'); END IF;
     block_reason := admin_private.privacy_blockers_v1(req);
+    -- An access or export request is only finished once an export actually succeeded.
+    IF block_reason IS NULL AND req.kind IN ('ACCESS','EXPORT')
+      AND NOT EXISTS (
+        SELECT 1 FROM admin_private.privacy_export_receipts r
+        WHERE r.privacy_request_id = req.id AND r.result->>'status' = 'success'
+      )
+    THEN block_reason := 'export_required'; END IF;
     IF req.kind = 'DELETION' AND coalesce(block_reason, '') NOT IN ('identity_unverified','preview_required') THEN
       block_reason := coalesce(admin_private.deletion_blocked_v1(req), block_reason);
     END IF;

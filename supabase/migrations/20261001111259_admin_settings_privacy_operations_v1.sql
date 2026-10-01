@@ -439,14 +439,6 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'overlapping approved retention';
   END IF;
-  IF NEW.status IN ('APPROVED','RETIRED') AND EXISTS (
-    SELECT 1 FROM public.retention_policy_versions o
-    WHERE o.category = NEW.category AND o.id <> NEW.id
-      AND o.status IN ('APPROVED','RETIRED')
-      AND tstzrange(o.effective_from, o.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
-  ) THEN
-    RAISE EXCEPTION 'overlapping approved retention';
-  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER retention_policy_versions_protect
@@ -1119,17 +1111,22 @@ BEGIN
     retained := 0;
     blocked := '';
     IF cat = 'UNSUCCESSFUL_ENQUIRIES' THEN
-      hold := hold OR coalesce((p_preview#>>'{blockedByHold,unsuccessfulEnquiries}')::boolean, false);
-      no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,unsuccessfulEnquiries}')::boolean, false);
-      eligible := coalesce((p_preview#>>'{eligible,unsuccessfulEnquiries}')::int, 0);
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
+      hold := hold OR coalesce((p_preview#>>'{blockedByHold,unsuccessfulEnquiries}')::boolean, false);
+      -- Elapsed approved retention decides whether data may be destroyed. Reading the same
+      -- rows back to the subject does not depend on a deletion retention policy existing.
+      no_ret := action = 'DELETE'
+        AND coalesce((p_preview#>>'{blockedNoApprovedRetention,unsuccessfulEnquiries}')::boolean, false);
+      eligible := coalesce((p_preview#>>'{eligible,unsuccessfulEnquiries}')::int, 0);
       st := CASE WHEN hold OR no_ret THEN 'BLOCKED' ELSE 'READY' END;
       blocked := CASE WHEN hold THEN 'Legal hold' WHEN no_ret THEN 'No approved retention policy' ELSE '' END;
     ELSIF cat = 'CASE_EVIDENCE' THEN
-      hold := hold OR coalesce((p_preview#>>'{blockedByHold,caseEvidence}')::boolean, false);
-      no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,caseEvidence}')::boolean, false);
-      eligible := admin_private.external_deletion_outstanding_v1(cust);
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
+      hold := hold OR coalesce((p_preview#>>'{blockedByHold,caseEvidence}')::boolean, false);
+      no_ret := action = 'DELETE'
+        AND coalesce((p_preview#>>'{blockedNoApprovedRetention,caseEvidence}')::boolean, false);
+      eligible := admin_private.external_deletion_outstanding_v1(cust);
+      -- Stored objects can be read but not yet erased, so they block deletion only.
       external := CASE WHEN action = 'DELETE' THEN eligible ELSE 0 END;
       st := CASE
         WHEN hold OR no_ret OR external > 0 THEN 'BLOCKED'
@@ -1151,9 +1148,10 @@ BEGIN
       action := 'RETAIN';
       st := 'READY';
     ELSIF cat = 'CONSENT_RECORDS' THEN
-      no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,consentRecords}')::boolean, false);
-      action := 'MANUAL_REVIEW';
-      st := 'PENDING';
+      -- Changing or erasing consent history is a genuine manual review. Reading it back is
+      -- an ordinary export, so an access request does not manufacture a review step.
+      action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'MANUAL_REVIEW' END;
+      st := CASE WHEN action = 'EXPORT' THEN 'READY' ELSE 'PENDING' END;
     ELSE
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,securityLogs}')::boolean, false);
       action := 'RETAIN';
@@ -1165,6 +1163,7 @@ BEGIN
     ) VALUES (
       p_request, cat, action, st, policy, hold, eligible, retained, blocked,
       CASE WHEN cat IN ('FINANCIAL_RECORDS','SECURITY_LOGS') THEN 'Retained. Financial and audit records are not deleted by a privacy request.'
+           WHEN cat = 'CONSENT_RECORDS' AND action = 'EXPORT' THEN 'Consent history is included in the export.'
            WHEN cat = 'CONSENT_RECORDS' THEN 'Consent history is retained or sent to manual review.'
            ELSE '' END
     )
@@ -1220,9 +1219,6 @@ LANGUAGE plpgsql STABLE SET search_path='' AS $$
 DECLARE preview jsonb := coalesce(p_req.preview, '{}'::jsonb);
 BEGIN
   IF preview = '{}'::jsonb THEN RETURN 'preview_required'; END IF;
-  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id) > 0 THEN
-    RETURN 'external_deletion';
-  END IF;
   IF admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, NULL)
     OR admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, 'UNSUCCESSFUL_ENQUIRIES')
     OR admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, 'CASE_EVIDENCE')
@@ -1234,21 +1230,18 @@ BEGIN
       WHERE d.privacy_request_id = p_req.id AND d.legal_hold_blocker
     )
   THEN RETURN 'legal_hold'; END IF;
-  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id)
-    OR EXISTS (
-      SELECT 1 FROM public.privacy_request_dispositions d
-      WHERE d.privacy_request_id = p_req.id
-        AND d.category = 'CASE_EVIDENCE'
-        AND (d.blocked_reason = 'BLOCKED_EXTERNAL_DELETION' OR d.status = 'BLOCKED')
-        AND d.proposed_action = 'DELETE'
-    )
-  THEN RETURN 'external_deletion'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.privacy_request_dispositions d WHERE d.privacy_request_id = p_req.id)
-    OR EXISTS (
-      SELECT 1 FROM public.privacy_request_dispositions d
-      WHERE d.privacy_request_id = p_req.id AND d.status IN ('PENDING','BLOCKED')
-    )
-  THEN RETURN 'blocked_disposition'; END IF;
+  -- Returns a count, so compare explicitly. Stored evidence only blocks a request that
+  -- actually proposes deleting it; an export of the same evidence is unaffected.
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id
+      AND d.category = 'CASE_EVIDENCE'
+      AND d.proposed_action = 'DELETE'
+      AND (
+        admin_private.external_deletion_outstanding_v1(p_req.customer_id) > 0
+        OR d.blocked_reason LIKE 'BLOCKED_EXTERNAL_DELETION%'
+      )
+  ) THEN RETURN 'external_deletion'; END IF;
   IF EXISTS (
     SELECT 1 FROM public.privacy_request_dispositions d
     WHERE d.privacy_request_id = p_req.id
@@ -1261,6 +1254,12 @@ BEGIN
         OR (d.category = 'SECURITY_LOGS' AND coalesce((preview#>>'{blockedNoApprovedRetention,securityLogs}')::boolean, false))
       )
   ) THEN RETURN 'retention_required'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.privacy_request_dispositions d WHERE d.privacy_request_id = p_req.id)
+    OR EXISTS (
+      SELECT 1 FROM public.privacy_request_dispositions d
+      WHERE d.privacy_request_id = p_req.id AND d.status IN ('PENDING','BLOCKED')
+    )
+  THEN RETURN 'blocked_disposition'; END IF;
   RETURN NULL;
 END; $$;
 
@@ -1812,8 +1811,9 @@ BEGIN
     IF req.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF req.status IS DISTINCT FROM 'REVIEWING' THEN RETURN jsonb_build_object('status','invalid'); END IF;
     block_reason := admin_private.privacy_blockers_v1(req);
-    IF block_reason IS NULL AND req.kind = 'DELETION' THEN
-      block_reason := admin_private.deletion_blocked_v1(req);
+    -- A deletion reports its own specific blocker instead of the generic disposition state.
+    IF req.kind = 'DELETION' AND coalesce(block_reason, '') NOT IN ('identity_unverified','preview_required') THEN
+      block_reason := coalesce(admin_private.deletion_blocked_v1(req), block_reason);
     END IF;
     IF block_reason IS NOT NULL THEN RETURN jsonb_build_object('status','denied','reason', block_reason); END IF;
     UPDATE public.privacy_requests SET status = 'READY_FOR_ACTION', record_version = req.record_version + 1
@@ -1867,8 +1867,8 @@ BEGIN
       OR note ~* '^\s*(ok|okay|done|n/?a|none|fixed|complete[d]?|closed)\s*[.!]?\s*$'
     THEN RETURN jsonb_build_object('status','invalid','reason','meaningful_resolution_required'); END IF;
     block_reason := admin_private.privacy_blockers_v1(req);
-    IF block_reason IS NULL AND req.kind = 'DELETION' THEN
-      block_reason := admin_private.deletion_blocked_v1(req);
+    IF req.kind = 'DELETION' AND coalesce(block_reason, '') NOT IN ('identity_unverified','preview_required') THEN
+      block_reason := coalesce(admin_private.deletion_blocked_v1(req), block_reason);
     END IF;
     IF block_reason IS NOT NULL THEN RETURN jsonb_build_object('status','denied','reason', block_reason); END IF;
     UPDATE public.privacy_requests SET

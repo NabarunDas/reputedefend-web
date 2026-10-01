@@ -511,8 +511,6 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
 
   it("never completes a privacy request while required disposition work is pending or blocked", async () => {
     await verifyCustomerEmail()
-    await approveRetention("UNSUCCESSFUL_ENQUIRIES", 1)
-    await approveRetention("CASE_EVIDENCE", 30)
     const request = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
       kind: "ACCESS", customerId: customer, notes: "Subject access request covering the current record.",
     }, null])
@@ -530,6 +528,9 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
       status: "denied", reason: "not_ready",
     })
     expect((await step("preview_privacy_request", {}))?.status).toBe("success")
+    expect((await step("review_disposition", {
+      category: "CONSENT_RECORDS", proposedAction: "MANUAL_REVIEW", status: "PENDING", reason: "Consent history still needs a manual check.",
+    }))?.status).toBe("success")
     expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "pending_disposition" })
     expect((await step("review_disposition", {
       category: "CONSENT_RECORDS", proposedAction: "MANUAL_REVIEW", status: "READY", reason: "Consent history reviewed and retained.",
@@ -579,7 +580,7 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
       "update public.privacy_request_dispositions set status='READY', record_version=record_version+1 where privacy_request_id=$1 and category='CASE_EVIDENCE'",
       [request!.id],
     )).rejects.toThrow(/BLOCKED_EXTERNAL_DELETION/)
-    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "blocked_disposition" })
+    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "external_deletion" })
     expect((await db.query<{ reason: string }>(
       "select admin_private.deletion_blocked_v1(r.*) as reason from public.privacy_requests r where r.id=$1",
       [request!.id],
@@ -660,7 +661,128 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
       "update public.privacy_request_dispositions set status='READY', record_version=record_version+1 where privacy_request_id=$1 and category='UNSUCCESSFUL_ENQUIRIES'",
       [request!.id],
     )).rejects.toThrow(/legal hold/i)
-    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "blocked_disposition" })
+    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "legal_hold" })
+  })
+
+  it("runs deletion_blocked_v1 to completion when no external evidence remains", async () => {
+    await verifyCustomerEmail()
+    await approveRetention("UNSUCCESSFUL_ENQUIRIES", 1)
+    await approveRetention("CASE_EVIDENCE", 30)
+    const request = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Deletion request with nothing left in storage.",
+    }, null])
+    const step = stepper(request!.id as string)
+    expect((await step("verify_privacy_request", {}))?.status).toBe("success")
+    expect((await step("start_privacy_review", {}))?.status).toBe("success")
+    expect((await step("preview_privacy_request", {}))?.status).toBe("success")
+    expect((await db.query<{ still: number }>(
+      "select admin_private.external_deletion_outstanding_v1($1) as still", [customer],
+    )).rows[0].still).toBe(0)
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.privacy_request_dispositions where privacy_request_id=$1", [request!.id],
+    )).rows[0].n).toBe(5)
+    const blocked = async () => (await db.query<{ reason: string | null }>(
+      "select admin_private.deletion_blocked_v1(r.*) as reason from public.privacy_requests r where r.id=$1",
+      [request!.id],
+    )).rows[0].reason
+    expect(await blocked()).toBe("blocked_disposition")
+    expect((await step("review_disposition", {
+      category: "CONSENT_RECORDS", proposedAction: "MANUAL_REVIEW", status: "READY", reason: "Consent history reviewed and retained.",
+    }))?.status).toBe("success")
+    expect(await blocked()).toBeNull()
+    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "review_required" })
+    for (const category of ["UNSUCCESSFUL_ENQUIRIES", "CASE_EVIDENCE"]) {
+      expect((await step("review_disposition", {
+        category, proposedAction: "DELETE", status: "READY", reason: "Retention elapsed and no hold applies.",
+      }))?.status).toBe("success")
+    }
+    expect(await blocked()).toBeNull()
+    expect((await step("mark_privacy_ready", {}))?.status).toBe("success")
+  })
+
+  it("does not make an access request wait for a deletion retention policy", async () => {
+    await verifyCustomerEmail()
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.retention_policy_versions")).rows[0].n).toBe(0)
+    const request = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "ACCESS", customerId: customer, notes: "Subject access request with no retention policy approved.",
+    }, null])
+    const step = stepper(request!.id as string)
+    expect((await step("verify_privacy_request", {}))?.status).toBe("success")
+    expect((await step("start_privacy_review", {}))?.status).toBe("success")
+    expect((await step("preview_privacy_request", {}))?.status).toBe("success")
+    const dispositions = await db.query<{ category: string; proposed_action: string; status: string; blocked_reason: string; retention_policy_id: string | null }>(
+      "select category, proposed_action, status, blocked_reason, retention_policy_id from public.privacy_request_dispositions where privacy_request_id=$1 order by category",
+      [request!.id],
+    )
+    for (const category of ["UNSUCCESSFUL_ENQUIRIES", "CASE_EVIDENCE", "CONSENT_RECORDS"]) {
+      const row = dispositions.rows.find(item => item.category === category)!
+      expect({ category, ...row }).toMatchObject({ proposed_action: "EXPORT", status: "READY", blocked_reason: "" })
+      expect(row.retention_policy_id).toBeNull()
+    }
+    const exported = await rpc("admin_privacy_export_v1", [token, key(), request!.id, currentVersion()])
+    expect(exported?.status).toBe("success")
+    expect(JSON.stringify(exported)).not.toMatch(/sk_live|whsec_|otp|token_hash|SUPABASE_SECRET/)
+    expect((await step("mark_privacy_ready", {}))?.status).toBe("success")
+    expect((await step("complete_privacy_request", {
+      resolution: "Exported the allowlisted record to the subject and retained financial history.",
+    }))?.status).toBe("success")
+    expect((await db.query<{ status: string }>("select status from public.privacy_requests where id=$1", [request!.id])).rows[0].status).toBe("COMPLETED")
+  })
+
+  it("exports stored case evidence that cannot yet be physically deleted", async () => {
+    await insertStoredEvidence()
+    await verifyCustomerEmail()
+    expect((await db.query<{ still: number }>(
+      "select admin_private.external_deletion_outstanding_v1($1) as still", [customer],
+    )).rows[0].still).toBe(1)
+    const exportRequest = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "EXPORT", customerId: customer, notes: "Export every stored record including case evidence.",
+    }, null])
+    const step = stepper(exportRequest!.id as string)
+    expect((await step("verify_privacy_request", {}))?.status).toBe("success")
+    expect((await step("start_privacy_review", {}))?.status).toBe("success")
+    expect((await step("preview_privacy_request", {}))?.status).toBe("success")
+    const evidence = await db.query<{ proposed_action: string; status: string; blocked_reason: string }>(
+      "select proposed_action, status, blocked_reason from public.privacy_request_dispositions where privacy_request_id=$1 and category='CASE_EVIDENCE'",
+      [exportRequest!.id],
+    )
+    expect(evidence.rows[0]).toMatchObject({ proposed_action: "EXPORT", status: "READY", blocked_reason: "" })
+    expect((await step("mark_privacy_ready", {}))?.status).toBe("success")
+    expect((await step("complete_privacy_request", {
+      resolution: "Exported the stored evidence to the subject. Physical erasure is a separate step.",
+    }))?.status).toBe("success")
+    const deletion = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Erase the same stored evidence from storage.",
+    }, null])
+    const erase = stepper(deletion!.id as string)
+    expect((await erase("verify_privacy_request", {}))?.status).toBe("success")
+    expect((await erase("start_privacy_review", {}))?.status).toBe("success")
+    expect((await erase("preview_privacy_request", {}))?.status).toBe("success")
+    expect((await db.query<{ status: string; blocked_reason: string }>(
+      "select status, blocked_reason from public.privacy_request_dispositions where privacy_request_id=$1 and category='CASE_EVIDENCE'",
+      [deletion!.id],
+    )).rows[0]).toMatchObject({ status: "BLOCKED" })
+    expect(await erase("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "external_deletion" })
+  })
+
+  it("still refuses a deletion with no approved retention policy", async () => {
+    await verifyCustomerEmail()
+    const request = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Deletion raised before any retention policy was approved.",
+    }, null])
+    const step = stepper(request!.id as string)
+    expect((await step("verify_privacy_request", {}))?.status).toBe("success")
+    expect((await step("start_privacy_review", {}))?.status).toBe("success")
+    expect((await step("preview_privacy_request", {}))?.status).toBe("success")
+    expect((await db.query<{ status: string; blocked_reason: string }>(
+      "select status, blocked_reason from public.privacy_request_dispositions where privacy_request_id=$1 and category='UNSUCCESSFUL_ENQUIRIES'",
+      [request!.id],
+    )).rows[0]).toMatchObject({ status: "BLOCKED", blocked_reason: "No approved retention policy" })
+    expect(await step("mark_privacy_ready", {})).toMatchObject({ status: "denied", reason: "retention_required" })
+    expect(await step("complete_privacy_request", {
+      resolution: "Attempting completion without an approved retention policy.",
+    })).toMatchObject({ status: "denied", reason: "not_ready" })
+    expect((await db.query<{ status: string }>("select status from public.privacy_requests where id=$1", [request!.id])).rows[0].status).toBe("REVIEWING")
   })
 
   it("never lets a future version retired before its effective date become current later", async () => {

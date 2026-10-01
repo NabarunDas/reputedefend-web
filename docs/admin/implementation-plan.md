@@ -498,7 +498,7 @@ Acceptance: each count reconciles to its drill-down; dates/timezones and currenc
 
 # 17 Implementation steps continued
 ## Step 20 Settings staff and privacy operations
-Deliver: staff management UI, session revocation, versioned settings, approved template lifecycle, service hours/rota settings, retention/holds and verified privacy request workflows. Add complaints and incident resolution views if not completed earlier.
+SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. Additive `20261001110000_admin_settings_privacy_v1.sql` is source only and must not be applied from this PR. Delivered against the singleton staff identity `admin@profilerelaunch.com`: Settings identity + Security sessions, versioned SERVICE_HOURS/RETENTION, template draft→immutable approved version, Guard schedule drafts, legal holds, verified privacy request preview/complete without automated deletion, complaints queue and operational incidents. No staff invitations, roles, capability matrices, account deletion, disabling or identity rebinding. Last Owner cannot be removed because there is only one staff row and the identity trigger forbids DELETE/disable/rebind. Cron remains `0 4 * * *`. See settings-privacy.md.
 
 Acceptance: last Owner cannot be removed; retroactive settings do not rewrite historical obligations; legal holds block deletion; removal requests preview retained financial/audit data. No secrets appear in settings or exports. Depends on 4 and 19.
 

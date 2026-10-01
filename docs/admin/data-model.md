@@ -28,7 +28,9 @@ Step 17 adds applied `20260930203750_guard_manual_checks_v1.sql` after Step 16 (
 
 Step 18 adds applied `20260930222821_guard_alerts_escalation_v1.sql` after Step 17 (`20260930222821 guard_alerts_escalation_v1` exactly once): `guard_alerts`, append-only `guard_alert_observations` / `guard_alert_events`, `guard_alert_cases`, `guard_alert_notifications`, `guard_service_actions`, and private `guard_alert_receipts`. Communications gain nullable `guard_alert_id` and a three-way parent XOR. Template `GUARD_ALERT` v1 is additive. Job type `MAINTAIN_GUARD_ALERTS` reuses the Step 10 outbox. DATABASE APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED. See guard-alerts-escalation.md.
 
-Step 19 adds unapplied source `20261001092213_admin_dashboard_search_reports_v1.sql`: `public.admin_saved_filters`, private `report_export_receipts` / `report_command_receipts`, audit action `REPORT_CHANGED`, and service-role RPCs `admin_dashboard_today_v1`, `admin_report_summary_v1`, `admin_report_detail_v1`, `admin_global_search_v1`, `admin_saved_filter_list_v1`, `admin_saved_filter_command_v1`, `admin_report_export_v1`, `admin_customer_preview_v1`. Reporting reuses existing authorities through `admin_private.report_rows_v1`. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. See dashboard-search-reports.md.
+Step 19 adds applied `20261001092213_admin_dashboard_search_reports_v1.sql` (`20261001092213 admin_dashboard_search_reports_v1` exactly once after Step 18): `public.admin_saved_filters`, private `report_export_receipts` / `report_command_receipts`, audit action `REPORT_CHANGED`, and service-role RPCs `admin_dashboard_today_v1`, `admin_report_summary_v1`, `admin_report_detail_v1`, `admin_global_search_v1`, `admin_saved_filter_list_v1`, `admin_saved_filter_command_v1`, `admin_report_export_v1`, `admin_customer_preview_v1`. Reporting reuses existing authorities through `admin_private.report_rows_v1`. DATABASE APPLIED. See dashboard-search-reports.md.
+
+Step 20 adds unapplied source `20261001110000_admin_settings_privacy_v1.sql`: versioned `public.admin_settings_versions` (`SERVICE_HOURS` / `RETENTION`), `admin_private.communication_template_drafts`, `public.legal_holds`, `public.privacy_requests`, `public.operational_incidents`, private `settings_command_receipts`, identity-protect trigger, and service-role RPCs `admin_settings_overview_v1`, `admin_settings_list_v1`, `admin_template_list_v1`, `admin_complaint_list_v1`, `admin_privacy_list_v1`, `admin_incident_list_v1`, `admin_settings_command_v1`. Audit actions gain `SETTINGS_CHANGED`, `TEMPLATE_CHANGED`, `PRIVACY_CHANGED`, `INCIDENT_CHANGED`. `saved_filter_actor_is_staff_v1` aliases the singleton Admin identity. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. See settings-privacy.md.
 
 ## Relationships
 
@@ -80,6 +82,12 @@ admin_private.quote_command_receipts
 public.admin_saved_filters
 admin_private.report_export_receipts
 admin_private.report_command_receipts
+public.admin_settings_versions
+admin_private.communication_template_drafts
+admin_private.settings_command_receipts
+public.legal_holds
+public.privacy_requests
+public.operational_incidents
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)

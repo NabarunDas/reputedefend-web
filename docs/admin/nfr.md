@@ -42,4 +42,19 @@ These are internal security controls, not customer service promises.
 | Masked email | `n***@example.com` before OTP; full address never rendered |
 | Agreement body | 20–50,000 characters of owner-supplied wording |
 | Manager evidence | 10–1,000 characters; no Google password or OTP field |
-| Admin reauth window | 5 minutes for emergency revocation and Manager verify/revoke |
+| Admin reauth window | 5 minutes for emergency revocation, Manager verify/revoke, setting/schedule approval, hold release and privacy completion |
+
+## Settings and privacy (Step 20)
+
+These are internal controls, not customer service promises.
+
+| Requirement | Implemented value |
+| --- | --- |
+| Staff identities | One: `admin@profilerelaunch.com`. No invitations, roles or rebinding |
+| Settings keys | `SERVICE_HOURS`, `RETENTION` only |
+| Settings lifecycle | `DRAFT` → `APPROVED` → `RETIRED`; not retroactive; `[effective_from, effective_to)` |
+| Template keys | Existing four keys only; drafts are unpublished until approved |
+| Privacy preview | Counts plus retained financial/audit statement; no PII dump; no automated deletion |
+| Legal hold | Blocks `DELETION` completion; release requires 5-minute reauth |
+| Secrets in settings | Rejected in payload keys/values; not stored in audit |
+| Worker cadence | Unchanged daily Cron `0 4 * * *` |

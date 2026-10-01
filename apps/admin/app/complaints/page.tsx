@@ -45,17 +45,18 @@ export default async function ComplaintsPage({ searchParams }: { searchParams: P
           <li key={row.id}>
             {row.caseId && row.reference ? <Link href={`/cases/${row.caseId}`}>{row.reference}: {row.title}</Link> : <strong>{row.title}</strong>}
             <p className="muted">{row.status}{row.dueAt ? ` · due ${ukDate(row.dueAt)}` : ""}{row.resolution ? ` · ${row.resolution}` : ""}</p>
-            {row.status === "OPEN" && <ApproveButton operation="acknowledge_complaint" id={row.id} version={row.recordVersion ?? 1} label="Acknowledge" />}
+            {row.status === "OPEN" && <ApproveButton operation="acknowledge_complaint" id={row.id} version={row.recordVersion ?? 1} label="Acknowledge" record={row.title} />}
             {(row.status === "OPEN" || row.status === "ACKNOWLEDGED") && (
               <SettingsActionForm
                 operation="resolve_complaint"
                 extras={{ id: row.id }}
                 version={row.recordVersion ?? 1}
                 submit="Resolve"
+                record={row.title}
                 fields={[{ name: "resolution", label: "Resolution", required: true, maxLength: 2000 }]}
               />
             )}
-            {(row.status === "OPEN" || row.status === "ACKNOWLEDGED") && <ApproveButton operation="cancel_complaint" id={row.id} version={row.recordVersion ?? 1} label="Cancel complaint" />}
+            {(row.status === "OPEN" || row.status === "ACKNOWLEDGED") && <ApproveButton operation="cancel_complaint" id={row.id} version={row.recordVersion ?? 1} label="Cancel complaint" record={row.title} />}
           </li>
         ))}</ul>
       )}

@@ -44,9 +44,9 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
           <li key={row.id}>
             <strong>{row.title}</strong>
             <p className="muted">{row.kind} · {row.status} · {ukDate(row.openedAt)} — {row.summary}</p>
-            {row.status === "OPEN" && <ApproveButton operation="acknowledge_incident" id={row.id} version={row.recordVersion ?? 1} label="Acknowledge" />}
-            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ResolveIncidentForm id={row.id} version={row.recordVersion ?? 1} />}
-            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ApproveButton operation="cancel_incident" id={row.id} version={row.recordVersion ?? 1} label="Cancel incident" />}
+            {row.status === "OPEN" && <ApproveButton operation="acknowledge_incident" id={row.id} version={row.recordVersion ?? 1} label="Acknowledge" record={row.title} />}
+            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ResolveIncidentForm id={row.id} version={row.recordVersion ?? 1} record={row.title} />}
+            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ApproveButton operation="cancel_incident" id={row.id} version={row.recordVersion ?? 1} label="Cancel incident" record={row.title} />}
           </li>
         ))}</ul>
       )}

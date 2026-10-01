@@ -35,6 +35,11 @@ describe("Complaints page", () => {
     render(await ComplaintsPage({ searchParams: Promise.resolve({}) }))
     expect(screen.getByRole("heading", { name: "Complaints" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "PR-26-AAAAAA: Complaint about delay" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555")
+    // Each row repeats the same visible labels, so the accessible name has to
+    // say which complaint the control would change.
+    expect(screen.getByRole("button", { name: "Acknowledge: Complaint about delay" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Resolve: Complaint about delay" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Cancel complaint: Complaint about delay" })).toBeTruthy()
     expect(screen.getByText(/Closing a case does not delete a complaint/)).toBeTruthy()
     expect(loadComplaints).toHaveBeenCalledWith("open")
   })

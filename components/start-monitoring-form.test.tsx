@@ -75,14 +75,14 @@ describe("StartMonitoringForm", () => {
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms")
   })
 
-  it("does not dispatch when local validation fails", () => {
+  it("does not dispatch when local validation fails", async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
     render(<StartMonitoringForm />)
     fireEvent.click(screen.getByRole("button", { name: "Submit setup request" }))
     expect(fetchMock).not.toHaveBeenCalled()
     expect(screen.getByRole("alert")).toHaveTextContent(/please enter your name/i)
-    expect(document.activeElement).toBe(screen.getByRole("alert"))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("alert")))
   })
 
   it("sends only one in-flight request for rapid duplicate submits", async () => {
@@ -136,7 +136,7 @@ describe("StartMonitoringForm", () => {
     expect(submittedBody(fetchMock, 1)).toEqual(submittedBody(fetchMock, 0))
     expect(screen.getByText(SUCCESS_COPY.recorded("Harbour Bakery"))).toBeInTheDocument()
     expect(screen.getByText(SUCCESS_COPY.notActive)).toBeInTheDocument()
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: SUCCESS_COPY.title }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: SUCCESS_COPY.title })))
     expect(screen.queryByText(/PR-|RV-|GR-/)).not.toBeInTheDocument()
   })
 
@@ -243,7 +243,7 @@ describe("StartMonitoringForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit setup request" }))
     await screen.findByRole("button", { name: "Try again" })
     expect(screen.getByRole("alert")).toHaveTextContent(RETRY_COPY)
-    expect(document.activeElement).toBe(screen.getByRole("alert"))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("alert")))
   })
 
   it("treats a malformed success-looking JSON shape as a retry", async () => {

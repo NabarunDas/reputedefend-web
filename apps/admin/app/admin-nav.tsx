@@ -2,12 +2,14 @@ import Link from "next/link"
 
 export const adminNavItems = [
   { href: "/", label: "Today", match: (pathname: string) => pathname === "/" },
+  { href: "/search", label: "Search", match: (pathname: string) => pathname.startsWith("/search") },
   { href: "/enquiries", label: "Enquiries", match: (pathname: string) => pathname.startsWith("/enquiries") },
   { href: "/records/client", label: "Clients & Businesses", match: (pathname: string) => pathname.startsWith("/records") },
   { href: "/cases", label: "Cases", match: (pathname: string) => pathname.startsWith("/cases") },
   { href: "/documents", label: "Documents", match: (pathname: string) => pathname.startsWith("/documents") },
   { href: "/tasks", label: "Tasks", match: (pathname: string) => pathname.startsWith("/tasks") },
   { href: "/activity", label: "Activity", match: (pathname: string) => pathname.startsWith("/activity") },
+  { href: "/reports", label: "Reports", match: (pathname: string) => pathname.startsWith("/reports") },
   { href: "/communications", label: "Communications", match: (pathname: string) => pathname.startsWith("/communications") },
   { href: "/conversations", label: "Conversations", match: (pathname: string) => pathname.startsWith("/conversations") },
   { href: "/commercial", label: "Commercial", match: (pathname: string) => pathname.startsWith("/commercial") },

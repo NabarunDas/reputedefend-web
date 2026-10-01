@@ -3,14 +3,10 @@ import React from "react"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-const listEnquiries = vi.fn()
-const listCases = vi.fn()
-const listTasks = vi.fn()
+const loadDashboard = vi.fn()
 vi.mock("@/lib/require-staff", () => ({ requireStaff: vi.fn() }))
-vi.mock("@/lib/enquiries/queries", () => ({ listEnquiries: (...args: unknown[]) => listEnquiries(...args) }))
-vi.mock("@/lib/cases/queries", () => ({
-  listCases: (...args: unknown[]) => listCases(...args),
-  listTasks: (...args: unknown[]) => listTasks(...args),
+vi.mock("@/lib/reports/queries", () => ({
+  loadDashboard: (...args: unknown[]) => loadDashboard(...args),
 }))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
@@ -23,29 +19,51 @@ import { requireStaff } from "@/lib/require-staff"
 import "@testing-library/jest-dom/vitest"
 
 afterEach(() => cleanup())
-beforeEach(() => {
-  listEnquiries.mockReset()
-  listCases.mockReset()
-  listTasks.mockReset()
-})
+beforeEach(() => loadDashboard.mockReset())
 
 describe("Today home", () => {
-  it("summarises existing queues and links to current screens", async () => {
-    listEnquiries.mockResolvedValue(Array.from({ length: 51 }, (_, index) => ({ id: String(index) })))
-    listCases.mockResolvedValue([{ id: "case-1" }])
-    listTasks.mockImplementation(async (filter: { filter: string }) => filter.filter === "overdue"
-      ? [{ id: "task-1", caseId: "case-1", reference: "PR-1", title: "Call the owner", owner: "ADMIN", due: "2026-09-01T09:00:00Z", status: "OPEN" }]
-      : [{ id: "task-1" }, { id: "task-2" }])
-    render(await AdminHome())
+  it("shows exact Needs Attention counts and does not invent 50+ cards", async () => {
+    loadDashboard.mockResolvedValue({
+      computedAt: "2026-03-29T12:00:00Z",
+      timezone: "Europe/London",
+      freshness: { status: "HEALTHY", lateAfterSeconds: 93600 },
+      monitoringScheduleConfigured: false,
+      needsAttention: {
+        overdueWork: { count: 61 },
+        unassignedEnquiries: { count: 2 },
+        missedGuardChecks: { count: 0 },
+        unreviewedGuardAlerts: { count: 0 },
+        guardAlertsNeedsReview: { count: 0 },
+        failedCustomerEmail: { count: 0 },
+        accessRecovery: { count: 0 },
+        contactRecovery: { count: 0 },
+        paymentExceptions: { count: 0 },
+        guardBillingExceptions: { count: 0 },
+        failedJobs: { count: 1 },
+      },
+      metrics: {
+        clientsTotal: { count: 4 },
+        clientsActiveService: { count: 1 },
+        contactsEnquiryOnly: { count: 3 },
+        openEnquiries: { count: 2 },
+        openCases: { count: 1 },
+        collectedGross: { count: 1, amounts: [{ currency: "GBP", amountMinor: 24900 }] },
+        collectedRefunds: { count: 0, amounts: [] },
+        outstandingMoney: { count: 0, amounts: [] },
+        checkCoverage: { numerator: 0, denominator: 0, percentage: null },
+      },
+      secondary: {},
+    })
+    render(await AdminHome({ searchParams: Promise.resolve({}) }))
     expect(requireStaff).toHaveBeenCalled()
     expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy()
-    expect(screen.getByText("50+")).toBeTruthy()
-    expect(screen.getByRole("link", { name: /Open enquiries/ })).toHaveAttribute("href", "/enquiries")
-    expect(screen.getByRole("link", { name: /Open cases/ })).toHaveAttribute("href", "/cases")
-    expect(screen.getByRole("link", { name: /Open tasks/ })).toHaveAttribute("href", "/tasks")
-    expect(screen.getByRole("link", { name: /Overdue tasks/ })).toHaveAttribute("href", "/tasks?filter=overdue")
-    expect(screen.getByRole("link", { name: /PR-1: Call the owner/ })).toHaveAttribute("href", "/cases/case-1")
+    expect(screen.getByRole("heading", { name: "Needs attention" })).toBeTruthy()
+    expect(screen.getByText("61")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("50+")
+    expect(screen.getByRole("link", { name: /Overdue work/ })).toHaveAttribute("href", expect.stringContaining("/reports/overdue_work"))
+    expect(screen.getByText("Monitoring schedule not configured")).toBeTruthy()
+    expect(screen.getByText(/Europe\/London/)).toBeTruthy()
     expect(document.body.textContent).not.toContain("admin@profilerelaunch.com")
-    expect(document.body.textContent).not.toMatch(/revenue|Guard statistics|Documents/)
+    expect(document.body.textContent).not.toMatch(/googletagmanager|google-analytics|gtag\(/)
   })
 })

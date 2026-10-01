@@ -26,7 +26,9 @@ Step 16 adds applied `20260930180050_guard_subscriptions_billing_v1.sql` after S
 
 Step 17 adds applied `20260930203750_guard_manual_checks_v1.sql` after Step 16 (`20260930203750 guard_manual_checks_v1` exactly once): versioned `guard_check_schedule_versions`, `guard_check_obligations`, append-only `guard_check_obligation_events`, `guard_check_attempts`, immutable `guard_check_observations`, and private `guard_check_receipts`. Job type `MAINTAIN_GUARD_CHECKS` reuses the Step 10 outbox. DATABASE APPLIED / LIVE MONITORING DISABLED. See guard-manual-checks.md.
 
-Step 18 adds unapplied source `20260930222821_guard_alerts_escalation_v1.sql`: `guard_alerts`, append-only `guard_alert_observations` / `guard_alert_events`, `guard_alert_cases`, `guard_alert_notifications`, `guard_service_actions`, and private `guard_alert_receipts`. Communications gain nullable `guard_alert_id` and a three-way parent XOR. Template `GUARD_ALERT` v1 is additive. Job type `MAINTAIN_GUARD_ALERTS` reuses the Step 10 outbox. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED. See guard-alerts-escalation.md.
+Step 18 adds applied `20260930222821_guard_alerts_escalation_v1.sql` after Step 17 (`20260930222821 guard_alerts_escalation_v1` exactly once): `guard_alerts`, append-only `guard_alert_observations` / `guard_alert_events`, `guard_alert_cases`, `guard_alert_notifications`, `guard_service_actions`, and private `guard_alert_receipts`. Communications gain nullable `guard_alert_id` and a three-way parent XOR. Template `GUARD_ALERT` v1 is additive. Job type `MAINTAIN_GUARD_ALERTS` reuses the Step 10 outbox. DATABASE APPLIED / LIVE ALERTS & NOTIFICATIONS DISABLED. See guard-alerts-escalation.md.
+
+Step 19 adds unapplied source `20261001092213_admin_dashboard_search_reports_v1.sql`: `public.admin_saved_filters`, private `report_export_receipts` / `report_command_receipts`, audit action `REPORT_CHANGED`, and service-role RPCs `admin_dashboard_today_v1`, `admin_report_summary_v1`, `admin_report_detail_v1`, `admin_global_search_v1`, `admin_saved_filter_list_v1`, `admin_saved_filter_command_v1`, `admin_report_export_v1`, `admin_customer_preview_v1`. Reporting reuses existing authorities through `admin_private.report_rows_v1`. SOURCE IMPLEMENTED / MIGRATION NOT APPLIED. See dashboard-search-reports.md.
 
 ## Relationships
 
@@ -75,6 +77,9 @@ public.guard_reconciliation_runs → public.guard_reconciliation_issues
 admin_private.guard_subscription_receipts
 admin_private.catalogue_command_receipts
 admin_private.quote_command_receipts
+public.admin_saved_filters
+admin_private.report_export_receipts
+admin_private.report_command_receipts
   └── public.case_prepared_packs publication axis (published_at / unpublished_at; not a pack status)
   └── public.location_manager_access (VERIFIED / REVOKED; Admin-verified)
 public.case_document_events  (append-only lifecycle)

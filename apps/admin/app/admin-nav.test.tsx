@@ -19,12 +19,14 @@ describe("admin navigation", () => {
     const nav = screen.getByRole("navigation", { name: "Admin workspace" })
     expect([...nav.querySelectorAll("a")].map(link => [link.getAttribute("href"), link.textContent])).toEqual([
       ["/", "Today"],
+      ["/search", "Search"],
       ["/enquiries", "Enquiries"],
       ["/records/client", "Clients & Businesses"],
       ["/cases", "Cases"],
       ["/documents", "Documents"],
       ["/tasks", "Tasks"],
       ["/activity", "Activity"],
+      ["/reports", "Reports"],
       ["/communications", "Communications"],
       ["/conversations", "Conversations"],
       ["/commercial", "Commercial"],
@@ -35,9 +37,9 @@ describe("admin navigation", () => {
       ["/operations/jobs", "Jobs"],
       ["/security", "Security"],
     ])
-    expect(nav.textContent).not.toMatch(/Payments|Reports/)
+    expect(nav.textContent).not.toMatch(/Payments/)
     expect(nav.textContent).not.toContain("admin@profilerelaunch.com")
-    expect(adminNavItems).toHaveLength(16)
+    expect(adminNavItems).toHaveLength(18)
   })
 
   it("marks Today as the home route and Security as its own route", () => {

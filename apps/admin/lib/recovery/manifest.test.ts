@@ -17,6 +17,14 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the applied Step 23 migration as both repository and dev head", () => {
+    // The two heads answer different questions and must stay derived rather
+    // than stated: migrationHead is the newest migration on disk,
+    // appliedMigrationHead the newest one the dev project has received. They
+    // coincide exactly when nothing is waiting, which is the case now.
+    expect(migrationHead).toBe(migrationChain.at(-1))
+    expect(appliedMigrationHead).toBe(migrationChain.findLast(entry => entry.appliedToDev))
+    expect(pendingMigrations().length === 0).toBe(migrationHead === appliedMigrationHead)
+
     expect(migrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
     expect(migrationHead.step).toBe("Step 23 quote surface fixes")
     expect(migrationHead.appliedToDev).toBe(true)
@@ -30,6 +38,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("has no reviewed migration still waiting to be applied", () => {
+    // Derived from appliedToDev rather than from a remembered filename, so the
+    // list populates again the moment a new migration is added.
+    expect(pendingMigrations()).toEqual(migrationChain.filter(entry => !entry.appliedToDev))
     expect(pendingMigrations()).toEqual([])
   })
 

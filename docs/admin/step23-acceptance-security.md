@@ -499,14 +499,14 @@ run once at the final head, and all of it passed:
 | Workspace | Checks |
 | --- | --- |
 | Marketing | `eslint .` clean; `tsc --noEmit` clean; 685 tests in 103 files; production build |
-| Admin | 1218 tests in 122 files, including the full migration chain on PGlite; `tsc --noEmit` clean; production build; HTTP smoke across every route and API path |
+| Admin | 1220 tests in 122 files, including the full migration chain on PGlite; `tsc --noEmit` clean; production build; HTTP smoke across every route and API path |
 | Customer | 63 tests in 10 files; `tsc --noEmit` clean; production build; HTTP smoke |
 
 `npm audit` reports no vulnerabilities and `git diff --check` is clean. `validation.md` is
 the Step 1–2 foundation handover and is left as the historical record it is; the regression
 for this step is the table above.
 
-Of the 1218 Admin tests, the ones this step added are the twenty-step simulated workday,
+Of the 1220 Admin tests, the ones this step added are the twenty-step simulated workday,
 six full-chain quote surface checks, nine schema-wide hardening checks, nine
 acceptance-matrix checks, five mutation-boundary checks, five client-boundary checks, six
 accessibility sweeps, four header checks, three conversations-form checks and two

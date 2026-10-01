@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { manifestFilenames, migrationChain } from "./manifest"
 import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHistory, type RemoteMigration } from "./history"
 
@@ -31,6 +31,53 @@ describe("the migration history validator", () => {
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)
+  })
+
+  it("treats a reviewed but unapplied migration as a candidate rather than a divergence", async () => {
+    // Nothing is pending now that Step 23 is applied, and any real filename
+    // offered as a candidate is correctly reported as a replay. The candidate
+    // path still matters the moment the next migration is written, so it is
+    // exercised against a manifest carrying one pending entry rather than
+    // left uncovered until then.
+    const pending = {
+      ...migrationChain.at(-1)!,
+      version: "20261002090000",
+      filename: "20261002090000_pending_example_v1.sql",
+      step: "Pending example",
+      appliedToDev: false,
+    }
+    vi.resetModules()
+    vi.doMock("./manifest", async () => {
+      const actual = await vi.importActual<typeof import("./manifest")>("./manifest")
+      const chain = [...actual.migrationChain, pending]
+      return { ...actual, migrationChain: chain, manifestFilenames: () => chain.map(entry => entry.filename) }
+    })
+    const history = await import("./history")
+
+    const result = history.validateMigrationHistory({
+      repoFilenames: [...repoFilenames, pending.filename],
+      remote: healthyRemote,
+      candidates: [pending.filename],
+    })
+    expect(result.findings.map(finding => finding.code)).toEqual([])
+    expect(result.status).toBe("clean")
+    expect(history.mayApplyMigrations(result)).toBe(true)
+
+    vi.doUnmock("./manifest")
+    vi.resetModules()
+  })
+
+  it("still refuses to replay a migration that is already applied", async () => {
+    // The counterpart to the candidate path: offering a real, applied
+    // migration as a candidate must never read as clean.
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: [migrationChain.at(-1)!.filename],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(result.status).toBe("diverged")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("fails closed when remote history was never collected", () => {

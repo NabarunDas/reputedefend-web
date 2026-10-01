@@ -18,6 +18,9 @@ alerts or the customer/business model. It does not turn any of that on.
   reach a production or preview database.
 - **OAuth and token storage are ready but inactive.** The schema exists only as unapplied
   migration source; no connection row, state row or token has ever been written.
+- **The connection flow cannot be executed in this build at all.** There is no token
+  exchange and no live transport, and that is a property of the code rather than of
+  configuration, so setting every Google environment variable still cannot start OAuth.
 - **Live acceptance requires explicit approval and configuration.** It is behind its own
   opt-in flag, separate from the ordinary API gate.
 - **Existing Guard behaviour remains manual** until a separate activation decision.
@@ -57,18 +60,37 @@ Any other value, including `mock`, resolves to manual rather than failing open.
 
 ## Fail-closed resolution
 
-A Google request is impossible unless every one of these passes:
+Configuration and execution are two separate things, and the distinction matters. The four
+configuration conditions are:
 
 1. `GOOGLE_BUSINESS_PROFILE_PROVIDER` is exactly `google`.
 2. `GOOGLE_BUSINESS_PROFILE_API_ENABLED` is exactly `true`. Unset, `yes`, `1` and `TRUE`
    all remain disabled.
 3. A complete server-side OAuth client is configured with an `https://` redirect URI.
 4. A server-side token encryption key of at least 32 characters is configured.
-5. A live transport has been injected by a caller that built one deliberately.
 
-If any condition fails, the resolver returns the manual adapter and names the first unmet
-condition. Today condition 1 fails in every environment, and condition 5 has no production
-implementation at all, so the manual adapter is reached by two independent routes.
+`googleLiveConfiguration()` answers only that question, and its result is named
+`configured` rather than `ready` precisely because satisfying it does not mean anything can
+run. Two further conditions are code facts, not settings:
+
+5. A live transport must have been injected by a caller that built one deliberately, or
+   `resolveGoogleBusinessProfileProvider` returns the manual adapter with
+   `live_transport_unavailable`.
+6. An implemented live stack must exist in the running build, or `googleConnectExecution()`
+   reports `connection_not_implemented` and nothing may start a connection.
+
+Condition 6 is the gate that makes Step 21 readiness-only. `googleLiveStack` in
+`lib/google-business-profile/live-stack.ts` is `null` in this build, so
+`googleConnectionExecutionAvailable()` is false. There is deliberately no environment
+variable, header or request field that can change it: opening the flow means shipping a
+token exchange and transport implementation, which is a code change that has to be written
+and reviewed. Adding a flag that let production enable an unfinished flow would defeat the
+point.
+
+The HTTP integration command checks condition 6 before anything else, so a direct POST to
+`/api/operations/integrations` with every Google variable set still gets a 403, no
+authorization URL, and no database call. The Admin UI being disabled is a consequence of
+this, not the mechanism.
 
 No `NEXT_PUBLIC_` Google variable exists. Client secrets, tokens and the encryption key are
 server-side only.
@@ -126,12 +148,7 @@ The OAuth boundary is server-side only.
 - State is 32 random bytes rendered base64url. Only its SHA-256 hash is stored, so a reader
   of the database cannot replay an authorization.
 - State is bound to the initiating actor and to a one-way hash of the initiating session.
-- State expires after ten minutes and is single-use: every callback path consumes it,
-  including rejections, so a retry cannot be made to look fresh.
-- The callback validates state presence, format, existence, replay, expiry, actor, session
-  binding, exact redirect URI and code presence, in that order.
-- A denial or cancellation is normalised to `access_denied` or `authorization_failed`; the
-  provider's error text is never echoed.
+- State expires after ten minutes and is single-use.
 - Token exchange and revocation are abstracted behind `GoogleTokenExchange`. No production
   implementation exists in this step.
 
@@ -141,6 +158,46 @@ code. They return a safe not-configured state and discard what Google sent.
 Access tokens, refresh tokens and client secrets never appear in browser state, URL query
 strings beyond the OAuth protocol itself, application logs, audit details, error messages,
 client JSON or analytics.
+
+### Terminal callbacks
+
+Every callback that carries a syntactically valid state goes through the same single-use
+operation, not only a successful one. A denial, a provider error and a redirect with no
+code are all terminal, so an attempt that ended cannot sit unconsumed until it expires and
+cannot be presented again later.
+
+A missing or malformed state is refused before any database work, because it names no
+attempt. Consuming by guess would be worse than leaving it: it would let anyone end
+somebody else's authorization.
+
+`provider_oauth_consume_v1` proves actor, initiating session binding and exact redirect URI
+before it writes anything, and the distinction between a code callback and a cancellation
+decides what happens on a mismatch:
+
+| Callback | Context matches | Context does not match |
+| --- | --- | --- |
+| Carries a code | Consumed as `ACCEPTED`, or `REJECTED` if expired | Consumed as `REJECTED`; a mismatched exchange attempt is an attack and the attempt should not survive it |
+| Cancellation or no code | Consumed as `CANCELLED` with the fixed reason | Refused, and the row is left untouched, so one Admin session cannot end another's attempt |
+
+`provider_oauth_cancel_v1` is the Admin abandoning their own attempt. It is the same
+context-bound operation with the single reason this surface may record, so it inherits all
+of the above rather than offering a looser path.
+
+### Fixed reason vocabulary
+
+Nothing a browser or Google writes is ever persisted. A cancellation is classified into one
+of four values before it leaves TypeScript — `access_denied`, `authorization_failed`,
+`cancelled_by_admin`, `code_missing` — and PostgreSQL independently refuses anything else
+with `reason_not_normalised`. The same closed vocabulary constrains
+`provider_oauth_states.rejection_reason` and `provider_connection_events.detail` as CHECK
+constraints, and the audit writer drops a reason it does not recognise rather than
+recording it. Admin wording is generated from the classification, so no provider sentence
+reaches a page or an API response either.
+
+The browser cancel payload no longer carries a reason at all, and
+`containsTokenMaterial` now matches credential-shaped values as well as field names, so an
+access token, refresh token, authorization code or client secret smuggled into an
+unexpected field is still caught.
 
 ## Token storage design
 
@@ -157,6 +214,37 @@ constraint additionally rejects a ciphertext that still looks like a readable OA
 Token material is write-once. A revoked connection cannot be reopened. Connection history is
 append-only so a revocation cannot be erased.
 
+### What a connection row may change
+
+A connection row records one authorization, so everything identifying that authorization is
+immutable: `customer_id`, `business_id`, `location_id`, `account_ref`, `granted_scopes`,
+`token_expires_at`, the ciphertext, IV, auth tag, key version, `connected_at` and
+`created_by`. Only `status`, `revoked_at`, the last normalised error and `record_version`
+may move. A new authorization means a new row, which `provider_connection_store_v1` creates
+after revoking the previous one.
+
+`granted_scopes` and `token_expires_at` are the two that could reasonably be called
+lifecycle metadata, and the decision is to keep them immutable for now. A refresh would
+change the expiry and a re-consent would change the scopes, but this build has no token
+exchange, so neither can happen. Leaving them writable would mean shipping an unaudited
+mutation path before there is anything to mutate. At live activation they get an explicit
+refresh operation with its own allowed transitions, a record-version concurrency check and
+a normalised audit event, rather than an arbitrary `UPDATE`.
+
+### Connection scope
+
+A Google grant has to belong to someone identifiable, so `customer_id` is `NOT NULL` on
+both `provider_oauth_states` and `provider_connections`, and a location always implies a
+business. `provider_scope_fault_v1` then proves the chain against the existing data model
+rather than trusting an Admin form: `business_memberships` must carry a `verified`
+membership linking the customer to the business, and `locations.business_id` must link that
+business to the location. A pending or revoked membership is not evidence that a customer
+may authorise anything.
+
+Both the OAuth begin and the connection store call it, so another customer's business or
+another business's location is refused before a state row or an encrypted token can exist.
+Valid scopes are customer only, customer and business, or customer, business and location.
+
 ## Audit
 
 Connection lifecycle events are recorded through the existing audit architecture as
@@ -164,8 +252,9 @@ Connection lifecycle events are recorded through the existing audit architecture
 covering connection initiated, callback rejected, connection established, authorization
 revoked, re-authorization required, provider fallback activated and connection disconnected.
 
-Audit details carry the operation, the provider and, where relevant, a rejection reason.
-OAuth codes, tokens and ciphertext are never audited.
+Audit details carry the operation, the provider and, where relevant, a rejection reason
+drawn from the fixed vocabulary above. A reason outside that vocabulary is dropped rather
+than written. OAuth codes, tokens and ciphertext are never audited.
 
 ## Live acceptance harness
 
@@ -202,8 +291,9 @@ connection exists.
 
 A new Integrations section shows provider mode, API capability, connection state, last
 successful check, last provider error classification and whether manual fallback is active,
-plus the unmet live conditions in plain wording. It displays no client secret, token,
-encrypted payload, raw provider error body or environment value.
+plus the unmet conditions in plain wording, including that this build has no connection
+implementation. It displays no client secret, token, encrypted payload, raw provider error
+body or environment value.
 
 The connect action is present but unavailable, with the wording
 `Google Business Profile connection is not enabled yet.` There is no working Connect button

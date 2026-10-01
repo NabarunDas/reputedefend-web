@@ -6,6 +6,10 @@
 -- Additive only: new tables, new functions, and one widened audit action check.
 -- GOOGLE_BUSINESS_PROFILE_API_ENABLED remains unset. Provider mode remains manual.
 -- No token plaintext is stored here and no encryption key is stored here.
+--
+-- Nothing in this file can be reached in this build. The connection flow has no
+-- token exchange and no transport, which is a property of the code rather than
+-- of configuration, so these functions exist for a later activation step.
 
 BEGIN;
 

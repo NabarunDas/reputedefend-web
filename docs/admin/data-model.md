@@ -243,9 +243,15 @@ itself, so a reader of this table cannot replay an authorization. Bound to `acto
 `session_binding`, a one-way hash of the initiating session. `redirect_uri` must be
 `https://`. `expires_at` must be after `created_at` and the begin function caps the window
 at one hour. Single use is enforced by `consumed_at`, paired with an `outcome` of
-`ACCEPTED`, `REJECTED` or `CANCELLED` and a bounded `rejection_reason`. A trigger refuses to
-rewrite a consumed row, refuses to change the state hash, actor, session binding, redirect
-URI, expiry or creation time, and refuses to delete a state that is still live.
+`ACCEPTED`, `REJECTED` or `CANCELLED` and a `rejection_reason` constrained to a fixed
+vocabulary, so no browser or provider text can be stored. A trigger refuses to rewrite a
+consumed row, refuses to change the state hash, actor, session binding, redirect URI,
+expiry or creation time, and refuses to delete a state that is still live.
+
+`customer_id` is `NOT NULL` and a `location_id` requires a `business_id`.
+`admin_private.provider_scope_fault_v1` additionally proves that any business has a
+`verified` row in `business_memberships` for that customer and that any location has that
+business as its `locations.business_id`, so an attempt cannot be aimed across customers.
 
 ## public.provider_connections
 
@@ -257,16 +263,27 @@ rejects a ciphertext that still looks like an OAuth token (`ya29.%` or `1//%`). 
 `AUTH_REQUIRED`), `connected_at`, `revoked_at`, `last_success_at`, `last_error_code`
 constrained to the ten normalised failure codes, `last_error_at` and optimistic
 `record_version`. A partial unique index allows one non-revoked connection per provider and
-target. A trigger makes token material, ownership and creation facts write-once, refuses to
-reopen a revoked connection, requires a version increment on update, and forbids DELETE.
+target. It carries the same scope rules as the state table: `customer_id` is `NOT NULL`, a
+location requires a business, and `provider_scope_fault_v1` re-proves the chain before a
+token is stored.
+
+A trigger makes the connection identity write-once — `customer_id`, `business_id`,
+`location_id`, `account_ref`, `granted_scopes`, `token_expires_at`, ciphertext, IV, auth
+tag, key version, `connected_at` and `created_by` — leaving only `status`, `revoked_at`,
+the last normalised error and `record_version` mutable. It refuses to reopen a revoked
+connection, requires a version increment on update, and forbids DELETE. `granted_scopes`
+and `token_expires_at` are immutable rather than lifecycle metadata because this build has
+no token exchange; a controlled refresh operation arrives with live activation.
 
 ## public.provider_connection_events
 
 Append-only lifecycle history: `CONNECTION_INITIATED`, `CALLBACK_REJECTED`,
 `CONNECTION_ESTABLISHED`, `AUTHORIZATION_REVOKED`, `REAUTHORIZATION_REQUIRED`,
-`PROVIDER_FALLBACK_ACTIVATED`, `CONNECTION_DISCONNECTED`. `detail` is bounded to 200
-characters and carries a classification or rejection reason, never a code, token or provider
-body. A trigger blocks UPDATE and DELETE outright.
+`PROVIDER_FALLBACK_ACTIVATED`, `CONNECTION_DISCONNECTED`. `detail` is constrained by CHECK
+to a fixed vocabulary of lifecycle classifications, terminal callback reasons and the ten
+normalised failure codes, so a code, token, browser reason or provider body cannot be
+written even by a caller that bypassed the functions. A trigger blocks UPDATE and DELETE
+outright.
 
 Step 21 RPCs:
 
@@ -278,10 +295,19 @@ Step 21 RPCs:
 `admin_private.provider_connection_public_json_v1` is the only projection used by those
 RPCs and deliberately omits ciphertext, IV, auth tag and key version, so no response can
 return token material. Both public RPCs require a fresh re-authentication, audit as
-`INTEGRATION_CHANGED` with only the operation, provider and any rejection reason in the
-details, and map integration statuses onto the existing audit outcome vocabulary rather than
-widening it. The migration's only change to an existing object is adding
-`INTEGRATION_CHANGED` to the audit action check.
+`INTEGRATION_CHANGED` with only the operation, provider and a rejection reason drawn from
+the fixed vocabulary in the details, and map integration statuses onto the existing audit
+outcome vocabulary rather than widening it. An unrecognised reason is dropped rather than
+audited. The migration's only change to an existing object is adding `INTEGRATION_CHANGED`
+to the audit action check.
+
+`provider_oauth_consume_v1` is the single terminal operation for an attempt. It takes an
+optional reason from the four-value terminal set and refuses anything else with
+`reason_not_normalised`. It verifies actor, session binding and exact redirect before
+writing: a mismatched code callback is still consumed, because a mismatched exchange
+attempt should not survive, while a mismatched cancellation is refused with the row left
+untouched, so one session cannot end another's attempt. `provider_oauth_cancel_v1` is a
+thin wrapper over it carrying `cancelled_by_admin`.
 
 RLS is enabled on all three tables with no direct policies and all CRUD revoked from
 `PUBLIC`, `anon`, `authenticated` and `service_role`. The public RPCs are granted to

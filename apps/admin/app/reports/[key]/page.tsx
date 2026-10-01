@@ -19,11 +19,11 @@ export default async function ReportDetailPage({ params, searchParams }: { param
       status?: string; reason?: string; temporalMode?: string
       period?: { start?: string; end?: string; timezone?: string }
       summary?: {
-        count?: number; numerator?: number; denominator?: number; percentage?: number | null
-        measured?: number; excluded?: number; medianSeconds?: number | null; p90Seconds?: number | null
+        count?: number; numerator?: number; percentage?: number | null
+        measured?: number; medianSeconds?: number | null; p90Seconds?: number | null
         amounts?: Array<{ currency: string; amountMinor: number }>
         eligible?: number; converted?: number; notYetConverted?: number; excludedSpam?: number; monitoring?: number
-        excluded?: { spam?: number; monitoring?: number; general?: number; nonCaseContact?: number }
+        excluded?: number | { spam?: number; monitoring?: number; general?: number; nonCaseContact?: number }
         offered?: number; accepted?: number; closedOther?: number; stillOpen?: number
         success?: number; partial?: number; unsuccessful?: number; withdrawn?: number; denominator?: number
         successRate?: number | null; openInIntake?: number; unknownDueDateCount?: number
@@ -45,6 +45,8 @@ export default async function ReportDetailPage({ params, searchParams }: { param
     return <section className="page"><PageHeader title={reportLabels[key]} /><EmptyState>{data.reason === "invalid_cursor" ? "That page link is invalid." : "This report could not be loaded."}</EmptyState></section>
   }
   const rows = data.page?.rows || []
+  const excludedBuckets = data.summary?.excluded && typeof data.summary.excluded === "object" ? data.summary.excluded : null
+  const excludedCount = typeof data.summary?.excluded === "number" ? data.summary.excluded : undefined
   const periodLabel = mode === "CURRENT"
     ? "Current snapshot. The selected period does not produce this population."
     : `Europe/London period ${data.period?.start ? ukDate(data.period.start) : ""} to ${data.period?.end ? ukDate(data.period.end) : ""}.`
@@ -58,11 +60,11 @@ export default async function ReportDetailPage({ params, searchParams }: { param
       <h2>Summary</h2>
       <p>Count: {data.summary?.count ?? 0}</p>
       {data.summary?.denominator != null && key === "check_coverage_completed" && <p>Coverage: {coverageLabel(data.summary)}</p>}
-      {data.summary?.measured != null && <p>Measured: {data.summary.measured}. Excluded or missing: {data.summary.excluded}. Median: {data.summary.medianSeconds ?? "—"}s. P90: {data.summary.p90Seconds ?? "—"}s.</p>}
+      {data.summary?.measured != null && <p>Measured: {data.summary.measured}. Excluded or missing: {excludedCount}. Median: {data.summary.medianSeconds ?? "—"}s. P90: {data.summary.p90Seconds ?? "—"}s.</p>}
       {data.summary?.enquiry && <p>Enquiry responses: measured {data.summary.enquiry.measured ?? 0}, excluded {data.summary.enquiry.excluded ?? 0}, median {data.summary.enquiry.medianSeconds ?? "—"}s, P90 {data.summary.enquiry.p90Seconds ?? "—"}s.</p>}
       {data.summary?.case && <p>Case responses: measured {data.summary.case.measured ?? 0}, excluded {data.summary.case.excluded ?? 0}, median {data.summary.case.medianSeconds ?? "—"}s, P90 {data.summary.case.p90Seconds ?? "—"}s.</p>}
       {data.summary?.note && <p className="muted">{data.summary.note}</p>}
-      {data.summary?.eligible != null && <p>Eligible case-service enquiries: {data.summary.eligible}. Converted: {data.summary.converted}. Not yet converted: {data.summary.notYetConverted}. Excluded spam: {data.summary.excluded?.spam ?? data.summary.excludedSpam}. Monitoring: {data.summary.excluded?.monitoring ?? data.summary.monitoring}. General: {data.summary.excluded?.general ?? 0}. Non-case contact: {data.summary.excluded?.nonCaseContact ?? 0}.</p>}
+      {data.summary?.eligible != null && <p>Eligible case-service enquiries: {data.summary.eligible}. Converted: {data.summary.converted}. Not yet converted: {data.summary.notYetConverted}. Excluded spam: {excludedBuckets?.spam ?? data.summary.excludedSpam}. Monitoring: {excludedBuckets?.monitoring ?? data.summary.monitoring}. General: {excludedBuckets?.general ?? 0}. Non-case contact: {excludedBuckets?.nonCaseContact ?? 0}.</p>}
       {data.summary?.offered != null && <p>Offered cohort: {data.summary.offered}. Accepted: {data.summary.accepted}. Closed other: {data.summary.closedOther}. Still open: {data.summary.stillOpen}.</p>}
       {data.summary?.success != null && <p>Strict success (RESTORED + REMOVED): {data.summary.success}. Denominator (decided non-withdrawn): {data.summary.denominator}. Success rate: {data.summary.successRate == null ? "Not applicable" : `${data.summary.successRate}%`}. Partial or recommendation: {data.summary.partial}. Unsuccessful: {data.summary.unsuccessful}. Withdrawn: {data.summary.withdrawn}. Open in the same intake period: {data.summary.openInIntake}. Open work is not failure.</p>}
       {data.summary?.cohort && <p className="muted">{data.summary.cohort}</p>}

@@ -17,7 +17,7 @@ function mapStatus(status?: string) {
   return 200
 }
 
-async function readJson(request: NextRequest, limit = 8192) {
+async function readJson(request: NextRequest, limit = 8192): Promise<{ error: NextResponse } | { body: Record<string, unknown> }> {
   const reader = request.body?.getReader()
   const decoder = new TextDecoder()
   let raw = "", size = 0

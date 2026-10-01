@@ -210,8 +210,13 @@ export function deriveRecoveryVerification(input: RecoveryStatusInput): Recovery
 
   if (input.jobs === null) {
     limitations.push("job and outbox reconciliation was not exercised by this rehearsal")
-  } else if (input.jobs.requiresHumanReview) {
-    blockers.push("the restored queue has findings that need human or provider reconciliation before workers resume")
+  } else {
+    if (input.jobs.requiresHumanReview) {
+      blockers.push("the restored queue has findings that need human or provider reconciliation before workers resume")
+    }
+    if (input.jobs.requiresRecoveryAction) {
+      limitations.push("job/outbox recovery actions remain before workers can resume")
+    }
   }
 
   for (const gap of input.unresolvedGaps) {

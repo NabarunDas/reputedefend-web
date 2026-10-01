@@ -73,6 +73,22 @@ const packVersion: PackVersionRecord = {
 const recoverablePacks = validatePackRecovery({ items: [packItem], versions: [packVersion], storage: provenStorage })
 const cleanJobs = reconcileJobRecovery({ jobs: [], outbox: [], now: new Date(), providerGatesEnabled: false })
 
+const outboxId = "5e5e5e5e-0000-4000-8000-000000000130"
+
+function job(overrides: Partial<JobRecord> = {}): JobRecord {
+  return {
+    jobId: "5e5e5e5e-0000-4000-8000-000000000120",
+    jobType: "SYSTEM_HEALTH_PROBE",
+    idempotencyKey: "rehearsal-job-0001",
+    status: "PENDING",
+    attempts: 0,
+    maxAttempts: 5,
+    leaseExpiresAt: null,
+    leaseOwner: null,
+    ...overrides,
+  }
+}
+
 function status(overrides: Partial<RecoveryStatusInput> = {}): RecoveryStatusInput {
   return {
     scope: { verifiesRecoveredState: true, requiresByteIntegrity: false },
@@ -255,24 +271,77 @@ describe("deriving the recovery verification", () => {
   })
 
   it("blocks while the restored queue still needs human or provider reconciliation", () => {
-    const leased: JobRecord = {
-      jobId: "5e5e5e5e-0000-4000-8000-000000000120",
-      jobType: "SYSTEM_HEALTH_PROBE",
-      idempotencyKey: "rehearsal-job-0001",
+    const leased = job({
       status: "RUNNING",
       attempts: 1,
-      maxAttempts: 5,
       leaseExpiresAt: new Date(Date.now() + 60_000),
       leaseOwner: "worker-that-no-longer-exists",
-    }
+    })
     const jobs = reconcileJobRecovery({ jobs: [leased], outbox: [], now: new Date(), providerGatesEnabled: false })
     const result = deriveRecoveryVerification(status({ jobs }))
     expect(result.verification).toBe("BLOCKED")
     expect(result.blockers.join(" ")).toContain("human or provider reconciliation")
   })
 
+  it("blocks while a promoted outbox entry needs its provider effect established", () => {
+    const jobs = reconcileJobRecovery({
+      jobs: [],
+      outbox: [{ outboxId: outboxId, eventKey: "rehearsal-event-1", topic: "SYSTEM", promoted: true, hasJob: false }],
+      now: new Date(),
+      providerGatesEnabled: false,
+    })
+    expect(jobs.counts.reconcile_provider_effect).toBe(1)
+    expect(deriveRecoveryVerification(status({ jobs })).verification).toBe("BLOCKED")
+  })
+
   it("does not invent a blocker from a clean job and outbox state", () => {
+    expect(cleanJobs.requiresRecoveryAction).toBe(false)
     expect(deriveRecoveryVerification(status({ jobs: cleanJobs })).verification).toBe("VERIFIED")
+  })
+
+  it.each([
+    ["PENDING", "PENDING" as const],
+    ["RETRY", "RETRY" as const],
+    ["SUCCEEDED", "SUCCEEDED" as const],
+  ])("leaves an ordinary %s job verified, because it needs no recovery action", (_label, jobStatus) => {
+    const jobs = reconcileJobRecovery({
+      jobs: [job({ status: jobStatus })],
+      outbox: [],
+      now: new Date(),
+      providerGatesEnabled: false,
+    })
+    expect(jobs.requiresRecoveryAction).toBe(false)
+    expect(jobs.requiresHumanReview).toBe(false)
+    expect(deriveRecoveryVerification(status({ jobs })).verification).toBe("VERIFIED")
+  })
+
+  it("holds back from VERIFIED while a stale lease still needs releasing", () => {
+    const jobs = reconcileJobRecovery({
+      jobs: [job({ status: "RUNNING", leaseExpiresAt: new Date(Date.now() - 1000) })],
+      outbox: [],
+      now: new Date(),
+      providerGatesEnabled: false,
+    })
+    expect(jobs.counts.release_stale_lease).toBe(1)
+    expect(jobs.requiresRecoveryAction).toBe(true)
+    const result = deriveRecoveryVerification(status({ jobs }))
+    expect(result.verification).toBe("PARTIALLY_VERIFIED")
+    expect(result.blockers).toEqual([])
+    expect(result.limitations).toContain("job/outbox recovery actions remain before workers can resume")
+  })
+
+  it("holds back from VERIFIED while an outbox entry still needs promoting", () => {
+    const jobs = reconcileJobRecovery({
+      jobs: [],
+      outbox: [{ outboxId, eventKey: "rehearsal-event-1", topic: "SYSTEM", promoted: false, hasJob: false }],
+      now: new Date(),
+      providerGatesEnabled: false,
+    })
+    expect(jobs.counts.promote_outbox_entry).toBe(1)
+    expect(jobs.requiresRecoveryAction).toBe(true)
+    const result = deriveRecoveryVerification(status({ jobs }))
+    expect(result.verification).toBe("PARTIALLY_VERIFIED")
+    expect(result.blockers).toEqual([])
   })
 
   it("reports a domain that was not exercised as a limitation, not a blocker", () => {
@@ -322,17 +391,8 @@ describe("machine-readable serialisation", () => {
     key: rehearsalStorageKey(caseId, documentId, "5e5e5e5e-0000-4000-8000-000000000082"),
   })], [object()])
   const staleJobs = reconcileJobRecovery({
-    jobs: [{
-      jobId: "5e5e5e5e-0000-4000-8000-000000000121",
-      jobType: "SYSTEM_HEALTH_PROBE",
-      idempotencyKey: "rehearsal-job-0002",
-      status: "RUNNING",
-      attempts: 1,
-      maxAttempts: 5,
-      leaseExpiresAt: new Date(Date.now() - 1000),
-      leaseOwner: "rehearsal-worker",
-    }],
-    outbox: [{ outboxId: "5e5e5e5e-0000-4000-8000-000000000130", eventKey: "rehearsal-event-1", topic: "SYSTEM", promoted: false, hasJob: false }],
+    jobs: [job({ status: "RUNNING", attempts: 1, leaseExpiresAt: new Date(Date.now() - 1000), leaseOwner: "rehearsal-worker" })],
+    outbox: [{ outboxId, eventKey: "rehearsal-event-1", topic: "SYSTEM", promoted: false, hasJob: false }],
     now: new Date(),
     providerGatesEnabled: false,
   })

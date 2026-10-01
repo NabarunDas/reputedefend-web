@@ -19,7 +19,7 @@ templates.
 ## What exists
 
 Everything lives in `apps/admin/lib/recovery/`, is pure TypeScript, and is exercised by
-`npm run rehearse:recovery` from the repository root. The suite is 175 tests across 7
+`npm run rehearse:recovery` from the repository root. The suite is 182 tests across 7
 files and runs in roughly five seconds, so a rehearsal is cheap enough to run on every
 change rather than once before launch.
 
@@ -261,6 +261,13 @@ history. A promoted outbox entry with no job needs provider reconciliation; an u
 entry can be promoted because its unique event key prevents a duplicate. Provider gates are
 reported as the restore left them and never adjusted.
 
+The module separates three queue states, because they call for different responses.
+Work that simply awaits its own schedule — pending, retrying, already succeeded — needs
+nothing and leaves recovery verifiable. Work with a known safe resolution, a stale lease
+to release or an outbox entry to promote, sets `requiresRecoveryAction`: not a blocker,
+but the queue is not ready to resume, so verification holds at `PARTIALLY_VERIFIED`.
+Work whose provider effect cannot be established sets `requiresHumanReview` and blocks.
+
 `blindReplayPermitted` is typed as the literal `false`. There is no bulk replay path in
 this module by construction. `jobReconciliationSequence` gives the eight-step order a
 person works through instead, beginning with workers and Cron stopped and ending with
@@ -319,7 +326,7 @@ explicitly in the JSON; neither has to be inferred from prose.
 | Status | Meaning |
 | --- | --- |
 | `VERIFIED` | Every recovery domain in scope was exercised and came back clean, including proven byte integrity where storage is involved |
-| `PARTIALLY_VERIFIED` | Structurally correct, but a verification dimension was unavailable — no content hash, or a domain this rehearsal did not exercise. Never full recovery |
+| `PARTIALLY_VERIFIED` | Structurally correct, but something remains outstanding — no content hash, a domain this rehearsal did not exercise, or deterministic recovery work still to do such as a stale lease to release. Never full recovery |
 | `BLOCKED` | A concrete unresolved blocker: a blocking storage outcome, a missing inventory, a non-recoverable pack, a queue needing reconciliation, a fingerprint difference or a failed check |
 | `NOT_APPLICABLE` | The rehearsal does not attempt to verify a restored state at all, such as an isolated history-parser exercise. Not a way to avoid reporting a blocker |
 

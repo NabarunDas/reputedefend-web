@@ -53,9 +53,19 @@ export type JobRecoveryReport = {
   counts: Record<JobRecoveryAction, number>
   /** True when a person must look at the queue before any worker is resumed. */
   requiresHumanReview: boolean
+  /**
+   * True when deterministic recovery work is still outstanding — a stale lease
+   * to release, an outbox entry to promote. These have a known safe action, so
+   * they do not block recovery, but the queue is not yet ready to resume.
+   * Work that simply awaits its normal schedule does not count.
+   */
+  requiresRecoveryAction: boolean
   /** Always false: this module never authorises a bulk replay. */
   blindReplayPermitted: false
 }
+
+/** Actions with a known safe resolution that must happen before workers resume. */
+const deterministicRecoveryActions: readonly JobRecoveryAction[] = ["release_stale_lease", "promote_outbox_entry"]
 
 export type JobRecoveryInput = {
   jobs: readonly JobRecord[]
@@ -177,6 +187,7 @@ export function reconcileJobRecovery(input: JobRecoveryInput): JobRecoveryReport
     findings,
     counts,
     requiresHumanReview: counts.human_review_required > 0 || counts.reconcile_provider_effect > 0,
+    requiresRecoveryAction: deterministicRecoveryActions.some(action => counts[action] > 0),
     blindReplayPermitted: false,
   }
 }

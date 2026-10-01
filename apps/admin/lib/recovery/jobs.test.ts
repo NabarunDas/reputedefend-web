@@ -35,6 +35,21 @@ describe("job and outbox recovery after a restore", () => {
     const report = reconcile([job()])
     expect(report.findings[0].action).toBe("await_scheduled_run")
     expect(report.requiresHumanReview).toBe(false)
+    expect(report.requiresRecoveryAction).toBe(false)
+  })
+
+  it("separates work that awaits its own schedule from work that needs a recovery action", () => {
+    expect(reconcile([]).requiresRecoveryAction).toBe(false)
+    expect(reconcile([job({ status: "RETRY" })]).requiresRecoveryAction).toBe(false)
+    expect(reconcile([job({ status: "SUCCEEDED" })]).requiresRecoveryAction).toBe(false)
+
+    const staleLease = reconcile([job({ status: "RUNNING", leaseExpiresAt: new Date(now.getTime() - 1000) })])
+    expect(staleLease.requiresRecoveryAction).toBe(true)
+    expect(staleLease.requiresHumanReview).toBe(false)
+
+    const unpromoted = reconcile([], [outbox({ promoted: false, hasJob: false })])
+    expect(unpromoted.requiresRecoveryAction).toBe(true)
+    expect(unpromoted.requiresHumanReview).toBe(false)
   })
 
   it("does not re-execute a completed idempotent provider action", () => {

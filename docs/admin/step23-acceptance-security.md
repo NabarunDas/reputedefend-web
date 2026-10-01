@@ -21,10 +21,10 @@ performed, and no AWS object was touched.
 **Step 22A is complete. Step 22B is deferred: a cloud recovery rehearsal is required before
 final production sign-off.** Step 24 must still carry it as an unresolved operational item.
 
-One migration was created, and it is **source-only**. It is described under
-[The one migration](#the-one-migration) below, and it has **not** been applied to
-`profilerelaunch-dev`. Remote migration history still ends at
-`20261001175315 google_integration_readiness_v1`.
+One migration was created, independently reviewed and applied once to
+`profilerelaunch-dev`. It is described under [The one migration](#the-one-migration)
+below. Supabase recorded it as `20261001220255 quote_surface_fixes_v1`; the repository
+filename is aligned to that applied version.
 
 ## Acceptance matrix
 
@@ -445,38 +445,32 @@ Guard ones.
 
 ## The one migration
 
-`supabase/migrations/20261001200000_quote_surface_fixes_v1.sql` is the only migration
+`supabase/migrations/20261001220255_quote_surface_fixes_v1.sql` is the only migration
 created by Step 23. It is forward-only, replaces two function bodies with
 `CREATE OR REPLACE` — `admin_private.admin_quote_command_core_v1` and
 `public.admin_quote_list_v1` — edits no applied migration, and contains no data change. It
 carries both quote defects described above, because both are in the same feature and
 applying one file at cutover is simpler to review and safer to sequence than applying two.
 
-It is **source-only and has not been applied**. `appliedToDev: false` in the recovery
-manifest, and the manifest now distinguishes `migrationHead` — the newest migration in the
-repository — from `appliedMigrationHead`, the newest one the development project has
-actually received. `pendingMigrations()` lists what is waiting. The history validator
-needed no change: it already filtered on `appliedToDev`, so a reviewed but unapplied
-migration reads as a candidate to apply rather than as a divergence, which is what the
-Step 22A design intended. The upgrade rehearsal also now proves the new migration applies
-cleanly onto the real chain.
+It was independently reviewed and applied exactly once to `profilerelaunch-dev`.
+Supabase recorded the migration as `20261001220255 quote_surface_fixes_v1`, and the
+recovery manifest now records `appliedToDev: true` with that exact version. The applied
+SQL content is frozen. The upgrade rehearsal proves the migration applies cleanly onto the
+real chain.
 
 ## Remaining blockers for Step 24
 
 1. **Step 22B is not done.** A recovery rehearsal against a genuinely restored project is
    still required before final production sign-off. Step 22A built and proved the tooling;
    it did not restore anything.
-2. **The Step 23 migration must be reviewed and applied.** Until it is, the quotes list
-   fails on `profilerelaunch-dev` and a quote acceptance action can be revoked through the
-   wrong quote.
-3. **Legacy database objects on the development project.** `public.set_case_public_ref` and
+2. **Legacy database objects on the development project.** `public.set_case_public_ref` and
    `public.rls_auto_enable` exist on `profilerelaunch-dev` from before this repository held
    the schema. A production project built from these migrations will not have them. If
    production is created by promoting the development project rather than by rebuilding,
    they must be removed as a cutover task.
-4. **Leaked-password protection** is a Supabase Auth project setting and must be enabled
+3. **Leaked-password protection** is a Supabase Auth project setting and must be enabled
    there. It does not affect the Admin account, which has no password.
-5. **The repository chain and the remote migration ledger do not start in the same place.**
+4. **The repository chain and the remote migration ledger do not start in the same place.**
    Supabase's migration history on `profilerelaunch-dev` begins at
    `20260917080553_single_admin_auth_v1`. The three foundation migrations before it —
    `20260915120000_core_data_foundation_v1.sql`, `20260915193000_case_intake_transaction_v1.sql`
@@ -493,7 +487,7 @@ cleanly onto the real chain.
    required on how the canonical repository chain and the historical development ledger are
    reconciled — whether production is rebuilt from the full chain, or the existing ledger is
    adopted with its origin documented. That decision belongs to Step 22B and Step 24.
-6. **The live gates are still closed by design.** Stripe, outgoing mail, inbound mail, the
+5. **The live gates are still closed by design.** Stripe, outgoing mail, inbound mail, the
    Google API, Guard automation and privacy deletion are all off, and the five
    `DEFERRED_EXTERNAL` matrix rows record what each one would still need.
 

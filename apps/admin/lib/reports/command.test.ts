@@ -30,10 +30,14 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("report export command", () => {
   it("requires session, Origin, JSON and a UUID idempotency key", async () => {
-    expect((await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { origin: "https://evil.example" }))).status).toBe(403)
-    expect((await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { "content-type": "text/plain" }))).status).toBe(415)
-    expect((await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { cookie: "" }))).status).toBe(401)
-    expect((await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { "idempotency-key": "not-a-uuid" }))).status).toBe(400)
+    const originDenied = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { origin: "https://evil.example" }))
+    const typeDenied = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { "content-type": "text/plain" }))
+    const sessionDenied = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { cookie: "" }))
+    const keyDenied = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "open_cases" }, { "idempotency-key": "not-a-uuid" }))
+    expect(originDenied!.status).toBe(403)
+    expect(typeDenied!.status).toBe(415)
+    expect(sessionDenied!.status).toBe(401)
+    expect(keyDenied!.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
@@ -43,25 +47,26 @@ describe("report export command", () => {
       rows: [{ id: "1", occurredAt: "2026-03-29T00:00:00Z", label: "=HYPERLINK(1)", amountMinor: 100, currency: "GBP", elapsedSeconds: null }],
     })
     const ok = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "collected_gross", preset: "today" }))
-    expect(ok.status).toBe(200)
-    expect(ok.headers.get("content-type")).toBe("text/csv; charset=utf-8")
-    expect(ok.headers.get("cache-control")).toMatch(/no-store/)
-    expect(ok.headers.get("x-content-type-options")).toBe("nosniff")
-    expect(ok.headers.get("content-disposition")).toMatch(/admin-collected_gross-/)
-    expect(await ok.text()).toContain("'=HYPERLINK(1)")
+    expect(ok!.status).toBe(200)
+    expect(ok!.headers.get("content-type")).toBe("text/csv; charset=utf-8")
+    expect(ok!.headers.get("cache-control")).toMatch(/no-store/)
+    expect(ok!.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(ok!.headers.get("content-disposition")).toMatch(/admin-collected_gross-/)
+    expect(await ok!.text()).toContain("'=HYPERLINK(1)")
     const denied = await reportExportCommand(req("/api/operations/reports/export", { reportKey: "all_customers" }))
-    expect(denied.status).toBe(400)
+    expect(denied!.status).toBe(400)
   })
 })
 
 describe("saved filter command", () => {
   it("rejects missing session and forwards a valid create", async () => {
-    expect((await savedFilterCommand(req("/api/operations/reports/filters", { operation: "create" }, { cookie: "" }))).status).toBe(401)
+    const unauthenticated = await savedFilterCommand(req("/api/operations/reports/filters", { operation: "create" }, { cookie: "" }))
+    expect(unauthenticated!.status).toBe(401)
     mocks.rpc.mockResolvedValue({ status: "success", id: key, version: 1 })
     const ok = await savedFilterCommand(req("/api/operations/reports/filters", {
       operation: "create", payload: { module: "REPORTS", name: "Today", filter: { preset: "today" } },
     }))
-    expect(ok.status).toBe(200)
+    expect(ok!.status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_saved_filter_command_v1", expect.objectContaining({
       p_operation: "create",
       p_request: key,

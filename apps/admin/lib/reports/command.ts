@@ -10,7 +10,7 @@ import { isPreset, isReportKey, parseDateOnly } from "./model"
 const json = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
 
-async function readJson(request: NextRequest, limit = 8192) {
+async function readJson(request: NextRequest, limit = 8192): Promise<{ error: NextResponse } | { body: Record<string, unknown> }> {
   const reader = request.body?.getReader(), decoder = new TextDecoder()
   let raw = "", size = 0
   if (reader) for (;;) {
@@ -24,7 +24,7 @@ async function readJson(request: NextRequest, limit = 8192) {
   catch { return { error: json("Please check the form and try again.", 400) } }
 }
 
-function guard(request: NextRequest) {
+function guard(request: NextRequest): { error: NextResponse } | { token: string; key: string } {
   const config = authConfig()
   if (!config) return { error: json("The workspace is unavailable. Please try again shortly.", 503) }
   if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) {
@@ -35,12 +35,12 @@ function guard(request: NextRequest) {
   }
   const token = request.cookies.get(sessionCookie)?.value
   const key = request.headers.get("idempotency-key")
-  if (!validToken(token)) return { error: json("Please sign in again.", 401) }
-  if (!isUuid(key)) return { error: json("Reload the form and try again.", 400) }
+  if (!validToken(token) || !token) return { error: json("Please sign in again.", 401) }
+  if (!isUuid(key) || !key) return { error: json("Reload the form and try again.", 400) }
   return { token, key }
 }
 
-export async function reportExportCommand(request: NextRequest) {
+export async function reportExportCommand(request: NextRequest): Promise<NextResponse> {
   const session = guard(request)
   if ("error" in session) return session.error
   const parsed = await readJson(request)
@@ -82,7 +82,7 @@ export async function reportExportCommand(request: NextRequest) {
   })
 }
 
-export async function savedFilterCommand(request: NextRequest) {
+export async function savedFilterCommand(request: NextRequest): Promise<NextResponse> {
   const session = guard(request)
   if ("error" in session) return session.error
   const parsed = await readJson(request)

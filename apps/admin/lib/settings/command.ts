@@ -33,7 +33,7 @@ async function readJson(request: NextRequest, limit = 8192): Promise<{ error: Ne
   catch { return { error: json("Please check the form and try again.", 400) } }
 }
 
-function sessionOrError(request: NextRequest) {
+function sessionOrError(request: NextRequest): { error: NextResponse } | { token: string; key: string } {
   const config = authConfig()
   if (!config) return { error: json("The workspace is unavailable. Please try again shortly.", 503) }
   if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) {
@@ -46,7 +46,7 @@ function sessionOrError(request: NextRequest) {
   const key = request.headers.get("idempotency-key")
   if (!validToken(token) || !token) return { error: json("Please sign in again.", 401) }
   if (!isUuid(key) || !key) return { error: json("Reload the form and try again.", 400) }
-  return { config, token, key }
+  return { token, key }
 }
 
 export async function settingsCommand(request: NextRequest): Promise<NextResponse> {

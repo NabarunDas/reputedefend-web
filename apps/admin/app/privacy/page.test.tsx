@@ -43,6 +43,10 @@ describe("Privacy page", () => {
         scopeNote: "Customer asked for deletion of unused enquiry data.",
         recordVersion: 2,
         preview: { blockedByHold: { customer: true }, automatedDeletion: false, retained: { paymentReceipts: 1, paymentObligations: 1 }, externalDeletionRequired: { caseEvidence: 1 } },
+        dispositions: [
+          { category: "CONSENT_RECORDS", proposedAction: "MANUAL_REVIEW", status: "PENDING", retainedCount: 1, eligibleCount: 0 },
+          { category: "CASE_EVIDENCE", proposedAction: "DELETE", status: "BLOCKED", blockedReason: "BLOCKED_EXTERNAL_DELETION", retainedCount: 0, eligibleCount: 1 },
+        ],
       }],
     })
     render(await PrivacyPage())
@@ -50,7 +54,10 @@ describe("Privacy page", () => {
     expect(screen.getByText(/Legal holds block deletion/)).toBeTruthy()
     expect(screen.getByText(/Blocked by hold: yes/)).toBeTruthy()
     expect(screen.getByText(/Automated deletion: no/)).toBeTruthy()
+    expect(screen.getAllByText(/BLOCKED_EXTERNAL_DELETION/).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Release hold" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Mark ready" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Review CONSENT_RECORDS" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Complete review" })).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/sk_live|whsec_|otp/i)
   })

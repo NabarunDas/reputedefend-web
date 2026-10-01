@@ -85,6 +85,7 @@ beforeEach(async () => {
     alter table public.retention_policy_versions disable trigger retention_policy_versions_protect;
     alter table public.legal_holds disable trigger legal_holds_protect;
     truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,public.admin_saved_filters,admin_private.report_export_receipts,admin_private.report_command_receipts,admin_private.settings_command_receipts,admin_private.privacy_export_receipts,public.admin_setting_versions,public.retention_policy_versions,public.legal_holds,public.privacy_request_dispositions,public.privacy_requests,public.complaints,public.operational_incidents,public.service_response_obligations,public.guard_check_schedule_versions,auth.users,public.enquiry_events,public.enquiries,public.case_tasks,public.case_work_events,public.customer_contact_verifications,public.business_memberships,admin_private.jobs,admin_private.job_outbox cascade;
+    delete from public.case_documents;
     delete from public.cases where id <> '${caseId}';
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${otherActor}','other@example.com',now(),null,null);
@@ -436,5 +437,165 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
     }, 1])).toMatchObject({ status: "denied", reason: "single_admin_only" })
     const overview = await rpc("admin_settings_overview_v1", [token])
     expect(String(overview?.rotaAssignments && (overview.rotaAssignments as { note?: string }).note || "")).toMatch(/single Admin identity/)
+  })
+
+  it("does not complete access requests with pending dispositions and blocks unverified deletion execution", async () => {
+    await db.query("insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values($1,'email',$2,$3,$4)", [
+      customer, "alex@example.com", uid, "Verified from a live call with the customer.",
+    ])
+    const access = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "ACCESS", customerId: customer, notes: "Subject access request for current records.",
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "verify_privacy_request", { id: access!.id }, 1]))?.status).toBe("success")
+    expect((await rpc("admin_settings_command_v1", [token, key(), "preview_privacy_request", { id: access!.id }, 2]))?.status).toBe("success")
+    expect(await rpc("admin_settings_command_v1", [token, key(), "complete_privacy_request", { id: access!.id, resolution: "Tried to complete with consent still pending." }, 3])).toMatchObject({
+      status: "denied", reason: "blocked_disposition",
+    })
+    const deletion = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Delete unused enquiry data after review.",
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "verify_privacy_request", { id: deletion!.id }, 1]))?.status).toBe("success")
+    expect(await rpc("admin_settings_command_v1", [token, key(), "execute_deletion", { id: deletion!.id, enquiryId: key() }, null])).toMatchObject({
+      status: "conflict",
+    })
+    expect(await rpc("admin_settings_command_v1", [token, key(), "execute_deletion", { id: deletion!.id, enquiryId: key() }, 2])).toMatchObject({
+      status: "denied", reason: "not_ready",
+    })
+    expect((await rpc("admin_settings_command_v1", [token, key(), "preview_privacy_request", { id: deletion!.id }, 2]))?.status).toBe("success")
+    expect(await rpc("admin_settings_command_v1", [token, key(), "execute_deletion", { id: deletion!.id, enquiryId: key() }, 3])).toMatchObject({
+      status: "denied", reason: "not_ready",
+    })
+  })
+
+  it("keeps BLOCKED_EXTERNAL_DELETION as a hard database blocker until evidence is gone", async () => {
+    await db.query("insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values($1,'email',$2,$3,$4)", [
+      customer, "alex@example.com", uid, "Verified from a live call with the customer.",
+    ])
+    await db.query("insert into public.case_documents(case_id,title,created_by) values($1,$2,$3)", [caseId, "Passport scan", uid])
+    const deletion = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Customer asked to remove remaining profile evidence.",
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "verify_privacy_request", { id: deletion!.id }, 1]))?.status).toBe("success")
+    expect((await rpc("admin_settings_command_v1", [token, key(), "preview_privacy_request", { id: deletion!.id }, 2]))?.status).toBe("success")
+    expect(await rpc("admin_settings_command_v1", [token, key(), "review_disposition", {
+      id: deletion!.id, category: "CASE_EVIDENCE", proposedAction: "DELETE", status: "READY", reason: "Pretend storage delete succeeded.",
+    }, 3])).toMatchObject({ status: "denied", reason: "external_deletion" })
+    await expect(db.query(
+      "update public.privacy_request_dispositions set status='READY', record_version=record_version+1 where privacy_request_id=$1 and category='CASE_EVIDENCE'",
+      [deletion!.id],
+    )).rejects.toThrow(/external deletion remains outstanding/)
+    const blocked = await db.query<{ reason: string }>(
+      "select admin_private.deletion_blocked_v1(r) as reason from public.privacy_requests r where r.id=$1",
+      [deletion!.id],
+    )
+    expect(blocked.rows[0].reason).toBe("external_deletion")
+  })
+
+  it("closes a future approved setting on retire so it never becomes current later", async () => {
+    const created = await rpc("admin_settings_command_v1", [token, key(), "create_setting_draft", {
+      key: "SUPPORTED_MARKETS", reason: "Future market list", effectiveFrom: tomorrow(),
+      payload: { countries: ["GB"], currencies: ["GBP"] },
+    }, null])
+    const draft = (await rpc("admin_settings_list_v1", [token, "SUPPORTED_MARKETS"]))?.versions?.[0]
+    expect((await rpc("admin_settings_command_v1", [token, key(), "approve_setting", { id: created!.id }, draft!.recordVersion]))?.status).toBe("success")
+    const approved = (await rpc("admin_settings_list_v1", [token, "SUPPORTED_MARKETS"]))?.versions?.find(row => row.status === "APPROVED")
+    expect((await rpc("admin_settings_command_v1", [token, key(), "retire_setting", { id: approved!.id }, approved!.recordVersion]))?.status).toBe("success")
+    const retired = await db.query<{ status: string; same: boolean }>(
+      "select status, (effective_from = effective_to) as same from public.admin_setting_versions where id=$1",
+      [approved!.id],
+    )
+    expect(retired.rows[0]).toMatchObject({ status: "RETIRED", same: true })
+    const later = await db.query<{ id: string | null }>(
+      "select (admin_private.current_setting_v1('SUPPORTED_MARKETS', $1::timestamptz)).id::text as id",
+      [tomorrow()],
+    )
+    expect(later.rows[0].id).toBeNull()
+  })
+
+  it("rejects overlapping approved retention ranges at the database", async () => {
+    const first = await rpc("admin_settings_command_v1", [token, key(), "create_retention_draft", {
+      category: "SECURITY_LOGS", retentionMode: "RETAIN_INDEFINITELY", reason: "Keep security logs",
+      effectiveFrom: new Date(Date.now() - 10_000).toISOString(),
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "approve_retention", { id: first!.id }, 1]))?.status).toBe("success")
+    const second = await rpc("admin_settings_command_v1", [token, key(), "create_retention_draft", {
+      category: "SECURITY_LOGS", retentionMode: "MANUAL_REVIEW", reason: "Overlapping security logs",
+      effectiveFrom: new Date(Date.now() - 5_000).toISOString(),
+    }, null])
+    await expect(db.query(
+      "update public.retention_policy_versions set status='APPROVED', record_version=record_version+1 where id=$1",
+      [second!.id],
+    )).rejects.toThrow(/overlapping/)
+  })
+
+  it("protects response-obligation snapshot identity and timezone", async () => {
+    const recent = new Date(Date.now() - 15_000).toISOString()
+    const hours = await rpc("admin_settings_command_v1", [token, key(), "create_setting_draft", {
+      key: "SERVICE_HOURS", reason: "Hours for obligation snapshot", effectiveFrom: recent, payload: hoursPayload,
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "approve_setting", { id: hours!.id }, 1]))?.status).toBe("success")
+    const targets = await rpc("admin_settings_command_v1", [token, key(), "create_setting_draft", {
+      key: "RESPONSE_TARGETS", reason: "Targets for obligation snapshot", effectiveFrom: recent,
+      payload: { ENQUIRY_FIRST_RESPONSE: { hours: 8 }, CASE_FIRST_RESPONSE: { hours: 8 } },
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "approve_setting", { id: targets!.id }, 1]))?.status).toBe("success")
+    const enquiryId = key()
+    await db.query(
+      "insert into public.enquiries(id,submission_key,fingerprint,source,payload,internal_status,ack_status,status) values($1,$2,'fp','contact',$3,'SKIPPED','SKIPPED','new')",
+      [enquiryId, key(), { fullName: "Alex", email: "alex@example.com", phone: "", businessName: "", country: "", service: "", subject: "Help", details: "Details", websiteUrl: "", businessProfileUrl: "", reviewUrl: "", source: "contact" }],
+    )
+    await expect(db.query("update public.service_response_obligations set timezone='UTC' where enquiry_id=$1", [enquiryId])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.service_response_obligations set target_type='CASE_FIRST_RESPONSE', case_id=$2, enquiry_id=null where enquiry_id=$1", [enquiryId, caseId])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.service_response_obligations set hours_version_id=policy_version_id where enquiry_id=$1", [enquiryId])).rejects.toThrow(/immutable/)
+  })
+
+  it("rejects missing required placeholders, after-hours wrap, weekends and converted enquiry deletion", async () => {
+    expect(await rpc("admin_settings_command_v1", [token, key(), "create_template_draft", {
+      templateKey: "CASE_UPDATE", name: "Missing next step", subject: "Update on {case_ref}", body: "{fact} {effect} without the required next action placeholder.",
+    }, null])).toMatchObject({ status: "invalid" })
+    const afterClose = await db.query<{ due: string }>(
+      "select admin_private.staffed_due_at_v1(timestamptz '2026-01-07 18:00:00+00', 1, $1::jsonb)::text as due",
+      [JSON.stringify(hoursPayload)],
+    )
+    expect(afterClose.rows[0].due).toContain("2026-01-08")
+    const weekendOff = await db.query<{ due: string }>(
+      "select admin_private.staffed_due_at_v1(timestamptz '2026-01-10 10:00:00+00', 1, $1::jsonb)::text as due",
+      [JSON.stringify(hoursPayload)],
+    )
+    expect(weekendOff.rows[0].due).toContain("2026-01-12")
+    const weekendOn = await db.query<{ due: string }>(
+      "select admin_private.staffed_due_at_v1(timestamptz '2026-01-10 10:00:00+00', 1, $1::jsonb)::text as due",
+      [JSON.stringify({ ...hoursPayload, weekendPolicy: "INCLUDED", windows: [1, 2, 3, 4, 5, 6, 7].map(day => ({ day, start: "09:00", end: "17:00" })) })],
+    )
+    expect(weekendOn.rows[0].due).toContain("2026-01-10")
+    await db.query("insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values($1,'email',$2,$3,$4)", [
+      customer, "alex@example.com", uid, "Verified from a live call with the customer.",
+    ])
+    const convertedId = key()
+    await db.query(
+      "insert into public.enquiries(id,submission_key,fingerprint,source,payload,internal_status,ack_status,status,case_id) values($1,$2,'fp','contact',$3,'SKIPPED','SKIPPED','converted',$4)",
+      [convertedId, key(), { fullName: "Alex", email: "alex@example.com", phone: "", businessName: "", country: "", service: "", subject: "Help", details: "Details", websiteUrl: "", businessProfileUrl: "", reviewUrl: "", source: "contact" }, caseId],
+    )
+    const deletion = await rpc("admin_settings_command_v1", [token, key(), "create_privacy_request", {
+      kind: "DELETION", customerId: customer, notes: "Attempt to delete a converted enquiry.",
+    }, null])
+    expect((await rpc("admin_settings_command_v1", [token, key(), "verify_privacy_request", { id: deletion!.id }, 1]))?.status).toBe("success")
+    expect((await rpc("admin_settings_command_v1", [token, key(), "start_privacy_review", { id: deletion!.id }, 2]))?.status).toBe("success")
+    expect((await rpc("admin_settings_command_v1", [token, key(), "preview_privacy_request", { id: deletion!.id }, 3]))?.status).toBe("success")
+    const reviewed = await rpc("admin_settings_command_v1", [token, key(), "review_disposition", {
+      id: deletion!.id, category: "UNSUCCESSFUL_ENQUIRIES", proposedAction: "DELETE", status: "READY", reason: "Reviewed unsuccessful enquiries only.",
+    }, 4])
+    expect(reviewed?.status).toBe("success")
+    const audit = await db.query<{ action: string }>("select action from public.admin_audit_events where action='PRIVACY_CHANGED' and details->>'operation'='review_disposition'")
+    expect(audit.rows.length).toBeGreaterThan(0)
+    expect(await rpc("admin_settings_command_v1", [token, key(), "execute_deletion", { id: deletion!.id, enquiryId: convertedId }, Number(reviewed!.version)])).toMatchObject({
+      status: "denied", reason: "not_ready",
+    })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.enquiries where id=$1", [convertedId])).rows[0].n).toBe(1)
+    expect((await rpc("admin_settings_command_v1", [token, key(), "reject_privacy_request", { id: deletion!.id, reason: "Converted enquiry cannot be auto-deleted." }, Number(reviewed!.version)]))?.status).toBe("success")
+    expect(await rpc("admin_settings_command_v1", [token, key(), "complete_privacy_request", { id: deletion!.id, resolution: "Reopen after reject." }, Number(reviewed!.version) + 1])).toMatchObject({
+      status: "invalid",
+    })
+    await expect(db.query("update public.privacy_requests set status='RECEIVED', record_version=record_version+1 where id=$1", [deletion!.id])).rejects.toThrow(/transition|terminal|immutable/i)
   })
 })

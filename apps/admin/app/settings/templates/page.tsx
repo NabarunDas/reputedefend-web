@@ -10,7 +10,7 @@ export const metadata = { title: "Templates" }
 export default async function TemplatesPage() {
   await requireStaff()
   const data = await loadTemplates() as {
-    approved?: Array<{ key: string; version: number; name: string; subject: string; createdAt: string }>
+    approved?: Array<{ id: string; key: string; version: number; name: string; subject: string; createdAt: string; recordVersion?: number }>
     drafts?: Array<{ id: string; key: string; name: string; subject: string; createdAt: string; recordVersion?: number }>
   }
   return <section className="page">
@@ -19,7 +19,7 @@ export default async function TemplatesPage() {
     <section className="panel">
       <h2>Approved versions</h2>
       {!data.approved?.length ? <EmptyState>No approved templates.</EmptyState> : (
-        <ul>{data.approved.map(row => <li key={`${row.key}-${row.version}`}>{row.key} v{row.version}: {row.name} — {row.subject} ({ukDate(row.createdAt)})</li>)}</ul>
+        <ul>{data.approved.map(row => <li key={`${row.key}-${row.version}`}>{row.key} v{row.version}: {row.name} — {row.subject} ({ukDate(row.createdAt)}) <ApproveButton operation="retire_template" id={row.id} version={row.recordVersion ?? 1} label="Retire template" /></li>)}</ul>
       )}
     </section>
     <section className="panel">

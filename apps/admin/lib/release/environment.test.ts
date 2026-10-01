@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { adminLaunchBlocking, computedEnvFamilies, environmentContract, expectedAbsentAtCutover, variable } from "./environment"
 import { containsSecret } from "./secrets"
+import { environmentReads, unsupportedEnvironmentAccess } from "./source-scan"
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url))
 const ignoredDirectories = new Set(["node_modules", ".git", ".next", "dist", "coverage", "out"])
@@ -22,38 +23,22 @@ function sourceFiles(): string[] {
   return found
 }
 
-/**
- * Dotted access on the process environment is only one of the ways this
- * codebase reaches configuration. Several modules destructure it, and the
- * job, mail and provider gates take an injectable `EnvMap` so they can be
- * tested without mutating the process. A scan that looked only for the dotted
- * form would report a fifth of the real surface and would miss every gate.
- */
-function environmentReads(source: string): string[] {
-  const names: string[] = []
-  const push = (name: string) => {
-    if (/^[A-Z][A-Z0-9_]*$/.test(name)) names.push(name)
-  }
-  for (const match of source.matchAll(/process\.env\.([A-Za-z_$][\w$]*)/g)) push(match[1])
-  for (const match of source.matchAll(/process\.env\[\s*["'`]([^"'`]+)["'`]\s*\]/g)) push(match[1])
-  for (const match of source.matchAll(/\benv\.([A-Za-z_$][\w$]*)/g)) push(match[1])
-  for (const match of source.matchAll(/\benv\[\s*["'`]([^"'`]+)["'`]\s*\]/g)) push(match[1])
-  for (const match of source.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:process\.)?env\b/g)) {
-    for (const part of match[1].split(",")) push(part.split(":")[0].trim())
-  }
-  return names
-}
-
 const isTestFile = (path: string) => /\.test\.|\/testing\/|^test\/|^scripts\//.test(path)
 
 /** Every reader, and separately the readers that ship to production. */
 const allReads = new Map<string, string[]>()
 const productionReads = new Map<string, string[]>()
+const unsupportedAccess: { file: string; unsupported: string[] }[] = []
 for (const file of sourceFiles()) {
   const path = relative(repoRoot, file).replaceAll("\\", "/")
-  for (const name of new Set(environmentReads(readFileSync(file, "utf8")))) {
+  const source = readFileSync(file, "utf8")
+  for (const name of new Set(environmentReads(source))) {
     allReads.set(name, [...(allReads.get(name) ?? []), path])
     if (!isTestFile(path)) productionReads.set(name, [...(productionReads.get(name) ?? []), path])
+  }
+  if (!isTestFile(path)) {
+    const unsupported = unsupportedEnvironmentAccess(source)
+    if (unsupported.length > 0) unsupportedAccess.push({ file: path, unsupported })
   }
 }
 
@@ -63,6 +48,14 @@ describe("production environment contract", () => {
   it("classifies every variable the code actually reads", () => {
     const unclassified = [...allReads.keys()].filter(name => !contractNames.includes(name)).sort()
     expect(unclassified).toEqual([])
+  })
+
+  it("can see every environment access in production source", () => {
+    // The inventory above is only complete while every access is one the
+    // scanner recognises. Aliasing the environment object, or reaching it
+    // through syntax this scanner does not understand, would leave reads
+    // unclassified without failing the check above, so it fails here instead.
+    expect(unsupportedAccess).toEqual([])
   })
 
   it("does not classify a variable nothing reads", () => {

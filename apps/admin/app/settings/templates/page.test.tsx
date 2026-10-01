@@ -30,8 +30,10 @@ describe("Templates page", () => {
     expect(screen.getByRole("heading", { name: "Template lifecycle" })).toBeTruthy()
     expect(screen.getByText(/CASE_UPDATE v1/)).toBeTruthy()
     expect(screen.getByText(/Case update v2/)).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Retire template" })).toBeTruthy()
+    // Both lists repeat the same visible labels, so the accessible name has to
+    // say which template version the control would change.
+    expect(screen.getByRole("button", { name: "Approve: CASE_UPDATE: Case update v2" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Retire template: CASE_UPDATE v1" })).toBeTruthy()
     expect(screen.getByText(/latest approved version only/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/MARKETING_BLAST|invite staff/i)
   })

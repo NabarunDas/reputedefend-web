@@ -3,7 +3,10 @@ import { manifestFilenames, migrationChain } from "./manifest"
 import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHistory, type RemoteMigration } from "./history"
 
 const repoFilenames = manifestFilenames()
-const healthyRemote: RemoteMigration[] = migrationChain.map(entry => ({
+const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
+// Remote history contains only what the dev project actually received, so a
+// reviewed migration still waiting to be applied is absent from this fixture.
+const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
 }))
@@ -17,7 +20,16 @@ describe("the migration history validator", () => {
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(result.findings).toEqual([])
-    expect(result.compared).toBe(migrationChain.length)
+    expect(result.compared).toBe(appliedChain.length)
+    expect(mayApplyMigrations(result)).toBe(true)
+  })
+
+  it("has no pending migration after the reviewed Step 23 migration is applied", () => {
+    const pending = migrationChain.filter(entry => !entry.appliedToDev)
+    expect(pending).toEqual([])
+    const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
+    expect(result.status).toBe("clean")
+    expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)
   })
 

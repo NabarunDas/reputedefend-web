@@ -52,6 +52,15 @@ async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null
   return (await db.query<{ value: RpcResult | null }>(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(",")}) as value`, args)).rows[0].value
 }
 
+/**
+ * This suite stops at the Step 13 catalogue and quote migration, which is the
+ * schema its assertions were written against. Step 15 later moved the quote
+ * command into admin_private behind a Guard-aware public wrapper, so anything
+ * that depends on the current function architecture — including the Step 23
+ * migration — belongs in quote-surface-fixes.database.test.ts, which runs the
+ * whole chain. Do not append a later migration to the list below: applying one
+ * onto a Step 13 schema tests an arrangement that exists nowhere.
+ */
 beforeAll(async () => {
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const dir = new URL("../../../../supabase/migrations/", import.meta.url)

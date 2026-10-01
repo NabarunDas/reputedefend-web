@@ -150,9 +150,9 @@ describe("evidence commands without proxy", () => {
     const response = await runEvidenceCommand(req(), store)
     const payload = await response.json()
     expect(response.status).toBe(200)
-    expect(isOpaqueEvidenceKey(payload.storageKey, beginBody.filename)).toBe(true)
-    expect(payload.storageKey).not.toContain("invoice")
-    expect(payload.storageKey).not.toContain(beginBody.filename)
+    expect(isOpaqueEvidenceKey(payload.upload.fields.key, beginBody.filename)).toBe(true)
+    expect(payload.upload.fields.key).not.toContain("invoice")
+    expect(payload.upload.fields.key).not.toContain(beginBody.filename)
     expect(payload.upload.expiresSeconds).toBeLessThanOrEqual(UPLOAD_EXPIRES_SECONDS)
     expect(payload.maxBytes).toBe(MAX_EVIDENCE_BYTES)
     expect(store.createUpload).toHaveBeenCalledWith({ key: storageKey, contentType: "application/pdf" })
@@ -163,6 +163,19 @@ describe("evidence commands without proxy", () => {
       ["eq", "$Content-Type", "application/pdf"],
       ["content-length-range", 1, MAX_EVIDENCE_BYTES],
     ]))
+  })
+  it("sends the browser nothing beyond the fields the upload needs", async () => {
+    const store = storage()
+    mocks.rpc.mockImplementation(async (name: string) => name === "admin_evidence_version_v1"
+      ? version
+      : { status: "success", documentId, versionId, versionNumber: 1, storageKey, contentType: "application/pdf" })
+    const payload = await (await runEvidenceCommand(req(), store)).json()
+    expect(Object.keys(payload).sort()).toEqual(["documentId", "maxBytes", "message", "upload", "versionId", "versionNumber"])
+    // The signed POST fields legitimately carry the key. Nothing else may.
+    const withoutUpload = JSON.stringify({ ...payload, upload: undefined })
+    expect(withoutUpload).not.toContain(storageKey)
+    expect(withoutUpload).not.toContain("test-evidence")
+    expect(payload.upload.url).not.toContain(storageKey)
   })
   it("replays a committed begin without minting a second version", async () => {
     const store = storage()

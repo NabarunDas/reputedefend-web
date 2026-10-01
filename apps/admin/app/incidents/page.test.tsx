@@ -37,8 +37,12 @@ describe("Incidents page", () => {
     expect(screen.getByRole("heading", { name: "Incidents" })).toBeTruthy()
     expect(screen.getByText("Outbound mail paused")).toBeTruthy()
     expect(screen.getByText(/no invented acknowledgement SLA/i)).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Acknowledge" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Resolve" })).toBeTruthy()
+    // Each row repeats the same visible labels, so the accessible name has to
+    // say which incident the control would change.
+    expect(screen.getByRole("button", { name: "Acknowledge: Outbound mail paused" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Resolve: Outbound mail paused" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Cancel incident: Outbound mail paused" })).toBeTruthy()
+    expect(screen.getByRole("textbox", { name: "Resolution: Outbound mail paused" })).toBeTruthy()
     expect(screen.queryByLabelText("Incident id")).toBeNull()
   })
 })

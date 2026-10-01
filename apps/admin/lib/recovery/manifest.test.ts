@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { readdirSync } from "node:fs"
-import { chainAfter, chainThrough, findMigration, manifestFilenames, manifestVersions, migrationChain, migrationHead } from "./manifest"
+import { appliedMigrationHead, chainAfter, chainThrough, findMigration, manifestFilenames, manifestVersions, migrationChain, migrationHead, pendingMigrations } from "./manifest"
 import { logicalName, migrationVersion } from "./history"
 
 const directory = new URL("../../../../supabase/migrations/", import.meta.url)
@@ -16,17 +16,27 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("ends at the Step 21 migration that is applied to the dev project", () => {
-    expect(migrationHead.filename).toBe("20261001175315_google_integration_readiness_v1.sql")
-    expect(migrationHead.step).toBe("Step 21 Google integration readiness")
+  it("records the applied Step 23 migration as both repository and dev head", () => {
+    expect(migrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
+    expect(migrationHead.step).toBe("Step 23 quote surface fixes")
     expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
+    expect(appliedMigrationHead.step).toBe("Step 23 quote surface fixes")
+    expect(appliedMigrationHead.appliedToDev).toBe(true)
   })
 
-  it("never marks an applied migration as safe to replay", () => {
-    for (const entry of migrationChain) {
-      expect(entry.safeToReplay).toBe(false)
-      expect(entry.appliedToDev).toBe(true)
-    }
+  it("never marks any migration as safe to replay", () => {
+    for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
+  })
+
+  it("has no reviewed migration still waiting to be applied", () => {
+    expect(pendingMigrations()).toEqual([])
+  })
+
+  it("keeps every applied migration ahead of every pending one", () => {
+    const lastApplied = migrationChain.findLastIndex(entry => entry.appliedToDev)
+    expect(migrationChain.slice(0, lastApplied + 1).every(entry => entry.appliedToDev)).toBe(true)
+    expect(migrationChain.slice(lastApplied + 1).every(entry => !entry.appliedToDev)).toBe(true)
   })
 
   it("gives every migration a logical step and a verification probe", () => {

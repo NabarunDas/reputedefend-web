@@ -19,13 +19,13 @@ export default async function TemplatesPage() {
     <section className="panel">
       <h2>Approved versions</h2>
       {!data.approved?.length ? <EmptyState>No approved templates.</EmptyState> : (
-        <ul>{data.approved.map(row => <li key={`${row.key}-${row.version}`}>{row.key} v{row.version}: {row.name} — {row.subject} ({ukDate(row.createdAt)}) <ApproveButton operation="retire_template" id={row.id} version={row.recordVersion ?? 1} label="Retire template" /></li>)}</ul>
+        <ul>{data.approved.map(row => <li key={`${row.key}-${row.version}`}>{row.key} v{row.version}: {row.name} — {row.subject} ({ukDate(row.createdAt)}) <ApproveButton operation="retire_template" id={row.id} version={row.recordVersion ?? 1} label="Retire template" record={`${row.key} v${row.version}`} /></li>)}</ul>
       )}
     </section>
     <section className="panel">
       <h2>Drafts</h2>
       {!data.drafts?.length ? <EmptyState>No unpublished drafts.</EmptyState> : (
-        <ul>{data.drafts.map(row => <li key={row.id}>{row.key}: {row.name} — {row.subject} <ApproveButton operation="approve_template_draft" id={row.id} version={row.recordVersion ?? 1} label="Approve" /></li>)}</ul>
+        <ul>{data.drafts.map(row => <li key={row.id}>{row.key}: {row.name} — {row.subject} <ApproveButton operation="approve_template_draft" id={row.id} version={row.recordVersion ?? 1} label="Approve" record={`${row.key}: ${row.name}`} /></li>)}</ul>
       )}
       <SettingsActionForm
         operation="create_template_draft"

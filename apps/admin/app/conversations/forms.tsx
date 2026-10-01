@@ -55,7 +55,7 @@ function ConversationForm({
   return <form onSubmit={submit}>
     {children}
     <button type="submit" disabled={busy}>{busy ? "Saving…" : label}</button>
-    {message && <p className="muted">{message}</p>}
+    <p role="status" className="muted">{message}</p>
   </form>
 }
 

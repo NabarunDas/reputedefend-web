@@ -15,18 +15,30 @@ async function send(operation: string, payload: Record<string, unknown>, version
   return { ok: response.ok, message: String(body.message || "Updated.") }
 }
 
+/**
+ * `record` names the row an action belongs to. These controls are rendered
+ * once per row on the incidents, complaints and template pages, where the
+ * visible label alone produces several identically named buttons and fields
+ * and nothing says which record each one would change.
+ */
+function forRecord(label: string, record?: string): string | undefined {
+  return record ? `${label}: ${record}` : undefined
+}
+
 export function SettingsActionForm({
   operation,
   fields,
   version,
   extras,
   submit,
+  record,
 }: {
   operation: string
   fields: Array<{ name: string; label: string; type?: string; required?: boolean; maxLength?: number }>
   version?: number
   extras?: Record<string, unknown>
   submit: string
+  record?: string
 }) {
   const [message, setMessage] = useState("")
   return <form onSubmit={event => {
@@ -41,10 +53,13 @@ export function SettingsActionForm({
   }}>
     {fields.map(field => (
       <label key={field.name}>{field.label}
-        <input name={field.name} type={field.type || "text"} required={field.required} maxLength={field.maxLength} />
+        <input
+          name={field.name} type={field.type || "text"} required={field.required} maxLength={field.maxLength}
+          aria-label={forRecord(field.label, record)}
+        />
       </label>
     ))}
-    <button type="submit">{submit}</button>
+    <button type="submit" aria-label={forRecord(submit, record)}>{submit}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }
@@ -142,7 +157,7 @@ export function RetentionForm() {
   </form>
 }
 
-export function ResolveIncidentForm({ id, version }: { id: string; version: number }) {
+export function ResolveIncidentForm({ id, version, record }: { id: string; version: number; record?: string }) {
   const [message, setMessage] = useState("")
   return <form onSubmit={event => {
     event.preventDefault()
@@ -152,24 +167,25 @@ export function ResolveIncidentForm({ id, version }: { id: string; version: numb
       if (result.ok) window.location.reload()
     })
   }}>
-    <label>Resolution<input name="resolution" required minLength={3} maxLength={2000} /></label>
-    <button type="submit">Resolve</button>
+    <label>Resolution<input name="resolution" required minLength={3} maxLength={2000} aria-label={forRecord("Resolution", record)} /></label>
+    <button type="submit" aria-label={forRecord("Resolve", record)}>Resolve</button>
     {message && <p role="status">{message}</p>}
   </form>
 }
 
 export function ApproveButton({
-  operation, id, version, label, extras,
+  operation, id, version, label, extras, record,
 }: {
   operation: string
   id: string
   version: number
   label: string
   extras?: Record<string, unknown>
+  record?: string
 }) {
   const [message, setMessage] = useState("")
   return <span>
-    <button type="button" onClick={() => {
+    <button type="button" aria-label={forRecord(label, record)} onClick={() => {
       void send(operation, { id, ...(extras || {}) }, version).then(result => {
         setMessage(result.message)
         if (result.ok) window.location.reload()

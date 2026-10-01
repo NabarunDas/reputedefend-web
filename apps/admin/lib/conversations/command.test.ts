@@ -31,6 +31,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs())
 
 describe("conversation admin commands", () => {
+  it.each([
+    ["a mistyped case reference", { operation: "link_case", conversationId, version: 2, caseId: "PR-26-ABC123" }],
+    ["an empty case reference", { operation: "link_case", conversationId, version: 2, caseId: "" }],
+    ["a malformed conversation", { operation: "close", conversationId: "not-a-uuid", version: 2 }],
+    ["a malformed attachment", { operation: "promote_attachment", conversationId, version: 2, attachmentId: "42" }],
+  ])("answers %s as a field problem and never reaches the database", async (_label, body) => {
+    const response = await conversationsCommand(req(body))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ message: "Check the fields before saving." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("injects the inbound domain for replies and strips browser threading fields", async () => {
     mocks.rpc.mockResolvedValue({ status: "success" })
     const response = await conversationsCommand(req({

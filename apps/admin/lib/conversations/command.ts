@@ -60,6 +60,11 @@ export async function conversationsCommand(request: NextRequest) {
     const operation = (body as { operation: string }).operation
     if (!(operations as readonly string[]).includes(operation)) return reply("Check the fields before saving.", 400)
     const payload: Record<string, unknown> = { ...(body as Record<string, unknown>) }
+    // These reach SQL as uuid parameters. The case reference is typed by hand,
+    // so a typo has to read as a field problem rather than a database fault.
+    for (const field of ["conversationId", "caseId", "attachmentId"] as const) {
+      if (field in payload && !isUuid(payload[field])) return reply("Check the fields before saving.", 400)
+    }
     delete payload.operation
     delete payload.version
     delete payload.inboundDomain

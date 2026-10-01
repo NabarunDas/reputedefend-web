@@ -31,6 +31,10 @@ try {
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
     assert.equal(response.headers.get("x-frame-options"), "DENY")
     assert.equal(response.headers.get("referrer-policy"), "no-referrer")
+    const policy = response.headers.get("content-security-policy") ?? ""
+    assert.match(policy, /default-src 'self'/)
+    assert.match(policy, /connect-src 'self' https:\/\/\*\.amazonaws\.com/)
+    assert.match(policy, /frame-ancestors 'none'/)
     if (path === "/login") {
       const html = await response.text()
       assert.equal(response.status, 200)

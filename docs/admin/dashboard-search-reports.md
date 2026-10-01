@@ -1,10 +1,10 @@
 # Dashboard, search, reports and customer-visible preview
 
-Status: **SOURCE IMPLEMENTED / MIGRATION NOT APPLIED**
+Status: **DATABASE APPLIED**
 
 Additive migration: `20261001092213_admin_dashboard_search_reports_v1.sql`
 
-Do not apply this migration from the Step 19 PR. Do not request Supabase credentials. Do not modify applied Steps 10–18. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`.
+The additive migration `20261001092213_admin_dashboard_search_reports_v1.sql` is applied to `profilerelaunch-dev` exactly once after Step 18 as `20261001092213 admin_dashboard_search_reports_v1`. Do not replay or modify it. Do not enable Guard, Stripe, live mail or Google. Cron remains `0 4 * * *`.
 
 Step 19 is reporting and read-mostly. The only intended new mutations are saved filters and export receipts.
 

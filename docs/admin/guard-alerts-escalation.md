@@ -49,6 +49,8 @@ Disposition: `PENDING_REVIEW`, `CONFIRMED_CUSTOMER_ISSUE`, `INTERNAL_ONLY`, `FAL
 
 Terminal states are `RESOLVED` and `DISMISSED`. They cannot be reopened. A later genuine attention candidate creates a new episode.
 
+Allowed database transitions are only `NEW → NEW|ACKNOWLEDGED|DISMISSED`, `ACKNOWLEDGED → ACKNOWLEDGED|RESOLVED`, and same-state updates on terminal rows. `NEW → RESOLVED` and `ACKNOWLEDGED → DISMISSED` are rejected. Same-state updates remain valid for attaching observations, severity, notifications and case-pointer bookkeeping. `linked_primary_case_id` can change only from NULL to an existing PRIMARY `guard_alert_cases` row and is then immutable. Later `issue_codes` updates must equal the distinct union of attached observation snapshots.
+
 Partial unique invariant: at most one alert in `NEW` or `ACKNOWLEDGED` per `coverage_id`. This is the primary duplicate-suppression boundary.
 
 ## Observation attachment

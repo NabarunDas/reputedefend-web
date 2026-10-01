@@ -1106,4 +1106,202 @@ describe("guard alerts SQL", () => {
     expect(new Date(String(discount.managedRelaunch.issueObservedAt)).toISOString()).toBe(new Date(validObservedAt).toISOString())
     expect(await count("public.quote_discount_snapshots")).toBe(snapshots)
   })
+
+  it("rejects privileged illegal transitions, case pointers, issue-code rewrites and service-action mutations", async () => {
+    const coverageId = await activateIncluded()
+    const [, morning] = await openWindow(coverageId)
+    const changed = await completeWindow(morning.id, morning.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
+    }))
+    const opened = await process(String(changed!.observationId))
+    expect(opened?.status).toBe("success")
+    await expect(db.query(
+      "update public.guard_alerts set state='RESOLVED', resolved_at=now(), resolved_by=$2, review_disposition='CONFIRMED_CUSTOMER_ISSUE', severity='MEDIUM', needs_review=false where id=$1",
+      [opened!.id, uid],
+    )).rejects.toThrow()
+
+    const ack = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
+      alertId: opened!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "Confirmed the displayed name change.",
+    }, opened!.version])
+    expect(ack).toMatchObject({ status: "success" })
+    await expect(db.query(
+      "update public.guard_alerts set state='NEW', acknowledged_at=null, acknowledged_by=null, review_disposition='PENDING_REVIEW', severity='UNASSESSED' where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set state='DISMISSED', dismissed_at=now(), dismissed_by=$2, review_disposition='FALSE_POSITIVE' where id=$1",
+      [opened!.id, uid],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set issue_codes=array['RATING_CHANGED']::text[] where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set issue_codes=array[]::text[] where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set linked_primary_case_id=$2 where id=$1",
+      [opened!.id, caseId],
+    )).rejects.toThrow()
+
+    const evening = (await db.query<{ id: string; record_version: number }>(
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and window_code='EVENING'",
+      [coverageId],
+    )).rows[0]
+    const extra = await completeWindow(evening.id, evening.record_version, healthyPayload({
+      classification: "CHANGE_DETECTED", reviewCount: 8,
+    }), "2026-09-30T16:15:00Z")
+    const attached = await process(String(extra!.observationId))
+    expect(attached?.id).toBe(opened?.id)
+    const codes = (await db.query<{ issue_codes: string[] }>("select issue_codes from public.guard_alerts where id=$1", [opened!.id])).rows[0].issue_codes
+    expect(codes).toEqual(expect.arrayContaining(["BUSINESS_NAME_CHANGED", "REVIEW_COUNT_DECREASED"]))
+    expect(codes).toEqual((await db.query<{ codes: string[] }>(
+      "select admin_private.guard_alert_attached_issue_codes_v1($1) as codes",
+      [opened!.id],
+    )).rows[0].codes)
+    await expect(db.query(
+      "update public.guard_alerts set issue_codes=array['BUSINESS_NAME_CHANGED']::text[] where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+
+    const reviewed = await rpc("admin_guard_alert_command_v1", [token, key(), "review_new_evidence", {
+      alertId: opened!.id, disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "The later decrease remains a customer issue.",
+    }, attached!.version])
+    expect(reviewed).toMatchObject({ status: "success" })
+    const prepared = await rpc("admin_guard_alert_command_v1", [token, key(), "prepare_notification", {
+      alertId: opened!.id, notificationKind: "INITIAL", fact: "The displayed business name has changed.", effect: "Customers may see a different listing name.", nextStep: "Please check the Google Business Profile for this location.",
+    }, reviewed!.version])
+    expect(prepared).toMatchObject({ status: "success" })
+    const note = (await db.query<{ id: string }>("select id from public.guard_alert_notifications where communication_id=$1", [prepared!.communicationId])).rows[0]
+    await expect(db.query(
+      "update public.guard_alert_notifications set approved_at=now(), approved_by=$2 where id=$1",
+      [note.id, uid],
+    )).rejects.toThrow()
+    await db.query("update public.communications set recipient='other@example.com' where id=$1", [prepared!.communicationId])
+    await expect(db.query(
+      "update public.guard_alert_notifications set approved_at=now(), approved_by=$2 where id=$1",
+      [note.id, uid],
+    )).rejects.toThrow()
+    await db.query("update public.communications set recipient='alex@example.com' where id=$1", [prepared!.communicationId])
+
+    const other = await activateIncluded(otherLocation)
+    const otherWindows = await openWindow(other, "2026-10-02")
+    const otherObs = await completeWindow(otherWindows[1].id, otherWindows[1].record_version, healthyPayload({
+      classification: "PROFILE_UNAVAILABLE", profileAvailability: "UNAVAILABLE", locationIdentified: false, ratingAvailable: false, rating: null,
+    }), "2026-10-02T08:15:00Z")
+    const otherAlert = await process(String(otherObs!.observationId))
+    await db.query("update public.communications set guard_alert_id=$2 where id=$1", [prepared!.communicationId, otherAlert!.id])
+    await expect(db.query(
+      "update public.guard_alert_notifications set approved_at=now(), approved_by=$2 where id=$1",
+      [note.id, uid],
+    )).rejects.toThrow()
+    await db.query("update public.communications set guard_alert_id=$2 where id=$1", [prepared!.communicationId, opened!.id])
+    await db.query("update public.communications set template_key='CASE_UPDATE', direction='INBOUND' where id=$1", [prepared!.communicationId])
+    await expect(db.query(
+      "update public.guard_alert_notifications set approved_at=now(), approved_by=$2 where id=$1",
+      [note.id, uid],
+    )).rejects.toThrow()
+    await db.query("update public.communications set template_key='GUARD_ALERT', direction='OUTBOUND' where id=$1", [prepared!.communicationId])
+    const approved = await rpc("admin_guard_alert_command_v1", [token, key(), "approve_notification", {
+      alertId: opened!.id, communicationId: prepared!.communicationId, fromAddress: "alerts@profilerelaunch.com",
+    }, prepared!.version])
+    expect(approved?.status).toBe("success")
+
+    const created = await rpc("admin_guard_alert_command_v1", [token, key(), "create_intervention_case", {
+      alertId: opened!.id, caseType: "PROFILE_RECOVERY",
+    }, approved!.version])
+    expect(created).toMatchObject({ status: "success" })
+    const otherCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Other location','2026-01-01',now(),now(),'UNDECIDED')",
+      [otherCase, customer, business, otherLocation],
+    )
+    await expect(db.query(
+      "update public.guard_alerts set linked_primary_case_id=$2 where id=$1",
+      [opened!.id, otherCase],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_alerts set linked_primary_case_id=null where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+
+    const resolved = await rpc("admin_guard_alert_command_v1", [token, key(), "resolve", {
+      alertId: opened!.id, reason: "The listing was restored after explicit review.",
+    }, created!.version])
+    expect(resolved).toMatchObject({ status: "success", state: "RESOLVED" })
+    await expect(db.query(
+      "update public.guard_alerts set state='ACKNOWLEDGED', resolved_at=null, resolved_by=null where id=$1",
+      [opened!.id],
+    )).rejects.toThrow()
+
+    const dismissed = await rpc("admin_guard_alert_command_v1", [token, key(), "dismiss", {
+      alertId: otherAlert!.id, reason: "False positive after a second look at the listing.",
+    }, otherAlert!.version])
+    expect(dismissed).toMatchObject({ status: "success", state: "DISMISSED" })
+    await expect(db.query(
+      "update public.guard_alerts set state='NEW', dismissed_at=null, dismissed_by=null, review_disposition='PENDING_REVIEW', severity='UNASSESSED' where id=$1",
+      [otherAlert!.id],
+    )).rejects.toThrow()
+
+    await db.query("delete from public.customer_contact_verifications where customer_id=$1", [customer])
+    await rpc("guard_maintain_alerts_v1", [null])
+    const contact = (await db.query<{ id: string; record_version: number; alert_id: string | null }>(
+      "select id, record_version, alert_id::text from public.guard_service_actions where coverage_id=$1 and kind='CONTACT_RECOVERY' and state in ('OPEN','ACKNOWLEDGED')",
+      [coverageId],
+    )).rows[0]
+    if (!contact.alert_id) {
+      await db.query("update public.guard_service_actions set alert_id=$2 where id=$1", [contact.id, opened!.id])
+    }
+    await expect(db.query(
+      "update public.guard_service_actions set alert_id=$2 where id=$1",
+      [contact.id, otherAlert!.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_service_actions set alert_id=null where id=$1",
+      [contact.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_service_actions set reason_code='EMAIL_FAILED_PHONE_AVAILABLE' where id=$1",
+      [contact.id],
+    )).rejects.toThrow()
+    const acknowledged = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge_service_action", {
+      serviceActionId: contact.id, reason: "Contact recovery is being handled.",
+    }, (await db.query<{ record_version: number }>("select record_version from public.guard_service_actions where id=$1", [contact.id])).rows[0].record_version])
+    expect(acknowledged?.status).toBe("success")
+    await expect(db.query(
+      "update public.guard_service_actions set state='OPEN', acknowledged_at=null, acknowledged_by=null where id=$1",
+      [contact.id],
+    )).rejects.toThrow()
+    await verify()
+    const resolvedAction = await rpc("admin_guard_alert_command_v1", [token, key(), "resolve_service_action", {
+      serviceActionId: contact.id, reason: "Verified contact was restored after handling.",
+    }, acknowledged!.version])
+    expect(resolvedAction).toMatchObject({ status: "success" })
+    await expect(db.query(
+      "update public.guard_service_actions set state='OPEN', resolved_at=null, resolved_by=null, acknowledged_at=null, acknowledged_by=null where id=$1",
+      [contact.id],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_service_actions(coverage_id,customer_id,business_id,location_id,kind,reason_code,details,state,acknowledged_at) values($1,$2,$3,$4,'ACCESS_RECOVERY','ACCESS_NOT_VERIFIED','missing actor','ACKNOWLEDGED',now())",
+      [coverageId, customer, business, location],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "insert into public.guard_service_actions(coverage_id,customer_id,business_id,location_id,kind,reason_code,details,state,acknowledged_at,acknowledged_by,resolved_at) values($1,$2,$3,$4,'ACCESS_RECOVERY','ACCESS_NOT_VERIFIED','missing resolver','RESOLVED',now(),$5,now())",
+      [coverageId, customer, business, location, uid],
+    )).rejects.toThrow()
+    const cancelled = crypto.randomUUID()
+    await db.query(
+      "insert into public.guard_service_actions(id,coverage_id,customer_id,business_id,location_id,kind,reason_code,details,state,cancelled_at,cancelled_by) values($1,$2,$3,$4,$5,'ACCESS_RECOVERY','ACCESS_NOT_VERIFIED','cancelled','CANCELLED',now(),$6)",
+      [cancelled, coverageId, customer, business, location, uid],
+    )
+    await expect(db.query(
+      "update public.guard_service_actions set state='OPEN', cancelled_at=null, cancelled_by=null where id=$1",
+      [cancelled],
+    )).rejects.toThrow()
+    await expect(db.query(
+      "update public.guard_service_actions set state='ACKNOWLEDGED', acknowledged_at=now(), acknowledged_by=$2, cancelled_at=null, cancelled_by=null where id=$1",
+      [cancelled, uid],
+    )).rejects.toThrow()
+  })
 })

@@ -202,17 +202,35 @@ CREATE TABLE public.guard_service_actions (
     OR (kind = 'ACCESS_RECOVERY' AND reason_code = 'ACCESS_NOT_VERIFIED')
   ),
   CONSTRAINT guard_service_action_open CHECK (
-    state <> 'OPEN' OR (acknowledged_at IS NULL AND resolved_at IS NULL AND cancelled_at IS NULL)
+    state <> 'OPEN' OR (
+      acknowledged_at IS NULL AND acknowledged_by IS NULL
+      AND resolved_at IS NULL AND resolved_by IS NULL
+      AND cancelled_at IS NULL AND cancelled_by IS NULL
+    )
   ),
   CONSTRAINT guard_service_action_ack CHECK (
-    state <> 'ACKNOWLEDGED' OR (acknowledged_at IS NOT NULL AND resolved_at IS NULL AND cancelled_at IS NULL)
+    state <> 'ACKNOWLEDGED' OR (
+      acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL
+      AND resolved_at IS NULL AND resolved_by IS NULL
+      AND cancelled_at IS NULL AND cancelled_by IS NULL
+    )
   ),
   CONSTRAINT guard_service_action_resolved CHECK (
-    state <> 'RESOLVED' OR (resolved_at IS NOT NULL AND cancelled_at IS NULL)
+    state <> 'RESOLVED' OR (
+      resolved_at IS NOT NULL AND resolved_by IS NOT NULL
+      AND acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL
+      AND cancelled_at IS NULL AND cancelled_by IS NULL
+    )
   ),
   CONSTRAINT guard_service_action_cancelled CHECK (
-    state <> 'CANCELLED' OR (cancelled_at IS NOT NULL AND resolved_at IS NULL)
-  )
+    state <> 'CANCELLED' OR (
+      cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL
+      AND resolved_at IS NULL AND resolved_by IS NULL
+    )
+  ),
+  CONSTRAINT guard_service_action_ack_pair CHECK ((acknowledged_at IS NULL) = (acknowledged_by IS NULL)),
+  CONSTRAINT guard_service_action_resolved_pair CHECK ((resolved_at IS NULL) = (resolved_by IS NULL)),
+  CONSTRAINT guard_service_action_cancelled_pair CHECK ((cancelled_at IS NULL) = (cancelled_by IS NULL))
 );
 CREATE UNIQUE INDEX guard_service_actions_one_open_kind_idx
   ON public.guard_service_actions (coverage_id, kind)
@@ -355,6 +373,35 @@ LANGUAGE sql STABLE SET search_path='' AS $$
     AND admin_private.contact_verified_v1(c.id, 'email');
 $$;
 
+CREATE FUNCTION admin_private.guard_alert_attached_issue_codes_v1(p_alert uuid) RETURNS text[]
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT coalesce(array(
+    SELECT DISTINCT code
+    FROM public.guard_alert_observations link
+    CROSS JOIN unnest(coalesce(link.issue_codes, '{}'::text[])) AS code
+    WHERE link.alert_id = p_alert AND code IS NOT NULL
+    ORDER BY 1
+  ), '{}'::text[]);
+$$;
+
+CREATE FUNCTION admin_private.guard_alert_transition_allowed_v1(p_from text, p_to text) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT
+    (p_from = 'NEW' AND p_to IN ('NEW','ACKNOWLEDGED','DISMISSED'))
+    OR (p_from = 'ACKNOWLEDGED' AND p_to IN ('ACKNOWLEDGED','RESOLVED'))
+    OR (p_from = 'RESOLVED' AND p_to = 'RESOLVED')
+    OR (p_from = 'DISMISSED' AND p_to = 'DISMISSED');
+$$;
+
+CREATE FUNCTION admin_private.guard_service_action_transition_allowed_v1(p_from text, p_to text) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+  SELECT
+    (p_from = 'OPEN' AND p_to IN ('OPEN','ACKNOWLEDGED','RESOLVED','CANCELLED'))
+    OR (p_from = 'ACKNOWLEDGED' AND p_to IN ('ACKNOWLEDGED','RESOLVED','CANCELLED'))
+    OR (p_from = 'RESOLVED' AND p_to = 'RESOLVED')
+    OR (p_from = 'CANCELLED' AND p_to = 'CANCELLED');
+$$;
+
 CREATE FUNCTION admin_private.guard_alert_scope_matches_v1(
   p_coverage uuid, p_customer uuid, p_business uuid, p_location uuid
 ) RETURNS boolean LANGUAGE sql STABLE SET search_path='' AS $$
@@ -391,6 +438,9 @@ BEGIN
       OR NEW.latest_observed_at IS DISTINCT FROM first_obs.observed_at
       OR NEW.issue_codes IS DISTINCT FROM first_obs.change_codes
     THEN RAISE EXCEPTION 'Guard alert opening observation snapshot is invalid'; END IF;
+    IF NEW.linked_primary_case_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Guard alert primary case must be linked after the immutable case row exists';
+    END IF;
   ELSIF NEW.latest_observation_id IS DISTINCT FROM OLD.latest_observation_id THEN
     IF NOT EXISTS (
       SELECT 1 FROM public.guard_alert_observations link
@@ -421,6 +471,9 @@ BEGIN
     OR NEW.first_observed_at IS DISTINCT FROM OLD.first_observed_at
     OR NEW.opened_at IS DISTINCT FROM OLD.opened_at
   THEN RAISE EXCEPTION 'Guard alert identity is immutable'; END IF;
+  IF NOT admin_private.guard_alert_transition_allowed_v1(OLD.state, NEW.state) THEN
+    RAISE EXCEPTION 'Guard alert state transition is not allowed';
+  END IF;
   IF OLD.state IN ('RESOLVED','DISMISSED') THEN
     IF NEW.state IS DISTINCT FROM OLD.state
       OR NEW.resolved_at IS DISTINCT FROM OLD.resolved_at
@@ -432,6 +485,28 @@ BEGIN
   IF NEW.state = 'ACKNOWLEDGED' AND NEW.severity = 'UNASSESSED' THEN
     RAISE EXCEPTION 'Acknowledged Guard alerts cannot remain unassessed';
   END IF;
+  IF NEW.linked_primary_case_id IS DISTINCT FROM OLD.linked_primary_case_id THEN
+    IF OLD.linked_primary_case_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Guard alert primary case is immutable';
+    END IF;
+    IF NEW.linked_primary_case_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM public.guard_alert_cases link
+        WHERE link.alert_id = NEW.id
+          AND link.case_id = NEW.linked_primary_case_id
+          AND link.role = 'PRIMARY'
+      )
+    THEN RAISE EXCEPTION 'Guard alert primary case must already be linked'; END IF;
+  END IF;
+  IF NEW.linked_primary_case_id IS NOT NULL
+    AND (
+      SELECT count(*) FROM public.guard_alert_cases link
+      WHERE link.alert_id = NEW.id AND link.role = 'PRIMARY' AND link.case_id = NEW.linked_primary_case_id
+    ) <> 1
+  THEN RAISE EXCEPTION 'Guard alert primary case pointer is inconsistent'; END IF;
+  IF NEW.issue_codes IS DISTINCT FROM OLD.issue_codes
+    AND NEW.issue_codes IS DISTINCT FROM admin_private.guard_alert_attached_issue_codes_v1(NEW.id)
+  THEN RAISE EXCEPTION 'Guard alert issue codes must equal the attached observation union'; END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER guard_alerts_protect
@@ -496,6 +571,17 @@ BEGIN
       OR NEW.approved_by IS NULL
     THEN RAISE EXCEPTION 'Guard alert notifications are immutable'; END IF;
     SELECT * INTO alert FROM public.guard_alerts WHERE id = NEW.alert_id;
+    SELECT * INTO comm FROM public.communications WHERE id = NEW.communication_id;
+    IF alert.id IS NULL OR comm.id IS NULL THEN RAISE EXCEPTION 'Guard alert notification is incomplete'; END IF;
+    IF comm.guard_alert_id IS DISTINCT FROM alert.id
+      OR comm.customer_id IS DISTINCT FROM alert.customer_id
+      OR comm.business_id IS DISTINCT FROM alert.business_id
+      OR comm.template_key IS DISTINCT FROM 'GUARD_ALERT'
+      OR comm.direction IS DISTINCT FROM 'OUTBOUND'
+      OR comm.lifecycle IS DISTINCT FROM 'REVIEWED'
+      OR comm.content_locked IS DISTINCT FROM TRUE
+      OR comm.recipient IS DISTINCT FROM admin_private.guard_alert_current_email_v1(alert.customer_id)
+    THEN RAISE EXCEPTION 'Guard alert notification communication parent mismatch'; END IF;
     IF NOT admin_private.guard_alert_notification_allowed_v1(
       NEW.notification_kind, alert.state, alert.review_disposition, alert.needs_review
     ) THEN RAISE EXCEPTION 'Guard alert notification kind is not valid for this alert state'; END IF;
@@ -540,6 +626,9 @@ BEGIN
   IF cs.case_type NOT IN ('PROFILE_RECOVERY','REVIEW_PROTECTION') OR cs.status IN ('CLOSED','CANCELLED') THEN
     RAISE EXCEPTION 'Intervention case is not suitable to link';
   END IF;
+  IF alert.linked_primary_case_id IS NOT NULL AND alert.linked_primary_case_id IS DISTINCT FROM NEW.case_id THEN
+    RAISE EXCEPTION 'Guard alert primary case pointer is already assigned';
+  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER guard_alert_cases_protect
@@ -571,7 +660,18 @@ BEGIN
       OR NEW.business_id IS DISTINCT FROM OLD.business_id
       OR NEW.location_id IS DISTINCT FROM OLD.location_id
       OR NEW.kind IS DISTINCT FROM OLD.kind
+      OR NEW.reason_code IS DISTINCT FROM OLD.reason_code
+      OR NEW.opened_at IS DISTINCT FROM OLD.opened_at
+      OR NEW.created_at IS DISTINCT FROM OLD.created_at
     THEN RAISE EXCEPTION 'Guard service action identity is immutable'; END IF;
+    IF NEW.alert_id IS DISTINCT FROM OLD.alert_id THEN
+      IF OLD.alert_id IS NOT NULL OR NEW.alert_id IS NULL THEN
+        RAISE EXCEPTION 'Guard service action alert assignment is immutable';
+      END IF;
+    END IF;
+    IF NOT admin_private.guard_service_action_transition_allowed_v1(OLD.state, NEW.state) THEN
+      RAISE EXCEPTION 'Guard service action state transition is not allowed';
+    END IF;
   END IF;
   RETURN NEW;
 END; $$;

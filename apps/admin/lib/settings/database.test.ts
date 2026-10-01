@@ -720,7 +720,7 @@ describe("Step 20 settings, privacy, templates, complaints and incidents", () =>
     )
     for (const category of ["UNSUCCESSFUL_ENQUIRIES", "CASE_EVIDENCE"]) {
       const row = dispositions.rows.find(item => item.category === category)!
-      expect({ category, ...row }).toMatchObject({ proposed_action: "EXPORT", status: "READY", blocked_reason: "" })
+      expect(row, category).toMatchObject({ proposed_action: "EXPORT", status: "READY", blocked_reason: "" })
       expect(row.retention_policy_id).toBeNull()
     }
     expect(dispositions.rows.find(item => item.category === "CONSENT_RECORDS")).toMatchObject({

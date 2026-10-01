@@ -227,7 +227,6 @@ export function validateMigrationHistory(input: HistoryInput): HistoryReport {
         version,
         name,
       ))
-      continue
     }
     const entry = migrationChain.find(item => item.filename === candidate)
     if (entry?.kind === "foundation") {

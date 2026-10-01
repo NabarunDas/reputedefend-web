@@ -89,6 +89,16 @@ export type Fingerprint = {
   syntheticIdentifiers: readonly string[]
   /** sha256 of the approved column set per table. Irreversible by construction. */
   columnDigests: Record<string, string>
+  /**
+   * Probes that could not run because their table does not exist. A partial
+   * restore and an earlier schema checkpoint both land here, so the list is
+   * compared like any other field rather than quietly ignored.
+   */
+  skippedProbes: readonly string[]
+}
+
+function relationMissing(error: unknown): boolean {
+  return error instanceof Error && /does not exist/i.test(error.message)
 }
 
 async function scalar(db: QueryTarget, sql: string): Promise<number> {
@@ -110,14 +120,19 @@ async function tableRowCounts(db: QueryTarget): Promise<Record<string, number>> 
   return counts
 }
 
-async function columnDigests(db: QueryTarget): Promise<Record<string, string>> {
+async function columnDigests(db: QueryTarget, skipped: string[]): Promise<Record<string, string>> {
   const digests: Record<string, string> = {}
   for (const target of digestedColumns) {
     const projection = target.columns.map(column => `coalesce(${column}::text,'')`).join(" || '|' || ")
-    const rows = await db.query<{ line: string }>(
-      `select ${projection} as line from ${target.table} order by ${target.order}`,
-    )
-    digests[target.table] = createHash("sha256").update(rows.rows.map(row => row.line).join("\n")).digest("hex")
+    try {
+      const rows = await db.query<{ line: string }>(
+        `select ${projection} as line from ${target.table} order by ${target.order}`,
+      )
+      digests[target.table] = createHash("sha256").update(rows.rows.map(row => row.line).join("\n")).digest("hex")
+    } catch (error) {
+      if (!relationMissing(error)) throw error
+      skipped.push(`digest:${target.table}`)
+    }
   }
   return digests
 }
@@ -137,29 +152,65 @@ export type FingerprintOptions = {
 }
 
 export async function captureFingerprint(db: QueryTarget, options: FingerprintOptions): Promise<Fingerprint> {
+  const skippedProbes: string[] = []
+
+  async function probeScalar(key: string, sql: string): Promise<number | null> {
+    try {
+      return await scalar(db, sql)
+    } catch (error) {
+      if (!relationMissing(error)) throw error
+      skippedProbes.push(key)
+      return null
+    }
+  }
+
   const relationshipCounts: Record<string, number> = {}
-  for (const probe of relationshipQueries) relationshipCounts[probe.key] = await scalar(db, probe.sql)
+  for (const probe of relationshipQueries) {
+    const value = await probeScalar(`relationship:${probe.key}`, probe.sql)
+    if (value !== null) relationshipCounts[probe.key] = value
+  }
 
   const orphanCounts: Record<string, number> = {}
-  for (const probe of orphanQueries) orphanCounts[probe.key] = await scalar(db, probe.sql)
+  for (const probe of orphanQueries) {
+    const value = await probeScalar(`orphan:${probe.key}`, probe.sql)
+    if (value !== null) orphanCounts[probe.key] = value
+  }
 
   let statusCounts: Record<string, number> = {}
-  for (const probe of statusQueries) statusCounts = { ...statusCounts, ...(await keyedCounts(db, probe.key, probe.sql)) }
+  for (const probe of statusQueries) {
+    try {
+      statusCounts = { ...statusCounts, ...(await keyedCounts(db, probe.key, probe.sql)) }
+    } catch (error) {
+      if (!relationMissing(error)) throw error
+      skippedProbes.push(`status:${probe.key}`)
+    }
+  }
 
   const jobStateCounts = await keyedCounts(db, "jobs.status", "select status as k, count(*)::int as n from admin_private.jobs group by status")
   const outboxCounts = {
-    promoted: await scalar(db, "select count(*)::int as n from admin_private.job_outbox where promoted_at is not null"),
-    unpromoted: await scalar(db, "select count(*)::int as n from admin_private.job_outbox where promoted_at is null"),
+    promoted: (await probeScalar("outbox:promoted", "select count(*)::int as n from admin_private.job_outbox where promoted_at is not null")) ?? 0,
+    unpromoted: (await probeScalar("outbox:unpromoted", "select count(*)::int as n from admin_private.job_outbox where promoted_at is null")) ?? 0,
   }
 
-  const identifiers = await db.query<{ id: string }>(
-    `select id::text as id from public.cases where id::text like $1
-     union all select id::text from public.case_document_versions where id::text like $1
-     union all select id::text from public.service_orders where id::text like $1
-     union all select id::text from public.guard_coverages where id::text like $1
-     order by 1`,
-    [`${options.syntheticIdPrefix}%`],
-  )
+  const identifierSources = [
+    "public.cases",
+    "public.case_document_versions",
+    "public.service_orders",
+    "public.guard_coverages",
+  ]
+  const identifiers: string[] = []
+  for (const source of identifierSources) {
+    try {
+      const found = await db.query<{ id: string }>(
+        `select id::text as id from ${source} where id::text like $1`,
+        [`${options.syntheticIdPrefix}%`],
+      )
+      identifiers.push(...found.rows.map(row => row.id))
+    } catch (error) {
+      if (!relationMissing(error)) throw error
+      skippedProbes.push(`identifiers:${source}`)
+    }
+  }
 
   return {
     marker: options.marker,
@@ -171,8 +222,9 @@ export async function captureFingerprint(db: QueryTarget, options: FingerprintOp
     statusCounts,
     jobStateCounts,
     outboxCounts,
-    syntheticIdentifiers: identifiers.rows.map(row => row.id),
-    columnDigests: await columnDigests(db),
+    syntheticIdentifiers: identifiers.sort(),
+    columnDigests: await columnDigests(db, skippedProbes),
+    skippedProbes: skippedProbes.sort(),
   }
 }
 
@@ -205,6 +257,14 @@ export function compareFingerprints(before: Fingerprint, after: Fingerprint): Fi
       key: "sequence",
       before: before.migrationSequence.join(" "),
       after: after.migrationSequence.join(" "),
+    })
+  }
+  if (before.skippedProbes.join(",") !== after.skippedProbes.join(",")) {
+    differences.push({
+      area: "skippedProbes",
+      key: "probes",
+      before: before.skippedProbes.join(" ") || "none",
+      after: after.skippedProbes.join(" ") || "none",
     })
   }
   if (before.syntheticIdentifiers.join(",") !== after.syntheticIdentifiers.join(",")) {

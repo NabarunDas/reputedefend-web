@@ -101,11 +101,20 @@ const pendingKey = rehearsalStorageKey(id.caseA, id.documentB, id.versionPending
  */
 export const rehearsalSessionTokenHash = "5e".repeat(32)
 
+// The identity protection trigger only exists from Step 20 onward, so the
+// seed toggles it conditionally and stays usable at every checkpoint.
 const identity = `insert into auth.users values('${id.adminUser}','operator@rehearsal.invalid',now(),null,null);
-alter table public.admin_identity disable trigger admin_identity_protect;
-insert into public.admin_identity(singleton,auth_user_id,enabled) values(true,'${id.adminUser}',true)
-  on conflict (singleton) do update set auth_user_id = excluded.auth_user_id, enabled = true;
-alter table public.admin_identity enable trigger admin_identity_protect;
+do $seed$
+begin
+  if exists (select 1 from pg_trigger where tgname = 'admin_identity_protect') then
+    alter table public.admin_identity disable trigger admin_identity_protect;
+  end if;
+  insert into public.admin_identity(singleton,auth_user_id,enabled) values(true,'${id.adminUser}',true)
+    on conflict (singleton) do update set auth_user_id = excluded.auth_user_id, enabled = true;
+  if exists (select 1 from pg_trigger where tgname = 'admin_identity_protect') then
+    alter table public.admin_identity enable trigger admin_identity_protect;
+  end if;
+end $seed$;
 insert into public.admin_sessions(token_hash,auth_user_id,created_at) values('${rehearsalSessionTokenHash}','${id.adminUser}',now());`
 
 const records = `insert into public.customers(id,full_name,email,phone) values

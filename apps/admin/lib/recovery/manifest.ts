@@ -134,7 +134,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
-    verification: { category: "evidence review", probe: "public.admin_evidence_command_v1" },
+    verification: { category: "evidence review", probe: "public.admin_evidence_review_v1" },
   },
   {
     version: "20260918163150",

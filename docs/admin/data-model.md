@@ -228,3 +228,64 @@ Step 8C / 9B1 RPCs:
 An AFTER UPDATE trigger on version upload/scan/validation/review marks affected `APPROVED` packs `STALE` when included evidence is no longer eligible. The pack is not rebuilt.
 
 RLS is enabled with no direct policies on evidence or pack tables. That is intentional: browser/table access is denied and service access is through these RPCs. Do not add broad policies only to silence the advisor. The Step 8B migration adds the `version_id` covering index requested by the performance advisor. Step 8C did not add a new warning-level advisor finding attributable to prepared packs.
+
+# Google Business Profile integration readiness (Step 21)
+
+These three tables exist only as unapplied migration source in
+`supabase/migrations/20261001153235_google_integration_readiness_v1.sql`. No environment has
+them, no row has ever been written and no Google credential exists. See
+google-integration-readiness.md.
+
+## public.provider_oauth_states
+
+One row per connect attempt. Stores the SHA-256 hash of the OAuth state, never the state
+itself, so a reader of this table cannot replay an authorization. Bound to `actor_id` and to
+`session_binding`, a one-way hash of the initiating session. `redirect_uri` must be
+`https://`. `expires_at` must be after `created_at` and the begin function caps the window
+at one hour. Single use is enforced by `consumed_at`, paired with an `outcome` of
+`ACCEPTED`, `REJECTED` or `CANCELLED` and a bounded `rejection_reason`. A trigger refuses to
+rewrite a consumed row, refuses to change the state hash, actor, session binding, redirect
+URI, expiry or creation time, and refuses to delete a state that is still live.
+
+## public.provider_connections
+
+One stored authorization. Holds `token_ciphertext`, `token_iv`, `token_auth_tag` and
+`encryption_key_version` for an AES-256-GCM payload encrypted in the server process. The
+encryption key is never stored here. No plaintext token is stored, and a CHECK constraint
+rejects a ciphertext that still looks like an OAuth token (`ya29.%` or `1//%`). Also holds
+`granted_scopes`, `token_expires_at`, `status` (`CONNECTED`, `REVOKED`, `EXPIRED`,
+`AUTH_REQUIRED`), `connected_at`, `revoked_at`, `last_success_at`, `last_error_code`
+constrained to the ten normalised failure codes, `last_error_at` and optimistic
+`record_version`. A partial unique index allows one non-revoked connection per provider and
+target. A trigger makes token material, ownership and creation facts write-once, refuses to
+reopen a revoked connection, requires a version increment on update, and forbids DELETE.
+
+## public.provider_connection_events
+
+Append-only lifecycle history: `CONNECTION_INITIATED`, `CALLBACK_REJECTED`,
+`CONNECTION_ESTABLISHED`, `AUTHORIZATION_REVOKED`, `REAUTHORIZATION_REQUIRED`,
+`PROVIDER_FALLBACK_ACTIVATED`, `CONNECTION_DISCONNECTED`. `detail` is bounded to 200
+characters and carries a classification or rejection reason, never a code, token or provider
+body. A trigger blocks UPDATE and DELETE outright.
+
+Step 21 RPCs:
+
+- `admin_integration_status_v1` — Admin-safe connection projection, live connection count,
+  pending connect count, last success and the twenty most recent events
+- `admin_integration_command_v1` — `begin_connect`, `consume_state`, `cancel_connect`,
+  `store_connection`, `revoke_connection`, `disconnect_connection`, `record_fault`
+
+`admin_private.provider_connection_public_json_v1` is the only projection used by those
+RPCs and deliberately omits ciphertext, IV, auth tag and key version, so no response can
+return token material. Both public RPCs require a fresh re-authentication, audit as
+`INTEGRATION_CHANGED` with only the operation, provider and any rejection reason in the
+details, and map integration statuses onto the existing audit outcome vocabulary rather than
+widening it. The migration's only change to an existing object is adding
+`INTEGRATION_CHANGED` to the audit action check.
+
+RLS is enabled on all three tables with no direct policies and all CRUD revoked from
+`PUBLIC`, `anon`, `authenticated` and `service_role`. The public RPCs are granted to
+`service_role` only.
+
+`guard_check_observations.capture_method` is unchanged and still accepts only `MANUAL`, so
+no provider-sourced observation can be persisted by this step.

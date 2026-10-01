@@ -59,4 +59,27 @@ This extends the Admin security model for Step 8A uploads, Step 8B review/access
 | Workflow gates enabled early | `authorizationReady` is display-only. `admin_case_command_v1` still returns `prerequisite` for `PREPARATION` and `READY_TO_SUBMIT` |
 | Direct table access | RLS enabled; grants revoked from PUBLIC/anon/authenticated/service_role; privileged RPCs are `SECURITY DEFINER` with empty `search_path` and `EXECUTE` for `service_role` only |
 
+## Google Business Profile integration readiness (Step 21)
+
+Live Google API access is disabled, so these controls guard a boundary that is built but
+inactive. See google-integration-readiness.md.
+
+| Threat | Mitigation |
+| --- | --- |
+| Mock data reaching production or preview | `mock` is absent from the configurable mode list, the resolver has no branch that constructs it, the factory throws outside a test runtime, and an injected mock is rejected even with every gate open. All fixtures carry a `SYNTHETIC-TEST-` prefix |
+| A Google request escaping the gate | Five independent conditions must all pass: provider mode `google`, API gate exactly `true`, complete https OAuth client, server-side token key, and an injected live transport. No production code supplies the transport |
+| Forged, replayed or expired OAuth state | 32 random bytes compared by constant-time hash; only the SHA-256 hash is stored; single use enforced by `consumed_at` and a trigger that refuses to rewrite a consumed row; ten-minute expiry; every callback path consumes the state including rejections |
+| Callback completed by a different session | State is bound to the initiating actor and to a one-way hash of the initiating session; a mismatch is `context_mismatch` |
+| Redirect substitution | The stored redirect URI must match exactly; the URI is read from server configuration, never from the request |
+| OAuth code or token leaking | The callback never echoes the code; a thrown transport error's message is discarded; audit details carry only operation, provider and rejection reason; responses are scrubbed against a forbidden-field list before being returned |
+| Plaintext tokens at rest | AES-256-GCM in the server process; only ciphertext, IV, auth tag and key version are stored; a CHECK constraint rejects a ciphertext that still looks like an OAuth token |
+| Encryption key exposure | The key is server-side only, is never written to the connection tables and is never returned by an RPC |
+| Token material in an RPC response | `provider_connection_public_json_v1` omits ciphertext, IV, auth tag and key version, and the Admin command handler refuses to forward a response containing token field names |
+| Token material swapped in place | A trigger makes token columns write-once and refuses to reopen a revoked connection; connection history is append-only |
+| A provider failure read as a healthy profile | Every normalised failure sets `manualFallback`; only `AVAILABLE` permits automation; a provider snapshot can propose only the conservative classification its availability permits and must satisfy the same rule a manual observation does |
+| Automated observation bypassing Guard review | `guard_check_observations.capture_method` still accepts only `MANUAL`; no automated result can be persisted in this step |
+| Live acceptance running unintentionally | Requires `GOOGLE_LIVE_ACCEPTANCE_ENABLED` exactly `true` *and* every ordinary live condition; otherwise it skips without a provider call |
+| Secrets rendered in Admin | The integration surface shows fixed labels, classifications and timestamps only; no client secret, token, encrypted payload, raw provider body or environment value |
+| Direct table access | RLS enabled on all three new tables with grants revoked from PUBLIC/anon/authenticated/service_role; both public RPCs are `SECURITY DEFINER` with empty `search_path`, service-role-only, and require a fresh re-authentication |
+
 Related controls from earlier steps remain in force: exact-origin CSRF, opaque Admin session cookies, hashed token RPCs, revoked anon/authenticated table grants, append-only Admin audit, no localStorage/sessionStorage for evidence, action secrets or auth state.

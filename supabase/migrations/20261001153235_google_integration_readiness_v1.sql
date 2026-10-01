@@ -465,9 +465,16 @@ BEGIN
   END IF;
 
   -- Audit records the operation and outcome only. No code, token, ciphertext or
-  -- provider body is ever written here.
+  -- provider body is ever written here. Integration statuses are mapped onto
+  -- the existing audit outcome vocabulary rather than widening it.
   PERFORM admin_private.write_record_audit_v1(
-    actor, 'INTEGRATION_CHANGED', result->>'status',
+    actor, 'INTEGRATION_CHANGED',
+    CASE result->>'status'
+      WHEN 'success' THEN 'success'
+      WHEN 'accepted' THEN 'success'
+      WHEN 'conflict' THEN 'conflict'
+      ELSE 'denied'
+    END,
     admin_private.settings_uuid_v1(result#>>'{connection,id}'), p_request, 'provider_integration',
     left(p_operation, 80),
     jsonb_build_object('operation', p_operation, 'provider', 'GOOGLE_BUSINESS_PROFILE')

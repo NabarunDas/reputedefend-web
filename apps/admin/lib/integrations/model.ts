@@ -31,6 +31,21 @@ export function isIntegrationOperation(value: unknown): value is IntegrationOper
   return typeof value === "string" && (integrationOperations as readonly string[]).includes(value)
 }
 
+// What a browser may ask for. Consuming a state and storing a connection are
+// deliberately absent: those only ever happen inside the server-side callback,
+// so a client cannot drive a token exchange or plant a connection row.
+export const browserIntegrationOperations = [
+  "begin_connect",
+  "cancel_connect",
+  "revoke_connection",
+  "disconnect_connection",
+] as const
+export type BrowserIntegrationOperation = (typeof browserIntegrationOperations)[number]
+
+export function isBrowserIntegrationOperation(value: unknown): value is BrowserIntegrationOperation {
+  return typeof value === "string" && (browserIntegrationOperations as readonly string[]).includes(value)
+}
+
 export const connectionStatuses = ["NOT_CONNECTED", "CONNECTED", "REVOKED", "EXPIRED"] as const
 export type ConnectionStatus = (typeof connectionStatuses)[number]
 

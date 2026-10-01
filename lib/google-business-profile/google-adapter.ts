@@ -56,7 +56,9 @@ function reasonOf(body: unknown): string {
   const detail = Array.isArray(error.details)
     ? error.details.map(item => (typeof item?.reason === "string" ? item.reason : "")).find(Boolean) ?? ""
     : ""
-  return `${status} ${detail}`.trim().toUpperCase()
+  // Google mixes SCREAMING_SNAKE statuses with camelCase detail reasons, so
+  // both are flattened to one underscore-free uppercase string before matching.
+  return `${status} ${detail}`.trim().toUpperCase().replace(/_/g, "")
 }
 
 // Maps Google transport outcomes onto the normalised failure codes. This is the
@@ -66,7 +68,9 @@ export function mapGoogleFailure(response: GoogleTransportResponse): ProviderFai
   if (response.status === 401) return "AUTH_REVOKED"
   if (response.status === 403) {
     if (reason.includes("INSUFFICIENT") || reason.includes("SCOPE")) return "INSUFFICIENT_SCOPE"
-    if (reason.includes("RATE_LIMIT") || reason.includes("QUOTA")) return "QUOTA_EXCEEDED"
+    if (reason.includes("RATELIMIT") || reason.includes("QUOTA") || reason.includes("RESOURCEEXHAUSTED")) {
+      return "QUOTA_EXCEEDED"
+    }
     return "PERMISSION_DENIED"
   }
   if (response.status === 404) return "LOCATION_UNAVAILABLE"

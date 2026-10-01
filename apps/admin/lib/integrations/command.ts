@@ -1,29 +1,40 @@
 import "server-only"
+import { createHash } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { googleLiveReadiness } from "../../../../lib/google-business-profile/config"
-import { normaliseOAuthError, oauthStatePattern } from "../../../../lib/google-business-profile/oauth"
-import { containsTokenMaterial } from "../../../../lib/google-business-profile/token-crypto"
 import {
+  type GoogleBusinessProfileEnv,
+  googleLiveReadiness,
+  googleOAuthConfig,
+} from "../../../../lib/google-business-profile/config"
+import {
+  type BrowserIntegrationOperation,
   commandMessage,
   connectDisabledNotice,
-  type IntegrationOperation,
+  isBrowserIntegrationOperation,
   isIntegrationKey,
-  isIntegrationOperation,
 } from "./model"
+import {
+  authorizationUrl,
+  hashOAuthState,
+  issueOAuthState,
+  normaliseOAuthError,
+  oauthStatePattern,
+} from "../../../../lib/google-business-profile/oauth"
+import { containsTokenMaterial } from "../../../../lib/google-business-profile/token-crypto"
 
 const json = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
 
 function mapStatus(status?: string): number {
   if (status === "unauthorized") return 401
-  if (status === "reauth_required" || status === "denied") return 403
+  if (status === "reauth_required" || status === "denied" || status === "rejected") return 403
   if (status === "conflict") return 409
   if (status === "invalid") return 400
-  if (status === "success") return 200
+  if (status === "success" || status === "accepted" || status === "cancelled") return 200
   return 503
 }
 
@@ -62,28 +73,48 @@ function sessionOrError(request: NextRequest): { error: NextResponse } | { token
 const disabled = (extra: Record<string, unknown> = {}) =>
   json(connectDisabledNotice, 403, { status: "denied", reason: "google_api_disabled", ...extra })
 
-// The payload each operation may carry. Nothing here can hold a code, token or
-// secret: the server reads those from its own configuration, never from the
-// browser.
-function operationPayload(operation: IntegrationOperation, body: Record<string, unknown>): Record<string, unknown> | null {
-  const reason = typeof body.reason === "string" ? body.reason.slice(0, 500) : ""
+// Binds a connect attempt to the session that started it without storing the
+// session token. The hash is one-way and is all the callback needs to compare.
+function sessionBinding(token: string): string {
+  return createHash("sha256").update(`oauth-binding:${token}`).digest("hex")
+}
+
+type BuiltCommand = { payload: Record<string, unknown>; state?: string }
+
+// Builds the RPC payload entirely from server-side material. Nothing a browser
+// sends can become a state, a redirect URI, an expiry or a token.
+function buildCommand(
+  operation: BrowserIntegrationOperation,
+  body: Record<string, unknown>,
+  token: string,
+  redirectUri: string,
+): BuiltCommand | null {
+  const reason = typeof body.reason === "string" ? body.reason.slice(0, 200) : ""
   if (operation === "begin_connect") {
-    const customerId = typeof body.customerId === "string" ? body.customerId : null
-    if (customerId !== null && !isUuid(customerId)) return null
-    return { customerId, reason }
+    const issued = issueOAuthState({ now: new Date() })
+    const target = (name: string) => (isUuid(body[name]) ? (body[name] as string) : null)
+    return {
+      state: issued.state,
+      payload: {
+        stateHash: issued.stateHash,
+        sessionBinding: sessionBinding(token),
+        redirectUri,
+        expiresAt: issued.expiresAt,
+        customerId: target("customerId"),
+        businessId: target("businessId"),
+        locationId: target("locationId"),
+      },
+    }
   }
-  if (operation === "consume_state" || operation === "cancel_connect") {
+  if (operation === "cancel_connect") {
     const state = typeof body.state === "string" ? body.state : ""
     if (!oauthStatePattern.test(state)) return null
-    return { state, reason }
+    return { payload: { stateHash: hashOAuthState(state), reason: reason || "cancelled" } }
   }
-  if (operation === "record_fault") {
-    const code = typeof body.code === "string" ? body.code : ""
-    return code ? { code, reason } : null
-  }
-  const connectionId = typeof body.connectionId === "string" ? body.connectionId : ""
-  if (!isUuid(connectionId)) return null
-  return { connectionId, reason }
+  const id = typeof body.connectionId === "string" ? body.connectionId : ""
+  const version = Number(body.version)
+  if (!isUuid(id) || !Number.isInteger(version) || version < 1) return null
+  return { payload: { id, version, reason } }
 }
 
 export async function integrationCommand(request: NextRequest): Promise<NextResponse> {
@@ -93,24 +124,22 @@ export async function integrationCommand(request: NextRequest): Promise<NextResp
   if ("error" in parsed) return parsed.error
   const body = parsed.body
   const operation = body.operation
-  if (!isIntegrationOperation(operation) || !isIntegrationKey(body.provider)) {
+  if (!isBrowserIntegrationOperation(operation) || !isIntegrationKey(body.provider)) {
     return json("Check the form and try again.", 400)
   }
-  const payload = operationPayload(operation, body)
-  if (!payload) return json("Check the form and try again.", 400)
-  // Fail closed. Every live condition must pass before any operation that
-  // could lead to a Google request is allowed to reach the database.
+  // Fail closed. Every live condition must pass before an operation that could
+  // lead to a Google request is allowed to reach the database.
   const readiness = googleLiveReadiness()
-  if (!readiness.ready) return disabled({ blockers: readiness.blockers })
-  const version = body.version == null ? null : Number(body.version)
+  const oauth = googleOAuthConfig()
+  if (!readiness.ready || !oauth) return disabled({ blockers: readiness.blockers })
+  const built = buildCommand(operation, body, gate.token, oauth.redirectUri)
+  if (!built) return json("Check the form and try again.", 400)
   try {
     const result = await backend().rpc<{ status?: string; reason?: string } | null>("admin_integration_command_v1", {
       p_token: tokenHash(gate.token),
       p_request: gate.key,
-      p_provider: body.provider,
       p_operation: operation,
-      p_payload: payload,
-      p_version: Number.isInteger(version) ? version : null,
+      p_payload: built.payload,
     })
     if (!result || result.status === "unauthorized") return json("Please sign in again.", 401)
     // The RPC never returns token material; this refuses to forward it if a
@@ -119,6 +148,11 @@ export async function integrationCommand(request: NextRequest): Promise<NextResp
     return json(commandMessage(result.status, result.reason), mapStatus(result.status), {
       status: result.status,
       ...(result.reason ? { reason: result.reason } : {}),
+      // The authorization URL is only ever built here, after the state row was
+      // recorded, and carries no client secret.
+      ...(built.state && result.status === "success"
+        ? { authorizationUrl: authorizationUrl(oauth, built.state) }
+        : {}),
     })
   } catch {
     return json("The integration could not be updated.", 503)
@@ -131,35 +165,67 @@ export type CallbackOutcome = {
   message: string
 }
 
-// Handles the OAuth redirect. While live Google integration is disabled this
-// never exchanges a code: it reports a safe not-configured state and discards
-// everything Google sent.
-export function googleCallbackOutcome(url: URL, env = process.env): CallbackOutcome {
+// Decides what the OAuth redirect may do before any database or network work.
+// While live Google integration is disabled this never exchanges a code.
+export function googleCallbackOutcome(
+  url: URL,
+  env: GoogleBusinessProfileEnv = process.env,
+): CallbackOutcome | { status: "proceed"; stateHash: string } {
   const readiness = googleLiveReadiness(env)
   if (!readiness.ready) {
     return { status: "disabled", reason: "google_api_disabled", message: connectDisabledNotice }
   }
   const error = url.searchParams.get("error")
   if (error) {
-    const reason = normaliseOAuthError(error)
-    return { status: "cancelled", reason, message: "The Google authorization was not completed." }
+    return { status: "cancelled", reason: normaliseOAuthError(error), message: "The Google authorization was not completed." }
   }
   const state = url.searchParams.get("state") ?? ""
   if (!state) return { status: "rejected", reason: "state_missing", message: "That authorization link is not valid." }
   if (!oauthStatePattern.test(state)) {
     return { status: "rejected", reason: "state_malformed", message: "That authorization link is not valid." }
   }
-  // Validation past this point needs the stored state row, which only exists
-  // once the Step 21 migration is applied and a connection has begun.
-  return { status: "rejected", reason: "state_unknown", message: "That authorization link is not valid." }
+  if (!url.searchParams.get("code")) {
+    return { status: "rejected", reason: "code_missing", message: "That authorization link is not valid." }
+  }
+  // Only now may the stored state be consumed, which is where single use,
+  // expiry, session binding and redirect matching are enforced.
+  return { status: "proceed", stateHash: hashOAuthState(state) }
 }
 
-export function googleCallbackResponse(request: NextRequest): NextResponse {
+export async function googleCallbackResponse(request: NextRequest): Promise<NextResponse> {
   const outcome = googleCallbackOutcome(new URL(request.url))
+  if (outcome.status === "proceed") {
+    const token = request.cookies.get(sessionCookie)?.value
+    const oauth = googleOAuthConfig()
+    if (!validToken(token) || !token || !oauth) {
+      return json("That authorization link is not valid.", 403, { status: "rejected", reason: "context_mismatch" })
+    }
+    try {
+      const result = await backend().rpc<{ status?: string; reason?: string } | null>("admin_integration_command_v1", {
+        p_token: tokenHash(token),
+        p_request: crypto.randomUUID(),
+        p_operation: "consume_state",
+        p_payload: {
+          stateHash: outcome.stateHash,
+          sessionBinding: sessionBinding(token),
+          redirectUri: oauth.redirectUri,
+        },
+      })
+      // A token exchange would happen here once an exchange implementation
+      // exists. There is none in this step, so an accepted state still ends in
+      // a not-configured answer rather than a Google request.
+      return json(commandMessage(result?.status, result?.reason), mapStatus(result?.status), {
+        status: result?.status ?? "rejected",
+        ...(result?.reason ? { reason: result.reason } : {}),
+      })
+    } catch {
+      return json("That authorization link is not valid.", 503, { status: "rejected" })
+    }
+  }
   // The query string may carry a code. It is never read, never logged and
   // never echoed back.
-  return NextResponse.json(
-    { message: outcome.message, status: outcome.status, reason: outcome.reason },
-    { status: outcome.status === "disabled" ? 503 : 400, headers: privateResponseHeaders },
-  )
+  return json(outcome.message, outcome.status === "disabled" ? 503 : 400, {
+    status: outcome.status,
+    reason: outcome.reason,
+  })
 }

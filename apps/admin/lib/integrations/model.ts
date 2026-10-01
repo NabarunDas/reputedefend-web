@@ -84,6 +84,7 @@ const blockerLabels: Record<string, string> = {
   token_key_missing: "No server-side token encryption key is configured.",
   live_transport_unavailable: "No live Google transport is available in this build.",
   live_provider_rejected: "The supplied provider was not a Google adapter and was rejected.",
+  connection_not_implemented: "This build has no Google connection implementation, so connecting cannot be switched on by configuration.",
 }
 
 export function blockerLabel(code: string): string {
@@ -124,23 +125,43 @@ export function capabilityText(state: ProviderCapabilityState): string {
   return capabilityLabel(state)
 }
 
+// Every refusal and cancellation sentence is written here, from the fixed
+// classification alone. Nothing a browser or Google sent reaches this wording.
+const reasonMessages: Record<string, string> = {
+  google_api_disabled: connectDisabledNotice,
+  connection_not_implemented: connectDisabledNotice,
+  provider_not_configured: "Google Business Profile is not configured on this server.",
+  state_replayed: "That authorization link was already used.",
+  state_expired: "That authorization link expired. Start again.",
+  state_unknown: "That authorization link is not valid.",
+  state_malformed: "That authorization link is not valid.",
+  state_missing: "That authorization link is not valid.",
+  context_mismatch: "That authorization did not start in this session.",
+  redirect_mismatch: "That authorization did not start in this session.",
+  access_denied: "The Google authorization was declined, so nothing was connected.",
+  authorization_failed: "The Google authorization did not complete, so nothing was connected.",
+  cancelled_by_admin: "That connection attempt was cancelled.",
+  code_missing: "The Google authorization did not complete, so nothing was connected.",
+  scope_customer_required: "Choose the customer this connection belongs to.",
+  scope_customer_unknown: "Choose the customer this connection belongs to.",
+  scope_business_mismatch: "That business does not belong to the chosen customer.",
+  scope_location_requires_business: "Choose the business before choosing a location.",
+  scope_location_mismatch: "That location does not belong to the chosen business.",
+}
+
 export function commandMessage(status?: string, reason?: string): string {
   if (status === "unauthorized") return "Please sign in again."
   if (status === "reauth_required") {
     return "For security, sign out and sign in with a new email code, then try again within five minutes."
   }
   if (status === "conflict") return "That connection changed. Refresh and try again."
-  if (status === "denied" && reason === "google_api_disabled") {
-    return connectDisabledNotice
+  const known = reason ? reasonMessages[reason] : undefined
+  if (status === "cancelled") return known ?? "That connection attempt ended without connecting."
+  if (status === "rejected") return known ?? "That authorization link is not valid."
+  if (status === "denied") return known ?? "That integration action is not allowed."
+  if (status === "invalid") return known ?? "Check the form and try again."
+  if (status === "success" || status === "accepted") {
+    return "The integration record was updated. No Google request was made."
   }
-  if (status === "denied" && reason === "provider_not_configured") {
-    return "Google Business Profile is not configured on this server."
-  }
-  if (status === "denied" && reason === "state_replayed") return "That authorization link was already used."
-  if (status === "denied" && reason === "state_expired") return "That authorization link expired. Start again."
-  if (status === "denied" && reason === "context_mismatch") return "That authorization did not start in this session."
-  if (status === "denied") return "That integration action is not allowed."
-  if (status === "invalid") return "Check the form and try again."
-  if (status === "success") return "The integration record was updated. No Google request was made."
   return "The integration could not be updated."
 }

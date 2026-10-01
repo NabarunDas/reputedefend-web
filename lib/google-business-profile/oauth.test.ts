@@ -3,10 +3,13 @@ import { googleOAuthConfig } from "./config"
 import {
   authorizationUrl,
   hashOAuthState,
+  isOAuthNormalisedReason,
   issueOAuthState,
   normaliseOAuthError,
+  oauthNormalisedReasons,
   oauthStateLength,
   oauthStatePattern,
+  oauthTerminalReasons,
   type StoredOAuthState,
   validateOAuthCallback,
 } from "./oauth"
@@ -123,5 +126,27 @@ describe("OAuth callback validation", () => {
 
   it("refuses a callback with no authorization code", () => {
     expect(validateOAuthCallback(callback({ code: null }), stored())).toEqual({ status: "rejected", reason: "code_missing" })
+  })
+
+  it("classifies every provider error onto the fixed terminal set", () => {
+    for (const raw of [
+      "access_denied",
+      "server_error",
+      "ya29.a-leaked-token",
+      "client_secret=GOCSPX-abcdefghijklmnop",
+      '{"error":{"message":"a long provider body"}}',
+      "y".repeat(5000),
+    ]) {
+      const reason = normaliseOAuthError(raw)
+      expect(oauthTerminalReasons, raw).toContain(reason)
+      expect(raw.startsWith(reason) || reason === "authorization_failed", raw).toBe(true)
+    }
+  })
+
+  it("recognises only the classifications it defines", () => {
+    for (const reason of oauthNormalisedReasons) expect(isOAuthNormalisedReason(reason), reason).toBe(true)
+    for (const reason of ["cancelled", "Google said no", "ya29.x", "", null, 7]) {
+      expect(isOAuthNormalisedReason(reason), String(reason)).toBe(false)
+    }
   })
 })

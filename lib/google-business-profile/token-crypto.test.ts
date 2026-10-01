@@ -51,6 +51,31 @@ describe("token leak detection", () => {
     }
   })
 
+  // Field-name scanning alone misses a secret in an innocuously named field,
+  // so the shape of the value is checked too.
+  it("flags credential-shaped values whatever field carries them", () => {
+    for (const value of [
+      "ya29.a0ARrdaM-real-looking-access-token",
+      "1//0gTheRefreshTokenLooksLikeThis",
+      "4/0AX4XfWgAuthorizationCodeValue",
+      "GOCSPX-aClientSecretValue",
+    ]) {
+      expect(containsTokenMaterial({ detail: value }), value).toBe(true)
+      expect(containsTokenMaterial(`provider said ${value}`), value).toBe(true)
+    }
+  })
+
+  it("does not mistake ordinary text, paths or ciphertext for a credential", () => {
+    const ciphertext = encryptTokenPayload({ payload, key, keyVersion: "v1" }).ciphertext
+    for (const value of [
+      "https://www.googleapis.com/auth/business.manage",
+      "/api/v1//legacy/path",
+      "accounts/1/locations/2",
+      "2026-02-01T10:00:00.000Z",
+      ciphertext,
+    ]) expect(containsTokenMaterial({ detail: value }), value).toBe(false)
+  })
+
   it("passes an Admin-safe response", () => {
     expect(containsTokenMaterial({
       status: "CONNECTED",

@@ -75,7 +75,7 @@ describe("provider resolution", () => {
 
   it("fails closed when every gate passes but no live transport exists", () => {
     const resolution = resolveGoogleBusinessProfileProvider({ env: liveEnv })
-    expect(resolution.readiness.ready).toBe(true)
+    expect(resolution.configuration.configured).toBe(true)
     expect(resolution.provider.kind).toBe("manual")
     expect(resolution.fallbackReason).toBe("live_transport_unavailable")
   })

@@ -69,6 +69,23 @@ export type OAuthCallbackInput = {
   now: Date
 }
 
+// How an attempt ended when the attempt itself was identifiable and nobody
+// forged anything: the person said no, Google said no, an Admin backed out, or
+// the redirect arrived without a code. These are the only values that may be
+// written as a cancellation, so no browser or provider text is ever persisted.
+export const oauthTerminalReasons = [
+  "access_denied",
+  "authorization_failed",
+  "cancelled_by_admin",
+  "code_missing",
+] as const
+
+export type OAuthTerminalReason = (typeof oauthTerminalReasons)[number]
+
+export function isOAuthTerminalReason(value: unknown): value is OAuthTerminalReason {
+  return typeof value === "string" && (oauthTerminalReasons as readonly string[]).includes(value)
+}
+
 export const oauthRejectionReasons = [
   "state_missing",
   "state_malformed",
@@ -82,8 +99,19 @@ export const oauthRejectionReasons = [
 
 export type OAuthRejectionReason = (typeof oauthRejectionReasons)[number]
 
+// The complete set of classifications that may be stored or echoed back. A
+// value outside it is a defect, not something to pass through.
+export const oauthNormalisedReasons = [
+  ...oauthTerminalReasons,
+  ...oauthRejectionReasons,
+] as const
+
+export function isOAuthNormalisedReason(value: unknown): boolean {
+  return typeof value === "string" && (oauthNormalisedReasons as readonly string[]).includes(value)
+}
+
 export type OAuthCallbackOutcome =
-  | { status: "cancelled"; reason: string }
+  | { status: "cancelled"; reason: OAuthTerminalReason }
   | { status: "rejected"; reason: OAuthRejectionReason }
   | { status: "accepted"; stateHash: string }
 
@@ -94,9 +122,10 @@ function sameSecret(a: string, b: string): boolean {
   return timingSafeEqual(left, right)
 }
 
-// Google only ever sends a small set of error codes on cancellation. Anything
-// else is still treated as a cancellation rather than echoed back.
-export function normaliseOAuthError(value: string): string {
+// Collapses whatever Google put in the error parameter onto two fixed values.
+// The original string is read once here and then discarded, so a provider
+// message or a crafted query string can never be stored or echoed back.
+export function normaliseOAuthError(value: string): OAuthTerminalReason {
   return value === "access_denied" ? "access_denied" : "authorization_failed"
 }
 

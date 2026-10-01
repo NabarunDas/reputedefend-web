@@ -20,6 +20,11 @@ ALTER TABLE public.admin_audit_events ADD CONSTRAINT admin_audit_events_action_c
 
 -- OAuth state. Only the SHA-256 hash of the state is kept, so a reader of this
 -- table cannot replay an authorization. Single use is enforced by consumed_at.
+--
+-- customer_id is NOT NULL because an authorization that cannot be attributed
+-- to one customer could later attach a Google grant to nothing in particular.
+-- A location always implies a business, and the function boundary below checks
+-- that the business and location genuinely belong to that customer.
 CREATE TABLE public.provider_oauth_states (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL CHECK (provider IN ('GOOGLE_BUSINESS_PROFILE')),
@@ -27,16 +32,22 @@ CREATE TABLE public.provider_oauth_states (
   actor_id uuid NOT NULL,
   session_binding text NOT NULL CHECK (session_binding ~ '^[0-9a-f]{64}$'),
   redirect_uri text NOT NULL CHECK (redirect_uri ~ '^https://'),
-  customer_id uuid REFERENCES public.customers(id) ON DELETE CASCADE,
+  customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
   business_id uuid REFERENCES public.businesses(id) ON DELETE CASCADE,
   location_id uuid REFERENCES public.locations(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL,
   consumed_at timestamptz,
   outcome text CHECK (outcome IN ('ACCEPTED','REJECTED','CANCELLED')),
-  rejection_reason text CHECK (rejection_reason IS NULL OR length(rejection_reason) <= 40),
+  -- A fixed vocabulary, never free text. Browser input and Google error
+  -- bodies are classified in code and only the classification is stored.
+  rejection_reason text CHECK (rejection_reason IS NULL OR rejection_reason IN (
+    'access_denied','authorization_failed','cancelled_by_admin','code_missing',
+    'state_malformed','state_unknown','state_expired','state_replayed','context_mismatch','redirect_mismatch'
+  )),
   CONSTRAINT provider_oauth_state_window CHECK (expires_at > created_at),
-  CONSTRAINT provider_oauth_state_consumed CHECK ((consumed_at IS NULL) = (outcome IS NULL))
+  CONSTRAINT provider_oauth_state_consumed CHECK ((consumed_at IS NULL) = (outcome IS NULL)),
+  CONSTRAINT provider_oauth_state_scope CHECK (location_id IS NULL OR business_id IS NOT NULL)
 );
 CREATE INDEX provider_oauth_states_expiry ON public.provider_oauth_states(expires_at) WHERE consumed_at IS NULL;
 ALTER TABLE public.provider_oauth_states ENABLE ROW LEVEL SECURITY;
@@ -47,7 +58,7 @@ REVOKE ALL ON TABLE public.provider_oauth_states FROM PUBLIC, anon, authenticate
 CREATE TABLE public.provider_connections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL CHECK (provider IN ('GOOGLE_BUSINESS_PROFILE')),
-  customer_id uuid REFERENCES public.customers(id) ON DELETE CASCADE,
+  customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
   business_id uuid REFERENCES public.businesses(id) ON DELETE CASCADE,
   location_id uuid REFERENCES public.locations(id) ON DELETE CASCADE,
   account_ref text CHECK (account_ref IS NULL OR length(account_ref) <= 200),
@@ -75,7 +86,8 @@ CREATE TABLE public.provider_connections (
     token_ciphertext NOT LIKE 'ya29.%' AND token_ciphertext NOT LIKE '1//%'
   ),
   CONSTRAINT provider_connection_revoked CHECK ((status = 'REVOKED') = (revoked_at IS NOT NULL)),
-  CONSTRAINT provider_connection_error_pair CHECK ((last_error_code IS NULL) = (last_error_at IS NULL))
+  CONSTRAINT provider_connection_error_pair CHECK ((last_error_code IS NULL) = (last_error_at IS NULL)),
+  CONSTRAINT provider_connection_scope CHECK (location_id IS NULL OR business_id IS NOT NULL)
 );
 -- One live connection per provider and location.
 CREATE UNIQUE INDEX provider_connections_live
@@ -93,15 +105,36 @@ CREATE TABLE public.provider_connection_events (
     'CONNECTION_INITIATED','CALLBACK_REJECTED','CONNECTION_ESTABLISHED','AUTHORIZATION_REVOKED',
     'REAUTHORIZATION_REQUIRED','PROVIDER_FALLBACK_ACTIVATED','CONNECTION_DISCONNECTED'
   )),
-  detail text CHECK (detail IS NULL OR length(detail) <= 200),
+  -- Classifications only. There is no path for an arbitrary string to land
+  -- here, so a browser reason or a Google error body cannot become history.
+  detail text CHECK (detail IS NULL OR detail IN (
+    'connect_requested','authorization_stored','authorization_revoked','disconnected_by_admin',
+    'access_denied','authorization_failed','cancelled_by_admin','code_missing',
+    'state_malformed','state_unknown','state_expired','state_replayed','context_mismatch','redirect_mismatch',
+    'CONFIGURATION_MISSING','AUTH_REVOKED','INSUFFICIENT_SCOPE','PERMISSION_DENIED','ACCOUNT_INACCESSIBLE',
+    'LOCATION_UNAVAILABLE','QUOTA_EXCEEDED','TRANSIENT_FAILURE','MALFORMED_RESPONSE','PROVIDER_DISABLED'
+  )),
   actor_id uuid,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.provider_connection_events ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.provider_connection_events FROM PUBLIC, anon, authenticated, service_role;
 
--- Token material is write-once per connection. An update may change lifecycle
--- and error fields only, so stored ciphertext cannot be swapped in place.
+-- A connection row is a record of one authorization, so everything that
+-- identifies that authorization is write-once: who it is for, which Google
+-- account answered, what was granted, when the grant runs out, and the
+-- encrypted material itself. Only lifecycle status and the last normalised
+-- error may move. A new authorization means a new row, which
+-- provider_connection_store_v1 creates after revoking the previous one.
+--
+-- granted_scopes and token_expires_at are deliberately immutable rather than
+-- lifecycle metadata. Refreshing a token would change token_expires_at, and a
+-- re-consent would change granted_scopes, but this build has no token
+-- exchange, so no refresh can happen. Leaving them writable now would mean
+-- shipping an unaudited mutation path before there is anything to mutate. At
+-- live activation they get an explicit refresh operation with its own allowed
+-- transitions, record-version concurrency check and normalised audit event,
+-- rather than an arbitrary UPDATE.
 CREATE FUNCTION admin_private.protect_provider_connection_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
@@ -112,6 +145,9 @@ BEGIN
       OR NEW.customer_id IS DISTINCT FROM OLD.customer_id
       OR NEW.business_id IS DISTINCT FROM OLD.business_id
       OR NEW.location_id IS DISTINCT FROM OLD.location_id
+      OR NEW.account_ref IS DISTINCT FROM OLD.account_ref
+      OR NEW.granted_scopes IS DISTINCT FROM OLD.granted_scopes
+      OR NEW.token_expires_at IS DISTINCT FROM OLD.token_expires_at
       OR NEW.token_ciphertext IS DISTINCT FROM OLD.token_ciphertext
       OR NEW.token_iv IS DISTINCT FROM OLD.token_iv
       OR NEW.token_auth_tag IS DISTINCT FROM OLD.token_auth_tag
@@ -191,13 +227,45 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
   ) END;
 $$;
 
+-- The customer/business/location chain a Google authorization may be attached
+-- to, checked against the existing ProfileRelaunch model rather than trusted
+-- from an Admin form. business_memberships links a customer to a business and
+-- locations.business_id links a business to a location, so a business from
+-- another customer or a location from another business is refused here, before
+-- any state row or encrypted token can exist. Returns NULL when the scope is
+-- consistent and a fixed classification otherwise.
+CREATE FUNCTION admin_private.provider_scope_fault_v1(
+  p_customer uuid, p_business uuid, p_location uuid
+) RETURNS text LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  IF p_customer IS NULL THEN RETURN 'scope_customer_required'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.customers c WHERE c.id = p_customer) THEN
+    RETURN 'scope_customer_unknown';
+  END IF;
+  IF p_location IS NOT NULL AND p_business IS NULL THEN
+    RETURN 'scope_location_requires_business';
+  END IF;
+  -- Only a verified membership counts. A pending or revoked one is not
+  -- evidence that this customer may authorise anything for that business.
+  IF p_business IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.business_memberships m
+    WHERE m.customer_id = p_customer AND m.business_id = p_business AND m.status = 'verified'
+  ) THEN RETURN 'scope_business_mismatch'; END IF;
+  IF p_location IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.locations l WHERE l.id = p_location AND l.business_id = p_business
+  ) THEN RETURN 'scope_location_mismatch'; END IF;
+  RETURN NULL;
+END; $$;
+
 -- Begins a connect attempt by recording the state hash. This never contacts
 -- Google; the caller only proceeds when the live gate is open.
 CREATE FUNCTION admin_private.provider_oauth_begin_v1(
   p_actor uuid, p_state_hash text, p_session_binding text, p_redirect_uri text,
   p_customer uuid, p_business uuid, p_location uuid, p_expires timestamptz
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE row public.provider_oauth_states;
+DECLARE
+  row public.provider_oauth_states;
+  scope_fault text;
 BEGIN
   IF p_state_hash !~ '^[0-9a-f]{64}$' OR p_session_binding !~ '^[0-9a-f]{64}$' THEN
     RETURN jsonb_build_object('status','invalid');
@@ -208,6 +276,10 @@ BEGIN
   IF p_expires IS NULL OR p_expires <= now() OR p_expires > now() + interval '1 hour' THEN
     RETURN jsonb_build_object('status','invalid','reason','expiry');
   END IF;
+  scope_fault := admin_private.provider_scope_fault_v1(p_customer, p_business, p_location);
+  IF scope_fault IS NOT NULL THEN
+    RETURN jsonb_build_object('status','invalid','reason', scope_fault);
+  END IF;
   INSERT INTO public.provider_oauth_states(
     provider, state_hash, actor_id, session_binding, redirect_uri,
     customer_id, business_id, location_id, expires_at
@@ -216,19 +288,33 @@ BEGIN
     p_customer, p_business, p_location, p_expires
   ) RETURNING * INTO row;
   INSERT INTO public.provider_connection_events(provider, kind, detail, actor_id)
-  VALUES ('GOOGLE_BUSINESS_PROFILE', 'CONNECTION_INITIATED', 'connect requested', p_actor);
+  VALUES ('GOOGLE_BUSINESS_PROFILE', 'CONNECTION_INITIATED', 'connect_requested', p_actor);
   RETURN jsonb_build_object('status','success','id', row.id, 'expiresAt', row.expires_at);
 END; $$;
 
--- Consumes a state exactly once and reports whether the callback may proceed.
--- Every rejection path still consumes the state so it cannot be retried.
+-- The single terminal operation for an OAuth attempt. The callback route calls
+-- it for every outcome that names a real attempt, not only for a successful
+-- one, so a denial or a codeless redirect leaves the attempt used up instead
+-- of alive until expiry.
+--
+-- p_reason is NULL when a code arrived and an exchange could be attempted, and
+-- otherwise one of four fixed terminal classifications. The distinction
+-- matters for context failures. A callback carrying a code is an exchange
+-- attempt, so a mismatched one is burnt: that is an attack, and the attempt
+-- should not survive it. A cancellation is not, so a mismatched one is refused
+-- and the row is left untouched. Otherwise any Admin session that learned a
+-- state value could end another session's attempt at will.
 CREATE FUNCTION admin_private.provider_oauth_consume_v1(
-  p_actor uuid, p_state_hash text, p_session_binding text, p_redirect_uri text
+  p_actor uuid, p_state_hash text, p_session_binding text, p_redirect_uri text, p_reason text
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   row public.provider_oauth_states;
+  mismatch text;
   reason text;
 BEGIN
+  IF p_reason IS NOT NULL AND p_reason NOT IN
+    ('access_denied','authorization_failed','cancelled_by_admin','code_missing')
+  THEN RETURN jsonb_build_object('status','invalid','reason','reason_not_normalised'); END IF;
   IF p_state_hash IS NULL OR p_state_hash !~ '^[0-9a-f]{64}$' THEN
     RETURN jsonb_build_object('status','rejected','reason','state_malformed');
   END IF;
@@ -238,22 +324,34 @@ BEGIN
   IF row.consumed_at IS NOT NULL THEN
     RETURN jsonb_build_object('status','rejected','reason','state_replayed');
   END IF;
-  reason := CASE
-    WHEN row.expires_at <= now() THEN 'state_expired'
+  -- Actor, initiating session and exact redirect are all proved before
+  -- anything is written.
+  mismatch := CASE
     WHEN row.actor_id IS DISTINCT FROM p_actor THEN 'context_mismatch'
     WHEN row.session_binding IS DISTINCT FROM p_session_binding THEN 'context_mismatch'
     WHEN row.redirect_uri IS DISTINCT FROM p_redirect_uri THEN 'redirect_mismatch'
     ELSE NULL
   END;
+  IF mismatch IS NOT NULL AND p_reason IS NOT NULL THEN
+    RETURN jsonb_build_object('status','rejected','reason', mismatch);
+  END IF;
+  reason := coalesce(mismatch, CASE WHEN row.expires_at <= now() THEN 'state_expired' ELSE p_reason END);
   UPDATE public.provider_oauth_states SET
     consumed_at = now(),
-    outcome = CASE WHEN reason IS NULL THEN 'ACCEPTED' ELSE 'REJECTED' END,
+    outcome = CASE
+      WHEN reason IS NULL THEN 'ACCEPTED'
+      WHEN reason IS NOT DISTINCT FROM p_reason THEN 'CANCELLED'
+      ELSE 'REJECTED'
+    END,
     rejection_reason = reason
   WHERE id = row.id RETURNING * INTO row;
   IF reason IS NOT NULL THEN
     INSERT INTO public.provider_connection_events(provider, kind, detail, actor_id)
     VALUES ('GOOGLE_BUSINESS_PROFILE', 'CALLBACK_REJECTED', reason, p_actor);
-    RETURN jsonb_build_object('status','rejected','reason', reason);
+    RETURN jsonb_build_object(
+      'status', CASE WHEN row.outcome = 'CANCELLED' THEN 'cancelled' ELSE 'rejected' END,
+      'reason', reason
+    );
   END IF;
   RETURN jsonb_build_object(
     'status','accepted','id', row.id,
@@ -261,20 +359,17 @@ BEGIN
   );
 END; $$;
 
--- Records a cancelled authorization without consuming a token exchange.
-CREATE FUNCTION admin_private.provider_oauth_cancel_v1(p_actor uuid, p_state_hash text, p_reason text)
-RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE row public.provider_oauth_states;
-BEGIN
-  IF p_state_hash IS NOT NULL AND p_state_hash ~ '^[0-9a-f]{64}$' THEN
-    UPDATE public.provider_oauth_states SET
-      consumed_at = now(), outcome = 'CANCELLED', rejection_reason = left(coalesce(p_reason,'cancelled'), 40)
-    WHERE state_hash = p_state_hash AND consumed_at IS NULL RETURNING * INTO row;
-  END IF;
-  INSERT INTO public.provider_connection_events(provider, kind, detail, actor_id)
-  VALUES ('GOOGLE_BUSINESS_PROFILE', 'CALLBACK_REJECTED', left(coalesce(p_reason,'cancelled'), 40), p_actor);
-  RETURN jsonb_build_object('status','cancelled','reason', coalesce(p_reason,'cancelled'));
-END; $$;
+-- An Admin abandoning their own connect attempt. It is the same context-bound
+-- single-use operation as the callback, with the one reason this surface may
+-- ever record, so a cancellation cannot be aimed at another session's attempt
+-- and cannot carry text of its own.
+CREATE FUNCTION admin_private.provider_oauth_cancel_v1(
+  p_actor uuid, p_state_hash text, p_session_binding text, p_redirect_uri text
+) RETURNS jsonb LANGUAGE sql SET search_path='' AS $$
+  SELECT admin_private.provider_oauth_consume_v1(
+    p_actor, p_state_hash, p_session_binding, p_redirect_uri, 'cancelled_by_admin'
+  );
+$$;
 
 -- Stores an already encrypted token payload. The caller encrypts in the server
 -- process; this function never sees a plaintext token or the encryption key.
@@ -283,13 +378,22 @@ CREATE FUNCTION admin_private.provider_connection_store_v1(
   p_ciphertext text, p_iv text, p_auth_tag text, p_key_version text,
   p_scopes text[], p_expires timestamptz
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
-DECLARE row public.provider_connections;
+DECLARE
+  row public.provider_connections;
+  scope_fault text;
 BEGIN
   IF coalesce(p_ciphertext,'') = '' OR coalesce(p_iv,'') = '' OR coalesce(p_auth_tag,'') = ''
     OR coalesce(p_key_version,'') = ''
   THEN RETURN jsonb_build_object('status','invalid','reason','encrypted_payload_required'); END IF;
   IF coalesce(array_length(p_scopes, 1), 0) = 0 THEN
     RETURN jsonb_build_object('status','invalid','reason','scopes_required');
+  END IF;
+  -- The same chain the OAuth state had to satisfy, re-proved here so a stored
+  -- token can never be attached across customers even if a caller skipped the
+  -- state entirely.
+  scope_fault := admin_private.provider_scope_fault_v1(p_customer, p_business, p_location);
+  IF scope_fault IS NOT NULL THEN
+    RETURN jsonb_build_object('status','invalid','reason', scope_fault);
   END IF;
   -- Supersede any live connection for the same target before inserting.
   UPDATE public.provider_connections SET
@@ -305,7 +409,7 @@ BEGIN
     p_ciphertext, p_iv, p_auth_tag, p_key_version, p_scopes, p_expires, p_actor
   ) RETURNING * INTO row;
   INSERT INTO public.provider_connection_events(connection_id, provider, kind, detail, actor_id)
-  VALUES (row.id, 'GOOGLE_BUSINESS_PROFILE', 'CONNECTION_ESTABLISHED', 'authorization stored', p_actor);
+  VALUES (row.id, 'GOOGLE_BUSINESS_PROFILE', 'CONNECTION_ESTABLISHED', 'authorization_stored', p_actor);
   RETURN jsonb_build_object('status','success','connection', admin_private.provider_connection_public_json_v1(row));
 END; $$;
 
@@ -329,7 +433,7 @@ BEGIN
   VALUES (
     row.id, 'GOOGLE_BUSINESS_PROFILE',
     CASE WHEN p_disconnect THEN 'CONNECTION_DISCONNECTED' ELSE 'AUTHORIZATION_REVOKED' END,
-    CASE WHEN p_disconnect THEN 'disconnected by admin' ELSE 'authorization revoked' END,
+    CASE WHEN p_disconnect THEN 'disconnected_by_admin' ELSE 'authorization_revoked' END,
     p_actor
   );
   RETURN jsonb_build_object('status','success','connection', admin_private.provider_connection_public_json_v1(row));
@@ -366,7 +470,7 @@ BEGIN
       WHEN p_code IN ('INSUFFICIENT_SCOPE','PERMISSION_DENIED') THEN 'REAUTHORIZATION_REQUIRED'
       ELSE 'PROVIDER_FALLBACK_ACTIVATED'
     END,
-    left(p_code, 40), p_actor
+    p_code, p_actor
   );
   RETURN jsonb_build_object('status','success','connection', admin_private.provider_connection_public_json_v1(row));
 END; $$;
@@ -436,10 +540,13 @@ BEGIN
     );
   ELSIF p_operation = 'consume_state' THEN
     result := admin_private.provider_oauth_consume_v1(
-      actor, p_payload->>'stateHash', p_payload->>'sessionBinding', p_payload->>'redirectUri'
+      actor, p_payload->>'stateHash', p_payload->>'sessionBinding', p_payload->>'redirectUri',
+      p_payload->>'reason'
     );
   ELSIF p_operation = 'cancel_connect' THEN
-    result := admin_private.provider_oauth_cancel_v1(actor, p_payload->>'stateHash', p_payload->>'reason');
+    result := admin_private.provider_oauth_cancel_v1(
+      actor, p_payload->>'stateHash', p_payload->>'sessionBinding', p_payload->>'redirectUri'
+    );
   ELSIF p_operation = 'store_connection' THEN
     result := admin_private.provider_connection_store_v1(
       actor,
@@ -467,6 +574,10 @@ BEGIN
   -- Audit records the operation and outcome only. No code, token, ciphertext or
   -- provider body is ever written here. Integration statuses are mapped onto
   -- the existing audit outcome vocabulary rather than widening it.
+  --
+  -- The reason is written only when it is one of the classifications these
+  -- functions produce. Anything else is dropped rather than audited, so even a
+  -- future caller that invented its own wording could not get it in here.
   PERFORM admin_private.write_record_audit_v1(
     actor, 'INTEGRATION_CHANGED',
     CASE result->>'status'
@@ -478,7 +589,13 @@ BEGIN
     admin_private.settings_uuid_v1(result#>>'{connection,id}'), p_request, 'provider_integration',
     left(p_operation, 80),
     jsonb_build_object('operation', p_operation, 'provider', 'GOOGLE_BUSINESS_PROFILE')
-      || CASE WHEN result ? 'reason' THEN jsonb_build_object('reason', result->>'reason') ELSE '{}'::jsonb END
+      || CASE WHEN result->>'reason' IN (
+        'access_denied','authorization_failed','cancelled_by_admin','code_missing',
+        'state_malformed','state_unknown','state_expired','state_replayed','context_mismatch','redirect_mismatch',
+        'reason_not_normalised','redirect_uri','expiry','encrypted_payload_required','scopes_required',
+        'scope_customer_required','scope_customer_unknown','scope_business_mismatch',
+        'scope_location_requires_business','scope_location_mismatch'
+      ) THEN jsonb_build_object('reason', result->>'reason') ELSE '{}'::jsonb END
   );
   RETURN result;
 END; $$;
@@ -488,9 +605,10 @@ REVOKE ALL ON FUNCTION
   admin_private.protect_provider_connection_event_v1(),
   admin_private.protect_provider_oauth_state_v1(),
   admin_private.provider_connection_public_json_v1(public.provider_connections),
+  admin_private.provider_scope_fault_v1(uuid, uuid, uuid),
   admin_private.provider_oauth_begin_v1(uuid, text, text, text, uuid, uuid, uuid, timestamptz),
-  admin_private.provider_oauth_consume_v1(uuid, text, text, text),
-  admin_private.provider_oauth_cancel_v1(uuid, text, text),
+  admin_private.provider_oauth_consume_v1(uuid, text, text, text, text),
+  admin_private.provider_oauth_cancel_v1(uuid, text, text, text),
   admin_private.provider_connection_store_v1(uuid, uuid, uuid, uuid, text, text, text, text, text, text[], timestamptz),
   admin_private.provider_connection_revoke_v1(uuid, uuid, integer, boolean),
   admin_private.provider_connection_fault_v1(uuid, uuid, text)

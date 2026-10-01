@@ -1,4 +1,4 @@
-import { type GoogleBusinessProfileEnv, googleLiveAcceptanceEnabled, googleLiveReadiness } from "./config"
+import { type GoogleBusinessProfileEnv, googleLiveAcceptanceEnabled, googleLiveConfiguration } from "./config"
 import type { GoogleBusinessProfileProvider } from "./provider"
 
 // The sequence to run once Google grants API access and an operator chooses to
@@ -42,8 +42,10 @@ export function liveAcceptanceGate(env: GoogleBusinessProfileEnv = process.env):
   if (!googleLiveAcceptanceEnabled(env)) {
     return { runnable: false, reason: "acceptance_flag_missing", blockers: ["GOOGLE_LIVE_ACCEPTANCE_ENABLED"] }
   }
-  const readiness = googleLiveReadiness(env)
-  if (!readiness.ready) return { runnable: false, reason: "live_conditions_unmet", blockers: readiness.blockers }
+  const configuration = googleLiveConfiguration(env)
+  if (!configuration.configured) {
+    return { runnable: false, reason: "live_conditions_unmet", blockers: configuration.blockers }
+  }
   return { runnable: true }
 }
 

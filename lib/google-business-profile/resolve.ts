@@ -7,8 +7,8 @@ import {
   googleBusinessProfileApiEnabled,
   type GoogleBusinessProfileEnv,
   googleBusinessProfileMode,
-  googleLiveReadiness,
-  type LiveReadiness,
+  googleLiveConfiguration,
+  type LiveConfiguration,
 } from "./config"
 import { manualGoogleBusinessProfileProvider, type ManualAdapterOptions } from "./manual-adapter"
 import type { GoogleBusinessProfileProvider } from "./provider"
@@ -17,7 +17,9 @@ export type ProviderResolution = {
   provider: GoogleBusinessProfileProvider
   // The mode the configuration asked for, which is not always what resolved.
   requestedMode: ProviderMode
-  readiness: LiveReadiness
+  // Configuration only. A complete configuration still resolves to manual
+  // unless a caller also supplies a live provider built on a real transport.
+  configuration: LiveConfiguration
   // Why the live adapter was not used, if it was not.
   fallbackReason: string | null
 }
@@ -37,21 +39,21 @@ export type ResolveOptions = {
 export function resolveGoogleBusinessProfileProvider(options: ResolveOptions = {}): ProviderResolution {
   const env = options.env ?? process.env
   const requestedMode = googleBusinessProfileMode(env)
-  const readiness = googleLiveReadiness(env)
+  const configuration = googleLiveConfiguration(env)
   const manual = manualGoogleBusinessProfileProvider(options.manual)
 
-  if (!readiness.ready) {
-    return { provider: manual, requestedMode, readiness, fallbackReason: readiness.blockers[0] ?? null }
+  if (!configuration.configured) {
+    return { provider: manual, requestedMode, configuration, fallbackReason: configuration.blockers[0] ?? null }
   }
   if (!options.liveProvider) {
-    // Fail closed: every gate passed but no live transport was supplied.
-    return { provider: manual, requestedMode, readiness, fallbackReason: "live_transport_unavailable" }
+    // Fail closed: configuration is complete but no live transport exists.
+    return { provider: manual, requestedMode, configuration, fallbackReason: "live_transport_unavailable" }
   }
   if (options.liveProvider.kind !== "google") {
     // Defence in depth. A non-Google adapter can never be promoted to live.
-    return { provider: manual, requestedMode, readiness, fallbackReason: "live_provider_rejected" }
+    return { provider: manual, requestedMode, configuration, fallbackReason: "live_provider_rejected" }
   }
-  return { provider: options.liveProvider, requestedMode, readiness, fallbackReason: null }
+  return { provider: options.liveProvider, requestedMode, configuration, fallbackReason: null }
 }
 
 // The capability implied by configuration alone, with no adapter constructed

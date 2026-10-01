@@ -61,7 +61,7 @@ export async function googleIntegrationHealth(
   const connection = input.connection ?? null
   const storedStatus = connectionStatusOf(connection?.status)
   const lastErrorCode = failureCodeOf(connection?.lastErrorCode) ?? health.lastFailure?.code ?? null
-  const blockers = [...resolution.readiness.blockers]
+  const blockers = [...resolution.configuration.blockers]
   if (resolution.fallbackReason && !blockers.includes(resolution.fallbackReason)) {
     blockers.push(resolution.fallbackReason)
   }

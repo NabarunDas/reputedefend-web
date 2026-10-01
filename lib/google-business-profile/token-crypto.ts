@@ -66,8 +66,23 @@ export const forbiddenTokenFields = [
   "code",
 ] as const
 
+// Shapes real Google credentials take. Field-name scanning alone misses a
+// secret carried in an innocuously named field, so values are matched too.
+const tokenValuePatterns = [
+  // Access tokens.
+  /ya29\.[A-Za-z0-9._-]{8,}/,
+  // Refresh tokens. The leading boundary excludes base64 and URL characters so
+  // an ordinary path segment or ciphertext blob cannot trip it.
+  /(^|[^A-Za-z0-9+/=_-])1\/\/[A-Za-z0-9._-]{20,}/,
+  // Authorization codes.
+  /(^|[^A-Za-z0-9+/=_-])4\/[01][A-Za-z0-9._-]{20,}/,
+  // OAuth client secrets.
+  /GOCSPX-[A-Za-z0-9_-]{8,}/,
+]
+
 export function containsTokenMaterial(value: unknown): boolean {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? null)
   if (!text) return false
-  return forbiddenTokenFields.some(field => text.includes(`"${field}"`))
+  if (forbiddenTokenFields.some(field => text.includes(`"${field}"`))) return true
+  return tokenValuePatterns.some(pattern => pattern.test(text))
 }

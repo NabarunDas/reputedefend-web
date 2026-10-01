@@ -7,9 +7,13 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import {
   type GoogleBusinessProfileEnv,
-  googleLiveReadiness,
   googleOAuthConfig,
 } from "../../../../lib/google-business-profile/config"
+import {
+  googleConnectExecution,
+  type GoogleLiveStack,
+  googleLiveStack,
+} from "../../../../lib/google-business-profile/live-stack"
 import {
   type BrowserIntegrationOperation,
   commandMessage,
@@ -20,8 +24,10 @@ import {
 import {
   authorizationUrl,
   hashOAuthState,
+  isOAuthNormalisedReason,
   issueOAuthState,
   normaliseOAuthError,
+  type OAuthTerminalReason,
   oauthStatePattern,
 } from "../../../../lib/google-business-profile/oauth"
 import { containsTokenMaterial } from "../../../../lib/google-business-profile/token-crypto"
@@ -82,14 +88,14 @@ function sessionBinding(token: string): string {
 type BuiltCommand = { payload: Record<string, unknown>; state?: string }
 
 // Builds the RPC payload entirely from server-side material. Nothing a browser
-// sends can become a state, a redirect URI, an expiry or a token.
+// sends can become a state, a redirect URI, an expiry, a token or a stored
+// reason: a cancellation from this surface is always cancelled_by_admin.
 function buildCommand(
   operation: BrowserIntegrationOperation,
   body: Record<string, unknown>,
   token: string,
   redirectUri: string,
 ): BuiltCommand | null {
-  const reason = typeof body.reason === "string" ? body.reason.slice(0, 200) : ""
   if (operation === "begin_connect") {
     const issued = issueOAuthState({ now: new Date() })
     const target = (name: string) => (isUuid(body[name]) ? (body[name] as string) : null)
@@ -109,15 +115,55 @@ function buildCommand(
   if (operation === "cancel_connect") {
     const state = typeof body.state === "string" ? body.state : ""
     if (!oauthStatePattern.test(state)) return null
-    return { payload: { stateHash: hashOAuthState(state), reason: reason || "cancelled" } }
+    // The same context the callback has to prove. Without it the database
+    // refuses, so one Admin session cannot end another session's attempt.
+    return {
+      payload: {
+        stateHash: hashOAuthState(state),
+        sessionBinding: sessionBinding(token),
+        redirectUri,
+        reason: "cancelled_by_admin" satisfies OAuthTerminalReason,
+      },
+    }
   }
   const id = typeof body.connectionId === "string" ? body.connectionId : ""
   const version = Number(body.version)
   if (!isUuid(id) || !Number.isInteger(version) || version < 1) return null
-  return { payload: { id, version, reason } }
+  return { payload: { id, version } }
 }
 
-export async function integrationCommand(request: NextRequest): Promise<NextResponse> {
+// Only a classification the server itself defines may leave this boundary. A
+// value from anywhere else is dropped rather than echoed to the browser.
+function safeReason(value: unknown): string | null {
+  if (!isOAuthNormalisedReason(value) && !isCommandReason(value)) return null
+  return value as string
+}
+
+// Fixed classifications the integration RPC may return for a refused command.
+const commandReasons = [
+  "google_api_disabled",
+  "provider_not_configured",
+  "connection_not_implemented",
+  "reason_not_normalised",
+  "redirect_uri",
+  "expiry",
+  "encrypted_payload_required",
+  "scopes_required",
+  "scope_customer_required",
+  "scope_customer_unknown",
+  "scope_business_mismatch",
+  "scope_location_requires_business",
+  "scope_location_mismatch",
+] as const
+
+function isCommandReason(value: unknown): boolean {
+  return typeof value === "string" && (commandReasons as readonly string[]).includes(value)
+}
+
+export async function integrationCommand(
+  request: NextRequest,
+  stack: GoogleLiveStack | null = googleLiveStack,
+): Promise<NextResponse> {
   const gate = sessionOrError(request)
   if ("error" in gate) return gate.error
   const parsed = await readJson(request)
@@ -127,11 +173,12 @@ export async function integrationCommand(request: NextRequest): Promise<NextResp
   if (!isBrowserIntegrationOperation(operation) || !isIntegrationKey(body.provider)) {
     return json("Check the form and try again.", 400)
   }
-  // Fail closed. Every live condition must pass before an operation that could
-  // lead to a Google request is allowed to reach the database.
-  const readiness = googleLiveReadiness()
+  // Fail closed, and not only on configuration. An operator who sets every
+  // Google variable still gets here with connection_not_implemented, so a
+  // direct POST cannot start an OAuth flow that this build cannot finish.
+  const execution = googleConnectExecution(process.env, stack)
   const oauth = googleOAuthConfig()
-  if (!readiness.ready || !oauth) return disabled({ blockers: readiness.blockers })
+  if (!execution.available || !oauth) return disabled({ blockers: execution.blockers })
   const built = buildCommand(operation, body, gate.token, oauth.redirectUri)
   if (!built) return json("Check the form and try again.", 400)
   try {
@@ -145,9 +192,10 @@ export async function integrationCommand(request: NextRequest): Promise<NextResp
     // The RPC never returns token material; this refuses to forward it if a
     // future change ever did.
     if (containsTokenMaterial(result)) return json("The integration could not be updated.", 503)
-    return json(commandMessage(result.status, result.reason), mapStatus(result.status), {
+    const reason = safeReason(result.reason)
+    return json(commandMessage(result.status, reason ?? undefined), mapStatus(result.status), {
       status: result.status,
-      ...(result.reason ? { reason: result.reason } : {}),
+      ...(reason ? { reason } : {}),
       // The authorization URL is only ever built here, after the state row was
       // recorded, and carries no client secret.
       ...(built.state && result.status === "success"
@@ -160,45 +208,63 @@ export async function integrationCommand(request: NextRequest): Promise<NextResp
 }
 
 export type CallbackOutcome = {
-  status: "disabled" | "cancelled" | "rejected"
+  status: "disabled" | "rejected"
   reason: string
   message: string
 }
 
+// A callback that names a real attempt. terminalReason is null only when a
+// code is present and an exchange could be attempted; otherwise it says how
+// the attempt ended, using a fixed classification rather than anything Google
+// or the browser wrote.
+export type CallbackConsumption = {
+  status: "consume"
+  stateHash: string
+  terminalReason: OAuthTerminalReason | null
+}
+
+const invalidLink = "That authorization link is not valid."
+
 // Decides what the OAuth redirect may do before any database or network work.
-// While live Google integration is disabled this never exchanges a code.
+//
+// Every syntactically valid state is sent on to be consumed, including a
+// denial and a codeless redirect, so an attempt that reached a terminal
+// outcome cannot be left live until expiry. A missing or malformed state
+// names no attempt, so it is refused without touching the database: there is
+// no trustworthy row to consume and consuming by guess would let anyone
+// cancel someone else's attempt.
 export function googleCallbackOutcome(
   url: URL,
   env: GoogleBusinessProfileEnv = process.env,
-): CallbackOutcome | { status: "proceed"; stateHash: string } {
-  const readiness = googleLiveReadiness(env)
-  if (!readiness.ready) {
+  stack: GoogleLiveStack | null = googleLiveStack,
+): CallbackOutcome | CallbackConsumption {
+  if (!googleConnectExecution(env, stack).available) {
     return { status: "disabled", reason: "google_api_disabled", message: connectDisabledNotice }
   }
-  const error = url.searchParams.get("error")
-  if (error) {
-    return { status: "cancelled", reason: normaliseOAuthError(error), message: "The Google authorization was not completed." }
-  }
   const state = url.searchParams.get("state") ?? ""
-  if (!state) return { status: "rejected", reason: "state_missing", message: "That authorization link is not valid." }
+  if (!state) return { status: "rejected", reason: "state_missing", message: invalidLink }
   if (!oauthStatePattern.test(state)) {
-    return { status: "rejected", reason: "state_malformed", message: "That authorization link is not valid." }
+    return { status: "rejected", reason: "state_malformed", message: invalidLink }
   }
-  if (!url.searchParams.get("code")) {
-    return { status: "rejected", reason: "code_missing", message: "That authorization link is not valid." }
-  }
-  // Only now may the stored state be consumed, which is where single use,
-  // expiry, session binding and redirect matching are enforced.
-  return { status: "proceed", stateHash: hashOAuthState(state) }
+  const stateHash = hashOAuthState(state)
+  const error = url.searchParams.get("error")
+  // The error text is read once, collapsed onto a fixed classification and
+  // then discarded, so no provider wording travels any further.
+  if (error) return { status: "consume", stateHash, terminalReason: normaliseOAuthError(error) }
+  if (!url.searchParams.get("code")) return { status: "consume", stateHash, terminalReason: "code_missing" }
+  return { status: "consume", stateHash, terminalReason: null }
 }
 
-export async function googleCallbackResponse(request: NextRequest): Promise<NextResponse> {
-  const outcome = googleCallbackOutcome(new URL(request.url))
-  if (outcome.status === "proceed") {
+export async function googleCallbackResponse(
+  request: NextRequest,
+  stack: GoogleLiveStack | null = googleLiveStack,
+): Promise<NextResponse> {
+  const outcome = googleCallbackOutcome(new URL(request.url), process.env, stack)
+  if (outcome.status === "consume") {
     const token = request.cookies.get(sessionCookie)?.value
     const oauth = googleOAuthConfig()
     if (!validToken(token) || !token || !oauth) {
-      return json("That authorization link is not valid.", 403, { status: "rejected", reason: "context_mismatch" })
+      return json(invalidLink, 403, { status: "rejected", reason: "context_mismatch" })
     }
     try {
       const result = await backend().rpc<{ status?: string; reason?: string } | null>("admin_integration_command_v1", {
@@ -209,17 +275,21 @@ export async function googleCallbackResponse(request: NextRequest): Promise<Next
           stateHash: outcome.stateHash,
           sessionBinding: sessionBinding(token),
           redirectUri: oauth.redirectUri,
+          // Null means "a code arrived, try to accept it". Anything else is
+          // one of four fixed terminal classifications.
+          reason: outcome.terminalReason,
         },
       })
       // A token exchange would happen here once an exchange implementation
       // exists. There is none in this step, so an accepted state still ends in
       // a not-configured answer rather than a Google request.
-      return json(commandMessage(result?.status, result?.reason), mapStatus(result?.status), {
+      const reason = safeReason(result?.reason)
+      return json(commandMessage(result?.status, reason ?? undefined), mapStatus(result?.status), {
         status: result?.status ?? "rejected",
-        ...(result?.reason ? { reason: result.reason } : {}),
+        ...(reason ? { reason } : {}),
       })
     } catch {
-      return json("That authorization link is not valid.", 503, { status: "rejected" })
+      return json(invalidLink, 503, { status: "rejected" })
     }
   }
   // The query string may carry a code. It is never read, never logged and

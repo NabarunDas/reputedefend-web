@@ -56,19 +56,23 @@ export function googleLiveAcceptanceEnabled(env: GoogleBusinessProfileEnv = proc
   return env.GOOGLE_LIVE_ACCEPTANCE_ENABLED === "true"
 }
 
-export type LiveReadiness = {
-  ready: boolean
+export type LiveConfiguration = {
+  // True when configuration alone is complete. Configuration being complete is
+  // necessary but never sufficient: an executable connection also needs code
+  // that this module cannot see. See live-stack.ts.
+  configured: boolean
   // Ordered list of unmet conditions. Safe to show an Admin.
   blockers: string[]
 }
 
-// Every condition required before a single Google request may be attempted.
-// A caller that cannot satisfy all of them must stay on the manual adapter.
-export function googleLiveReadiness(env: GoogleBusinessProfileEnv = process.env): LiveReadiness {
+// The configuration half of live access. Nothing here asserts that a live
+// connection can actually be executed, only that the operator supplied every
+// value one would need.
+export function googleLiveConfiguration(env: GoogleBusinessProfileEnv = process.env): LiveConfiguration {
   const blockers: string[] = []
   if (googleBusinessProfileMode(env) !== "google") blockers.push("provider_mode_manual")
   if (!googleBusinessProfileApiEnabled(env)) blockers.push("api_disabled")
   if (!googleOAuthConfig(env)) blockers.push("oauth_not_configured")
   if (!googleTokenEncryptionKey(env)) blockers.push("token_key_missing")
-  return { ready: blockers.length === 0, blockers }
+  return { configured: blockers.length === 0, blockers }
 }

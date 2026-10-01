@@ -3,11 +3,16 @@ import {
   googleBusinessProfileApiEnabled,
   googleBusinessProfileMode,
   googleLiveAcceptanceEnabled,
-  googleLiveReadiness,
+  googleLiveConfiguration,
   googleOAuthConfig,
   googleTokenEncryptionKey,
   googleTokenKeyVersion,
 } from "./config"
+import {
+  googleConnectExecution,
+  googleConnectionExecutionAvailable,
+  googleLiveStack,
+} from "./live-stack"
 
 const liveEnv = {
   GOOGLE_BUSINESS_PROFILE_PROVIDER: "google",
@@ -51,16 +56,16 @@ describe("Google integration configuration gates", () => {
     expect(googleTokenKeyVersion({ GOOGLE_BUSINESS_PROFILE_TOKEN_KEY_VERSION: "v2" })).toBe("v2")
   })
 
-  it("reports every unmet live condition and only clears when all of them pass", () => {
-    expect(googleLiveReadiness({})).toEqual({
-      ready: false,
+  it("reports every unmet configuration condition and only clears when all of them pass", () => {
+    expect(googleLiveConfiguration({})).toEqual({
+      configured: false,
       blockers: ["provider_mode_manual", "api_disabled", "oauth_not_configured", "token_key_missing"],
     })
-    expect(googleLiveReadiness({ ...liveEnv, GOOGLE_BUSINESS_PROFILE_API_ENABLED: "yes" })).toEqual({
-      ready: false,
+    expect(googleLiveConfiguration({ ...liveEnv, GOOGLE_BUSINESS_PROFILE_API_ENABLED: "yes" })).toEqual({
+      configured: false,
       blockers: ["api_disabled"],
     })
-    expect(googleLiveReadiness(liveEnv)).toEqual({ ready: true, blockers: [] })
+    expect(googleLiveConfiguration(liveEnv)).toEqual({ configured: true, blockers: [] })
   })
 
   it("keeps live acceptance behind its own exact flag", () => {
@@ -70,6 +75,57 @@ describe("Google integration configuration gates", () => {
       expect(googleLiveAcceptanceEnabled({ GOOGLE_LIVE_ACCEPTANCE_ENABLED: value }), value).toBe(false)
     }
     expect(googleLiveAcceptanceEnabled({ GOOGLE_LIVE_ACCEPTANCE_ENABLED: "true" })).toBe(true)
+  })
+
+  // Finding A: complete configuration is not an executable connection.
+  it("ships no live stack, so a complete configuration still cannot connect", () => {
+    expect(googleLiveStack).toBeNull()
+    expect(googleConnectionExecutionAvailable()).toBe(false)
+    expect(googleLiveConfiguration(liveEnv).configured).toBe(true)
+    expect(googleConnectExecution(liveEnv)).toEqual({
+      available: false,
+      blockers: ["connection_not_implemented"],
+    })
+  })
+
+  it("cannot be made executable by any environment value", () => {
+    const everything: Record<string, string> = { ...liveEnv }
+    // Every name an operator could plausibly try, including invented ones.
+    for (const name of [
+      "GOOGLE_BUSINESS_PROFILE_CONNECTION_ENABLED",
+      "GOOGLE_BUSINESS_PROFILE_EXECUTION_ENABLED",
+      "GOOGLE_CONNECTION_EXECUTION_AVAILABLE",
+      "GOOGLE_LIVE_ACCEPTANCE_ENABLED",
+      "GOOGLE_BUSINESS_PROFILE_TOKEN_KEY_VERSION",
+      "NODE_ENV",
+      "VERCEL_ENV",
+    ]) everything[name] = "true"
+    expect(googleConnectExecution(everything).available).toBe(false)
+    expect(googleConnectExecution(everything).blockers).toContain("connection_not_implemented")
+  })
+
+  it("reports configuration blockers alongside the missing implementation", () => {
+    expect(googleConnectExecution({}).blockers).toEqual([
+      "provider_mode_manual", "api_disabled", "oauth_not_configured", "token_key_missing",
+      "connection_not_implemented",
+    ])
+  })
+
+  // Proves the gate is a real condition rather than a constant false, so the
+  // same code genuinely opens once an implementation is supplied.
+  it("becomes available only when an implemented live stack is supplied", () => {
+    const stack = {
+      transport: { async get() { return { status: 200, body: {} } } },
+      exchange: {
+        async exchange() {
+          return { accessToken: "", refreshToken: null, grantedScopes: [], expiresAt: "" }
+        },
+        async revoke() {},
+      },
+    }
+    expect(googleConnectionExecutionAvailable(stack)).toBe(true)
+    expect(googleConnectExecution(liveEnv, stack)).toEqual({ available: true, blockers: [] })
+    expect(googleConnectExecution({}, stack).available).toBe(false)
   })
 
   it("defines no NEXT_PUBLIC Google variable", () => {

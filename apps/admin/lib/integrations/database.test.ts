@@ -8,9 +8,17 @@ import { hashOAuthState, issueOAuthState } from "../../../../lib/google-business
 const db = new PGlite()
 const uid = "11111111-1111-4111-8111-111111111111"
 const customer = "22222222-2222-4222-8222-222222222222"
+const business = "22222222-2222-4222-8222-2222222222b1"
+const location = "22222222-2222-4222-8222-2222222222c1"
+// A second customer with their own business and location, used to prove that
+// one customer's scope can never be mixed with another's.
+const otherCustomer = "33333333-3333-4333-8333-3333333333a2"
+const otherBusiness = "33333333-3333-4333-8333-3333333333b2"
+const otherLocation = "33333333-3333-4333-8333-3333333333c2"
 const token = "a".repeat(64)
 const key = () => crypto.randomUUID()
 const sessionBinding = createHash("sha256").update("binding").digest("hex")
+const otherBinding = createHash("sha256").update("another-session").digest("hex")
 const redirectUri = "https://admin.example.com/api/integrations/google/callback"
 const encryptionKey = "0123456789abcdef0123456789abcdef"
 
@@ -110,7 +118,16 @@ beforeAll(async () => {
       on conflict (singleton) do update set auth_user_id = excluded.auth_user_id, enabled = true;
     alter table public.admin_identity enable trigger admin_identity_protect;
     insert into public.admin_sessions(token_hash,auth_user_id,created_at) values('${token}','${uid}',now());
-    insert into public.customers(id,full_name,email,phone) values('${customer}','Alex Baker','alex@example.com','+441234567890');`)
+    insert into public.customers(id,full_name,email,phone) values
+      ('${customer}','Alex Baker','alex@example.com','+441234567890'),
+      ('${otherCustomer}','Sam Clarke','sam@example.com','+441234567891');
+    insert into public.businesses(id,display_name) values
+      ('${business}','Baker Joinery'),('${otherBusiness}','Clarke Dental');
+    insert into public.locations(id,business_id,country) values
+      ('${location}','${business}','GB'),('${otherLocation}','${otherBusiness}','GB');
+    insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence) values
+      ('${customer}','${business}','verified',now(),'${uid}','Companies House filing confirms control.'),
+      ('${otherCustomer}','${otherBusiness}','verified',now(),'${uid}','Companies House filing confirms control.');`)
 }, 180000)
 
 afterAll(async () => { await db.close() })
@@ -194,12 +211,207 @@ describe("provider oauth state storage", () => {
     }
   })
 
+  // Findings E and F. A denial and a codeless redirect are terminal outcomes,
+  // not reasons to leave an attempt alive until it expires.
+  it("makes a denial and a codeless callback terminal and single use", async () => {
+    for (const reason of ["access_denied", "authorization_failed", "code_missing"]) {
+      await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+        delete from public.provider_oauth_states;
+        alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;`)
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      const consume = { stateHash: hashOAuthState(state), sessionBinding, redirectUri, reason }
+      expect(await command("consume_state", consume), reason)
+        .toMatchObject({ status: "cancelled", reason })
+      const row = await db.query<{ consumed_at: string | null; outcome: string; rejection_reason: string }>(
+        "select consumed_at, outcome, rejection_reason from public.provider_oauth_states",
+      )
+      expect(row.rows[0].consumed_at, reason).not.toBeNull()
+      expect(row.rows[0].outcome, reason).toBe("CANCELLED")
+      expect(row.rows[0].rejection_reason, reason).toBe(reason)
+      // A second callback for the same attempt is a replay, including one
+      // that now carries a code.
+      expect(await command("consume_state", consume), reason)
+        .toMatchObject({ status: "rejected", reason: "state_replayed" })
+      expect(await command("consume_state", { stateHash: hashOAuthState(state), sessionBinding, redirectUri }), reason)
+        .toMatchObject({ status: "rejected", reason: "state_replayed" })
+    }
+  })
+
+  // Finding G.
+  it("refuses a cancellation from another session and leaves the attempt alive", async () => {
+    const { state, payload } = beginPayload()
+    await command("begin_connect", payload)
+    const stateHash = hashOAuthState(state)
+    for (const [field, value, reason] of [
+      ["sessionBinding", otherBinding, "context_mismatch"],
+      ["redirectUri", "https://admin.example.com/other", "redirect_mismatch"],
+    ] as const) {
+      expect(await command("cancel_connect", {
+        stateHash, sessionBinding, redirectUri, [field]: value,
+      }), field).toMatchObject({ status: "rejected", reason })
+      const row = await db.query<{ consumed_at: string | null }>("select consumed_at from public.provider_oauth_states")
+      expect(row.rows[0].consumed_at, field).toBeNull()
+    }
+    // The session that started it can still finish or abandon it.
+    expect(await command("cancel_connect", { stateHash, sessionBinding, redirectUri }))
+      .toMatchObject({ status: "cancelled", reason: "cancelled_by_admin" })
+    const row = await db.query<{ outcome: string; rejection_reason: string }>(
+      "select outcome, rejection_reason from public.provider_oauth_states",
+    )
+    expect(row.rows[0]).toEqual({ outcome: "CANCELLED", rejection_reason: "cancelled_by_admin" })
+  })
+
+  it("still burns a state when a code arrives from the wrong context", async () => {
+    const { state, payload } = beginPayload()
+    await command("begin_connect", payload)
+    expect(await command("consume_state", {
+      stateHash: hashOAuthState(state), sessionBinding: otherBinding, redirectUri,
+    })).toMatchObject({ status: "rejected", reason: "context_mismatch" })
+    const row = await db.query<{ consumed_at: string | null; outcome: string }>(
+      "select consumed_at, outcome from public.provider_oauth_states",
+    )
+    expect(row.rows[0].consumed_at).not.toBeNull()
+    expect(row.rows[0].outcome).toBe("REJECTED")
+  })
+
   it("refuses to rewrite a consumed state or delete a live one", async () => {
     const { state, payload } = beginPayload()
     await command("begin_connect", payload)
     await expect(db.query("delete from public.provider_oauth_states")).rejects.toThrow(/live OAuth state/)
     await command("consume_state", { stateHash: hashOAuthState(state), sessionBinding, redirectUri })
     await expect(db.query("update public.provider_oauth_states set outcome = 'ACCEPTED'")).rejects.toThrow(/single use/)
+  })
+})
+
+// Finding H. The reason is a classification, never a message.
+describe("cancellation reasons are a closed set", () => {
+  const hostile = [
+    "ya29.a-real-looking-access-token",
+    "1//0gARefreshTokenLookingValue",
+    "authorization-code",
+    "client_secret=GOCSPX-abcdefghijklmnop",
+    '{"error":{"message":"Google said no at length"}}',
+    "x".repeat(4000),
+  ]
+
+  it("refuses any reason outside the fixed set before touching the attempt", async () => {
+    // "cancelled" was the old free-form default and is no longer a reason.
+    for (const reason of [...hostile, "cancelled"]) {
+      await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+        delete from public.provider_oauth_states;
+        alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;`)
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      const result = await command("consume_state", {
+        stateHash: hashOAuthState(state), sessionBinding, redirectUri, reason,
+      })
+      expect(result, reason).toMatchObject({ status: "invalid", reason: "reason_not_normalised" })
+      const row = await db.query<{ consumed_at: string | null }>("select consumed_at from public.provider_oauth_states")
+      expect(row.rows[0].consumed_at, reason).toBeNull()
+    }
+  })
+
+  it("keeps hostile text out of events, audit and every RPC answer", async () => {
+    for (const reason of hostile) {
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      await command("consume_state", { stateHash: hashOAuthState(state), sessionBinding, redirectUri, reason })
+      await command("cancel_connect", { stateHash: hashOAuthState(state), sessionBinding, redirectUri, reason })
+    }
+    const events = await db.query<{ detail: string }>("select detail from public.provider_connection_events")
+    const audit = await db.query<{ details: Record<string, unknown> }>("select details from public.admin_audit_events")
+    const status = await rpc("admin_integration_status_v1", [token])
+    const dump = JSON.stringify([events.rows, audit.rows, status])
+    for (const reason of hostile) expect(dump, reason).not.toContain(reason)
+    expect(dump).not.toMatch(/ya29\.|1\/\/|GOCSPX-|authorization-code|client_secret|xxxx/)
+    // Only server-defined classifications are recorded.
+    for (const row of events.rows) {
+      expect(["connect_requested", "cancelled_by_admin"]).toContain(row.detail)
+    }
+    for (const row of audit.rows) {
+      const written = row.details.reason
+      if (written !== undefined) {
+        expect(["reason_not_normalised", "cancelled_by_admin", "state_replayed"]).toContain(written)
+      }
+    }
+  })
+
+  it("refuses a hand-written detail or rejection reason at the table itself", async () => {
+    await expect(db.query(
+      `insert into public.provider_connection_events(provider,kind,detail) values('GOOGLE_BUSINESS_PROFILE','CALLBACK_REJECTED',$1)`,
+      ["Google said no"],
+    )).rejects.toThrow(/detail_check/)
+    const { payload } = beginPayload()
+    await command("begin_connect", payload)
+    await expect(db.query(
+      "update public.provider_oauth_states set consumed_at = now(), outcome = 'CANCELLED', rejection_reason = $1",
+      ["user changed their mind"],
+    )).rejects.toThrow(/rejection_reason_check/)
+  })
+})
+
+// Findings I and J. The chain is proved against the existing data model.
+describe("customer, business and location scope", () => {
+  const scopes: Array<[string, Record<string, unknown>, string | null]> = [
+    ["missing customer", { customerId: null }, "scope_customer_required"],
+    ["unknown customer", { customerId: "44444444-4444-4444-8444-444444444444" }, "scope_customer_unknown"],
+    ["another customer's business", { businessId: otherBusiness }, "scope_business_mismatch"],
+    ["another business's location", { businessId: business, locationId: otherLocation }, "scope_location_mismatch"],
+    ["a location with no business", { locationId: location }, "scope_location_requires_business"],
+    ["a location from another customer entirely", { customerId: otherCustomer, businessId: business, locationId: location }, "scope_business_mismatch"],
+    ["customer only", {}, null],
+    ["customer and business", { businessId: business }, null],
+    ["customer, business and location", { businessId: business, locationId: location }, null],
+  ]
+
+  it("accepts a consistent chain and refuses every inconsistent one when beginning", async () => {
+    for (const [name, overrides, fault] of scopes) {
+      const { payload } = beginPayload(overrides)
+      const before = await db.query<{ count: number }>("select count(*)::int as count from public.provider_oauth_states")
+      const result = await command("begin_connect", payload)
+      const after = await db.query<{ count: number }>("select count(*)::int as count from public.provider_oauth_states")
+      if (fault) {
+        expect(result, name).toMatchObject({ status: "invalid", reason: fault })
+        // The failure happens before anything is written.
+        expect(after.rows[0].count, name).toBe(before.rows[0].count)
+      } else {
+        expect(result?.status, name).toBe("success")
+        expect(after.rows[0].count, name).toBe(before.rows[0].count + 1)
+      }
+    }
+  })
+
+  it("re-proves the chain before an encrypted token is stored", async () => {
+    for (const [name, overrides, fault] of scopes) {
+      await db.exec(`alter table public.provider_connection_events disable trigger provider_connection_events_protect;
+        alter table public.provider_connections disable trigger provider_connections_protect;
+        delete from public.provider_connections;
+        alter table public.provider_connections enable trigger provider_connections_protect;
+        alter table public.provider_connection_events enable trigger provider_connection_events_protect;`)
+      const result = await command("store_connection", storePayload(overrides))
+      const stored = await db.query<{ count: number }>("select count(*)::int as count from public.provider_connections")
+      if (fault) {
+        expect(result, name).toMatchObject({ status: "invalid", reason: fault })
+        expect(stored.rows[0].count, name).toBe(0)
+      } else {
+        expect(result?.status, name).toBe("success")
+        expect(result?.connection, name).toMatchObject({ customerId: overrides.customerId ?? customer })
+      }
+    }
+  })
+
+  it("will not accept an unattributed row even with the functions bypassed", async () => {
+    await expect(db.query(
+      `insert into public.provider_connections(provider,token_ciphertext,token_iv,token_auth_tag,encryption_key_version,created_by)
+       values('GOOGLE_BUSINESS_PROFILE','opaque','iv','tag','v1',$1)`,
+      [uid],
+    )).rejects.toThrow(/customer_id/)
+    await expect(db.query(
+      `insert into public.provider_connections(provider,customer_id,location_id,token_ciphertext,token_iv,token_auth_tag,encryption_key_version,created_by)
+       values('GOOGLE_BUSINESS_PROFILE',$1,$2,'opaque','iv','tag','v1',$3)`,
+      [customer, location, uid],
+    )).rejects.toThrow(/provider_connection_scope/)
   })
 })
 
@@ -254,6 +466,30 @@ describe("provider connection storage", () => {
       "update public.provider_connections set status = 'CONNECTED', revoked_at = null, record_version = record_version + 1 where id = $1",
       [id],
     )).rejects.toThrow(/cannot be reopened/)
+  })
+
+  // Finding K. Identity, scope and grant facts are all write-once.
+  it("refuses a direct rewrite of the account, scopes or token expiry", async () => {
+    const created = await command("store_connection", storePayload())
+    const id = created!.connection!.id as string
+    for (const [column, value] of [
+      ["account_ref", "'accounts/999'"],
+      ["granted_scopes", "array['https://www.googleapis.com/auth/plus.business.manage']"],
+      ["token_expires_at", "now() + interval '400 days'"],
+      ["customer_id", `'${otherCustomer}'`],
+      ["token_iv", "'swapped'"],
+      ["token_auth_tag", "'swapped'"],
+      ["encryption_key_version", "'v9'"],
+    ] as const) {
+      await expect(db.query(
+        `update public.provider_connections set ${column} = ${value}, record_version = record_version + 1 where id = $1`,
+        [id],
+      ), column).rejects.toThrow(/immutable/)
+    }
+    const row = await db.query<{ account_ref: string }>(
+      "select account_ref from public.provider_connections where id = $1", [id],
+    )
+    expect(row.rows[0].account_ref).toBe("accounts/1")
   })
 
   it("enforces the record version when revoking", async () => {

@@ -79,7 +79,7 @@ export default async function ReportDetailPage({ params, searchParams }: { param
     </section>
     <section className="panel">
       <h2>Matching records</h2>
-      {!rows.length ? <EmptyState>No rows match this predicate.</EmptyState> : <div className="table-scroll"><table aria-label={reportLabels[key]}><caption className="muted">Same predicate as the summary count</caption><thead><tr><th>Record</th><th>When</th><th>Amount</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.href ? <Link href={row.href}>{row.label || row.id}</Link> : row.label}</td><td>{row.occurredAt ? ukDate(row.occurredAt) : "—"}</td><td>{row.currency ? formatMinor(row.amountMinor || 0, row.currency) : row.elapsedSeconds != null ? `${row.elapsedSeconds}s` : "—"}</td></tr>)}</tbody></table></div>}
+      {!rows.length ? <EmptyState>No rows match this predicate.</EmptyState> : <div className="table-scroll" role="region" aria-label={reportLabels[key]} tabIndex={0}><table><caption className="muted">Same predicate as the summary count</caption><thead><tr><th>Record</th><th>When</th><th>Amount</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.href ? <Link href={row.href}>{row.label || row.id}</Link> : row.label}</td><td>{row.occurredAt ? ukDate(row.occurredAt) : "—"}</td><td>{row.currency ? formatMinor(row.amountMinor || 0, row.currency) : row.elapsedSeconds != null ? `${row.elapsedSeconds}s` : "—"}</td></tr>)}</tbody></table></div>}
       {data.page?.hasMore && data.page.nextCursor && <p className="pagination"><Link href={periodHref(`/reports/${key}`, period, { cursor: data.page.nextCursor })}>View more</Link></p>}
     </section>
   </section>

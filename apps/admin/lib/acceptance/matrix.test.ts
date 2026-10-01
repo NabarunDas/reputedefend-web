@@ -7,7 +7,7 @@
  * fails here.
  */
 
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { acceptanceMatrix, type AcceptanceStatus } from "./matrix"
 
@@ -74,6 +74,21 @@ describe("Step 23 acceptance matrix", () => {
   it("names each area once", () => {
     const names = acceptanceMatrix.map(row => row.area)
     expect(names).toEqual([...new Set(names)])
+  })
+
+  it("matches the companion table in the Step 23 document", () => {
+    // The document is what a reviewer reads. If it can drift from the matrix,
+    // one of the two is lying, so the table is derived from the same rows.
+    const doc = readFileSync(new URL("../../../../docs/admin/step23-acceptance-security.md", import.meta.url), "utf8")
+    const rows = doc.split("\n")
+      .filter(line => line.startsWith("| ") && !line.startsWith("| Area") && !line.startsWith("| ---"))
+      .map(line => line.split("|").map(cell => cell.trim()).slice(1, -1))
+    expect(rows.map(cells => [cells[0], cells[2]])).toEqual(
+      acceptanceMatrix.map(row => [row.area, row.status]),
+    )
+    expect(rows.map(cells => cells[1])).toEqual(
+      acceptanceMatrix.map(row => row.routes.map(route => `\`${route}\``).join(", ") || "—"),
+    )
   })
 
   it("holds the deferred items open rather than quietly passing them", () => {

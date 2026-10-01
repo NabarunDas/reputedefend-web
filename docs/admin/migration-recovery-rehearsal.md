@@ -19,7 +19,7 @@ templates.
 ## What exists
 
 Everything lives in `apps/admin/lib/recovery/`, is pure TypeScript, and is exercised by
-`npm run rehearse:recovery` from the repository root. The suite is 143 tests across 7
+`npm run rehearse:recovery` from the repository root. The suite is 175 tests across 7
 files and runs in roughly five seconds, so a rehearsal is cheap enough to run on every
 change rather than once before launch.
 
@@ -207,17 +207,33 @@ Each expected object resolves to `MATCHED`, `DATABASE_ONLY`, `OBJECT_ONLY`,
 `METADATA_MISMATCH`, `CHECKSUM_MISMATCH` or `NOT_CHECKED`. The rehearsal covers a missing
 object, a wrong key, a size mismatch, a checksum mismatch and an orphan object, and a
 mismatched object is never silently marked recovered: the four blocking outcomes make
-`storageRecoveryBlocked` true. When no inventory is supplied every row becomes
-`NOT_CHECKED` and `fullyVerified` is false.
+`storageRecoveryBlocked` true. So does an absent inventory — every row becomes
+`NOT_CHECKED`, `inventorySupplied` is false and the report is blocked, because an
+unreconciled bucket must never read as a safe one.
 
 Reports carry a 16-character digest of bucket and key, never the key itself, so a report
 can be shared without disclosing object paths.
 
+Four states are kept apart, because collapsing them is how an unproven recovery gets
+declared successful. `structurallyMatched` means bucket, key, size and content type agree.
+`byteIntegrityProven` additionally requires a hash on both sides that agrees.
+`fullyVerified` requires both, with nothing left incomplete. `blocked` means something
+concrete is wrong — or that nothing was checked at all, because an absent inventory is a
+blocker rather than a clean result.
+
 **There is no content hash in the schema.** `case_document_versions` stores declared size
 and content type but no checksum, so a `MATCHED` row means size and content type agree,
-not that the bytes agree. Those rows carry a `checksum_unavailable` reason, `fullyVerified`
-stays false, and the `unverified` list states plainly that byte-level integrity was not
-proved. This is a real limitation recorded as a Step 22B gap rather than smoothed over.
+not that the bytes agree. Those rows carry a `checksum_unavailable` reason,
+`byteIntegrityProven` and `fullyVerified` stay false, and both the human and machine
+forms of the report say byte-level integrity is unproven. This is a real limitation
+recorded as a Step 22B gap rather than smoothed over.
+
+A version whose upload never finished is a fourth thing again. The database never claimed
+an object existed, so inventing a missing-object failure for it would be wrong. It stays
+`NOT_CHECKED` with an `upload_not_finished` reason and is counted as an incomplete upload,
+which keeps the recovery out of `VERIFIED` without fabricating a failure. An operator
+decides per row whether to abandon the transaction, retry it later or leave it for manual
+reconciliation; nothing in this tooling uploads or retries anything.
 
 ## Prepared pack recovery
 
@@ -283,12 +299,58 @@ start and finish timestamps, every check with its pass or fail state, the finger
 comparison, storage, pack and job reconciliation summaries, unresolved gaps, RPO and RTO
 observations, and a signoff placeholder.
 
-The report is safe by construction. `assertReportIsSafe` runs over both rendered forms and
-throws on presigned URL signatures, AWS access key ids, evidence storage keys, Google
-access tokens, refresh tokens and client secrets, Stripe secret keys, bearer tokens,
-session token hash fields, email addresses and UK telephone numbers. It throws rather than
-redacting, because a report that tried to carry a secret is a defect to fix, not output to
-clean up.
+### Two questions, two answers
+
+"Did the rehearsal execute correctly?" and "is the restored state actually recovered?" are
+different questions, and one boolean cannot carry both honestly. A failure-injection
+rehearsal that correctly detects a missing evidence object executed perfectly *and* proved
+the restore is unusable. The report says exactly that:
+
+```
+Rehearsal execution: PASSED
+Recovery verification: BLOCKED
+```
+
+`rehearsalStatus` is `PASSED` or `FAILED` and derives from the rehearsal's own checks.
+`recoveryVerification` is `VERIFIED`, `PARTIALLY_VERIFIED`, `BLOCKED` or
+`NOT_APPLICABLE`, and carries the blockers and limitations behind it. Both appear
+explicitly in the JSON; neither has to be inferred from prose.
+
+| Status | Meaning |
+| --- | --- |
+| `VERIFIED` | Every recovery domain in scope was exercised and came back clean, including proven byte integrity where storage is involved |
+| `PARTIALLY_VERIFIED` | Structurally correct, but a verification dimension was unavailable — no content hash, or a domain this rehearsal did not exercise. Never full recovery |
+| `BLOCKED` | A concrete unresolved blocker: a blocking storage outcome, a missing inventory, a non-recoverable pack, a queue needing reconciliation, a fingerprint difference or a failed check |
+| `NOT_APPLICABLE` | The rehearsal does not attempt to verify a restored state at all, such as an isolated history-parser exercise. Not a way to avoid reporting a blocker |
+
+`deriveRecoveryVerification` is the only place this decision is made. Domain modules report
+facts — `blocked`, `byteIntegrityProven`, `requiresHumanReview` — and the report layer
+combines them, so there is no second, slightly different opinion about whether a recovery
+succeeded living in a test or a renderer.
+
+Gaps are typed rather than uniformly alarming. `INFO` is context, `LIMITATION` is
+something this rehearsal could not establish, and `BLOCKER` is a reason the restored state
+is not recovered. An unapproved production RTO is an Owner decision, not a failed
+rehearsal; an evidence inventory that could not be collected during a real recovery is a
+blocker.
+
+### Serialisation
+
+JSON is produced by a deep stable transform: object keys are sorted at every depth, arrays
+keep their order, primitives and nulls pass through, and the source report is never
+mutated. A `JSON.stringify` replacer array cannot do this — it is applied at every depth,
+so a nested key survives only if it happens to appear in the top-level key list, which
+silently drops nested evidence. Tests parse the output back and assert that check fields,
+fingerprint differences, storage counts and rows, pack findings, job findings and signoff
+all survive the round trip.
+
+The report is safe by construction. `assertReportIsSafe` runs over both final rendered
+strings and throws on presigned URL signatures, AWS access key ids, evidence storage keys,
+Google access tokens, refresh tokens and client secrets, Stripe secret keys, bearer
+tokens, session token hash fields, email addresses and UK telephone numbers. It throws
+rather than redacting, because a report that tried to carry a secret is a defect to fix,
+not output to clean up. A test buries an unsafe value several levels deep in a pack
+finding to prove the check still catches it.
 
 Signoff is always `approvedBy: null, approvedAt: null`. An Owner signs a rehearsal off; a
 script does not.
@@ -306,6 +368,7 @@ Each of these is injected deliberately and must be visible and fail closed:
 | Duplicate idempotency retry | No duplicate record created |
 | Stale job lease | `release_stale_lease`; the job does not sit stuck |
 | Orphan storage metadata or object | `DATABASE_ONLY` / `OBJECT_ONLY`; both block |
+| No object inventory collected | Storage blocked; recovery verification cannot reach `VERIFIED` |
 | Migration-history mismatch | Validator reports divergence; status is not `clean` |
 | Missing applied migration file | `applied_file_missing` |
 | Replay attempt on an applied migration | `replay_of_applied_migration`, plus `foundation_treated_as_new` for a foundation migration |
@@ -323,6 +386,10 @@ Each of these is injected deliberately and must be visible and fail closed:
 - Fingerprints are reproducible and contain no plaintext customer data.
 - Evidence objects, prepared packs and the job queue each have a reconciliation model that
   cannot declare an unproven recovery successful.
+- Rehearsal execution and recovered-state verification are separate, explicitly typed
+  statuses, derived in one place and carried in both the human and machine forms.
+- The machine-readable form preserves nested evidence, sorts keys at every depth and does
+  not mutate the report it was given.
 - Recovery reports cannot carry a secret, a token, a presigned URL, a storage key or
   personal data, enforced by a test rather than by review.
 - No live restore, no live S3 operation, no migration, no gate change, no Cron change.

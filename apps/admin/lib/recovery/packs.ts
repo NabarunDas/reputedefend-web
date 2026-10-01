@@ -51,6 +51,8 @@ export type PackRecoveryReport = {
   recoverablePacks: readonly string[]
   nonRecoverablePacks: readonly string[]
   items: readonly PackItemResult[]
+  /** At least one approved pack cannot be rebuilt as it was approved. */
+  blocked: boolean
 }
 
 export type PackRecoveryInput = {
@@ -122,5 +124,6 @@ export function validatePackRecovery(input: PackRecoveryInput): PackRecoveryRepo
     recoverablePacks: packIds.filter(packId => !nonRecoverablePacks.includes(packId)),
     nonRecoverablePacks,
     items,
+    blocked: nonRecoverablePacks.length > 0,
   }
 }

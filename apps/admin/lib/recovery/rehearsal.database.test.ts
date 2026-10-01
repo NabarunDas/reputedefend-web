@@ -431,7 +431,12 @@ describe("storage, pack and job reconciliation driven by restored rows", () => {
     const report = reconcileEvidenceStorage(records, { inventory: inventoryFor(records), expectedBucket: rehearsalBucket })
     expect(report.counts.MATCHED).toBe(1)
     expect(report.counts.NOT_CHECKED).toBe(1)
+    expect(report.incompleteUploads).toBe(1)
     expect(storageRecoveryBlocked(report)).toBe(false)
+    // Structural only: the schema stores no hash, so the bytes are not proven.
+    expect(report.structurallyMatched).toBe(true)
+    expect(report.byteIntegrityProven).toBe(false)
+    expect(report.fullyVerified).toBe(false)
   })
 
   it("confirms the approved pack still resolves to the version it was approved with", async () => {
@@ -577,14 +582,15 @@ describe("failure injection", () => {
 })
 
 describe("the recovery evidence report produced by this rehearsal", () => {
-  it("records the run and stays safe to share", () => {
-    const report = buildRecoveryReport({
+  function rebuildReport() {
+    return buildRecoveryReport({
       runId: "clean-schema-rebuild",
       sourceRevision: "step-22a-rehearsal",
       migrationHead: migrationHead.version,
       rehearsalType: "clean_schema_rebuild",
       startedAt: "1970-01-01T00:00:00.000Z",
       finishedAt: "1970-01-01T00:00:00.000Z",
+      scope: { verifiesRecoveredState: true, requiresByteIntegrity: false },
       checks: [
         { name: "chain applied in order", passed: true, detail: `${migrationChain.length} migrations applied with nothing cherry-picked` },
         { name: "no orphan rows", passed: !fingerprintHasOrphans(fingerprint), detail: "every orphan probe returned zero" },
@@ -594,16 +600,41 @@ describe("the recovery evidence report produced by this rehearsal", () => {
       packs: null,
       jobs: null,
       unresolvedGaps: [
-        "no live Supabase restore has been performed",
-        "no live AWS S3 operation has been performed",
-        "the schema stores no evidence content hash, so byte-level integrity cannot be proved from the database alone",
+        { severity: "LIMITATION", detail: "no live Supabase restore has been performed" },
+        { severity: "LIMITATION", detail: "no live AWS S3 operation has been performed" },
+        {
+          severity: "LIMITATION",
+          detail: "the schema stores no evidence content hash, so byte-level integrity cannot be proved from the database alone",
+        },
       ],
       rpoRtoObservations: [`a clean rebuild of the full chain took ${rebuildMs} ms against in-process PostgreSQL`],
     })
-    expect(report.passed).toBe(true)
+  }
+
+  it("records the run and stays safe to share", () => {
+    const report = rebuildReport()
+    expect(report.rehearsalStatus).toBe("PASSED")
     const text = renderReportText(report)
     expect(text).toContain("no live Supabase restore has been performed")
     expect(text).toContain("not an approved recovery target")
     expect(() => renderReportJson(report)).not.toThrow()
+  })
+
+  it("does not claim a verified recovery for domains this rehearsal never exercised", () => {
+    const report = rebuildReport()
+    expect(report.recoveryVerification.verification).toBe("PARTIALLY_VERIFIED")
+    expect(report.recoveryVerification.blockers).toEqual([])
+    expect(report.recoveryVerification.limitations.join(" ")).toContain("evidence object storage was not reconciled")
+    expect(renderReportText(report)).toContain("Recovery verification: PARTIALLY_VERIFIED")
+  })
+
+  it("keeps nested evidence through the machine-readable form", () => {
+    const parsed = JSON.parse(renderReportJson(rebuildReport()))
+    expect(parsed.checks[0].name).toBe("chain applied in order")
+    expect(parsed.checks[0].passed).toBe(true)
+    expect(parsed.checks[0].detail).toContain(`${migrationChain.length} migrations`)
+    expect(parsed.unresolvedGaps[0].severity).toBe("LIMITATION")
+    expect(parsed.recoveryVerification.verification).toBe("PARTIALLY_VERIFIED")
+    expect(parsed.signoff.note).toContain("An Owner signs this off")
   })
 })

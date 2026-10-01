@@ -14,6 +14,24 @@
  *
  * Reports never contain a storage key. Keys are replaced by a short digest so
  * a report can be shared, stored and diffed without disclosing object paths.
+ *
+ * Three states are kept apart on purpose, because collapsing them is how an
+ * unproven recovery gets declared successful:
+ *
+ * - *structurally matched* means bucket, key, size and content type agree. The
+ *   schema stores no content hash, so that is as far as the database can take
+ *   us and it is not a statement about the bytes.
+ * - *byte integrity proven* additionally requires a hash on both sides that
+ *   agrees. Today it is only reachable when an operator supplies one.
+ * - *blocked* means something concrete is wrong, or nothing was checked at all.
+ *   An absent inventory blocks: not knowing is not the same as being fine.
+ *
+ * A version whose upload never finished is a fourth thing again. The database
+ * never claimed an object existed, so its absence is correct and inventing a
+ * missing-object failure for it would be wrong. It is counted separately as an
+ * incomplete upload, and an operator decides per row whether to abandon the
+ * transaction, retry it later or leave it for manual reconciliation. Nothing
+ * here retries or uploads anything.
  */
 
 import { createHash } from "node:crypto"
@@ -75,8 +93,18 @@ export type ReconciliationRow = {
 }
 
 export type ReconciliationReport = {
-  /** True only when every expected object matched on every comparable attribute. */
+  /** True only when every expected object matched and its bytes were proven. */
   fullyVerified: boolean
+  /** Bucket, key, size and content type agree for every expected object. Says nothing about the bytes. */
+  structurallyMatched: boolean
+  /** A hash was compared on both sides for every expected object and agreed. */
+  byteIntegrityProven: boolean
+  /** Something concrete is wrong, or nothing was checked. Recovery cannot be declared complete. */
+  blocked: boolean
+  /** False when no inventory was collected, which is itself a blocker. */
+  inventorySupplied: boolean
+  /** Versions whose upload never finished, so no object was ever expected. */
+  incompleteUploads: number
   counts: Record<ReconciliationOutcome, number>
   rows: readonly ReconciliationRow[]
   /** Comparisons that could not be made, so a reader never mistakes silence for success. */
@@ -118,7 +146,17 @@ export function reconcileEvidenceStorage(
       })
     }
     unverified.push("no object inventory was supplied, so no evidence object was confirmed to exist")
-    return { fullyVerified: false, counts: countOutcomes(rows), rows, unverified }
+    return {
+      fullyVerified: false,
+      structurallyMatched: false,
+      byteIntegrityProven: false,
+      blocked: true,
+      inventorySupplied: false,
+      incompleteUploads: records.filter(record => record.uploadStatus !== "UPLOADED").length,
+      counts: countOutcomes(rows),
+      rows,
+      unverified,
+    }
   }
 
   const remaining = new Map(options.inventory.map(object => [inventoryKey(object.bucket, object.key), object]))
@@ -214,10 +252,30 @@ export function reconcileEvidenceStorage(
     )
   }
 
-  const counts = countOutcomes(rows)
-  const fullyVerified = counts.MATCHED === rows.length && rows.length > 0 && unchecked.length === 0
+  const incompleteUploads = rows.filter(row => row.reasons.includes("upload_not_finished")).length
+  if (incompleteUploads > 0) {
+    unverified.push(
+      `${incompleteUploads} version(s) never finished uploading, so no object was expected; an operator decides whether to abandon, retry or leave each one pending`,
+    )
+  }
 
-  return { fullyVerified, counts, rows, unverified }
+  const counts = countOutcomes(rows)
+  const blocked = blockingOutcomes.some(outcome => counts[outcome] > 0)
+  const expected = rows.length - incompleteUploads
+  const structurallyMatched = !blocked && counts.MATCHED === expected
+  const byteIntegrityProven = structurallyMatched && unchecked.length === 0
+
+  return {
+    fullyVerified: byteIntegrityProven && incompleteUploads === 0 && rows.length > 0,
+    structurallyMatched,
+    byteIntegrityProven,
+    blocked,
+    inventorySupplied: true,
+    incompleteUploads,
+    counts,
+    rows,
+    unverified,
+  }
 }
 
 function countOutcomes(rows: readonly ReconciliationRow[]): Record<ReconciliationOutcome, number> {
@@ -233,7 +291,11 @@ function countOutcomes(rows: readonly ReconciliationRow[]): Record<Reconciliatio
   return counts
 }
 
-/** Outcomes that block declaring evidence storage recovered. */
+/**
+ * Object outcomes that block declaring evidence storage recovered. An absent
+ * inventory blocks too, but it is not an outcome of a comparison that happened,
+ * so it is carried by `inventorySupplied` rather than added to this list.
+ */
 export const blockingOutcomes: readonly ReconciliationOutcome[] = [
   "DATABASE_ONLY",
   "OBJECT_ONLY",
@@ -242,5 +304,5 @@ export const blockingOutcomes: readonly ReconciliationOutcome[] = [
 ]
 
 export function storageRecoveryBlocked(report: ReconciliationReport): boolean {
-  return blockingOutcomes.some(outcome => report.counts[outcome] > 0)
+  return report.blocked
 }

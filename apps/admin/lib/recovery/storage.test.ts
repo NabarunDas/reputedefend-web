@@ -109,16 +109,38 @@ describe("evidence object reconciliation against a synthetic inventory", () => {
     expect(storageRecoveryBlocked(report)).toBe(false)
   })
 
+  it("counts an incomplete upload separately rather than letting it pass as recovered", () => {
+    const report = reconcileEvidenceStorage(
+      [record({ checksum: "cafe" }), record({
+        versionId: "5e5e5e5e-0000-4000-8000-000000000081",
+        key: rehearsalStorageKey(caseId, documentId, "5e5e5e5e-0000-4000-8000-000000000081"),
+        uploadStatus: "PENDING_UPLOAD",
+      })],
+      { ...options, inventory: [object({ checksum: "cafe" })] },
+    )
+    expect(report.incompleteUploads).toBe(1)
+    expect(report.byteIntegrityProven).toBe(true)
+    expect(report.fullyVerified).toBe(false)
+    expect(report.unverified.join(" ")).toMatch(/never finished uploading/)
+    expect(storageRecoveryBlocked(report)).toBe(false)
+  })
+
   it("fails closed when no inventory could be collected", () => {
     const report = reconcileEvidenceStorage([record()], { ...options, inventory: null })
     expect(report.counts.NOT_CHECKED).toBe(1)
+    expect(report.inventorySupplied).toBe(false)
     expect(report.fullyVerified).toBe(false)
+    expect(report.structurallyMatched).toBe(false)
+    expect(report.byteIntegrityProven).toBe(false)
+    expect(storageRecoveryBlocked(report)).toBe(true)
     expect(report.unverified[0]).toMatch(/no object inventory/)
   })
 
   it("says plainly that a size match is not a byte match while no hash is stored", () => {
     const report = reconcileEvidenceStorage([record()], { ...options, inventory: [object()] })
     expect(report.rows[0].reasons).toContain("checksum_unavailable")
+    expect(report.structurallyMatched).toBe(true)
+    expect(report.byteIntegrityProven).toBe(false)
     expect(report.fullyVerified).toBe(false)
     expect(report.unverified.join(" ")).toMatch(/no content hash/)
   })
@@ -130,6 +152,8 @@ describe("evidence object reconciliation against a synthetic inventory", () => {
     )
     expect(report.counts.MATCHED).toBe(1)
     expect(report.rows[0].reasons).toEqual([])
+    expect(report.structurallyMatched).toBe(true)
+    expect(report.byteIntegrityProven).toBe(true)
     expect(report.fullyVerified).toBe(true)
   })
 
@@ -168,12 +192,14 @@ describe("prepared pack recovery", () => {
     expect(report.items[0].outcome).toBe("RECOVERABLE")
     expect(report.recoverablePacks).toEqual([packId])
     expect(report.nonRecoverablePacks).toEqual([])
+    expect(report.blocked).toBe(false)
   })
 
   it("marks a pack non-recoverable when its pinned evidence version is gone", () => {
     const report = validatePackRecovery({ items: [item], versions: [], storage })
     expect(report.items[0].outcome).toBe("VERSION_MISSING")
     expect(report.nonRecoverablePacks).toEqual([packId])
+    expect(report.blocked).toBe(true)
   })
 
   it("does not silently rebind a pack item to a newer version of the document", () => {

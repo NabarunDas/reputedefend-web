@@ -21,6 +21,24 @@ that no longer exist, and surviving objects can have no database row pointing at
 Every restore therefore ends in reconciliation, never in "the backup came back, we are
 done".
 
+## Three things a report can mean, and only one of them is "recovered"
+
+Keep these apart when reading any recovery evidence report, and when writing one.
+
+- **Rehearsal execution** is whether the exercise itself ran correctly. A failure-injection
+  rehearsal that correctly detects a missing object executed perfectly.
+- **Recovered-state verification** is whether the restored data is actually usable:
+  `VERIFIED`, `PARTIALLY_VERIFIED`, `BLOCKED` or `NOT_APPLICABLE`. A rehearsal can execute
+  perfectly and report `BLOCKED`; that is a correct result, not a contradiction.
+- **Structural object match** means bucket, key, size and content type agree. It is not
+  byte-level verification. The schema stores no content hash, so today every real restore
+  tops out at a structural match and cannot reach `VERIFIED` where byte integrity matters.
+
+An unresolved recovery blocker — a blocking object outcome, an inventory that could not be
+collected, a non-recoverable prepared pack, a queue awaiting provider reconciliation — is
+a different thing again from a documented future Owner decision such as an unapproved RTO.
+The first stops the recovery; the second does not.
+
 ## Never
 
 - Never replay a baseline `CREATE TABLE` migration against a database that already has
@@ -45,6 +63,10 @@ done".
   `DeleteObject`.
 - Never treat a size-and-content-type match as proof the bytes are intact. The schema
   stores no content hash.
+- Never treat an inventory you could not collect as a clean result. Not knowing whether
+  the objects are there is a blocker, not a pass.
+- Never let an upload that never finished count towards a recovered total, and never
+  retry one automatically. Each needs an operator decision.
 
 ## Before any restore
 
@@ -164,7 +186,10 @@ gates re-opened one at a time.
    Report every difference; do not explain any of them away yet.
 7. **Reconcile evidence storage.** Collect an object inventory out of band and reconcile
    it against restored metadata. Resolve every `DATABASE_ONLY`, `OBJECT_ONLY`,
-   `METADATA_MISMATCH` and `CHECKSUM_MISMATCH` before continuing.
+   `METADATA_MISMATCH` and `CHECKSUM_MISMATCH` before continuing. Not being able to
+   collect an inventory is itself a blocker, not a clean result. Decide what to do with
+   each incomplete upload: abandon the transaction, retry it later, or leave it pending
+   for manual reconciliation. Nothing retries an upload automatically.
 8. **Validate prepared packs.** Every approved pack item must resolve to the same pinned
    version with the same metadata and a recovered object. Record non-recoverable packs as
    non-recoverable.
@@ -198,7 +223,7 @@ been approved.
 | Point-in-time recovery | Not demonstrated | Supabase PITR window | Up to the recovery point | PITR availability unconfirmed for this project | Not yet approved |
 | Forward fix after a faulty migration | Backfill sequence and interruption-resumption rehearsed locally | Deployment pipeline | None if the fix is additive | Rehearsed on synthetic rows only | Not yet approved |
 | Catastrophic project loss | Not demonstrated | Supabase, Vercel, AWS, DNS | Everything after the last backup | External configuration is the real cost and is unmeasured | Not yet approved |
-| Evidence object recovery | Reconciliation logic rehearsed against synthetic objects | AWS S3 versioning or backup | Unknown — depends on bucket configuration | No live S3 operation performed; no content hash stored | Not yet approved |
+| Evidence object recovery | Reconciliation logic rehearsed against synthetic objects | AWS S3 versioning or backup | Unknown — depends on bucket configuration | No live S3 operation performed; with no content hash stored, a real restore can reach a structural match but never byte verification | Not yet approved |
 | Job queue reconciliation | Classification rehearsed on synthetic rows | None | None directly; duplicate provider effects are the risk | Volume and provider reconciliation untested | Not yet approved |
 
 Database and storage are separate streams. Overall recovery is bounded by whichever

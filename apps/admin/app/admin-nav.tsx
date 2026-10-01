@@ -18,6 +18,10 @@ export const adminNavItems = [
   { href: "/guard/checks", label: "Checks", match: (pathname: string) => pathname.startsWith("/guard/checks") },
   { href: "/guard/alerts", label: "Alerts", match: (pathname: string) => pathname.startsWith("/guard/alerts") },
   { href: "/operations/jobs", label: "Jobs", match: (pathname: string) => pathname.startsWith("/operations") },
+  { href: "/settings", label: "Settings", match: (pathname: string) => pathname.startsWith("/settings") },
+  { href: "/privacy", label: "Privacy", match: (pathname: string) => pathname.startsWith("/privacy") },
+  { href: "/complaints", label: "Complaints", match: (pathname: string) => pathname.startsWith("/complaints") },
+  { href: "/incidents", label: "Incidents", match: (pathname: string) => pathname.startsWith("/incidents") },
   { href: "/security", label: "Security", match: (pathname: string) => pathname.startsWith("/security") },
 ] as const
 

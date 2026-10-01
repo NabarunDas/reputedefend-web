@@ -27,6 +27,17 @@ This extends the Admin security model for Step 8A uploads, Step 8B review/access
 | Stale approved pack used as current | Included evidence changes mark that APPROVED pack `STALE`; STALE/SUPERSEDED packs cannot be edited or re-approved |
 | Pack approval treated as submission authority | Approval copy and command success text state that payment, permission and Google submission are not confirmed; `PREPARATION` / `READY_TO_SUBMIT` remain `prerequisite` |
 
+## Settings and privacy (Step 20)
+
+| Threat | Mitigation |
+| --- | --- |
+| Extra staff accounts or role escalation | No staff tables, invitations or capability UI; singleton `admin_identity` cannot be deleted, disabled or rebound |
+| Retroactive policy rewrite | Approve rejects `effective_from` before the current Europe/London day; current lookup is `[effective_from, effective_to)` |
+| Secret material in settings or audit | Payload key/value secret check; audit stores operation name only |
+| Privacy deletion of financial/audit evidence | Preview states retention; completion never deletes receipts, obligations or audit; holds refuse deletion |
+| Unverified privacy requester | Verify requires current email already verified |
+| Direct table or browser RPC access | RLS on, grants revoked, public RPCs service-role-only |
+
 ## Customer actions (Step 9A)
 
 | Threat | Mitigation |

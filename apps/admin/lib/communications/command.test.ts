@@ -33,6 +33,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs())
 
 describe("communications admin commands", () => {
+  it.each([
+    ["a mistyped case reference", { operation: "draft", caseId: "PR-26-ABC123", templateKey: "CASE_UPDATE" }],
+    ["an empty case reference", { operation: "draft", caseId: "", templateKey: "CASE_UPDATE" }],
+    ["a mistyped evidence request", { operation: "draft", caseId, templateKey: "EVIDENCE_REQUEST", evidenceRequestId: "req-7" }],
+    ["a malformed communication", { operation: "review", communicationId: "not-a-uuid", version: 1 }],
+  ])("answers %s as a field problem and never reaches the database", async (_label, body) => {
+    const response = await communicationsCommand(req(body))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ message: "Check the fields before saving." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("drafts through the server command and rejects unknown operations", async () => {
     mocks.rpc.mockResolvedValue({ status: "success" })
     const ok = await communicationsCommand(req({

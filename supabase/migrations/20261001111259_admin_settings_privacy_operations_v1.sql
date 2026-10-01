@@ -75,7 +75,9 @@ CREATE TABLE public.admin_setting_versions (
   retired_by uuid,
   record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1),
   UNIQUE (setting_key, version),
-  CONSTRAINT admin_setting_range CHECK (effective_to IS NULL OR effective_to > effective_from)
+  -- An equal pair closes the interval as empty: a version retired before it ever took effect.
+  CONSTRAINT admin_setting_range CHECK (effective_to IS NULL OR effective_to >= effective_from),
+  CONSTRAINT admin_setting_retired_closed CHECK (status <> 'RETIRED' OR effective_to IS NOT NULL)
 );
 CREATE INDEX admin_setting_versions_current_idx
   ON public.admin_setting_versions (setting_key, effective_from DESC, version DESC)
@@ -129,7 +131,8 @@ CREATE TABLE public.retention_policy_versions (
   CONSTRAINT retention_mode_duration CHECK (
     (retention_mode = 'RETAIN_FOR_PERIOD') = (duration_days IS NOT NULL)
   ),
-  CONSTRAINT retention_range CHECK (effective_to IS NULL OR effective_to > effective_from)
+  CONSTRAINT retention_range CHECK (effective_to IS NULL OR effective_to >= effective_from),
+  CONSTRAINT retention_retired_closed CHECK (status <> 'RETIRED' OR effective_to IS NOT NULL)
 );
 ALTER TABLE public.retention_policy_versions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.retention_policy_versions FROM PUBLIC, anon, authenticated, service_role;
@@ -372,6 +375,17 @@ BEGIN
   IF NEW.record_version IS DISTINCT FROM OLD.record_version + 1 THEN
     RAISE EXCEPTION 'Settings version increment is required';
   END IF;
+  IF NEW.status = 'RETIRED' AND OLD.status IS DISTINCT FROM 'RETIRED' THEN
+    IF NEW.effective_to IS NULL THEN
+      RAISE EXCEPTION 'Retired settings must close their effective interval';
+    END IF;
+    IF NEW.effective_to > now() AND NEW.effective_to > NEW.effective_from AND NOT EXISTS (
+      SELECT 1 FROM public.admin_setting_versions o
+      WHERE o.setting_key = NEW.setting_key AND o.id <> NEW.id AND o.effective_from = NEW.effective_to
+    ) THEN
+      RAISE EXCEPTION 'Retired settings cannot stay applicable without a scheduled replacement';
+    END IF;
+  END IF;
   IF NEW.status IN ('APPROVED','RETIRED') AND EXISTS (
     SELECT 1 FROM public.admin_setting_versions o
     WHERE o.setting_key = NEW.setting_key AND o.id <> NEW.id
@@ -405,6 +419,25 @@ BEGIN
     IF NEW.record_version IS DISTINCT FROM OLD.record_version + 1 THEN
       RAISE EXCEPTION 'Retention version increment is required';
     END IF;
+    IF NEW.status = 'RETIRED' AND OLD.status IS DISTINCT FROM 'RETIRED' THEN
+      IF NEW.effective_to IS NULL THEN
+        RAISE EXCEPTION 'Retired retention must close their effective interval';
+      END IF;
+      IF NEW.effective_to > now() AND NEW.effective_to > NEW.effective_from AND NOT EXISTS (
+        SELECT 1 FROM public.retention_policy_versions o
+        WHERE o.category = NEW.category AND o.id <> NEW.id AND o.effective_from = NEW.effective_to
+      ) THEN
+        RAISE EXCEPTION 'Retired retention cannot stay applicable without a scheduled replacement';
+      END IF;
+    END IF;
+  END IF;
+  IF NEW.status IN ('APPROVED','RETIRED') AND EXISTS (
+    SELECT 1 FROM public.retention_policy_versions o
+    WHERE o.category = NEW.category AND o.id <> NEW.id
+      AND o.status IN ('APPROVED','RETIRED')
+      AND tstzrange(o.effective_from, o.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+  ) THEN
+    RAISE EXCEPTION 'overlapping approved retention';
   END IF;
   RETURN NEW;
 END; $$;
@@ -512,12 +545,29 @@ CREATE FUNCTION admin_private.protect_response_obligation_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Response obligations are not deleted'; END IF;
-  IF TG_OP = 'UPDATE' AND (
-    NEW.due_at IS DISTINCT FROM OLD.due_at
-    OR NEW.target_hours IS DISTINCT FROM OLD.target_hours
-    OR NEW.policy_version_id IS DISTINCT FROM OLD.policy_version_id
-    OR NEW.opened_at IS DISTINCT FROM OLD.opened_at
-  ) THEN RAISE EXCEPTION 'Response obligation facts are immutable'; END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.id IS DISTINCT FROM OLD.id
+      OR NEW.target_type IS DISTINCT FROM OLD.target_type
+      OR NEW.enquiry_id IS DISTINCT FROM OLD.enquiry_id
+      OR NEW.case_id IS DISTINCT FROM OLD.case_id
+      OR NEW.policy_version_id IS DISTINCT FROM OLD.policy_version_id
+      OR NEW.hours_version_id IS DISTINCT FROM OLD.hours_version_id
+      OR NEW.opened_at IS DISTINCT FROM OLD.opened_at
+      OR NEW.due_at IS DISTINCT FROM OLD.due_at
+      OR NEW.timezone IS DISTINCT FROM OLD.timezone
+      OR NEW.target_hours IS DISTINCT FROM OLD.target_hours
+      OR NEW.created_at IS DISTINCT FROM OLD.created_at
+    THEN RAISE EXCEPTION 'Response obligation facts are immutable'; END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status
+      AND NOT (OLD.status = 'OPEN' AND NEW.status IN ('FULFILLED','CANCELLED'))
+    THEN RAISE EXCEPTION 'Invalid response obligation transition'; END IF;
+    IF OLD.fulfilled_at IS NOT NULL AND NEW.fulfilled_at IS DISTINCT FROM OLD.fulfilled_at THEN
+      RAISE EXCEPTION 'Response obligation fulfilment is immutable';
+    END IF;
+    IF (NEW.status = 'FULFILLED') IS DISTINCT FROM (NEW.fulfilled_at IS NOT NULL) THEN
+      RAISE EXCEPTION 'Response obligation fulfilment time is required';
+    END IF;
+  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER service_response_obligations_protect
@@ -655,6 +705,17 @@ CREATE FUNCTION admin_private.hold_blocks_v1(
   );
 $$;
 
+-- Stored evidence objects live in S3. No storage delete capability exists, so any stored
+-- object keeps CASE_EVIDENCE deletion outstanding and cannot be cleared by an Admin edit.
+CREATE FUNCTION admin_private.external_deletion_outstanding_v1(p_customer uuid) RETURNS integer
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT count(*)::int
+  FROM public.case_document_versions v
+  JOIN public.case_documents d ON d.id = v.document_id
+  JOIN public.cases c ON c.id = d.case_id
+  WHERE p_customer IS NOT NULL AND c.customer_id = p_customer;
+$$;
+
 ALTER TABLE admin_private.communication_templates
   ADD COLUMN IF NOT EXISTS status text,
   ADD COLUMN IF NOT EXISTS created_by uuid,
@@ -784,8 +845,7 @@ BEGIN
   SELECT count(*)::int INTO receipts FROM public.payment_receipts WHERE customer_id = p_customer;
   SELECT count(*)::int INTO obligations FROM public.payment_obligations WHERE customer_id = p_customer;
   SELECT count(*)::int INTO comms FROM public.communications WHERE customer_id = p_customer;
-  SELECT count(*)::int INTO evidence FROM public.case_documents d
-    JOIN public.cases c ON c.id = d.case_id WHERE c.customer_id = p_customer;
+  evidence := admin_private.external_deletion_outstanding_v1(p_customer);
   SELECT count(*)::int INTO enquiries FROM public.enquiries e
   WHERE e.status <> 'converted' AND e.case_id IS NULL AND e.monitoring_request_id IS NULL
     AND lower(btrim(coalesce(e.payload->>'email',''))) = (SELECT lower(email) FROM public.customers WHERE id = p_customer);
@@ -829,17 +889,6 @@ BEGIN
     )
   );
 END; $$;
-
-CREATE OR REPLACE FUNCTION admin_private.privacy_transition_ok_v1(p_from text, p_to text) RETURNS boolean
-LANGUAGE sql IMMUTABLE SET search_path='' AS $$
-  SELECT (p_from, p_to) IN (
-    ('RECEIVED','IDENTITY_REQUIRED'),('RECEIVED','VERIFIED'),('RECEIVED','REJECTED'),('RECEIVED','CANCELLED'),
-    ('IDENTITY_REQUIRED','VERIFIED'),('IDENTITY_REQUIRED','REJECTED'),('IDENTITY_REQUIRED','CANCELLED'),
-    ('VERIFIED','REVIEWING'),('VERIFIED','COMPLETED'),('VERIFIED','REJECTED'),('VERIFIED','CANCELLED'),
-    ('REVIEWING','READY_FOR_ACTION'),('REVIEWING','COMPLETED'),('REVIEWING','REJECTED'),('REVIEWING','CANCELLED'),
-    ('READY_FOR_ACTION','COMPLETED'),('READY_FOR_ACTION','REJECTED'),('READY_FOR_ACTION','CANCELLED')
-  );
-$$;
 
 CREATE FUNCTION admin_private.settings_uuid_v1(p_value text) RETURNS uuid
 LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
@@ -1047,8 +1096,11 @@ DECLARE
   retained integer;
   blocked text;
   policy uuid;
+  cust uuid;
+  external integer;
   ret public.retention_policy_versions;
 BEGIN
+  SELECT r.customer_id INTO cust FROM public.privacy_requests r WHERE r.id = p_request;
   FOREACH cat IN ARRAY ARRAY['UNSUCCESSFUL_ENQUIRIES','CASE_EVIDENCE','FINANCIAL_RECORDS','CONSENT_RECORDS','SECURITY_LOGS']
   LOOP
     ret := admin_private.current_retention_v1(cat, now());
@@ -1068,13 +1120,15 @@ BEGIN
     ELSIF cat = 'CASE_EVIDENCE' THEN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,caseEvidence}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,caseEvidence}')::boolean, false);
-      eligible := coalesce((p_preview#>>'{externalDeletionRequired,caseEvidence}')::int, 0);
+      eligible := admin_private.external_deletion_outstanding_v1(cust);
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
-      st := CASE WHEN hold OR no_ret OR eligible > 0 THEN 'BLOCKED' ELSE 'READY' END;
+      external := CASE WHEN action = 'DELETE' THEN eligible ELSE 0 END;
+      st := CASE WHEN hold OR no_ret OR external > 0 THEN 'BLOCKED' ELSE 'READY' END;
       blocked := CASE
         WHEN hold THEN 'Legal hold'
         WHEN no_ret THEN 'No approved retention policy'
-        WHEN eligible > 0 THEN coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'BLOCKED_EXTERNAL_DELETION')
+        WHEN external > 0 THEN 'BLOCKED_EXTERNAL_DELETION: '
+          || coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'storage delete is not granted')
         ELSE ''
       END;
     ELSIF cat = 'FINANCIAL_RECORDS' THEN
@@ -1111,14 +1165,49 @@ BEGIN
       retained_count = EXCLUDED.retained_count,
       blocked_reason = EXCLUDED.blocked_reason,
       reason = EXCLUDED.reason,
+      reviewed_at = NULL,
+      reviewed_by = NULL,
       record_version = public.privacy_request_dispositions.record_version + 1;
   END LOOP;
 END; $$;
+
+-- System-derived blockers cannot be edited away. An Admin may change a proposed action or
+-- add reasoning, but the database re-proves external storage deletion and legal holds itself.
+CREATE FUNCTION admin_private.protect_privacy_disposition_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE cust uuid;
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Privacy dispositions are not deleted'; END IF;
+  IF TG_OP = 'UPDATE' AND (
+    NEW.privacy_request_id IS DISTINCT FROM OLD.privacy_request_id OR NEW.category IS DISTINCT FROM OLD.category
+  ) THEN RAISE EXCEPTION 'Privacy disposition scope is immutable'; END IF;
+  SELECT r.customer_id INTO cust FROM public.privacy_requests r WHERE r.id = NEW.privacy_request_id;
+  IF NEW.category = 'CASE_EVIDENCE' AND NEW.proposed_action = 'DELETE' AND NEW.status IN ('READY','COMPLETED')
+    AND admin_private.external_deletion_outstanding_v1(cust) > 0
+  THEN RAISE EXCEPTION 'BLOCKED_EXTERNAL_DELETION remains outstanding'; END IF;
+  IF NEW.proposed_action = 'DELETE' AND NEW.status IN ('READY','COMPLETED') AND NEW.legal_hold_blocker THEN
+    RAISE EXCEPTION 'A legal hold blocks this disposition';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.legal_hold_blocker AND NOT NEW.legal_hold_blocker
+    AND (
+      admin_private.hold_blocks_v1(cust, NULL, NULL, NULL)
+      OR admin_private.hold_blocks_v1(cust, NULL, NULL, NEW.category)
+    )
+  THEN RAISE EXCEPTION 'A legal hold blocker cannot be cleared while the hold is active'; END IF;
+  RETURN NEW;
+END; $$;
+CREATE TRIGGER privacy_request_dispositions_protect
+  BEFORE INSERT OR UPDATE OR DELETE ON public.privacy_request_dispositions
+  FOR EACH ROW EXECUTE FUNCTION admin_private.protect_privacy_disposition_v1();
 
 CREATE FUNCTION admin_private.deletion_blocked_v1(p_req public.privacy_requests) RETURNS text
 LANGUAGE plpgsql STABLE SET search_path='' AS $$
 DECLARE preview jsonb := coalesce(p_req.preview, '{}'::jsonb);
 BEGIN
+  IF preview = '{}'::jsonb THEN RETURN 'preview_required'; END IF;
+  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id) > 0 THEN
+    RETURN 'external_deletion';
+  END IF;
   IF admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, NULL)
     OR admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, 'UNSUCCESSFUL_ENQUIRIES')
     OR admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, 'CASE_EVIDENCE')
@@ -1149,6 +1238,58 @@ BEGIN
       )
   ) THEN RETURN 'retention_required'; END IF;
   RETURN NULL;
+END; $$;
+
+-- A privacy request may only reach READY_FOR_ACTION or COMPLETED once the review workflow
+-- actually happened and every required disposition is resolved. Checked again at completion
+-- because holds, evidence and retention can change after the review.
+CREATE FUNCTION admin_private.privacy_blockers_v1(p_req public.privacy_requests) RETURNS text
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+  IF p_req.identity_status NOT IN ('VERIFIED_CONTACT','VERIFIED_MANUAL') OR p_req.verified_at IS NULL THEN
+    RETURN 'identity_unverified';
+  END IF;
+  IF coalesce(p_req.preview, '{}'::jsonb) = '{}'::jsonb THEN RETURN 'preview_required'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d WHERE d.privacy_request_id = p_req.id
+  ) THEN RETURN 'review_required'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id AND d.status = 'BLOCKED'
+  ) THEN RETURN 'blocked_disposition'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id AND d.status = 'PENDING'
+  ) THEN RETURN 'pending_disposition'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id AND d.reviewed_at IS NULL
+      AND d.proposed_action IN ('DELETE','MANUAL_REVIEW','CORRECT')
+  ) THEN RETURN 'review_required'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id AND d.legal_hold_blocker AND d.proposed_action = 'DELETE'
+  ) OR (p_req.kind = 'DELETION' AND admin_private.hold_blocks_v1(p_req.customer_id, NULL, NULL, NULL))
+  THEN RETURN 'legal_hold'; END IF;
+  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id) > 0 AND EXISTS (
+    SELECT 1 FROM public.privacy_request_dispositions d
+    WHERE d.privacy_request_id = p_req.id AND d.proposed_action = 'DELETE'
+  ) THEN RETURN 'external_deletion'; END IF;
+  RETURN NULL;
+END; $$;
+
+-- The stored preview must still describe today's facts before any destructive step runs.
+CREATE FUNCTION admin_private.privacy_preview_current_v1(p_req public.privacy_requests) RETURNS boolean
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE fresh jsonb;
+BEGIN
+  IF coalesce(p_req.preview, '{}'::jsonb) = '{}'::jsonb THEN RETURN false; END IF;
+  IF p_req.preview->>'customerId' IS DISTINCT FROM p_req.customer_id::text THEN RETURN false; END IF;
+  fresh := admin_private.privacy_preview_v1(p_req.customer_id);
+  RETURN p_req.preview->'eligible' = fresh->'eligible'
+    AND p_req.preview->'blockedByHold' = fresh->'blockedByHold'
+    AND p_req.preview->'blockedNoApprovedRetention' = fresh->'blockedNoApprovedRetention'
+    AND p_req.preview->'externalDeletionRequired' = fresh->'externalDeletionRequired';
 END; $$;
 
 CREATE FUNCTION admin_private.settings_command_apply_v1(
@@ -1250,19 +1391,27 @@ BEGIN
     IF row.status IS DISTINCT FROM 'DRAFT' THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF row.effective_from < clock - interval '2 minutes' THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
     IF row.setting_key = 'RESPONSE_TARGETS' THEN
+      -- The hours policy applicable at the target's effective instant counts, even when a
+      -- later version has already been scheduled and this one is therefore RETIRED.
       hours := admin_private.current_setting_v1('SERVICE_HOURS', row.effective_from);
-      IF hours.id IS NULL OR hours.status IS DISTINCT FROM 'APPROVED' THEN
+      IF hours.id IS NULL OR hours.approved_at IS NULL OR hours.status NOT IN ('APPROVED','RETIRED') THEN
         RETURN jsonb_build_object('status','denied','reason','service_hours_required');
       END IF;
     END IF;
-    SELECT * INTO prev FROM public.admin_setting_versions
-      WHERE setting_key = row.setting_key AND status = 'APPROVED' AND id <> row.id FOR UPDATE;
-    IF prev.id IS NOT NULL THEN
+    FOR prev IN
+      SELECT v.* FROM public.admin_setting_versions v
+      WHERE v.setting_key = row.setting_key AND v.status = 'APPROVED' AND v.id <> row.id
+        AND tstzrange(v.effective_from, v.effective_to, '[)') && tstzrange(row.effective_from, NULL, '[)')
+      FOR UPDATE
+    LOOP
+      IF prev.effective_from >= row.effective_from THEN
+        RETURN jsonb_build_object('status','invalid','reason','overlapping_approved_settings');
+      END IF;
       UPDATE public.admin_setting_versions
         SET status = 'RETIRED', effective_to = row.effective_from, retired_at = clock, retired_by = p_actor,
             record_version = record_version + 1
       WHERE id = prev.id;
-    END IF;
+    END LOOP;
     UPDATE public.admin_setting_versions
       SET status = 'APPROVED', approved_at = clock, approved_by = p_actor, record_version = row.record_version + 1
     WHERE id = row.id RETURNING * INTO row;
@@ -1273,9 +1422,11 @@ BEGIN
     IF row.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF row.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF row.status IS DISTINCT FROM 'APPROVED' THEN RETURN jsonb_build_object('status','invalid'); END IF;
+    -- A version retired before it ever takes effect closes as an empty interval so it can
+    -- never become current later. An already effective version keeps its history up to now.
     UPDATE public.admin_setting_versions
       SET status = 'RETIRED',
-          effective_to = CASE WHEN effective_to IS NULL AND clock > effective_from THEN clock ELSE effective_to END,
+          effective_to = coalesce(effective_to, greatest(clock, effective_from)),
           retired_at = clock, retired_by = p_actor, record_version = row.record_version + 1
     WHERE id = row.id RETURNING * INTO row;
     RETURN jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
@@ -1327,14 +1478,20 @@ BEGIN
     IF ret.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF ret.status IS DISTINCT FROM 'DRAFT' THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF ret.effective_from < clock - interval '2 minutes' THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
-    SELECT * INTO prev_ret FROM public.retention_policy_versions
-      WHERE category = ret.category AND status = 'APPROVED' AND id <> ret.id FOR UPDATE;
-    IF prev_ret.id IS NOT NULL THEN
+    FOR prev_ret IN
+      SELECT v.* FROM public.retention_policy_versions v
+      WHERE v.category = ret.category AND v.status = 'APPROVED' AND v.id <> ret.id
+        AND tstzrange(v.effective_from, v.effective_to, '[)') && tstzrange(ret.effective_from, NULL, '[)')
+      FOR UPDATE
+    LOOP
+      IF prev_ret.effective_from >= ret.effective_from THEN
+        RETURN jsonb_build_object('status','invalid','reason','overlapping_approved_retention');
+      END IF;
       UPDATE public.retention_policy_versions
         SET status = 'RETIRED', effective_to = ret.effective_from, retired_at = clock, retired_by = p_actor,
             record_version = record_version + 1
       WHERE id = prev_ret.id;
-    END IF;
+    END LOOP;
     UPDATE public.retention_policy_versions
       SET status = 'APPROVED', approved_at = clock, approved_by = p_actor, record_version = ret.record_version + 1
     WHERE id = ret.id RETURNING * INTO ret;
@@ -1347,7 +1504,7 @@ BEGIN
     IF ret.status IS DISTINCT FROM 'APPROVED' THEN RETURN jsonb_build_object('status','invalid'); END IF;
     UPDATE public.retention_policy_versions
       SET status = 'RETIRED',
-          effective_to = CASE WHEN effective_to IS NULL AND clock > effective_from THEN clock ELSE effective_to END,
+          effective_to = coalesce(effective_to, greatest(clock, effective_from)),
           retired_at = clock, retired_by = p_actor, record_version = ret.record_version + 1
     WHERE id = ret.id RETURNING * INTO ret;
     RETURN jsonb_build_object('status','success','id', ret.id, 'version', ret.record_version);
@@ -1630,13 +1787,11 @@ BEGIN
     IF req.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF req.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF req.status IS DISTINCT FROM 'REVIEWING' THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF req.kind IN ('ACCESS','EXPORT','CORRECTION') AND (
-      req.preview = '{}'::jsonb
-      OR EXISTS (
-        SELECT 1 FROM public.privacy_request_dispositions d
-        WHERE d.privacy_request_id = req.id AND d.status IN ('PENDING','BLOCKED')
-      )
-    ) THEN RETURN jsonb_build_object('status','denied','reason','pending_disposition'); END IF;
+    block_reason := admin_private.privacy_blockers_v1(req);
+    IF block_reason IS NULL AND req.kind = 'DELETION' THEN
+      block_reason := admin_private.deletion_blocked_v1(req);
+    END IF;
+    IF block_reason IS NOT NULL THEN RETURN jsonb_build_object('status','denied','reason', block_reason); END IF;
     UPDATE public.privacy_requests SET status = 'READY_FOR_ACTION', record_version = req.record_version + 1
     WHERE id = req.id RETURNING * INTO req;
     RETURN jsonb_build_object('status','success','id', req.id, 'version', req.record_version);
@@ -1648,16 +1803,27 @@ BEGIN
     category := admin_private.hold_category_v1(p_payload->>'category');
     action := upper(btrim(coalesce(p_payload->>'proposedAction', p_payload->>'action', '')));
     reason := btrim(coalesce(p_payload->>'reason', ''));
-    SELECT * INTO disp FROM public.privacy_request_dispositions
-      WHERE privacy_request_id = req.id AND category = category FOR UPDATE;
+    SELECT * INTO disp FROM public.privacy_request_dispositions d
+      WHERE d.privacy_request_id = req.id AND d.category = category FOR UPDATE;
     IF disp.id IS NULL OR action NOT IN ('EXPORT','CORRECT','DELETE','RETAIN','MANUAL_REVIEW')
       OR length(reason) > 500
       OR coalesce(nullif(upper(btrim(p_payload->>'status')), ''), disp.status) NOT IN ('PENDING','READY','BLOCKED','COMPLETED')
     THEN RETURN jsonb_build_object('status','invalid'); END IF;
+    note := coalesce(nullif(upper(btrim(p_payload->>'status')), ''), disp.status);
+    -- A manual status edit cannot clear a system-derived blocker.
+    IF note IN ('READY','COMPLETED') AND action = 'DELETE' THEN
+      IF disp.category = 'CASE_EVIDENCE' AND admin_private.external_deletion_outstanding_v1(req.customer_id) > 0 THEN
+        RETURN jsonb_build_object('status','denied','reason','external_deletion');
+      END IF;
+      IF disp.legal_hold_blocker
+        OR admin_private.hold_blocks_v1(req.customer_id, NULL, NULL, NULL)
+        OR admin_private.hold_blocks_v1(req.customer_id, NULL, NULL, disp.category)
+      THEN RETURN jsonb_build_object('status','denied','reason','legal_hold'); END IF;
+    END IF;
     UPDATE public.privacy_request_dispositions SET
       proposed_action = action,
       reason = reason,
-      status = coalesce(nullif(upper(btrim(p_payload->>'status')), ''), status),
+      status = note,
       reviewed_at = clock, reviewed_by = p_actor, record_version = record_version + 1
     WHERE id = disp.id RETURNING * INTO disp;
     UPDATE public.privacy_requests SET record_version = record_version + 1 WHERE id = req.id RETURNING * INTO req;
@@ -1667,13 +1833,20 @@ BEGIN
     note := btrim(coalesce(p_payload->>'resolution', p_payload->>'outcomeNote', p_payload->>'outcome_note', ''));
     SELECT * INTO req FROM public.privacy_requests WHERE id = admin_private.settings_uuid_v1(p_payload->>'id') FOR UPDATE;
     IF req.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF req.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
-    IF req.status NOT IN ('VERIFIED','REVIEWING','READY_FOR_ACTION') THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF length(note) NOT BETWEEN 3 AND 1000 THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF req.kind = 'DELETION' THEN
-      block_reason := admin_private.deletion_blocked_v1(req);
-      IF block_reason IS NOT NULL THEN RETURN jsonb_build_object('status','denied','reason', block_reason); END IF;
+    IF p_version IS NULL OR req.record_version IS DISTINCT FROM p_version THEN
+      RETURN jsonb_build_object('status','conflict');
     END IF;
+    IF req.status IS DISTINCT FROM 'READY_FOR_ACTION' THEN
+      RETURN jsonb_build_object('status','denied','reason','not_ready');
+    END IF;
+    IF length(note) NOT BETWEEN 10 AND 1000
+      OR note ~* '^\s*(ok|okay|done|n/?a|none|fixed|complete[d]?|closed)\s*[.!]?\s*$'
+    THEN RETURN jsonb_build_object('status','invalid','reason','meaningful_resolution_required'); END IF;
+    block_reason := admin_private.privacy_blockers_v1(req);
+    IF block_reason IS NULL AND req.kind = 'DELETION' THEN
+      block_reason := admin_private.deletion_blocked_v1(req);
+    END IF;
+    IF block_reason IS NOT NULL THEN RETURN jsonb_build_object('status','denied','reason', block_reason); END IF;
     UPDATE public.privacy_requests SET
       status = 'COMPLETED', resolution = note, completed_at = clock, record_version = req.record_version + 1
     WHERE id = req.id RETURNING * INTO req;
@@ -1698,13 +1871,26 @@ BEGIN
   ELSIF op = 'execute_deletion' THEN
     SELECT * INTO req FROM public.privacy_requests WHERE id = admin_private.settings_uuid_v1(coalesce(p_payload->>'id', p_payload->>'privacyRequestId')) FOR UPDATE;
     IF req.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF p_version IS NOT NULL AND req.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
-    IF req.kind IS DISTINCT FROM 'DELETION' OR req.status NOT IN ('VERIFIED','READY_FOR_ACTION') THEN
+    -- Destructive execution fails closed on a missing or stale expected version.
+    IF p_version IS NULL THEN RETURN jsonb_build_object('status','conflict','reason','version_required'); END IF;
+    IF req.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
+    IF req.kind IS DISTINCT FROM 'DELETION' OR req.status NOT IN ('REVIEWING','READY_FOR_ACTION') THEN
       RETURN jsonb_build_object('status','denied','reason','not_ready');
     END IF;
-    IF req.identity_status NOT IN ('VERIFIED_CONTACT','VERIFIED_MANUAL') THEN
+    IF req.identity_status NOT IN ('VERIFIED_CONTACT','VERIFIED_MANUAL') OR req.verified_at IS NULL THEN
       RETURN jsonb_build_object('status','denied','reason','identity_unverified');
     END IF;
+    IF NOT admin_private.privacy_preview_current_v1(req) THEN
+      RETURN jsonb_build_object('status','denied','reason','preview_required');
+    END IF;
+    SELECT * INTO disp FROM public.privacy_request_dispositions d
+      WHERE d.privacy_request_id = req.id AND d.category = 'UNSUCCESSFUL_ENQUIRIES' FOR UPDATE;
+    IF disp.id IS NULL OR disp.reviewed_at IS NULL OR disp.reviewed_by IS NULL THEN
+      RETURN jsonb_build_object('status','denied','reason','review_required');
+    END IF;
+    IF disp.proposed_action IS DISTINCT FROM 'DELETE' OR disp.status IS DISTINCT FROM 'READY'
+      OR disp.legal_hold_blocker
+    THEN RETURN jsonb_build_object('status','denied','reason','blocked_disposition'); END IF;
     SELECT * INTO enq FROM public.enquiries WHERE id = admin_private.settings_uuid_v1(p_payload->>'enquiryId') FOR UPDATE;
     SELECT * INTO customer FROM public.customers WHERE id = req.customer_id;
     IF enq.id IS NULL OR customer.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
@@ -1717,6 +1903,7 @@ BEGIN
     ret := admin_private.current_retention_v1('UNSUCCESSFUL_ENQUIRIES', clock);
     IF ret.id IS NULL OR ret.status IS DISTINCT FROM 'APPROVED' OR ret.retention_mode IS DISTINCT FROM 'RETAIN_FOR_PERIOD'
       OR ret.duration_days IS NULL OR enq.created_at + make_interval(days => ret.duration_days) > clock
+      OR disp.retention_policy_id IS DISTINCT FROM ret.id
     THEN RETURN jsonb_build_object('status','denied','reason','retention_required'); END IF;
     IF admin_private.hold_blocks_v1(req.customer_id, NULL, NULL, NULL)
       OR admin_private.hold_blocks_v1(req.customer_id, NULL, NULL, 'UNSUCCESSFUL_ENQUIRIES')
@@ -1877,6 +2064,9 @@ EXCEPTION
   WHEN others THEN
     IF SQLERRM = 'overlapping approved settings' THEN
       RETURN jsonb_build_object('status','invalid','reason','overlapping_approved_settings');
+    END IF;
+    IF SQLERRM = 'overlapping approved retention' THEN
+      RETURN jsonb_build_object('status','invalid','reason','overlapping_approved_retention');
     END IF;
     IF SQLERRM = 'overlapping approved schedule' THEN
       RETURN jsonb_build_object('status','invalid','reason','overlapping_approved_schedule');
@@ -2996,6 +3186,7 @@ REVOKE ALL ON FUNCTION
   admin_private.staffed_due_at_v1(timestamptz, integer, jsonb),
   admin_private.maybe_snapshot_response_obligation_v1(),
   admin_private.hold_blocks_v1(uuid, uuid, uuid, text),
+  admin_private.external_deletion_outstanding_v1(uuid),
   admin_private.protect_communication_template_v1(),
   admin_private.template_placeholders_v1(text),
   admin_private.template_text_valid_v1(text, text, text),
@@ -3016,7 +3207,10 @@ REVOKE ALL ON FUNCTION
   admin_private.privacy_export_rows_v1(uuid),
   admin_private.privacy_export_row_count_v1(jsonb),
   admin_private.privacy_upsert_dispositions_v1(uuid, jsonb, text),
+  admin_private.protect_privacy_disposition_v1(),
   admin_private.deletion_blocked_v1(public.privacy_requests),
+  admin_private.privacy_blockers_v1(public.privacy_requests),
+  admin_private.privacy_preview_current_v1(public.privacy_requests),
   admin_private.settings_command_apply_v1(uuid, uuid, text, jsonb, integer, text),
   admin_private.guard_alert_prepare_notification_v1(uuid, uuid, jsonb, integer)
 FROM PUBLIC, anon, authenticated, service_role;

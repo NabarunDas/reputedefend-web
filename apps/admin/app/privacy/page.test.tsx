@@ -51,7 +51,30 @@ describe("Privacy page", () => {
     expect(screen.getByText(/Blocked by hold: yes/)).toBeTruthy()
     expect(screen.getByText(/Automated deletion: no/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Release hold" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Complete review" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Record disposition review" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Mark ready for action" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Complete review" })).toBeNull()
     expect(document.body.textContent).not.toMatch(/sk_live|whsec_|otp/i)
+  })
+
+  it("offers completion only once a request is ready for action", async () => {
+    loadPrivacy.mockResolvedValue({
+      holds: [],
+      requests: [{
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        kind: "ACCESS",
+        customerId: "22222222-2222-4222-8222-222222222222",
+        status: "READY_FOR_ACTION",
+        identityStatus: "VERIFIED_CONTACT",
+        requestedAt: "2026-03-29T12:00:00Z",
+        notes: "Subject access request.",
+        recordVersion: 5,
+        dispositions: [{ category: "CASE_EVIDENCE", proposedAction: "EXPORT", status: "READY" }],
+      }],
+    })
+    render(await PrivacyPage())
+    expect(screen.getByRole("button", { name: "Complete review" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Mark ready for action" })).toBeNull()
+    expect(screen.getByText(/blocked evidence that still needs storage deletion/)).toBeTruthy()
   })
 })

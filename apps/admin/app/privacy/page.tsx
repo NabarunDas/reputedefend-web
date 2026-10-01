@@ -75,9 +75,25 @@ export default async function PrivacyPage() {
               fields={[{ name: "note", label: "Verification evidence", required: true, maxLength: 500 }]}
             />
           )}
+          {row.status === "VERIFIED" && <ApproveButton operation="start_privacy_review" id={row.id} version={row.recordVersion ?? 1} label="Start review" />}
           {["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && <ApproveButton operation="preview_privacy_request" id={row.id} version={row.recordVersion ?? 1} label="Refresh preview" />}
           {["ACCESS", "EXPORT"].includes(row.kind) && ["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && <ExportPrivacyButton id={row.id} version={row.recordVersion ?? 1} />}
-          {["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && (
+          {["REVIEWING", "READY_FOR_ACTION"].includes(row.status) && (
+            <SettingsActionForm
+              operation="review_disposition"
+              extras={{ id: row.id }}
+              version={row.recordVersion ?? 1}
+              submit="Record disposition review"
+              fields={[
+                { name: "category", label: "Category", required: true, maxLength: 40 },
+                { name: "proposedAction", label: "Proposed action", required: true, maxLength: 20 },
+                { name: "status", label: "Disposition status", required: true, maxLength: 20 },
+                { name: "reason", label: "Review reason", maxLength: 500 },
+              ]}
+            />
+          )}
+          {row.status === "REVIEWING" && <ApproveButton operation="mark_privacy_ready" id={row.id} version={row.recordVersion ?? 1} label="Mark ready for action" />}
+          {row.status === "READY_FOR_ACTION" && (
             <SettingsActionForm
               operation="complete_privacy_request"
               extras={{ id: row.id }}
@@ -106,7 +122,7 @@ export default async function PrivacyPage() {
           { name: "notes", label: "Scope", required: true, maxLength: 1000 },
         ]}
       />
-      <p className="muted">A request cannot export or delete data until identity is verified. Completion does not erase receipts, obligations or audit events. Physical deletion stays disabled unless the server gate is exactly true. Exports are downloaded here and are not emailed.</p>
+      <p className="muted">A request cannot export or delete data until identity is verified. Completion needs a current preview and every category disposition resolved; blocked evidence that still needs storage deletion keeps the request open. Completion does not erase receipts, obligations or audit events. Physical deletion stays disabled unless the server gate is exactly true. Exports are downloaded here and are not emailed.</p>
     </section>
   </section>
 }

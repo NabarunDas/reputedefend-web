@@ -17,3 +17,11 @@ export function guardRefundsEnabled(env: GuardBillingEnv = process.env): boolean
 export function guardChecksEnabled(env: GuardBillingEnv = process.env): boolean {
   return env.GUARD_CHECKS_ENABLED === "true"
 }
+
+export function guardAlertsEnabled(env: GuardBillingEnv = process.env): boolean {
+  return env.GUARD_ALERTS_ENABLED === "true"
+}
+
+export function guardAlertNotificationsEnabled(env: GuardBillingEnv = process.env): boolean {
+  return env.GUARD_ALERT_NOTIFICATIONS_ENABLED === "true"
+}

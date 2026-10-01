@@ -1,4 +1,4 @@
-import { guardChecksEnabled } from "../guard/gate"
+import { guardAlertsEnabled, guardChecksEnabled } from "../guard/gate"
 import { handlerFor, registeredJobHandlers } from "./adapters"
 import { jobWorkerConfig, type EnvMap } from "./config"
 import type { ClaimedJob, JobHandler, JobRpc, JobType, WorkerCounts } from "./model"
@@ -41,6 +41,13 @@ export async function runJobWorker(options: WorkerRunOptions): Promise<{ status:
         await options.rpc.rpc("guard_enqueue_daily_checks_v1", {})
       } catch {
         // Daily Guard check maintenance is optional until the Step 17 migration is applied.
+      }
+    }
+    if (guardAlertsEnabled(options.env)) {
+      try {
+        await options.rpc.rpc("guard_enqueue_daily_alerts_v1", {})
+      } catch {
+        // Daily Guard alert maintenance is optional until the Step 18 migration is applied.
       }
     }
     const promoted = await options.rpc.rpc<{ status?: string; promoted?: number }>("job_promote_outbox_v1", {

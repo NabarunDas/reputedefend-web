@@ -4,7 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { guardChecksEnabled } from "./gate"
+import { guardAlertsEnabled, guardChecksEnabled } from "./gate"
 import { isGuardCheckOperation, guardCheckArgs } from "./checks-validation"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -90,6 +90,13 @@ export async function guardCheckCommand(request: NextRequest): Promise<NextRespo
     if (result.status !== "success") return reply(commandMessage(result.status, result.reason), mapStatus(result.status), {
       ...(result.reason ? { reason: result.reason } : {}),
     })
+    if (operation === "complete" && result.observationId && guardAlertsEnabled()) {
+      try {
+        await backend().rpc("guard_process_alert_candidate_v1", { p_observation: result.observationId })
+      } catch {
+        // Observation completion remains authoritative if Step 18 processing fails.
+      }
+    }
     return reply(
       operation === "complete"
         ? result.late ? "The observation is recorded. Late completion remains late." : "The observation is recorded."

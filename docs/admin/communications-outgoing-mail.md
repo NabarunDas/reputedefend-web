@@ -149,4 +149,5 @@ Step 11 communications have a unique `(provider, provider_message_id)` index whe
 - `COMMUNICATIONS_LINK_SECRET` / `RESEND_WEBHOOK_SECRET` in Vercel
 - Cron cadence change
 - Stripe, incoming mail, Google API, Guard automation
+- Step 18 Guard alert notifications (`GUARD_ALERT` template exists only as unapplied source; live alert email remains disabled)
 - `PREPARATION` / `READY_TO_SUBMIT`

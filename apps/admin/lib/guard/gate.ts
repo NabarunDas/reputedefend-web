@@ -1,6 +1,8 @@
 import "server-only"
 import {
   guardActivationEnabled as sharedActivation,
+  guardAlertNotificationsEnabled as sharedAlertNotifications,
+  guardAlertsEnabled as sharedAlerts,
   guardChecksEnabled as sharedChecks,
   guardRefundsEnabled as sharedRefunds,
   guardSubscriptionsEnabled as sharedSubscriptions,
@@ -20,4 +22,12 @@ export function guardRefundsEnabled(env: Record<string, string | undefined> = pr
 
 export function guardChecksEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return sharedChecks(env)
+}
+
+export function guardAlertsEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return sharedAlerts(env)
+}
+
+export function guardAlertNotificationsEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return sharedAlertNotifications(env)
 }

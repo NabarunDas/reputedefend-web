@@ -398,7 +398,21 @@ cleanly onto the real chain.
 
 ## Verification
 
-One repository-level regression was run at the final head rather than repeatedly during
-development: marketing lint, tests, typecheck and build; the complete Admin test suite,
-typecheck, build and HTTP smoke; and the customer tests, typecheck, build and HTTP smoke.
-The results are recorded in `validation.md`.
+During development only the impacted suites were run. One repository-level regression was
+run once at the final head, and all of it passed:
+
+| Workspace | Checks |
+| --- | --- |
+| Marketing | `eslint .` clean; `tsc --noEmit` clean; 685 tests in 103 files; production build |
+| Admin | 1213 tests in 121 files, including the full migration chain on PGlite; `tsc --noEmit` clean; production build; HTTP smoke across every route and API path |
+| Customer | 63 tests in 10 files; `tsc --noEmit` clean; production build; HTTP smoke |
+
+`npm audit` reports no vulnerabilities and `git diff --check` is clean. `validation.md` is
+the Step 1–2 foundation handover and is left as the historical record it is; the regression
+for this step is the table above.
+
+Of the 1213 Admin tests, the ones this step added are the twenty-step simulated workday,
+nine schema-wide hardening checks, nine acceptance-matrix checks, five mutation-boundary
+checks, five client-boundary checks, six accessibility sweeps, four header checks, three
+conversations-form checks and two error-boundary checks, plus the regression tests attached
+to each of the ten defects.

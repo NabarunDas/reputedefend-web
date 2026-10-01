@@ -961,7 +961,7 @@ CREATE FUNCTION public.admin_saved_filter_command_v1(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   s jsonb; actor uuid; fp text; cached jsonb; result jsonb; row public.admin_saved_filters;
-  module text; fname text;
+  filter_module text; fname text;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status','unauthorized'); END IF;
@@ -972,19 +972,19 @@ BEGIN
   fp := md5(jsonb_build_array(p_operation, p_payload, p_version)::text);
   cached := admin_private.report_receipt_v1(actor, p_request, fp);
   IF cached IS NOT NULL THEN RETURN cached; END IF;
-  module := p_payload->>'module';
+  filter_module := p_payload->>'module';
   fname := btrim(coalesce(p_payload->>'name', ''));
   IF p_operation = 'create' THEN
-    IF module IS NULL
-      OR module NOT IN ('ENQUIRIES','CASES','TASKS','GUARD_CHECKS','GUARD_ALERTS','MONEY','REPORTS')
-      OR NOT admin_private.saved_filter_keys_allowed_v1(module, coalesce(p_payload->'filter', '{}'::jsonb))
+    IF filter_module IS NULL
+      OR filter_module NOT IN ('ENQUIRIES','CASES','TASKS','GUARD_CHECKS','GUARD_ALERTS','MONEY','REPORTS')
+      OR NOT admin_private.saved_filter_keys_allowed_v1(filter_module, coalesce(p_payload->'filter', '{}'::jsonb))
       OR length(fname) NOT BETWEEN 1 AND 80
     THEN result := jsonb_build_object('status','invalid'); 
-    ELSIF EXISTS (SELECT 1 FROM public.admin_saved_filters f WHERE f.actor_id = actor AND f.module = module AND f.name = fname) THEN
+    ELSIF EXISTS (SELECT 1 FROM public.admin_saved_filters f WHERE f.actor_id = actor AND f.module = filter_module AND f.name = fname) THEN
       result := jsonb_build_object('status','conflict','reason','duplicate_name');
     ELSE
       INSERT INTO public.admin_saved_filters(actor_id, module, name, filter)
-      VALUES (actor, module, fname, coalesce(p_payload->'filter', '{}'::jsonb))
+      VALUES (actor, filter_module, fname, coalesce(p_payload->'filter', '{}'::jsonb))
       RETURNING * INTO row;
       result := jsonb_build_object('status','success','id', row.id, 'version', row.record_version);
     END IF;
@@ -1019,7 +1019,7 @@ BEGIN
   IF result->>'status' = 'success' THEN
     PERFORM admin_private.write_record_audit_v1(
       actor, 'REPORT_CHANGED', 'success', NULLIF(result->>'id','')::uuid, p_request, 'admin_saved_filter',
-      'Saved filter ' || p_operation, jsonb_build_object('module', module, 'operation', p_operation)
+      'Saved filter ' || p_operation, jsonb_build_object('module', filter_module, 'operation', p_operation)
     );
   END IF;
   PERFORM admin_private.report_store_receipt_v1(p_request, actor, fp, result);

@@ -62,7 +62,7 @@ describe("Today home", () => {
     expect(document.body.textContent).not.toContain("50+")
     expect(screen.getByRole("link", { name: /Overdue work/ })).toHaveAttribute("href", expect.stringContaining("/reports/overdue_work"))
     expect(screen.getByText("Monitoring schedule not configured")).toBeTruthy()
-    expect(screen.getByText(/Europe\/London/)).toBeTruthy()
+    expect(screen.getAllByText(/Europe\/London/).length).toBeGreaterThan(0)
     expect(document.body.textContent).not.toContain("admin@profilerelaunch.com")
     expect(document.body.textContent).not.toMatch(/googletagmanager|google-analytics|gtag\(/)
   })

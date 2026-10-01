@@ -35,7 +35,7 @@ describe("Complaints page", () => {
     render(await ComplaintsPage({ searchParams: Promise.resolve({}) }))
     expect(screen.getByRole("heading", { name: "Complaints" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "PR-26-AAAAAA: Complaint about delay" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555")
-    expect(screen.getByText(/blocks case closure/)).toBeTruthy()
+    expect(screen.getByText(/Closing a case does not delete a complaint/)).toBeTruthy()
     expect(loadComplaints).toHaveBeenCalledWith("open")
   })
 })

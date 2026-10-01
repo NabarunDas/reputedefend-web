@@ -25,7 +25,8 @@ describe("Privacy page", () => {
     loadPrivacy.mockResolvedValue({
       holds: [{
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        category: "FINANCIAL",
+        scopeKind: "CATEGORY",
+        category: "FINANCIAL_RECORDS",
         customerId: "22222222-2222-4222-8222-222222222222",
         reason: "Open payment dispute remains under review.",
         status: "ACTIVE",
@@ -36,11 +37,12 @@ describe("Privacy page", () => {
         id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         kind: "DELETION",
         customerId: "22222222-2222-4222-8222-222222222222",
-        status: "IN_REVIEW",
+        status: "REVIEWING",
+        identityStatus: "VERIFIED_CONTACT",
         requestedAt: "2026-03-29T12:00:00Z",
         scopeNote: "Customer asked for deletion of unused enquiry data.",
         recordVersion: 2,
-        preview: { blockedByHold: true, automatedDeletion: false, retained: { paymentReceipts: 1, paymentObligations: 1 } },
+        preview: { blockedByHold: { customer: true }, automatedDeletion: false, retained: { paymentReceipts: 1, paymentObligations: 1 }, externalDeletionRequired: { caseEvidence: 1 } },
       }],
     })
     render(await PrivacyPage())

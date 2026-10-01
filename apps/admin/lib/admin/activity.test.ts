@@ -18,6 +18,7 @@ describe("activity filters", () => {
     expect(parseActivityFilters({ action: "TEMPLATE_CHANGED" })).toEqual({ before: null, action: "TEMPLATE_CHANGED", outcome: null })
     expect(parseActivityFilters({ action: "PRIVACY_CHANGED" })).toEqual({ before: null, action: "PRIVACY_CHANGED", outcome: null })
     expect(parseActivityFilters({ action: "INCIDENT_CHANGED" })).toEqual({ before: null, action: "INCIDENT_CHANGED", outcome: null })
+    expect(parseActivityFilters({ action: "COMPLAINT_CHANGED" })).toEqual({ before: null, action: "COMPLAINT_CHANGED", outcome: null })
   })
   it("accepts cleared filters", () => {
     expect(parseActivityFilters({ action: "", outcome: "" })).toEqual({ before: null, action: null, outcome: null })

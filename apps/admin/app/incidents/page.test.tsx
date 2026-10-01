@@ -25,7 +25,7 @@ describe("Incidents page", () => {
     loadIncidents.mockResolvedValue({
       rows: [{
         id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        kind: "MAIL_FAILURE",
+        kind: "EMAIL",
         status: "OPEN",
         title: "Outbound mail paused",
         summary: "Provider reported a sending outage.",

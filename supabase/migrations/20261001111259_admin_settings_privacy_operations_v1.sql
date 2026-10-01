@@ -603,8 +603,8 @@ LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE hours public.admin_setting_versions; targets public.admin_setting_versions;
   target_hours integer; due timestamptz; kind text; opened timestamptz;
 BEGIN
-  hours := admin_private.current_setting_v1('SERVICE_HOURS', now());
-  targets := admin_private.current_setting_v1('RESPONSE_TARGETS', now());
+  hours := admin_private.current_setting_v1('SERVICE_HOURS', NEW.created_at);
+  targets := admin_private.current_setting_v1('RESPONSE_TARGETS', NEW.created_at);
   IF hours.id IS NULL OR targets.id IS NULL THEN RETURN NEW; END IF;
   IF TG_TABLE_NAME = 'enquiries' THEN
     kind := 'ENQUIRY_FIRST_RESPONSE';
@@ -1064,9 +1064,15 @@ BEGIN
     ELSIF cat = 'CASE_EVIDENCE' THEN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,caseEvidence}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,caseEvidence}')::boolean, false);
+      eligible := coalesce((p_preview#>>'{externalDeletionRequired,caseEvidence}')::int, 0);
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
-      st := 'BLOCKED';
-      blocked := coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'BLOCKED_EXTERNAL_DELETION');
+      st := CASE WHEN hold OR no_ret OR eligible > 0 THEN 'BLOCKED' ELSE 'READY' END;
+      blocked := CASE
+        WHEN hold THEN 'Legal hold'
+        WHEN no_ret THEN 'No approved retention policy'
+        WHEN eligible > 0 THEN coalesce(p_preview#>>'{externalDeletionRequired,reason}', 'BLOCKED_EXTERNAL_DELETION')
+        ELSE ''
+      END;
     ELSIF cat = 'FINANCIAL_RECORDS' THEN
       hold := hold OR coalesce((p_preview#>>'{blockedByHold,financialRecords}')::boolean, false);
       no_ret := coalesce((p_preview#>>'{blockedNoApprovedRetention,financialRecords}')::boolean, false);
@@ -1193,8 +1199,8 @@ BEGIN
 
   IF op IN (
     'approve_setting','retire_setting','approve_retention','retire_retention','approve_template','retire_template',
-    'approve_schedule','retire_schedule','create_hold','release_hold','verify_privacy_manual','complete_privacy_request',
-    'execute_deletion'
+    'approve_schedule','retire_schedule','create_hold','release_hold','verify_privacy_manual','review_disposition',
+    'complete_privacy_request','execute_deletion'
   ) AND NOT admin_private.settings_reauth_ok_v1(p_token) THEN
     RETURN jsonb_build_object('status','reauth_required');
   END IF;
@@ -1237,7 +1243,7 @@ BEGIN
     IF row.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF row.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF row.status IS DISTINCT FROM 'DRAFT' THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF row.effective_from < clock THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
+    IF row.effective_from < clock - interval '2 minutes' THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
     IF row.setting_key = 'RESPONSE_TARGETS' THEN
       hours := admin_private.current_setting_v1('SERVICE_HOURS', row.effective_from);
       IF hours.id IS NULL OR hours.status IS DISTINCT FROM 'APPROVED' THEN
@@ -1315,7 +1321,7 @@ BEGIN
     IF ret.id IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
     IF ret.record_version IS DISTINCT FROM p_version THEN RETURN jsonb_build_object('status','conflict'); END IF;
     IF ret.status IS DISTINCT FROM 'DRAFT' THEN RETURN jsonb_build_object('status','invalid'); END IF;
-    IF ret.effective_from < clock THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
+    IF ret.effective_from < clock - interval '2 minutes' THEN RETURN jsonb_build_object('status','invalid','reason','retroactive_effective_from'); END IF;
     SELECT * INTO prev_ret FROM public.retention_policy_versions
       WHERE category = ret.category AND status = 'APPROVED' AND id <> ret.id FOR UPDATE;
     IF prev_ret.id IS NOT NULL THEN
@@ -1641,6 +1647,7 @@ BEGIN
       WHERE privacy_request_id = req.id AND category = category FOR UPDATE;
     IF disp.id IS NULL OR action NOT IN ('EXPORT','CORRECT','DELETE','RETAIN','MANUAL_REVIEW')
       OR length(reason) > 500
+      OR coalesce(nullif(upper(btrim(p_payload->>'status')), ''), disp.status) NOT IN ('PENDING','READY','BLOCKED','COMPLETED')
     THEN RETURN jsonb_build_object('status','invalid'); END IF;
     UPDATE public.privacy_request_dispositions SET
       proposed_action = action,
@@ -1894,7 +1901,7 @@ BEGIN
         SELECT count(*) FROM public.admin_sessions sess
         WHERE sess.auth_user_id = actor AND sess.revoked_at IS NULL AND sess.expires_at > now()
       ),
-      'enabled', true
+      'enabled', coalesce((SELECT i.enabled FROM public.admin_identity i WHERE i.singleton), false)
     ),
     'serviceHours', admin_private.setting_public_json_v1(admin_private.current_setting_v1('SERVICE_HOURS', now())),
     'responseTargets', admin_private.setting_public_json_v1(admin_private.current_setting_v1('RESPONSE_TARGETS', now())),

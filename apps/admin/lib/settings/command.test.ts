@@ -5,7 +5,7 @@ import { sessionCookie } from "@/lib/auth/config"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
 
-import { settingsCommand } from "./command"
+import { privacyExportCommand, settingsCommand } from "./command"
 
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
@@ -50,11 +50,45 @@ describe("settings command HTTP boundary", () => {
     expect(reauth.status).toBe(403)
     expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
     mocks.rpc.mockResolvedValue({ status: "success" })
-    const ok = await settingsCommand(req({ operation: "create_incident", payload: { kind: "MAIL_FAILURE", title: "Bounce surge", summary: "Provider outage recorded." } }))
+    const ok = await settingsCommand(req({ operation: "create_incident", payload: { kind: "EMAIL", title: "Bounce surge", summary: "Provider outage recorded." } }))
     expect(ok.status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_settings_command_v1", expect.objectContaining({
       p_operation: "create_incident",
       p_request: key,
     }))
+  })
+
+  it("exports a reviewed CSV with no-store headers and no email side effect", async () => {
+    vi.stubEnv("PRIVACY_DELETION_ENABLED", "")
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      rows: {
+        customer: { id: key, fullName: "=cmd", email: "alex@example.com" },
+        cases: [],
+        enquiries: [],
+        communications: [],
+        paymentReceipts: [],
+      },
+    })
+    const response = await privacyExportCommand(req({ privacyRequestId: key, version: 1 }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toMatch(/no-store/)
+    expect(response.headers.get("content-disposition")).toMatch(/privacy-export.csv/)
+    expect(await response.text()).toMatch(/'=cmd/)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_privacy_export_v1", expect.objectContaining({
+      p_privacy_request: key,
+    }))
+  })
+
+  it("blocks physical deletion unless PRIVACY_DELETION_ENABLED is exactly true", async () => {
+    const denied = await settingsCommand(req({ operation: "execute_deletion", payload: { id: key, enquiryId: key }, version: 1 }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ reason: "deletion_disabled" })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    vi.stubEnv("PRIVACY_DELETION_ENABLED", "true")
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "retention_required" })
+    const forwarded = await settingsCommand(req({ operation: "execute_deletion", payload: { id: key, enquiryId: key }, version: 1 }))
+    expect(forwarded.status).toBe(403)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_settings_command_v1", expect.objectContaining({ p_operation: "execute_deletion" }))
   })
 })

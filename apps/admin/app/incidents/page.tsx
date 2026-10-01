@@ -17,7 +17,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   }
   return <section className="page">
     <Link className="back-link" href="/settings">Back to settings</Link>
-    <PageHeader title="Incidents" description="Record worker, provider, staff-absence and mail failures. There is no invented acknowledgement SLA." />
+    <PageHeader title="Incidents" description="Record worker, provider, monitoring, mail, billing, security and privacy failures. There is no invented acknowledgement SLA." />
     <section className="panel">
       <form className="filters" method="get">
         <label>Show
@@ -34,6 +34,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         submit="Open incident"
         fields={[
           { name: "kind", label: "Kind", required: true, maxLength: 40 },
+          { name: "severity", label: "Severity", maxLength: 20 },
           { name: "title", label: "Title", required: true, maxLength: 200 },
           { name: "summary", label: "Summary", required: true, maxLength: 2000 },
         ]}
@@ -44,7 +45,8 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
             <strong>{row.title}</strong>
             <p className="muted">{row.kind} · {row.status} · {ukDate(row.openedAt)} — {row.summary}</p>
             {row.status === "OPEN" && <ApproveButton operation="acknowledge_incident" id={row.id} version={row.recordVersion ?? 1} label="Acknowledge" />}
-            {row.status !== "RESOLVED" && <ResolveIncidentForm id={row.id} version={row.recordVersion ?? 1} />}
+            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ResolveIncidentForm id={row.id} version={row.recordVersion ?? 1} />}
+            {row.status !== "RESOLVED" && row.status !== "CANCELLED" && <ApproveButton operation="cancel_incident" id={row.id} version={row.recordVersion ?? 1} label="Cancel incident" />}
           </li>
         ))}</ul>
       )}

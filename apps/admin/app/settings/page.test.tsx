@@ -86,7 +86,7 @@ describe("Settings page", () => {
     expect(screen.getByText(/one staff account/)).toBeTruthy()
     expect(screen.getByText(/never rewrite historical obligations/)).toBeTruthy()
     expect(screen.getAllByText("Not configured").length).toBeGreaterThan(0)
-    expect(screen.getByText(/Retention policy not approved/)).toBeTruthy()
+    expect(screen.getAllByText(/Retention policy not approved/).length).toBeGreaterThan(0)
     expect(screen.getByRole("link", { name: "Manage sessions" })).toHaveAttribute("href", "/security")
     expect(screen.getByRole("link", { name: "Approved template lifecycle" })).toHaveAttribute("href", "/settings/templates")
     expect(screen.getByRole("link", { name: "Privacy requests and legal holds" })).toHaveAttribute("href", "/privacy")

@@ -51,7 +51,7 @@ function configured(value: unknown, empty: string) {
   return value ? null : <EmptyState>{empty}</EmptyState>
 }
 
-export default async function SettingsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function SettingsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
   await requireStaff()
   const query = searchParams ? await searchParams : {}
   const raw = Array.isArray(query.section) ? query.section[0] : query.section

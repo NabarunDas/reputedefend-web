@@ -348,10 +348,10 @@ CREATE FUNCTION admin_private.protect_settings_version_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Settings versions are append-only'; END IF;
-  IF NOT admin_private.settings_payload_valid_v1(NEW.setting_key, NEW.payload) THEN
-    RAISE EXCEPTION 'Settings payload is invalid or contains secrets';
-  END IF;
   IF TG_OP = 'INSERT' THEN
+    IF NOT admin_private.settings_payload_valid_v1(NEW.setting_key, NEW.payload) THEN
+      RAISE EXCEPTION 'Settings payload is invalid or contains secrets';
+    END IF;
     IF NEW.status IS DISTINCT FROM 'DRAFT' OR NEW.record_version IS DISTINCT FROM 1 THEN
       RAISE EXCEPTION 'Settings insert must start as draft version 1';
     END IF;
@@ -365,6 +365,9 @@ BEGIN
       OR NEW.setting_key IS DISTINCT FROM OLD.setting_key
       OR NEW.version IS DISTINCT FROM OLD.version
     THEN RAISE EXCEPTION 'Approved settings facts are immutable'; END IF;
+  END IF;
+  IF NOT admin_private.settings_payload_valid_v1(NEW.setting_key, NEW.payload) THEN
+    RAISE EXCEPTION 'Settings payload is invalid or contains secrets';
   END IF;
   IF NEW.record_version IS DISTINCT FROM OLD.record_version + 1 THEN
     RAISE EXCEPTION 'Settings version increment is required';
@@ -708,10 +711,11 @@ CREATE TRIGGER communication_templates_protect
 CREATE FUNCTION admin_private.template_placeholders_v1(p_key text)
 RETURNS TABLE(name text, required boolean)
 LANGUAGE sql IMMUTABLE SET search_path='' AS $$
-  SELECT * FROM (VALUES
+  SELECT v.name, v.required FROM (VALUES
     ('EVIDENCE_REQUEST','case_ref', true),
     ('EVIDENCE_REQUEST','specific_document', true),
     ('EVIDENCE_REQUEST','upload_url', true),
+    ('CASE_UPDATE','case_ref', true),
     ('CASE_UPDATE','fact', true),
     ('CASE_UPDATE','effect', true),
     ('CASE_UPDATE','next_step', true),
@@ -1150,6 +1154,7 @@ END; $$;
 CREATE FUNCTION admin_private.settings_command_apply_v1(
   p_actor uuid, p_request uuid, p_operation text, p_payload jsonb, p_version integer, p_token text
 ) RETURNS jsonb LANGUAGE plpgsql SET search_path='' AS $$
+#variable_conflict use_variable
 DECLARE
   op text := btrim(coalesce(p_operation, ''));
   clock timestamptz := now();

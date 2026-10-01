@@ -102,12 +102,18 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
       {hourVersions.filter(row => row.status === "DRAFT").map(row => (
         <p key={row.id}>Draft v{row.version}: {row.reason} <ApproveButton operation="approve_setting" id={row.id} version={row.recordVersion} label="Approve" /></p>
       ))}
+      {hourVersions.filter(row => row.status === "APPROVED").map(row => (
+        <p key={row.id}>Approved v{row.version}: {row.reason} <ApproveButton operation="retire_setting" id={row.id} version={row.recordVersion} label="Retire hours" /></p>
+      ))}
       <h3>Response targets</h3>
       {configured(overview.responseTargets, "Not configured")}
       {overview.responseTargets && <p>Approved version {overview.responseTargets.version}.</p>}
       <ResponseTargetsForm />
       {targetVersions.filter(row => row.status === "DRAFT").map(row => (
         <p key={row.id}>Draft v{row.version}: {row.reason} <ApproveButton operation="approve_setting" id={row.id} version={row.recordVersion} label="Approve" /></p>
+      ))}
+      {targetVersions.filter(row => row.status === "APPROVED").map(row => (
+        <p key={row.id}>Approved v{row.version}: {row.reason} <ApproveButton operation="retire_setting" id={row.id} version={row.recordVersion} label="Retire targets" /></p>
       ))}
       <h3>Alert escalation</h3>
       {configured(overview.alertEscalation, "Not configured")}
@@ -146,6 +152,9 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
       {overview.schedules?.filter(row => row.status === "DRAFT").map(row => (
         <p key={row.id}>Draft {row.id} <ApproveButton operation="approve_schedule" id={row.id} version={row.recordVersion ?? 1} label="Approve schedule" /></p>
       ))}
+      {overview.schedules?.filter(row => row.status === "APPROVED").map(row => (
+        <p key={row.id}>Approved {row.id} <ApproveButton operation="retire_schedule" id={row.id} version={row.recordVersion ?? 1} label="Retire schedule" /></p>
+      ))}
       <h3>Rota</h3>
       <p className="muted">{overview.rotaAssignments?.note}</p>
       {!overview.rotaAssignments?.active?.length ? <EmptyState>No active coverage assignment.</EmptyState> : (
@@ -176,6 +185,9 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
       <RetentionForm />
       {retentionVersions.filter(row => row.status === "DRAFT").map(row => (
         <p key={row.id}>{row.category} draft v{row.version}: {row.reason} <ApproveButton operation="approve_retention" id={row.id} version={row.recordVersion} label="Approve retention" /></p>
+      ))}
+      {retentionVersions.filter(row => row.status === "APPROVED").map(row => (
+        <p key={row.id}>{row.category} approved v{row.version}: {row.reason} <ApproveButton operation="retire_retention" id={row.id} version={row.recordVersion} label="Retire retention" /></p>
       ))}
       <p><Link href="/privacy">Privacy requests and legal holds</Link> — {overview.openPrivacy ?? 0} open, {overview.activeHolds ?? 0} holds</p>
     </section>

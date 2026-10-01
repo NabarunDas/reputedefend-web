@@ -439,6 +439,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'overlapping approved retention';
   END IF;
+  IF NEW.status IN ('APPROVED','RETIRED') AND EXISTS (
+    SELECT 1 FROM public.retention_policy_versions o
+    WHERE o.category = NEW.category AND o.id <> NEW.id
+      AND o.status IN ('APPROVED','RETIRED')
+      AND tstzrange(o.effective_from, o.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+  ) THEN
+    RAISE EXCEPTION 'overlapping approved retention';
+  END IF;
   RETURN NEW;
 END; $$;
 CREATE TRIGGER retention_policy_versions_protect
@@ -1123,7 +1131,11 @@ BEGIN
       eligible := admin_private.external_deletion_outstanding_v1(cust);
       action := CASE WHEN p_kind IN ('ACCESS','EXPORT') THEN 'EXPORT' WHEN p_kind = 'CORRECTION' THEN 'CORRECT' ELSE 'DELETE' END;
       external := CASE WHEN action = 'DELETE' THEN eligible ELSE 0 END;
-      st := CASE WHEN hold OR no_ret OR external > 0 THEN 'BLOCKED' ELSE 'READY' END;
+      st := CASE
+        WHEN hold OR no_ret OR external > 0 THEN 'BLOCKED'
+        WHEN action = 'CORRECT' THEN 'PENDING'
+        ELSE 'READY'
+      END;
       blocked := CASE
         WHEN hold THEN 'Legal hold'
         WHEN no_ret THEN 'No approved retention policy'
@@ -1181,6 +1193,9 @@ BEGIN
   IF TG_OP = 'UPDATE' AND (
     NEW.privacy_request_id IS DISTINCT FROM OLD.privacy_request_id OR NEW.category IS DISTINCT FROM OLD.category
   ) THEN RAISE EXCEPTION 'Privacy disposition scope is immutable'; END IF;
+  IF TG_OP = 'UPDATE' AND NEW.record_version IS DISTINCT FROM OLD.record_version + 1 THEN
+    RAISE EXCEPTION 'Disposition version increment is required';
+  END IF;
   SELECT r.customer_id INTO cust FROM public.privacy_requests r WHERE r.id = NEW.privacy_request_id;
   IF NEW.category = 'CASE_EVIDENCE' AND NEW.proposed_action = 'DELETE' AND NEW.status IN ('READY','COMPLETED')
     AND admin_private.external_deletion_outstanding_v1(cust) > 0
@@ -1219,6 +1234,15 @@ BEGIN
       WHERE d.privacy_request_id = p_req.id AND d.legal_hold_blocker
     )
   THEN RETURN 'legal_hold'; END IF;
+  IF admin_private.external_deletion_outstanding_v1(p_req.customer_id)
+    OR EXISTS (
+      SELECT 1 FROM public.privacy_request_dispositions d
+      WHERE d.privacy_request_id = p_req.id
+        AND d.category = 'CASE_EVIDENCE'
+        AND (d.blocked_reason = 'BLOCKED_EXTERNAL_DELETION' OR d.status = 'BLOCKED')
+        AND d.proposed_action = 'DELETE'
+    )
+  THEN RETURN 'external_deletion'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.privacy_request_dispositions d WHERE d.privacy_request_id = p_req.id)
     OR EXISTS (
       SELECT 1 FROM public.privacy_request_dispositions d
@@ -2375,7 +2399,11 @@ BEGIN
   IF result->>'status' IN ('success','denied') THEN
     action := CASE
       WHEN p_operation LIKE '%template%' THEN 'TEMPLATE_CHANGED'
-      WHEN p_operation LIKE '%hold%' OR p_operation LIKE '%privacy%' OR p_operation = 'execute_deletion' THEN 'PRIVACY_CHANGED'
+      WHEN p_operation LIKE '%hold%'
+        OR p_operation LIKE '%privacy%'
+        OR p_operation LIKE '%disposition%'
+        OR p_operation = 'execute_deletion'
+        THEN 'PRIVACY_CHANGED'
       WHEN p_operation LIKE '%complaint%' THEN 'COMPLAINT_CHANGED'
       WHEN p_operation LIKE '%incident%' THEN 'INCIDENT_CHANGED'
       ELSE 'SETTINGS_CHANGED'

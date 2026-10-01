@@ -77,22 +77,31 @@ export default async function PrivacyPage() {
           )}
           {row.status === "VERIFIED" && <ApproveButton operation="start_privacy_review" id={row.id} version={row.recordVersion ?? 1} label="Start review" />}
           {["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && <ApproveButton operation="preview_privacy_request" id={row.id} version={row.recordVersion ?? 1} label="Refresh preview" />}
-          {["ACCESS", "EXPORT"].includes(row.kind) && ["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && <ExportPrivacyButton id={row.id} version={row.recordVersion ?? 1} />}
-          {["REVIEWING", "READY_FOR_ACTION"].includes(row.status) && (
+          {row.status === "REVIEWING" && <ApproveButton operation="mark_privacy_ready" id={row.id} version={row.recordVersion ?? 1} label="Mark ready" />}
+          {row.dispositions?.filter(item => item.status === "PENDING" || item.status === "BLOCKED").map(item => (
             <SettingsActionForm
+              key={`${row.id}-${item.category}`}
               operation="review_disposition"
-              extras={{ id: row.id }}
+              extras={{ id: row.id, category: item.category }}
               version={row.recordVersion ?? 1}
-              submit="Record disposition review"
+              submit={`Review ${item.category}`}
               fields={[
-                { name: "category", label: "Category", required: true, maxLength: 40 },
                 { name: "proposedAction", label: "Proposed action", required: true, maxLength: 20 },
-                { name: "status", label: "Disposition status", required: true, maxLength: 20 },
-                { name: "reason", label: "Review reason", maxLength: 500 },
+                { name: "status", label: "Status", required: true, maxLength: 20 },
+                { name: "reason", label: "Review note", required: true, maxLength: 500 },
               ]}
             />
+          ))}
+          {["ACCESS", "EXPORT"].includes(row.kind) && ["VERIFIED", "REVIEWING", "READY_FOR_ACTION"].includes(row.status) && <ExportPrivacyButton id={row.id} version={row.recordVersion ?? 1} />}
+          {row.kind === "DELETION" && ["REVIEWING", "READY_FOR_ACTION"].includes(row.status) && (
+            <SettingsActionForm
+              operation="execute_deletion"
+              extras={{ id: row.id }}
+              version={row.recordVersion ?? 1}
+              submit="Execute eligible deletion"
+              fields={[{ name: "enquiryId", label: "Enquiry id", required: true, maxLength: 36 }]}
+            />
           )}
-          {row.status === "REVIEWING" && <ApproveButton operation="mark_privacy_ready" id={row.id} version={row.recordVersion ?? 1} label="Mark ready for action" />}
           {row.status === "READY_FOR_ACTION" && (
             <SettingsActionForm
               operation="complete_privacy_request"

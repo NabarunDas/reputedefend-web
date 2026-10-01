@@ -19,7 +19,9 @@ const repoRoot = new URL("../", import.meta.url)
 
 const suites = [
   ["environment contract", "lib/release/environment.test.ts"],
+  ["environment access scanning", "lib/release/source-scan.test.ts"],
   ["gate-default safety", "lib/release/gates.test.ts"],
+  ["operator SQL is portable and read-only", "lib/release/operator-sql.test.ts"],
   ["readiness model", "lib/release/readiness.test.ts"],
   ["cutover sequence and release record", "lib/release/cutover.test.ts"],
   ["secret patterns in release artifacts", "lib/release/secrets.test.ts"],

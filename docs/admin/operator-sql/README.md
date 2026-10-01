@@ -4,12 +4,19 @@ SQL in this directory is for a person to read, paste into a SQL console and run
 deliberately. None of it is a migration, none of it is imported by application
 code, and none of it is wired into any build, start, test or deploy path.
 
-Two rules apply to everything here.
+Three rules apply to everything here.
 
 **Read-only by default.** A script in this directory either returns rows or it
 does nothing. Where a statement would change the database, it is present as a
 commented example with the reasoning next to it, so that running the file as
 written cannot alter anything.
+
+**Portable SQL.** Everything here is standard PostgreSQL and runs unchanged in
+the Supabase SQL Editor as well as in psql. No psql meta-command, so a script
+cannot be pasteable in theory and broken in the console an operator actually
+uses. Sections are labelled with a plain `select '…' as inspection_section;`.
+`apps/admin/lib/release/operator-sql.test.ts` enforces both this rule and the
+read-only one.
 
 **No blind `CASCADE`.** A dependency that `CASCADE` would silently remove is
 the most important thing these scripts are trying to surface. If the inspection

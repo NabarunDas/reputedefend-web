@@ -5,6 +5,10 @@
 -- by a migration, by a build or by a deploy. A person pastes it into a SQL
 -- console against the database being inspected and reads the output.
 --
+-- Standard PostgreSQL throughout, so it runs unchanged in the Supabase SQL
+-- Editor as well as in psql. Each section opens with a labelling SELECT rather
+-- than a psql meta-command, so the output is one labelled result per section.
+--
 -- Neither object is created by any file under supabase/migrations. Both exist
 -- on profilerelaunch-dev. Step 1 created public.cases_assign_public_ref, which
 -- is the hardened, search_path-pinned function the repository relies on.
@@ -12,7 +16,8 @@
 -- Read all five sections before deciding anything. Section 5 describes what a
 -- removal would do; it does not perform one, and it does not use CASCADE.
 
-\echo '== 1. Does each object exist, and what is it? =='
+-- 1. Does each object exist, and what is it?
+select '1. object existence and definition' as inspection_section;
 
 select
   n.nspname                                   as schema,
@@ -39,7 +44,8 @@ order by p.proname;
 -- not be removed.
 
 
-\echo '== 2. Which triggers call them? =='
+-- 2. Which triggers call them?
+select '2. triggers calling the legacy functions' as inspection_section;
 
 select
   c.relname                     as table_name,
@@ -62,7 +68,8 @@ order by c.relname, t.tgname;
 -- before concluding anything.
 
 
-\echo '== 3. Is either used as an event trigger? =='
+-- 3. Is either used as an event trigger?
+select '3. event triggers using the legacy functions' as inspection_section;
 
 select
   evtname                       as event_trigger_name,
@@ -81,7 +88,8 @@ order by evtname;
 -- inert and removing it changes how future DDL behaves.
 
 
-\echo '== 4. What else depends on them? =='
+-- 4. What else depends on them?
+select '4. other dependencies on the legacy functions' as inspection_section;
 
 select
   dependent_ns.nspname          as dependent_schema,
@@ -103,7 +111,8 @@ order by dependent_ns.nspname, dependent.relname;
 -- repository, and that has to be understood before anything is removed.
 
 
-\echo '== 5. What would removal consist of? =='
+-- 5. What would removal consist of?
+select '5. statements a removal would consist of' as inspection_section;
 
 select
   format('DROP FUNCTION %I.%I(%s);', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid))

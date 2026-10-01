@@ -276,9 +276,11 @@ actually relies on.
 object exists, which triggers and event triggers call it, what depends on it,
 and what a removal statement would look like. It is read-only, it is not
 imported by application code, it is not wired into any build, start, test or
-deploy path, and the removal statement it prints carries no `CASCADE`. A person
-pastes it into a SQL console and reads the output. Do not run it as a cutover
-step without reading what it returns first.
+deploy path, and the removal statement it prints carries no `CASCADE`. It is
+standard PostgreSQL with no psql meta-command, so it runs unchanged in the
+Supabase SQL Editor. A person pastes it in and reads the output. Do not run it
+as a cutover step without reading what it returns first.
+`apps/admin/lib/release/operator-sql.test.ts` holds the file to all of that.
 
 Under Strategy A the question closes by construction, because neither object is
 ever created.

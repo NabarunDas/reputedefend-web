@@ -296,10 +296,36 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "OAuth state single use", probe: "public.provider_oauth_states" },
   },
+  {
+    version: "20261001200000",
+    filename: "20261001200000_quote_action_scope_fix_v1.sql",
+    step: "Step 23 quote acceptance action scope fix",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "quote action scope", probe: "public.admin_quote_command_v1" },
+  },
 ]
 
-/** The newest migration in the chain. Recovery output records this as the schema head. */
+/**
+ * The newest migration in the repository. A project rebuilt from source
+ * receives the whole chain, so a clean-schema rehearsal records this as its
+ * schema head.
+ */
 export const migrationHead = migrationChain[migrationChain.length - 1]
+
+/**
+ * The newest migration `profilerelaunch-dev` has actually received. This is
+ * what remote migration history should end at, and it is behind
+ * `migrationHead` whenever a reviewed migration is still waiting to be applied.
+ */
+export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
+
+/** Migrations that exist in source review but have not reached the dev project. */
+export function pendingMigrations(): MigrationEntry[] {
+  return migrationChain.filter(entry => !entry.appliedToDev)
+}
 
 export function manifestFilenames(): string[] {
   return migrationChain.map(entry => entry.filename)

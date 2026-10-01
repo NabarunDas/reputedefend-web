@@ -53,13 +53,15 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(11)
+    expect(chainAfter(checkpoint)).toHaveLength(12)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    expect(pending.at(-1)?.version).toBe("20261001175315")
+    // The tail now carries the reviewed Step 23 fix, so this rehearsal also
+    // proves that migration applies cleanly onto the real chain.
+    expect(pending.at(-1)?.version).toBe("20261001200000")
     expect(upgradeMs).toBeGreaterThan(0)
     expect(await count(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name = 'provider_oauth_states'",

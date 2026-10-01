@@ -90,8 +90,19 @@ export async function loadGuardChecks(
   }
 }
 
+function notFoundCheckDetail(): GuardCheckDetail {
+  return {
+    serviceDate: "", timezone: "Europe/London", scheduleConfigured: false,
+    status: "invalid", obligation: undefined, attempts: [], observation: null,
+  }
+}
+
 export async function loadGuardCheck(obligationId: string): Promise<GuardCheckDetail> {
   await requireStaff()
+  // A malformed identifier must reach the page as "no such check", the same as
+  // an unknown one. Sending it to a uuid parameter raises a database error and
+  // the operator gets a failure page instead of a 404.
+  if (!isUuid(obligationId)) return notFoundCheckDetail()
   const token = (await cookies()).get(sessionCookie)!.value
   const result = await backend().rpc<GuardCheckDetail | null>("admin_guard_check_detail_v1", {
     p_token: tokenHash(token), p_obligation: obligationId, p_now: null,

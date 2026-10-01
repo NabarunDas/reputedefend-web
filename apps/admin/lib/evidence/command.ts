@@ -135,8 +135,11 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
       }
       const upload = await store.createUpload({ key: loaded.storageKey, contentType: loaded.contentType })
       if (upload.expiresSeconds > UPLOAD_EXPIRES_SECONDS) return reply("We couldn’t create a safe upload. Please try again shortly.", 503)
+      // The presigned POST already carries the object key in its signed fields,
+      // which the browser needs to perform the upload. Nothing reads a second
+      // copy, so the key is not repeated at the top level of the response.
       return reply("Upload the file directly using the provided fields.", 200, {
-        documentId: result.documentId, versionId: result.versionId, versionNumber: result.versionNumber, storageKey: loaded.storageKey,
+        documentId: result.documentId, versionId: result.versionId, versionNumber: result.versionNumber,
         maxBytes: MAX_EVIDENCE_BYTES, upload: { url: upload.url, fields: upload.fields, expiresSeconds: upload.expiresSeconds },
       })
     }

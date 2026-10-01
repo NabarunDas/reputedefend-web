@@ -74,6 +74,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_catalogue_quotes_orders_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_quote_action_scope_fix_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 45000)
 
@@ -354,6 +355,38 @@ describe("catalogue quotes and orders SQL", () => {
     expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ email: "alex@example.com" })
     const otherSession = secretHash()
     expect(await rpc("customer_action_finish_otp_v1", [pending, otherSession, otherAuth, "other@example.com"])).toEqual({ status: "unavailable" })
+  })
+
+  it("refuses to revoke a quote acceptance action that belongs to another quote", async () => {
+    await verify()
+    const target = await createDraft()
+    await setTax(target!.id!, target!.version!)
+    await offer(target!.id!, target!.version! + 1)
+    const targetAction = await issue(target!.id!)
+    expect(targetAction.result?.status).toBe("success")
+
+    const attacker = await createDraft({ serviceCode: "GUIDED_REVIEW", caseId: reviewCase, priceVersionId: await priceId("GUIDED_REVIEW") })
+    await setTax(attacker!.id!, attacker!.version!)
+    await offer(attacker!.id!, attacker!.version! + 1)
+
+    const crossed = await rpc("admin_quote_command_v1", [token, key(), "revoke_action", {
+      quoteId: attacker?.id, actionId: targetAction.result?.id, reason: "Attempting to revoke another quote's action.",
+    }, null])
+    expect(crossed?.status).toBe("conflict")
+
+    const untouched = await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [targetAction.result?.id])
+    expect(untouched.rows[0].status).toBe("OPEN")
+    const misattributed = await db.query<{ n: number }>(
+      "select count(*)::int as n from public.admin_audit_events where target_id=$1 and reason='Quote acceptance action revoked'",
+      [attacker?.id],
+    )
+    expect(misattributed.rows[0].n).toBe(0)
+
+    const owned = await rpc("admin_quote_command_v1", [token, key(), "revoke_action", {
+      quoteId: target?.id, actionId: targetAction.result?.id, reason: "The customer asked us to withdraw this quote link.",
+    }, null])
+    expect(owned?.status).toBe("success")
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id=$1", [targetAction.result?.id])).rows[0].status).toBe("REVOKED")
   })
 
   it("accepts a taxable Guided quote once and returns the same order on retry or race", async () => {

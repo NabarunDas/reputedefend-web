@@ -24,14 +24,10 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("treats a reviewed but unapplied migration as a candidate rather than a divergence", () => {
+  it("has no pending migration after the reviewed Step 23 migration is applied", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.length).toBeGreaterThan(0)
-    const result = validateMigrationHistory({
-      repoFilenames,
-      remote: healthyRemote,
-      candidates: pending.map(entry => entry.filename),
-    })
+    expect(pending).toEqual([])
+    const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)

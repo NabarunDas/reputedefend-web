@@ -79,10 +79,15 @@ describe("Step 23 acceptance matrix", () => {
   it("matches the companion table in the Step 23 document", () => {
     // The document is what a reviewer reads. If it can drift from the matrix,
     // one of the two is lying, so the table is derived from the same rows.
+    // Read only the matrix section: the document carries other tables, and
+    // scraping every pipe-prefixed line in the file would read those as areas.
     const doc = readFileSync(new URL("../../../../docs/admin/step23-acceptance-security.md", import.meta.url), "utf8")
-    const rows = doc.split("\n")
+    const section = doc.split("\n## ").find(part => part.startsWith("Acceptance matrix\n"))
+    expect(section).toBeDefined()
+    const rows = (section ?? "").split("\n")
       .filter(line => line.startsWith("| ") && !line.startsWith("| Area") && !line.startsWith("| ---"))
       .map(line => line.split("|").map(cell => cell.trim()).slice(1, -1))
+    expect(rows).toHaveLength(acceptanceMatrix.length)
     expect(rows.map(cells => [cells[0], cells[2]])).toEqual(
       acceptanceMatrix.map(row => [row.area, row.status]),
     )

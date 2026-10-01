@@ -4,6 +4,8 @@ import { createHash } from "node:crypto"
 import { readFileSync, readdirSync } from "node:fs"
 import { encryptTokenPayload } from "../../../../lib/google-business-profile/token-crypto"
 import { hashOAuthState, issueOAuthState } from "../../../../lib/google-business-profile/oauth"
+import type { GoogleLiveStack } from "../../../../lib/google-business-profile/live-stack"
+import { googleCallbackOutcome } from "./command"
 
 const db = new PGlite()
 const uid = "11111111-1111-4111-8111-111111111111"
@@ -273,6 +275,59 @@ describe("provider oauth state storage", () => {
     )
     expect(row.rows[0].consumed_at).not.toBeNull()
     expect(row.rows[0].outcome).toBe("REJECTED")
+  })
+
+  // The route and the database are tested separately elsewhere, so this
+  // drives the real callback planner and hands its output straight to the
+  // RPC. If the two ever disagree about what a terminal callback looks like,
+  // this is where it shows.
+  it("ends an attempt through the planner the callback route actually uses", async () => {
+    const env = {
+      GOOGLE_BUSINESS_PROFILE_PROVIDER: "google",
+      GOOGLE_BUSINESS_PROFILE_API_ENABLED: "true",
+      GOOGLE_BUSINESS_PROFILE_CLIENT_ID: "client-id",
+      GOOGLE_BUSINESS_PROFILE_CLIENT_SECRET: "client-secret",
+      GOOGLE_BUSINESS_PROFILE_REDIRECT_URI: redirectUri,
+      GOOGLE_BUSINESS_PROFILE_TOKEN_KEY: encryptionKey,
+    }
+    const stack = {
+      transport: { async get() { return { status: 200, body: {} } } },
+      exchange: {
+        async exchange() {
+          return { accessToken: "", refreshToken: null, grantedScopes: [], expiresAt: "" }
+        },
+        async revoke() {},
+      },
+    } satisfies GoogleLiveStack
+    for (const [query, status, reason] of [
+      ["&error=access_denied", "cancelled", "access_denied"],
+      ["&error=client_secret%20GOCSPX-abcdefghijklmnop", "cancelled", "authorization_failed"],
+      ["", "cancelled", "code_missing"],
+      ["&code=4%2F0Aan-authorization-code", "accepted", null],
+    ] as const) {
+      await db.exec(`alter table public.provider_oauth_states disable trigger provider_oauth_states_protect;
+        delete from public.provider_oauth_states;
+        alter table public.provider_oauth_states enable trigger provider_oauth_states_protect;`)
+      const { state, payload } = beginPayload()
+      await command("begin_connect", payload)
+      const plan = googleCallbackOutcome(new URL(`${redirectUri}?state=${state}${query}`), env, stack)
+      if (plan.status !== "consume") throw new Error(`expected a consumable plan for ${query}`)
+      const result = await command("consume_state", {
+        stateHash: plan.stateHash,
+        reason: plan.terminalReason,
+        sessionBinding,
+        redirectUri,
+      })
+      expect(result, query).toMatchObject({ status, ...(reason ? { reason } : {}) })
+      const row = await db.query<{ consumed_at: string | null; outcome: string }>(
+        "select consumed_at, outcome from public.provider_oauth_states",
+      )
+      expect(row.rows[0].consumed_at, query).not.toBeNull()
+      expect(row.rows[0].outcome, query).toBe(status === "accepted" ? "ACCEPTED" : "CANCELLED")
+    }
+    const events = await db.query<{ detail: string }>("select detail from public.provider_connection_events")
+    const dump = JSON.stringify(events.rows)
+    expect(dump).not.toMatch(/GOCSPX-|client_secret|4\/0A|authorization-code/)
   })
 
   it("refuses to rewrite a consumed state or delete a live one", async () => {

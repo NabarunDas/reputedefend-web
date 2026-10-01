@@ -1085,14 +1085,17 @@ describe("guard alerts SQL", () => {
       alertId: increaseAlert!.id, severity: "MEDIUM", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "A review-count increase alone cannot qualify a discount.",
     }, increaseAlert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
 
-    await rpc("guard_maintain_checks_v1", ["2026-10-01T08:00:00Z", "2026-10-01"])
+    const validAt = new Date(Date.now() + 24 * 3600 * 1000)
+    validAt.setUTCHours(8, 15, 0, 0)
+    const validDate = validAt.toISOString().slice(0, 10)
+    await rpc("guard_maintain_checks_v1", [`${validDate}T08:00:00Z`, validDate])
     const validWindow = (await db.query<{ id: string; record_version: number }>(
-      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date='2026-10-01' and window_code='MORNING'",
-      [coverageId],
+      "select id, record_version from public.guard_check_obligations where coverage_id=$1 and service_date=$2 and window_code='MORNING'",
+      [coverageId, validDate],
     )).rows[0]
     const valid = await completeWindow(validWindow.id, validWindow.record_version, healthyPayload({
       classification: "CHANGE_DETECTED", displayedBusinessName: "New Bakery",
-    }), "2026-10-01T08:15:00Z")
+    }), validAt.toISOString())
     const attached = await process(String(valid!.observationId))
     const ack = await rpc("admin_guard_alert_command_v1", [token, key(), "acknowledge", {
       alertId: attached!.id, severity: "HIGH", disposition: "CONFIRMED_CUSTOMER_ISSUE", reason: "The later name change is the first valid customer issue.",

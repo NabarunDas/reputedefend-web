@@ -6,8 +6,8 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
-| UX-1 | Canonical case journey and next action engine | IN PROGRESS |
-| UX-2 | Case page rendering the model | NOT STARTED |
+| UX-1 | Canonical case journey and next action engine | COMPLETE |
+| UX-2 | Case page rendering the model | IN PROGRESS |
 | UX-3 | Case list, queue and batch fact projection | NOT STARTED |
 | UX-4 | Today as an operator home | NOT STARTED |
 | UX-5 | Navigation and information architecture | NOT STARTED |
@@ -19,11 +19,11 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 
 ## UX-1 — Canonical case journey and next action engine
 
-In progress. Non-visual by design: no page, component or stylesheet changes. It establishes nine human phases projected from the fourteen technical stages, phase states that allow a case to move backwards and allow a later problem to reopen an earlier phase without rewriting history, one primary next action chosen by a documented four-band priority table, separate attention items that never compete with the recommendation, explained blockers, per-track prerequisite groups, validated internal destinations and a single `waitingOn`. The resolver is pure, takes `now` as a parameter, and requires zero migrations. See ux-case-flow-model.md for the model, the query cost, the UX-3 projection it identifies and the gaps report.
+Complete. Non-visual by design: no page, component or stylesheet changes. It establishes nine human phases projected from the fourteen technical stages, phase states that allow a case to move backwards and allow a later problem to reopen an earlier phase without rewriting history, one primary next action chosen by a documented four-band priority table, separate attention items that never compete with the recommendation, explained blockers, per-track prerequisite groups, validated internal destinations and a single `waitingOn`. The resolver is pure, takes `now` as a parameter, and requires zero migrations. See ux-case-flow-model.md for the model, the query cost, the UX-3 projection it identifies and the gaps report.
 
 ## UX-2 — Case page rendering the model
 
-The first visual phase. The case page becomes a single place that answers where the case is, what is done, what is blocking and what to do next, by rendering the UX-1 model rather than by re-deriving any of it. Expected to cover the phase strip, the primary action with its destination, attention items, the prerequisite groups with their individual items rather than a single authorised flag, and the technical stage kept visible for operators who want it. Existing case commands stay exactly as they are; the page gains a better front door, not new powers.
+In progress. The first visual phase. The case page becomes a single place that answers where the case is, what is done, what is blocking and what to do next, by rendering the UX-1 model rather than by re-deriving any of it: the nine-phase journey, the primary action with its destination, the blockers, the attention items, the prerequisite groups with their individual items rather than a single authorised flag, and the technical stage kept available but secondary. Existing case commands stay exactly as they are; the page gains a better front door, not new powers. Zero migrations. See ux-case-cockpit.md for the page hierarchy, the same-page anchor map, the progressive disclosure rules, the closed-case treatment and the accessibility position. It stays in progress until it has been independently verified and merged.
 
 ## UX-3 — Case list, queue and batch fact projection
 

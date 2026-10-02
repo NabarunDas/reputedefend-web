@@ -34,9 +34,11 @@ describe("workspace accessibility invariants", () => {
   })
 
   it("gives every page exactly one top-level heading", () => {
-    // Pages use the shared PageHeader, which renders the single h1. A page
-    // that writes its own h1 is fine; a page with neither is not.
-    const headless = pages.filter(file => !/<h1|<PageHeader/.test(read(file))).map(relative)
+    // Most pages use the shared PageHeader, which renders the single h1. A
+    // page that writes its own h1 is fine, and so is one that delegates it to
+    // a header component of its own, as the case cockpit does. A page with
+    // none of the three is not.
+    const headless = pages.filter(file => !/<h1|<[A-Z]\w*Header\b/.test(read(file))).map(relative)
     expect(headless).toEqual([])
     const doubled = pages.filter(file => (read(file).match(/<h1/g) ?? []).length > 1).map(relative)
     expect(doubled).toEqual([])

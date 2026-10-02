@@ -12,7 +12,7 @@
  * already answered all of that, and these functions turn its enums into words.
  */
 
-import type { CaseActionOwner, CaseActionState, CaseNextAction, CaseServiceTrack } from "@/lib/case-flow/model"
+import type { CaseActionOwner, CaseActionState, CaseFlowModel, CaseNextAction, CaseNextActionId, CaseServiceTrack } from "@/lib/case-flow/model"
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -108,4 +108,113 @@ const statusWords: Record<string, string> = {
 export function caseStatusLabel(status: string): { word: string; tone: Tone } {
   const word = statusWords[status] ?? "Open"
   return { word, tone: word === "Open" ? "info" : "neutral" }
+}
+
+// ---------------------------------------------------------------------------
+// What else is wrong with a case
+// ---------------------------------------------------------------------------
+
+export type CaseNotice = { text: string; tone: "danger" | "warning" }
+
+/**
+ * `2 blockers`, `1 other issue`, `Overdue` — counted, never coded.
+ *
+ * A list of cases cannot have each one explain its blockers, and the case
+ * page already does that properly. A count with its noun is enough to decide
+ * whether to open the case. Nothing here is derived: the blockers and the
+ * attention items are UX-1's, and overdue is the action's own recorded date
+ * having passed.
+ */
+export function caseAttentionNotices(flow: CaseFlowModel): CaseNotice[] {
+  const notices: CaseNotice[] = []
+  if (flow.blockers.length > 0) notices.push({ text: plural(flow.blockers.length, "blocker"), tone: "danger" })
+  if (flow.attentionItems.length > 0) {
+    notices.push({ text: plural(flow.attentionItems.length, "other issue"), tone: "warning" })
+  }
+  if (flow.primaryAction?.overdue) notices.push({ text: "Overdue", tone: "danger" })
+  return notices
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`
+}
+
+// ---------------------------------------------------------------------------
+// Where an action is performed
+// ---------------------------------------------------------------------------
+
+/**
+ * The sections of the case page that hold a command, and what each is called.
+ * Ids are rendered as `id` attributes so an anchor can reach them.
+ */
+export const caseSections = {
+  "case-plan": "Case planning",
+  "case-progress": "Progress case",
+  "case-authorisation": "Agreements and permissions",
+  "case-tasks": "Tasks",
+  "case-submissions": "Submission attempts",
+  "case-closure": "Close or withdraw this case",
+} as const
+
+export type CaseSectionId = keyof typeof caseSections
+
+/**
+ * Where on the case page each same-case action is performed.
+ *
+ * A `CASE` destination means "the case page", which tells an operator already
+ * on that page nothing. This maps the action to the section that holds the
+ * relevant command, so the link lands on the control rather than the top of
+ * the document. Today reuses the same map from the outside, which is the
+ * reason it lives here rather than beside the cockpit it was written for.
+ *
+ * It decides nothing about permission. An action appears here because UX-1
+ * recommended it; the command in that section still applies every check it
+ * applied before, and an action missing from this map simply gets no link.
+ */
+const caseActionSections: Partial<Record<CaseNextActionId, CaseSectionId>> = {
+  SELECT_SERVICE: "case-plan",
+
+  REVIEW_NEW_CASE: "case-progress",
+  COMPLETE_ASSESSMENT: "case-progress",
+  ADVANCE_TO_ASSESSMENT: "case-progress",
+  ADVANCE_TO_PREREQUISITES: "case-progress",
+  ADVANCE_TO_PREPARATION: "case-progress",
+  ADVANCE_TO_READY_TO_SUBMIT: "case-progress",
+  MOVE_TO_WAITING_GOOGLE: "case-progress",
+  RETURN_TO_PREPARATION: "case-progress",
+  PERFORM_FURTHER_REVIEW: "case-progress",
+  REVIEW_OUTCOME: "case-progress",
+  REVIEW_CASE_STATE: "case-progress",
+
+  RESOLVE_AUTHORISATION_REVIEW: "case-authorisation",
+  ISSUE_SERVICE_AGREEMENT: "case-authorisation",
+  WAIT_FOR_SERVICE_AGREEMENT: "case-authorisation",
+  ISSUE_CASE_PERMISSION: "case-authorisation",
+  WAIT_FOR_CASE_PERMISSION: "case-authorisation",
+  VERIFY_MANAGER_ACCESS: "case-authorisation",
+
+  REQUEST_CUSTOMER_ACTION: "case-tasks",
+  WAIT_FOR_CUSTOMER_ACTION: "case-tasks",
+  FOLLOW_UP_GOOGLE: "case-tasks",
+  WAIT_FOR_GOOGLE: "case-tasks",
+
+  RECORD_EXTERNAL_SUBMISSION: "case-submissions",
+  REVIEW_SUBMISSION_DECISION: "case-submissions",
+
+  CLOSE_CASE: "case-closure",
+}
+
+/**
+ * Where the action's link should point, and what that place is called.
+ *
+ * `caseBase` is empty on the case page itself, where a bare fragment is the
+ * right link, and is the case's own path anywhere else, so a surface listing
+ * many cases still lands on the section that performs the action.
+ */
+export function actionTarget(action: CaseNextAction, caseBase = ""): { href: string; label: string } | null {
+  const target = action.destination
+  if (!target) return null
+  if (target.kind !== "CASE") return { href: target.href, label: target.label }
+  const section = caseActionSections[action.id]
+  return section ? { href: `${caseBase}#${section}`, label: caseSections[section] } : null
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseActivityFilters, ukDate } from "./activity"
+import { parseActivityFilters, ukDate, ukDay } from "./activity"
 describe("activity filters", () => {
   it.each([{ before: "9223372036854775808" }, { before: "-1" }, { before: "0" }, { before: "1e2" }, { before: ["1", "2"] }, { action: "__proto__" }, { outcome: "unknown" }])("rejects unsafe filters %j", value => {
     expect(parseActivityFilters(value)).toBeNull()
@@ -26,5 +26,9 @@ describe("activity filters", () => {
   it("uses UK daylight saving time", () => {
     expect(ukDate("2026-07-01T12:00:00Z")).toContain("13:00")
     expect(ukDate("2026-01-01T12:00:00Z")).toContain("12:00")
+  })
+  it("names the London calendar date, including across midnight UTC in summer", () => {
+    expect(ukDay("2026-07-01T23:30:00Z")).toBe("Thursday, 2 July 2026")
+    expect(ukDay("2026-01-01T23:30:00Z")).toBe("Thursday, 1 January 2026")
   })
 })

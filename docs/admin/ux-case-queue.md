@@ -229,6 +229,10 @@ The historical foundation migration-ledger discrepancy is a separate, older matt
 
 No provider state changed: outgoing and inbound mail remain disabled, Stripe remains disabled, the Google live stack remains off, Guard live automation remains disabled, privacy deletion remains disabled, Cron is unchanged and Step 22B remains deferred.
 
+## Reuse by UX-4
+
+Today reads this same projection, in chunks of fifty. The cap above is unchanged and the migration is unchanged: a day with two hundred open cases is four calls of `admin_case_flow_facts_v1`, each at or under fifty identifiers, not one wider call and not a call per case. The Cases queue itself is not re-ranked. Today orders its own work list by the priority band the chosen action already carries; `/cases` keeps the order `admin_case_list_v1` returns.
+
 ## Remaining gaps and deferred work
 
 Deliberately out of scope, and unchanged by this phase:
@@ -237,8 +241,8 @@ Deliberately out of scope, and unchanged by this phase:
 - Guard, contact recovery, Stripe provider state, Google submission and the workflow reverse transitions
 - the `admin_private` readiness helpers that `CaseDetail.transitions` does not apply
 - `pack_publishable_v1`'s per-item conditions, which the pack projection still does not expose
-- re-ranking the queue by anything, which belongs to whichever phase decides what priority means
-- Today, navigation and the rest of the UX programme
+- re-ranking the Cases queue itself; Today orders its own work list and leaves `/cases` in list order
+- navigation and the rest of the UX programme
 
 Known and accepted in the design:
 

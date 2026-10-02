@@ -34,19 +34,24 @@
  */
 
 import type { CaseDestinationKind } from "./destinations"
-import type { CaseActionOwner, CaseActionState, CaseNextActionId } from "./model"
+import type { CaseActionOwner, CaseActionState, CaseNextActionId, CasePriorityBand } from "./model"
 
-export const priorityBands = {
+/**
+ * The bands and the order they win in. The names are the shared
+ * `CasePriorityBand` type; the numbers are this module's business, because
+ * ordering is what this table is for.
+ */
+export const priorityBands: Record<CasePriorityBand, number> = {
   SAFETY: 1,
   ADMIN_ACTION: 2,
   JOURNEY: 3,
   PROGRESSION: 4,
-} as const
+}
 
-export type PriorityBand = keyof typeof priorityBands
+export type PriorityBand = CasePriorityBand
 
 export type ActionDefinition = {
-  band: PriorityBand
+  band: CasePriorityBand
   owner: CaseActionOwner
   /** What this action normally means; a resolver may narrow it. */
   state: CaseActionState
@@ -646,6 +651,6 @@ export function highestPriority(candidates: ActionCandidate[]): ActionCandidate 
   return best
 }
 
-export function bandOf(id: CaseNextActionId): PriorityBand {
+export function bandOf(id: CaseNextActionId): CasePriorityBand {
   return actionCatalogue[id].band
 }

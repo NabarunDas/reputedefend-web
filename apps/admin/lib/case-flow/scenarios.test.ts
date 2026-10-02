@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest"
 import { stages } from "../cases/model"
-import { actionCatalogue } from "./actions"
+import { actionCatalogue, bandOf } from "./actions"
 import { isInternalPath } from "./destinations"
 import { blockerCatalogue } from "./notices"
 import { casePhaseIds } from "./phases"
@@ -26,6 +26,7 @@ import type {
   CaseFlowOrderFact,
   CaseFlowQuoteFact,
   CaseNextActionId,
+  CasePriorityBand,
   CaseWaitingOn,
 } from "./model"
 import type { CasePhaseId } from "./phases"
@@ -1614,6 +1615,81 @@ describe("every scenario, whatever it is about", () => {
     expect(wording).not.toMatch(/\bpayment (has been |was )?received\b/i)
     expect(wording).not.toMatch(/\bsubmitted to Google\b/i)
     expect(wording).not.toMatch(/\bsent to Google\b/i)
+  })
+})
+
+/**
+ * The band the chosen action came from, carried out of the model.
+ *
+ * UX-4 orders many cases against each other and needs the same notion of
+ * urgency the resolver already uses to order candidates within one case.
+ * Rather than rebuild an action-to-urgency table on the Today page, the
+ * materialised action now carries the band it was always chosen by. It is a
+ * projection of the action identifier and nothing else, which is why it
+ * cannot have changed any conclusion: the same facts still choose the same
+ * action, and the band is read off that choice afterwards.
+ */
+describe("the priority band the chosen action came from", () => {
+  const firstWith = (id: CaseNextActionId) => {
+    const scenario = scenarios.find(entry => entry.primary === id)
+    expect(scenario, `no scenario reaches ${id}`).toBeDefined()
+    return resolveCaseFlow(scenario!.facts, NOW)
+  }
+
+  const representative: Array<[CaseNextActionId, CasePriorityBand]> = [
+    ["RESOLVE_EVIDENCE_THREAT", "SAFETY"],
+    ["REVIEW_EVIDENCE", "ADMIN_ACTION"],
+    ["REQUEST_EVIDENCE", "JOURNEY"],
+    ["WAIT_FOR_CUSTOMER_EVIDENCE", "JOURNEY"],
+    ["ADVANCE_TO_ASSESSMENT", "PROGRESSION"],
+    ["CLOSE_CASE", "PROGRESSION"],
+  ]
+
+  it.each(representative)("reports %s as %s", (id, band) => {
+    const model = firstWith(id)
+    expect(model.primaryAction?.id).toBe(id)
+    expect(model.primaryAction?.priorityBand).toBe(band)
+  })
+
+  it("is the catalogue's own answer on every scenario, never a second opinion", () => {
+    for (const scenario of scenarios) {
+      const model = resolveCaseFlow(scenario.facts, NOW)
+      if (!model.primaryAction) continue
+      expect(model.primaryAction.priorityBand, scenario.name).toBe(bandOf(model.primaryAction.id))
+      expect(model.primaryAction.priorityBand, scenario.name).toBe(actionCatalogue[model.primaryAction.id].band)
+    }
+  })
+
+  // Reading the band off the chosen action must not have moved the choice,
+  // so every scenario still reaches the conclusion it is specified against.
+  it("leaves the action, its state, its owner, the blockers and the phases alone", () => {
+    for (const scenario of scenarios) {
+      const model = resolveCaseFlow(scenario.facts, NOW)
+      expect(model.primaryAction?.id ?? null, scenario.name).toBe(scenario.primary)
+      if (scenario.state) expect(model.primaryAction?.state, scenario.name).toBe(scenario.state)
+      if (scenario.waitingOn) expect(model.waitingOn, scenario.name).toBe(scenario.waitingOn)
+      if (scenario.phase) expect(model.phase, scenario.name).toBe(scenario.phase)
+      expect(model.primaryAction?.owner ?? "NONE", scenario.name).toBe(model.waitingOn)
+      for (const code of scenario.blockers ?? []) {
+        expect(model.blockers.map(entry => entry.code), scenario.name).toContain(code)
+      }
+      expect(model.phases.map(entry => entry.id), scenario.name).toEqual(casePhaseIds.slice())
+    }
+  })
+
+  // A band is a fixed property of the action, so the same action chosen on a
+  // different case cannot arrive carrying a different urgency.
+  it("does not vary by case", () => {
+    const byAction = new Map<CaseNextActionId, Set<CasePriorityBand>>()
+    for (const scenario of scenarios) {
+      const action = resolveCaseFlow(scenario.facts, NOW).primaryAction
+      if (!action) continue
+      const seen = byAction.get(action.id) ?? new Set<CasePriorityBand>()
+      seen.add(action.priorityBand)
+      byAction.set(action.id, seen)
+    }
+    expect(byAction.size).toBeGreaterThan(0)
+    for (const [id, bands] of byAction) expect([...bands], id).toHaveLength(1)
   })
 })
 

@@ -20,7 +20,7 @@ import { ukDate } from "@/lib/admin/activity"
 import { outcomes, type CaseRow } from "@/lib/cases/model"
 import type { CaseFlowModel, CaseNextAction } from "@/lib/case-flow/model"
 import { Badge } from "../ui"
-import { actionOwnershipSummary, actionStatePresentation, priorityLabel, serviceTrackLabels } from "./presentation"
+import { actionOwnershipSummary, actionStatePresentation, caseAttentionNotices, priorityLabel, serviceTrackLabels } from "./presentation"
 
 export type CaseQueueEntry = { row: CaseRow; flow: CaseFlowModel }
 
@@ -52,14 +52,13 @@ export function CaseQueueItem({ row, flow }: { row: CaseRow; flow: CaseFlowModel
  * The human phase, what the case is worth doing as, and anything about it
  * that is not simply progressing.
  *
- * The attention summary counts rather than lists: fifty cases cannot each
- * explain their blockers, and the case page already does that properly. A
- * count with its noun is enough to decide whether to open the case, and the
- * codes behind it stay where they are useful.
+ * The attention summary counts rather than lists, for the reason given where
+ * `caseAttentionNotices` is defined, and the codes behind it stay where they
+ * are useful.
  */
 export function CaseQueueStatus({ flow, priority }: { flow: CaseFlowModel; priority: string }) {
   const { word, tone } = priorityLabel(priority)
-  const notices = attentionSummary(flow)
+  const notices = caseAttentionNotices(flow)
   return <div className="queue-case-status">
     <p className="queue-case-phase">{flow.phaseLabel}</p>
     <p className="badge-row">
@@ -110,23 +109,4 @@ function CaseQueueDue({ action }: { action: CaseNextAction }): ReactNode {
 function completionLabel(flow: CaseFlowModel): string {
   if (flow.outcome && flow.outcome in outcomes) return outcomes[flow.outcome as keyof typeof outcomes]
   return flow.outcome ?? "Outcome not recorded"
-}
-
-type Notice = { text: string; tone: "danger" | "warning" }
-
-/** `2 blockers`, `1 other issue`, `Overdue` — counted, never coded. */
-function attentionSummary(flow: CaseFlowModel): Notice[] {
-  const notices: Notice[] = []
-  if (flow.blockers.length > 0) {
-    notices.push({ text: plural(flow.blockers.length, "blocker"), tone: "danger" })
-  }
-  if (flow.attentionItems.length > 0) {
-    notices.push({ text: plural(flow.attentionItems.length, "other issue"), tone: "warning" })
-  }
-  if (flow.primaryAction?.overdue) notices.push({ text: "Overdue", tone: "danger" })
-  return notices
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`
 }

@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { filters } from "@/lib/cases/model"
+import { casePage } from "@/lib/cases/pagination"
 import { listCases } from "@/lib/cases/queries"
 import { loadCaseFlows, requiredCase } from "@/lib/case-flow/load"
 import { EmptyState, PageHeader } from "../ui"
@@ -33,7 +34,7 @@ export const metadata = { title: "Cases" }
 export default async function Cases({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const f = filters(await searchParams)
   if (!f) notFound()
-  const all = await listCases(f), rows = all.slice(0, 50), last = rows.at(-1)
+  const { rows, next } = casePage(await listCases(f))
   const flows = rows.length > 0 ? await loadCaseFlows(rows.map(row => row.id)) : new Map()
   // Paired by identifier rather than by position: the projection is not
   // obliged to answer in the order it was asked, and a row with no flow is an
@@ -62,8 +63,8 @@ export default async function Cases({ searchParams }: { searchParams: Promise<Re
       {entries.length === 0
         ? <EmptyState>No cases match these filters.</EmptyState>
         : <CaseQueue entries={entries} />}
-      {all.length > 50 && last && <div className="pagination">
-        <Link href={`/cases?${new URLSearchParams({ q: f.q, filter: f.filter, time: last.createdAt, before: last.id })}`}>Next page</Link>
+      {next && <div className="pagination">
+        <Link href={`/cases?${new URLSearchParams({ q: f.q, filter: f.filter, ...next })}`}>Next page</Link>
       </div>}
     </section>
   </section>

@@ -538,6 +538,7 @@ function materialise(collector: Collector, candidate: ActionCandidate): CaseNext
     description: candidate.description ?? definition.description,
     owner: definition.owner,
     state: candidate.state ?? definition.state,
+    priorityBand: definition.band,
     dueAt: candidate.dueAt ?? null,
     overdue: candidate.overdue ?? false,
     destination: collector.destinations[surfaceKeys[definition.surface]],

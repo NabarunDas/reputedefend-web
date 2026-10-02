@@ -70,15 +70,16 @@ describe("admin shell", () => {
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false")
   })
 
-  it("opens a disclosure without closing the drawer, and closes the drawer when a destination is chosen", () => {
+  it("opens an inactive disclosure without closing the drawer, and closes the drawer when a destination is chosen", () => {
     pathname = "/complaints/complaint-1"
     render(<AdminShell><h1>Complaint</h1></AdminShell>)
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }))
-    const operations = screen.getByText("Operations", { selector: "summary" }).closest("details")
-    expect(operations).toHaveAttribute("open")
+    expect(screen.queryByText("Operations", { selector: "summary" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Complaints" })).toBeVisible()
     expect(screen.getByRole("link", { name: "Complaints" })).toHaveAttribute("aria-current", "page")
     fireEvent.click(screen.getByText("Guard", { selector: "summary" }))
     expect(screen.getByText("Guard", { selector: "summary" }).closest("details")).toHaveAttribute("open")
+    expect(screen.getByRole("link", { name: "Overview" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Close menu" })).toHaveAttribute("aria-expanded", "true")
     fireEvent.click(screen.getByRole("link", { name: "Overview" }))
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false")

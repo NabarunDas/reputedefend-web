@@ -156,7 +156,7 @@ describe("what the sidebar renders", () => {
     render(<AdminNav pathname="/" />)
     const nav = screen.getByRole("navigation", { name: "Admin workspace" })
     const top = [...nav.querySelectorAll(":scope > .admin-nav-list > li")].map(item =>
-      item.querySelector(":scope > a, :scope > details > summary")?.textContent,
+      item.querySelector(":scope > a, :scope > details > summary, :scope > .admin-nav-group > .admin-nav-group-label")?.textContent,
     )
     expect(top).toEqual(["Today", "Intake", "Cases", "Guard", "Finance", "Reports", "Operations", "Settings"])
     expect(nav.querySelector("a[href='/search']")).toBeNull()
@@ -183,19 +183,24 @@ describe("what the sidebar renders", () => {
     expect(current).toHaveLength(1)
     expect(current[0]).toHaveAccessibleName(label)
     expect(current[0]).toHaveAttribute("aria-current", "page")
+    expect(current[0]).toBeVisible()
+    expect(current[0].closest("details:not([open])")).toBeNull()
     for (const name of ["Guard", "Finance", "Operations"]) {
-      const details = disclosure(name)
-      expect(details.querySelector("summary")).not.toHaveAttribute("aria-current")
-      expect(details.hasAttribute("open")).toBe(name === group)
+      const summary = screen.queryByText(name, { selector: "summary" })
+      const staticLabel = screen.queryByText(name, { selector: ".admin-nav-group-label" })
+      expect(summary ?? staticLabel).not.toHaveAttribute("aria-current")
+      if (name === group) {
+        expect(summary).toBeNull()
+        expect(staticLabel).toBeVisible()
+        expect(staticLabel?.closest(".admin-nav-group")).toHaveClass("is-active")
+        expect(staticLabel?.closest("details")).toBeNull()
+        expect(activeNavGroup(pathname)?.label).toBe(group)
+      } else {
+        expect(staticLabel).toBeNull()
+        expect(disclosure(name)).not.toHaveAttribute("open")
+      }
     }
-    if (group) {
-      const details = disclosure(group)
-      expect(details).toHaveAttribute("open")
-      expect(details).toHaveClass("is-active")
-      expect(activeNavGroup(pathname)?.label).toBe(group)
-    } else {
-      expect(activeNavGroup(pathname)).toBeUndefined()
-    }
+    if (!group) expect(activeNavGroup(pathname)).toBeUndefined()
   })
 
   it("does not mark a sidebar link current on search", () => {
@@ -204,28 +209,68 @@ describe("what the sidebar renders", () => {
     expect(screen.getByRole("link", { name: "Today" })).not.toHaveAttribute("aria-current")
   })
 
-  it("lets a closed group be opened, and does not snap it shut again", () => {
+  it("lets each inactive group be opened and closed", () => {
     const { rerender } = render(<AdminNav pathname="/" />)
-    const guard = disclosure("Guard")
-    expect(guard).not.toHaveAttribute("open")
+    for (const name of ["Guard", "Finance", "Operations"]) {
+      const details = disclosure(name)
+      expect(details).not.toHaveAttribute("open")
+      fireEvent.click(screen.getByText(name, { selector: "summary" }))
+      expect(details).toHaveAttribute("open")
+      fireEvent.click(screen.getByText(name, { selector: "summary" }))
+      expect(details).not.toHaveAttribute("open")
+    }
     fireEvent.click(screen.getByText("Guard", { selector: "summary" }))
-    expect(guard).toHaveAttribute("open")
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current")
     rerender(<AdminNav pathname="/" />)
     expect(disclosure("Guard")).toHaveAttribute("open")
     expect(currentLinks().map(link => link.textContent)).toEqual(["Today"])
   })
 
-  it("lets an open active group be closed on this page, then opens it again on the next route", () => {
+  it("keeps Finance expanded on Money, and does not offer a way to hide it", () => {
+    render(<AdminNav pathname="/money" />)
+    const money = screen.getByRole("link", { name: "Money" })
+    expect(money).toBeVisible()
+    expect(money).toHaveAttribute("aria-current", "page")
+    expect(currentLinks()).toHaveLength(1)
+    const finance = screen.getByText("Finance", { selector: ".admin-nav-group-label" })
+    expect(finance).toBeVisible()
+    expect(finance).not.toHaveAttribute("aria-current")
+    expect(screen.queryByText("Finance", { selector: "summary" })).toBeNull()
+    fireEvent.click(finance)
+    expect(screen.getByRole("link", { name: "Money" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "Commercial" })).toBeVisible()
+  })
+
+  it("keeps Guard expanded on a check, with Checks as the only current link", () => {
+    render(<AdminNav pathname="/guard/checks/obligation-1" />)
+    const checks = screen.getByRole("link", { name: "Checks" })
+    expect(checks).toBeVisible()
+    expect(checks).toHaveAttribute("aria-current", "page")
+    expect(currentLinks()).toHaveLength(1)
+    expect(screen.queryByText("Guard", { selector: "summary" })).toBeNull()
+    expect(screen.getByText("Guard", { selector: ".admin-nav-group-label" })).not.toHaveAttribute("aria-current")
+    expect(screen.getByRole("link", { name: "Overview" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current")
+  })
+
+  it("keeps Operations expanded on a complaint, with Complaints as the only current link", () => {
+    render(<AdminNav pathname="/complaints/complaint-1" />)
+    const complaints = screen.getByRole("link", { name: "Complaints" })
+    expect(complaints).toBeVisible()
+    expect(complaints).toHaveAttribute("aria-current", "page")
+    expect(currentLinks()).toHaveLength(1)
+    expect(screen.queryByText("Operations", { selector: "summary" })).toBeNull()
+    expect(screen.getByText("Operations", { selector: ".admin-nav-group-label" })).not.toHaveAttribute("aria-current")
+  })
+
+  it("returns a group to a normal disclosure once the route leaves it", () => {
     const { rerender } = render(<AdminNav pathname="/money" />)
-    expect(disclosure("Finance")).toHaveAttribute("open")
     expect(screen.getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page")
-    fireEvent.click(screen.getByText("Finance", { selector: "summary" }))
+    rerender(<AdminNav pathname="/guard/checks/obligation-1" />)
+    expect(screen.getByRole("link", { name: "Checks" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "Checks" })).toHaveAttribute("aria-current", "page")
+    expect(currentLinks()).toHaveLength(1)
+    expect(screen.queryByText("Guard", { selector: "summary" })).toBeNull()
     expect(disclosure("Finance")).not.toHaveAttribute("open")
-    rerender(<AdminNav pathname="/money" />)
-    expect(disclosure("Finance")).not.toHaveAttribute("open")
-    rerender(<AdminNav pathname="/commercial" />)
-    expect(disclosure("Finance")).toHaveAttribute("open")
-    expect(currentLinks().map(link => link.textContent)).toEqual(["Commercial"])
+    expect(screen.queryByText("Finance", { selector: ".admin-nav-group-label" })).toBeNull()
   })
 })

@@ -54,7 +54,7 @@ ProfileRelaunch, the Admin Portal label, the header sign-out and the "ProfileRel
 
 Intake is the label for the existing Enquiries capability. The route stays `/enquiries`. Clients & businesses stays under records: Intake may identify a customer, but the records module is supporting infrastructure, not the front door.
 
-There is no `/finance` page, no `/operations` page, no `/intake` page and no extra Guard home. Finance and Operations are disclosure titles. Their children are the existing pages.
+There is no `/finance` page, no `/operations` page, no `/intake` page and no extra Guard home. Finance and Operations are group titles. Their children are the existing pages.
 
 ## Groups
 
@@ -74,15 +74,15 @@ Guard is the careful case. Overview is current for `/guard` and for any Guard pa
 
 Cases stays current on the case page and on case evidence. Evidence is part of the case journey. It is not a new primary link. Reports stays current on report drill-downs.
 
-The current page is `aria-current="page"` on that one link. A group summary never carries `aria-current`. The group that contains the current page gets an active class: a lime inset rule and a heavier summary, plus the green current-page treatment on the child.
+The current page is `aria-current="page"` on that one link. A group label never carries `aria-current`. The group that contains the current page gets an active class: a lime inset rule and heavier type, plus the green current-page treatment on the child.
 
 ## Disclosures
 
-Guard, Finance and Operations are native `<details>` elements. The summary is the control. The children are links.
+Guard, Finance and Operations are groups. Only an inactive group is a native `<details>` disclosure. The summary is the control, and the operator can open and close it on that page. The choice is not stored in localStorage, a cookie or the database. Leaving the page drops it.
 
-The group opens by itself when the current route belongs to it, so the current child is not hidden inside a collapsed group. Otherwise it starts closed. Opening or closing a group is for this page only. It is not stored in localStorage, a cookie or the database. Navigating to another route starts again from whether that route belongs to the group. A group the operator has opened on a page that does not belong to it stays open until they leave the page. React does not force it shut on the next render.
+The group that contains the current route is not a disclosure. It is a static expanded section: the label is visible, and it is not a toggle, so it cannot be collapsed. That is what keeps the single `aria-current="page"` destination on screen. Navigating to a route outside the group returns it to an ordinary collapsed disclosure. The group that owns the new route is the static one instead.
 
-On a phone the same sidebar is the existing drawer. Open menu, Close menu and the backdrop behave as before. Choosing a destination closes the drawer. Opening a disclosure does not. The active group is already open when the drawer opens, because the sidebar is rendered for the current route.
+On a phone the same sidebar is the existing drawer. Open menu, Close menu and the backdrop behave as before. Choosing a destination closes the drawer. Opening an inactive disclosure does not. The active group is already expanded when the drawer opens, because the sidebar is rendered for the current route.
 
 ## Accessibility
 

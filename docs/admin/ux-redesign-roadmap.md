@@ -9,7 +9,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-1 | Canonical case journey and next action engine | COMPLETE |
 | UX-2 | Case page rendering the model | COMPLETE |
 | UX-3 | Case list, queue and batch fact projection | COMPLETE |
-| UX-4 | Today as an operator home | IN PROGRESS |
+| UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | NOT STARTED |
 | UX-6 | Evidence workspace | NOT STARTED |
 | UX-7 | Commercial and money surfaces | NOT STARTED |
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2 and UX-3 are complete. UX-4 is in progress. UX-5 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2 and UX-3 are complete. UX-4 is complete. UX-5 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.

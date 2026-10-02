@@ -8,7 +8,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | --- | --- | --- |
 | UX-1 | Canonical case journey and next action engine | COMPLETE |
 | UX-2 | Case page rendering the model | COMPLETE |
-| UX-3 | Case list, queue and batch fact projection | IN PROGRESS |
+| UX-3 | Case list, queue and batch fact projection | COMPLETE |
 | UX-4 | Today as an operator home | NOT STARTED |
 | UX-5 | Navigation and information architecture | NOT STARTED |
 | UX-6 | Evidence workspace | NOT STARTED |

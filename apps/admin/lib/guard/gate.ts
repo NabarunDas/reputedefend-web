@@ -1,33 +1,19 @@
+/**
+ * The Guard flags, re-exported into Admin as server-only.
+ *
+ * These were wrappers that forwarded their environment to the shared gate.
+ * Re-exporting instead keeps the identical function — same signature, same
+ * `process.env` default, same values — while removing six whole-environment
+ * hand-offs that said nothing a reader could check.
+ */
+
 import "server-only"
-import {
-  guardActivationEnabled as sharedActivation,
-  guardAlertNotificationsEnabled as sharedAlertNotifications,
-  guardAlertsEnabled as sharedAlerts,
-  guardChecksEnabled as sharedChecks,
-  guardRefundsEnabled as sharedRefunds,
-  guardSubscriptionsEnabled as sharedSubscriptions,
+
+export {
+  guardActivationEnabled,
+  guardAlertNotificationsEnabled,
+  guardAlertsEnabled,
+  guardChecksEnabled,
+  guardRefundsEnabled,
+  guardSubscriptionsEnabled,
 } from "../../../../lib/guard-billing/config"
-
-export function guardActivationEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedActivation(env)
-}
-
-export function guardSubscriptionsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedSubscriptions(env)
-}
-
-export function guardRefundsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedRefunds(env)
-}
-
-export function guardChecksEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedChecks(env)
-}
-
-export function guardAlertsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedAlerts(env)
-}
-
-export function guardAlertNotificationsEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return sharedAlertNotifications(env)
-}

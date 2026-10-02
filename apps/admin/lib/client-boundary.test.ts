@@ -26,6 +26,9 @@ function sourceFiles(directory: URL, extensions = [".ts", ".tsx"]): string[] {
 
 const read = (file: string) => readFileSync(file, "utf8")
 const relative = (file: string) => file.replace(new URL(".", adminRoot).pathname, "")
+// The hand-off exception table names files from the repository root, so a
+// path relative to the Admin workspace is not the one to ask it about.
+const repoPath = (file: string) => `apps/admin/${relative(file)}`
 
 // A variable only reaches a bundle, or a module, when something reads it, so
 // these checks look for a read rather than a mention: a catalogue that names a
@@ -82,7 +85,7 @@ describe("client boundary", () => {
     // Fail closed: an alias of the whole environment object, or any syntax the
     // scanner does not understand, would hide reads from the two checks above.
     const offenders = allSources
-      .map(file => ({ file: relative(file), unsupported: unsupportedEnvironmentAccess(read(file)) }))
+      .map(file => ({ file: relative(file), unsupported: unsupportedEnvironmentAccess(read(file), repoPath(file)) }))
       .filter(entry => entry.unsupported.length > 0)
     expect(offenders).toEqual([])
   })

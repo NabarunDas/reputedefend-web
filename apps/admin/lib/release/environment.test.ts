@@ -38,7 +38,7 @@ for (const file of sourceFiles()) {
     if (!isTestFile(path)) productionReads.set(name, [...(productionReads.get(name) ?? []), path])
   }
   if (!isTestFile(path)) {
-    const unsupported = unsupportedEnvironmentAccess(source)
+    const unsupported = unsupportedEnvironmentAccess(source, path)
     if (unsupported.length > 0) unsupportedAccess.push({ file: path, unsupported })
     for (const prefix of environmentFamilies(source)) familyPrefixes.add(prefix)
   }

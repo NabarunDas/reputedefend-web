@@ -4,8 +4,7 @@ import {
   type EnvMap,
 } from "../jobs/config"
 
-function configuredFromAddress(env: EnvMap): boolean {
-  const raw = env.COMMUNICATIONS_FROM_EMAIL
+function configuredFromAddress(raw: string | undefined): boolean {
   return !!raw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) && raw.length <= 254
 }
 
@@ -19,7 +18,7 @@ export function communicationsSendEnabled(env: EnvMap = process.env): boolean {
   if (env.JOB_WORKER_ENABLED !== "true") return false
   if (resolveProviderMode(env) !== "production") return false
   if (!env.RESEND_API_KEY || env.RESEND_API_KEY.length < 8) return false
-  if (!configuredFromAddress(env)) return false
+  if (!configuredFromAddress(env.COMMUNICATIONS_FROM_EMAIL)) return false
   if (parseWorkerCadenceSeconds(env) > MAX_LIVE_MAIL_CADENCE_SECONDS) return false
   return true
 }

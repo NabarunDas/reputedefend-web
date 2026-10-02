@@ -11,7 +11,7 @@ import {
 } from "./readiness"
 import { liveCapabilities } from "./gates"
 import { ownerDecisions, productionDatabaseStrategies, strategy } from "./decisions"
-import { migrationHead, pendingMigrations } from "../recovery/manifest"
+import { appliedMigrationHead, migrationHead, pendingMigrations } from "../recovery/manifest"
 
 const doc = readFileSync(new URL("../../../../docs/admin/production-cutover-readiness.md", import.meta.url), "utf8")
 
@@ -152,10 +152,17 @@ describe("readiness model", () => {
     expect(item("google.api-inactive")?.externalAction).toContain("not a defect")
   })
 
-  it("agrees with the recovery manifest about the applied head", () => {
+  it("agrees with the recovery manifest about the applied and repository heads", () => {
+    // The UX-3 batch projection has been applied to dev, so the repository
+    // and the project agree on one head and nothing is waiting to be applied.
     expect(pendingMigrations()).toEqual([])
-    expect(item("supabase.applied-head")?.requirement).toContain(migrationHead.version)
-    expect(item("supabase.applied-head")?.requirement).toContain("quote_surface_fixes_v1")
+    expect(appliedMigrationHead).toBe(migrationHead)
+    const supabase = item("supabase.applied-head")
+    expect(supabase?.status).toBe("READY")
+    expect(supabase?.requirement).toContain(migrationHead.version)
+    expect(supabase?.requirement).toContain("admin_case_flow_batch_v1")
+    expect(supabase?.evidence).toContain("profilerelaunch-dev")
+    expect(supabase?.externalAction).toBeNull()
   })
 })
 

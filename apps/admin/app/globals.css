@@ -476,6 +476,50 @@ summary { cursor: pointer; }
   font-weight: 700;
 }
 
+/* --- Case queue -------------------------------------------------------- */
+
+/* An operational list rather than a wide technical table: three columns on a
+   desktop, stacked on a narrow screen, with no horizontal scroll at any
+   width. */
+.case-queue { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.queue-case {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: .4rem 1.1rem;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  padding: .85rem 1rem;
+  background: var(--paper);
+  min-width: 0;
+}
+.queue-case > * { min-width: 0; }
+.queue-case p { margin: 0; overflow-wrap: anywhere; }
+.queue-case p + p { margin-top: .2rem; }
+
+.queue-case-reference { margin: 0; font-size: 1.05rem; }
+.queue-case-reference a { font-weight: 700; }
+.queue-case-parties { font-size: .95rem; }
+.queue-case-assignment { font-size: .85rem; }
+
+.queue-case-phase { font-weight: 700; }
+.queue-case-status .badge-row { margin: .35rem 0 0; }
+.queue-case-notices { display: flex; flex-wrap: wrap; gap: .3rem .6rem; margin-top: .35rem; }
+.queue-notice { font-size: .85rem; font-weight: 700; }
+.queue-notice-danger { color: var(--danger); }
+.queue-notice-warning { color: var(--warning); }
+
+.queue-case-action { border-left: 3px solid var(--line); padding-left: .8rem; }
+.queue-case-action-action-required { border-left-color: var(--warning); }
+.queue-case-action-ready { border-left-color: var(--green); }
+.queue-case-action-blocked { border-left-color: var(--danger); }
+.queue-case-action-complete { border-left-color: var(--accent); }
+.queue-action-state { margin-bottom: .3rem; }
+.queue-action-label { font-weight: 700; }
+.queue-action-owner { font-size: .85rem; }
+.queue-action-due { font-size: .85rem; }
+.queue-overdue { color: var(--danger); font-weight: 700; }
+
 /* --- Case cockpit ------------------------------------------------------ */
 
 .cockpit-header .cockpit-parties { color: var(--ink); font-size: 1.02rem; }
@@ -620,6 +664,11 @@ summary { cursor: pointer; }
   .comparison { grid-template-columns: 1fr; }
   dl { grid-template-columns: 1fr; }
   .cockpit-split { grid-template-columns: minmax(0, 1fr); }
+  /* Identity, then status, then the action: the order an operator reads a
+     case in, which is also the DOM order, so nothing is reordered visually
+     away from the way it is announced. */
+  .queue-case { grid-template-columns: minmax(0, 1fr); gap: .55rem; }
+  .queue-case-action { border-left-width: 2px; padding-left: .7rem; }
   .journey { grid-template-columns: minmax(0, 1fr); }
   .journey-step {
     display: grid;

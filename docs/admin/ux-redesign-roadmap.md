@@ -7,8 +7,8 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | UX-1 | Canonical case journey and next action engine | COMPLETE |
-| UX-2 | Case page rendering the model | IN PROGRESS |
-| UX-3 | Case list, queue and batch fact projection | NOT STARTED |
+| UX-2 | Case page rendering the model | COMPLETE |
+| UX-3 | Case list, queue and batch fact projection | COMPLETE |
 | UX-4 | Today as an operator home | NOT STARTED |
 | UX-5 | Navigation and information architecture | NOT STARTED |
 | UX-6 | Evidence workspace | NOT STARTED |
@@ -23,11 +23,11 @@ Complete. Non-visual by design: no page, component or stylesheet changes. It est
 
 ## UX-2 — Case page rendering the model
 
-In progress. The first visual phase. The case page becomes a single place that answers where the case is, what is done, what is blocking and what to do next, by rendering the UX-1 model rather than by re-deriving any of it: the nine-phase journey, the primary action with its destination, the blockers, the attention items, the prerequisite groups with their individual items rather than a single authorised flag, and the technical stage kept available but secondary. Existing case commands stay exactly as they are; the page gains a better front door, not new powers. Zero migrations. See ux-case-cockpit.md for the page hierarchy, the same-page anchor map, the progressive disclosure rules, the closed-case treatment and the accessibility position. It stays in progress until it has been independently verified and merged.
+Complete. The first visual phase. The case page becomes a single place that answers where the case is, what is done, what is blocking and what to do next, by rendering the UX-1 model rather than by re-deriving any of it: the nine-phase journey, the primary action with its destination, the blockers, the attention items, the prerequisite groups with their individual items rather than a single authorised flag, and the technical stage kept available but secondary. Existing case commands stay exactly as they are; the page gains a better front door, not new powers. Zero migrations. See ux-case-cockpit.md for the page hierarchy, the same-page anchor map, the progressive disclosure rules, the closed-case treatment and the accessibility position.
 
 ## UX-3 — Case list, queue and batch fact projection
 
-Extends the model to many cases at once, which UX-1 explicitly refuses to do with the current loader because it would be eight round trips per case including three unfiltered list reads. This phase is where the single case-scoped batch projection identified in ux-case-flow-model.md gets designed, reviewed and, if approved, built — and it is the first phase in the programme that may legitimately need a migration. The resolver itself should not change: it is already a pure function of the fact tree, so only the loader is replaced.
+In progress. Extends the model to many cases at once, which UX-1 explicitly refuses to do with the current loader because it would be eight round trips per case including three unfiltered list reads. The single case-scoped batch projection identified in ux-case-flow-model.md now exists as `admin_case_flow_facts_v1`, and the Cases page is an operational queue reading the same `CaseFlowModel` the case page reads. The resolver did not change: it is a pure function of the fact tree, so only the loader was replaced, and the single-case loader now delegates to the batch path rather than running beside it. This is the first phase in the programme to carry a migration, and that migration has not been applied to the remote database — the repository is ahead of `profilerelaunch-dev` until it is independently reviewed and applied. See ux-case-queue.md for the projection contract, its security envelope, the batch integrity checks and the queue itself. It stays in progress until it has been independently verified and merged.
 
 ## UX-4 — Today as an operator home
 

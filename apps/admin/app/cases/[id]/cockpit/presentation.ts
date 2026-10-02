@@ -1,86 +1,34 @@
 /**
- * Wording, symbols and page anchors for the case cockpit.
+ * Symbols and page anchors for the case cockpit.
+ *
+ * The wording every case surface shares — who owns an action, what its state
+ * is called, what a service track or a priority is called — moved to
+ * `app/cases/presentation.ts` when UX-3 gave the case queue the same model to
+ * render, and is re-exported here so this page's components keep one import.
+ * What stays is what is only true of this page: the journey and prerequisite
+ * symbols, and the map from an action to the section that performs it.
  *
  * Everything here is presentation. Nothing in this file decides what a case
  * may do, which action is next, whether a prerequisite is met or where a case
  * is in its journey — UX-1 has already answered all of that, and the cockpit
- * renders those answers rather than forming its own. The one job here is to
- * turn the model's enums into words an operator reads and into somewhere on
- * the page to go.
+ * renders those answers rather than forming its own.
  */
 
 import type { CaseNextAction, CaseNextActionId } from "@/lib/case-flow/model"
-import type {
-  CaseActionOwner,
-  CaseActionState,
-  CaseAttentionSeverity,
-  CasePhaseState,
-  CasePrerequisiteState,
-  CaseServiceTrack,
-} from "@/lib/case-flow/model"
+import type { CaseAttentionSeverity, CasePhaseState, CasePrerequisiteState } from "@/lib/case-flow/model"
+import type { Tone } from "../../presentation"
 
-export type Tone = "neutral" | "info" | "success" | "warning" | "danger"
-
-// ---------------------------------------------------------------------------
-// Who
-// ---------------------------------------------------------------------------
-
-/**
- * The operator is reading their own case, so `ADMIN` is "You" in the sentence
- * about what they have to do next and "ProfileRelaunch" everywhere a third
- * party is being named alongside the customer, Google or the provider. Both
- * readings are the same `CaseActionOwner`; only the wording changes.
- */
-const ownerLabels: Record<CaseActionOwner, { self: string; organisation: string }> = {
-  ADMIN: { self: "You", organisation: "ProfileRelaunch" },
-  CUSTOMER: { self: "Customer", organisation: "Customer" },
-  GOOGLE: { self: "Google", organisation: "Google" },
-  PAYMENT_PROVIDER: { self: "Payment provider", organisation: "Payment provider" },
-  SYSTEM: { self: "System", organisation: "System" },
-}
-
-export function ownerLabel(owner: CaseActionOwner, voice: "self" | "organisation" = "organisation"): string {
-  return ownerLabels[owner][voice]
-}
-
-// ---------------------------------------------------------------------------
-// Action state
-// ---------------------------------------------------------------------------
-
-/**
- * `primary` is what separates a step somebody can take now from a step that
- * has been asked for or cannot be taken: only the first two get a button, so
- * waiting never looks like something to click.
- */
-export const actionStatePresentation: Record<CaseActionState, { word: string; tone: Tone; prefix: string; primary: boolean }> = {
-  ACTION_REQUIRED: { word: "Action required", tone: "warning", prefix: "Action owner", primary: true },
-  READY: { word: "Ready to do", tone: "success", prefix: "Action owner", primary: true },
-  WAITING: { word: "Waiting", tone: "neutral", prefix: "Waiting on", primary: false },
-  BLOCKED: { word: "Blocked", tone: "danger", prefix: "Blocked by", primary: false },
-}
-
-/**
- * Who the case is on, under the word that is true of them.
- *
- * `flow.waitingOn` is the primary action's owner whatever the state of that
- * action, so reading it as a wait is wrong: a case the operator has to act on
- * would say "Waiting on: ProfileRelaunch" when it means "Action owner: You".
- * The action state decides the word — a step that can be taken now has an
- * owner, only a step that has been asked for is a wait, and a blocked step
- * names what is holding it. A case with no primary action is a finished case,
- * because the resolver proposes a step for every open one.
- */
-export function actionOwnershipSummary(action: CaseNextAction | null): { label: string; value: string } {
-  if (!action) return { label: "Work state", value: "Complete" }
-  const { prefix, primary } = actionStatePresentation[action.state]
-  return { label: prefix, value: ownerLabel(action.owner, primary ? "self" : "organisation") }
-}
-
-/** "Action owner: You", "Waiting on: Customer", "Blocked by: System". */
-export function ownerSentence(action: CaseNextAction): string {
-  const { label, value } = actionOwnershipSummary(action)
-  return `${label}: ${value}`
-}
+export type { Tone } from "../../presentation"
+export {
+  actionOwnershipSummary,
+  actionStatePresentation,
+  caseStatusLabel,
+  ownerLabel,
+  ownerSentence,
+  priorityLabel,
+  priorityPresentation,
+  serviceTrackLabels,
+} from "../../presentation"
 
 // ---------------------------------------------------------------------------
 // Phase and prerequisite state
@@ -110,39 +58,6 @@ export const severityPresentation: Record<CaseAttentionSeverity, { word: string;
   CRITICAL: { word: "Critical", tone: "danger" },
   WARNING: { word: "Warning", tone: "warning" },
   INFO: { word: "For information", tone: "neutral" },
-}
-
-// ---------------------------------------------------------------------------
-// Case facts the header and snapshot show
-// ---------------------------------------------------------------------------
-
-export const serviceTrackLabels: Record<CaseServiceTrack, string> = {
-  UNDECIDED: "Not chosen",
-  GUIDED: "Guided",
-  MANAGED: "Managed",
-}
-
-export const priorityPresentation: Record<string, { word: string; tone: Tone }> = {
-  NORMAL: { word: "Normal priority", tone: "neutral" },
-  HIGH: { word: "High priority", tone: "warning" },
-  URGENT: { word: "Urgent", tone: "danger" },
-}
-
-export function priorityLabel(priority: string): { word: string; tone: Tone } {
-  return priorityPresentation[priority] ?? { word: `${priority} priority`, tone: "neutral" }
-}
-
-const statusWords: Record<string, string> = {
-  CLOSED: "Closed",
-  CANCELLED: "Cancelled",
-  AWAITING_CUSTOMER: "Open",
-  UNDER_REVIEW: "Open",
-  RECEIVED: "Open",
-}
-
-export function caseStatusLabel(status: string): { word: string; tone: Tone } {
-  const word = statusWords[status] ?? "Open"
-  return { word, tone: word === "Open" ? "info" : "neutral" }
 }
 
 // ---------------------------------------------------------------------------

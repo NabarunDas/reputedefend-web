@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join, relative } from "node:path"
+import ts from "typescript"
 import { describe, expect, it } from "vitest"
 import { providerModes } from "./capability"
 import {
@@ -31,6 +32,50 @@ const connected: ProviderConnectionState = {
 }
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
+
+/**
+ * Every module specifier a source file loads, read from the parsed syntax
+ * tree rather than matched in text.
+ *
+ * Only a specifier pulls a module into a build, so the mock guard below asks
+ * about specifiers: a readiness catalogue may record the mock's path without
+ * that record making the mock reachable. Matching specifier syntax by regex
+ * invites exactly the gap this replaced, where a side-effect `import "..."`
+ * carried no `from` and so passed. The parser knows every form instead.
+ */
+function moduleSpecifiers(source: string, fileName = "source.ts"): string[] {
+  const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const tree = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind)
+  const specifiers: string[] = []
+  const visit = (node: ts.Node) => {
+    // `import ... from`, bare `import "..."`, `export ... from`, `export * from`.
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      && node.moduleSpecifier
+      && ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      specifiers.push(node.moduleSpecifier.text)
+    }
+    // `import x = require("...")`.
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      const reference = node.moduleReference.expression
+      if (ts.isStringLiteralLike(reference)) specifiers.push(reference.text)
+    }
+    // `import("...")` and `require("...")`.
+    if (ts.isCallExpression(node)) {
+      const loader =
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+        || (ts.isIdentifier(node.expression) && node.expression.text === "require")
+      const [argument] = node.arguments
+      if (loader && argument && ts.isStringLiteralLike(argument)) specifiers.push(argument.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  return specifiers
+}
+
+const loadsTheMock = (specifier: string) => /mock-adapter|testing\/mock/.test(specifier)
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -119,8 +164,27 @@ describe("provider resolution", () => {
       const name = relative(repoRoot, path)
       if (/\.test\.tsx?$/.test(name)) continue
       if (name.includes(join("google-business-profile", "testing"))) continue
-      if (/mock-adapter|testing\/mock/.test(readFileSync(path, "utf8"))) offenders.push(name)
+      if (moduleSpecifiers(readFileSync(path, "utf8"), path).some(loadsTheMock)) offenders.push(name)
     }
     expect(offenders).toEqual([])
+  })
+
+  it("recognises every form that loads a module, and no mere mention", () => {
+    const loads = (source: string) => moduleSpecifiers(source).some(loadsTheMock)
+
+    expect(loads(`import { mockGoogleBusinessProfileProvider } from "./testing/mock-adapter"`)).toBe(true)
+    expect(loads(`import type { MockOptions } from "./testing/mock-adapter"`)).toBe(true)
+    expect(loads(`import "./testing/mock-adapter"`)).toBe(true)
+    expect(loads(`const m = await import("../google-business-profile/testing/mock-adapter")`)).toBe(true)
+    expect(loads(`const m = require("./testing/mock-adapter")`)).toBe(true)
+    expect(loads(`import m = require("./testing/mock-adapter")`)).toBe(true)
+    expect(loads(`export { mockGoogleBusinessProfileProvider } from "./testing/mock-adapter"`)).toBe(true)
+    expect(loads(`export * from "./testing/mock-adapter"`)).toBe(true)
+    expect(loads(`export * as mock from "@/lib/google-business-profile/testing/mock"`)).toBe(true)
+
+    // A catalogue may record the file without making it reachable.
+    expect(loads(`readBy: ["lib/google-business-profile/testing/mock-adapter.ts"]`)).toBe(false)
+    expect(loads(`const note = "see testing/mock-adapter for the fake"`)).toBe(false)
+    expect(loads(`import { resolve } from "./resolve"`)).toBe(false)
   })
 })

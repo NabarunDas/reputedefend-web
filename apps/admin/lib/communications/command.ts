@@ -5,7 +5,7 @@ import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { communicationsSendEnabled, sendDisabledReason } from "./gate"
-import { currentLinkKeyVersion, deriveCommunicationActionId, prepareCommunicationAccessLink } from "./link"
+import { deriveCommunicationActionId, prepareCommunicationAccessLink } from "./link"
 import { mailFromAddress } from "./mail"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -84,8 +84,7 @@ export async function communicationsCommand(request: NextRequest) {
       }
       if (payload.templateKey === "EVIDENCE_REQUEST" || operation === "resend_draft") {
         const actionId = deriveCommunicationActionId(key)
-        const version = currentLinkKeyVersion()
-        const prepared = prepareCommunicationAccessLink(actionId, process.env, version)
+        const prepared = prepareCommunicationAccessLink(actionId)
         if (payload.templateKey === "EVIDENCE_REQUEST" && !prepared) {
           return reply("The secure upload link secret is not configured.", 503)
         }

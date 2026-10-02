@@ -31,6 +31,17 @@ export type CaseServiceTrack = "UNDECIDED" | "GUIDED" | "MANAGED"
  */
 export type CaseActionState = "ACTION_REQUIRED" | "WAITING" | "BLOCKED" | "READY"
 
+/**
+ * How urgent a recommendation is relative to other recommendations.
+ *
+ * The bands and the order they win in are defined by the action catalogue in
+ * `actions.ts`, which is the only place that decides which band an action
+ * belongs to. The type lives here so a caller comparing two cases can name a
+ * band without importing the catalogue, and so the catalogue and the
+ * materialised action cannot drift apart.
+ */
+export type CasePriorityBand = "SAFETY" | "ADMIN_ACTION" | "JOURNEY" | "PROGRESSION"
+
 export type CasePhaseState = "COMPLETE" | "CURRENT" | "UPCOMING" | "NEEDS_ATTENTION"
 
 export type CasePhase = {
@@ -125,6 +136,12 @@ export type CaseNextAction = {
   description: string
   owner: CaseActionOwner
   state: CaseActionState
+  /**
+   * The band this action sits in, carried straight from the catalogue. It is
+   * what lets a caller holding many cases order them the same way the
+   * resolver orders candidates within one case.
+   */
+  priorityBand: CasePriorityBand
   /** An authoritative date, or null. Never an invented service level. */
   dueAt: string | null
   overdue: boolean

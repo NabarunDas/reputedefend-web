@@ -56,6 +56,8 @@ Inside a band, the earlier entry in the action catalogue wins, and the catalogue
 
 `waitingOn` is a single value of `ADMIN`, `CUSTOMER`, `GOOGLE`, `PAYMENT_PROVIDER`, `SYSTEM` or `NONE`, taken from the owner of the action actually being shown, so the two can never disagree. It is `CUSTOMER` only when the recommendation is genuinely a waiting state owned by the customer, never merely because a customer exists on the case.
 
+The chosen action carries the band it was chosen by, as `priorityBand` on `CaseNextAction`. The type lives with the model and the numeric ordering stays in the catalogue, so a caller holding many cases can order them the same way the resolver orders candidates within one case, without keeping a second copy of the action-to-band table. UX-4 is that caller: Today sorts open cases by the band of the action the resolver already chose. The field changes no decision. It is a projection of the action identifier, the scenario matrix asserts it equals the catalogue's own answer on every scenario, and the bands themselves are exactly the four in the table above.
+
 ## Phase by phase
 
 **Received.** A new case has one recommendation: read what the customer reported and triage it.

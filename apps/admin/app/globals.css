@@ -476,6 +476,101 @@ summary { cursor: pointer; }
   font-weight: 700;
 }
 
+/* --- Today workbench ---------------------------------------------------- */
+
+/* The page is a worklist, not a dashboard. The work sections carry weight,
+   everything below them gets progressively quieter, and nothing is a tile. */
+.today-page .page-header p { color: var(--ink); font-weight: 700; }
+.today-summary {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--forest);
+  overflow-wrap: anywhere;
+}
+.today-health { margin: 0; }
+.today-health-warning { margin: 0; }
+
+.today-primary { border-left: 3px solid var(--green); }
+.today-blocked { border-left: 3px solid var(--danger); }
+.today-waiting { background: var(--paper); }
+
+.today-case-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.today-case {
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  padding: .75rem .9rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.today-case p { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.today-case-headline {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.today-case-actionable { border-left: 3px solid var(--green); }
+.today-case-actionable .today-case-headline a { font-weight: 800; }
+.today-case-blocked { border-left: 3px solid var(--danger); }
+.today-case-waiting { border-left: 3px solid var(--line); }
+.today-case-waiting .today-case-headline { font-size: 1rem; font-weight: 700; color: var(--muted); }
+.today-case-identity { font-size: .95rem; }
+.today-case-identity a { font-weight: 700; }
+.today-case-business { color: var(--muted); }
+.today-case-meta { font-size: .88rem; }
+.today-case-due { font-size: .88rem; }
+.today-case-notices { display: flex; flex-wrap: wrap; gap: .3rem .6rem; }
+.today-showing { margin: .7rem 0 0; }
+
+.today-waiting-group { margin-top: 1rem; }
+.today-waiting-heading {
+  margin: 0 0 .45rem;
+  font-size: .95rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+}
+
+.today-queue-groups { display: grid; gap: 1rem; }
+.today-queue-heading { margin: 0 0 .35rem; font-size: .92rem; color: var(--muted); }
+.today-queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.today-queue-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .3rem .7rem;
+  min-width: 0;
+}
+.today-queue-count { font-weight: 800; color: var(--forest); min-width: 2ch; }
+.today-queue-label { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.today-queue-link { font-size: .9rem; font-weight: 700; }
+
+.today-guard-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.today-guard-list a { font-weight: 700; }
+
+.today-management summary { font-weight: 700; }
+.today-management-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: .5rem 1.4rem;
+  margin: .85rem 0 0;
+}
+.today-management-entry { min-width: 0; }
+.today-management-entry dt { font-size: .88rem; }
+.today-management-entry dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .25rem .7rem;
+  min-width: 0;
+}
+.today-management-value { font-weight: 700; overflow-wrap: anywhere; }
+.today-management-entry dd a { font-size: .85rem; }
+.today-management-all { margin: 1rem 0 0; }
+.today-footer { margin: 0; }
+
 /* --- Case queue -------------------------------------------------------- */
 
 /* An operational list rather than a wide technical table: three columns on a
@@ -685,4 +780,13 @@ summary { cursor: pointer; }
   .login-panel, .panel { padding: 1.15rem; }
   .header-brand img { max-width: 8.5rem; height: 1.5rem; }
   input { max-width: 100%; }
+  /* The header search box has a 10rem minimum that, beside the menu button
+     and sign-out, is wider than a phone. Drop the search onto its own line
+     so the page does not scroll sideways and the wordmark stays readable. */
+  .admin-header { flex-wrap: wrap; justify-content: flex-start; height: auto; row-gap: .55rem; padding-top: .6rem; padding-bottom: .6rem; }
+  .header-actions { flex: 1 1 100%; min-width: 0; }
+  .header-search { flex: 1 1 auto; min-width: 0; }
+  .header-search input { min-width: 0; width: 100%; }
+  .header-sign-out { flex: 0 0 auto; }
+  .header-sign-out button { white-space: nowrap; }
 }

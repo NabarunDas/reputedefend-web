@@ -11,3 +11,5 @@ export function parseActivityFilters(params: Record<string, string | string[] | 
   return { before: (before as string) || null, action: (action as string) || null, outcome: (outcome as string) || null }
 }
 export const ukDate = (value: string) => new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date(value))
+/** The Europe/London calendar date on its own, for naming the working day. */
+export const ukDay = (value: string | Date) => new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/London" }).format(new Date(value))

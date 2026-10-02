@@ -9,7 +9,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-1 | Canonical case journey and next action engine | COMPLETE |
 | UX-2 | Case page rendering the model | COMPLETE |
 | UX-3 | Case list, queue and batch fact projection | COMPLETE |
-| UX-4 | Today as an operator home | NOT STARTED |
+| UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | NOT STARTED |
 | UX-6 | Evidence workspace | NOT STARTED |
 | UX-7 | Commercial and money surfaces | NOT STARTED |
@@ -27,11 +27,11 @@ Complete. The first visual phase. The case page becomes a single place that answ
 
 ## UX-3 — Case list, queue and batch fact projection
 
-In progress. Extends the model to many cases at once, which UX-1 explicitly refuses to do with the current loader because it would be eight round trips per case including three unfiltered list reads. The single case-scoped batch projection identified in ux-case-flow-model.md now exists as `admin_case_flow_facts_v1`, and the Cases page is an operational queue reading the same `CaseFlowModel` the case page reads. The resolver did not change: it is a pure function of the fact tree, so only the loader was replaced, and the single-case loader now delegates to the batch path rather than running beside it. This is the first phase in the programme to carry a migration, and that migration has not been applied to the remote database — the repository is ahead of `profilerelaunch-dev` until it is independently reviewed and applied. See ux-case-queue.md for the projection contract, its security envelope, the batch integrity checks and the queue itself. It stays in progress until it has been independently verified and merged.
+Complete. Extends the model to many cases at once, which UX-1 explicitly refuses to do with the earlier loader because it would be eight round trips per case including three unfiltered list reads. The single case-scoped batch projection identified in ux-case-flow-model.md exists as `admin_case_flow_facts_v1`, and the Cases page is an operational queue reading the same `CaseFlowModel` the case page reads. The resolver did not change: it is a pure function of the fact tree, so only the loader was replaced, and the single-case loader delegates to the batch path rather than running beside it. The migration `20261002194215_admin_case_flow_batch_v1.sql` was applied to `profilerelaunch-dev` on 2026-10-02 and is immutable. See ux-case-queue.md for the projection contract, its security envelope, the batch integrity checks and the queue itself.
 
 ## UX-4 — Today as an operator home
 
-Turns Today from a metrics page into the place the working day starts: what needs doing now, ordered by the same priority bands, drawn from the UX-3 batch projection rather than from a separate ranking. Depends on UX-3 for cost reasons.
+Complete. Today is now the place the working day starts: what needs doing now, ordered by the priority band the UX-1 resolver already chose, drawn from the UX-3 batch projection in chunks of fifty rather than from a separate ranking or a wider query. It adds no migration, no urgency score and no service level. See ux-today-workbench.md. UX-5 is not started.
 
 ## UX-5 — Navigation and information architecture
 
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. Nothing in UX-2 to UX-10 is started, designed or implemented by UX-1, and no phase after UX-1 should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2 and UX-3 are complete. UX-4 is complete. UX-5 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.

@@ -357,6 +357,46 @@ describe("today's Guard checks", () => {
     const model = build([], { dashboardFacts: dashboard({ monitoringScheduleConfigured: true }) })
     expect(model.guard).toEqual({ scheduleConfigured: true, windows: [] })
   })
+
+  const window = (id: string, code: string, state: string) => ({ id, windowCode: code, state })
+  const withWindows = (...windows: Array<{ id: string; windowCode: string; state: string }>) =>
+    build([], { dashboardFacts: dashboard({ monitoringScheduleConfigured: true, secondary: { todayWindows: windows } }) })
+
+  it("drops a completed check, and does not let it keep the day busy", () => {
+    const model = withWindows(window("morning", "MORNING", "COMPLETED"))
+    expect(model.guard.windows).toEqual([])
+    expect(model.summary.guardChecksDue).toBe(0)
+    expect(model.summary.clear).toBe(true)
+  })
+
+  it("drops a cancelled check the same way", () => {
+    const model = withWindows(window("morning", "MORNING", "CANCELLED"))
+    expect(model.guard.windows).toEqual([])
+    expect(model.summary.clear).toBe(true)
+  })
+
+  it("keeps the pending check and drops the one already done", () => {
+    const model = withWindows(
+      window("morning", "MORNING", "COMPLETED"),
+      window("evening", "EVENING", "PENDING"),
+    )
+    expect(model.guard.windows.map(entry => entry.id)).toEqual(["evening"])
+    expect(model.summary.guardChecksDue).toBe(1)
+    expect(model.summary.clear).toBe(false)
+  })
+
+  it("keeps a claimed check, because somebody is in the middle of it", () => {
+    const model = withWindows(window("evening", "EVENING", "CLAIMED"))
+    expect(model.guard.windows.map(entry => [entry.id, entry.state])).toEqual([["evening", "CLAIMED"]])
+    expect(model.summary.guardChecksDue).toBe(1)
+  })
+
+  it("keeps a state it does not recognise, rather than hiding it", () => {
+    const model = withWindows(window("morning", "MORNING", "PAUSED_BY_OPERATOR"))
+    expect(model.guard.windows.map(entry => entry.state)).toEqual(["PAUSED_BY_OPERATOR"])
+    expect(model.summary.guardChecksDue).toBe(1)
+    expect(model.summary.clear).toBe(false)
+  })
 })
 
 describe("the platform", () => {
@@ -414,6 +454,7 @@ describe("the summary line", () => {
       blocked: model.caseWork.counts.blocked,
       waiting: model.caseWork.counts.waiting,
       operationalQueues: 1,
+      guardChecksDue: 0,
       clear: false,
     })
     expect(model.summary.needYou).toBeGreaterThan(5)
@@ -429,6 +470,55 @@ describe("the summary line", () => {
         secondary: { todayWindows: [{ id: "window-1", windowCode: "EVENING", state: "PENDING" }] },
       }),
     }).summary.clear).toBe(false)
+  })
+
+  it("counts a pending Guard check as the day's work, and says so on its own", () => {
+    const model = build([], {
+      dashboardFacts: dashboard({
+        monitoringScheduleConfigured: true,
+        secondary: { todayWindows: [{ id: "evening", windowCode: "EVENING", state: "PENDING" }] },
+      }),
+    })
+    expect(model.summary.clear).toBe(false)
+    expect(model.summary.guardChecksDue).toBe(1)
+    expect(model.summary.operationalQueues).toBe(0)
+    expect(model.caseWork.counts).toEqual({ doNext: 0, blocked: 0, waiting: 0 })
+  })
+
+  it("counts cases and Guard checks separately", () => {
+    const model = build([todayScenarios.adminApprovePack, todayScenarios.blockedCommercialUnknown], {
+      dashboardFacts: dashboard({
+        monitoringScheduleConfigured: true,
+        secondary: { todayWindows: [
+          { id: "morning", windowCode: "MORNING", state: "PENDING" },
+          { id: "evening", windowCode: "EVENING", state: "CLAIMED" },
+        ] },
+      }),
+    })
+    expect(model.summary.needYou).toBe(1)
+    expect(model.summary.blocked).toBe(1)
+    expect(model.summary.guardChecksDue).toBe(2)
+    expect(model.summary.clear).toBe(false)
+  })
+
+  it("does not treat a finished Guard day as work", () => {
+    for (const state of ["COMPLETED", "CANCELLED"]) {
+      const model = build([], {
+        dashboardFacts: dashboard({
+          monitoringScheduleConfigured: true,
+          secondary: { todayWindows: [{ id: "morning", windowCode: "MORNING", state }] },
+        }),
+      })
+      expect(model.summary.guardChecksDue).toBe(0)
+      expect(model.summary.clear).toBe(true)
+    }
+  })
+
+  it("stays quiet about the work when the only thing wrong is the platform", () => {
+    const model = build([], { dashboardFacts: dashboard({ freshness: { status: "LATE", lastStartedAt: null, lateAfterSeconds: 93600 } }) })
+    expect(model.health.status).toBe("LATE")
+    expect(model.summary.clear).toBe(true)
+    expect(model.summary.guardChecksDue).toBe(0)
   })
 
   it("records the instant the whole page was built against", () => {

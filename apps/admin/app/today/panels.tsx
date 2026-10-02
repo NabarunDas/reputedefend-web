@@ -45,8 +45,11 @@ export function TodaySummary({ summary, complete }: { summary: TodaySummaryFacts
   if (summary.operationalQueues > 0) {
     parts.push(`${summary.operationalQueues} other operational ${plural(summary.operationalQueues, "queue")} ${summary.operationalQueues === 1 ? "needs" : "need"} attention`)
   }
+  if (summary.guardChecksDue > 0) {
+    parts.push(`${summary.guardChecksDue} Guard ${plural(summary.guardChecksDue, "check")} ${summary.guardChecksDue === 1 ? "is" : "are"} due`)
+  }
   return <p className="today-summary" role="status">
-    {parts.length > 0 ? parts.join(" · ") : "No case or operational work currently needs attention."}
+    {parts.length > 0 ? parts.join(" · ") : "No case, operational queue or outstanding Guard check currently needs attention."}
   </p>
 }
 
@@ -204,8 +207,8 @@ export function TodayManagementSnapshot({ management }: { management: TodayManag
  */
 export function TodayClear({ guard }: { guard: TodayGuard }) {
   return <section className="panel today-primary" aria-labelledby="today-clear">
-    <h2 id="today-clear">Nothing needs attention</h2>
-    <p role="status">No case or operational work currently needs attention, and no Guard checks are due today.</p>
+    <h2 id="today-clear">No case, queue or Guard work needs attention</h2>
+    <p role="status">No case, operational queue or outstanding Guard check currently needs attention.</p>
     {!guard.scheduleConfigured && <p className="muted">Monitoring schedule not configured.</p>}
   </section>
 }

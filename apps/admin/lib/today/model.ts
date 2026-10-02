@@ -145,7 +145,18 @@ export type TodaySummary = {
   blocked: number
   waiting: number
   operationalQueues: number
-  /** True when there is nothing at all for the operator to pick up. */
+  /**
+   * Outstanding Guard checks for the current London date: pending or claimed,
+   * and anything the dashboard reports that is not a known finished state.
+   * Completed and cancelled checks are not work. This is not an exception count.
+   */
+  guardChecksDue: number
+  /**
+   * True when there is no current business work: no case to do, none blocked,
+   * none waiting, no exception queue and no outstanding Guard check. It says
+   * nothing about platform health, whether a schedule is configured, or
+   * whether a future deadline exists. Those are shown on their own.
+   */
   clear: boolean
 }
 
@@ -320,17 +331,31 @@ function buildOperational(needsAttention: Record<string, DashboardCount>): Today
 
 const windowLabels: Record<string, string> = { MORNING: "Morning", EVENING: "Evening" }
 
+/**
+ * States a Guard obligation has finished in. The dashboard returns every
+ * obligation for the London date, including these, because the report is a
+ * record of the day. The workbench is a list of work, so a check that is
+ * already done or was cancelled is not still something to do.
+ *
+ * Only these two are dropped. A state this build does not know stays visible:
+ * hiding it would be the workbench deciding, on no evidence, that it was not
+ * work.
+ */
+const finishedGuardStates = new Set(["COMPLETED", "CANCELLED"])
+
 function buildGuard(facts: DashboardFacts): TodayGuard {
   const configured = facts.monitoringScheduleConfigured === true
   if (!configured) return { scheduleConfigured: false, windows: [] }
   return {
     scheduleConfigured: true,
-    windows: (facts.secondary?.todayWindows ?? []).map(window => ({
-      id: window.id,
-      label: windowLabels[window.windowCode] ?? window.windowCode,
-      state: window.state,
-      href: `/guard/checks/${window.id}`,
-    })),
+    windows: (facts.secondary?.todayWindows ?? [])
+      .filter(window => !finishedGuardStates.has(window.state))
+      .map(window => ({
+        id: window.id,
+        label: windowLabels[window.windowCode] ?? window.windowCode,
+        state: window.state,
+        href: `/guard/checks/${window.id}`,
+      })),
   }
 }
 
@@ -403,6 +428,7 @@ export function buildTodayWorkModel(input: {
       blocked: caseWork.counts.blocked,
       waiting: caseWork.counts.waiting,
       operationalQueues: queueCount,
+      guardChecksDue: guard.windows.length,
       clear:
         caseWork.complete &&
         caseWork.counts.doNext === 0 &&

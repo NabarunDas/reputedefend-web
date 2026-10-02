@@ -9,8 +9,9 @@
  * enough it says so rather than ranking a sample.
  *
  * The bound is what keeps the page honest about cost too. Two hundred and
- * fifty cases is five list reads and five projection reads; there is no
- * per-case call anywhere in here.
+ * fifty cases is five list reads and five projection reads. One case past
+ * that is still five list reads, and no projection read, because a ranking
+ * that cannot be finished is not built. There is no per-case call anywhere.
  */
 
 import { CASE_PAGE_SIZE, casePage, type CaseCursor } from "../cases/pagination"
@@ -77,11 +78,20 @@ export function caseFlowChunks(rows: readonly CaseRow[], size = CASE_FLOW_BATCH_
   return chunks
 }
 
-/** Reads expected for a scan of this many cases, for the cost documentation. */
+/**
+ * What the workbench actually reads for this many open cases.
+ *
+ * Up to the scan bound that is one list page and one projection batch per
+ * fifty cases, plus the dashboard. Past the bound the ranking is refused, so
+ * the projection is not called at all: the five list pages still happen,
+ * because that is how the scan discovers it cannot finish, and then it stops.
+ */
 export function expectedReads(caseCount: number) {
+  const scanned = Math.min(caseCount, TODAY_CASE_SCAN_LIMIT)
+  const complete = caseCount <= TODAY_CASE_SCAN_LIMIT
   return {
-    caseList: Math.max(1, Math.ceil(caseCount / CASE_PAGE_SIZE)),
-    caseFlowBatches: Math.ceil(caseCount / CASE_FLOW_BATCH_LIMIT),
+    caseList: Math.max(1, Math.ceil(scanned / CASE_PAGE_SIZE)),
+    caseFlowBatches: complete ? Math.ceil(caseCount / CASE_FLOW_BATCH_LIMIT) : 0,
     dashboard: 1,
   }
 }

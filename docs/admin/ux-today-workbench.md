@@ -24,13 +24,13 @@ Today has to see every open case before it can say which one matters most. Readi
 
 It walks the existing Cases cursor. `admin_case_list_v1` orders by `(created_at, id)` descending and returns fifty-one rows; the fifty-first is evidence of another page and is never shown, and the cursor is the fiftieth row. That rule now lives in one place, `lib/cases/pagination.ts`, and both `/cases` and Today read it. The Cases page behaves exactly as it did.
 
-The scan stops at 250 open cases. That is five list reads and, because the UX-3 projection accepts at most fifty cases per call, five projection reads. The projection was not widened and its migration was not touched. There is no per-case read anywhere, and the eleven exception queues are counts from the one dashboard read rather than eleven report-detail reads.
+The scan stops at 250 open cases. A finished scan is five list reads and, because the UX-3 projection accepts at most fifty cases per call, five projection reads. The projection was not widened and its migration was not touched. There is no per-case read anywhere, and the eleven exception queues are counts from the one dashboard read rather than eleven report-detail reads.
 
 One `now` is created for the page and passed into every projection batch, so "overdue" means the same instant on every case.
 
 ### When 250 is not enough
 
-If more than 250 cases are open, Today does not rank the ones it managed to read and present them as the work. A Safety case could be among the ones it never saw. The case sections are replaced by an explicit statement that the page cannot prioritise, with a link to the full Cases queue. Operational exceptions, Guard checks and the management snapshot still render, because those do not depend on the scan. The summary does not quote a count of case work it did not finish counting.
+If more than 250 cases are open, Today does not rank the ones it managed to read and present them as the work. A Safety case could be among the ones it never saw. It also does not project them: the five CaseFlow reads would answer a question the page has refused to ask, and they are the expensive reads, so an incomplete scan makes none. The case sections are replaced by an explicit statement that the page cannot prioritise, with a link to the full Cases queue, and the statement still records that the scan stopped at 250. Operational exceptions, Guard checks, coming up and the management snapshot still render, because those come from the dashboard read and do not depend on the scan. The summary does not quote a count of case work it did not finish counting.
 
 A repeated case identifier during the scan is treated as a broken pagination contract and stops the page, rather than producing a work list with one case counted twice.
 
@@ -54,7 +54,7 @@ The action label is the link, and it reuses the destination the model already co
 
 ## The rest of the page, in the order it appears
 
-**The day.** One heading, the current Europe/London calendar date, and one sentence of real counts: how many cases need ProfileRelaunch, how many are blocked, how many are waiting externally, how many other queues need attention. Zero counts are left out. A day with nothing to do says so once, rather than rendering an empty panel for every section. The date is formatted on the server in `Europe/London`, so the calendar day is correct across GMT and BST and does not depend on the browser's timezone.
+**The day.** One heading, the current Europe/London calendar date, and one sentence of real counts: how many cases need ProfileRelaunch, how many are blocked, how many are waiting externally, how many other queues need attention, and how many Guard checks are still due. Zero counts are left out. Guard checks are not folded into the exception-queue count: a check the schedule requires and a check that already failed are different facts. A day with none of that work says so once — that no case, queue or outstanding Guard check needs attention — rather than rendering an empty panel for every section, and rather than claiming that nothing at all is wrong. A late worker is a separate sentence and can sit above a quiet work day without either contradicting the other. The date is formatted on the server in `Europe/London`, so the calendar day is correct across GMT and BST and does not depend on the browser's timezone.
 
 **The platform.** A healthy background worker is one quiet line. A late one is a warning, using the existing Step 10 threshold the dashboard already reports. No new timeout was invented. An unreported status is described as unknown.
 
@@ -62,7 +62,7 @@ The action label is the link, and it reuses the destination the model already co
 
 Overdue case work stays available here as a cross-check. It does not replace the case list above it.
 
-**Today's Guard checks.** The monitoring obligations for the current London date, kept apart from Guard exceptions: one is work the schedule requires, the other is work that already went wrong. If no schedule is configured the page says so, and it invents no obligations. Each window links to the existing check. The check page itself is unchanged.
+**Today's Guard checks.** The monitoring obligations for the current London date that are still outstanding, kept apart from Guard exceptions: one is work the schedule requires, the other is work that already went wrong. The dashboard returns every obligation for the date. Today keeps `PENDING` and `CLAIMED`, and drops `COMPLETED` and `CANCELLED`, which are finished and would otherwise keep a clear day looking busy. A state the workbench does not recognise stays visible, because dropping it would be guessing that it was not work. The underlying Guard and report surfaces still hold the completed history. If no schedule is configured the page says so, and an unconfigured schedule is not itself turned into a task. Each remaining window links to the existing check. The check page itself is unchanged.
 
 **Coming up.** Recorded future task due dates, after the current work. No date is manufactured.
 
@@ -92,8 +92,8 @@ The page does not scroll horizontally at a phone width, a tablet width, a laptop
 
 The scan is tested without a database: an empty list, one page, exactly fifty, a second page, several pages, no duplicate and no skipped case, cursor progression identical to the Cases queue, chunks of at most fifty, the same instant on every batch, exactly 250 still complete, and 251 reporting an incomplete scan that stops reading. A repeated identifier aborts the scan.
 
-The work model is tested as a pure function: band order regardless of created date, record priority and track; the due-date tie-break; waiting actions absent from Do next; a blocked action absent from Do next; a completed case absent everywhere; one case in one position; the fail-closed summary; exception queues shown only when non-zero and counted from the dashboard; Guard configured, unconfigured and empty; health states including an unknown one; multi-currency figures; paid and included Guard kept apart.
+The work model is tested as a pure function: band order regardless of created date, record priority and track; the due-date tie-break; waiting actions absent from Do next; a blocked action absent from Do next; a completed case absent everywhere; one case in one position; the fail-closed summary; exception queues shown only when non-zero and counted from the dashboard; Guard configured, unconfigured and empty; a completed or cancelled check dropped and a pending, claimed or unrecognised one kept; health states including an unknown one; multi-currency figures; paid and included Guard kept apart.
 
-The page is tested against flows the resolver actually produced: a busy day led by a Safety case, a day of waiting, a blocked case, overdue and undated rows, operational exceptions present and absent, Guard obligations apart from Guard exceptions, a healthy worker and a late one, upcoming deadlines below the work, the management snapshot collapsed, a quiet day said once, and the fail-closed state. The read pattern is counted: one dashboard read, and one list read and one projection read per fifty cases.
+The page is tested against flows the resolver actually produced: a busy day led by a Safety case, a day of waiting, a blocked case, overdue and undated rows, operational exceptions present and absent, Guard obligations apart from Guard exceptions, a Guard-only day, a day whose checks are already finished, a late worker beside a quiet work day, upcoming deadlines below the work, the management snapshot collapsed, a quiet day said once, and the fail-closed state. The read pattern is counted: one dashboard read, one list read and one projection read per fifty cases while the scan is complete, and no projection read once it is not.
 
 The CaseFlow suite still passes with the band exposed, and the Cases queue tests still pass with the shared pagination helper.

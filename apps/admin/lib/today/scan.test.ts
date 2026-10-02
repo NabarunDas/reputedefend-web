@@ -187,6 +187,11 @@ describe("what the page costs", () => {
     expect(expectedReads(250)).toEqual({ caseList: 5, caseFlowBatches: 5, dashboard: 1 })
   })
 
+  it("stops projecting once the scan cannot finish, and still reads only five list pages", () => {
+    expect(expectedReads(251)).toEqual({ caseList: 5, caseFlowBatches: 0, dashboard: 1 })
+    expect(expectedReads(1000)).toEqual({ caseList: 5, caseFlowBatches: 0, dashboard: 1 })
+  })
+
   it("never grows with the number of cases the way a per-case read would", () => {
     expect(expectedReads(250).caseFlowBatches).toBeLessThan(250)
   })

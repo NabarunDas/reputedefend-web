@@ -133,13 +133,23 @@ describe("the first thing on the page", () => {
       todayScenarios.waitingOnGoogle,
       todayScenarios.waitingOnCustomer,
     ])
-    loadDashboard.mockResolvedValue(dashboard({ needsAttention: busyAttention }))
+    loadDashboard.mockResolvedValue(dashboard({
+      needsAttention: busyAttention,
+      monitoringScheduleConfigured: true,
+      secondary: {
+        todayWindows: [
+          { id: "morning", windowCode: "MORNING", state: "PENDING" },
+          { id: "evening", windowCode: "EVENING", state: "CLAIMED" },
+        ],
+      },
+    }))
     await show()
     const summary = screen.getByText(/needs you/)
     expect(summary).toHaveTextContent("1 case needs you")
     expect(summary).toHaveTextContent("1 is blocked")
     expect(summary).toHaveTextContent("2 are waiting externally")
     expect(summary).toHaveTextContent("5 other operational queues need attention")
+    expect(summary).toHaveTextContent("2 Guard checks are due")
   })
 })
 
@@ -285,10 +295,12 @@ describe("Guard", () => {
     }))
     await show()
     const guard = panel(/Guard checks/)
-    expect(within(guard).getByRole("link", { name: "Morning check" }))
-      .toHaveAttribute("href", `/guard/checks/${guardWindows[0].id}`)
-    expect(guard).toHaveTextContent("Done")
+    expect(within(guard).queryByRole("link", { name: "Morning check" })).not.toBeInTheDocument()
+    expect(within(guard).getByRole("link", { name: "Evening check" }))
+      .toHaveAttribute("href", `/guard/checks/${guardWindows[1].id}`)
+    expect(guard).not.toHaveTextContent("Done")
     expect(guard).toHaveTextContent("Not started")
+    expect(screen.getByText(/1 Guard check is due/)).toBeInTheDocument()
   })
 
   it("keeps Guard obligations apart from Guard exceptions", async () => {
@@ -357,14 +369,57 @@ describe("what is coming up, and how the business is doing", () => {
 describe("a quiet day", () => {
   it("says so once instead of rendering six empty panels", async () => {
     await show()
-    expect(screen.getByRole("heading", { level: 2, name: "Nothing needs attention" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 2, name: "No case, queue or Guard work needs attention" })).toBeInTheDocument()
     const headings = screen.getAllByRole("heading", { level: 2 }).map(node => node.textContent)
-    expect(headings).toEqual(["Nothing needs attention", "Coming up", "Management snapshot"])
+    expect(headings).toEqual(["No case, queue or Guard work needs attention", "Coming up", "Management snapshot"])
   })
 
   it("still names the missing monitoring schedule, which is not the same as no checks", async () => {
     await show()
     expect(screen.getByText("Monitoring schedule not configured.")).toBeInTheDocument()
+  })
+
+  it("names a Guard check on its own, and does not call that day clear", async () => {
+    loadDashboard.mockResolvedValue(dashboard({
+      monitoringScheduleConfigured: true,
+      secondary: { todayWindows: [guardWindows[1]] },
+    }))
+    await show()
+    expect(screen.getByText("1 Guard check is due")).toBeInTheDocument()
+    expect(screen.queryByText(/currently needs attention/)).not.toBeInTheDocument()
+    expect(within(panel(/Guard checks/)).getByRole("link", { name: "Evening check" })).toBeInTheDocument()
+  })
+
+  it("does not invent work from a check that is already done", async () => {
+    loadDashboard.mockResolvedValue(dashboard({
+      monitoringScheduleConfigured: true,
+      secondary: { todayWindows: [{ ...guardWindows[0], state: "COMPLETED" }] },
+    }))
+    await show()
+    expect(screen.getByRole("heading", { name: "No case, queue or Guard work needs attention" })).toBeInTheDocument()
+    expect(screen.queryByText(/Guard check is due/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Morning check" })).not.toBeInTheDocument()
+  })
+
+  it("does not invent work from a check that was cancelled", async () => {
+    loadDashboard.mockResolvedValue(dashboard({
+      monitoringScheduleConfigured: true,
+      secondary: { todayWindows: [{ ...guardWindows[0], state: "CANCELLED" }] },
+    }))
+    await show()
+    expect(screen.getByRole("heading", { name: "No case, queue or Guard work needs attention" })).toBeInTheDocument()
+    expect(screen.queryByText(/Guard check is due/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /check$/ })).not.toBeInTheDocument()
+  })
+
+  it("lets a late worker stand next to a day that has no work", async () => {
+    loadDashboard.mockResolvedValue(dashboard({
+      freshness: { status: "LATE", lastStartedAt: "2026-05-28T09:00:00.000Z", lateAfterSeconds: 93600 },
+    }))
+    await show()
+    expect(screen.getByText(/Background processing is late/)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "No case, queue or Guard work needs attention" })).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain("Nothing needs attention")
   })
 })
 
@@ -387,6 +442,13 @@ describe("more open cases than the page can read", () => {
     await show()
     expect(screen.getAllByText(/Case work cannot be prioritised today/).length).toBeGreaterThan(0)
     expect(document.body.textContent).not.toMatch(/\d+ cases? needs? you/)
+  })
+
+  it("does not project the cases it has refused to rank", async () => {
+    await show()
+    expect(loadCaseFlows).not.toHaveBeenCalled()
+    expect(loadDashboard).toHaveBeenCalledTimes(1)
+    expect(listCases).toHaveBeenCalledTimes(5)
   })
 
   it("still answers for the work that is not case work", async () => {

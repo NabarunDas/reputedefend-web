@@ -36,9 +36,14 @@ export async function loadTodayWork(now: Date = new Date()): Promise<TodayWorkMo
     ),
   ])
 
-  const batches = await Promise.all(caseFlowChunks(scan.rows).map(chunk => loadCaseFlows(chunk, now)))
+  // An incomplete scan is not ranked, so projecting those cases would be five
+  // heavy reads whose answers the page is obliged to throw away. The rows
+  // stay, so the page can still say how far the scan got.
   const flows = new Map<string, CaseFlowModel>()
-  for (const batch of batches) for (const [caseId, flow] of batch) flows.set(caseId, flow)
+  if (scan.complete) {
+    const batches = await Promise.all(caseFlowChunks(scan.rows).map(chunk => loadCaseFlows(chunk, now)))
+    for (const batch of batches) for (const [caseId, flow] of batch) flows.set(caseId, flow)
+  }
 
   return buildTodayWorkModel({
     now,

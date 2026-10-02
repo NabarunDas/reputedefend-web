@@ -1177,8 +1177,9 @@ const scenarios: Scenario[] = [
     primary: "REVIEW_SUBMISSION_DECISION",
     blockers: ["OPEN_SUBMISSION_UNRESOLVED"],
   },
-  // Being at the stage is not being ready. A pack that went stale after the
-  // case was marked ready must never produce a recommendation to submit.
+  // Being at the stage is not being ready. The pack ladder runs again here,
+  // with the same rungs preparation uses, so the operator is told the step
+  // they actually have to take rather than a generic repair.
   {
     name: "a case marked ready to submit whose pack went stale behind it",
     facts: prepared({
@@ -1199,16 +1200,43 @@ const scenarios: Scenario[] = [
     },
   },
   {
-    name: "a case marked ready to submit with nothing published behind it",
+    name: "a case marked ready to submit with no pack ever started",
+    facts: prepared({ technicalStage: "READY_TO_SUBMIT" }),
+    primary: "CREATE_PREPARED_PACK",
+    waitingOn: "ADMIN",
+    blockers: ["NO_PUBLISHED_PACK"],
+    attention: ["PACK_NOT_SUBMITTABLE"],
+  },
+  {
+    name: "a case marked ready to submit with an empty draft pack",
+    facts: prepared({
+      technicalStage: "READY_TO_SUBMIT",
+      packs: { packs: [pack({ itemCount: 0 })], eligibleCount: 1 },
+    }),
+    primary: "ADD_PREPARED_PACK_ITEMS",
+    blockers: ["NO_PUBLISHED_PACK"],
+    attention: ["PACK_NOT_SUBMITTABLE"],
+  },
+  {
+    name: "a case marked ready to submit with a draft pack nobody approved",
+    facts: prepared({
+      technicalStage: "READY_TO_SUBMIT",
+      packs: { packs: [pack()], eligibleCount: 1 },
+    }),
+    primary: "APPROVE_PREPARED_PACK",
+    blockers: ["NO_PUBLISHED_PACK"],
+    attention: ["PACK_NOT_SUBMITTABLE"],
+  },
+  {
+    name: "a case marked ready to submit with an approved pack nobody published",
     facts: prepared({
       technicalStage: "READY_TO_SUBMIT",
       packs: { packs: [pack({ status: "APPROVED" })], eligibleCount: 1 },
     }),
-    primary: "FIX_PREPARED_PACK",
+    primary: "PUBLISH_PREPARED_PACK",
     waitingOn: "ADMIN",
     blockers: ["NO_PUBLISHED_PACK"],
     attention: ["PACK_NOT_SUBMITTABLE"],
-    check: model => expect(model.primaryAction?.description).toContain("not published"),
   },
   {
     name: "a recorded submission that can move to waiting on Google",
@@ -1586,6 +1614,53 @@ describe("every scenario, whatever it is about", () => {
     expect(wording).not.toMatch(/\bpayment (has been |was )?received\b/i)
     expect(wording).not.toMatch(/\bsubmitted to Google\b/i)
     expect(wording).not.toMatch(/\bsent to Google\b/i)
+  })
+})
+
+/**
+ * The pack ladder at `READY_TO_SUBMIT`, rung by rung.
+ *
+ * An operator who does not know this system should be told the step they
+ * have to take, not a repair they then have to interpret. The ladder is the
+ * one preparation uses, so the two surfaces cannot drift apart.
+ */
+describe("a case marked ready to submit, at every pack state", () => {
+  const ladder: Array<{ state: string; packs: CaseFlowFacts["packs"]; expected: CaseNextActionId }> = [
+    { state: "no pack", packs: { packs: [], eligibleCount: 1 }, expected: "CREATE_PREPARED_PACK" },
+    { state: "empty draft", packs: { packs: [pack({ itemCount: 0 })], eligibleCount: 1 }, expected: "ADD_PREPARED_PACK_ITEMS" },
+    { state: "draft with evidence", packs: { packs: [pack()], eligibleCount: 1 }, expected: "APPROVE_PREPARED_PACK" },
+    { state: "approved, unpublished", packs: { packs: [pack({ status: "APPROVED" })], eligibleCount: 1 }, expected: "PUBLISH_PREPARED_PACK" },
+    { state: "stale", packs: { packs: [pack({ status: "STALE" })], eligibleCount: 1 }, expected: "FIX_PREPARED_PACK" },
+  ]
+
+  const usable: CaseFlowFacts["packs"] = {
+    packs: [pack({ status: "APPROVED", published: true, everPublished: true })],
+    eligibleCount: 1,
+  }
+
+  const resolve = (packs: CaseFlowFacts["packs"]) =>
+    resolveCaseFlow(prepared({ technicalStage: "READY_TO_SUBMIT", packs }), NOW)
+
+  it("names the exact pack step rather than a generic repair", () => {
+    for (const rung of ladder) {
+      expect(resolve(rung.packs).primaryAction?.id, rung.state).toBe(rung.expected)
+    }
+  })
+
+  it("never offers to record a submission until the pack is usable", () => {
+    for (const rung of ladder) {
+      expect(resolve(rung.packs).primaryAction?.id, rung.state).not.toBe("RECORD_EXTERNAL_SUBMISSION")
+    }
+    expect(resolve(usable).primaryAction?.id).toBe("RECORD_EXTERNAL_SUBMISSION")
+  })
+
+  it("leaves the stage alone and flags preparation instead", () => {
+    for (const rung of ladder) {
+      const model = resolve(rung.packs)
+      expect(model.technicalStage, rung.state).toBe("READY_TO_SUBMIT")
+      expect(model.phase, rung.state).toBe("SUBMISSION")
+      expect(model.phases[5].state, rung.state).toBe("NEEDS_ATTENTION")
+    }
   })
 })
 

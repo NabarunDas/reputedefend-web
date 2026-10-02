@@ -1087,8 +1087,12 @@ function preparationRules(collector: Collector): void {
 /**
  * The pack ladder: stale, missing, empty, unapproved, unpublished, usable.
  *
- * Returns true when it proposed a repair step, meaning there is no pack on
- * this case fit to submit.
+ * Returns true when it proposed a step, meaning there is no pack on this
+ * case fit to submit. Preparation and `READY_TO_SUBMIT` share it rather
+ * than each interpreting pack state their own way: the prepared-pack
+ * command is not gated on the work stage, so every rung of the ladder is
+ * available from either, and the operator should be told the same thing in
+ * both places.
  */
 function packRules(collector: Collector): boolean {
   const { packs } = collector
@@ -1119,28 +1123,6 @@ function packRules(collector: Collector): boolean {
 }
 
 /**
- * What is wrong with the pack behind a case already marked ready to submit.
- *
- * The remedy differs — rebuild, fill, approve, publish — but the one thing
- * the operator must not be told is to record a submission, so all of them
- * are presented as repairing the pack. The prepared-pack command is not
- * gated on the work stage, so every one of these is possible from here
- * without the case stage moving backwards.
- */
-function packRepairDescription(packs: PackView): string | undefined {
-  if (packs.stale) return undefined
-  const prefix = "This case is marked ready to submit, but there is no pack behind it fit to send."
-  if (!packs.working) return `${prefix} No pack has been started. Build one from the accepted evidence before recording anything.`
-  if (packs.working.status === "DRAFT" && packs.working.itemCount === 0) {
-    return `${prefix} The draft pack is empty, so there is nothing in it to approve or publish.`
-  }
-  if (packs.working.status === "DRAFT") {
-    return `${prefix} The draft pack has never been approved, and an unapproved pack cannot be published.`
-  }
-  return `${prefix} The pack is approved but not published, and publication is what makes it the pack of record.`
-}
-
-/**
  * `READY_TO_SUBMIT` means ProfileRelaunch is ready, and nothing more. The
  * submission itself happens outside this application and is then recorded;
  * recording it is what moves the case on.
@@ -1148,24 +1130,20 @@ function packRepairDescription(packs: PackView): string | undefined {
  * Being at the stage is not the same as still being ready. A pack can go
  * stale or be withdrawn after the case was marked ready, and a stale pack
  * must never be submitted, so the pack is checked again here rather than
- * assumed from the stage. Preparation then reads as needing attention while
- * the technical stage stays where the database put it.
+ * assumed from the stage. It is checked with the same ladder preparation
+ * uses, so the operator is told the actual next step — start it, fill it,
+ * approve it, publish it, rebuild it — rather than a generic repair they
+ * would have to read a paragraph to interpret. Preparation then reads as
+ * needing attention while the technical stage stays where the database put
+ * it.
  */
 function submissionRules(collector: Collector, stage: string): void {
   const { facts, packs } = collector
   const unresolved = facts.submissions.filter(entry => entry.result === null)
 
   if (stage === "READY_TO_SUBMIT") {
-    if (packs.stale || !packs.publishedUsable) {
-      if (!packs.stale) {
-        notice(collector, "PACK_NOT_SUBMITTABLE", { where: "evidence" })
-        block(collector, "NO_PUBLISHED_PACK", "evidence")
-      }
-      propose(collector, {
-        id: "FIX_PREPARED_PACK",
-        reasonCodes: packs.stale ? ["PACK_STALE"] : ["PACK_NOT_SUBMITTABLE"],
-        description: packRepairDescription(packs),
-      })
+    if (packRules(collector)) {
+      if (!packs.stale) notice(collector, "PACK_NOT_SUBMITTABLE", { where: "evidence" })
       return
     }
     if (unresolved.length > 0) {

@@ -17,7 +17,6 @@ import type {
   CasePhaseState,
   CasePrerequisiteState,
   CaseServiceTrack,
-  CaseWaitingOn,
 } from "@/lib/case-flow/model"
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger"
@@ -44,11 +43,6 @@ export function ownerLabel(owner: CaseActionOwner, voice: "self" | "organisation
   return ownerLabels[owner][voice]
 }
 
-/** `NONE` has no label, because a case waiting on nobody is not waiting. */
-export function waitingLabel(waitingOn: CaseWaitingOn): string | null {
-  return waitingOn === "NONE" ? null : ownerLabels[waitingOn].organisation
-}
-
 // ---------------------------------------------------------------------------
 // Action state
 // ---------------------------------------------------------------------------
@@ -65,10 +59,27 @@ export const actionStatePresentation: Record<CaseActionState, { word: string; to
   BLOCKED: { word: "Blocked", tone: "danger", prefix: "Blocked by", primary: false },
 }
 
+/**
+ * Who the case is on, under the word that is true of them.
+ *
+ * `flow.waitingOn` is the primary action's owner whatever the state of that
+ * action, so reading it as a wait is wrong: a case the operator has to act on
+ * would say "Waiting on: ProfileRelaunch" when it means "Action owner: You".
+ * The action state decides the word — a step that can be taken now has an
+ * owner, only a step that has been asked for is a wait, and a blocked step
+ * names what is holding it. A case with no primary action is a finished case,
+ * because the resolver proposes a step for every open one.
+ */
+export function actionOwnershipSummary(action: CaseNextAction | null): { label: string; value: string } {
+  if (!action) return { label: "Work state", value: "Complete" }
+  const { prefix, primary } = actionStatePresentation[action.state]
+  return { label: prefix, value: ownerLabel(action.owner, primary ? "self" : "organisation") }
+}
+
 /** "Action owner: You", "Waiting on: Customer", "Blocked by: System". */
 export function ownerSentence(action: CaseNextAction): string {
-  const { prefix, primary } = actionStatePresentation[action.state]
-  return `${prefix}: ${ownerLabel(action.owner, primary ? "self" : "organisation")}`
+  const { label, value } = actionOwnershipSummary(action)
+  return `${label}: ${value}`
 }
 
 // ---------------------------------------------------------------------------

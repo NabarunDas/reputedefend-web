@@ -61,6 +61,16 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   const recommended = flow.primaryAction ? actionTarget(flow.primaryAction) : null
   const openSection = recommended?.href.startsWith("#") ? recommended.href.slice(1) : null
 
+  // UX-1 returns the Guided and Managed checklists for the whole life of a
+  // case, which is right for the model and wrong to put on screen the whole
+  // time: a case in Submission does not need its satisfied permissions read
+  // back to it, and a case in Service does not yet need to read requirements
+  // it has not reached. The journey already says which of those a case is in,
+  // so the phase decides whether the list is worth showing. It decides
+  // nothing about whether the prerequisites are met.
+  const prerequisitePhase = flow.phases.find(item => item.id === "PREREQUISITES")?.state
+  const showPrerequisites = prerequisitePhase === "CURRENT" || prerequisitePhase === "NEEDS_ATTENTION"
+
   return <section className="page">
     <Link className="back-link" href="/cases">Back to cases</Link>
     <CaseHeader c={c} flow={flow} />
@@ -74,9 +84,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
     </div>
     <CaseBlockers blockers={flow.blockers} />
     <CaseAttention items={flow.attentionItems} />
-    {/* A closed case keeps its history, not its checklist: what had to be in
-        place before work began is no longer something to put in place. */}
-    {!flow.caseComplete && <CasePrerequisites groups={flow.prerequisites} />}
+    {showPrerequisites && <CasePrerequisites groups={flow.prerequisites} />}
 
     <section className="cockpit-group" aria-labelledby="case-work-heading">
       <h2 className="cockpit-group-heading" id="case-work-heading">Work on this case</h2>

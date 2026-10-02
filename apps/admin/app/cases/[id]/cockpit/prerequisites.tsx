@@ -4,17 +4,21 @@ import { Badge } from "../../../ui"
 import { ownerLabel, prerequisiteStatePresentation } from "./presentation"
 
 /**
- * What has to be in place before work begins, per track.
+ * What has to be in place for work to proceed, per track.
  *
  * Each item's state is the model's, including the group's `satisfied` flag.
  * The page does not re-read a membership row or an order to second-guess
  * them, and it does not turn the list into a row of commands: the commands
  * stay where they already are, and these items link to them.
+ *
+ * The heading says what the list is rather than when it applies, because the
+ * same list reappears if a permission or payment is invalidated later, by
+ * which time "before work can begin" would be untrue.
  */
 export function CasePrerequisites({ groups }: { groups: CasePrerequisiteGroup[] }) {
   if (groups.length === 0) return null
   return <section className="panel cockpit-prerequisites" id="case-prerequisites" aria-labelledby="case-prerequisites-heading">
-    <h2 id="case-prerequisites-heading">Before work can begin</h2>
+    <h2 id="case-prerequisites-heading">Case prerequisites</h2>
     {groups.map(group => <div key={group.id} className="prerequisite-group">
       <h3>{group.label}</h3>
       <p className="badge-row">

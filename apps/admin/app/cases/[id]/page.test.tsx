@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import type { CaseDetail } from "@/lib/cases/model"
-import type { CaseFlowFacts } from "@/lib/case-flow/model"
+import type { CaseFlowFacts, CaseFlowModel } from "@/lib/case-flow/model"
 
 const getCase = vi.fn()
 const getCaseAuthorization = vi.fn()
@@ -26,7 +26,7 @@ vi.mock("./authorization-forms", () => ({
 }))
 
 import CasePage from "./page"
-import { CASE_ID, caseDetail, cockpitScenarios, flowFrom, type CockpitScenarioName } from "./cockpit/fixtures"
+import { CASE_ID, caseDetail, cockpitScenarios, componentScenarios, flowFrom, type CockpitScenarioName } from "./cockpit/fixtures"
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -51,11 +51,14 @@ function arrange(facts: CaseFlowFacts, overrides: Partial<CaseDetail> = {}) {
   return c
 }
 
-async function show(name: CockpitScenarioName, overrides: Partial<CaseDetail> = {}) {
-  const facts = cockpitScenarios[name]
+async function showFacts(facts: CaseFlowFacts, overrides: Partial<CaseDetail> = {}) {
   const c = arrange(facts, overrides)
   render(await CasePage({ params: Promise.resolve({ id: CASE_ID }), searchParams: Promise.resolve({}) }))
   return { c, flow: flowFrom(facts) }
+}
+
+async function show(name: CockpitScenarioName, overrides: Partial<CaseDetail> = {}) {
+  return showFacts(cockpitScenarios[name], overrides)
 }
 
 describe("the case cockpit, across the states operators see", () => {
@@ -121,6 +124,9 @@ describe("the case cockpit, across the states operators see", () => {
   })
 })
 
+const checklist = () => screen.queryByRole("heading", { name: "Case prerequisites" })
+const prerequisitePhase = (flow: CaseFlowModel) => flow.phases.find(phase => phase.id === "PREREQUISITES")!.state
+
 describe("blockers, attention and prerequisites", () => {
   it("shows what is blocking immediately after the recommendation", async () => {
     await show("guidedWaitingForPayment")
@@ -145,14 +151,14 @@ describe("blockers, attention and prerequisites", () => {
 
   it("lists the Managed prerequisite groups with their individual items", async () => {
     await show("managedWaitingForAgreement")
-    const section = screen.getByRole("heading", { name: "Before work can begin" }).closest("section")!
+    const section = screen.getByRole("heading", { name: "Case prerequisites" }).closest("section")!
     expect(within(section).getAllByRole("listitem")).toHaveLength(9)
     expect(within(section).getByText("The service agreement is accepted")).toBeInTheDocument()
   })
 
   it("shows no prerequisite section on a track that has none", async () => {
     await show("newCase")
-    expect(screen.queryByRole("heading", { name: "Before work can begin" })).toBeNull()
+    expect(checklist()).toBeNull()
   })
 
   it("never prints a reason code, a blocker code or an action id", async () => {
@@ -160,6 +166,57 @@ describe("blockers, attention and prerequisites", () => {
     const cockpit = document.querySelector(".cockpit-split")!.parentElement!
     const text = Array.from(cockpit.children).slice(0, 6).map(node => node.textContent).join(" ")
     expect(text).not.toMatch(/AUTHORISATION_IN_REVIEW|RESOLVE_AUTHORISATION_REVIEW|AUTHORISATION_REVIEW_REQUIRED/)
+  })
+})
+
+/**
+ * The checklist follows the journey, not the existence of the groups: UX-1
+ * returns them for the whole life of a Guided or Managed case, and these say
+ * which part of that life is the part worth reading them in. Each one asserts
+ * the resolver's own phase state first, so a test can never agree with the
+ * page about a readiness neither of them worked out.
+ */
+describe("when the prerequisite checklist is worth reading", () => {
+  it("holds it back while the service is still being chosen, though the model already lists it", async () => {
+    const { flow } = await show("serviceNeedsQuote")
+    expect(prerequisitePhase(flow)).toBe("UPCOMING")
+    expect(flow.prerequisites.length).toBeGreaterThan(0)
+    expect(checklist()).toBeNull()
+  })
+
+  it("shows it while the case is at the prerequisites phase", async () => {
+    const { flow } = await show("managedWaitingForAgreement")
+    expect(prerequisitePhase(flow)).toBe("CURRENT")
+    expect(checklist()).toBeInTheDocument()
+  })
+
+  it("drops it once preparation has started and the prerequisites still hold", async () => {
+    const { flow } = await show("preparationApprovePack")
+    expect(prerequisitePhase(flow)).toBe("COMPLETE")
+    expect(flow.prerequisites.length).toBeGreaterThan(0)
+    expect(checklist()).toBeNull()
+  })
+
+  it("leaves it out at the submission phase too", async () => {
+    const { flow } = await show("readyToSubmitRecordSubmission")
+    expect(prerequisitePhase(flow)).toBe("COMPLETE")
+    expect(flow.prerequisites.length).toBeGreaterThan(0)
+    expect(checklist()).toBeNull()
+  })
+
+  it("brings it back when a permission is invalidated long after it was met", async () => {
+    const { flow } = await showFacts(componentScenarios.managedPermissionInvalidatedLater)
+    expect(flow.phase).toBe("PREPARATION")
+    expect(prerequisitePhase(flow)).toBe("NEEDS_ATTENTION")
+    expect(checklist()).toBeInTheDocument()
+    expect(within(checklist()!.closest("section")!).getByText("The case-management permission is active")).toBeInTheDocument()
+  })
+
+  it("does not resurrect it on a finished case", async () => {
+    const { flow } = await show("closedSuccessfully")
+    expect(prerequisitePhase(flow)).toBe("COMPLETE")
+    expect(flow.prerequisites.length).toBeGreaterThan(0)
+    expect(checklist()).toBeNull()
   })
 })
 
@@ -176,7 +233,7 @@ describe("a closed case", () => {
   it("keeps an open complaint visible and does not resurrect old prerequisites", async () => {
     await show("closedWithOpenComplaint")
     expect(screen.getByRole("heading", { name: "There is an open complaint about this case" })).toBeInTheDocument()
-    expect(screen.queryByRole("heading", { name: "Before work can begin" })).toBeNull()
+    expect(checklist()).toBeNull()
     expect(screen.queryByRole("heading", { name: "Blocking progress" })).toBeNull()
   })
 
@@ -189,9 +246,7 @@ describe("a closed case", () => {
   })
 
   it("says so when a case has been reopened", async () => {
-    const facts = { ...cockpitScenarios.furtherReview, reopened: true }
-    arrange(facts)
-    render(await CasePage({ params: Promise.resolve({ id: CASE_ID }), searchParams: Promise.resolve({}) }))
+    await showFacts({ ...cockpitScenarios.furtherReview, reopened: true })
     expect(screen.getByText("This case was previously closed and has been reopened for further work.")).toBeInTheDocument()
   })
 })

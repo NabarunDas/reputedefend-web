@@ -321,9 +321,9 @@ export const cockpitScenarios = {
 export type CockpitScenarioName = keyof typeof cockpitScenarios
 
 /**
- * Two more states the sixteen above do not reach, needed because the next
- * action card has to be right about them too: an action the model marks as
- * blocked, and one carrying a date that has passed.
+ * Three more states the sixteen above do not reach: an action the model
+ * marks as blocked, one carrying a date that has passed, and a case whose
+ * prerequisites were satisfied and have since stopped being so.
  */
 export const componentScenarios = {
   commercialPositionUnknown: facts({
@@ -338,6 +338,16 @@ export const componentScenarios = {
     technicalStage: "EVIDENCE_COLLECTION",
     evidence: { requests: [request({ dueAt: PAST })], versions: [] },
     communications: [delivered],
+  }),
+
+  // Preparation was reached, so the prerequisites were met; the permission
+  // has since been moved to review, which puts that phase back into
+  // attention long after the case passed through it.
+  managedPermissionInvalidatedLater: managed({
+    technicalStage: "PREPARATION",
+    authorization: fullyAuthorised({ reviewRequired: ["CASE_MANAGEMENT_PERMISSION"], caseManagementPermissionActive: false, authorizationReady: false }),
+    payment: managedPaymentDone,
+    packs: { packs: [pack()], eligibleCount: 1 },
   }),
 } satisfies Record<string, CaseFlowFacts>
 

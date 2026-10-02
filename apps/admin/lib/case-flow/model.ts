@@ -109,6 +109,8 @@ export const caseNextActionIds = [
   "REVIEW_SUBMISSION_DECISION",
   "REVIEW_OUTCOME",
   "CLOSE_CASE",
+  // Fallback
+  "REVIEW_CASE_STATE",
 ] as const
 
 export type CaseNextActionId = (typeof caseNextActionIds)[number]

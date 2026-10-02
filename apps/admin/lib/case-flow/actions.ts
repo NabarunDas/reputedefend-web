@@ -566,6 +566,21 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     label: "Close the case",
     description: "The outcome is agreed and there is no open work left.",
   },
+
+  // --- Fallback ------------------------------------------------------------
+  // Proposed only when nothing else was, so its position cannot shadow a
+  // real recommendation. An open case always gets an answer, and when the
+  // honest answer is "this does not fit the model", it says so rather than
+  // guessing or showing nothing.
+  REVIEW_CASE_STATE: {
+    band: "ADMIN_ACTION",
+    owner: "ADMIN",
+    state: "BLOCKED",
+    surface: "CASE",
+    label: "Check this case by hand",
+    description:
+      "This case is in a combination of states the journey model does not recognise, so it is not recommending anything. Work out the next step from the case itself and raise it, because something here is worth understanding.",
+  },
 }
 
 /** Declaration order, cached so tie-breaking does not re-scan the object. */

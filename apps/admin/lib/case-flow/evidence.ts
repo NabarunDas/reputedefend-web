@@ -155,6 +155,8 @@ export type EvidenceSummary = {
   openRequests: EvidenceRequestView[]
   /** The earliest due date across open requests, or null. */
   earliestOpenDueAt: string | null
+  uploadInProgress: number
+  uploadFailed: number
   threatBlocked: number
   contentInvalid: number
   needsScanCheck: number
@@ -195,13 +197,18 @@ export function summariseEvidence(
     anyUpload: evidence.versions.length > 0,
     openRequests,
     earliestOpenDueAt: dueDates[0] ?? null,
+    uploadInProgress: count("UPLOAD_PENDING"),
+    uploadFailed: count("UPLOAD_FAILED"),
     threatBlocked: count("THREAT_BLOCKED"),
     contentInvalid: count("CONTENT_INVALID"),
-    needsScanCheck: count("CHECK_NEEDED") + count("SCAN_UNAVAILABLE") + count("UPLOAD_FAILED"),
+    needsScanCheck: count("CHECK_NEEDED") + count("SCAN_UNAVAILABLE"),
     scanInProgress: count("SCAN_PENDING"),
     awaitingReview: count("AWAITING_REVIEW"),
     accepted: count("ACCEPTED"),
-    rejected: versionStates.filter(state => state === "REJECTED").length,
+    // Counted from the review decision rather than the derived state: a
+    // rejected file with a threat in it still reads as blocked, and it has
+    // still been rejected.
+    rejected: evidence.versions.filter(version => version.reviewStatus === "REJECTED").length,
     satisfiedButOpen: requests.filter(request => request.state === "OPEN_SATISFIED"),
     complete: requests.length > 0 && openRequests.length === 0,
   }

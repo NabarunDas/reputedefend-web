@@ -483,6 +483,9 @@ export function resolveCaseFlow(facts: CaseFlowFacts, now: string): CaseFlowMode
     collectSafety(collector)
     collectHousekeeping(collector)
     collectStage(collector, phase)
+    if (collector.candidates.length === 0) {
+      propose(collector, { id: "REVIEW_CASE_STATE", reasonCodes: ["NO_RULE_MATCHED"] })
+    }
   }
 
   const prerequisites = buildPrerequisiteGroups(collector, facts)
@@ -691,10 +694,13 @@ function evidenceRules(collector: Collector): void {
     notice(collector, "EVIDENCE_REQUEST_SATISFIED_BUT_OPEN", { where: "evidence" })
   }
 
-  const waitingOnUpload =
+  const nothingArrived =
     evidence.openRequests.some(request => request.state === "OPEN_NOT_STARTED")
     && contactReachedCustomer(evidence.contact)
-  if (waitingOnUpload) {
+  // An upload that is half finished or failed outright is also the
+  // customer's move, and is not the same as never having been asked.
+  const uploadIncomplete = evidence.uploadInProgress > 0 || evidence.uploadFailed > 0
+  if (nothingArrived || uploadIncomplete) {
     const dueAt = evidence.earliestOpenDueAt
     propose(collector, {
       id: "WAIT_FOR_CUSTOMER_EVIDENCE",
@@ -830,7 +836,7 @@ function prerequisiteRules(collector: Collector): void {
 }
 
 function guidedPrerequisiteRules(collector: Collector): void {
-  const { commercial, facts, payment } = collector
+  const { facts, payment } = collector
 
   if (payment.truncated && !payment.upfrontOrder) {
     propose(collector, { id: "CONFIRM_PAYMENT_STATE", reasonCodes: ["PAYMENT_LIST_TRUNCATED"] })
@@ -1018,7 +1024,7 @@ function submissionRules(collector: Collector, stage: string): void {
   if (allows(collector, "WAITING_GOOGLE")) {
     propose(collector, { id: "MOVE_TO_WAITING_GOOGLE", reasonCodes: ["SUBMISSION_RECORDED"] })
   }
-  if (unresolved.length === 0 && allows(collector, "OUTCOME_REVIEW")) {
+  if (facts.submissions.length > 0 && unresolved.length === 0 && allows(collector, "OUTCOME_REVIEW")) {
     propose(collector, { id: "REVIEW_OUTCOME", reasonCodes: ["SUBMISSION_RESOLVED"] })
   }
 }

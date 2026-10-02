@@ -41,17 +41,18 @@ Each phase carries one of `COMPLETE`, `CURRENT`, `UPCOMING` or `NEEDS_ATTENTION`
 
 The result carries exactly one `primaryAction`, or `null` on a case that is finished, closed or cancelled. Everything else that deserves a mention goes into `attentionItems`, which never compete for the recommendation. A case with ten things wrong still gets one answer, and it is the same answer every time for the same facts.
 
-Precedence is a documented table in `lib/case-flow/actions.ts`, not an `if` chain and not array ordering spread across the per-phase rules. Five bands, highest first:
+The model answers in a fixed order of concern: the safety and integrity of the case first, then the earliest unresolved step in the journey, then a progression the case has earned. That ordering is expressed as a documented table in `lib/case-flow/actions.ts`, not an `if` chain and not array ordering spread across the per-phase rules. Four bands, highest first:
 
 | Band | Meaning |
 | --- | --- |
 | 1 `SAFETY` | The integrity of the case: a threat in an upload, evidence that can no longer be validated, a permission that has been invalidated, a payment that needs reconciling, a message that failed to reach the customer it was blocking. |
-| 2 `ADMIN_ACTION` | Work ProfileRelaunch owes the case right now: review the evidence, complete the assessment, approve the pack, record the Google decision. |
-| 3 `OUTBOUND` | Something that has to be issued before the customer can do anything: request evidence, offer the quote, issue an agreement, permission or payment link. |
-| 4 `WAITING` | It has been asked for and the answer has not arrived. |
-| 5 `PROGRESSION` | A step the case has earned: advance a stage, close. |
+| 2 `ADMIN_ACTION` | Work ProfileRelaunch owes the case right now: review the evidence, complete the assessment, approve the pack, rebuild a pack that is not fit to send, record the Google decision. |
+| 3 `JOURNEY` | The earliest unresolved step in the case journey, whether that step is issuing something to the customer or waiting for what was already issued. |
+| 4 `PROGRESSION` | A step the case has earned: advance a stage, close. |
 
-Inside a band, the earlier entry in the action catalogue wins, and the catalogue is declared in journey order, so the earliest unfinished step is the one recommended. Declaration order is therefore load-bearing and the catalogue must not be sorted; a test asserts the bands are declared in order and that every action has a distinct priority key. The deliberate consequence of band 3 outranking band 4 is that issuing something the customer cannot act on yet always beats waiting for something else to come back: a Managed case with an agreement outstanding and no payment-setup link issued is told to issue the link, because the waiting is already happening and the issuing is not.
+Issuing and waiting share one band on purpose. An earlier version of this table put every outbound action above every waiting action, and the consequence was wrong in exactly the place it mattered: a Managed case with the service agreement already out with the customer was told to send the payment-setup link, because the waiting was already happening and the issuing was not. That is a worse instruction than waiting. Journey position decides between issuing and waiting now, and a later customer-facing request is never recommended while an earlier customer prerequisite is still outstanding.
+
+Inside a band, the earlier entry in the action catalogue wins, and the catalogue is declared in journey order, so the earliest unfinished step is the one recommended. Declaration order is therefore load-bearing and the catalogue must not be sorted; a test asserts the bands are declared in order and that every action has a distinct priority key. That tie-break settles conflicts between phases. Sequencing *within* a phase is the per-phase rule's job, and the Managed prerequisite ladder in particular returns a single candidate rather than relying on this table to order its own steps.
 
 `waitingOn` is a single value of `ADMIN`, `CUSTOMER`, `GOOGLE`, `PAYMENT_PROVIDER`, `SYSTEM` or `NONE`, taken from the owner of the action actually being shown, so the two can never disagree. It is `CUSTOMER` only when the recommendation is genuinely a waiting state owned by the customer, never merely because a customer exists on the case.
 
@@ -63,21 +64,51 @@ Inside a band, the earlier entry in the action catalogue wins, and the catalogue
 
 Each uploaded version resolves to one of eleven states, with the per-version precedence consumed from `evidenceActions` in `lib/evidence/model.ts` rather than reimplemented, so the flow model and the evidence workspace cannot disagree about what a file is doing. A test asserts agreement across the exhaustive cross-product of the four status axes. Contact resolves to one of nine states from the newest `EVIDENCE_REQUEST` message, and requests to one of five. A version somebody has already rejected or superseded stops counting as an outstanding problem, because nagging about resolved history would hide the thing that actually needs doing.
 
+### What "the customer has been asked" actually means
+
+The Step 11 communications contract is authoritative here, and it keeps apart three things an operator would otherwise read as one. `contactReachedCustomer()` returns true for `DELIVERED` and for nothing else.
+
+| Delivery outcome | Recommendation | Owner | State |
+| --- | --- | --- | --- |
+| Queued, nothing back | `WAIT_FOR_EMAIL_DELIVERY` | `SYSTEM` | `WAITING` |
+| `PROVIDER_ACCEPTED` | `WAIT_FOR_EMAIL_DELIVERY` | `SYSTEM` | `WAITING` |
+| `ACCEPTANCE_UNKNOWN` | `RECONCILE_EMAIL_DELIVERY` | `ADMIN` | `ACTION_REQUIRED` |
+| `DELIVERED` | `WAIT_FOR_CUSTOMER_EVIDENCE` | `CUSTOMER` | `WAITING` |
+| Bounced, complained, suppressed or failed | `RECOVER_CUSTOMER_CONTACT` | `ADMIN` | `ACTION_REQUIRED` |
+
+A queued message is a wait on the email provider, not on the customer, and the wording says so. Accepted by the provider is not the same as delivered, and the explanation of `WAIT_FOR_EMAIL_DELIVERY` preserves that sentence rather than paraphrasing it away: a message the provider accepted may still be sitting in a queue, so the customer can neither be treated as having been reached nor as unresponsive. `ACCEPTANCE_UNKNOWN` is weaker still — the provider was called and the outcome was never established — so the only honest instruction is to reconcile it against the provider. Waiting on the customer would blame somebody who may never have been written to, and sending again blind risks either a duplicate or a second silent failure.
+
+A delivery failure is named `RECOVER_CUSTOMER_CONTACT` rather than anything resembling a resend. The address bounced, complained or is suppressed; sending the same message to the same address again will not work, nothing here resends automatically, and there is no SMS or telephone route in this system. The instruction is to re-establish a usable contact route before anything further is expected of the customer.
+
+A cross-cutting test sweeps all ten delivery outcomes and asserts that exactly one of them — `DELIVERED` — makes the case say it is waiting on the customer because of that evidence request.
+
 **Assessment.** With no accepted evidence the case is blocked and falls back to the evidence rules; with accepted evidence it is told to complete the assessment, subject to the transition being allowed.
 
 **Service.** An undecided track blocks everything commercial, because the two tracks have different prerequisites, different pricing and different submitters. Once a track is chosen the commercial ladder runs: no quote, draft with unconfirmed tax, draft ready to offer, offered with no acceptance link, offered and awaiting the customer, accepted, declined, expired. A declined or expired quote is an attention item and a blocker rather than a silent dead end.
 
+Creating, configuring and offering a quote are not gated on anything about the customer. Putting an acceptance link in front of them is. `create_quote_acceptance_action` refuses unless the customer's email address is verified and a verified membership links them to the business, so the model applies the same two conditions before it recommends `ISSUE_QUOTE_ACCEPTANCE`: an unverified email produces `VERIFY_CUSTOMER_CONTACT`, a verified email with unverified authority produces `VERIFY_BUSINESS_AUTHORITY`, and both recorded produce the link. The two facts are read from the authorisation readiness projection, which computes them from exactly the conditions the command checks and does so independently of the service track, so this applies to Guided and Managed cases alike — the customer-action trust boundary is the same on both. The database rule is unchanged; the model simply stops sending operators to a button it will deny.
+
 **Guided prerequisites.** Two items: an accepted quote, because payment is collected against an order and an order only exists once a quote has been accepted, and the upfront payment itself. Payment means the authoritative obligation state, and nothing else. A returned checkout page, a completed Checkout session and the existence of a provider object are explicitly not interpreted as payment; the case moves when the obligation reads `PAID`. Where payment collection is switched off in the deployment, the model says the capability is blocked rather than fabricating a payment step that cannot be performed.
 
-**Managed prerequisites.** Six separate items, never one `authorised = true` flag. Five are the component facts the database checks — the customer's email verified, their authority over the business verified, the service agreement accepted, the case-management permission active, Google Manager access verified — so an operator sees which one is missing instead of being told the case is not authorised. The sixth is the authoritative aggregate itself, consumed from the existing readiness projection rather than recomputed, and the group's `satisfied` is that aggregate and not this model's reading of the five. If the two ever disagreed, the database is right and the disagreement is visible on the same screen. A permission moved to `REVIEW_REQUIRED` is treated as absent authority, raises a critical attention item, and is never auto-revived here; it has to be issued and accepted again. Managed payment setup is its own three-item group covering the success-fee order, consent to a later charge and a usable saved method, with consent recorded but no usable method treated as a failed setup rather than progress.
+**Managed prerequisites.** The six prerequisites are resolved one rung at a time, in the order an operator actually walks them: verify the customer's email, verify their authority over the business, get the service agreement accepted, get the case-management permission accepted, record Google Manager access, then set payment up and advance to preparation. Each rung returns, so a request already out with the customer produces a wait rather than the next request — an agreement sitting `OPEN` gives `WAIT_FOR_SERVICE_AGREEMENT`, and an accepted agreement with the permission still `OPEN` gives `WAIT_FOR_CASE_PERMISSION`. Some of this could technically happen in parallel and deliberately does not: one clear next step is worth more to an operator than a list of things they could be doing, and a customer holding two outstanding requests at once is worse than holding one.
 
-**Preparation.** Prerequisites are re-checked, because they can be undone after the case has moved past them. Then the pack ladder: no pack, empty draft, draft with items to approve, approved but unpublished, published and usable. Approval and publication are separate and approval alone is never enough. A stale pack takes priority over everything else in the phase.
+The sequence is a presentation of the journey, not a restatement of the rule. `authorizationReady` from `case_authorization_readiness_v1` remains the authority on whether the case may actually move, and it is checked again before preparation is offered.
+
+The group itself reports six separate items, never one `authorised = true` flag. Five are the component facts the database checks — the customer's email verified, their authority over the business verified, the service agreement accepted, the case-management permission active, Google Manager access verified — so an operator sees which one is missing instead of being told the case is not authorised. The sixth is the authoritative aggregate itself, consumed from the existing readiness projection rather than recomputed, and the group's `satisfied` is that aggregate and not this model's reading of the five. If the two ever disagreed, the database is right and the disagreement is visible on the same screen. A permission moved to `REVIEW_REQUIRED` is treated as absent authority, raises a critical attention item, and is never auto-revived here; it has to be issued and accepted again. Managed payment setup is its own three-item group covering the success-fee order, consent to a later charge and a usable saved method, with consent recorded but no usable method treated as a failed setup rather than progress.
+
+**Preparation.** Prerequisites are re-checked, because they can be undone after the case has moved past them. Then the pack ladder: no pack, empty draft, draft with items to approve, approved but unpublished, published and usable. Approval and publication are separate and approval alone is never enough. A stale pack takes priority over everything else in the phase. Where an invalidated permission and a stale pack are both present before submission, the permission wins: authority to act at all comes before the quality of what would be sent. The stale pack stays visible as a critical attention item rather than being swallowed.
 
 **Submission.** `READY_TO_SUBMIT` means ProfileRelaunch is internally ready and nothing more. It does not mean Google has received anything, and the model never automates or fabricates a submission: the recommendation is to submit through the agreed external channel and then record the submission with its reference, channel, time and evidence, because recording it is what moves the case on. The absence of automated Google submission is stated as a capability blocker so the boundary is explicit rather than implied.
 
+Being at the stage is not the same as still being ready. A pack can go stale or be withdrawn after the case was marked ready, so the pack is checked again here rather than assumed from the stage. If there is nothing fit to send — stale, missing, empty, unapproved or unpublished — the recommendation is `FIX_PREPARED_PACK`, owned by `ADMIN`, in `ACTION_REQUIRED`, pointing at the case evidence workspace, and `RECORD_EXTERNAL_SUBMISSION` is not proposed at all. A cross-cutting test asserts that no scenario in the matrix recommends recording a submission without an approved, published, non-empty pack behind it. The repair is genuinely available from here: `admin_prepared_pack_command_v1` gates only on the case being closed or cancelled, not on its work stage, so an open case can rebuild, approve and publish a pack wherever its stage happens to be. The technical stage stays exactly where the database put it; the `PREPARATION` phase reads as `NEEDS_ATTENTION` instead.
+
+After a submission is recorded, an unresolved evidence threat remains the primary recommendation. It is not demoted merely because a submission exists: the facts this model sees cannot prove whether the affected file was or was not part of the submitted pack, and the safe reading of an unprovable question about a blocked file is the cautious one.
+
 **Decision.** Waiting for Google produces a waiting recommendation with no invented date, and becomes a follow-up recommendation only when a follow-up somebody actually recorded falls due. `OWNER_ACTION` waits on a recorded customer task, or recommends recording one. `FURTHER_REVIEW` resolves any open submission first. `OUTCOME_REVIEW` resolves any open submission, then any open tasks, then recommends closure.
 
-**Complete and reopened.** A finished, closed or cancelled case produces no recommendation at all and `waitingOn` of `NONE`. A case reopened after closure carries an informational notice saying the earlier history is intact, and is otherwise resolved as the open case it now is.
+**Complete and reopened.** A finished, closed or cancelled case produces no recommendation at all and `waitingOn` of `NONE`, and its phases all read as complete. The ordinary workflow expectations stop applying with it: an old pack that went stale, a prerequisite that lapsed, a permission that was invalidated are all history, and resurrecting them on a closed case would be noise.
+
+One exception survives closure. An open complaint about the case stays in `attentionItems`, because the case rules already say a complaint cannot disappear because the case it concerns was closed. It is never a case-progression action — there is no case progression left — and it does not reopen a phase. It is simply still visible. A case reopened after closure is different again: it carries an informational notice saying the earlier history is intact, and is otherwise resolved as the open case it now is.
 
 Where no rule matches at all, an open case still gets an answer: a fallback that says plainly that the combination of states is not recognised and should be looked at by hand. It sits last in its band so it can never shadow a real recommendation, and a test asserts that no scenario in the matrix reaches it.
 
@@ -91,7 +122,7 @@ No date is ever manufactured. `dueAt` is only ever a date somebody recorded — 
 
 ## Shape and purity
 
-`resolveCaseFlow(facts, now)` in `lib/case-flow/resolve.ts` is pure. It imports no React, touches no component state, reads no cookie and reads no clock: `now` is a parameter, so a fixture is reproducible and an overdue test does not depend on the day it runs. `loadCaseFlow(caseId, now)` in `lib/case-flow/load.ts` is the server-only side that gathers the facts and calls it. The split means the entire rule set is testable without a database, which is what makes a 92-scenario matrix practical.
+`resolveCaseFlow(facts, now)` in `lib/case-flow/resolve.ts` is pure. It imports no React, touches no component state, reads no cookie and reads no clock: `now` is a parameter, so a fixture is reproducible and an overdue test does not depend on the day it runs. `loadCaseFlow(caseId, now)` in `lib/case-flow/load.ts` is the server-only side that gathers the facts and calls it. The split means the entire rule set is testable without a database, which is what makes a matrix of this size practical.
 
 Destinations are a closed set of eleven internal surfaces resolved by builders in `lib/case-flow/destinations.ts`. A destination is never a string from the database or the browser, case-scoped paths are built only from an identifier that passes a UUID check, and a test asserts every destination the model can emit is an internal path. There is no way for an arbitrary URL to become a destination and therefore no open redirect.
 
@@ -111,25 +142,29 @@ Classified as required. None of these were introduced by UX-1 and none are fixed
 
 ### ACTUAL_FUNCTIONAL_GAP
 
-Two, both in the existing transition matrix.
+None.
 
-`READY_TO_SUBMIT` has no outgoing transition in `admin_private.case_transitions`. The only way out of it is recording a submission. If a pack is discovered to be stale after the case has been marked ready to submit, the case cannot be returned to `PREPARATION` to rebuild it; the model raises the stale pack as a critical attention item and a blocker, but there is no stage movement available to resolve it correctly.
+Two items were classified here in the first draft and both were wrong. Each described a stage the case cannot move back to, and in each case the business capability behind it turned out not to be blocked at all. They are restated as workflow and state-alignment gaps below.
 
-`PAYMENT_REQUIRED` and `AUTHORIZATION_REQUIRED` have no reverse edge to `SERVICE_SELECTION`, and the `plan` operation refuses a service track change outside `INITIAL_REVIEW`, `EVIDENCE_COLLECTION`, `ASSESSMENT_READY` and `SERVICE_SELECTION`. A quote declined after the case has reached a prerequisite stage therefore leaves the stage describing something that is no longer true. The commercial workspace is not stage-gated, so re-quoting is still possible and no work is actually blocked, but the case stage and the commercial reality diverge.
+### WORKFLOW_STATE_ALIGNMENT_GAP
+
+`READY_TO_SUBMIT` has no outgoing transition in `admin_private.case_transitions`, so a case marked ready cannot be sent back to `PREPARATION`. That is a stage-machine limitation and not a blocked capability: `admin_prepared_pack_command_v1` gates only on `status IN ('CLOSED','CANCELLED')`, so an open case can create, fill, approve and publish a pack at any work stage. A pack discovered to be stale after the case was marked ready can therefore be rebuilt and republished in place. What is missing is alignment, not ability — the technical stage continues to read `READY_TO_SUBMIT` while preparation work is genuinely outstanding. The model closes the operator-facing half of that gap by refusing to recommend a submission and showing the `PREPARATION` phase as `NEEDS_ATTENTION`, and UX-2 renders it the same way. Adding the transition is a separate decision and a separate migration, and neither belongs to UX-1.
+
+`PAYMENT_REQUIRED` and `AUTHORIZATION_REQUIRED` have no reverse edge to `SERVICE_SELECTION`, and the `plan` operation refuses a service track change outside `INITIAL_REVIEW`, `EVIDENCE_COLLECTION`, `ASSESSMENT_READY` and `SERVICE_SELECTION`. Here too the commercial capability is intact: Commercial is not stage-gated, so a quote declined at a prerequisite stage can be re-quoted, re-offered and re-accepted without the stage moving. Only the service track itself is frozen. The gap is that the stage describes something that is no longer true while the commercial position moves on underneath it.
 
 ### BUSINESS_RULE_DECISION_REQUIRED
 
-No service level exists anywhere in the system, so `dueAt` is only ever a recorded date. Whether the business wants response or completion targets on any of these steps is a decision nobody has taken, and the model will not invent one.
+None outstanding.
 
-Where an invalidated permission and a stale pack are both present, the permission currently wins, on the grounds that authority to act is more fundamental than the contents of a pack. That ordering is a judgement, not a derived fact.
+Seven questions were raised in the first draft and all seven have been decided. For the record:
 
-On a Managed case, commercial work currently outranks an unverified customer email, because the catalogue is ordered by journey position and the quote comes first. An argument exists for verifying the contact before quoting. That is a business preference.
-
-`ACCEPTANCE_UNKNOWN` currently counts as the customer having plausibly been reached, with an informational notice saying delivery is unconfirmed. Treating it as not-yet-reached instead would change which recommendation a stalled evidence request produces.
-
-A Managed case sitting at `AUTHORIZATION_REQUIRED` with no order currently recommends creating a quote. Whether the commercial step belongs at that point in a Managed journey or earlier is unsettled.
-
-After a submission is recorded, an evidence threat currently remains the top recommendation on the case. Whether safety should continue to outrank the decision cycle once the submission has left is a decision.
+- **No SLA is currently defined for CaseFlow. UX-1 and UX-2 use recorded dates only.** `dueAt` is only ever a task deadline, an evidence request's due date, a follow-up date or a customer action's expiry where the expiry is explicitly represented as one. No response or completion target is invented anywhere.
+- An invalidated permission outranks a stale pack before submission; the stale pack remains a critical attention item.
+- Managed prerequisites are sequential, and an earlier outstanding customer request is never overtaken by a later one.
+- Quote work may be prepared, configured and offered before Managed authorisation completes, but the acceptance link itself respects the verified-email and verified-authority conditions the database enforces, on both tracks.
+- A Managed case at `AUTHORIZATION_REQUIRED` with no accepted order keeps the commercial recovery path, because commercial commands are not stage-gated and fabricating an order would be worse.
+- `ACCEPTANCE_UNKNOWN` is not reached and not delivered; it is reconciled.
+- An unresolved evidence threat remains the primary recommendation after a submission is recorded.
 
 ### DATA_PROJECTION_GAP
 
@@ -147,7 +182,7 @@ The authoritative readiness helpers — `guided_payment_ready_v1`, `managed_setu
 
 ### UX_ORCHESTRATION_GAP
 
-There is no per-case communications route; case communications are reached through the Communications workspace filtered by case. There is no resend or alternate-contact flow, so the recommendation when a message bounces is to reach the customer another way rather than to press a button. Issuing agreements, permissions and payment links is spread across three surfaces. Nothing marks an evidence request fulfilled when evidence against it is accepted, and nothing refreshes a scan result on its own.
+There is no per-case communications route; case communications are reached through the Communications workspace filtered by case. There is no resend or alternate-contact flow, so the recommendation when a message bounces is to reach the customer another way rather than to press a button, and there is no reconciliation screen for a message whose provider acceptance was never established. Issuing agreements, permissions and payment links is spread across three surfaces. Nothing marks an evidence request fulfilled when evidence against it is accepted, and nothing refreshes a scan result on its own. A case marked ready to submit whose pack needs rebuilding has no stage that says so, which is the operator-facing half of the first state-alignment gap above.
 
 ### CAPABILITY_NOT_LIVE
 
@@ -159,9 +194,9 @@ It does not redesign the case page, the Today page or the navigation, and it add
 
 ## Tests
 
-Five test files, 150 tests. The scenario matrix in `lib/case-flow/scenarios.test.ts` carries 92 named scenarios spanning every phase, both service tracks, the evidence states, the commercial ladder, the prerequisite groups, the pack ladder, the submission boundary, the decision cycle, closure and reopening, the capability-disabled cases and the truncated-read cases. Its transition fixtures mirror `admin_private.case_transitions` and a test asserts the mirror covers every stage.
+Five test files, 179 tests. The scenario matrix in `lib/case-flow/scenarios.test.ts` carries 108 named scenarios spanning every phase, both service tracks, the evidence states, every email delivery outcome, the commercial ladder and its trust conditions, the sequential Managed prerequisite ladder, the pack ladder, the submission boundary and its stale-pack gate, the decision cycle, closure and reopening, the capability-disabled cases and the truncated-read cases. Its transition fixtures mirror `admin_private.case_transitions` and a test asserts the mirror covers every stage.
 
-Alongside the named scenarios, cross-cutting assertions run over the whole matrix: exactly one primary action on every open case, never the fallback, exactly one `waitingOn` always equal to the primary action's owner, `CUSTOMER` only on a genuine waiting state, every blocker carrying a title, an explanation and an owner, no duplicate blocker or attention codes, every destination an internal path, no date that was not recorded somewhere, identical output across repeated resolution of identical facts, and no wording anywhere that claims delivery, payment or submission the facts do not support.
+Alongside the named scenarios, cross-cutting assertions run over the whole matrix: exactly one primary action on every open case, never the fallback, exactly one `waitingOn` always equal to the primary action's owner, `CUSTOMER` only on a genuine waiting state, never a recorded submission without a usable pack behind it, every blocker carrying a title, an explanation and an owner, no duplicate blocker or attention codes, every destination an internal path, no date that was not recorded somewhere, identical output across repeated resolution of identical facts, and no wording anywhere that claims delivery, payment or submission the facts do not support. A separate sweep resolves the same evidence request at all ten delivery outcomes and asserts that only `DELIVERED` makes the case wait on the customer.
 
 Verification at the final head: the complete Admin suite, Admin typecheck, Admin build, the Admin protected-route smoke check and root lint.
 

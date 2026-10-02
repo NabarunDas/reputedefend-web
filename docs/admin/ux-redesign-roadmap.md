@@ -19,7 +19,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 
 ## UX-1 — Canonical case journey and next action engine
 
-In progress. Non-visual by design: no page, component or stylesheet changes. It establishes nine human phases projected from the fourteen technical stages, phase states that allow a case to move backwards and allow a later problem to reopen an earlier phase without rewriting history, one primary next action chosen by a documented five-band priority table, separate attention items that never compete with the recommendation, explained blockers, per-track prerequisite groups, validated internal destinations and a single `waitingOn`. The resolver is pure, takes `now` as a parameter, and requires zero migrations. See ux-case-flow-model.md for the model, the query cost, the UX-3 projection it identifies and the gaps report.
+In progress. Non-visual by design: no page, component or stylesheet changes. It establishes nine human phases projected from the fourteen technical stages, phase states that allow a case to move backwards and allow a later problem to reopen an earlier phase without rewriting history, one primary next action chosen by a documented four-band priority table, separate attention items that never compete with the recommendation, explained blockers, per-track prerequisite groups, validated internal destinations and a single `waitingOn`. The resolver is pure, takes `now` as a parameter, and requires zero migrations. See ux-case-flow-model.md for the model, the query cost, the UX-3 projection it identifies and the gaps report.
 
 ## UX-2 — Case page rendering the model
 
@@ -47,7 +47,7 @@ The quote and payment ladders made legible end to end, including the distinction
 
 ## UX-8 — Communications and conversations
 
-Case-scoped communications, the resend and alternate-contact flow that currently does not exist, and delivery state presented honestly, with provider acceptance never shown as delivery.
+Case-scoped communications, the contact-recovery and alternate-contact flow that currently does not exist, a place to reconcile a message whose provider acceptance was never established, and delivery state presented honestly, with provider acceptance never shown as delivery.
 
 ## UX-9 — Visual system, wording and accessibility
 

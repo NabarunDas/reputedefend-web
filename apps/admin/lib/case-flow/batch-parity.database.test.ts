@@ -50,6 +50,8 @@ const fresh = "66666666-6666-4666-8666-666666666666"
 const reopened = "77777777-7777-4777-8777-777777777777"
 /** Waiting on the customer, with an open complaint and an overdue task. */
 const waiting = "99999999-9999-4999-8999-999999999999"
+/** Managed, success fee, payment set up, waiting on the outcome. */
+const managed = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 const NOW = "2026-06-15T12:00:00.000Z"
 
@@ -262,12 +264,14 @@ async function priceId(serviceCode: string): Promise<string> {
   )).rows[0].id
 }
 
-async function acceptedOrder(caseId: string, serviceCode: string) {
+const inDays = (days: number) => new Date(Date.now() + days * 24 * 3600 * 1000).toISOString()
+
+async function acceptedOrder(caseId: string, serviceCode: string): Promise<Json> {
   const quote = await rpc<Json>("admin_quote_command_v1", [token, key(), "create_draft", {
     customerId: customer, businessId: business, caseId, locationId: location,
     scope: "Prepare the agreed recovery pack for this location only.",
     exclusions: "Google decisions, Manager access and later collection are excluded.",
-    validUntil: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
+    validUntil: inDays(3),
     applyDiscount: false, priceVersionId: await priceId(serviceCode), serviceCode,
   }, null])
   await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax",
@@ -276,7 +280,7 @@ async function acceptedOrder(caseId: string, serviceCode: string) {
 
   const raw = randomBytes(32).toString("hex")
   const action = await rpc<Json>("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", {
-    quoteId: quote.id, expiresAt: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(), secretHash: hashOf(raw),
+    quoteId: quote.id, expiresAt: inDays(2), secretHash: hashOf(raw),
   }, null])
 
   const pending = secretHash(), session = secretHash()
@@ -284,8 +288,45 @@ async function acceptedOrder(caseId: string, serviceCode: string) {
   await rpc("customer_action_begin_otp_v1", [pending])
   await rpc("customer_action_confirm_otp_sent_v1", [pending])
   await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
-  expect(await rpc<Json>("customer_action_command_v1", [session, key(), "accept", { accepted: true }]))
-    .toMatchObject({ orderState: "ACCEPTED_AWAITING_PAYMENT" })
+  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  expect(accepted).toMatchObject({ status: "success" })
+  return accepted
+}
+
+/**
+ * The real Managed payment-setup path, as far as the business takes it before
+ * an outcome: the customer accepts the quote, consents to a later charge and
+ * completes a Stripe setup session, which saves a usable payment method. No
+ * success-fee obligation is created here, and none should be: the obligation
+ * only exists once a qualifying outcome has been approved by Admin, so
+ * inventing one would be a fixture the application cannot reach.
+ */
+async function managedPaymentSetUp(orderId: string, suffix: string) {
+  const secret = secretHash()
+  const issued = await rpc<Json>("admin_payment_command_v1", [token, key(), "issue_managed_setup_action", {
+    serviceOrderId: orderId, expiresAt: inDays(2), secretHash: secret,
+  }, 1])
+  expect(issued).toMatchObject({ status: "success" })
+
+  const pending = secretHash(), session = secretHash()
+  await rpc("customer_action_exchange_v1", [issued.id, secret, pending])
+  await rpc("customer_action_begin_otp_v1", [pending])
+  await rpc("customer_action_confirm_otp_sent_v1", [pending])
+  await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
+
+  expect(await rpc<Json>("customer_payment_command_v1", [session, key(), "confirm_consent", { accepted: true }]))
+    .toMatchObject({ status: "success" })
+  const setup = await rpc<Json>("customer_payment_command_v1",
+    [session, key(), "start_checkout", { idempotencyKey: key() }])
+  expect(setup).toMatchObject({ status: "success", mode: "setup", amountMinor: 0 })
+
+  await rpc("payment_ensure_customer_map_v1", [customer, `cus_${suffix}`])
+  expect(await rpc<Json>("payment_apply_provider_event_v1",
+    [`evt_${suffix}`, "setup_intent.succeeded", `seti_${suffix}`, {
+      stripeCustomerId: `cus_${suffix}`, paymentMethodId: `pm_${suffix}`, usage: "off_session",
+      brand: "visa", last4: "4242", expMonth: 12, expYear: 2031,
+      serviceOrderId: orderId, customerId: customer, providerOperationId: setup.providerOperationId,
+    }])).toMatchObject({ status: "success" })
 }
 
 const newCase = (id: string, track: string, stage: string, extra = "") => `
@@ -356,7 +397,7 @@ beforeAll(async () => {
     [pack, document, version, uid],
   )
 
-  await acceptedOrder(guided, "GUIDED_RELAUNCH")
+  expect(await acceptedOrder(guided, "GUIDED_RELAUNCH")).toMatchObject({ orderState: "ACCEPTED_AWAITING_PAYMENT" })
 }, 240000)
 
 afterAll(async () => { await db.close() })
@@ -436,6 +477,77 @@ describe("the three facts UX-3 makes stronger", () => {
 
     // And the resolver now says so, which is the gap UX-1 recorded.
     expect(resolveCaseFlow(requiredCase(await projectedFacts([reopened]), reopened), NOW).reopened).toBe(true)
+  })
+})
+
+/**
+ * The fixture above is strongest around a Guided `UPFRONT` order, where an
+ * obligation exists from the moment the quote is accepted. The Managed
+ * `SUCCESS_FEE` path reaches the opposite shape — consent and a saved card but
+ * no obligation and no receipt — and it is the shape most likely to expose a
+ * difference between the payment joins the two readings make, so it gets its
+ * own scenario.
+ */
+describe("a Managed success-fee order waiting on an outcome", () => {
+  let orderId: string
+
+  beforeAll(async () => {
+    await db.exec(newCase(managed, "MANAGED", "PAYMENT_REQUIRED"))
+    const accepted = await acceptedOrder(managed, "MANAGED_RELAUNCH")
+    expect(accepted).toMatchObject({ orderState: "ACCEPTED_SUCCESS_FEE" })
+    orderId = accepted.orderId as string
+    await managedPaymentSetUp(orderId, "parityManaged")
+  }, 240000)
+
+  it("is in the pre-outcome state the business actually reaches", async () => {
+    const counts = await db.query<{ obligations: number; receipts: number; approvals: number; usable: number }>(
+      `select
+         (select count(*) from public.payment_obligations where service_order_id=$1)::int as obligations,
+         (select count(*) from public.payment_receipts where service_order_id=$1)::int as receipts,
+         (select count(*) from public.success_fee_approvals where service_order_id=$1)::int as approvals,
+         (select count(*) from public.saved_payment_methods where service_order_id=$1 and status='USABLE')::int as usable`,
+      [orderId],
+    )
+    // No obligation and no receipt yet is correct, not a gap in the fixture:
+    // the success fee is only owed once Admin approves a qualifying outcome.
+    expect(counts.rows[0]).toEqual({ obligations: 0, receipts: 0, approvals: 0, usable: 1 })
+  })
+
+  it("composes the same payment facts from the payment list and from the projection", async () => {
+    const before = await legacyFacts(managed)
+    const after = requiredCase(await projectedFacts([managed]), managed)
+
+    expect(after.payment).toEqual(before.payment)
+    expect(after.payment.orders).toHaveLength(1)
+    expect(after.payment.orders[0]).toEqual({
+      orderId,
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      obligationKind: null,
+      obligationState: null,
+      setupReady: true,
+      consentRecorded: true,
+      receiptRecorded: false,
+    })
+  })
+
+  it("projects the whole Managed case exactly as the eight reads composed it", async () => {
+    const before = await legacyFacts(managed)
+    const after = requiredCase(await projectedFacts([managed]), managed)
+
+    const { commercial: oldCommercial, complaints: oldComplaints, reopened: _was, ...oldRest } = before
+    const { commercial: newCommercial, complaints: newComplaints, reopened: _is, ...newRest } = after
+
+    expect(newRest).toEqual(oldRest)
+    expect(newCommercial.quotes).toEqual(oldCommercial.quotes)
+    expect(newComplaints.open).toEqual(oldComplaints.open)
+  })
+
+  it("resolves to the same operator conclusions through the unchanged resolver", async () => {
+    const before = resolveCaseFlow(await legacyFacts(managed), NOW)
+    const after = resolveCaseFlow(requiredCase(await projectedFacts([managed]), managed), NOW)
+
+    expect(after).toEqual(before)
   })
 })
 

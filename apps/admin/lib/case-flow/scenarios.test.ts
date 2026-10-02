@@ -95,6 +95,19 @@ function fullyAuthorised(overrides: Partial<CaseFlowAuthorizationFact> = {}): Ca
   })
 }
 
+/**
+ * The two facts `create_quote_acceptance_action` insists on before it will
+ * issue a customer link: a verified email and a verified membership.
+ */
+function trusted(overrides: Partial<CaseFlowAuthorizationFact> = {}): CaseFlowAuthorizationFact {
+  return authorization({
+    membershipStatus: "verified",
+    customerEmailVerified: true,
+    businessAuthorityVerified: true,
+    ...overrides,
+  })
+}
+
 function request(overrides: Partial<CaseFlowEvidenceRequestFact> = {}): CaseFlowEvidenceRequestFact {
   return { id: "request-1", status: "OPEN", dueAt: null, createdAt: PAST, ...overrides }
 }
@@ -352,15 +365,39 @@ const scenarios: Scenario[] = [
     primary: "PREPARE_EVIDENCE_REQUEST_MESSAGE",
   },
   {
+    name: "the request queued with the email provider and no outcome back yet",
+    facts: facts({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [requestMessage({ lifecycle: "QUEUED" })],
+    }),
+    primary: "WAIT_FOR_EMAIL_DELIVERY",
+    waitingOn: "SYSTEM",
+    state: "WAITING",
+  },
+  {
     name: "the request accepted by the email provider but not confirmed delivered",
     facts: facts({
       technicalStage: "EVIDENCE_COLLECTION",
       evidence: { requests: [request()], versions: [] },
       communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "PROVIDER_ACCEPTED" })],
     }),
-    primary: "WAIT_FOR_CUSTOMER_EVIDENCE",
-    waitingOn: "CUSTOMER",
+    primary: "WAIT_FOR_EMAIL_DELIVERY",
+    waitingOn: "SYSTEM",
     attention: ["EVIDENCE_DELIVERY_UNCONFIRMED"],
+    check: model => expect(model.primaryAction?.description).toContain("not the same as delivered"),
+  },
+  {
+    name: "the request whose provider acceptance was never established",
+    facts: facts({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "ACCEPTANCE_UNKNOWN" })],
+    }),
+    primary: "RECONCILE_EMAIL_DELIVERY",
+    waitingOn: "ADMIN",
+    state: "ACTION_REQUIRED",
+    attention: ["EVIDENCE_DELIVERY_UNKNOWN"],
   },
   {
     name: "the request delivered and the customer has not uploaded anything",
@@ -390,7 +427,8 @@ const scenarios: Scenario[] = [
       evidence: { requests: [request()], versions: [] },
       communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "BOUNCED" })],
     }),
-    primary: "RESEND_EVIDENCE_REQUEST",
+    primary: "RECOVER_CUSTOMER_CONTACT",
+    waitingOn: "ADMIN",
     attention: ["EVIDENCE_REQUEST_UNDELIVERED"],
   },
   {
@@ -400,7 +438,7 @@ const scenarios: Scenario[] = [
       evidence: { requests: [request()], versions: [] },
       communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "COMPLAINED" })],
     }),
-    primary: "RESEND_EVIDENCE_REQUEST",
+    primary: "RECOVER_CUSTOMER_CONTACT",
   },
   {
     name: "the customer's address is suppressed by the email provider",
@@ -409,7 +447,16 @@ const scenarios: Scenario[] = [
       evidence: { requests: [request()], versions: [] },
       communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "SUPPRESSED" })],
     }),
-    primary: "RESEND_EVIDENCE_REQUEST",
+    primary: "RECOVER_CUSTOMER_CONTACT",
+  },
+  {
+    name: "a bounce the provider may yet retry still means nobody has been reached",
+    facts: facts({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus: "TRANSIENT_BOUNCE" })],
+    }),
+    primary: "RECOVER_CUSTOMER_CONTACT",
   },
   {
     name: "an upload started but never finished",
@@ -614,9 +661,76 @@ const scenarios: Scenario[] = [
     facts: facts({
       technicalStage: "SERVICE_SELECTION",
       serviceTrack: "GUIDED",
+      authorization: trusted(),
       commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
     }),
     primary: "ISSUE_QUOTE_ACCEPTANCE",
+  },
+  // The database refuses to create a quote-acceptance action without a
+  // verified email and a verified membership, so neither does the model.
+  {
+    name: "a Guided quote offered to a customer whose email is not verified",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "GUIDED",
+      commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
+    }),
+    primary: "VERIFY_CUSTOMER_CONTACT",
+    waitingOn: "ADMIN",
+    blockers: ["ACCEPTANCE_TRUST_INCOMPLETE"],
+  },
+  {
+    name: "a Guided quote offered with the email verified but not the business authority",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "GUIDED",
+      authorization: authorization({ customerEmailVerified: true }),
+      commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
+    }),
+    primary: "VERIFY_BUSINESS_AUTHORITY",
+    blockers: ["ACCEPTANCE_TRUST_INCOMPLETE"],
+  },
+  {
+    name: "a Managed quote offered to a customer whose email is not verified",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "MANAGED",
+      commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
+    }),
+    primary: "VERIFY_CUSTOMER_CONTACT",
+    blockers: ["ACCEPTANCE_TRUST_INCOMPLETE"],
+  },
+  {
+    name: "a Managed quote offered with the email verified but not the business authority",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "MANAGED",
+      authorization: authorization({ customerEmailVerified: true }),
+      commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
+    }),
+    primary: "VERIFY_BUSINESS_AUTHORITY",
+    blockers: ["ACCEPTANCE_TRUST_INCOMPLETE"],
+  },
+  {
+    name: "a Managed quote offered once both trust facts are recorded",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "MANAGED",
+      authorization: trusted(),
+      commercial: { complete: true, quotes: [quote({ status: "OFFERED" })] },
+    }),
+    primary: "ISSUE_QUOTE_ACCEPTANCE",
+  },
+  // Preparing the commercial side is not gated on the trust facts; only
+  // putting a link in front of the customer is.
+  {
+    name: "a draft quote can be configured before the customer is verified at all",
+    facts: facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "MANAGED",
+      commercial: { complete: true, quotes: [quote({ taxBehaviour: "UNCONFIRMED" })] },
+    }),
+    primary: "COMPLETE_QUOTE_CONFIGURATION",
   },
   {
     name: "a quote offered with an open acceptance link",
@@ -634,6 +748,7 @@ const scenarios: Scenario[] = [
     facts: facts({
       technicalStage: "SERVICE_SELECTION",
       serviceTrack: "GUIDED",
+      authorization: trusted(),
       commercial: { complete: true, quotes: [quote({ status: "OFFERED", actionStatus: "OPEN", actionExpiresAt: PAST })] },
       customerActions: [customerAction({ kind: "QUOTE_ACCEPTANCE", status: "OPEN", expiresAt: PAST })],
     }),
@@ -765,58 +880,66 @@ const scenarios: Scenario[] = [
   },
   {
     name: "a Managed case with both verified and no agreement issued",
-    facts: managed({
-      technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" }),
-    }),
+    facts: managed({ technicalStage: "AUTHORIZATION_REQUIRED", authorization: trusted() }),
     primary: "ISSUE_SERVICE_AGREEMENT",
   },
+  // The six prerequisites are worked one at a time, in the order the
+  // operator walks them. A customer who is already holding something is
+  // never handed the next thing as well.
   {
-    name: "a Managed case where the agreement is out but the permission is not",
+    name: "a Managed case where the agreement is out and the permission has not been issued",
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" }),
+      authorization: trusted(),
       customerActions: [customerAction({ agreementKind: "SERVICE_AGREEMENT", status: "OPEN" })],
     }),
-    primary: "ISSUE_CASE_PERMISSION",
+    primary: "WAIT_FOR_SERVICE_AGREEMENT",
+    waitingOn: "CUSTOMER",
   },
   {
-    name: "a Managed case with both agreements out and Manager access still unrecorded",
+    name: "a Managed case where the agreement is accepted and the permission has not been issued",
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" }),
-      customerActions: [
-        customerAction({ id: "action-1", agreementKind: "SERVICE_AGREEMENT", status: "OPEN" }),
-        customerAction({ id: "action-2", agreementKind: "CASE_MANAGEMENT_PERMISSION", status: "OPEN" }),
-      ],
+      authorization: trusted({ serviceAgreementAccepted: true }),
+    }),
+    primary: "ISSUE_CASE_PERMISSION",
+    waitingOn: "ADMIN",
+  },
+  {
+    name: "a Managed case where the permission is out with the customer",
+    facts: managed({
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: trusted({ serviceAgreementAccepted: true }),
+      customerActions: [customerAction({ agreementKind: "CASE_MANAGEMENT_PERMISSION", status: "OPEN" })],
+    }),
+    primary: "WAIT_FOR_CASE_PERMISSION",
+    waitingOn: "CUSTOMER",
+  },
+  {
+    name: "a Managed case where the permission is accepted and Manager access is unrecorded",
+    facts: managed({
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: trusted({ serviceAgreementAccepted: true, caseManagementPermissionActive: true }),
     }),
     primary: "VERIFY_MANAGER_ACCESS",
+    waitingOn: "ADMIN",
   },
   {
-    name: "issuing the payment-setup link beats waiting for an agreement to come back",
+    name: "the payment-setup link does not overtake an agreement the customer still has",
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: authorization({
-        customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified",
-        managerAccessVerified: true,
-      }),
-      customerActions: [
-        customerAction({ id: "action-1", agreementKind: "SERVICE_AGREEMENT", status: "OPEN" }),
-        customerAction({ id: "action-2", agreementKind: "CASE_MANAGEMENT_PERMISSION", status: "OPEN" }),
-      ],
+      authorization: trusted({ managerAccessVerified: true }),
+      customerActions: [customerAction({ agreementKind: "SERVICE_AGREEMENT", status: "OPEN" })],
     }),
-    primary: "START_MANAGED_PAYMENT_SETUP",
-    waitingOn: "ADMIN",
+    primary: "WAIT_FOR_SERVICE_AGREEMENT",
+    waitingOn: "CUSTOMER",
   },
   {
     name: "a Managed case waiting on the customer for both agreements",
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
       payment: managedPaymentDone,
-      authorization: authorization({
-        customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified",
-        managerAccessVerified: true,
-      }),
+      authorization: trusted({ managerAccessVerified: true }),
       customerActions: [
         customerAction({ id: "action-1", agreementKind: "SERVICE_AGREEMENT", status: "OPEN" }),
         customerAction({ id: "action-2", agreementKind: "CASE_MANAGEMENT_PERMISSION", status: "OPEN" }),
@@ -830,10 +953,7 @@ const scenarios: Scenario[] = [
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
       payment: managedPaymentDone,
-      authorization: authorization({
-        customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified",
-        serviceAgreementAccepted: true, managerAccessVerified: true,
-      }),
+      authorization: trusted({ serviceAgreementAccepted: true, managerAccessVerified: true }),
       customerActions: [customerAction({ agreementKind: "CASE_MANAGEMENT_PERMISSION", status: "OPEN" })],
     }),
     primary: "WAIT_FOR_CASE_PERMISSION",
@@ -844,8 +964,7 @@ const scenarios: Scenario[] = [
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
       locationId: null,
-      authorization: authorization({
-        customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified",
+      authorization: trusted({
         serviceAgreementAccepted: true, caseManagementPermissionActive: true, hasLocation: false,
       }),
     }),
@@ -856,8 +975,7 @@ const scenarios: Scenario[] = [
     name: "a Managed case whose permission was invalidated after acceptance",
     facts: managed({
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: authorization({
-        customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified",
+      authorization: trusted({
         serviceAgreementAccepted: true, managerAccessVerified: true,
         reviewRequired: ["CASE_MANAGEMENT_PERMISSION"],
       }),
@@ -1011,6 +1129,22 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    name: "an invalidated permission outranks a stale pack before submission",
+    facts: managedReady({
+      technicalStage: "PREPARATION",
+      authorization: fullyAuthorised({
+        caseManagementPermissionActive: false, authorizationReady: false,
+        reviewRequired: ["CASE_MANAGEMENT_PERMISSION"],
+      }),
+      packs: { packs: [pack({ status: "STALE" })], eligibleCount: 1 },
+    }),
+    // Authority to act at all comes before the quality of what would be
+    // sent. The stale pack stays visible rather than being swallowed.
+    primary: "RESOLVE_AUTHORISATION_REVIEW",
+    blockers: ["AUTHORISATION_IN_REVIEW", "PACK_STALE"],
+    attention: ["AUTHORISATION_REVIEW_REQUIRED", "PACK_STALE"],
+  },
+  {
     name: "a threat in evidence outranks pack work in preparation",
     facts: prepared({
       packs: { packs: [pack({ status: "APPROVED" })], eligibleCount: 1 },
@@ -1042,6 +1176,39 @@ const scenarios: Scenario[] = [
     }),
     primary: "REVIEW_SUBMISSION_DECISION",
     blockers: ["OPEN_SUBMISSION_UNRESOLVED"],
+  },
+  // Being at the stage is not being ready. A pack that went stale after the
+  // case was marked ready must never produce a recommendation to submit.
+  {
+    name: "a case marked ready to submit whose pack went stale behind it",
+    facts: prepared({
+      technicalStage: "READY_TO_SUBMIT",
+      packs: { packs: [pack({ status: "STALE", everPublished: true })], eligibleCount: 1 },
+    }),
+    primary: "FIX_PREPARED_PACK",
+    state: "ACTION_REQUIRED",
+    waitingOn: "ADMIN",
+    blockers: ["PACK_STALE"],
+    attention: ["PACK_STALE"],
+    check: model => {
+      // The stage stays where the database put it; preparation is what
+      // reads as needing attention.
+      expect(model.technicalStage).toBe("READY_TO_SUBMIT")
+      expect(model.phases[5].state).toBe("NEEDS_ATTENTION")
+      expect(model.primaryAction?.destination?.kind).toBe("CASE_EVIDENCE")
+    },
+  },
+  {
+    name: "a case marked ready to submit with nothing published behind it",
+    facts: prepared({
+      technicalStage: "READY_TO_SUBMIT",
+      packs: { packs: [pack({ status: "APPROVED" })], eligibleCount: 1 },
+    }),
+    primary: "FIX_PREPARED_PACK",
+    waitingOn: "ADMIN",
+    blockers: ["NO_PUBLISHED_PACK"],
+    attention: ["PACK_NOT_SUBMITTABLE"],
+    check: model => expect(model.primaryAction?.description).toContain("not published"),
   },
   {
     name: "a recorded submission that can move to waiting on Google",
@@ -1096,6 +1263,27 @@ const scenarios: Scenario[] = [
     }),
     primary: "REQUEST_CUSTOMER_ACTION",
     waitingOn: "ADMIN",
+  },
+  // A submission having happened says nothing about which files were in it.
+  // Until the flow facts can prove the threatened file was not part of the
+  // submitted pack, the threat stays the headline.
+  {
+    name: "a threat found in evidence after the submission was recorded",
+    facts: prepared({
+      technicalStage: "WAITING_GOOGLE",
+      packs: { packs: [pack({ status: "APPROVED", published: true, everPublished: true })], eligibleCount: 1 },
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: null }],
+      evidence: {
+        requests: [request({ status: "FULFILLED" })],
+        versions: [upload({ reviewStatus: "ACCEPTED" }), upload({ versionId: "version-2", scanStatus: "THREATS_FOUND" })],
+      },
+      tasks: [{ id: "task-1", title: "Follow up", owner: "ADMIN", kind: "FOLLOW_UP", status: "OPEN", dueAt: FUTURE }],
+    }),
+    primary: "RESOLVE_EVIDENCE_THREAT",
+    waitingOn: "ADMIN",
+    blockers: ["EVIDENCE_THREAT_BLOCKED"],
+    attention: ["EVIDENCE_THREAT_FOUND"],
+    check: model => expect(model.phases[1].state).toBe("NEEDS_ATTENTION"),
   },
   {
     name: "a case back for further work",
@@ -1169,6 +1357,30 @@ const scenarios: Scenario[] = [
       expect(model.blockers).toEqual([])
       expect(model.attentionItems).toEqual([])
       expect(model.outcome).toBe("RESTORED")
+    },
+  },
+  // Closing a case ends its journey but not a complaint about it. The old
+  // stale pack is history and is not resurrected; the complaint is not.
+  {
+    name: "a closed case with an open complaint still against it",
+    facts: prepared({
+      technicalStage: "FINISHED",
+      caseStatus: "CLOSED",
+      outcome: "RESTORED",
+      outcomeSummary: "The profile was reinstated.",
+      packs: { packs: [pack({ status: "STALE", everPublished: true })], eligibleCount: 1 },
+      complaints: { complete: true, open: [{ id: "complaint-1", dueAt: FUTURE }] },
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "DECIDED" }],
+    }),
+    primary: null,
+    waitingOn: "NONE",
+    phase: "COMPLETE",
+    attention: ["COMPLAINT_OPEN"],
+    check: model => {
+      expect(model.caseComplete).toBe(true)
+      expect(model.attentionItems.map(entry => entry.code)).toEqual(["COMPLAINT_OPEN"])
+      expect(model.blockers).toEqual([])
+      expect(model.progressSummary).toEqual({ completed: 9, total: 9 })
     },
   },
   {
@@ -1266,6 +1478,20 @@ describe("every scenario, whatever it is about", () => {
     }
   })
 
+  // A stale or unpublished pack must never be submitted, whatever stage the
+  // database has the case at.
+  it("never recommends recording a submission without a usable pack behind it", () => {
+    for (const { scenario, model } of resolved) {
+      if (model.primaryAction?.id !== "RECORD_EXTERNAL_SUBMISSION") continue
+      const packs = scenario.facts.packs.packs
+      expect(packs.some(entry => entry.status === "STALE"), scenario.name).toBe(false)
+      expect(
+        packs.some(entry => entry.published && entry.status === "APPROVED" && entry.itemCount > 0),
+        scenario.name,
+      ).toBe(true)
+    }
+  })
+
   // Every blocker says what is missing, why that stops things, and who fixes it.
   it("explains every blocker in full", () => {
     for (const { scenario, model } of resolved) {
@@ -1360,5 +1586,79 @@ describe("every scenario, whatever it is about", () => {
     expect(wording).not.toMatch(/\bpayment (has been |was )?received\b/i)
     expect(wording).not.toMatch(/\bsubmitted to Google\b/i)
     expect(wording).not.toMatch(/\bsent to Google\b/i)
+  })
+})
+
+/**
+ * Every delivery outcome the communications contract can report, swept in
+ * one place. The point of the sweep is the negative: nine of the ten say
+ * nothing about whether the customer has the request.
+ */
+describe("the evidence request message, at every delivery outcome", () => {
+  const deliveryStates = [
+    "NONE",
+    "ACCEPTANCE_UNKNOWN",
+    "PROVIDER_ACCEPTED",
+    "DELIVERED",
+    "BOUNCED",
+    "TRANSIENT_BOUNCE",
+    "UNDETERMINED_BOUNCE",
+    "COMPLAINED",
+    "SUPPRESSED",
+    "FAILED",
+  ]
+
+  const queued = (deliveryStatus: string) =>
+    resolveCaseFlow(
+      facts({
+        technicalStage: "EVIDENCE_COLLECTION",
+        evidence: { requests: [request()], versions: [] },
+        communications: [requestMessage({ lifecycle: "QUEUED", deliveryStatus })],
+      }),
+      NOW,
+    )
+
+  it("only says the case is waiting on the customer once delivery is confirmed", () => {
+    for (const deliveryStatus of deliveryStates) {
+      const model = queued(deliveryStatus)
+      expect(model.primaryAction?.id === "WAIT_FOR_CUSTOMER_EVIDENCE", deliveryStatus)
+        .toBe(deliveryStatus === "DELIVERED")
+      expect(model.waitingOn === "CUSTOMER", deliveryStatus).toBe(deliveryStatus === "DELIVERED")
+    }
+  })
+
+  it("waits on the provider while the message is queued or merely accepted", () => {
+    for (const deliveryStatus of ["NONE", "PROVIDER_ACCEPTED"]) {
+      const model = queued(deliveryStatus)
+      expect(model.primaryAction?.id, deliveryStatus).toBe("WAIT_FOR_EMAIL_DELIVERY")
+      expect(model.waitingOn, deliveryStatus).toBe("SYSTEM")
+    }
+  })
+
+  it("asks for a reconciliation rather than a resend when acceptance is unknown", () => {
+    const model = queued("ACCEPTANCE_UNKNOWN")
+    expect(model.primaryAction?.id).toBe("RECONCILE_EMAIL_DELIVERY")
+    expect(model.primaryAction?.state).toBe("ACTION_REQUIRED")
+  })
+
+  it("treats every failure outcome as contact to re-establish", () => {
+    for (const deliveryStatus of ["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "SUPPRESSED", "FAILED"]) {
+      expect(queued(deliveryStatus).primaryAction?.id, deliveryStatus).toBe("RECOVER_CUSTOMER_CONTACT")
+    }
+  })
+
+  it("walks the drafting steps before any of that", () => {
+    const at = (lifecycle: string) =>
+      resolveCaseFlow(
+        facts({
+          technicalStage: "EVIDENCE_COLLECTION",
+          evidence: { requests: [request()], versions: [] },
+          communications: [requestMessage({ lifecycle })],
+          capabilities: { liveMailEnabled: true, paymentsEnabled: true, googleSubmissionLive: false },
+        }),
+        NOW,
+      )
+    expect(at("DRAFT").primaryAction?.id).toBe("REVIEW_EVIDENCE_REQUEST_MESSAGE")
+    expect(at("REVIEWED").primaryAction?.id).toBe("SEND_EVIDENCE_REQUEST")
   })
 })

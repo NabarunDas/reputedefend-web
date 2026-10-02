@@ -69,6 +69,13 @@ export const blockerCatalogue = {
       "Payment is collected against an order, and an order only exists once the customer has accepted a quote. Until then there is nothing to collect against.",
     owner: "CUSTOMER",
   },
+  ACCEPTANCE_TRUST_INCOMPLETE: {
+    category: "AUTHORITY",
+    title: "The customer cannot be sent an acceptance link yet",
+    explanation:
+      "A quote-acceptance link is only issued to a verified email address belonging to somebody with verified authority over the business. The database refuses to create the link until both are recorded, so issuing it now would simply be denied.",
+    owner: "ADMIN",
+  },
   UPFRONT_PAYMENT_OUTSTANDING: {
     category: "PAYMENT",
     title: "The upfront payment has not been collected",
@@ -231,8 +238,16 @@ export const attentionCatalogue = {
     severity: "INFO",
     title: "The evidence request was accepted by the email provider but delivery is unconfirmed",
     explanation:
-      "Provider acceptance is not delivery. If nothing arrives, treat the customer as not yet reached rather than as unresponsive.",
-    owner: "CUSTOMER",
+      "Accepted by the provider is not the same as delivered. Until a delivery outcome arrives the customer counts as not yet reached, not as unresponsive.",
+    owner: "SYSTEM",
+    phase: "EVIDENCE",
+  },
+  EVIDENCE_DELIVERY_UNKNOWN: {
+    severity: "WARNING",
+    title: "It is not known whether the email provider accepted the request",
+    explanation:
+      "The provider was called but the outcome was never established, so nothing can be concluded about this message. It may have gone, and it may never have been accepted. Reconcile it against the provider rather than sending again blind.",
+    owner: "ADMIN",
     phase: "EVIDENCE",
   },
   EVIDENCE_REQUEST_SATISFIED_BUT_OPEN: {
@@ -279,6 +294,14 @@ export const attentionCatalogue = {
     severity: "WARNING",
     title: "A published pack has been withdrawn from the customer",
     explanation: "The pack was published and then unpublished, so the customer can no longer see it.",
+    owner: "ADMIN",
+    phase: "PREPARATION",
+  },
+  PACK_NOT_SUBMITTABLE: {
+    severity: "CRITICAL",
+    title: "The case is marked ready to submit with no usable pack behind it",
+    explanation:
+      "There is no approved, published pack on this case, so there is nothing fit to submit. The pack can be rebuilt from the evidence workspace without moving the case stage back; preparation needs finishing before a submission is recorded.",
     owner: "ADMIN",
     phase: "PREPARATION",
   },

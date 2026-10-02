@@ -105,9 +105,26 @@ export function latestEvidenceRequestMessage(
   return relevant.reduce((newest, row) => (row.draftedAt > newest.draftedAt ? row : newest))
 }
 
-/** Whether the customer could plausibly have received the request. */
+/**
+ * Whether the request actually reached the customer.
+ *
+ * Only a confirmed delivery counts. The Step 11 communications contract
+ * keeps provider acceptance and delivery apart on purpose, and so does this:
+ * a message the provider accepted may still be sitting in a queue, and a
+ * message whose acceptance is unknown may never have been accepted at all.
+ * Reading either as "reached" would let the case blame a customer who was
+ * never written to.
+ */
 export function contactReachedCustomer(state: EvidenceContactState): boolean {
-  return state === "PROVIDER_ACCEPTED" || state === "DELIVERED" || state === "ACCEPTANCE_UNKNOWN"
+  return state === "DELIVERED"
+}
+
+/**
+ * Whether the message is somewhere between queued and a delivery outcome,
+ * which is a wait on the provider rather than on anybody human.
+ */
+export function contactAwaitingProvider(state: EvidenceContactState): boolean {
+  return state === "QUEUED" || state === "PROVIDER_ACCEPTED"
 }
 
 export const evidenceRequestStates = [

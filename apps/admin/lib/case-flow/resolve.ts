@@ -27,7 +27,12 @@ import {
   type CaseDestination,
   type CaseDestinationKind,
 } from "./destinations"
-import { contactReachedCustomer, summariseEvidence, type EvidenceSummary } from "./evidence"
+import {
+  contactAwaitingProvider,
+  contactReachedCustomer,
+  summariseEvidence,
+  type EvidenceSummary,
+} from "./evidence"
 import {
   casePhaseIds,
   casePhaseLabels,
@@ -479,7 +484,9 @@ export function resolveCaseFlow(facts: CaseFlowFacts, now: string): CaseFlowMode
   const caseComplete =
     facts.technicalStage === "FINISHED" || facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
 
-  if (!caseComplete) {
+  if (caseComplete) {
+    collectDurableExceptions(collector)
+  } else {
     collectSafety(collector)
     collectHousekeeping(collector)
     collectStage(collector, phase)
@@ -574,13 +581,36 @@ function collectSafety(collector: Collector): void {
     })
   }
   if (evidence.contact === "FAILED" && evidence.openRequests.length > 0) {
-    propose(collector, { id: "RESEND_EVIDENCE_REQUEST", reasonCodes: ["EVIDENCE_REQUEST_UNDELIVERED"] })
+    propose(collector, { id: "RECOVER_CUSTOMER_CONTACT", reasonCodes: ["EVIDENCE_REQUEST_UNDELIVERED"] })
     notice(collector, "EVIDENCE_REQUEST_UNDELIVERED", { where: "communications" })
   }
   if (collector.packs.stale) {
     notice(collector, "PACK_STALE", { where: "evidence" })
     block(collector, "PACK_STALE", "evidence")
   }
+}
+
+/**
+ * What survives the end of the case.
+ *
+ * Closing a case finishes its journey, so none of the ordinary workflow
+ * expectations apply any more: an old pack that went stale, a prerequisite
+ * that lapsed and a permission that was invalidated are all history, and
+ * resurrecting them would be noise. An open complaint is different. The
+ * case rules already say a complaint cannot disappear because the case it
+ * concerns was closed, so it stays visible as an exception — never as a
+ * case-progression action, because there is no case progression left.
+ */
+function collectDurableExceptions(collector: Collector): void {
+  const { facts, now } = collector
+  if (facts.complaints.open.length === 0) return
+  const dates = facts.complaints.open.map(entry => entry.dueAt).filter((value): value is string => !!value).sort()
+  notice(collector, "COMPLAINT_OPEN", {
+    where: "complaints",
+    dueAt: dates[0] ?? null,
+    overdue: !!dates[0] && dates[0] <= now,
+    phase: "COMPLETE",
+  })
 }
 
 /**
@@ -675,7 +705,10 @@ function evidenceRules(collector: Collector): void {
     return
   }
 
-  if (evidence.openRequests.length > 0) {
+  // The contact ladder answers "has the customer been told?". Once a file
+  // arrives against a request that question is answered by the file, so it
+  // only runs while something is still outstanding with nothing behind it.
+  if (evidence.openRequests.some(entry => entry.state === "OPEN_NOT_STARTED")) {
     contactRules(collector)
   }
 
@@ -718,7 +751,16 @@ function evidenceRules(collector: Collector): void {
   }
 }
 
-/** Whether the customer has actually been told, and how far that got. */
+/**
+ * Whether the customer has actually been told, and how far that got.
+ *
+ * The Step 11 contract keeps three things apart that an operator would
+ * otherwise read as one: a message that has been queued, a message the
+ * provider said it accepted, and a message that was delivered. Only the
+ * last of those means the customer has it. The two before it are waits on
+ * the provider, and a message whose provider acceptance was never
+ * established is neither — it needs reconciling before anything else.
+ */
 function contactRules(collector: Collector): void {
   const { evidence, facts } = collector
   const liveMail = facts.capabilities.liveMailEnabled
@@ -747,8 +789,22 @@ function contactRules(collector: Collector): void {
     if (!liveMail) block(collector, "LIVE_MAIL_NOT_ENABLED", "communications")
     return
   }
-  if (evidence.contact === "PROVIDER_ACCEPTED" || evidence.contact === "ACCEPTANCE_UNKNOWN") {
-    notice(collector, "EVIDENCE_DELIVERY_UNCONFIRMED", { where: "communications" })
+  if (evidence.contact === "ACCEPTANCE_UNKNOWN") {
+    propose(collector, { id: "RECONCILE_EMAIL_DELIVERY", reasonCodes: ["EVIDENCE_DELIVERY_UNKNOWN"] })
+    notice(collector, "EVIDENCE_DELIVERY_UNKNOWN", { where: "communications" })
+    return
+  }
+  if (contactAwaitingProvider(evidence.contact)) {
+    propose(collector, {
+      id: "WAIT_FOR_EMAIL_DELIVERY",
+      reasonCodes:
+        evidence.contact === "PROVIDER_ACCEPTED"
+          ? ["EVIDENCE_MESSAGE_PROVIDER_ACCEPTED"]
+          : ["EVIDENCE_MESSAGE_QUEUED"],
+    })
+    if (evidence.contact === "PROVIDER_ACCEPTED") {
+      notice(collector, "EVIDENCE_DELIVERY_UNCONFIRMED", { where: "communications" })
+    }
   }
 }
 
@@ -806,7 +862,7 @@ function quoteRules(collector: Collector): void {
     return
   }
   if (commercial.state === "OFFERED_NO_LINK") {
-    propose(collector, { id: "ISSUE_QUOTE_ACCEPTANCE", reasonCodes: ["QUOTE_OFFERED_NO_ACCEPTANCE_LINK"] })
+    acceptanceLinkRules(collector)
     return
   }
   if (commercial.state === "OFFERED_AWAITING") {
@@ -828,6 +884,32 @@ function quoteRules(collector: Collector): void {
     notice(collector, "QUOTE_EXPIRED", { where: "commercial" })
     block(collector, "NO_ACCEPTED_ORDER", "commercial")
   }
+}
+
+/**
+ * Issuing the acceptance link, and the two facts that have to be true first.
+ *
+ * `create_quote_acceptance_action` refuses unless the customer's email is
+ * verified and their membership of the business is verified. Recommending
+ * the link without them would send an operator to a button the database
+ * denies, so the same two facts gate the recommendation. They are read from
+ * the authorisation readiness projection, which computes them from exactly
+ * the conditions the command checks, and they apply to both tracks because
+ * the customer-action trust boundary is the same on both.
+ */
+function acceptanceLinkRules(collector: Collector): void {
+  const authorization = collector.facts.authorization
+  if (!authorization.customerEmailVerified) {
+    propose(collector, { id: "VERIFY_CUSTOMER_CONTACT", reasonCodes: ["ACCEPTANCE_NEEDS_VERIFIED_EMAIL"] })
+    block(collector, "ACCEPTANCE_TRUST_INCOMPLETE", "client")
+    return
+  }
+  if (!authorization.businessAuthorityVerified) {
+    propose(collector, { id: "VERIFY_BUSINESS_AUTHORITY", reasonCodes: ["ACCEPTANCE_NEEDS_VERIFIED_AUTHORITY"] })
+    block(collector, "ACCEPTANCE_TRUST_INCOMPLETE", "business")
+    return
+  }
+  propose(collector, { id: "ISSUE_QUOTE_ACCEPTANCE", reasonCodes: ["QUOTE_OFFERED_NO_ACCEPTANCE_LINK"] })
 }
 
 function prerequisiteRules(collector: Collector): void {
@@ -873,42 +955,65 @@ function guidedPrerequisiteRules(collector: Collector): void {
   if (!enabled) block(collector, "PAYMENTS_NOT_ENABLED", "money")
 }
 
+/**
+ * The Managed ladder, resolved one rung at a time.
+ *
+ * The canonical operator journey is sequential: verify the contact, verify
+ * the authority, get the service agreement accepted, get the case-management
+ * permission accepted, record Manager access, then set payment up. Each rung
+ * returns, so a request that is already out with the customer produces a wait
+ * rather than the next request. Some of this work could technically happen in
+ * parallel, and deliberately does not: one clear next step is worth more to
+ * the operator than a list of things they could be doing.
+ *
+ * The sequence is a presentation of the journey, not a restatement of the
+ * rule. `authorizationReady` from the database stays the authority on whether
+ * the case may actually move, and it is checked again at the end.
+ */
 function managedPrerequisiteRules(collector: Collector): void {
   const { facts, payment } = collector
   const authorization = facts.authorization
+  const review = (kind: string) => authorization.reviewRequired.includes(kind)
+
+  if (!authorization.authorizationReady) block(collector, "AUTHORISATION_INCOMPLETE")
 
   if (!authorization.customerEmailVerified) {
     propose(collector, { id: "VERIFY_CUSTOMER_CONTACT", reasonCodes: ["CUSTOMER_EMAIL_UNVERIFIED"] })
+    return
   }
   if (!authorization.businessAuthorityVerified) {
     propose(collector, { id: "VERIFY_BUSINESS_AUTHORITY", reasonCodes: ["BUSINESS_AUTHORITY_UNVERIFIED"] })
+    return
   }
-  if (!authorization.serviceAgreementAccepted && !authorization.reviewRequired.includes("SERVICE_AGREEMENT")) {
-    if (openAgreement(facts, "SERVICE_AGREEMENT")) {
-      propose(collector, { id: "WAIT_FOR_SERVICE_AGREEMENT", reasonCodes: ["SERVICE_AGREEMENT_ISSUED"] })
-    } else {
-      propose(collector, { id: "ISSUE_SERVICE_AGREEMENT", reasonCodes: ["SERVICE_AGREEMENT_NOT_ISSUED"] })
-    }
+  if (review("SERVICE_AGREEMENT")) {
+    propose(collector, { id: "RESOLVE_AUTHORISATION_REVIEW", reasonCodes: ["SERVICE_AGREEMENT_IN_REVIEW"] })
+    return
   }
-  if (
-    !authorization.caseManagementPermissionActive
-    && !authorization.reviewRequired.includes("CASE_MANAGEMENT_PERMISSION")
-  ) {
-    if (openAgreement(facts, "CASE_MANAGEMENT_PERMISSION")) {
-      propose(collector, { id: "WAIT_FOR_CASE_PERMISSION", reasonCodes: ["CASE_PERMISSION_ISSUED"] })
-    } else {
-      propose(collector, { id: "ISSUE_CASE_PERMISSION", reasonCodes: ["CASE_PERMISSION_NOT_ISSUED"] })
-    }
+  if (!authorization.serviceAgreementAccepted) {
+    propose(collector, openAgreement(facts, "SERVICE_AGREEMENT")
+      ? { id: "WAIT_FOR_SERVICE_AGREEMENT", reasonCodes: ["SERVICE_AGREEMENT_ISSUED"] }
+      : { id: "ISSUE_SERVICE_AGREEMENT", reasonCodes: ["SERVICE_AGREEMENT_NOT_ISSUED"] })
+    return
+  }
+  if (review("CASE_MANAGEMENT_PERMISSION")) {
+    propose(collector, { id: "RESOLVE_AUTHORISATION_REVIEW", reasonCodes: ["CASE_PERMISSION_IN_REVIEW"] })
+    return
+  }
+  if (!authorization.caseManagementPermissionActive) {
+    propose(collector, openAgreement(facts, "CASE_MANAGEMENT_PERMISSION")
+      ? { id: "WAIT_FOR_CASE_PERMISSION", reasonCodes: ["CASE_PERMISSION_ISSUED"] }
+      : { id: "ISSUE_CASE_PERMISSION", reasonCodes: ["CASE_PERMISSION_NOT_ISSUED"] })
+    return
   }
   if (!authorization.managerAccessVerified) {
     if (!authorization.hasLocation) {
       propose(collector, { id: "CONFIRM_CASE_LOCATION", reasonCodes: ["NO_LOCATION_RECORDED"] })
       block(collector, "NO_LOCATION_RECORDED", "business")
-    } else {
-      propose(collector, { id: "VERIFY_MANAGER_ACCESS", reasonCodes: ["MANAGER_ACCESS_UNVERIFIED"] })
+      return
     }
+    propose(collector, { id: "VERIFY_MANAGER_ACCESS", reasonCodes: ["MANAGER_ACCESS_UNVERIFIED"] })
+    return
   }
-  if (!authorization.authorizationReady) block(collector, "AUTHORISATION_INCOMPLETE")
 
   managedPaymentRules(collector)
 
@@ -955,7 +1060,7 @@ function managedPaymentRules(collector: Collector): void {
 }
 
 function preparationRules(collector: Collector): void {
-  const { evidence, facts, packs } = collector
+  const { evidence, facts } = collector
 
   // Prerequisites were met to arrive here, and can be undone afterwards.
   const prerequisitesHold =
@@ -973,14 +1078,28 @@ function preparationRules(collector: Collector): void {
     return
   }
 
+  if (packRules(collector)) return
+  if (prerequisitesHold && allows(collector, "READY_TO_SUBMIT")) {
+    propose(collector, { id: "ADVANCE_TO_READY_TO_SUBMIT", reasonCodes: ["PACK_PUBLISHED"] })
+  }
+}
+
+/**
+ * The pack ladder: stale, missing, empty, unapproved, unpublished, usable.
+ *
+ * Returns true when it proposed a repair step, meaning there is no pack on
+ * this case fit to submit.
+ */
+function packRules(collector: Collector): boolean {
+  const { packs } = collector
   if (packs.stale) {
     propose(collector, { id: "FIX_PREPARED_PACK", reasonCodes: ["PACK_STALE"] })
-    return
+    return true
   }
   if (!packs.working) {
     propose(collector, { id: "CREATE_PREPARED_PACK", reasonCodes: ["NO_PACK"] })
     block(collector, "NO_PUBLISHED_PACK", "evidence")
-    return
+    return true
   }
   if (packs.working.status === "DRAFT") {
     block(collector, "NO_PUBLISHED_PACK", "evidence")
@@ -989,28 +1108,66 @@ function preparationRules(collector: Collector): void {
     } else {
       propose(collector, { id: "APPROVE_PREPARED_PACK", reasonCodes: ["PACK_READY_FOR_APPROVAL"] })
     }
-    return
+    return true
   }
   if (!packs.publishedUsable) {
     propose(collector, { id: "PUBLISH_PREPARED_PACK", reasonCodes: ["PACK_APPROVED_NOT_PUBLISHED"] })
     block(collector, "NO_PUBLISHED_PACK", "evidence")
-    return
+    return true
   }
-  if (prerequisitesHold && allows(collector, "READY_TO_SUBMIT")) {
-    propose(collector, { id: "ADVANCE_TO_READY_TO_SUBMIT", reasonCodes: ["PACK_PUBLISHED"] })
+  return false
+}
+
+/**
+ * What is wrong with the pack behind a case already marked ready to submit.
+ *
+ * The remedy differs — rebuild, fill, approve, publish — but the one thing
+ * the operator must not be told is to record a submission, so all of them
+ * are presented as repairing the pack. The prepared-pack command is not
+ * gated on the work stage, so every one of these is possible from here
+ * without the case stage moving backwards.
+ */
+function packRepairDescription(packs: PackView): string | undefined {
+  if (packs.stale) return undefined
+  const prefix = "This case is marked ready to submit, but there is no pack behind it fit to send."
+  if (!packs.working) return `${prefix} No pack has been started. Build one from the accepted evidence before recording anything.`
+  if (packs.working.status === "DRAFT" && packs.working.itemCount === 0) {
+    return `${prefix} The draft pack is empty, so there is nothing in it to approve or publish.`
   }
+  if (packs.working.status === "DRAFT") {
+    return `${prefix} The draft pack has never been approved, and an unapproved pack cannot be published.`
+  }
+  return `${prefix} The pack is approved but not published, and publication is what makes it the pack of record.`
 }
 
 /**
  * `READY_TO_SUBMIT` means ProfileRelaunch is ready, and nothing more. The
  * submission itself happens outside this application and is then recorded;
  * recording it is what moves the case on.
+ *
+ * Being at the stage is not the same as still being ready. A pack can go
+ * stale or be withdrawn after the case was marked ready, and a stale pack
+ * must never be submitted, so the pack is checked again here rather than
+ * assumed from the stage. Preparation then reads as needing attention while
+ * the technical stage stays where the database put it.
  */
 function submissionRules(collector: Collector, stage: string): void {
-  const { facts } = collector
+  const { facts, packs } = collector
   const unresolved = facts.submissions.filter(entry => entry.result === null)
 
   if (stage === "READY_TO_SUBMIT") {
+    if (packs.stale || !packs.publishedUsable) {
+      if (!packs.stale) {
+        notice(collector, "PACK_NOT_SUBMITTABLE", { where: "evidence" })
+        block(collector, "NO_PUBLISHED_PACK", "evidence")
+      }
+      propose(collector, {
+        id: "FIX_PREPARED_PACK",
+        reasonCodes: packs.stale ? ["PACK_STALE"] : ["PACK_NOT_SUBMITTABLE"],
+        description: packRepairDescription(packs),
+      })
+      return
+    }
     if (unresolved.length > 0) {
       propose(collector, { id: "REVIEW_SUBMISSION_DECISION", reasonCodes: ["SUBMISSION_AWAITING_RESULT"] })
       block(collector, "OPEN_SUBMISSION_UNRESOLVED")
@@ -1118,6 +1275,9 @@ function buildPrerequisiteGroups(collector: Collector, facts: CaseFlowFacts): Ca
  * a stale pack or an invalidated permission reopens an earlier phase without
  * anything being rewritten: the history is untouched, the phase simply says
  * that something there needs looking at again.
+ *
+ * A finished case is exempt. Its journey is over, and an exception that
+ * outlives it — an open complaint — is not an unfinished step in it.
  */
 function buildPhases(
   current: CasePhaseId,
@@ -1127,7 +1287,7 @@ function buildPhases(
 ): CasePhase[] {
   const currentOrdinal = phaseOrdinal(current)
   const attentionByPhase = new Map<CasePhaseId, CaseAttentionItem>()
-  for (const item of attentionItems) {
+  for (const item of caseComplete ? [] : attentionItems) {
     if (item.severity === "INFO") continue
     const existing = attentionByPhase.get(item.phase)
     if (!existing || (existing.severity === "WARNING" && item.severity === "CRITICAL")) {

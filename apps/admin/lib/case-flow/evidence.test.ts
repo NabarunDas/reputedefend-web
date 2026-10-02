@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { evidenceActions, reviewStatuses, scanStatuses, uploadStatuses, validationStatuses } from "../evidence/model"
 import {
+  contactAwaitingProvider,
   contactReachedCustomer,
   evidenceContactState,
+  evidenceContactStates,
   evidenceRequestViews,
   evidenceVersionState,
   summariseEvidence,
@@ -106,6 +108,27 @@ describe("evidence contact state", () => {
     expect(evidenceContactState([message({ lifecycle: "QUEUED", deliveryStatus: "PROVIDER_ACCEPTED" })])).toBe("PROVIDER_ACCEPTED")
     expect(evidenceContactState([message({ lifecycle: "QUEUED", deliveryStatus: "DELIVERED" })])).toBe("DELIVERED")
     expect(evidenceContactState([message({ lifecycle: "QUEUED", deliveryStatus: "ACCEPTANCE_UNKNOWN" })])).toBe("ACCEPTANCE_UNKNOWN")
+  })
+
+  // The whole point of the Step 11 contract: queued is not accepted,
+  // accepted is not delivered, and only delivered is reaching somebody.
+  it("counts only a confirmed delivery as having reached the customer", () => {
+    for (const state of evidenceContactStates) {
+      expect(contactReachedCustomer(state), state).toBe(state === "DELIVERED")
+    }
+  })
+
+  it("treats queued and provider-accepted as a wait on the provider", () => {
+    for (const state of evidenceContactStates) {
+      expect(contactAwaitingProvider(state), state).toBe(state === "QUEUED" || state === "PROVIDER_ACCEPTED")
+    }
+  })
+
+  // An unknown acceptance is neither reached nor a clean wait: nobody knows
+  // whether the provider took the message at all.
+  it("leaves an unknown provider outcome outside both", () => {
+    expect(contactReachedCustomer("ACCEPTANCE_UNKNOWN")).toBe(false)
+    expect(contactAwaitingProvider("ACCEPTANCE_UNKNOWN")).toBe(false)
   })
 
   it("treats every unsuccessful delivery outcome as not having reached anybody", () => {

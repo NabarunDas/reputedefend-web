@@ -22,17 +22,42 @@ describe("action catalogue", () => {
   it("only ever waits on somebody who has actually been asked", () => {
     for (const id of caseNextActionIds) {
       const definition = actionCatalogue[id]
-      if (definition.band !== "WAITING") continue
-      expect(definition.state, id).toBe("WAITING")
+      if (definition.state !== "WAITING") continue
       expect(definition.owner, id).not.toBe("ADMIN")
+      expect(definition.band, id).toBe("JOURNEY")
     }
   })
 
   it("keeps the declared bands in the documented order", () => {
     expect(priorityBands.SAFETY).toBeLessThan(priorityBands.ADMIN_ACTION)
-    expect(priorityBands.ADMIN_ACTION).toBeLessThan(priorityBands.OUTBOUND)
-    expect(priorityBands.OUTBOUND).toBeLessThan(priorityBands.WAITING)
-    expect(priorityBands.WAITING).toBeLessThan(priorityBands.PROGRESSION)
+    expect(priorityBands.ADMIN_ACTION).toBeLessThan(priorityBands.JOURNEY)
+    expect(priorityBands.JOURNEY).toBeLessThan(priorityBands.PROGRESSION)
+  })
+
+  // The old model had outbound work in a band above waiting, which made a
+  // later request overtake an earlier customer wait. Journey position now
+  // decides between them, so they have to share a band.
+  it("puts issuing something and waiting for it in the same band", () => {
+    expect(bandOf("ISSUE_SERVICE_AGREEMENT")).toBe(bandOf("WAIT_FOR_SERVICE_AGREEMENT"))
+    expect(bandOf("ISSUE_CASE_PERMISSION")).toBe(bandOf("WAIT_FOR_CASE_PERMISSION"))
+    expect(bandOf("START_MANAGED_PAYMENT_SETUP")).toBe(bandOf("WAIT_FOR_MANAGED_PAYMENT_SETUP"))
+  })
+
+  // Only a delivered message means the customer has it, so the two states
+  // before that have to resolve to something other than waiting on them.
+  it("waits on the provider, not the customer, before delivery is confirmed", () => {
+    expect(actionCatalogue.WAIT_FOR_EMAIL_DELIVERY.owner).toBe("SYSTEM")
+    expect(actionCatalogue.WAIT_FOR_EMAIL_DELIVERY.description).toContain("not the same as delivered")
+    expect(actionCatalogue.RECONCILE_EMAIL_DELIVERY.owner).toBe("ADMIN")
+    expect(actionCatalogue.RECONCILE_EMAIL_DELIVERY.state).toBe("ACTION_REQUIRED")
+  })
+
+  // The identifier used to say "resend", which is exactly what must not
+  // happen to an address that bounced, was complained about or suppressed.
+  it("recovers contact rather than promising a resend", () => {
+    expect(actionCatalogue.RECOVER_CUSTOMER_CONTACT.band).toBe("SAFETY")
+    expect(`${actionCatalogue.RECOVER_CUSTOMER_CONTACT.label} ${actionCatalogue.RECOVER_CUSTOMER_CONTACT.description}`)
+      .not.toMatch(/\bresend\b|\bsend (it|the message) again\b/i)
   })
 
   // Declaration order breaks ties inside a band, so the catalogue has to be
@@ -61,11 +86,18 @@ describe("priority", () => {
     expect(chosen?.id).toBe("RESOLVE_EVIDENCE_THREAT")
   })
 
-  it("prefers work that can be done now over waiting for somebody else", () => {
-    expect(highestPriority([{ id: "WAIT_FOR_SERVICE_AGREEMENT" }, { id: "ISSUE_CASE_PERMISSION" }])?.id)
-      .toBe("ISSUE_CASE_PERMISSION")
+  it("prefers work ProfileRelaunch owes the case over waiting for somebody else", () => {
     expect(highestPriority([{ id: "WAIT_FOR_CUSTOMER_EVIDENCE" }, { id: "REVIEW_EVIDENCE" }])?.id)
       .toBe("REVIEW_EVIDENCE")
+  })
+
+  // The dependency order of the journey, not "outbound beats waiting":
+  // an earlier request already out with the customer wins.
+  it("waits for an earlier step rather than starting a later one", () => {
+    expect(highestPriority([{ id: "WAIT_FOR_SERVICE_AGREEMENT" }, { id: "ISSUE_CASE_PERMISSION" }])?.id)
+      .toBe("WAIT_FOR_SERVICE_AGREEMENT")
+    expect(highestPriority([{ id: "WAIT_FOR_CASE_PERMISSION" }, { id: "START_MANAGED_PAYMENT_SETUP" }])?.id)
+      .toBe("WAIT_FOR_CASE_PERMISSION")
   })
 
   it("prefers resolving the current step over advancing past it", () => {

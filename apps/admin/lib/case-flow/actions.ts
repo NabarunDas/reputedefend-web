@@ -6,7 +6,7 @@
  * never hidden behind routine work. A resolver proposes candidates; this
  * module picks one, and it picks the same one every time.
  *
- * Five bands, highest first:
+ * Four bands, highest first:
  *
  *   1 SAFETY       Integrity of the case: a threat in an upload, evidence
  *                  that is no longer valid, an authorisation that has been
@@ -15,16 +15,22 @@
  *   2 ADMIN_ACTION Work ProfileRelaunch owes the case right now: review the
  *                  evidence, complete the assessment, approve the pack,
  *                  record the Google decision.
- *   3 OUTBOUND     Something that has to be issued to the customer before
- *                  they can do anything: request evidence, offer the quote,
- *                  issue an agreement, permission or payment link.
- *   4 WAITING      It has been asked for and the answer has not arrived.
- *   5 PROGRESSION  A step the case has earned: advance a stage, close.
+ *   3 JOURNEY      The earliest unresolved step in the case journey, whether
+ *                  that step is issuing something to the customer or waiting
+ *                  for what was already issued.
+ *   4 PROGRESSION  A step the case has earned: advance a stage, close.
  *
- * Within a band, the earlier entry in `actionCatalogue` wins. That is the
- * journey order, so the earliest unfinished step in the case journey is the
- * one recommended. Nothing else, anywhere, decides precedence: there is no
- * second ordering scattered across the per-phase rules.
+ * Issuing and waiting deliberately share one band. An earlier "every
+ * outbound action beats every waiting action" rule meant a later request
+ * overtook an earlier customer wait, so a case with an agreement already out
+ * with the customer told the operator to send the next thing instead of
+ * waiting for the answer. Journey position decides between them now.
+ *
+ * Within a band, the earlier entry in `actionCatalogue` wins, and the
+ * catalogue is declared in journey order. That tie-break settles conflicts
+ * between phases. Sequencing *within* a phase is the per-phase rule's job:
+ * the Managed prerequisite ladder in particular returns one candidate and
+ * does not rely on this table to order its own steps.
  */
 
 import type { CaseDestinationKind } from "./destinations"
@@ -33,9 +39,8 @@ import type { CaseActionOwner, CaseActionState, CaseNextActionId } from "./model
 export const priorityBands = {
   SAFETY: 1,
   ADMIN_ACTION: 2,
-  OUTBOUND: 3,
-  WAITING: 4,
-  PROGRESSION: 5,
+  JOURNEY: 3,
+  PROGRESSION: 4,
 } as const
 
 export type PriorityBand = keyof typeof priorityBands
@@ -102,14 +107,14 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description:
       "Saving the customer's payment method did not complete. Managed cases cannot proceed without a usable saved method, so this has to be resolved before preparation.",
   },
-  RESEND_EVIDENCE_REQUEST: {
+  RECOVER_CUSTOMER_CONTACT: {
     band: "SAFETY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_COMMUNICATIONS",
-    label: "Reach the customer another way",
+    label: "Re-establish contact with the customer",
     description:
-      "The evidence request did not reach the customer: the email bounced, was complained about or was suppressed. Waiting for an upload is pointless until contact is re-established.",
+      "The evidence request did not reach the customer: the email bounced, was complained about or was suppressed. Sending the same message to the same address again will not work. Establish a usable contact route before anything else is expected of them.",
   },
 
   // --- Admin work the case is waiting on ----------------------------------
@@ -221,9 +226,9 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "The order list this view reads did not come back complete, so nothing here can be treated as the full picture. Open Money and confirm before issuing anything.",
   },
 
-  // --- Things to issue to the customer ------------------------------------
+  // --- The journey, in the order an operator walks it ----------------------
   REQUEST_EVIDENCE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_EVIDENCE",
@@ -232,7 +237,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "Record what the customer has to provide. Raising a request does not contact anybody; the message is a separate step.",
   },
   PREPARE_EVIDENCE_REQUEST_MESSAGE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_COMMUNICATIONS",
@@ -241,7 +246,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "An evidence request exists but the customer has not been written to. Draft the message that carries their secure upload link.",
   },
   REVIEW_EVIDENCE_REQUEST_MESSAGE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_COMMUNICATIONS",
@@ -249,15 +254,51 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description: "The evidence request message is drafted and needs checking before it can be queued.",
   },
   SEND_EVIDENCE_REQUEST: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_COMMUNICATIONS",
     label: "Send the evidence request",
     description: "The message has been reviewed and is ready to go to the customer.",
   },
+  WAIT_FOR_EMAIL_DELIVERY: {
+    band: "JOURNEY",
+    owner: "SYSTEM",
+    state: "WAITING",
+    surface: "CASE_COMMUNICATIONS",
+    label: "Waiting for the email provider",
+    description:
+      "The message has been queued, but delivery has not yet been confirmed. Accepted by the provider is not the same as delivered, so the customer cannot be treated as having been reached and cannot yet be treated as unresponsive.",
+  },
+  RECONCILE_EMAIL_DELIVERY: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "CASE_COMMUNICATIONS",
+    label: "Reconcile the message with the email provider",
+    description:
+      "The provider was called but it is not known whether it accepted the message, so nothing can be concluded about delivery. Reconcile the outcome against the provider before drafting a replacement; sending again blind risks either a duplicate or another silent failure.",
+  },
+  WAIT_FOR_CUSTOMER_EVIDENCE: {
+    band: "JOURNEY",
+    owner: "CUSTOMER",
+    state: "WAITING",
+    surface: "CASE_EVIDENCE",
+    label: "Waiting for the customer to upload evidence",
+    description:
+      "The request has been delivered to the customer and nothing has been uploaded against it yet.",
+  },
+  WAIT_FOR_EVIDENCE_SCAN: {
+    band: "JOURNEY",
+    owner: "SYSTEM",
+    state: "WAITING",
+    surface: "CASE_EVIDENCE",
+    label: "Waiting for the security scan",
+    description:
+      "A file has been uploaded and is being scanned for malware. It cannot be opened or reviewed until the scan reports back.",
+  },
   SELECT_SERVICE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE",
@@ -266,7 +307,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "Decide whether the customer submits with our guidance or ProfileRelaunch submits on their behalf. Everything commercial follows from this.",
   },
   CREATE_QUOTE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "COMMERCIAL",
@@ -274,7 +315,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description: "The service track is chosen and there is no quote this case can proceed on.",
   },
   COMPLETE_QUOTE_CONFIGURATION: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "BLOCKED",
     surface: "COMMERCIAL",
@@ -283,33 +324,24 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "The draft quote cannot be offered as it stands. Tax treatment has to be confirmed on the quote before it can go to the customer.",
   },
   OFFER_QUOTE: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "COMMERCIAL",
     label: "Offer the quote",
     description: "The draft quote is configured and can be offered to the customer.",
   },
-  ISSUE_QUOTE_ACCEPTANCE: {
-    band: "OUTBOUND",
-    owner: "ADMIN",
-    state: "ACTION_REQUIRED",
-    surface: "COMMERCIAL",
-    label: "Send the quote for acceptance",
-    description:
-      "The quote has been offered but the customer has no way to accept it yet. Issue the acceptance link.",
-  },
   VERIFY_CUSTOMER_CONTACT: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CLIENT_RECORD",
     label: "Verify the customer's email address",
     description:
-      "Permissions are tied to a verified email address. Until the address on the record is verified, nothing the customer accepts can be relied on.",
+      "Secure customer links are tied to a verified email address. Until the address on the record is verified, nothing the customer accepts can be relied on and the database refuses to issue the link.",
   },
   VERIFY_BUSINESS_AUTHORITY: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "BUSINESS_RECORD",
@@ -317,16 +349,51 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description:
       "ProfileRelaunch only acts for somebody who can show they speak for the business. Record the evidence and mark the membership verified.",
   },
+  ISSUE_QUOTE_ACCEPTANCE: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "COMMERCIAL",
+    label: "Send the quote for acceptance",
+    description:
+      "The quote has been offered but the customer has no way to accept it yet. Issue the acceptance link.",
+  },
+  WAIT_FOR_QUOTE_ACCEPTANCE: {
+    band: "JOURNEY",
+    owner: "CUSTOMER",
+    state: "WAITING",
+    surface: "COMMERCIAL",
+    label: "Waiting for the customer to accept the quote",
+    description: "The acceptance link is open and the customer has not accepted or declined it.",
+  },
+  REVIEW_DECLINED_QUOTE: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "COMMERCIAL",
+    label: "Pick up the declined quote",
+    description:
+      "The customer declined the quote. Decide whether to re-quote on different terms or close the case.",
+  },
   ISSUE_SERVICE_AGREEMENT: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE",
     label: "Issue the service agreement",
     description: "Send the service agreement for the customer to accept.",
   },
+  WAIT_FOR_SERVICE_AGREEMENT: {
+    band: "JOURNEY",
+    owner: "CUSTOMER",
+    state: "WAITING",
+    surface: "CASE",
+    label: "Waiting for the service agreement",
+    description:
+      "The agreement has been issued and the customer has not accepted it. Nothing further is asked of them until this comes back.",
+  },
   ISSUE_CASE_PERMISSION: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE",
@@ -334,8 +401,17 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description:
       "Send the permission that lets ProfileRelaunch act on this case. It is specific to this case and separate from the service agreement.",
   },
+  WAIT_FOR_CASE_PERMISSION: {
+    band: "JOURNEY",
+    owner: "CUSTOMER",
+    state: "WAITING",
+    surface: "CASE",
+    label: "Waiting for the case-management permission",
+    description:
+      "The permission has been issued and the customer has not accepted it. Nothing further is asked of them until this comes back.",
+  },
   VERIFY_MANAGER_ACCESS: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE",
@@ -344,93 +420,15 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
       "Record that ProfileRelaunch has Manager or Owner access to the location's Google profile, with the evidence for it.",
   },
   START_UPFRONT_PAYMENT: {
-    band: "OUTBOUND",
+    band: "JOURNEY",
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "MONEY",
     label: "Send the payment link",
     description: "The order is accepted and the upfront payment has not been started.",
   },
-  START_MANAGED_PAYMENT_SETUP: {
-    band: "OUTBOUND",
-    owner: "ADMIN",
-    state: "ACTION_REQUIRED",
-    surface: "MONEY",
-    label: "Send the payment-setup link",
-    description:
-      "A Managed case charges on success, so the customer has to consent to a later charge and save a payment method before work begins.",
-  },
-  REQUEST_CUSTOMER_ACTION: {
-    band: "OUTBOUND",
-    owner: "ADMIN",
-    state: "ACTION_REQUIRED",
-    surface: "CASE",
-    label: "Ask the customer to act on Google's request",
-    description:
-      "Google has asked the profile owner to do something. Record what is needed as a customer task and tell them.",
-  },
-  FOLLOW_UP_GOOGLE: {
-    band: "OUTBOUND",
-    owner: "ADMIN",
-    state: "ACTION_REQUIRED",
-    surface: "CASE",
-    label: "Follow up with Google",
-    description: "A follow-up somebody set on this submission has come due.",
-  },
-  REVIEW_DECLINED_QUOTE: {
-    band: "OUTBOUND",
-    owner: "ADMIN",
-    state: "ACTION_REQUIRED",
-    surface: "COMMERCIAL",
-    label: "Pick up the declined quote",
-    description:
-      "The customer declined the quote. Decide whether to re-quote on different terms or close the case.",
-  },
-
-  // --- Waiting -------------------------------------------------------------
-  WAIT_FOR_CUSTOMER_EVIDENCE: {
-    band: "WAITING",
-    owner: "CUSTOMER",
-    state: "WAITING",
-    surface: "CASE_EVIDENCE",
-    label: "Waiting for the customer to upload evidence",
-    description: "The request has gone to the customer and nothing has been uploaded against it yet.",
-  },
-  WAIT_FOR_EVIDENCE_SCAN: {
-    band: "WAITING",
-    owner: "SYSTEM",
-    state: "WAITING",
-    surface: "CASE_EVIDENCE",
-    label: "Waiting for the security scan",
-    description:
-      "A file has been uploaded and is being scanned for malware. It cannot be opened or reviewed until the scan reports back.",
-  },
-  WAIT_FOR_QUOTE_ACCEPTANCE: {
-    band: "WAITING",
-    owner: "CUSTOMER",
-    state: "WAITING",
-    surface: "COMMERCIAL",
-    label: "Waiting for the customer to accept the quote",
-    description: "The acceptance link is open and the customer has not accepted or declined it.",
-  },
-  WAIT_FOR_SERVICE_AGREEMENT: {
-    band: "WAITING",
-    owner: "CUSTOMER",
-    state: "WAITING",
-    surface: "CASE",
-    label: "Waiting for the service agreement",
-    description: "The agreement has been issued and the customer has not accepted it.",
-  },
-  WAIT_FOR_CASE_PERMISSION: {
-    band: "WAITING",
-    owner: "CUSTOMER",
-    state: "WAITING",
-    surface: "CASE",
-    label: "Waiting for the case-management permission",
-    description: "The permission has been issued and the customer has not accepted it.",
-  },
   WAIT_FOR_UPFRONT_PAYMENT: {
-    band: "WAITING",
+    band: "JOURNEY",
     owner: "CUSTOMER",
     state: "WAITING",
     surface: "MONEY",
@@ -438,24 +436,50 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     description:
       "Collection has started and no confirmation has arrived. A completed checkout page is not payment; the case moves when the provider confirms the money was taken.",
   },
+  START_MANAGED_PAYMENT_SETUP: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "MONEY",
+    label: "Send the payment-setup link",
+    description:
+      "A Managed case charges on success, so the customer has to consent to a later charge and save a payment method before work begins.",
+  },
   WAIT_FOR_MANAGED_PAYMENT_SETUP: {
-    band: "WAITING",
+    band: "JOURNEY",
     owner: "CUSTOMER",
     state: "WAITING",
     surface: "MONEY",
     label: "Waiting for the customer to save a payment method",
     description: "The setup link is open and no usable payment method has been saved yet.",
   },
+  REQUEST_CUSTOMER_ACTION: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "CASE",
+    label: "Ask the customer to act on Google's request",
+    description:
+      "Google has asked the profile owner to do something. Record what is needed as a customer task and tell them.",
+  },
   WAIT_FOR_CUSTOMER_ACTION: {
-    band: "WAITING",
+    band: "JOURNEY",
     owner: "CUSTOMER",
     state: "WAITING",
     surface: "CASE",
     label: "Waiting for the customer to act on Google's request",
     description: "The customer has been asked to do something on their own profile.",
   },
+  FOLLOW_UP_GOOGLE: {
+    band: "JOURNEY",
+    owner: "ADMIN",
+    state: "ACTION_REQUIRED",
+    surface: "CASE",
+    label: "Follow up with Google",
+    description: "A follow-up somebody set on this submission has come due.",
+  },
   WAIT_FOR_GOOGLE: {
-    band: "WAITING",
+    band: "JOURNEY",
     owner: "GOOGLE",
     state: "WAITING",
     surface: "CASE",

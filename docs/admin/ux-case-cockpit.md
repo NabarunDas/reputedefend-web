@@ -192,4 +192,4 @@ Every cockpit component is a Server Component. Nothing was marked `"use client"`
 - **UX-6** — the evidence workspace, which is where the manual scan refresh and the request-fulfilment step should become first-class actions rather than things the cockpit can only point at.
 - **UX-7** — Commercial and Money, including the per-case filters whose absence makes the model report the commercial and payment position as possibly incomplete.
 - **UX-8** — communications, including contact recovery.
-- **UX-9** — the shared visual system and the central wording review; the cockpit uses the existing Admin tokens and adds no new palette.
+- **UX-9** — the shared visual system and the central wording review; the cockpit uses the existing Admin tokens and adds no new palette. The task list still prints its stored `kind` and `status` columns verbatim — `FOLLOW_UP`, `OPEN` — which predates UX-2 and was left alone because UX-2 was asked to keep the task functionality as it was. Those are the legacy task record's own columns rather than anything from the flow model, and humanising them belongs with the rest of the wording work.

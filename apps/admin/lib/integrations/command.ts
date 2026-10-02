@@ -163,6 +163,7 @@ function isCommandReason(value: unknown): boolean {
 export async function integrationCommand(
   request: NextRequest,
   stack: GoogleLiveStack | null = googleLiveStack,
+  env: GoogleBusinessProfileEnv = process.env,
 ): Promise<NextResponse> {
   const gate = sessionOrError(request)
   if ("error" in gate) return gate.error
@@ -176,7 +177,7 @@ export async function integrationCommand(
   // Fail closed, and not only on configuration. An operator who sets every
   // Google variable still gets here with connection_not_implemented, so a
   // direct POST cannot start an OAuth flow that this build cannot finish.
-  const execution = googleConnectExecution(process.env, stack)
+  const execution = googleConnectExecution(env, stack)
   const oauth = googleOAuthConfig()
   if (!execution.available || !oauth) return disabled({ blockers: execution.blockers })
   const built = buildCommand(operation, body, gate.token, oauth.redirectUri)
@@ -258,8 +259,9 @@ export function googleCallbackOutcome(
 export async function googleCallbackResponse(
   request: NextRequest,
   stack: GoogleLiveStack | null = googleLiveStack,
+  env: GoogleBusinessProfileEnv = process.env,
 ): Promise<NextResponse> {
-  const outcome = googleCallbackOutcome(new URL(request.url), process.env, stack)
+  const outcome = googleCallbackOutcome(new URL(request.url), env, stack)
   if (outcome.status === "consume") {
     const token = request.cookies.get(sessionCookie)?.value
     const oauth = googleOAuthConfig()

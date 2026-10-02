@@ -135,19 +135,29 @@ export type CapabilityState = {
   whyOff: string
 }
 
+/**
+ * Asking one capability's gate. Lifting the gate out of the capability before
+ * calling it keeps the environment flowing into a plainly named function,
+ * which is the only shape `source-scan.ts` can follow.
+ */
+function isLive(entry: LiveCapability, env: EnvMap): boolean {
+  const gate = entry.live
+  return gate(env)
+}
+
 /** What each live capability would do under the supplied configuration. */
 export function liveCapabilityStates(env: EnvMap): CapabilityState[] {
-  return liveCapabilities.map(capability => ({
-    id: capability.id,
-    name: capability.name,
-    live: capability.live(env),
-    whyOff: capability.whyOff,
+  return liveCapabilities.map(entry => ({
+    id: entry.id,
+    name: entry.name,
+    live: isLive(entry, env),
+    whyOff: entry.whyOff,
   }))
 }
 
 /** Capability ids that the supplied configuration would switch on. */
 export function liveCapabilityIds(env: EnvMap): CapabilityId[] {
-  return liveCapabilities.filter(capability => capability.live(env)).map(capability => capability.id)
+  return liveCapabilities.filter(entry => isLive(entry, env)).map(entry => entry.id)
 }
 
 export function capability(id: CapabilityId): LiveCapability {

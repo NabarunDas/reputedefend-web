@@ -15,6 +15,9 @@ import { sessionCookie } from "@/lib/auth/config"
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
 const orderId = "55555555-5555-4555-8555-555555555555"
+// Relative to the run, because the command refuses an expiry in the past and
+// a fixed date turns these cases into failures on whichever day it arrives.
+const expiresAt = new Date(Date.now() + 86_400_000).toISOString()
 
 function req(body: unknown) {
   return new NextRequest(`${origin}/api/operations/payments`, {
@@ -37,9 +40,9 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("admin payment commands", () => {
   it("issues a Guided payment action without persisting the raw secret", async () => {
-    mocks.rpc.mockResolvedValue({ status: "success", id: orderId, expiresAt: "2026-10-02T00:00:00.000Z" })
+    mocks.rpc.mockResolvedValue({ status: "success", id: orderId, expiresAt })
     const ok = await paymentCommand(req({
-      operation: "issue_guided_payment_action", serviceOrderId: orderId, version: 1, expiresAt: "2026-10-02T00:00:00.000Z",
+      operation: "issue_guided_payment_action", serviceOrderId: orderId, version: 1, expiresAt,
     }))
     expect(ok.status).toBe(200)
     const body = await ok.json() as { actionUrl?: string }
@@ -68,13 +71,13 @@ describe("admin payment commands", () => {
 
   it("rejects invoice fallback without an obligation and maps reauth", async () => {
     const denied = await paymentCommand(req({
-      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, expiresAt: "2026-10-02T00:00:00.000Z",
+      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, expiresAt,
     }))
     expect(denied.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const reauth = await paymentCommand(req({
-      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, obligationId: orderId, expiresAt: "2026-10-02T00:00:00.000Z",
+      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, obligationId: orderId, expiresAt,
     }))
     expect(reauth.status).toBe(403)
     expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })

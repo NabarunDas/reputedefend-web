@@ -16,6 +16,9 @@ import { sessionCookie } from "@/lib/auth/config"
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
 const coverageId = "55555555-5555-4555-8555-555555555555"
+// Relative to the run, because the command refuses an expiry in the past and
+// a fixed date turns these cases into failures on whichever day it arrives.
+const expiresAt = new Date(Date.now() + 86_400_000).toISOString()
 
 function req(body: unknown) {
   return new NextRequest(`${origin}/api/operations/guard`, {
@@ -38,9 +41,9 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("guard admin commands", () => {
   it("issues a Guard permission link without persisting the raw secret", async () => {
-    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, expiresAt: "2026-10-02T00:00:00.000Z" })
+    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, expiresAt })
     const ok = await guardCommand(req({
-      operation: "issue_permission_action", coverageId, expiresAt: "2026-10-02T00:00:00.000Z",
+      operation: "issue_permission_action", coverageId, expiresAt,
     }))
     expect(ok.status).toBe(200)
     const body = await ok.json() as { actionUrl?: string }
@@ -114,9 +117,9 @@ describe("guard admin commands", () => {
   })
 
   it("does not show a newly generated permission secret on receipt replay", async () => {
-    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, replay: true, expiresAt: "2026-10-02T00:00:00.000Z" })
+    mocks.rpc.mockResolvedValue({ status: "success", id: coverageId, replay: true, expiresAt })
     const replay = await guardCommand(req({
-      operation: "issue_permission_action", coverageId, expiresAt: "2026-10-02T00:00:00.000Z",
+      operation: "issue_permission_action", coverageId, expiresAt,
     }))
     expect(replay.status).toBe(200)
     const body = await replay.json() as { actionUrl?: string; message?: string }

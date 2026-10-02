@@ -160,8 +160,18 @@ describe("workspace accessibility invariants", () => {
 
   it("marks the current page in the navigation landmark", () => {
     const nav = read(new URL("app/admin-nav.tsx", adminRoot).pathname)
+    const model = read(new URL("app/admin-nav-model.ts", adminRoot).pathname)
     expect(nav).toMatch(/aria-label="Admin workspace"/)
-    expect(nav).toMatch(/aria-current=\{item\.match\(pathname\) \? "page" : undefined\}/)
+    expect(nav).toMatch(/aria-current=\{link\.match\(pathname\) \? "page" : undefined\}/)
+    expect(nav.match(/aria-current=/g)).toHaveLength(1)
+    expect(nav).not.toMatch(/<summary[^>]*aria-current/)
+    expect(model).toMatch(/function guardOverview/)
+    expect(model).toMatch(/!section\(pathname, "\/guard\/checks"\)/)
+    expect(model).toMatch(/!section\(pathname, "\/guard\/alerts"\)/)
+    const layout = read(new URL("app/layout.tsx", adminRoot).pathname)
+    const shell = read(new URL("app/admin-shell.tsx", adminRoot).pathname)
+    expect(layout).toMatch(/className="skip-link" href="#main-content"/)
+    expect(shell).toMatch(/id="main-content"/)
   })
 
   it("keeps every scrollable table reachable from the keyboard", () => {

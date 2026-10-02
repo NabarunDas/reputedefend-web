@@ -31,7 +31,7 @@ Complete. Extends the model to many cases at once, which UX-1 explicitly refuses
 
 ## UX-4 — Today as an operator home
 
-In progress. Turns Today from a metrics page into the place the working day starts: what needs doing now, ordered by the priority band the UX-1 resolver already chose, drawn from the UX-3 batch projection in chunks of fifty rather than from a separate ranking or a wider query. It adds no migration, no urgency score and no service level. See ux-today-workbench.md. It stays in progress until it has been independently verified and merged. UX-5 is not started.
+Complete. Today is now the place the working day starts: what needs doing now, ordered by the priority band the UX-1 resolver already chose, drawn from the UX-3 batch projection in chunks of fifty rather than from a separate ranking or a wider query. It adds no migration, no urgency score and no service level. See ux-today-workbench.md. UX-5 is not started.
 
 ## UX-5 — Navigation and information architecture
 

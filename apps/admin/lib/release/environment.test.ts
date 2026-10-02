@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { adminLaunchBlocking, computedEnvFamilies, environmentContract, expectedAbsentAtCutover, variable } from "./environment"
 import { containsSecret } from "./secrets"
-import { environmentReads, unsupportedEnvironmentAccess } from "./source-scan"
+import { environmentFamilies, environmentReads, unsupportedEnvironmentAccess } from "./source-scan"
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url))
 const ignoredDirectories = new Set(["node_modules", ".git", ".next", "dist", "coverage", "out"])
@@ -29,6 +29,7 @@ const isTestFile = (path: string) => /\.test\.|\/testing\/|^test\/|^scripts\//.t
 const allReads = new Map<string, string[]>()
 const productionReads = new Map<string, string[]>()
 const unsupportedAccess: { file: string; unsupported: string[] }[] = []
+const familyPrefixes = new Set<string>()
 for (const file of sourceFiles()) {
   const path = relative(repoRoot, file).replaceAll("\\", "/")
   const source = readFileSync(file, "utf8")
@@ -39,6 +40,7 @@ for (const file of sourceFiles()) {
   if (!isTestFile(path)) {
     const unsupported = unsupportedEnvironmentAccess(source)
     if (unsupported.length > 0) unsupportedAccess.push({ file: path, unsupported })
+    for (const prefix of environmentFamilies(source)) familyPrefixes.add(prefix)
   }
 }
 
@@ -179,5 +181,13 @@ describe("production environment contract", () => {
     expect(computedEnvFamilies.map(entry => entry.pattern)).toEqual(["COMMUNICATIONS_LINK_SECRET_V{n}"])
     const link = readFileSync(new URL("../communications/link.ts", import.meta.url), "utf8")
     expect(link).toContain("COMMUNICATIONS_LINK_SECRET_V${version}")
+  })
+
+  it("declares every computed name family production source reads", () => {
+    // A computed key is the one read whose name cannot be recovered from the
+    // source. It is allowed only while the contract names its prefix, so a
+    // new one is a test failure rather than a variable nothing classifies.
+    const declared = computedEnvFamilies.map(entry => entry.pattern.replace("{n}", ""))
+    expect([...familyPrefixes].sort()).toEqual(declared.sort())
   })
 })

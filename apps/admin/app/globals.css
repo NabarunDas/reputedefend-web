@@ -248,6 +248,7 @@ button, input, textarea, select { font: inherit; }
 h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .75rem; }
 h2 { font-size: 1.05rem; margin: 0 0 .65rem; }
 h3 { font-size: 1rem; margin: 0 0 .4rem; }
+h4 { font-size: .95rem; margin: 0 0 .4rem; }
 p { line-height: 1.55; margin: 0 0 .85rem; }
 p:last-child { margin-bottom: 0; }
 
@@ -331,6 +332,8 @@ button:disabled { opacity: .65; cursor: not-allowed; }
   font-weight: 700;
 }
 .button-link:hover { color: #fff; background: var(--green-dark); }
+.button-link.secondary { background: var(--paper); color: var(--green-dark); border: 1px solid var(--line); }
+.button-link.secondary:hover { background: var(--surface); color: var(--green-dark); border-color: var(--green); }
 .button-row, .filters, .pagination {
   display: flex;
   gap: 1rem;
@@ -473,6 +476,113 @@ summary { cursor: pointer; }
   font-weight: 700;
 }
 
+/* --- Case cockpit ------------------------------------------------------ */
+
+.cockpit-header .cockpit-parties { color: var(--ink); font-size: 1.02rem; }
+.cockpit-header .badge-row { margin: .6rem 0 .5rem; }
+.cockpit-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem 1.1rem;
+  margin: 0;
+  font-size: .92rem;
+}
+
+.cockpit-group { display: grid; gap: 1.15rem; min-width: 0; }
+.cockpit-group-heading {
+  margin: .5rem 0 0;
+  padding-bottom: .5rem;
+  font-size: 1.2rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.cockpit-split {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 1.15rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.cockpit-next { border-left: 3px solid var(--green); }
+.cockpit-next h2 { font-size: 1.3rem; margin-bottom: .55rem; }
+.cockpit-next .badge-row { margin-bottom: .7rem; }
+.cockpit-owner { font-weight: 700; }
+.cockpit-overdue { color: var(--danger); font-weight: 700; }
+
+/* Stacked rather than two columns: the snapshot sits in a narrow side
+   column, and a value like "ProfileRelaunch" needs the full width of it. */
+.cockpit-snapshot dl { grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; }
+.cockpit-snapshot dt { font-size: .85rem; }
+.cockpit-snapshot dd { margin: .1rem 0 .6rem; font-weight: 700; overflow-wrap: anywhere; }
+.cockpit-snapshot dd:last-child { margin-bottom: 0; }
+
+/* Wraps onto a second row rather than scrolling sideways, so a phase is
+   never half visible at the edge of the strip. */
+.journey {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.9rem, 1fr));
+  gap: .55rem;
+}
+.journey-step {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: .45rem;
+  padding: .6rem .5rem;
+  background: var(--paper);
+  min-width: 0;
+}
+.journey-step p { margin: 0; overflow-wrap: anywhere; }
+.journey-step p + p { margin-top: .2rem; }
+.journey-mark { font-weight: 800; line-height: 1.2; }
+.journey-label { font-weight: 700; font-size: .85rem; }
+.journey-state { font-size: .8rem; color: var(--muted); }
+.journey-complete { border-left-color: var(--green); }
+.journey-complete .journey-mark { color: var(--green); }
+.journey-current { border-left-color: var(--accent); background: color-mix(in srgb, var(--lime) 32%, var(--surface)); }
+.journey-current .journey-mark { color: var(--green-dark); }
+.journey-upcoming { border-left-color: var(--line); }
+.journey-upcoming .journey-mark, .journey-upcoming .journey-label { color: var(--muted); }
+.journey-needs-attention { border-left-color: var(--warning); background: #fdf5e6; }
+.journey-needs-attention .journey-mark { color: var(--warning); }
+.journey-step[aria-current="step"] { box-shadow: inset 0 0 0 1px var(--green); }
+
+.cockpit-blockers { border-left: 3px solid var(--danger); }
+
+.notice-list { list-style: none; margin: 0; padding: 0; }
+.notice-list > li { padding: .95rem 0; border-bottom: 1px solid var(--line); }
+.notice-list > li:first-child { padding-top: .25rem; }
+.notice-list > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.notice-list h3 { margin: 0 0 .35rem; }
+.notice-list p { margin: 0 0 .45rem; }
+.notice-list p:last-child { margin-bottom: 0; }
+.notice-list .badge-row { margin-bottom: .4rem; }
+
+.prerequisite-group + .prerequisite-group { margin-top: 1.35rem; }
+.prerequisite-group h3 { margin-bottom: .4rem; }
+.prerequisite-list { list-style: none; margin: 0; padding: 0; }
+.prerequisite-item {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  gap: .15rem .6rem;
+  padding: .7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.prerequisite-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.prerequisite-item p { margin: 0; }
+.prerequisite-mark { grid-column: 1; grid-row: 1; font-weight: 800; text-align: center; }
+.prerequisite-label { grid-column: 2; grid-row: 1; font-weight: 700; }
+.prerequisite-state { grid-column: 3; grid-row: 1; font-size: .85rem; color: var(--muted); white-space: nowrap; }
+.prerequisite-detail { grid-column: 2 / -1; grid-row: 2; }
+.prerequisite-success .prerequisite-mark { color: var(--green); }
+.prerequisite-info .prerequisite-mark { color: var(--green-dark); }
+.prerequisite-warning .prerequisite-mark { color: var(--warning); }
+.prerequisite-danger .prerequisite-mark { color: var(--danger); }
+.prerequisite-neutral .prerequisite-mark { color: var(--muted); }
+
 @media (max-width: 900px) {
   .admin-shell {
     display: block;
@@ -509,6 +619,16 @@ summary { cursor: pointer; }
   .admin-main { padding: 1rem .9rem 2rem; }
   .comparison { grid-template-columns: 1fr; }
   dl { grid-template-columns: 1fr; }
+  .cockpit-split { grid-template-columns: minmax(0, 1fr); }
+  .journey { grid-template-columns: minmax(0, 1fr); }
+  .journey-step {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0 .6rem;
+  }
+  .journey-step p + p { margin-top: 0; }
+  .journey-mark { text-align: center; }
 }
 
 @media (max-width: 480px) {

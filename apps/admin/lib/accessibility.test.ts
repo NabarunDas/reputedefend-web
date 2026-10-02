@@ -27,6 +27,44 @@ function files(directory: URL, match: (name: string) => boolean): string[] {
 const pages = files(new URL("app/", adminRoot), name => name === "page.tsx")
 const components = files(new URL("app/", adminRoot), name => name.endsWith(".tsx") && !name.includes(".test."))
 
+/**
+ * The components a page may delegate its single `<h1>` to, and the file each
+ * one lives in. This is a closed list rather than a naming convention: a
+ * component called `EmptyHeader` would satisfy a convention while rendering
+ * no heading at all, so an unlisted component counts for nothing however it
+ * is named. The list is itself checked against the source below, so adding a
+ * name here is not enough either — the component has to render the heading.
+ */
+const h1Providers: Record<string, string> = {
+  PageHeader: "app/ui.tsx",
+  CaseHeader: "app/cases/[id]/cockpit/header.tsx",
+}
+
+const literalH1s = (source: string) => (source.match(/<h1/g) ?? []).length
+
+const providersUsed = (source: string) =>
+  Object.keys(h1Providers).filter(name => new RegExp(`<${name}[\\s/>]`).test(source))
+
+/**
+ * Whether a page provides its heading, provides more than one, or provides
+ * none. A provider counts as a heading, because that is what it renders.
+ *
+ * Literal `<h1>`s are counted one by one. Providers are counted once per
+ * distinct component rather than once per occurrence: several pages return
+ * the same `PageHeader` from alternative branches — an empty state and a
+ * populated one — and render exactly one of them. Repeating one provider is
+ * that pattern. A literal heading beside a provider, or two different
+ * providers, is not, and is reported. Reading source cannot prove those are
+ * mutually exclusive either, so the check errs towards being told: no page
+ * does it today, and one that needs to can be looked at rather than passing
+ * in silence.
+ */
+function pageHeading(source: string): "ok" | "missing" | "duplicate" {
+  const headings = literalH1s(source) + providersUsed(source).length
+  if (headings === 0) return "missing"
+  return headings === 1 ? "ok" : "duplicate"
+}
+
 describe("workspace accessibility invariants", () => {
   it("finds the pages and components these checks cover", () => {
     expect(pages.length).toBeGreaterThan(30)
@@ -34,12 +72,60 @@ describe("workspace accessibility invariants", () => {
   })
 
   it("gives every page exactly one top-level heading", () => {
-    // Pages use the shared PageHeader, which renders the single h1. A page
-    // that writes its own h1 is fine; a page with neither is not.
-    const headless = pages.filter(file => !/<h1|<PageHeader/.test(read(file))).map(relative)
+    const headless = pages.filter(file => pageHeading(read(file)) === "missing").map(relative)
     expect(headless).toEqual([])
-    const doubled = pages.filter(file => (read(file).match(/<h1/g) ?? []).length > 1).map(relative)
+    const doubled = pages.filter(file => pageHeading(read(file)) === "duplicate").map(relative)
     expect(doubled).toEqual([])
+  })
+
+  it("accepts a heading only from a component that renders one", () => {
+    // Guards the allowlist rather than the pages: a listed component that
+    // stops rendering its h1, or starts rendering two, fails here.
+    const headings = Object.fromEntries(Object.entries(h1Providers).map(([name, file]) => {
+      const source = read(new URL(file, adminRoot).pathname)
+      return [name, new RegExp(`function ${name}\\b`).test(source) ? literalH1s(source) : "not declared there"]
+    }))
+    expect(headings).toEqual(Object.fromEntries(Object.keys(h1Providers).map(name => [name, 1])))
+  })
+
+  it("counts a page's headings whether it writes them or delegates them", () => {
+    const page = (body: string) => `export default function Page() { return ${body} }`
+    const literal = "<h1>Title</h1>"
+    const viaPage = "<PageHeader title=\"Title\" />"
+    const viaCase = "<CaseHeader c={c} flow={flow} />"
+
+    expect({
+      none: pageHeading(page("<p>nothing</p>")),
+      // The regression the allowlist exists for: a component nobody has
+      // checked is not a heading, however it is named.
+      unknownProvider: pageHeading(page("<FooHeader />")),
+      otherUnknownProvider: pageHeading(page("<SectionHeader title=\"x\" />")),
+
+      literal: pageHeading(page(literal)),
+      pageHeader: pageHeading(page(viaPage)),
+      caseHeader: pageHeading(page(viaCase)),
+      // Alternative branches of one provider are one heading.
+      sameProviderTwice: pageHeading(page(`a ? ${viaPage} : ${viaPage}`)),
+
+      twoLiterals: pageHeading(page(`<>${literal}${literal}</>`)),
+      literalAndPageHeader: pageHeading(page(`<>${literal}${viaPage}</>`)),
+      literalAndCaseHeader: pageHeading(page(`<>${literal}${viaCase}</>`)),
+      twoProviders: pageHeading(page(`<>${viaPage}${viaCase}</>`)),
+    }).toEqual({
+      none: "missing",
+      unknownProvider: "missing",
+      otherUnknownProvider: "missing",
+
+      literal: "ok",
+      pageHeader: "ok",
+      caseHeader: "ok",
+      sameProviderTwice: "ok",
+
+      twoLiterals: "duplicate",
+      literalAndPageHeader: "duplicate",
+      literalAndCaseHeader: "duplicate",
+      twoProviders: "duplicate",
+    })
   })
 
   it("labels every visible input, select and textarea", () => {

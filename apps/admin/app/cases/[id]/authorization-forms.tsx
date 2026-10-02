@@ -73,7 +73,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
   const ready = data.readiness
   const managed = data.track === "MANAGED"
   return <section className="panel">
-    <h2>Agreements & permissions</h2>
+    <h3>Agreements & permissions</h3>
     <p>{AUTHORIZATION_READINESS_NOTE}</p>
     <p className="badge-row">
       <Badge tone={data.membershipStatus === "verified" ? "success" : "warning"}>Business authority · {data.membershipStatus}</Badge>
@@ -86,7 +86,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
     </p>
     <p className="muted">Marketing or setup consent cannot satisfy case-management permission. An approved pack is not permission.</p>
     {data.agreements.length > 0 && <div>
-      <h3>Issued agreement snapshots</h3>
+      <h4>Issued agreement snapshots</h4>
       {data.agreements.map(row => <details key={row.id}>
         <summary>{row.kind} · version {row.versionNumber} · {row.title}</summary>
         <p>Created {row.createdAt}</p>
@@ -96,7 +96,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
       </details>)}
     </div>}
     {data.authorizations.map(row => <article key={row.id} className="evidence-document">
-      <h3>{row.kind} · {row.status}</h3>
+      <h4>{row.kind} · {row.status}</h4>
       <p>Accepted {row.acceptedAt} · {row.acceptedEmailMasked} · source {row.source}</p>
       {row.status === "ACTIVE" && <>
         <details><summary>Issue a customer revocation action</summary>
@@ -133,7 +133,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
         <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm this open action should be revoked.</label>
       </CommandForm>
     </details>)}
-    <h3>Google Manager access</h3>
+    <h4>Google Manager access</h4>
     {managed ? <>
       <p className="notice-danger">{MANAGER_PASSWORD_WARNING}</p>
       {data.managerAccess && <p>Current: {data.managerAccess.status} · {data.managerAccess.accessLevel}</p>}

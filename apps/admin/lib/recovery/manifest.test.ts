@@ -16,26 +16,23 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("records the UX-3 migration as repository head and Step 23 as the dev head", () => {
-    // The repository is one migration ahead of the dev project. The UX-3
-    // batch projection is committed for independent review and has not been
-    // applied to profilerelaunch-dev, so the two heads differ on purpose.
-    expect(migrationHead.filename).toBe("20261002182320_admin_case_flow_batch_v1.sql")
+  it("records the UX-3 migration as both the repository head and the dev head", () => {
+    // The UX-3 batch projection was independently reviewed and applied to
+    // profilerelaunch-dev on 2026-10-02, so the two heads agree again. The
+    // version is the one the remote ledger assigned, which is why the file
+    // was renamed from the version the local CLI generated.
+    expect(migrationHead.filename).toBe("20261002194215_admin_case_flow_batch_v1.sql")
     expect(migrationHead.step).toBe("UX-3 batch CaseFlow fact projection")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
-    expect(appliedMigrationHead.step).toBe("Step 23 quote surface fixes")
-    expect(appliedMigrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead).toBe(migrationHead)
   })
 
   it("never marks any migration as safe to replay", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has exactly the UX-3 projection waiting to be applied", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261002182320_admin_case_flow_batch_v1.sql",
-    ])
+  it("has nothing waiting to be applied", () => {
+    expect(pendingMigrations()).toEqual([])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

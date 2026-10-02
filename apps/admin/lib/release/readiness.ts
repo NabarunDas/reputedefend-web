@@ -239,13 +239,12 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head is 20261001220255 quote_surface_fixes_v1 and one reviewed migration, 20261002182320 admin_case_flow_batch_v1, is waiting to be applied.",
-    status: "BLOCKED",
+      "The applied migration head is 20261002194215 admin_case_flow_batch_v1 and the repository has no migration waiting to be applied.",
+    status: "READY",
     evidence:
-      "apps/admin/lib/recovery/manifest.ts records the chain; pendingMigrations() returns the UX-3 batch CaseFlow projection and manifest.test.ts asserts it is the only entry. The upgrade rehearsal applies it onto the Step 23 chain in PGlite; nothing has applied it to profilerelaunch-dev.",
+      "The UX-3 batch CaseFlow projection was independently reviewed, applied to profilerelaunch-dev on 2026-10-02 and verified live. The remote ledger assigned 20261002194215, so the repository file was renamed to match and its contents left untouched. apps/admin/lib/recovery/manifest.ts records the chain, pendingMigrations() is empty, and manifest.test.ts asserts the applied head is the chain head.",
     codeAction: null,
-    externalAction:
-      "Apply 20261002182320_admin_case_flow_batch_v1.sql to profilerelaunch-dev once it has been independently reviewed, then set appliedToDev to true in the manifest.",
+    externalAction: null,
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:

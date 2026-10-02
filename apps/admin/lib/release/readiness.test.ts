@@ -124,9 +124,6 @@ describe("readiness model", () => {
     const blockers = adminAccessBlockers()
     expect(blockers.map(entry => entry.id).sort()).toEqual([
       "email.auth-otp",
-      // The UX-3 batch projection is written and rehearsed in source; what
-      // remains is a person reviewing it and applying it to the project.
-      "supabase.applied-head",
       "supabase.migration-ledger-discrepancy",
       "vercel.admin-project-and-domain",
       "vercel.environment-contract",
@@ -156,17 +153,16 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    // The repository is ahead of dev while the UX-3 batch projection waits
-    // for review, so this item names both heads and is blocked until the
-    // reviewed migration is actually applied.
-    expect(pendingMigrations().map(entry => entry.version)).toEqual([migrationHead.version])
+    // The UX-3 batch projection has been applied to dev, so the repository
+    // and the project agree on one head and nothing is waiting to be applied.
+    expect(pendingMigrations()).toEqual([])
+    expect(appliedMigrationHead).toBe(migrationHead)
     const supabase = item("supabase.applied-head")
-    expect(supabase?.status).toBe("BLOCKED")
-    expect(supabase?.requirement).toContain(appliedMigrationHead.version)
-    expect(supabase?.requirement).toContain("quote_surface_fixes_v1")
+    expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(migrationHead.version)
     expect(supabase?.requirement).toContain("admin_case_flow_batch_v1")
-    expect(supabase?.externalAction).toContain("profilerelaunch-dev")
+    expect(supabase?.evidence).toContain("profilerelaunch-dev")
+    expect(supabase?.externalAction).toBeNull()
   })
 })
 
@@ -247,9 +243,9 @@ describe("the cutover document matches the model", () => {
 
   it("reports the status counts the model actually holds", () => {
     const counts = statusCounts()
-    expect(counts).toEqual({ READY: 11, READY_DISABLED: 8, ACTION_REQUIRED: 9, BLOCKED: 4, DEFERRED: 3 })
+    expect(counts).toEqual({ READY: 12, READY_DISABLED: 8, ACTION_REQUIRED: 9, BLOCKED: 3, DEFERRED: 3 })
     expect(doc).toContain(
-      "Eleven items are `READY`, eight are `READY_DISABLED`, nine are\n`ACTION_REQUIRED`, four are `BLOCKED` and three are `DEFERRED`",
+      "Twelve items are `READY`, eight are `READY_DISABLED`, nine are\n`ACTION_REQUIRED`, three are `BLOCKED` and three are `DEFERRED`",
     )
   })
 })

@@ -59,10 +59,10 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail now carries the UX-3 batch projection, so this rehearsal is
-    // also what proves that migration applies cleanly onto the real chain
-    // before anyone applies it to a running database.
-    expect(pending.at(-1)?.version).toBe("20261002182320")
+    // The tail carries the UX-3 batch projection, which is what proved that
+    // migration applied cleanly onto the real chain before it was applied to
+    // the dev project, and still proves it for any later rebuild.
+    expect(pending.at(-1)?.version).toBe("20261002194215")
     expect(upgradeMs).toBeGreaterThan(0)
     expect(await count(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name = 'provider_oauth_states'",

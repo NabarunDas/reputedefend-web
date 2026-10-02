@@ -4,8 +4,10 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
-// Remote history contains only what the dev project actually received, so a
-// reviewed migration still waiting to be applied is absent from this fixture.
+// Remote history contains only what the dev project actually received. Every
+// migration in the tracked chain has now been applied, so this fixture is the
+// whole manifest; a reviewed migration still waiting to be applied would be
+// absent from it.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -24,23 +26,26 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("accepts the one pending migration as a candidate rather than a replay", () => {
-    // The UX-3 batch projection is in the repository and in the manifest but
-    // not in remote history, which is exactly the shape of a migration
-    // waiting for review. Offering it as a candidate must stay clean; it is
-    // only a replay once dev has actually received it.
+  it("has no pending migration now the UX-3 projection is applied", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual(["20261002182320_admin_case_flow_batch_v1.sql"])
-    expect(pending.every(entry => entry.kind === "additive")).toBe(true)
-
-    const result = validateMigrationHistory({
-      repoFilenames,
-      remote: healthyRemote,
-      candidates: pending.map(entry => entry.filename),
-    })
+    expect(pending).toEqual([])
+    const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)
+  })
+
+  it("refuses to replay the UX-3 projection now that dev has received it", () => {
+    // The remote ledger assigned 20261002194215 rather than the version the
+    // local CLI generated, so the file was renamed to match. Offering it again
+    // must read as a replay of an applied migration, not as a new change.
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261002194215_admin_case_flow_batch_v1.sql"],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("fails closed when remote history was never collected", () => {

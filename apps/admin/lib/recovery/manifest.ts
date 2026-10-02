@@ -307,11 +307,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "quote action scope and quote list", probe: "public.admin_quote_list_v1" },
   },
   {
-    version: "20261002182320",
-    filename: "20261002182320_admin_case_flow_batch_v1.sql",
+    // Applied to profilerelaunch-dev on 2026-10-02. The remote ledger assigned
+    // 20261002194215, not the version the local CLI generated, so the file was
+    // renamed to match the applied one and its contents left untouched.
+    version: "20261002194215",
+    filename: "20261002194215_admin_case_flow_batch_v1.sql",
     step: "UX-3 batch CaseFlow fact projection",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "batch case flow projection", probe: "public.admin_case_flow_facts_v1" },

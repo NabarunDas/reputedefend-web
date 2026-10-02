@@ -26,7 +26,7 @@ public.admin_case_flow_facts_v1(p_token text, p_case_ids uuid[]) RETURNS jsonb
 
 It returns `{"cases": [ <fact tree>, ... ]}`, one tree per requested case that exists, each carrying its own `caseId`. One call returns the complete CaseFlow fact tree for every requested case; there is no per-case call anywhere in the path.
 
-The migration is `supabase/migrations/20261002182320_admin_case_flow_batch_v1.sql`, generated with `npx supabase migration new admin_case_flow_batch_v1`. It adds a function and nothing else: no table, no column, no view, no trigger, no policy.
+The migration is `supabase/migrations/20261002194215_admin_case_flow_batch_v1.sql`. It adds a function and nothing else: no table, no column, no view, no trigger, no policy. Its header comment was written before the migration was applied and still describes it as unapplied, with the version the local CLI first generated; that text is deliberately left alone, because the file is now an applied migration and must stay byte-for-byte as applied. The applied state is recorded here and in the recovery manifest instead.
 
 ### It supplies facts, it does not make decisions
 
@@ -208,13 +208,24 @@ All are Server Components. There is no client-side CaseFlow resolution, no fetch
 
 ## Migration status
 
-**The migration has not been applied to the remote database.** It exists in the repository only.
+**The migration has been applied to the development database.** It was reviewed independently and applied once, by hand, outside this repository.
 
-- repository head: `20261002182320_admin_case_flow_batch_v1.sql`
-- applied head on `profilerelaunch-dev`: `20261001220255`
-- status: **Repository migration pending remote application**
+- migration file: `supabase/migrations/20261002194215_admin_case_flow_batch_v1.sql`
+- applied to: `profilerelaunch-dev`
+- applied on: 2026-10-02
+- remote migration head afterwards: `20261002194215 admin_case_flow_batch_v1`
+- repository head: `20261002194215`, the same
+- live function: `public.admin_case_flow_facts_v1(text, uuid[])`
 
-Nothing in this work created a Supabase branch, executed schema-changing SQL against a remote project, or created any cost-bearing cloud resource. The recovery manifest records the migration as `appliedToDev: false`, and the release readiness check reports `supabase.applied-head` as `BLOCKED` with the external action needed to clear it, so the divergence is visible rather than assumed. The migration chain, the recovery rehearsal and the upgrade path are all tested against it in PGlite, which is local and disposable.
+The remote ledger assigned `20261002194215` rather than the version the local CLI had generated, so the repository file was renamed to match the applied one. Its contents were not touched: the file is byte-for-byte the SQL that was applied.
+
+The live function was verified on the project after application: `SECURITY DEFINER` is on, `search_path` is pinned empty, `service_role` can execute it, `PUBLIC`, `anon` and `authenticated` cannot, and an invalid Admin session returns `NULL` rather than data. The Supabase security advisor reported no new finding; the existing unrelated warnings are unchanged.
+
+The recovery manifest now records the migration as `appliedToDev: true`, `pendingMigrations()` is empty, and the release readiness check reports `supabase.applied-head` as `READY` with no external action left on it.
+
+This is the development project. Nothing has been applied to a production database, no Supabase branch was created, and no cost-bearing cloud resource exists. The migration chain, the recovery rehearsal and the upgrade path continue to be tested in PGlite, which is local and disposable.
+
+The historical foundation migration-ledger discrepancy is a separate, older matter and is untouched by this. `20260915120000_core_data_foundation_v1.sql`, `20260915193000_case_intake_transaction_v1.sql` and `20260916000000_relaunch_guard_data_foundation_v1.sql` are present in the dev schema but absent from the remote ledger, which begins at `20260917080553_single_admin_auth_v1`. `supabase.migration-ledger-discrepancy` remains `BLOCKED` and the Step 24 production topology decision remains outstanding.
 
 No provider state changed: outgoing and inbound mail remain disabled, Stripe remains disabled, the Google live stack remains off, Guard live automation remains disabled, privacy deletion remains disabled, Cron is unchanged and Step 22B remains deferred.
 

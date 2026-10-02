@@ -24,10 +24,20 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("has no pending migration after the reviewed Step 23 migration is applied", () => {
+  it("accepts the one pending migration as a candidate rather than a replay", () => {
+    // The UX-3 batch projection is in the repository and in the manifest but
+    // not in remote history, which is exactly the shape of a migration
+    // waiting for review. Offering it as a candidate must stay clean; it is
+    // only a replay once dev has actually received it.
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
-    const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
+    expect(pending.map(entry => entry.filename)).toEqual(["20261002182320_admin_case_flow_batch_v1.sql"])
+    expect(pending.every(entry => entry.kind === "additive")).toBe(true)
+
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: pending.map(entry => entry.filename),
+    })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)

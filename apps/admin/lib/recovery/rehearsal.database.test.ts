@@ -48,10 +48,10 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(27)
-    // The reviewed Step 23 fix is now applied to dev too, so source and dev
-    // share the same schema head.
-    expect(migrationHead.version).toBe("20261001220255")
+    expect(migrationChain).toHaveLength(28)
+    // The UX-3 batch projection is in source and not yet on dev, so a clean
+    // rebuild carries one migration more than the dev project does.
+    expect(migrationHead.version).toBe("20261002182320")
     expect(appliedMigrationHead.version).toBe("20261001220255")
   })
 
@@ -287,7 +287,7 @@ describe("the recovery fingerprint", () => {
     expect(fingerprint.jobStateCounts["jobs.status=DEAD_LETTER"]).toBe(1)
     expect(fingerprint.outboxCounts).toEqual({ promoted: 1, unpromoted: 1 })
     expect(fingerprint.migrationSequence).toEqual(sequence)
-    expect(fingerprint.schemaHead).toBe("20261001220255")
+    expect(fingerprint.schemaHead).toBe("20261002182320")
   })
 
   it("carries no plaintext customer data", () => {

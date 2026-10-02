@@ -16,10 +16,13 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("records the applied Step 23 migration as both repository and dev head", () => {
-    expect(migrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
-    expect(migrationHead.step).toBe("Step 23 quote surface fixes")
-    expect(migrationHead.appliedToDev).toBe(true)
+  it("records the UX-3 migration as repository head and Step 23 as the dev head", () => {
+    // The repository is one migration ahead of the dev project. The UX-3
+    // batch projection is committed for independent review and has not been
+    // applied to profilerelaunch-dev, so the two heads differ on purpose.
+    expect(migrationHead.filename).toBe("20261002182320_admin_case_flow_batch_v1.sql")
+    expect(migrationHead.step).toBe("UX-3 batch CaseFlow fact projection")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.filename).toBe("20261001220255_quote_surface_fixes_v1.sql")
     expect(appliedMigrationHead.step).toBe("Step 23 quote surface fixes")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
@@ -29,8 +32,10 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no reviewed migration still waiting to be applied", () => {
-    expect(pendingMigrations()).toEqual([])
+  it("has exactly the UX-3 projection waiting to be applied", () => {
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261002182320_admin_case_flow_batch_v1.sql",
+    ])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head is 20261001220255 quote_surface_fixes_v1 and the repository has no migration waiting to be applied. |
+| `supabase.applied-head` | Supabase | BLOCKED | The applied migration head is 20261001220255 quote_surface_fixes_v1 and one reviewed migration, 20261002182320 admin_case_flow_batch_v1, is waiting to be applied. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -74,8 +74,8 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `privacy.deletion-disabled` | Privacy | READY_DISABLED | Physical deletion stays off. A privacy request records the decision and deletes nothing. |
 | `privacy.export-and-holds` | Privacy | READY | A subject access export works and a legal hold blocks deletion in the database, not only in the interface. |
 
-Twelve items are `READY`, eight are `READY_DISABLED`, nine are
-`ACTION_REQUIRED`, three are `BLOCKED` and three are `DEFERRED` — the Step 22B
+Eleven items are `READY`, eight are `READY_DISABLED`, nine are
+`ACTION_REQUIRED`, four are `BLOCKED` and three are `DEFERRED` — the Step 22B
 recovery rehearsal plus the two mail activations, each deferred to its own
 phase.
 

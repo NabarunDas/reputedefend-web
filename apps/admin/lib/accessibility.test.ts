@@ -42,19 +42,27 @@ const h1Providers: Record<string, string> = {
 
 const literalH1s = (source: string) => (source.match(/<h1/g) ?? []).length
 
-const delegatesH1 = (source: string) =>
-  Object.keys(h1Providers).some(name => new RegExp(`<${name}[\\s/>]`).test(source))
+const providersUsed = (source: string) =>
+  Object.keys(h1Providers).filter(name => new RegExp(`<${name}[\\s/>]`).test(source))
 
 /**
- * Whether a page provides its heading, writes two of them, or provides none.
+ * Whether a page provides its heading, provides more than one, or provides
+ * none. A provider counts as a heading, because that is what it renders.
  *
- * Only a literal `<h1>` is counted for duplication. Several pages return a
- * `PageHeader` from more than one branch — an empty state and a populated
- * one, say — and render exactly one of them.
+ * Literal `<h1>`s are counted one by one. Providers are counted once per
+ * distinct component rather than once per occurrence: several pages return
+ * the same `PageHeader` from alternative branches — an empty state and a
+ * populated one — and render exactly one of them. Repeating one provider is
+ * that pattern. A literal heading beside a provider, or two different
+ * providers, is not, and is reported. Reading source cannot prove those are
+ * mutually exclusive either, so the check errs towards being told: no page
+ * does it today, and one that needs to can be looked at rather than passing
+ * in silence.
  */
 function pageHeading(source: string): "ok" | "missing" | "duplicate" {
-  if (literalH1s(source) > 1) return "duplicate"
-  return literalH1s(source) === 1 || delegatesH1(source) ? "ok" : "missing"
+  const headings = literalH1s(source) + providersUsed(source).length
+  if (headings === 0) return "missing"
+  return headings === 1 ? "ok" : "duplicate"
 }
 
 describe("workspace accessibility invariants", () => {
@@ -80,16 +88,44 @@ describe("workspace accessibility invariants", () => {
     expect(headings).toEqual(Object.fromEntries(Object.keys(h1Providers).map(name => [name, 1])))
   })
 
-  it("does not treat an unknown header component as a heading", () => {
-    // The regression the allowlist exists for: a page whose only heading-ish
-    // element is a component nobody has checked has no heading.
-    expect(pageHeading("export default function Page() { return <FooHeader /> }")).toBe("missing")
-    expect(pageHeading("export default function Page() { return <SectionHeader title=\"x\" /> }")).toBe("missing")
-    expect(pageHeading("export default function Page() { return <p>nothing</p> }")).toBe("missing")
-    expect(pageHeading("export default function Page() { return <PageHeader title=\"x\" /> }")).toBe("ok")
-    expect(pageHeading("export default function Page() { return <CaseHeader c={c} flow={flow} /> }")).toBe("ok")
-    expect(pageHeading("export default function Page() { return <h1>Title</h1> }")).toBe("ok")
-    expect(pageHeading("export default function Page() { return <><h1>One</h1><h1>Two</h1></> }")).toBe("duplicate")
+  it("counts a page's headings whether it writes them or delegates them", () => {
+    const page = (body: string) => `export default function Page() { return ${body} }`
+    const literal = "<h1>Title</h1>"
+    const viaPage = "<PageHeader title=\"Title\" />"
+    const viaCase = "<CaseHeader c={c} flow={flow} />"
+
+    expect({
+      none: pageHeading(page("<p>nothing</p>")),
+      // The regression the allowlist exists for: a component nobody has
+      // checked is not a heading, however it is named.
+      unknownProvider: pageHeading(page("<FooHeader />")),
+      otherUnknownProvider: pageHeading(page("<SectionHeader title=\"x\" />")),
+
+      literal: pageHeading(page(literal)),
+      pageHeader: pageHeading(page(viaPage)),
+      caseHeader: pageHeading(page(viaCase)),
+      // Alternative branches of one provider are one heading.
+      sameProviderTwice: pageHeading(page(`a ? ${viaPage} : ${viaPage}`)),
+
+      twoLiterals: pageHeading(page(`<>${literal}${literal}</>`)),
+      literalAndPageHeader: pageHeading(page(`<>${literal}${viaPage}</>`)),
+      literalAndCaseHeader: pageHeading(page(`<>${literal}${viaCase}</>`)),
+      twoProviders: pageHeading(page(`<>${viaPage}${viaCase}</>`)),
+    }).toEqual({
+      none: "missing",
+      unknownProvider: "missing",
+      otherUnknownProvider: "missing",
+
+      literal: "ok",
+      pageHeader: "ok",
+      caseHeader: "ok",
+      sameProviderTwice: "ok",
+
+      twoLiterals: "duplicate",
+      literalAndPageHeader: "duplicate",
+      literalAndCaseHeader: "duplicate",
+      twoProviders: "duplicate",
+    })
   })
 
   it("labels every visible input, select and textarea", () => {

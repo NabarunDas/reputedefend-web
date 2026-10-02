@@ -510,30 +510,35 @@ summary { cursor: pointer; }
 .cockpit-owner { font-weight: 700; }
 .cockpit-overdue { color: var(--danger); font-weight: 700; }
 
-.cockpit-snapshot dl { grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr); gap: .45rem .75rem; margin: 0; }
+/* Stacked rather than two columns: the snapshot sits in a narrow side
+   column, and a value like "ProfileRelaunch" needs the full width of it. */
+.cockpit-snapshot dl { grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; }
+.cockpit-snapshot dt { font-size: .85rem; }
+.cockpit-snapshot dd { margin: .1rem 0 .6rem; font-weight: 700; overflow-wrap: anywhere; }
+.cockpit-snapshot dd:last-child { margin-bottom: 0; }
 
+/* Wraps onto a second row rather than scrolling sideways, so a phase is
+   never half visible at the edge of the strip. */
 .journey {
   list-style: none;
   margin: 0;
-  padding: 0 0 .4rem;
+  padding: 0;
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(7rem, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(6.9rem, 1fr));
   gap: .55rem;
-  overflow-x: auto;
 }
 .journey-step {
   border: 1px solid var(--line);
   border-left: 3px solid var(--muted);
   border-radius: .45rem;
-  padding: .6rem .7rem;
+  padding: .6rem .5rem;
   background: var(--paper);
   min-width: 0;
 }
 .journey-step p { margin: 0; overflow-wrap: anywhere; }
 .journey-step p + p { margin-top: .2rem; }
 .journey-mark { font-weight: 800; line-height: 1.2; }
-.journey-label { font-weight: 700; font-size: .92rem; }
+.journey-label { font-weight: 700; font-size: .85rem; }
 .journey-state { font-size: .8rem; color: var(--muted); }
 .journey-complete { border-left-color: var(--green); }
 .journey-complete .journey-mark { color: var(--green); }
@@ -615,8 +620,7 @@ summary { cursor: pointer; }
   .comparison { grid-template-columns: 1fr; }
   dl { grid-template-columns: 1fr; }
   .cockpit-split { grid-template-columns: minmax(0, 1fr); }
-  .cockpit-snapshot dl { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); }
-  .journey { grid-auto-flow: row; grid-auto-columns: auto; overflow-x: visible; }
+  .journey { grid-template-columns: minmax(0, 1fr); }
   .journey-step {
     display: grid;
     grid-template-columns: 1.5rem minmax(0, 1fr) auto;

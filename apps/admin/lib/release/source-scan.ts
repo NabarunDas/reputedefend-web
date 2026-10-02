@@ -137,22 +137,19 @@ function isBoundToEnv(before: string): boolean {
 }
 
 /**
- * The call an argument sits in: the callee exactly as written, and the
- * position of the argument.
+ * The callee of the call an argument sits in, exactly as written.
  *
  * A member callee keeps its receiver, so `entry.live(env)` is a different
  * exception from `live(env)` and has to be reviewed as one. A callee that is
  * not a plain name or member path — a call on a call, an index, a parenthesis
  * — resolves to nothing and can never match an exception.
  */
-export function enclosingCall(masked: string, at: number): { callee: string; position: number } | null {
-  let position = 0
+function enclosingCallee(masked: string, at: number): string | null {
   let depth = 0
   for (let index = at - 1; index >= 0; index -= 1) {
     const character = masked[index]
     if (character === ")" || character === "]" || character === "}") depth += 1
     else if (character === "[" || character === "{") depth -= 1
-    else if (character === "," && depth === 0) position += 1
     else if (character === "(") {
       if (depth > 0) {
         depth -= 1
@@ -160,7 +157,7 @@ export function enclosingCall(masked: string, at: number): { callee: string; pos
       }
       const path = `(?:${identifier}\\s*\\??\\s*\\.\\s*)*${identifier}`
       const callee = new RegExp(`(?:^|\\.\\.\\.|[^.?\\w$])(${path})\\s*$`).exec(masked.slice(0, index))
-      return callee ? { callee: callee[1].replace(/\s*\??\s*\.\s*/g, "."), position } : null
+      return callee ? callee[1].replace(/\s*\??\s*\.\s*/g, ".") : null
     }
   }
   return null
@@ -239,9 +236,8 @@ export function processEnvAccesses(source: string, path?: string): EnvAccess[] {
 /** The callee of a reviewed hand-off at this position, if that is what it is. */
 function reviewedCallee(masked: string, start: number, end: number, path: string | undefined): string | null {
   if (!/^\s*[),]/.test(masked.slice(end))) return null
-  const call = enclosingCall(masked, start)
-  if (!call || !isReviewedHandoff(call.callee, path)) return null
-  return call.callee
+  const callee = enclosingCallee(masked, start)
+  return callee !== null && isReviewedHandoff(callee, path) ? callee : null
 }
 
 /** Type annotations that always mean the environment. */

@@ -25,7 +25,7 @@ In order down the page:
 5. **Next action** beside the **case snapshot**.
 6. **Blocking progress**, when there are blockers.
 7. **Other things needing attention**, when there are attention items.
-8. **Before work can begin** — the prerequisite groups, on an open case.
+8. **Case prerequisites** — the prerequisite groups, while that phase is the one worth reading them in.
 9. **Work on this case** — planning, progress, agreements and permissions, tasks, submissions, notes, closure.
 10. **Supporting workspaces** — evidence, communications, related records.
 11. **Case details** — case context, customer preview, technical and operator details.
@@ -67,7 +67,7 @@ A waiting step never gets a button. "Waiting for the customer to upload evidence
 
 The button label is the action: `Create the quote`, `Approve the evidence pack`, `Close the case`. Never `Continue`, `Go` or a bare `Open`.
 
-## Waiting on
+## Who the case is on
 
 The owner enum is untouched; only the wording changes.
 
@@ -81,6 +81,8 @@ The owner enum is untouched; only the wording changes.
 | `NONE` | No waiting label at all |
 
 The sentence follows the action state: `Action owner: You` for `ACTION_REQUIRED` and `READY`, `Waiting on: Customer` for `WAITING`, `Blocked by: ProfileRelaunch` or `Blocked by: System` for `BLOCKED`. The blocked wording uses the organisation voice because "Blocked by: You" would be an odd thing to tell somebody about work they are about to do.
+
+The action card and the case snapshot both get this from `actionOwnershipSummary`, which takes the primary action and returns the label and the name. Neither reads `flow.waitingOn`, which is the primary action's owner whatever the state of that action: on a case the operator has to act on it holds `ADMIN`, so a row labelled "Waiting on" would have told them the case was waiting for themselves. A case with no primary action is a finished case — the resolver proposes a step for every open one — and the snapshot says `Work state: Complete` rather than naming a party nobody is waiting for.
 
 ## Blockers and attention
 
@@ -104,7 +106,21 @@ Rendered from `flow.prerequisites`, group by group, with each item's own state:
 
 A Managed case shows both of its groups and all of their items rather than one authorised flag, including the model's own `AUTHORISATION_READY` item, which is the database's answer rather than this view's. An outstanding item links to where it is dealt with; a satisfied one is plain text. Items are not buttons, because the commands already exist and duplicating them here would be a second way to do the same thing.
 
-A closed case does not show this section. What had to be in place before work began is no longer something to put in place, and showing it would be exactly the stale checklist UX-2 is meant to avoid.
+### When the checklist appears
+
+UX-1 returns the Guided and Managed groups for the whole life of a case, which is right for the model and would be wrong on screen the whole time: a case in Submission does not need its satisfied permissions read back to it, and a case still choosing a service does not yet need requirements it has not reached. So the journey decides, and the `PREREQUISITES` phase state is the whole rule:
+
+| Phase state | Checklist | Typical case |
+| --- | --- | --- |
+| `UPCOMING` | Hidden | Still at Received, Evidence, Assessment or Service |
+| `CURRENT` | Shown | At the prerequisites phase, waiting on an agreement, a permission or a payment |
+| `COMPLETE` | Hidden | Preparation, Submission or Decision, with the prerequisites still holding |
+| `NEEDS_ATTENTION` | Shown | A permission or payment that was met has since been invalidated |
+| Closed case | Hidden | Every phase reads complete, so the rule hides it without a special case |
+
+This is presentation relevance, not eligibility. The page does not ask whether the prerequisites are met; it asks which phase the model says the case is in, and the model has already answered both.
+
+The heading is `Case prerequisites` rather than "Before work can begin" because the section legitimately returns after work has begun — the invalidated-permission row above is exactly that case, and by then the older heading would have been untrue.
 
 ## Same-page anchors
 
@@ -127,7 +143,7 @@ Destinations outside this page — the evidence workspace, communications, Comme
 
 Collapsed by default: the plan, progress and closure forms when they are not what the model recommends; adding a note; adding a task; resolving a task or a submission; completed and cancelled tasks; the customer-visible preview; the technical and operator details; and everything the authorisation panel already collapsed.
 
-Never collapsed: the journey, the next action, the blockers, the attention items and the prerequisites.
+Never collapsed: the journey, the next action, the blockers, the attention items and the prerequisites relevant to the current case.
 
 ## The closed case
 
@@ -137,7 +153,11 @@ A reopened case says so at the top.
 
 ## Responsive behaviour
 
-The next action and the snapshot share a two-column row above 900px and stack below it. The journey is a nine-column strip that scrolls horizontally inside its own panel if the viewport is narrow, and becomes a vertical list of rows below 900px. Nothing clips, the page itself never scrolls sideways, and long model descriptions wrap rather than overflow.
+The next action and the snapshot share a two-column row above 900px and stack below it.
+
+The journey never scrolls sideways. On wide layouts it is a responsive grid of equal tracks that fits as many phases on a row as the width allows and wraps the rest onto another row — nine across at 1440px and above, five and four at common laptop widths. Below 900px each phase becomes a full-width row with its symbol, name and state on one line. An earlier draft scrolled the strip horizontally; visual verification found that it left a phase half-visible at the edge of the panel, which is why it wraps instead.
+
+Nothing clips, the page itself never scrolls sideways, phase names are never broken mid-word, and long model descriptions wrap rather than overflow.
 
 ## Accessibility
 
@@ -160,8 +180,9 @@ Every cockpit component is a Server Component. Nothing was marked `"use client"`
 ## Tests
 
 - `app/cases/[id]/cockpit/fixtures.ts` builds real `CaseFlowFacts` trees and resolves them with the real `resolveCaseFlow`. No component test asserts against a hand-written `CaseFlowModel`, because a hand-written model could have a shape the resolver never produces.
-- `journey.test.tsx`, `next-action.test.tsx`, `prerequisites.test.tsx` and `notices.test.tsx` cover the components.
-- `page.test.tsx` renders the whole page across the sixteen case states UX-2 is accepted against, from a new case through to a closed case with an open complaint.
+- `journey.test.tsx`, `next-action.test.tsx`, `prerequisites.test.tsx`, `notices.test.tsx` and `snapshot.test.tsx` cover the components.
+- `page.test.tsx` renders the whole page across the sixteen case states UX-2 is accepted against, from a new case through to a closed case with an open complaint, and across the phases that decide whether the prerequisite checklist appears.
+- `lib/accessibility.test.ts` holds the static "exactly one `<h1>` per page" invariant. A page may delegate that heading only to a component on an explicit allowlist — `PageHeader` and `CaseHeader` — and the allowlist is itself checked against those components' source, so neither an unknown `SomethingHeader` nor a listed component that stopped rendering a heading can satisfy it.
 
 ## Deferred
 

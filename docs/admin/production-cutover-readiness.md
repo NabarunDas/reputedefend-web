@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003120000 case_communications_workspace_v1, matching the repository migration head. |
+| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003125151 customer_portal_auth_foundation_v1, matching the repository migration head. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -101,11 +101,12 @@ capability gate is expected to be missing.
 | --- | --- | --- | --- | --- | --- |
 | `ADMIN_AUTH_ENABLED` | admin | FEATURE_GATE | non-secret | PRESENT | authConfig() is null, every Admin page redirects to /login and /login says sign-in is not available yet. |
 | `ADMIN_ORIGIN` | admin | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() is null, so Admin has no sign-in at all. |
-| `SUPABASE_URL` | marketing, admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerConfig() are null; the marketing site falls back to its email-only intake path. |
-| `SUPABASE_SECRET_KEY` | marketing, admin, customer | PROVIDER_SECRET | secret | PRESENT | authConfig() and customerConfig() are null; no Admin or Customer request can reach the database. |
-| `SUPABASE_PUBLISHABLE_KEY` | admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerConfig() are null, so no one-time code can be issued or verified. |
-| `CUSTOMER_AUTH_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | customerConfig() is null, so no customer action link can be opened. Admin is unaffected. |
-| `CUSTOMER_ORIGIN` | admin, customer, marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | OPTIONAL | customerConfig() is null and no customer-facing link can be composed. |
+| `SUPABASE_URL` | marketing, admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerBackendConfig() are null, so customer actions and the Customer Portal both stay closed. The marketing site falls back to its email-only intake path. |
+| `SUPABASE_SECRET_KEY` | marketing, admin, customer | PROVIDER_SECRET | secret | PRESENT | authConfig() and customerBackendConfig() are null, so no Admin, customer-action, or Customer Portal request can reach the database. |
+| `SUPABASE_PUBLISHABLE_KEY` | admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerBackendConfig() are null, so no Admin or customer one-time code can be issued or verified. |
+| `CUSTOMER_AUTH_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | customerConfig() is null, so no customer action link can be opened. The Customer Portal keeps its own gate. Admin is unaffected. |
+| `CUSTOMER_PORTAL_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | Portal login, /portal and the portal auth routes stay closed. Existing customer action links keep using CUSTOMER_AUTH_ENABLED. |
+| `CUSTOMER_ORIGIN` | admin, customer, marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | OPTIONAL | customerBackendConfig() is null, so customer actions and the Customer Portal both stay closed and no customer-facing link can be composed. |
 | `NODE_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Next.js sets it. A non-production value would select the development cookie names, which is why the production smoke test checks the cookie name. |
 | `VERCEL_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Every one of those capabilities stays off, which is the safe direction. |
 | `VERCEL_DEPLOYMENT_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The heartbeat records null. Nothing else changes. |
@@ -207,14 +208,15 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The applied head is `20261003120000 case_communications_workspace_v1`, file
-`supabase/migrations/20261003120000_case_communications_workspace_v1.sql`,
+The applied head is `20261003125151 customer_portal_auth_foundation_v1`, file
+`supabase/migrations/20261003125151_customer_portal_auth_foundation_v1.sql`,
 applied to `profilerelaunch-dev` on 2026-10-03 after independent review.
-Supabase MCP initially registered a generated migration timestamp; that single
-history row was repaired immediately to `20261003120000` so the remote ledger
-matches the repository filename. `pendingMigrations()` is now empty, which
-`apps/admin/lib/recovery/manifest.test.ts` asserts. The migration is immutable.
-Do not replay migrations that are already applied.
+Supabase MCP initially registered `20261003134234`; that single history row
+was repaired immediately to `20261003125151` so the remote ledger matches the
+repository filename. `pendingMigrations()` is now empty, and
+`apps/admin/lib/recovery/manifest.test.ts` asserts that the applied and
+repository heads are the same. Applied migrations stay immutable. Do not replay
+them.
 
 ### The ledger discrepancy, recorded rather than repaired
 
@@ -239,7 +241,7 @@ re-runs its seed data, so a replay to close the gap would be destructive.
 here.
 
 **Strategy A — build production from the canonical repository chain.** Create a
-new Supabase project and apply the 29 migrations in order from empty.
+new Supabase project and apply the 30 migrations in order from empty.
 
 The discrepancy then does not exist in production, because the three foundation
 migrations are applied there normally. The history validator can read clean, so

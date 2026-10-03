@@ -153,15 +153,13 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    // UX-8 is now applied to dev, so the repository and the project agree on
-    // the same head and nothing is waiting to be applied.
     expect(pendingMigrations()).toEqual([])
-    expect(appliedMigrationHead.version).toBe("20261003120000")
-    expect(migrationHead.version).toBe("20261003120000")
+    expect(appliedMigrationHead.version).toBe("20261003125151")
+    expect(migrationHead.version).toBe("20261003125151")
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
-    expect(supabase?.requirement).toContain("case_communications_workspace_v1")
+    expect(supabase?.requirement).toContain("customer_portal_auth_foundation_v1")
     expect(supabase?.evidence).toContain("profilerelaunch-dev")
     expect(supabase?.evidence).toContain("2026-10-03")
     expect(supabase?.externalAction).toBeNull()

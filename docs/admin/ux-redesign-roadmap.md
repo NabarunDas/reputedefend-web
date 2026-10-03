@@ -15,7 +15,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-7 | Commercial and money surfaces | COMPLETE |
 | UX-8 | Communications and conversations | COMPLETE |
 | UX-9 | Visual system, wording and accessibility | COMPLETE |
-| UX-10 | Customer-facing surfaces | NOT STARTED |
+| UX-10 | Customer-facing surfaces | IN PROGRESS |
 
 ## UX-1 — Canonical case journey and next action engine
 
@@ -51,12 +51,27 @@ Complete. `/cases/[id]/communications` is the case communications workspace. `CA
 
 ## UX-9 — Visual system, wording and accessibility
 
-Complete. The shared visual language, the wording review and the accessibility sweep over the Admin surfaces UX-2 to UX-8 already built. See ux-visual-wording-accessibility.md. No migration. UX-10 is not started.
+Complete. The shared visual language, the wording review and the accessibility sweep over the Admin surfaces UX-2 to UX-8 already built. See ux-visual-wording-accessibility.md. No migration.
 
 ## UX-10 — Customer-facing surfaces
 
-The customer portal and the customer-visible previews brought into line with the Admin work. Last, because it is the only phase with an external audience and should not move until the internal model and wording have stopped changing.
+In progress. The Customer Portal is not launched. UX-10A is the security boundary later portal phases will use. It does not design the portal, and it does not change the existing customer-action screens.
+
+| Phase | Deliverable | Status |
+| --- | --- | --- |
+| UX-10A | Authentication and security foundation | COMPLETE |
+| UX-10B | Brand and portal shell | NOT STARTED |
+| UX-10C | Dashboard and cases | NOT STARTED |
+| UX-10D | Case workspace | NOT STARTED |
+| UX-10E | Documents and evidence | NOT STARTED |
+| UX-10F | Quotes, agreements and permissions | NOT STARTED |
+| UX-10G | Payments and receipts | NOT STARTED |
+| UX-10H | Relaunch Guard | NOT STARTED |
+| UX-10I | Messages and Account | NOT STARTED |
+| UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
+
+UX-10A adds passwordless email OTP, a separate eight-hour portal session, and the migration `20261003125151_customer_portal_auth_foundation_v1.sql`. That migration is applied to `profilerelaunch-dev` and is the current dev/repository head. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A is complete and UX-10B through UX-10J are not started. No phase should be marked complete until its own acceptance evidence exists.

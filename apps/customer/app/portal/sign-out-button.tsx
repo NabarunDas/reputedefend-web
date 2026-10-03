@@ -1,7 +1,9 @@
 "use client"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 export function SignOutButton() {
+  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
@@ -19,7 +21,7 @@ export function SignOutButton() {
         setError("We couldn't sign you out. Try again.")
         return
       }
-      window.location.assign("/login")
+      router.push("/login")
     } catch {
       setError("We couldn't sign you out. Try again.")
     } finally {

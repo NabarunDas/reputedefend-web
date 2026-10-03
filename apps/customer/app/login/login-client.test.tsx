@@ -5,11 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { LoginClient } from "./login-client"
 
+const router = vi.hoisted(() => ({ push: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => router }))
+
 const fetchMock = vi.fn()
 
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
+  router.push.mockReset()
   window.localStorage.clear()
   window.sessionStorage.clear()
 })
@@ -49,8 +53,6 @@ describe("portal login screen", () => {
     fetchMock
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent a six-digit code." }) })
       .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ message: "We couldn't verify that code. Check it and try again, or request a new code." }) })
-    const assign = vi.fn()
-    vi.stubGlobal("location", { ...window.location, assign })
     render(<LoginClient />)
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "alex@example.com" } })
     fireEvent.click(screen.getByRole("button", { name: "Send code" }))
@@ -58,6 +60,6 @@ describe("portal login screen", () => {
     fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }))
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/couldn't verify that code/))
-    expect(assign).not.toHaveBeenCalled()
+    expect(router.push).not.toHaveBeenCalled()
   })
 })

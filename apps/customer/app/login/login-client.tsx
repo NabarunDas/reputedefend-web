@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
 import { PORTAL_EMAIL_INVALID, PORTAL_UNAVAILABLE, PORTAL_VERIFY_ERROR, normalizePortalEmail, portalLoginNotice } from "@/lib/portal/email"
 
 async function postJson(path: string, body: Record<string, unknown>) {
@@ -14,6 +15,7 @@ async function postJson(path: string, body: Record<string, unknown>) {
 }
 
 export function LoginClient() {
+  const router = useRouter()
   const [phase, setPhase] = useState<"email" | "code">("email")
   const [email, setEmail] = useState("")
   const [typedEmail, setTypedEmail] = useState("")
@@ -84,7 +86,7 @@ export function LoginClient() {
         setError(PORTAL_VERIFY_ERROR)
         return
       }
-      window.location.assign("/portal")
+      router.push("/portal")
     } catch {
       setError(PORTAL_VERIFY_ERROR)
     } finally {

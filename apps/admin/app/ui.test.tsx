@@ -13,14 +13,27 @@ describe("shared status presentation", () => {
     expect(screen.getByText("Needs attention").closest(".badge")).toHaveClass("badge-warning")
   })
 
-  it("announces an ordinary notice without an interrupting alert", () => {
-    render(<Notice tone="warning">The history is incomplete.</Notice>)
-    expect(screen.getByRole("status")).toHaveTextContent("The history is incomplete.")
+  it("leaves an ordinary notice out of the live-region roles", () => {
+    const { container } = render(<Notice tone="warning">The history is incomplete.</Notice>)
+    const notice = container.querySelector(".notice")
+    expect(notice).toHaveTextContent("The history is incomplete.")
+    expect(notice).not.toHaveAttribute("role")
+    expect(notice).not.toHaveAttribute("aria-live")
+    expect(screen.queryByRole("status")).toBeNull()
     expect(screen.queryByRole("alert")).toBeNull()
   })
 
-  it("uses an alert only when the notice is urgent", () => {
-    render(<Notice tone="danger" urgent>The case could not be loaded.</Notice>)
-    expect(screen.getByRole("alert")).toHaveTextContent("The case could not be loaded.")
+  it("uses a status role only when a dynamic update asks for one", () => {
+    render(<Notice live="status">The draft was saved.</Notice>)
+    const notice = screen.getByRole("status")
+    expect(notice).toHaveTextContent("The draft was saved.")
+    expect(notice).not.toHaveAttribute("aria-live")
+  })
+
+  it("uses an alert only when the notice is an interruption", () => {
+    render(<Notice tone="danger" live="alert">The case could not be loaded.</Notice>)
+    const notice = screen.getByRole("alert")
+    expect(notice).toHaveTextContent("The case could not be loaded.")
+    expect(notice).not.toHaveAttribute("aria-live")
   })
 })

@@ -91,7 +91,7 @@ These distinctions stay in the copy where the earlier phases put them: sender ma
 
 Component tests cover the shared badge and notice, the case next-action card (a waiting or blocked step is not an enabled mutation), and the shell.
 
-`role="alert"` is reserved for an urgent notice. Async command results stay on `role="status"`. Case communications classify a disagreeing record as danger and an incomplete history as a warning, instead of painting every notice as a failure. Commercial notices are status updates, not alerts.
+`Notice` is ordinary page content. It has no live-region role unless the caller asks. `live="status"` is for a dynamic update. `live="alert"` is only for an interruption. Static commercial warnings, communications completeness warnings and Money explanations are read in document order. Async command results stay on the `role="status"` paragraph each form already renders. Case communications classify a disagreeing record as danger and an incomplete history as a warning. That is colour and wording, not a live region.
 
 ## Focus and the mobile menu
 
@@ -100,8 +100,9 @@ Below 900px the sidebar is a drawer.
 - “Open menu” / “Close menu” sets `aria-expanded` and points at the sidebar with `aria-controls`.
 - While the drawer is closed, the sidebar is `inert` and `aria-hidden`, so it is not a second tab stop behind the page.
 - Opening it moves focus to the first link in the navigation.
+- While it is open, the page and the header controls behind the backdrop are `inert`. Tab and focus stay on the menu button, the backdrop and the navigation. Escape still closes it.
 - Escape, the close button and the backdrop close it and return focus to the menu button.
-- Choosing a destination closes it and leaves focus with that navigation.
+- Choosing a destination closes it without forcing focus back to the menu button, because navigation is happening.
 - `aria-current="page"` still marks the current destination, and an active group stays expanded.
 
 There is no new dependency. Desktop width does not inert the sidebar.
@@ -130,7 +131,7 @@ Global `/money` used to show **Approve success fee** for every success-fee order
 
 The Money page now loads case type and outcome through the existing batch projection `admin_case_flow_facts_v1`, in chunks of fifty, and only for success-fee orders that are not yet approved. It does not add a query per order and it does not copy the rule into SQL.
 
-Approve success fee is shown only when that helper matches and the order already has accepted evidence. Otherwise the row explains that approval is not due yet, that accepted evidence is still required, or that the outcome could not be confirmed. The row still links to the case commercial workspace. Fresh sign-in stays a requirement of the command. Approval still does not charge a card.
+Approve success fee is shown only when the same presentation prerequisites as the case Commercial workspace all hold: the order is a success fee, it is not already approved, it is linked to a case, the case outcome loaded, `isQualifyingSuccessFeeOutcome` matches, a usable payment method is saved (`setupReady`), later-charge consent is recorded, and accepted outcome evidence exists. A saved payment method without consent is a setup conflict and approval is withheld. Consent without a usable payment method, or neither, is incomplete setup. A qualifying outcome without accepted evidence still does not offer approval. A missing case projection withholds approval. The row still links to the case commercial workspace. Fresh sign-in stays a requirement of the command. `approve_success_fee` checks the rules again. Approval still does not charge a card.
 
 ## What this pass does not change
 

@@ -18,21 +18,23 @@ export function Badge({ tone = "neutral", children }: { tone?: keyof typeof badg
 
 /**
  * A page message. Colour is paired with the words inside it.
- * `role="status"` is the default so a screen reader hears it without an
- * interrupting alert. Pass `urgent` only for something the operator must
- * deal with before continuing.
+ *
+ * Static server-rendered notices have no live-region role, so a screen reader
+ * meets them in document order. Pass `live="status"` only for a dynamic
+ * update, and `live="alert"` only when the operator must be interrupted.
+ * Command forms keep their own `role="status"` results; they do not use this.
  */
 export function Notice({
   tone = "info",
   children,
-  urgent = false,
+  live,
 }: {
   tone?: "info" | "success" | "warning" | "danger" | "blocked"
   children: ReactNode
-  urgent?: boolean
+  live?: "status" | "alert"
 }) {
   const className = tone === "info" ? "notice" : tone === "danger" ? "notice notice-danger" : `notice notice-${tone}`
-  return <div className={className} role={urgent ? "alert" : "status"}>{children}</div>
+  return <div className={className} role={live}>{children}</div>
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {

@@ -85,7 +85,7 @@ describe("admin shell", () => {
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false")
   })
 
-  it("moves focus into the mobile navigation and returns it when Escape closes the menu", () => {
+  it("keeps keyboard focus inside the open mobile drawer", () => {
     pathname = "/cases"
     const previous = window.matchMedia
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -94,17 +94,74 @@ describe("admin shell", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }))
-    render(<AdminShell><h1>Cases</h1></AdminShell>)
+    render(<AdminShell><button type="button">Page action</button></AdminShell>)
     const sidebar = document.getElementById("admin-sidebar")
+    const main = screen.getByRole("main")
+    const search = screen.getByRole("textbox", { name: "Search records" })
+    const pageAction = screen.getByRole("button", { name: "Page action" })
     expect(sidebar).toHaveAttribute("aria-hidden", "true")
     expect(sidebar).toHaveAttribute("inert")
+    expect(main).not.toHaveAttribute("inert")
+
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }))
-    expect(sidebar).not.toHaveAttribute("aria-hidden")
     expect(sidebar).not.toHaveAttribute("inert")
     expect(sidebar).toContainElement(document.activeElement as HTMLElement)
+    expect(main).toHaveAttribute("inert")
+    expect(search.closest("[inert]")).toBeTruthy()
+    expect(pageAction.closest("[inert]")).toBeTruthy()
+    search.focus()
+    expect(sidebar).toContainElement(document.activeElement as HTMLElement)
+    expect(document.activeElement).not.toBe(search)
+    expect(document.activeElement).not.toBe(pageAction)
+
+    const links = sidebar?.querySelectorAll<HTMLAnchorElement>("a[href]") ?? []
+    links[links.length - 1]?.focus()
+    fireEvent.keyDown(document, { key: "Tab" })
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close menu" }))
+    expect(document.activeElement).not.toBe(search)
+    expect(document.activeElement).not.toBe(pageAction)
+
     fireEvent.keyDown(document, { key: "Escape" })
-    expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus()
+    const toggle = screen.getByRole("button", { name: "Open menu" })
+    expect(toggle).toHaveFocus()
     expect(sidebar).toHaveAttribute("inert")
+    expect(main).not.toHaveAttribute("inert")
+
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss navigation" }))
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus()
+    expect(main).not.toHaveAttribute("inert")
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }))
+    fireEvent.click(screen.getByRole("link", { name: "Intake" }))
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: "Open menu" })).not.toHaveFocus()
+    if (previous) window.matchMedia = previous
+    else delete (window as { matchMedia?: unknown }).matchMedia
+  })
+
+  it("leaves the desktop sidebar in the normal tab order", () => {
+    pathname = "/cases"
+    const previous = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    render(<AdminShell><button type="button">Page action</button></AdminShell>)
+    const sidebar = document.getElementById("admin-sidebar")
+    const search = screen.getByRole("textbox", { name: "Search records" })
+    const pageAction = screen.getByRole("button", { name: "Page action" })
+    expect(sidebar).not.toHaveAttribute("inert")
+    expect(screen.getByRole("main")).not.toHaveAttribute("inert")
+    expect(search.closest("[inert]")).toBeNull()
+    search.focus()
+    expect(document.activeElement).toBe(search)
+    pageAction.focus()
+    expect(document.activeElement).toBe(pageAction)
+    fireEvent.keyDown(document, { key: "Tab" })
+    expect(document.activeElement).toBe(pageAction)
     if (previous) window.matchMedia = previous
     else delete (window as { matchMedia?: unknown }).matchMedia
   })

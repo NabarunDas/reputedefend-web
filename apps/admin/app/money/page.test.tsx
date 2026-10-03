@@ -96,6 +96,25 @@ vi.mock("@/lib/payments/queries", () => ({
       approvalId: null,
       receiptId: null,
       acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "early.png", versionNumber: 1 }],
+    }, {
+      orderId: "99999999-9999-4999-8999-999999999991",
+      orderRef: "SO-26-NOSETUP",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      caseId: "55555555-5555-4555-8555-555555555555",
+      serviceCode: "MANAGED_RELAUNCH",
+      amountMinor: 29900,
+      currency: "GBP",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      version: 1,
+      obligationId: null,
+      obligationKind: null,
+      obligationState: null,
+      setupReady: false,
+      consentId: null,
+      approvalId: null,
+      receiptId: null,
+      acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }],
     }],
   }),
 }))
@@ -123,11 +142,12 @@ describe("money workspace", () => {
     expect(screen.queryByRole("button", { name: /mark refunded|override paid-through|cancel all/i })).toBeNull()
   })
 
-  it("requires accepted outcome evidence for success-fee approval", async () => {
+  it("offers success-fee approval only when outcome, evidence, setup and consent all hold", async () => {
     render(await MoneyPage())
     expect(screen.getByRole("combobox", { name: /accepted outcome evidence/i })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: /outcome.png/ })).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve success fee" })).toHaveLength(1)
+    expect(screen.getByText(/Payment-method setup is not complete/)).toBeInTheDocument()
   })
 
   it("does not offer success-fee approval before a qualifying outcome", async () => {
@@ -139,6 +159,7 @@ describe("money workspace", () => {
       "/cases/55555555-5555-4555-8555-555555555555/commercial",
       "/cases/55555555-5555-4555-8555-555555555555/commercial",
       "/cases/66666666-6666-4666-8666-666666666666/commercial",
+      "/cases/55555555-5555-4555-8555-555555555555/commercial",
     ])
   })
 })

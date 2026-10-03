@@ -29,6 +29,7 @@ export function CaseHeader({ c, flow }: { c: CaseDetail; flow: CaseFlowModel }) 
         <RecordLink id={c.customerId} href={`/records/client/${c.customerId}`} label="Client record" missing="No client record" />
         <RecordLink id={c.businessId} href={`/records/business/${c.businessId}`} label="Business record" missing="No business record" />
         <RecordLink id={c.locationId} href={`/records/location/${c.locationId}`} label="Location record" missing="No location recorded" />
+        {isUuid(c.id) && <Link href={`/cases/${c.id}/commercial`}>Commercial and money</Link>}
       </p>
     </div>
   </header>

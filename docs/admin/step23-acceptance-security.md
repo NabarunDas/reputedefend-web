@@ -59,7 +59,7 @@ exercised. Rendering a component is not acceptance and was not accepted as such.
 | Client, business and location records | `/records/[entity]`, `/records/[entity]/[id]` | PASS |
 | Duplicate review | `/records/duplicates` | PASS |
 | Customer preview | `/records/client/[id]/preview` | PASS |
-| Commercial catalogue, quotes and orders | `/commercial` | PASS |
+| Commercial catalogue, quotes and orders | `/commercial`, `/cases/[id]/commercial` | PASS |
 | Money, payments and invoices | `/money` | DEFERRED_EXTERNAL |
 | Outgoing communications | `/communications` | DEFERRED_EXTERNAL |
 | Inbound mail and conversations | `/conversations` | PASS |

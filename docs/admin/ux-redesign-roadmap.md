@@ -12,7 +12,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | COMPLETE |
 | UX-6 | Evidence workspace | COMPLETE |
-| UX-7 | Commercial and money surfaces | NOT STARTED |
+| UX-7 | Commercial and money surfaces | IN PROGRESS |
 | UX-8 | Communications and conversations | NOT STARTED |
 | UX-9 | Visual system, wording and accessibility | NOT STARTED |
 | UX-10 | Customer-facing surfaces | NOT STARTED |
@@ -39,11 +39,11 @@ Complete. Reorganises the Admin sidebar around the operating model UX-1 to UX-4 
 
 ## UX-6 — Evidence workspace
 
-In progress. The case Evidence page (`/cases/[id]/evidence`) now reads the same request, version and contact interpretation as CaseFlow, and shows the journey in that order: what was requested, what arrived, whether the file is still uploading, scanning, invalid, waiting for review, accepted or rejected, and whether an accepted request is still open. Fulfilment stays a manual command. Contact stays case-level, because communications are not linked to an evidence request. No migration. See ux-evidence-workspace.md. UX-7 is not started.
+Complete. The case Evidence page (`/cases/[id]/evidence`) reads the same request, version and contact interpretation as CaseFlow. Fulfilment stays a manual command. Contact stays case-level, because communications are not linked to an evidence request. No migration. See ux-evidence-workspace.md.
 
 ## UX-7 — Commercial and money surfaces
 
-The quote and payment ladders made legible end to end, including the distinction the model is careful about: a returned checkout page is not a payment, and the authoritative obligation state is. Also the natural home for the per-case commercial and payment filters whose absence forces UX-1 to read capped lists and flag the result as possibly incomplete.
+In progress. `/cases/[id]/commercial` reads `summariseCommercial`, `summarisePayment` and `resolveCaseFlow`, and shows quote, acceptance, service order and Guided payment or Managed setup for that case. Case-specific commercial and money destinations point there. `/commercial` stays the catalogue and the queues. `/money` stays cross-case obligations, approval, recovery and Guard billing. No migration. See ux-commercial-money.md. UX-8 is not started.
 
 ## UX-8 — Communications and conversations
 
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5 and UX-6 are complete. UX-7 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5 and UX-6 are complete. UX-7 is in progress. UX-8 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.

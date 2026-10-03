@@ -859,6 +859,13 @@ summary { cursor: pointer; }
 
 /* --- Evidence workspace -------------------------------------------------- */
 
+.journey-unknown { border-left-color: var(--warning); }
+.commercial-workspace { min-width: 0; }
+.commercial-workspace .panel,
+.commercial-workspace .journey-step { min-width: 0; max-width: 100%; }
+.commercial-headline { font-weight: 700; }
+.commercial-prereqs { margin: .5rem 0 0; padding-left: 1.2rem; }
+.commercial-prereqs li + li { margin-top: .45rem; }
 .evidence-workspace { min-width: 0; }
 .evidence-workspace .panel,
 .evidence-workspace .evidence-request,

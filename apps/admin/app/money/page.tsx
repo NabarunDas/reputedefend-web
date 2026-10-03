@@ -1,4 +1,6 @@
+import Link from "next/link"
 import { ukDate } from "@/lib/admin/activity"
+import { isUuid } from "@/lib/records/model"
 import { formatGbp, paymentModelLabel } from "@/lib/commerce/model"
 import { loadGuard } from "@/lib/guard/queries"
 import { billingStateLabel } from "@/lib/guard/model"
@@ -19,7 +21,11 @@ export default async function MoneyPage() {
         <table>
           <thead><tr><th>Order</th><th>Amount</th><th>Model</th><th>Obligation</th><th>Setup</th><th>Next action</th></tr></thead>
           <tbody>{money.orders.map(row => <tr key={row.orderId}>
-            <td>{row.orderRef}<br /><span className="muted">{row.serviceCode} · {row.orderId}</span></td>
+            <td>
+              {row.orderRef}<br />
+              <span className="muted">{row.serviceCode}</span>
+              {row.caseId && isUuid(row.caseId) && <><br /><Link href={`/cases/${row.caseId}/commercial`}>Open case commercial and money</Link></>}
+            </td>
             <td>{formatGbp(row.amountMinor)} {row.currency}</td>
             <td>{paymentModelLabel(row.paymentModel)}</td>
             <td><Badge tone={row.obligationState === "PAID" ? "success" : row.obligationState === "AUTHENTICATION_REQUIRED" ? "warning" : "neutral"}>{obligationLabel(row.obligationState)}</Badge></td>
@@ -31,7 +37,7 @@ export default async function MoneyPage() {
               {row.paymentModel === "SUCCESS_FEE" && !row.approvalId && <ApproveSuccessFeeForm serviceOrderId={row.orderId} version={row.version} evidence={row.acceptedEvidence} />}
               {row.obligationId && row.obligationState && !["PAID", "VOID"].includes(row.obligationState) && row.invoiceStatus !== "ISSUED" && row.invoiceStatus !== "PAID" && !row.receiptId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue TEST-MODE hosted invoice fallback" obligationId={row.obligationId} />}
               {row.invoiceStatus === "ISSUED" && <p>TEST-MODE hosted invoice issued. Payment is confirmed only from the Stripe webhook.</p>}
-              {row.receiptId && <p>Receipt recorded {ukDate(new Date().toISOString())}.</p>}
+              {row.receiptId && <p>Receipt recorded.</p>}
             </td>
           </tr>)}</tbody>
         </table>

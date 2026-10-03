@@ -15,6 +15,7 @@ export const caseDestinationKinds = [
   "CASE",
   "CASE_EVIDENCE",
   "CASE_COMMUNICATIONS",
+  "CASE_COMMERCIAL",
   "COMMERCIAL",
   "MONEY",
   "TASKS",
@@ -57,10 +58,14 @@ export function destination(kind: CaseDestinationKind): CaseDestination | null {
  * A destination inside one case. `caseId` must be a UUID; anything else
  * returns `null` rather than being interpolated into a path.
  */
-export function caseDestination(kind: "CASE" | "CASE_EVIDENCE" | "CASE_COMMUNICATIONS", caseId: string): CaseDestination | null {
+export function caseDestination(
+  kind: "CASE" | "CASE_EVIDENCE" | "CASE_COMMUNICATIONS" | "CASE_COMMERCIAL",
+  caseId: string,
+): CaseDestination | null {
   if (!isUuid(caseId)) return null
   if (kind === "CASE") return { kind, href: `/cases/${caseId}`, label: "Case" }
   if (kind === "CASE_EVIDENCE") return { kind, href: `/cases/${caseId}/evidence`, label: "Evidence and documents" }
+  if (kind === "CASE_COMMERCIAL") return { kind, href: `/cases/${caseId}/commercial`, label: "Commercial and money" }
   // Case communications live on the shared surface behind a case filter;
   // there is no `/cases/[id]/communications` route in this build.
   return { kind, href: `/communications?case=${caseId}`, label: "Case communications" }

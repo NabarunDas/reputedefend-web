@@ -1,6 +1,6 @@
 # UX-6 — Evidence workspace
 
-The case Evidence page, `/cases/[id]/evidence`, is the place an operator answers what was requested, what arrived, and how far that file has got. UX-1 through UX-5 are complete. UX-6 is in progress. UX-7 is not started.
+The case Evidence page, `/cases/[id]/evidence`, is the place an operator answers what was requested, what arrived, and how far that file has got. UX-1 through UX-6 are complete. UX-7 is in progress.
 
 No migration. The page reads `getCase`, `getEvidenceCase`, `getPreparedPackCase` and one `loadCaseFlowFacts` call, together, then resolves the case flow once with a single `now`.
 

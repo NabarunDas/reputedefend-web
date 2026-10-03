@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { ukDate } from "@/lib/admin/activity"
 import { loadCatalogue, loadOrders, loadQuotes } from "@/lib/commerce/queries"
-import { formatGbp, orderStateLabel, paymentModelLabel, taxLabel } from "@/lib/commerce/model"
+import { formatGbp, orderStateLabel, paymentModelLabel, quoteStatusLabel, serviceLabel, taxLabel } from "@/lib/commerce/model"
+import { isUuid } from "@/lib/records/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
 import {
   ApprovePriceForm, CreatePriceForm, CreateQuoteForm, CreateVersionForm, OfferQuoteActionForm, QuoteActionForm,
@@ -19,7 +20,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
   const quotes = tab === "quotes" || tab === "catalogue" ? await loadQuotes(status, q) : { quotes: [] }
   const orders = tab === "orders" ? await loadOrders() : { orders: [] }
   return <section className="page">
-    <PageHeader title="Commercial" description="Catalogue, quotes and accepted service orders. This workspace does not take payment, create Stripe objects, or activate monitoring. Seeded prices remain tax-unconfirmed until Finance configuration." />
+    <PageHeader title="Commercial" description="Catalogue and price administration, plus the quote and order queues. Open a case's Commercial and money workspace for the quote, acceptance, order and payment journey. This workspace does not take payment, create Stripe objects, or activate monitoring." />
     <p>
       <Link href="/commercial?tab=catalogue" aria-current={tab === "catalogue" ? "page" : undefined}>Catalogue</Link>
       {" · "}
@@ -86,7 +87,8 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
               <td>
                 {row.publicRef}<br />
                 <span className="muted">{row.customerName} · {row.businessName}</span><br />
-                <span className="muted">{row.caseReference || row.monitoringRequestId || "No case"}</span>
+                <span className="muted">{row.caseReference || "No case"}</span>
+                {row.caseId && isUuid(row.caseId) && <><br /><Link href={`/cases/${row.caseId}/commercial`}>Open case commercial and money</Link></>}
               </td>
               <td>
                 {row.currentVersion.serviceName} v{row.currentVersion.versionNumber}<br />
@@ -99,7 +101,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
               </td>
               <td><Badge tone={row.currentVersion.taxBehaviour === "UNCONFIRMED" ? "warning" : "neutral"}>{taxLabel(row.currentVersion.taxBehaviour)}</Badge></td>
               <td>
-                <Badge>{row.status}</Badge>
+                <Badge>{quoteStatusLabel(row.status)}</Badge>
                 {row.acceptedAt && <><br /><span className="muted">Accepted {ukDate(row.acceptedAt)}</span></>}
                 {row.orderRef && <><br /><span className="muted">{row.orderRef}</span></>}
               </td>
@@ -130,9 +132,12 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
         <table>
           <thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Amount</th><th>State</th></tr></thead>
           <tbody>{orders.orders.map(row => <tr key={row.id}>
-            <td>{row.publicRef}<br /><span className="muted">{row.quoteRef}</span></td>
+            <td>
+              {row.publicRef}<br /><span className="muted">{row.quoteRef}</span>
+              {row.caseId && isUuid(row.caseId) && <><br /><Link href={`/cases/${row.caseId}/commercial`}>Open case commercial and money</Link></>}
+            </td>
             <td>{row.customerName}<br /><span className="muted">{row.businessName}{row.caseReference ? ` · ${row.caseReference}` : ""}</span></td>
-            <td>{row.serviceCode}<br /><span className="muted">{paymentModelLabel(row.paymentModel)}</span></td>
+            <td>{serviceLabel(row.serviceCode)}<br /><span className="muted">{paymentModelLabel(row.paymentModel)}</span></td>
             <td>{formatGbp(row.amountMinor)} {row.currency}<br /><span className="muted">{taxLabel(row.taxBehaviour)} tax {formatGbp(row.taxAmountMinor)}</span></td>
             <td><Badge>{orderStateLabel(row.state)}</Badge><br /><span className="muted">{ukDate(row.acceptedAt)}</span></td>
           </tr>)}</tbody>

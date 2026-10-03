@@ -63,7 +63,7 @@ import type {
 // Derived views over the facts
 // ---------------------------------------------------------------------------
 
-type CommercialState =
+export type CommercialState =
   | "UNKNOWN"
   | "NONE"
   | "DRAFT_UNCONFIGURED"
@@ -74,7 +74,7 @@ type CommercialState =
   | "DECLINED"
   | "EXPIRED"
 
-type CommercialView = {
+export type CommercialView = {
   state: CommercialState
   quote: CaseFlowQuoteFact | null
   /** The open acceptance link's expiry, when one is open. */
@@ -88,7 +88,7 @@ const quoteRank: Record<string, number> = {
   ACCEPTED: 0, OFFERED: 1, DRAFT: 2, DECLINED: 3, EXPIRED: 4, SUPERSEDED: 5, CANCELLED: 6,
 }
 
-function summariseCommercial(facts: CaseFlowFacts, now: string): CommercialView {
+export function summariseCommercial(facts: CaseFlowFacts, now: string): CommercialView {
   const quotes = [...facts.commercial.quotes].sort(
     (a, b) => (quoteRank[a.status] ?? 9) - (quoteRank[b.status] ?? 9),
   )
@@ -115,7 +115,19 @@ function summariseCommercial(facts: CaseFlowFacts, now: string): CommercialView 
   return { state, quote, acceptanceExpiresAt: expiresAt, acceptanceExpired: expired, truncated }
 }
 
-type PaymentView = {
+/**
+ * Two quotes at the same rank cannot be told apart by the commercial rule.
+ * The resolver still has to name one; this says that choice is not safe.
+ */
+export function commercialQuotesTied(facts: CaseFlowFacts): boolean {
+  const quotes = facts.commercial.quotes
+  if (quotes.length < 2) return false
+  const rank = (status: string) => quoteRank[status] ?? 9
+  const best = Math.min(...quotes.map(item => rank(item.status)))
+  return quotes.filter(item => rank(item.status) === best).length > 1
+}
+
+export type PaymentView = {
   truncated: boolean
   upfrontOrder: CaseFlowOrderFact | null
   successFeeOrder: CaseFlowOrderFact | null
@@ -129,7 +141,7 @@ type PaymentView = {
   managedConsentRecorded: boolean
 }
 
-function summarisePayment(facts: CaseFlowFacts): PaymentView {
+export function summarisePayment(facts: CaseFlowFacts): PaymentView {
   const upfrontOrder = facts.payment.orders.find(order => order.paymentModel === "UPFRONT") ?? null
   const successFeeOrder = facts.payment.orders.find(order => order.paymentModel === "SUCCESS_FEE") ?? null
   const upfrontState =
@@ -385,8 +397,19 @@ function openAgreement(facts: CaseFlowFacts, kind: string): boolean {
   )
 }
 
-function openAction(facts: CaseFlowFacts, kind: string): boolean {
-  return facts.customerActions.some(action => action.kind === kind && action.status === "OPEN")
+/**
+ * An action the customer can still use.
+ *
+ * `OPEN` alone is not enough. `prepare_payment_action_v1` treats an action
+ * as finished once `expiresAt` has passed, and the resolver has to do the
+ * same or a dead link keeps the case on `WAIT_FOR_*`. Agreement acceptances
+ * stay on `openAgreement`: their expiry is already part of the commercial
+ * summary, and this helper is only the payment and setup links.
+ */
+function openAction(facts: CaseFlowFacts, kind: string, now: string): boolean {
+  return facts.customerActions.some(
+    action => action.kind === kind && action.status === "OPEN" && action.expiresAt > now,
+  )
 }
 
 function completedAction(facts: CaseFlowFacts, kind: string): boolean {
@@ -404,8 +427,8 @@ function buildDestinations(facts: CaseFlowFacts): Destinations {
     case: caseDestination("CASE", facts.caseId),
     evidence: caseDestination("CASE_EVIDENCE", facts.caseId),
     communications: caseDestination("CASE_COMMUNICATIONS", facts.caseId),
-    commercial: destination("COMMERCIAL"),
-    money: destination("MONEY"),
+    commercial: caseDestination("CASE_COMMERCIAL", facts.caseId),
+    money: caseDestination("CASE_COMMERCIAL", facts.caseId),
     tasks: destination("TASKS"),
     complaints: destination("COMPLAINTS"),
     documents: destination("DOCUMENTS"),
@@ -419,6 +442,7 @@ const surfaceKeys: Record<CaseDestinationKind, keyof Destinations> = {
   CASE: "case",
   CASE_EVIDENCE: "evidence",
   CASE_COMMUNICATIONS: "communications",
+  CASE_COMMERCIAL: "commercial",
   COMMERCIAL: "commercial",
   MONEY: "money",
   TASKS: "tasks",
@@ -940,7 +964,7 @@ function guidedPrerequisiteRules(collector: Collector): void {
 
   block(collector, "UPFRONT_PAYMENT_OUTSTANDING", "money")
   if (payment.upfrontFailed || payment.upfrontAuthenticationRequired) return
-  if (payment.upfrontCollecting || openAction(facts, "GUIDED_PAYMENT") || openAction(facts, "PAYMENT_RECOVERY")) {
+  if (payment.upfrontCollecting || openAction(facts, "GUIDED_PAYMENT", collector.now) || openAction(facts, "PAYMENT_RECOVERY", collector.now)) {
     propose(collector, { id: "WAIT_FOR_UPFRONT_PAYMENT", reasonCodes: ["UPFRONT_COLLECTION_STARTED"] })
     return
   }
@@ -1040,7 +1064,7 @@ function managedPaymentRules(collector: Collector): void {
 
   block(collector, "MANAGED_PAYMENT_SETUP_INCOMPLETE", "money")
   if (payment.managedConsentRecorded) return
-  if (openAction(facts, "MANAGED_PAYMENT_SETUP")) {
+  if (openAction(facts, "MANAGED_PAYMENT_SETUP", collector.now)) {
     propose(collector, { id: "WAIT_FOR_MANAGED_PAYMENT_SETUP", reasonCodes: ["MANAGED_SETUP_LINK_OPEN"] })
     return
   }

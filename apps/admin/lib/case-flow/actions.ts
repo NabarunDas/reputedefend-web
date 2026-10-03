@@ -219,7 +219,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     surface: "COMMERCIAL",
     label: "Check the commercial position for this case",
     description:
-      "The quote list this view reads is capped, so this case's quote may not have been in it. Open Commercial and confirm before raising anything new.",
+      "The quote list this view reads is capped, so this case's quote may not have been in it. Open this case's Commercial and money workspace and confirm before raising anything new.",
   },
   CONFIRM_PAYMENT_STATE: {
     band: "ADMIN_ACTION",
@@ -228,7 +228,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     surface: "MONEY",
     label: "Check the payment position for this case",
     description:
-      "The order list this view reads did not come back complete, so nothing here can be treated as the full picture. Open Money and confirm before issuing anything.",
+      "The order list this view reads did not come back complete, so nothing here can be treated as the full picture. Open this case's Commercial and money workspace and confirm before issuing anything.",
   },
 
   // --- The journey, in the order an operator walks it ----------------------

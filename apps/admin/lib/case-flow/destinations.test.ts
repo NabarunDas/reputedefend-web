@@ -35,6 +35,9 @@ describe("case flow destinations", () => {
     expect(caseDestination("CASE", caseId)?.href).toBe(`/cases/${caseId}`)
     expect(caseDestination("CASE_EVIDENCE", caseId)?.href).toBe(`/cases/${caseId}/evidence`)
     expect(caseDestination("CASE_COMMUNICATIONS", caseId)?.href).toBe(`/communications?case=${caseId}`)
+    expect(caseDestination("CASE_COMMERCIAL", caseId)?.href).toBe(`/cases/${caseId}/commercial`)
+    expect(caseDestination("CASE_COMMERCIAL", caseId)?.label).toBe("Commercial and money")
+    expect(caseDestination("CASE_COMMERCIAL", "not-a-uuid")).toBeNull()
     expect(recordDestination("CLIENT_RECORD", caseId)?.href).toBe(`/records/client/${caseId}`)
     expect(recordDestination("BUSINESS_RECORD", caseId)?.href).toBe(`/records/business/${caseId}`)
   })
@@ -56,6 +59,7 @@ describe("case flow destinations", () => {
   it("accepts only the shapes it builds itself", () => {
     expect(isInternalPath("/cases")).toBe(true)
     expect(isInternalPath(`/cases/${caseId}/evidence`)).toBe(true)
+    expect(isInternalPath(`/cases/${caseId}/commercial`)).toBe(true)
     expect(isInternalPath(`/communications?case=${caseId}`)).toBe(true)
   })
 })

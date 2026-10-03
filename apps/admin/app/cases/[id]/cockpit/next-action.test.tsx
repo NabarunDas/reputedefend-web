@@ -58,7 +58,7 @@ describe("the next action card", () => {
     cardFor(componentScenarios.commercialPositionUnknown)
     expect(screen.getByText("Blocked")).toBeInTheDocument()
     expect(screen.getByText("Blocked by: ProfileRelaunch")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View Commercial" })).not.toHaveClass("button-link")
+    expect(screen.getByRole("link", { name: "View Commercial and money" })).not.toHaveClass("button-link")
   })
 
   it("makes a step that can be taken now the one button on the card", () => {
@@ -68,7 +68,7 @@ describe("the next action card", () => {
     cardFor(cockpitScenarios.serviceNeedsQuote)
     const cta = screen.getByRole("link", { name: "Create the quote" })
     expect(cta).toHaveClass("button-link")
-    expect(cta).toHaveAttribute("href", "/commercial")
+    expect(cta).toHaveAttribute("href", `/cases/${cockpitScenarios.serviceNeedsQuote.caseId}/commercial`)
   })
 
   it("labels the button with the action rather than with 'continue'", () => {

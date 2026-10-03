@@ -9,7 +9,7 @@ UX-10F lets a signed-in customer review and complete the commercial steps that a
 - see the current accepted, declined, expired, or withdrawn state
 - complete an existing eligible authorization-revocation action
 
-The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. Guard, messaging, account editing, and Stripe stay outside this phase. After a quote is accepted, payment or payment-method setup is described as the next step. UX-10G later moved that step into the customer Payments area. The emailed secure payment link remains. The UX-10G migration has not been applied.
+The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. Guard, messaging, account editing, and Stripe stay outside this phase. After a quote is accepted, payment or payment-method setup is described as the next step. UX-10G later moved that step into the customer Payments area. The emailed secure payment link remains. UX-10G later applied `20261003224746_customer_portal_payments_receipts_v1.sql` to `profilerelaunch-dev`.
 
 ## Route
 
@@ -74,4 +74,4 @@ Private helpers, not executable by `PUBLIC`, `anon`, `authenticated`, or `servic
 
 `admin_private.customer_action_command_core_v1` is replaced so the secure-link path delegates commercial mutations to the shared helper.
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003220517`; that single history row was repaired immediately to repository version `20261003204538`. `appliedMigrationHead` remains `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`. UX-10G later added pending repository head `20261003224746_customer_portal_payments_receipts_v1.sql`. That file has not been applied, so `pendingMigrations()` returns it. The UX-10F migration is immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003220517`; that single history row was repaired immediately to repository version `20261003204538`. At UX-10F completion, `appliedMigrationHead` was `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`. UX-10G later applied `20261003224746_customer_portal_payments_receipts_v1.sql`, which is now both the repository head and the applied development head, and `pendingMigrations()` is empty. The UX-10F migration is immutable.

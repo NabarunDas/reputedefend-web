@@ -6,9 +6,10 @@ const linked = [
   { label: "Dashboard", href: "/portal" },
   { label: "Cases", href: "/portal/cases" },
   { label: "Documents", href: "/portal/documents" },
+  { label: "Payments", href: "/portal/payments" },
 ] as const
 
-const unavailable = ["Payments", "Relaunch Guard", "Account"] as const
+const unavailable = ["Relaunch Guard", "Account"] as const
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"

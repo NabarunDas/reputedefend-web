@@ -5,6 +5,10 @@ import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../reco
 
 const appliedHead = "20261003194353"
 const migration = "20261003204538_customer_portal_quotes_agreements_permissions_v1.sql"
+const upgradedFiles = [
+  migration,
+  "20261003224746_customer_portal_payments_receipts_v1.sql",
+].join(",")
 const db = new PGlite()
 
 const alex = "c10f0000-0000-4000-8000-0000000000a2"
@@ -210,8 +214,8 @@ beforeAll(async () => {
   await preparePlatform(db)
   await applyChain(db, { through: appliedHead })
   const upgraded = await applyUpgrade(db, appliedHead)
-  if (upgraded.applied.map(item => item.entry.filename).join(",") !== migration) {
-    throw new Error(`expected only ${migration}, applied ${upgraded.head}`)
+  if (upgraded.applied.map(item => item.entry.filename).join(",") !== upgradedFiles) {
+    throw new Error(`expected ${upgradedFiles}, applied ${upgraded.head}`)
   }
   await db.exec(`
     insert into auth.users(id, email, email_confirmed_at) values

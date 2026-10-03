@@ -104,6 +104,7 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
       {notice ? <p className="service-notice" role="alert">{notice}</p> : null}
 
       <QuoteSection
+        reference={item.reference}
         quote={service.quote}
         action={quoteAction}
         busy={busy}
@@ -154,8 +155,9 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
 }
 
 function QuoteSection({
-  quote, action, busy, open, setOpen, onSubmit,
+  reference, quote, action, busy, open, setOpen, onSubmit,
 }: {
+  reference: string
   quote: ServiceQuote | null
   action: ServiceAction | null
   busy: Operation | null
@@ -193,7 +195,12 @@ function QuoteSection({
           <p className="service-prose">{quote.paymentTiming}</p>
           <h3>Terms</h3>
           <p className="service-prose">{quote.termsReference}</p>
-          {quote.paymentNext ? <p>{paymentFollowUp(quote.paymentNext)}</p> : null}
+          {quote.paymentNext ? (
+            <p>
+              {paymentFollowUp(quote.paymentNext)}{" "}
+              <a href={`/portal/cases/${reference}/payments`}>Open payments for {reference}</a>
+            </p>
+          ) : null}
           {quote.canAccept && action ? (
             <div className="service-confirm">
               {open === "accept-quote" ? (

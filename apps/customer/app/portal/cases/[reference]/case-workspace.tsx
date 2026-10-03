@@ -52,6 +52,7 @@ export function CaseWorkspace({ detail }: { detail: CustomerCaseDetail }) {
         {item.closedAt ? <p className="case-closed">Closed {formatPortalDate(item.closedAt)}</p> : null}
         <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/documents`}>Documents and evidence</a></p>
         <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/service`}>Service and permissions</a></p>
+        <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/payments`}>Payments for this case</a></p>
       </header>
 
       <section className="attention-surface case-next" aria-labelledby="next-heading">

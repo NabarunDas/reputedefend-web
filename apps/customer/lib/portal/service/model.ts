@@ -22,8 +22,8 @@ export function quoteStatusText(quote: ServiceQuote): string {
 }
 
 export function paymentFollowUp(next: PaymentNext): string {
-  if (next === "payment") return "Payment is the next step. Use the secure link in the ProfileRelaunch email for that step."
-  return "Saving a payment method is the next step. Use the secure link in the ProfileRelaunch email for that step."
+  if (next === "payment") return "Payment is the next step. Continue in Payments in the customer portal."
+  return "Saving a payment method is the next step. Continue in Payments in the customer portal."
 }
 
 export function agreementStatusText(kind: "agreement" | "permission", item: ServiceAgreement): string {

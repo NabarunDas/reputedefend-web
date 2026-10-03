@@ -9,7 +9,7 @@ UX-10F lets a signed-in customer review and complete the commercial steps that a
 - see the current accepted, declined, expired, or withdrawn state
 - complete an existing eligible authorization-revocation action
 
-The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. UX-10G is not started. Payments, receipts, Guard, messaging, account editing, and Stripe stay outside this phase. After a quote is accepted, payment or payment-method setup is described as the next step and still uses the secure link in the ProfileRelaunch email.
+The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. Guard, messaging, account editing, and Stripe stay outside this phase. After a quote is accepted, payment or payment-method setup is described as the next step. UX-10G later moved that step into the customer Payments area. The emailed secure payment link remains. The UX-10G migration has not been applied.
 
 ## Route
 
@@ -53,7 +53,7 @@ Identical replay of a portal request returns the stored result. The same idempot
 
 ## Attention
 
-`QUOTE_ACCEPTANCE`, `SERVICE_AGREEMENT`, and `CASE_PERMISSION` link to `/portal/cases/{reference}/service`. `EVIDENCE_REQUIRED` stays on the documents route. `GUIDED_PAYMENT`, `MANAGED_PAYMENT_SETUP`, `PAYMENT_RECOVERY`, and `INVOICE_PAYMENT` stay on the secure email link.
+`QUOTE_ACCEPTANCE`, `SERVICE_AGREEMENT`, and `CASE_PERMISSION` link to `/portal/cases/{reference}/service`. `EVIDENCE_REQUIRED` stays on the documents route. UX-10G later points `GUIDED_PAYMENT`, `MANAGED_PAYMENT_SETUP`, `PAYMENT_RECOVERY`, and `INVOICE_PAYMENT` at `/portal/cases/{reference}/payments`.
 
 ## Migration
 
@@ -74,4 +74,4 @@ Private helpers, not executable by `PUBLIC`, `anon`, `authenticated`, or `servic
 
 `admin_private.customer_action_command_core_v1` is replaced so the secure-link path delegates commercial mutations to the shared helper.
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003220517`; that single history row was repaired immediately to repository version `20261003204538`. `appliedMigrationHead` and `migrationHead` now both point to `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003220517`; that single history row was repaired immediately to repository version `20261003204538`. `appliedMigrationHead` remains `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`. UX-10G later added pending repository head `20261003224746_customer_portal_payments_receipts_v1.sql`. That file has not been applied, so `pendingMigrations()` returns it. The UX-10F migration is immutable.

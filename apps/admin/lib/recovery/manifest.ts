@@ -397,6 +397,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal service", probe: "public.customer_portal_case_service_v1" },
   },
+  {
+    version: "20261003224746",
+    filename: "20261003224746_customer_portal_payments_receipts_v1.sql",
+    step: "UX-10G customer payments and receipts",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal payments", probe: "public.customer_portal_payments_v1" },
+  },
 ]
 
 /**

@@ -239,10 +239,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head on profilerelaunch-dev is 20261003204538 customer_portal_quotes_agreements_permissions_v1, matching the repository migration head.",
+      "The applied migration head on profilerelaunch-dev is 20261003204538 customer_portal_quotes_agreements_permissions_v1. Repository head 20261003224746 customer_portal_payments_receipts_v1 is pending and has not been applied.",
     status: "READY",
     evidence:
-      "UX-10F customer quotes, agreements and permissions was independently reviewed, applied to profilerelaunch-dev on 2026-10-03 and verified in the live schema. Supabase MCP initially registered 20261003220517; that history row was repaired immediately to repository version 20261003204538. apps/admin/lib/recovery/manifest.ts records the same applied head and pendingMigrations() is empty.",
+      "UX-10F customer quotes, agreements and permissions, version 20261003204538, remains the applied head on profilerelaunch-dev, reviewed and applied on 2026-10-03. UX-10G adds 20261003224746_customer_portal_payments_receipts_v1.sql in source only. pendingMigrations() returns that file. It has not been applied to any environment.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: true,

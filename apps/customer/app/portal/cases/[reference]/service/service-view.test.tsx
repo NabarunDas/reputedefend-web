@@ -121,7 +121,8 @@ describe("service and permissions", () => {
     expect(screen.getByRole("checkbox", { name: "I have read and agree to this Service Agreement." })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Withdraw this agreement" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Withdraw this permission" })).toBeNull()
-    expect(screen.queryByRole("link", { name: /Payments|Relaunch Guard|Account/ })).toBeNull()
+    expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/portal/payments")
+    expect(screen.queryByRole("link", { name: /Relaunch Guard|Account/ })).toBeNull()
     expect(screen.queryByText(/Stripe|PaymentIntent|checkout|card number/i)).toBeNull()
     const html = document.body.innerHTML
     expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
@@ -165,7 +166,8 @@ describe("service and permissions", () => {
     })} />)
     expect(screen.getByText("You accepted this quote on 2 October 2026.")).toBeTruthy()
     expect(screen.getByText("SO-26-ABCDEF")).toBeTruthy()
-    expect(screen.getByText("Payment is the next step. Use the secure link in the ProfileRelaunch email for that step.")).toBeTruthy()
+    expect(screen.getByText("Payment is the next step. Continue in Payments in the customer portal.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open payments for PR-26-ABCDEF" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/payments")
     expect(screen.queryByRole("button", { name: "Accept this quote" })).toBeNull()
   })
 

@@ -42,7 +42,6 @@ const ATTENTION_LABELS: Record<AttentionCode, string> = {
   INVOICE_PAYMENT: "Pay your invoice",
 }
 
-const ACTION_SUPPORT = "Use the secure link in the ProfileRelaunch email for this step."
 const EVIDENCE_SUPPORT = "Upload the requested evidence in your customer portal."
 
 const ukDate = new Intl.DateTimeFormat("en-GB", {
@@ -86,6 +85,13 @@ const PORTAL_SERVICE_SUPPORT = {
   CASE_PERMISSION: "Review your case management permission in the customer portal.",
 } as const
 
+const PORTAL_PAYMENT_SUPPORT = {
+  GUIDED_PAYMENT: "Complete your payment in the customer portal.",
+  MANAGED_PAYMENT_SETUP: "Save your payment method in the customer portal.",
+  PAYMENT_RECOVERY: "Complete payment authentication in the customer portal.",
+  INVOICE_PAYMENT: "Open your invoice from the customer portal.",
+} as const
+
 export type PresentedAttention = {
   label: string
   timing: string | null
@@ -114,10 +120,20 @@ export function presentAttention(item: AttentionItem, reference?: string): Prese
       actionLabel: destination ? `Review your service for ${destination}` : null,
     }
   }
+  if (item.code === "GUIDED_PAYMENT" || item.code === "MANAGED_PAYMENT_SETUP" || item.code === "PAYMENT_RECOVERY" || item.code === "INVOICE_PAYMENT") {
+    return {
+      label: ATTENTION_LABELS[item.code],
+      timing: `Available until ${formatPortalDate(item.expiresAt)}`,
+      support: PORTAL_PAYMENT_SUPPORT[item.code],
+      href: destination ? `/portal/cases/${destination}/payments` : null,
+      actionLabel: destination ? `Open payments for ${destination}` : null,
+    }
+  }
+  const unhandled: never = item.code
   return {
-    label: ATTENTION_LABELS[item.code],
-    timing: `Secure link expires ${formatPortalDate(item.expiresAt)}`,
-    support: ACTION_SUPPORT,
+    label: ATTENTION_LABELS[unhandled],
+    timing: null,
+    support: "",
     href: null,
     actionLabel: null,
   }

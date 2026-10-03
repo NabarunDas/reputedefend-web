@@ -49,10 +49,9 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(29)
-    // A clean rebuild includes the case-communications read. Dev has not
-    // received that migration yet, so the applied head stays on UX-3.
+    // A clean rebuild and profilerelaunch-dev now share the UX-8 migration head.
     expect(migrationHead.version).toBe("20261003120000")
-    expect(appliedMigrationHead.version).toBe("20261002194215")
+    expect(appliedMigrationHead.version).toBe("20261003120000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

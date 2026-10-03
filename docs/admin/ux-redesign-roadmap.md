@@ -11,7 +11,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-3 | Case list, queue and batch fact projection | COMPLETE |
 | UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | COMPLETE |
-| UX-6 | Evidence workspace | NOT STARTED |
+| UX-6 | Evidence workspace | COMPLETE |
 | UX-7 | Commercial and money surfaces | NOT STARTED |
 | UX-8 | Communications and conversations | NOT STARTED |
 | UX-9 | Visual system, wording and accessibility | NOT STARTED |
@@ -35,11 +35,11 @@ Complete. Today is now the place the working day starts: what needs doing now, o
 
 ## UX-5 — Navigation and information architecture
 
-Complete. Reorganises the Admin sidebar around the operating model UX-1 to UX-4 established: Today, Intake, Cases, then Guard and Finance, then Reports, with the remaining modules under Operations and Settings kept directly visible. Routes are unchanged. Search stays in the header. Active nested groups stay expanded so the current destination cannot be hidden. No migration. See ux-navigation-information-architecture.md. UX-6 is not started.
+Complete. Reorganises the Admin sidebar around the operating model UX-1 to UX-4 established: Today, Intake, Cases, then Guard and Finance, then Reports, with the remaining modules under Operations and Settings kept directly visible. Routes are unchanged. Search stays in the header. Active nested groups stay expanded so the current destination cannot be hidden. No migration. See ux-navigation-information-architecture.md.
 
 ## UX-6 — Evidence workspace
 
-The evidence surfaces made to match the distinctions the model already draws: a request is not a message, a message the provider accepted is not a message that arrived, a scan is not a validation, a validation is not a review, and an accepted document does not close its request. Likely to surface the manual scan refresh and the request-fulfilment step as first-class actions rather than as things an operator has to know to do.
+In progress. The case Evidence page (`/cases/[id]/evidence`) now reads the same request, version and contact interpretation as CaseFlow, and shows the journey in that order: what was requested, what arrived, whether the file is still uploading, scanning, invalid, waiting for review, accepted or rejected, and whether an accepted request is still open. Fulfilment stays a manual command. Contact stays case-level, because communications are not linked to an evidence request. No migration. See ux-evidence-workspace.md. UX-7 is not started.
 
 ## UX-7 — Commercial and money surfaces
 
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4 and UX-5 are complete. UX-6 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5 and UX-6 are complete. UX-7 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.

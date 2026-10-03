@@ -3,7 +3,8 @@ import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { AccessButtons, ApprovePackForm, CreateDraftPackForm, CreateRequestForm, PreparedPackPanel, ReviewForms, UploadEvidenceForm, VisibilityForm } from "./forms"
+import { evidenceActions, type EvidenceRequest } from "@/lib/evidence/model"
+import { AccessButtons, ApprovePackForm, CreateDraftPackForm, CreateRequestForm, PreparedPackPanel, RequestStatusForm, ReviewForms, UploadEvidenceForm, VisibilityForm } from "./forms"
 import { PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_PUBLISH_CONFIRMATION, PACK_PUBLISH_WARNING, type PreparedPack } from "@/lib/packs/model"
 import type { EvidenceVersionRow } from "@/lib/evidence/model"
 
@@ -58,12 +59,48 @@ describe("evidence forms", () => {
   it("states that creating a request does not send email", () => {
     render(<CreateRequestForm caseId="55555555-5555-4555-8555-555555555555" />)
     expect(screen.getByText(/does not send an email/)).toBeTruthy()
-    expect(document.body.textContent).not.toMatch(/customer portal|mailto:/i)
+    expect(screen.getByText(/records what is needed. It does not contact the customer/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/customer portal|mailto:|Request sent/i)
   })
   it("shows 10 MB type guidance on upload", () => {
     render(<UploadEvidenceForm caseId="55555555-5555-4555-8555-555555555555" documents={[]} openRequests={[]} />)
     expect(screen.getByText(/Maximum file size 10 MB/)).toBeTruthy()
     expect(screen.getByLabelText("File")).toHaveAttribute("accept", ".pdf,.jpg,.jpeg,.png,.webp,.docx")
+    expect(screen.queryByLabelText(/Which evidence request/)).toBeNull()
+  })
+  it("can associate an upload with an open request or leave it standalone", () => {
+    const request = {
+      id: "88888888-8888-4888-8888-888888888888", title: "Proof of ownership", requestText: "Please upload it.",
+      status: "OPEN", dueAt: null, createdAt: "2026-09-01T00:00:00.000Z", fulfilledAt: null, version: 1,
+    } as EvidenceRequest
+    render(<UploadEvidenceForm caseId="55555555-5555-4555-8555-555555555555" documents={[]} openRequests={[request]} />)
+    const select = screen.getByLabelText("Which evidence request does this file answer?")
+    expect(select).toHaveValue("")
+    expect(screen.getByRole("option", { name: "Not linked to a request" })).toBeTruthy()
+    expect(screen.getByRole("option", { name: "Proof of ownership" })).toBeTruthy()
+  })
+  it("shows Mark fulfilled immediately when accepted evidence leaves the request open", () => {
+    const request = {
+      id: "88888888-8888-4888-8888-888888888888", title: "Proof of ownership", requestText: "Please upload it.",
+      status: "OPEN", dueAt: null, createdAt: "2026-09-01T00:00:00.000Z", fulfilledAt: null, version: 2,
+    } as EvidenceRequest
+    render(<RequestStatusForm caseId="55555555-5555-4555-8555-555555555555" request={request} prominentFulfil />)
+    expect(screen.getByRole("button", { name: "Mark fulfilled Proof of ownership" })).toBeTruthy()
+    expect(screen.queryByText("Request sent")).toBeNull()
+    expect(document.body.textContent).not.toMatch(/automatically fulfil/i)
+  })
+  it("does not offer view, download or accept for a threat-blocked file", () => {
+    const actions = evidenceActions({
+      uploadStatus: "UPLOADED", scanStatus: "THREATS_FOUND", validationStatus: "VALID", reviewStatus: "UNREVIEWED", contentType: "application/pdf",
+    })
+    render(<AccessButtons caseId="55555555-5555-4555-8555-555555555555" versionId={version.id} actions={actions} />)
+    expect(screen.getByRole("button", { name: "View" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Download" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
+    cleanup()
+    render(<ReviewForms caseId="55555555-5555-4555-8555-555555555555" version={version} actions={actions} />)
+    expect(screen.queryByText("Accept")).toBeNull()
+    expect(screen.queryByText("Reject")).toBeNull()
   })
   it("requires confirmation before rejecting an accepted version or changing visibility", () => {
     render(<>

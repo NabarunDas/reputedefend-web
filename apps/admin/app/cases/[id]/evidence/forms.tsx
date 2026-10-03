@@ -19,6 +19,7 @@ export function CreateRequestForm({ caseId }: { caseId: string }) {
   return <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Create request" payload={form => ({
     operation: "create_request", caseId, title: form.get("title"), requestText: form.get("requestText"), dueAt: time(form, "dueAt"),
   })}>
+    <p>Creating this request records what is needed. It does not contact the customer.</p>
     <p>Creating an evidence request records the requirement only. It does not send an email.</p>
     <label>Title<input name="title" required maxLength={200} /></label>
     <label>Request text<textarea name="requestText" required maxLength={4000} rows={4} /></label>
@@ -26,17 +27,16 @@ export function CreateRequestForm({ caseId }: { caseId: string }) {
   </CommandForm>
 }
 
-export function RequestStatusForm({ caseId, request }: { caseId: string; request: EvidenceRequest }) {
+export function RequestStatusForm({ caseId, request, prominentFulfil = false }: { caseId: string; request: EvidenceRequest; prominentFulfil?: boolean }) {
+  const fulfil = <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Mark fulfilled" submitName={`Mark fulfilled ${request.title}`} payload={form => ({
+    operation: "fulfill_request", caseId, requestId: request.id, version: request.version, note: form.get("note"),
+  })}>
+    <Reason name="note" label="Supporting note" />
+  </CommandForm>
   return <div className="evidence-request-actions">
-    <details><summary>Fulfill</summary>
-      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Mark fulfilled" payload={form => ({
-        operation: "fulfill_request", caseId, requestId: request.id, version: request.version, note: form.get("note"),
-      })}>
-        <Reason name="note" label="Supporting note" />
-      </CommandForm>
-    </details>
-    <details><summary>Cancel</summary>
-      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Cancel request" payload={form => ({
+    {prominentFulfil ? fulfil : <details><summary>Mark fulfilled</summary>{fulfil}</details>}
+    <details><summary>Cancel request</summary>
+      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Cancel request" submitName={`Cancel request ${request.title}`} payload={form => ({
         operation: "cancel_request", caseId, requestId: request.id, version: request.version, note: form.get("note"),
       })}>
         <Reason name="note" label="Reason for cancelling" />
@@ -45,13 +45,13 @@ export function RequestStatusForm({ caseId, request }: { caseId: string; request
   </div>
 }
 
-export function ScanRefreshForm({ caseId, versionId }: { caseId: string; versionId: string }) {
-  return <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Refresh scan status" payload={() => ({
+export function ScanRefreshForm({ caseId, versionId, context }: { caseId: string; versionId: string; context?: string }) {
+  return <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Refresh scan status" submitName={context ? `Refresh scan status for ${context}` : undefined} payload={() => ({
     operation: "refresh_scan", caseId, versionId,
   })} />
 }
 
-export function AccessButtons({ caseId, versionId, actions }: { caseId: string; versionId: string; actions: EvidenceActionState }) {
+export function AccessButtons({ caseId, versionId, actions, context }: { caseId: string; versionId: string; actions: EvidenceActionState; context?: string }) {
   const [message, setMessage] = useState("")
   async function open(operation: "view" | "download") {
     setMessage("")
@@ -81,24 +81,25 @@ export function AccessButtons({ caseId, versionId, actions }: { caseId: string; 
     }
   }
   return <div className="evidence-access">
-    <button type="button" disabled={!actions.view} title={actions.viewHint || undefined} aria-describedby={!actions.view && actions.viewHint ? `view-hint-${versionId}` : undefined} onClick={() => open("view")}>View</button>
-    <button type="button" className="secondary" disabled={!actions.download} onClick={() => open("download")}>Download</button>
+    <button type="button" disabled={!actions.view} title={actions.viewHint || undefined} aria-label={context ? `View ${context}` : undefined} aria-describedby={!actions.view && actions.viewHint ? `view-hint-${versionId}` : undefined} onClick={() => open("view")}>View</button>
+    <button type="button" className="secondary" disabled={!actions.download} aria-label={context ? `Download ${context}` : undefined} onClick={() => open("download")}>Download</button>
     {message && <p role="status">{message}</p>}
   </div>
 }
 
-export function ReviewForms({ caseId, version, actions }: { caseId: string; version: EvidenceVersionRow; actions: EvidenceActionState }) {
+export function ReviewForms({ caseId, version, actions, context }: { caseId: string; version: EvidenceVersionRow; actions: EvidenceActionState; context?: string }) {
+  const name = context ? `${context}` : `version ${version.versionNumber}`
   return <div className="evidence-review">
-    {actions.accept && <details><summary>Accept</summary>
-      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Accept version" payload={form => ({
+    {actions.accept && <details><summary aria-label={`Accept ${name}`}>Accept</summary>
+      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Accept version" submitName={`Accept ${name}`} payload={form => ({
         operation: "accept", caseId, versionId: version.id, recordVersion: version.recordVersion, note: form.get("note"),
       })}>
-        <p>Accepting records the review only. It does not make this file customer visible.</p>
+        <p>Accepting records the review only. It does not make this file customer visible, and it does not fulfil an evidence request.</p>
         <Reason name="note" label="Review note" maxLength={2000} />
       </CommandForm>
     </details>}
-    {actions.reject && <details><summary>Reject</summary>
-      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Reject version" payload={form => ({
+    {actions.reject && <details><summary aria-label={`Reject ${name}`}>Reject</summary>
+      <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Reject version" submitName={`Reject ${name}`} payload={form => ({
         operation: "reject", caseId, versionId: version.id, recordVersion: version.recordVersion, note: form.get("note"),
       })}>
         {version.reviewStatus === "ACCEPTED" && <label className="checkbox"><input type="checkbox" required />I confirm I want to reject a previously accepted version.</label>}
@@ -114,7 +115,7 @@ export function VisibilityForm({ caseId, version }: { caseId: string; version: E
       operation: "set_visibility", caseId, versionId: version.id, recordVersion: version.recordVersion,
       note: form.get("note"), customerVisible: form.get("customerVisible") === "true",
     })}>
-      <p>Customer visibility is required before a pack containing this file can be published. It does not publish the file by itself.</p>
+      <p>Customer visibility is required before a pack containing this file can be published. It does not publish the file by itself. Marking a file for future customer visibility does not mean a current customer portal exposes it. No current customer portal exposes this file.</p>
       <label>Future customer visibility
         <select name="customerVisible" defaultValue={version.customerVisible ? "true" : "false"}>
           <option value="false">Not visible</option>
@@ -204,9 +205,9 @@ export function UploadEvidenceForm({ caseId, documents, openRequests }: { caseId
           {documents.map(document => <option key={document.id} value={document.id}>{document.title}</option>)}
         </select>
       </label>}
-      {mode === "new" && openRequests.length > 0 && <label>Link to an open evidence request (optional)
+      {mode === "new" && openRequests.length > 0 && <label>Which evidence request does this file answer?
         <select name="evidenceRequestId" defaultValue="">
-          <option value="">Not linked</option>
+          <option value="">Not linked to a request</option>
           {openRequests.map(request => <option key={request.id} value={request.id}>{request.title}</option>)}
         </select>
       </label>}

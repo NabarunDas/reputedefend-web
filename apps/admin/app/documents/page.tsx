@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
 import { listEvidenceQueue } from "@/lib/evidence/queries"
+import { evidenceVersionAnchor } from "@/lib/evidence/workspace"
 import { evidenceQueueFilters, fileTypeLabel, formatBytes, queueFilterLabels, type QueueFilter } from "@/lib/evidence/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
 
@@ -36,9 +37,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         <table>
           <thead><tr><th>Case</th><th>Client and business</th><th>Document</th><th>File</th><th>Scan</th><th>Review</th></tr></thead>
           <tbody>{rows.map(row => <tr key={row.versionId}>
-            <td><Link href={`/cases/${row.caseId}/evidence`}>{row.reference}</Link></td>
+            <td><Link href={`/cases/${row.caseId}/evidence#${evidenceVersionAnchor(row.versionId)}`}>{row.reference}</Link></td>
             <td>{row.client}<br />{row.business}</td>
-            <td><Link href={`/cases/${row.caseId}/evidence`}>{row.title}</Link></td>
+            <td><Link href={`/cases/${row.caseId}/evidence#${evidenceVersionAnchor(row.versionId)}`}>{row.title}</Link></td>
             <td>{row.filename}<br />{fileTypeLabel(row.contentType)} · {formatBytes(row.sizeBytes)}</td>
             <td>
               <Badge tone={scanTone(row.scanStatus)}>{row.scanStatus.replaceAll("_", " ")}</Badge><br />

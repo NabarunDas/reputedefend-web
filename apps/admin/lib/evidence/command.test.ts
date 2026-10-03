@@ -331,8 +331,8 @@ describe("evidence requests and review without S3", () => {
     const response = await runEvidenceCommand(req(requestBody), null)
     const payload = await response.json()
     expect(response.status).toBe(200)
-    expect(payload).toMatchObject({ requestStatus: "OPEN" })
-    expect(JSON.stringify(payload)).not.toMatch(/smtp|resend/i)
+    expect(payload).toMatchObject({ requestStatus: "OPEN", message: "The evidence request has been recorded. No email was sent." })
+    expect(JSON.stringify(payload)).not.toMatch(/smtp|resend|Request sent/i)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_request_v1", expect.objectContaining({ p_operation: "create", p_case: caseId, p_title: "Bank statements" }))
   })
   it("replays a matching request create", async () => {

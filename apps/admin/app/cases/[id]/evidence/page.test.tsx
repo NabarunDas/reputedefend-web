@@ -4,14 +4,15 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import type { CaseDetail } from "@/lib/cases/model"
-import type { EvidenceCase } from "@/lib/evidence/model"
 
 const getCase = vi.fn()
 const getEvidenceCase = vi.fn()
 const getPreparedPackCase = vi.fn()
+const loadCaseFlowFacts = vi.fn()
 vi.mock("@/lib/cases/queries", () => ({ getCase: (...args: unknown[]) => getCase(...args) }))
 vi.mock("@/lib/evidence/queries", () => ({ getEvidenceCase: (...args: unknown[]) => getEvidenceCase(...args) }))
 vi.mock("@/lib/packs/queries", () => ({ getPreparedPackCase: (...args: unknown[]) => getPreparedPackCase(...args) }))
+vi.mock("@/lib/case-flow/load", () => ({ loadCaseFlowFacts: (...args: unknown[]) => loadCaseFlowFacts(...args) }))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -47,7 +48,62 @@ vi.mock("./forms", () => ({
   ),
 }))
 
+import type { CaseFlowCommunicationFact, CaseFlowFacts } from "@/lib/case-flow/model"
+import type { EvidenceCase } from "@/lib/evidence/model"
 import EvidencePage from "./page"
+
+function flowFacts(evidence: EvidenceCase, communications: CaseFlowCommunicationFact[] = []): CaseFlowFacts {
+  return {
+    caseId: evidence.caseId,
+    reference: evidence.reference,
+    caseType: "PROFILE_RECOVERY",
+    technicalStage: "INITIAL_REVIEW",
+    caseStatus: "UNDER_REVIEW",
+    serviceTrack: "UNDECIDED",
+    outcome: null,
+    outcomeSummary: "",
+    customerId: "11111111-1111-4111-8111-111111111111",
+    businessId: "22222222-2222-4222-8222-222222222222",
+    locationId: "33333333-3333-4333-8333-333333333333",
+    plannedNextAction: "",
+    plannedNextActionDueAt: null,
+    allowedTransitions: ["ASSESSMENT_READY", "EVIDENCE_COLLECTION"],
+    reopened: false,
+    tasks: [],
+    submissions: [],
+    authorization: {
+      membershipStatus: "pending",
+      customerEmailVerified: false,
+      businessAuthorityVerified: false,
+      serviceAgreementAccepted: false,
+      caseManagementPermissionActive: false,
+      managerAccessVerified: false,
+      authorizationReady: false,
+      reviewRequired: [],
+      agreementKinds: [],
+      hasLocation: true,
+    },
+    customerActions: [],
+    evidence: {
+      requests: evidence.requests.map(request => ({ id: request.id, status: request.status, dueAt: request.dueAt, createdAt: request.createdAt })),
+      versions: evidence.documents.flatMap(document => document.versions.map(version => ({
+        documentId: document.id,
+        versionId: version.id,
+        evidenceRequestId: document.evidenceRequestId,
+        uploadStatus: version.uploadStatus,
+        scanStatus: version.scanStatus,
+        validationStatus: version.validationStatus,
+        reviewStatus: version.reviewStatus,
+      }))),
+    },
+    packs: { packs: [], eligibleCount: 0 },
+    commercial: { complete: true, quotes: [] },
+    payment: { complete: true, orders: [] },
+    communications,
+    complaints: { complete: true, open: [] },
+    capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
+  }
+}
 
 const caseId = "55555555-5555-4555-8555-555555555555"
 const c = { id: caseId, reference: "PR-1", client: "Alex", business: "Bakery" } as CaseDetail
@@ -80,6 +136,7 @@ beforeEach(() => {
   getCase.mockReset().mockResolvedValue(c)
   getEvidenceCase.mockReset()
   getPreparedPackCase.mockReset().mockResolvedValue({ caseId, packs: [], eligible: [] })
+  loadCaseFlowFacts.mockReset().mockImplementation(async () => flowFacts(await getEvidenceCase(caseId)))
 })
 
 describe("case evidence workspace", () => {
@@ -92,7 +149,9 @@ describe("case evidence workspace", () => {
       }],
     } as EvidenceCase)
     render(await EvidencePage({ params: Promise.resolve({ id: caseId }) }))
-    expect(screen.getByRole("heading", { name: "Evidence & Documents" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy()
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
+    expect(loadCaseFlowFacts).toHaveBeenCalledWith(caseId)
     expect(screen.getAllByText(/records the requirement only. It does not send an email/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Maximum file size 10 MB/).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "View" })).toBeDisabled()
@@ -102,7 +161,8 @@ describe("case evidence workspace", () => {
     expect(document.body.textContent).not.toMatch(/Google Docs Viewer|Microsoft Office Viewer|mailto:/i)
     expect(screen.getByRole("heading", { name: "Prepared submission pack" })).toBeTruthy()
     expect(screen.getByText(/does not confirm payment, customer authority or permission to submit/)).toBeTruthy()
-    expect(document.body.textContent).not.toMatch(/Submit to Google|customer portal|Mark as paid|permission granted/i)
+    expect(screen.queryByRole("link", { name: /customer portal/i })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Submit to Google|Mark as paid|permission granted/i)
   })
   it("shows eligible evidence, reused View/Download and a stale warning", async () => {
     getEvidenceCase.mockResolvedValue({ caseId, reference: "PR-1", requests: [], documents: [] } as EvidenceCase)
@@ -142,7 +202,7 @@ describe("case evidence workspace", () => {
       }],
     } as EvidenceCase)
     render(await EvidencePage({ params: Promise.resolve({ id: caseId }) }))
-    expect(screen.getByText("Customer submitted")).toBeTruthy()
+    expect(screen.getByText(/Customer submitted/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Refresh scan status" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Accept version" })).toBeNull()
   })

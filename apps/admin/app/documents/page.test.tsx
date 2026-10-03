@@ -45,7 +45,8 @@ describe("documents queue", () => {
     expect([...screen.getByLabelText("Show").querySelectorAll("option")].map(option => option.textContent)).toEqual([
       "Needs review", "Scanning", "Blocked", "Accepted", "Rejected", "All",
     ])
-    expect(screen.getByRole("link", { name: "PR-1" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/evidence")
+    expect(screen.getByRole("link", { name: "PR-1" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/evidence#evidence-version-77777777-7777-4777-8777-777777777777")
+    expect(screen.getByRole("link", { name: "Invoice" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/evidence#evidence-version-77777777-7777-4777-8777-777777777777")
     expect(document.body.textContent).not.toMatch(/customer portal|send an email|Google Docs/i)
   })
 })

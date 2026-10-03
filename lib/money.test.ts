@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { catalogueSeed } from "./catalogue-seed"
-import { GUARD_MANAGED_DISCOUNT_BPS, discountMinor, formatGbp, quoteAmounts } from "./money"
+import { GUARD_MANAGED_DISCOUNT_BPS, discountMinor, formatGbp, formatMoney, quoteAmounts } from "./money"
 import { pricingGroups } from "./pricing"
 
 describe("integer pence arithmetic", () => {
@@ -28,6 +28,9 @@ describe("integer pence arithmetic", () => {
     })
     expect(formatGbp(23920)).toBe("£239.20")
     expect(formatGbp(11920)).toBe("£119.20")
+    expect(formatMoney(29900, "GBP")).toBe("£299.00")
+    expect(formatMoney(100, "USD")).toBe("$1.00")
+    expect(formatMoney(0, "GBP")).toBe("£0.00")
   })
 
   it("rounds once at the minor-unit boundary for awkward values", () => {

@@ -2,7 +2,7 @@
 
 UX-10E is the first Customer Portal phase in which a signed-in customer completes an action. The customer can see evidence requests and submitted evidence for cases they directly own, upload a file for an eligible open request, and download a document ProfileRelaunch has published to them.
 
-The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. UX-10F is not started. Quote acceptance, service agreement acceptance, case-management permission, payments, Guard, messaging, and account editing stay outside the portal.
+The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. UX-10F later added quote, agreement, and permission actions inside the portal. Payments, Guard, messaging, and account editing stay outside the portal.
 
 ## Routes
 
@@ -43,7 +43,7 @@ Download authorisation happens when the file is requested. The route checks the 
 
 ## Attention
 
-Only `EVIDENCE_REQUIRED` now points into the portal: "Upload the requested evidence in your customer portal." The link is `/portal/cases/{reference}/documents`. Quote, agreement, permission, and payment attention still tell the customer to use the secure link from email.
+`EVIDENCE_REQUIRED` points into the portal: "Upload the requested evidence in your customer portal." The link is `/portal/cases/{reference}/documents`. UX-10F later pointed quote, agreement, and permission attention at `/portal/cases/{reference}/service`. Payment attention still tells the customer to use the secure link from email.
 
 A finalised upload appears on the UX-10D timeline through the existing `EVIDENCE_SUBMITTED` source. UX-10E does not write a separate timeline.
 
@@ -70,4 +70,4 @@ Private helpers are not executable by `service_role`:
 - `admin_private.customer_published_pack_documents_v1(uuid)`
 - `admin_private.customer_portal_case_evidence_v1(uuid)`
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003202103`; that single history row was repaired immediately to repository version `20261003194353`. `appliedMigrationHead` and `migrationHead` now both point to `20261003194353_customer_portal_documents_evidence_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003202103`; that single history row was repaired immediately to repository version `20261003194353`. At UX-10E completion, `appliedMigrationHead` and `migrationHead` both pointed to `20261003194353_customer_portal_documents_evidence_v1.sql`, and `pendingMigrations()` was empty. The migration is immutable. UX-10F later added and applied `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`; UX-10E remains immutable and is not replayed.

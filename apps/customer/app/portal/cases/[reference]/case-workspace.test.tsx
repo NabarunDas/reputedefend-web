@@ -72,6 +72,7 @@ describe("customer case workspace", () => {
     expect(screen.getByText("Upload the requested evidence in your customer portal.")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Upload evidence for PR-26-ABCDEF" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
     expect(screen.getByRole("link", { name: "Documents and evidence" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
+    expect(screen.getByRole("link", { name: "Service and permissions" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/service")
     expect(screen.getByText("You also have 1 other step waiting for you.")).toBeTruthy()
     expect(screen.getByText("Review your quote")).toBeTruthy()
     expect(screen.queryByText("Nothing is needed from you right now. We'll let you know when that changes.")).toBeNull()

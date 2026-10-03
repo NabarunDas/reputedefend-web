@@ -53,24 +53,38 @@ describe("customer case presentation", () => {
       timing: "Requested by 8 October 2026",
       support: "Upload the requested evidence in your customer portal.",
       href: "/portal/cases/PR-26-ABCDEF/documents",
+      actionLabel: "Upload evidence for PR-26-ABCDEF",
     })
     expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: null }).timing).toBeNull()
     expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: null }).href).toBeNull()
-    const actions = [
-      ["QUOTE_ACCEPTANCE", "Review your quote"],
-      ["SERVICE_AGREEMENT", "Accept your service agreement"],
-      ["CASE_PERMISSION", "Confirm case-management permission"],
+    const portalActions = [
+      ["QUOTE_ACCEPTANCE", "Review your quote", "Review your quote in the customer portal."],
+      ["SERVICE_AGREEMENT", "Accept your service agreement", "Review your Service Agreement in the customer portal."],
+      ["CASE_PERMISSION", "Confirm case-management permission", "Review your case management permission in the customer portal."],
+    ] as const
+    for (const [code, label, support] of portalActions) {
+      expect(presentAttention({ code, expiresAt: due }, "PR-26-ABCDEF")).toEqual({
+        label,
+        timing: "Available until 8 October 2026",
+        support,
+        href: "/portal/cases/PR-26-ABCDEF/service",
+        actionLabel: "Review your service for PR-26-ABCDEF",
+      })
+      expect(presentAttention({ code, expiresAt: due }).href).toBeNull()
+    }
+    const paymentActions = [
       ["GUIDED_PAYMENT", "Complete your payment"],
       ["MANAGED_PAYMENT_SETUP", "Save your payment method"],
       ["PAYMENT_RECOVERY", "Complete payment authentication"],
       ["INVOICE_PAYMENT", "Pay your invoice"],
     ] as const
-    for (const [code, label] of actions) {
+    for (const [code, label] of paymentActions) {
       expect(presentAttention({ code, expiresAt: due }, "PR-26-ABCDEF")).toEqual({
         label,
         timing: "Secure link expires 8 October 2026",
         support: "Use the secure link in the ProfileRelaunch email for this step.",
         href: null,
+        actionLabel: null,
       })
     }
     const presented = presentCase({ ...base, serviceTrack: "MANAGED", attentionItems: [{ code: "QUOTE_ACCEPTANCE", expiresAt: due }] })

@@ -29,9 +29,9 @@ export function CaseSummary({ item, titleLevel = 2 }: { item: PresentedCase; tit
               <p className="attention-label">{attention.label}</p>
               {attention.timing ? <p className="attention-timing">{attention.timing}</p> : null}
               <p className="attention-support">{attention.support}</p>
-              {attention.href ? (
+              {attention.href && attention.actionLabel ? (
                 <p className="attention-action">
-                  <a href={attention.href}>Upload evidence for {item.reference}</a>
+                  <a href={attention.href}>{attention.actionLabel}</a>
                 </p>
               ) : null}
             </li>

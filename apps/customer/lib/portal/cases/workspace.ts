@@ -94,6 +94,7 @@ export type PresentedNextStep = {
   timing: string | null
   support: string | null
   href: string | null
+  actionLabel: string | null
   alsoWaiting: string | null
   remaining: string[]
 }
@@ -115,6 +116,7 @@ export function presentNextStep(input: {
       timing: first.timing,
       support: first.support,
       href: first.href,
+      actionLabel: first.actionLabel,
       alsoWaiting: extra === 0
         ? null
         : extra === 1
@@ -132,6 +134,7 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: null,
+      actionLabel: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -143,6 +146,7 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: null,
+      actionLabel: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -154,6 +158,7 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: null,
+      actionLabel: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -165,6 +170,7 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: null,
+      actionLabel: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -176,15 +182,16 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: null,
+      actionLabel: null,
       alsoWaiting: null,
       remaining: [],
     }
   }
   if (input.caseType === "PROFILE_RECOVERY" && input.outcomeCode === "RESTORED") {
-    return { title: "Your profile was restored", body: "This case is complete.", timing: null, support: null, href: null, alsoWaiting: null, remaining: [] }
+    return { title: "Your profile was restored", body: "This case is complete.", timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
   }
   if (input.caseType === "REVIEW_PROTECTION" && input.outcomeCode === "REMOVED") {
-    return { title: "The review was removed", body: "This case is complete.", timing: null, support: null, href: null, alsoWaiting: null, remaining: [] }
+    return { title: "The review was removed", body: "This case is complete.", timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
   }
   return {
     title: "Your case is complete",
@@ -192,6 +199,7 @@ export function presentNextStep(input: {
     timing: null,
     support: null,
     href: null,
+    actionLabel: null,
     alsoWaiting: null,
     remaining: [],
   }

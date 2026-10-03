@@ -80,20 +80,38 @@ export function statusLabel(state: CustomerCaseState): string {
   return STATUS_LABELS[state]
 }
 
+const PORTAL_SERVICE_SUPPORT = {
+  QUOTE_ACCEPTANCE: "Review your quote in the customer portal.",
+  SERVICE_AGREEMENT: "Review your Service Agreement in the customer portal.",
+  CASE_PERMISSION: "Review your case management permission in the customer portal.",
+} as const
+
 export type PresentedAttention = {
   label: string
   timing: string | null
   support: string
   href: string | null
+  actionLabel: string | null
 }
 
 export function presentAttention(item: AttentionItem, reference?: string): PresentedAttention {
+  const destination = reference && isPublicCaseReference(reference) ? reference : null
   if (item.code === "EVIDENCE_REQUIRED") {
     return {
       label: ATTENTION_LABELS.EVIDENCE_REQUIRED,
       timing: item.dueAt ? `Requested by ${formatPortalDate(item.dueAt)}` : null,
       support: EVIDENCE_SUPPORT,
-      href: reference && isPublicCaseReference(reference) ? `/portal/cases/${reference}/documents` : null,
+      href: destination ? `/portal/cases/${destination}/documents` : null,
+      actionLabel: destination ? `Upload evidence for ${destination}` : null,
+    }
+  }
+  if (item.code === "QUOTE_ACCEPTANCE" || item.code === "SERVICE_AGREEMENT" || item.code === "CASE_PERMISSION") {
+    return {
+      label: ATTENTION_LABELS[item.code],
+      timing: `Available until ${formatPortalDate(item.expiresAt)}`,
+      support: PORTAL_SERVICE_SUPPORT[item.code],
+      href: destination ? `/portal/cases/${destination}/service` : null,
+      actionLabel: destination ? `Review your service for ${destination}` : null,
     }
   }
   return {
@@ -101,6 +119,7 @@ export function presentAttention(item: AttentionItem, reference?: string): Prese
     timing: `Secure link expires ${formatPortalDate(item.expiresAt)}`,
     support: ACTION_SUPPORT,
     href: null,
+    actionLabel: null,
   }
 }
 

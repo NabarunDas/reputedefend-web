@@ -239,10 +239,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head on profilerelaunch-dev is 20261003194353 customer_portal_documents_evidence_v1, matching the repository migration head.",
+      "The applied migration head on profilerelaunch-dev is 20261003204538 customer_portal_quotes_agreements_permissions_v1, matching the repository migration head.",
     status: "READY",
     evidence:
-      "UX-10E customer documents and evidence was independently reviewed, applied to profilerelaunch-dev on 2026-10-03 and verified in the live schema. Supabase MCP initially registered 20261003202103; that history row was repaired immediately to repository version 20261003194353. apps/admin/lib/recovery/manifest.ts records the same applied head and pendingMigrations() is empty.",
+      "UX-10F customer quotes, agreements and permissions was independently reviewed, applied to profilerelaunch-dev on 2026-10-03 and verified in the live schema. Supabase MCP initially registered 20261003220517; that history row was repaired immediately to repository version 20261003204538. apps/admin/lib/recovery/manifest.ts records the same applied head and pendingMigrations() is empty.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: true,

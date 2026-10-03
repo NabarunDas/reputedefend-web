@@ -16,10 +16,10 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("keeps the applied dev head aligned with the repository through UX-10E", () => {
-    expect(appliedMigrationHead.filename).toBe("20261003194353_customer_portal_documents_evidence_v1.sql")
+  it("keeps the applied dev head aligned with the repository through UX-10F", () => {
+    expect(appliedMigrationHead.filename).toBe("20261003204538_customer_portal_quotes_agreements_permissions_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261003194353_customer_portal_documents_evidence_v1.sql")
+    expect(migrationHead.filename).toBe("20261003204538_customer_portal_quotes_agreements_permissions_v1.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead).toBe(migrationHead)
   })
@@ -28,7 +28,7 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no pending migrations after UX-10E was applied to dev", () => {
+  it("has no pending migrations after UX-10F was applied to dev", () => {
     expect(pendingMigrations()).toEqual([])
   })
 

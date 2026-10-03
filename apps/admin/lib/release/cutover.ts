@@ -37,7 +37,7 @@ export const cutoverSequence: readonly CutoverPhase[] = [
       "Resolve everything that is a decision or an external account fact, while nothing is live and nothing can be broken.",
     prerequisites: [
       "Step 23 is complete and merged.",
-      "20261003125151 customer_portal_auth_foundation_v1 is applied to profilerelaunch-dev and remains the applied migration head. 20261003154314 customer_portal_dashboard_cases_v1 is in the repository and is not applied. Applied migrations are not replayed.",
+      "20261003154314 customer_portal_dashboard_cases_v1 is applied to profilerelaunch-dev and is the current repository/dev migration head. Applied migrations are not replayed.",
     ],
     steps: [
       "Record an answer to each Owner decision, or record explicitly that it is deferred and what that defers.",

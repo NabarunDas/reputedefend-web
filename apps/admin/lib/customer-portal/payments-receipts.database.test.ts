@@ -259,7 +259,7 @@ describe("customer portal payments and receipts", () => {
     const order = (await rows<{ id: string; amount_minor: number }>("select id, amount_minor from public.service_orders where case_id = $1", [caseId]))[0]
     const opened = await issueAndOpen("issue_managed_setup_action", order.id)
     const actionSelector = await selector(opened.actionId)
-    const view = await rpc<{ cases: Array<{ orders: Array<{ paymentModel: string; consent: { recorded: boolean; text: string | null }; consentOfferText: string | null; paymentMethodSaved: boolean }> }> }>("customer_portal_payments_v1", [alexSession])
+    const view = await rpc<{ cases: Array<{ reference: string; orders: Array<{ paymentModel: string; consent: { recorded: boolean; text: string | null }; consentOfferText: string | null; paymentMethodSaved: boolean }> }> }>("customer_portal_payments_v1", [alexSession])
     const managed = view.cases.find(item => item.reference === reference)
     expect(managed?.orders[0].paymentModel).toBe("SUCCESS_FEE")
     expect(managed?.orders[0].consent).toEqual({ recorded: false, text: null })

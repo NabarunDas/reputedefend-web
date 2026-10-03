@@ -126,7 +126,7 @@ beforeEach(async () => {
     insert into public.customers(id,full_name,email) values('${customer}','Alex','alex@example.com') on conflict (id) do update set email=excluded.email;
     insert into public.businesses(id,display_name) values('${business}','Bakery') on conflict (id) do nothing;
     insert into public.locations(id,business_id,country) values('${location}','${business}','UK') on conflict (id) do nothing;
-    insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'MANAGED') on conflict (id) do nothing;
+    insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'MANAGED') on conflict (id) do update set status='RECEIVED';
     insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values('${customer}','email','alex@example.com','${uid}','Verified from a live call with the customer.') on conflict (customer_id,channel) do update set verified_value=excluded.verified_value;
     insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence) values('${customer}','${business}','verified',now(),'${uid}','Companies House match discussed on a live call.') on conflict (customer_id,business_id) do update set status='verified', verified_at=now(), verified_by=excluded.verified_by, evidence=excluded.evidence;`)
 })
@@ -481,6 +481,9 @@ describe("communications outgoing mail SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_communications_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_conversations_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_reconcile_acceptance_v1(text,uuid,uuid,uuid,integer,text,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_conversation_command_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_conversation_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
     }
   })
 
@@ -942,5 +945,54 @@ describe("communications outgoing mail SQL", () => {
       token, key(), caseId, bounced.id, bouncedVersion, "msg_already", "Trying to treat a bounce as delivered from the admin screen.",
     ])).toMatchObject({ status: "denied" })
     expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [bounced.id])).rows[0].delivery_status).toBe("BOUNCED")
+  })
+
+  it("refuses to queue a communication or create a contact-recovery task after the case is closed or cancelled", async () => {
+    const row = await reviewed()
+    await db.query("update public.cases set status='CLOSED' where id=$1", [caseId])
+    expect(await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])).toEqual({ status: "denied" })
+    expect((await db.query<{ lifecycle: string }>("select lifecycle from public.communications where id=$1", [row.id])).rows[0].lifecycle).toBe("REVIEWED")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(0)
+    await db.query("update public.cases set status='CANCELLED' where id=$1", [caseId])
+    expect(await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])).toEqual({ status: "denied" })
+    expect((await db.query<{ lifecycle: string }>("select lifecycle from public.communications where id=$1", [row.id])).rows[0].lifecycle).toBe("REVIEWED")
+    const cancelled = await rpc("admin_communication_command_v1", [token, key(), "cancel", { communicationId: row.id }, row.version])
+    expect(cancelled).toMatchObject({ status: "success", lifecycle: "CANCELLED" })
+
+    const conversation = await db.query<{ id: string; record_version: number }>(
+      `insert into public.conversations(state, case_id, customer_id, reply_alias, subject)
+       values('OPEN',$1,$2,'dddddddddddddddddddddddddddddddd','Closed case') returning id, record_version`,
+      [caseId, customer],
+    )
+    expect(await rpc("admin_conversation_command_v1", [
+      token, key(), "contact_recovery", { conversationId: conversation.rows[0].id, kind: "CALL" }, conversation.rows[0].record_version,
+    ])).toEqual({ status: "denied" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_tasks where case_id=$1", [caseId])).rows[0].n).toBe(0)
+    await db.query("update public.cases set status='CLOSED' where id=$1", [caseId])
+    expect(await rpc("admin_conversation_command_v1", [
+      token, key(), "contact_recovery", { conversationId: conversation.rows[0].id, kind: "CALL" }, conversation.rows[0].record_version,
+    ])).toEqual({ status: "denied" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_tasks where case_id=$1", [caseId])).rows[0].n).toBe(0)
+  })
+
+  it("refuses a provider message id that already belongs to another communication", async () => {
+    const taken = await reviewed()
+    expect((await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(taken.id), taken.version]))?.status).toBe("success")
+    expect(await rpc("communication_mark_provider_accepted_v1", [taken.id, "resend", "msg_taken", `send-email:${taken.id}:v1`])).toMatchObject({ status: "success" })
+    const unknown = await reviewed()
+    expect((await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(unknown.id), unknown.version]))?.status).toBe("success")
+    expect(await rpc("communication_mark_acceptance_unknown_v1", [unknown.id, `send-email:${unknown.id}:v1`])).toMatchObject({ status: "success" })
+    const version = (await db.query<{ record_version: number }>("select record_version from public.communications where id=$1", [unknown.id])).rows[0].record_version
+    expect(await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, key(), caseId, unknown.id, version, "msg_taken", "This provider message id was copied from another communication.",
+    ])).toMatchObject({ status: "denied" })
+    expect((await db.query<{ delivery_status: string; provider_message_id: string }>(
+      "select delivery_status, provider_message_id from public.communications where id=$1",
+      [taken.id],
+    )).rows[0]).toEqual({ delivery_status: "PROVIDER_ACCEPTED", provider_message_id: "msg_taken" })
+    expect((await db.query<{ delivery_status: string; provider_message_id: string | null }>(
+      "select delivery_status, provider_message_id from public.communications where id=$1",
+      [unknown.id],
+    )).rows[0]).toEqual({ delivery_status: "ACCEPTANCE_UNKNOWN", provider_message_id: null })
   })
 })

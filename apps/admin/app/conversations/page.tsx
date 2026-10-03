@@ -8,7 +8,7 @@ import { communicationsSendEnabled, sendDisabledReason } from "@/lib/communicati
 import { Badge, EmptyState, PageHeader } from "../ui"
 import { ReviewCommunicationForm } from "../communications/forms"
 import {
-  AssignForm, AttentionForm, CloseForm, ContactRecoveryForm, DraftReplyForm,
+  AssignForm, AttentionForm, CloseForm, DraftReplyForm,
   LinkCaseForm, PhoneNoteForm, PromoteAttachmentForm, UnlinkCaseForm,
 } from "./forms"
 
@@ -63,7 +63,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
     {detail && <section className="panel">
       <h2>{detail.conversation.subject || "Conversation"}</h2>
       <p className="muted">State: {conversationStateLabel(detail.conversation.state)}. Case: {detail.conversation.caseReference || "unlinked"}.</p>
-      {detail.conversation.recipientSuppressed && <p className="muted">The linked case contact is suppressed. Create a contact recovery task instead of sending another email.</p>}
+      {detail.conversation.recipientSuppressed && <p className="muted">The linked case contact is suppressed. Do not send another email. Contact recovery is offered on the case communications workspace only when that is the case&apos;s next action.</p>}
       <div className="table-scroll" role="region" aria-label="Conversation thread" tabIndex={0}>
         {detail.entries.map(entry => <article key={entry.id}>
           <h3>{entry.kind === "PHONE_NOTE" ? "Phone note" : entry.kind === "OUTBOUND_EMAIL" ? "Outgoing email" : "Inbound email"}</h3>
@@ -91,7 +91,6 @@ export default async function ConversationsPage({ searchParams }: { searchParams
       <CloseForm conversationId={detail.conversation.id} version={detail.conversation.version} state={detail.conversation.state} />
       <AttentionForm conversationId={detail.conversation.id} version={detail.conversation.version} needsAttention={detail.conversation.needsAttention} />
       <PhoneNoteForm conversationId={detail.conversation.id} />
-      {detail.conversation.caseId && <ContactRecoveryForm conversationId={detail.conversation.id} version={detail.conversation.version} />}
       {detail.conversation.state === "OPEN" && <DraftReplyForm conversationId={detail.conversation.id} version={detail.conversation.version} />}
     </section>}
   </section>

@@ -78,6 +78,12 @@ export function CommunicationsWorkspace({ caseDetail, model }: { caseDetail: Cas
         <p>The replacement is a draft. It has not been sent.</p>
         <ResendDraftForm communicationId={current.id} caseId={caseDetail.id} />
       </>}
+      {model.commands.createContactRecoveryTask && model.selected.kind === "open" && (
+        <ContactRecoveryForm conversationId={model.selected.detail.conversation.id} version={model.selected.detail.conversation.version} />
+      )}
+      {model.selected.kind !== "open" && (
+        <p>Open a conversation linked to this case to create the contact-recovery task. This page does not create a conversation in order to do that.</p>
+      )}
     </section>}
 
     <section className="panel" aria-labelledby="outbound-heading">
@@ -131,15 +137,14 @@ export function CommunicationsWorkspace({ caseDetail, model }: { caseDetail: Cas
       {model.selected.kind === "foreign" && <p className="notice-danger" role="status">That conversation belongs to another case. Its contents are not shown.</p>}
       {model.selected.kind === "unavailable" && <p className="notice-danger" role="status">That conversation could not be loaded. It is not treated as empty.</p>}
       {model.selected.kind === "disagree" && <p className="notice-danger" role="status">That conversation is not in this case’s conversation list. Its contents are not shown.</p>}
-      {model.selected.kind === "open" && <ConversationThread caseId={caseDetail.id} model={model} detail={model.selected.detail} />}
+      {model.selected.kind === "open" && <ConversationThread model={model} detail={model.selected.detail} />}
     </section>
   </>
 }
 
 function ConversationThread({
-  caseId, model, detail,
+  model, detail,
 }: {
-  caseId: string
   model: CommunicationsWorkspaceModel
   detail: Extract<CommunicationsWorkspaceModel["selected"], { kind: "open" }>["detail"]
 }) {
@@ -157,10 +162,13 @@ function ConversationThread({
         {entry.deliveryStatus === "PROVIDER_ACCEPTED" && " Delivery is not yet confirmed."}
       </p>}
       <p className="preserve-lines">{entry.bodyText || "No plain-text body."}</p>
-      {entry.lifecycle === "DRAFT" && entry.version && <ReviewCommunicationForm communicationId={entry.id} version={entry.version} />}
-      {entry.lifecycle === "REVIEWED" && !model.liveMailEnabled && <p className="muted">Queueing is closed until live customer mail is enabled. This reply has not been sent.</p>}
-      {entry.lifecycle === "REVIEWED" && model.liveMailEnabled && !conversation.recipientSuppressed && entry.version && (
+      {!model.caseClosed && entry.lifecycle === "DRAFT" && entry.version && <ReviewCommunicationForm communicationId={entry.id} version={entry.version} />}
+      {!model.caseClosed && entry.lifecycle === "REVIEWED" && !model.liveMailEnabled && <p className="muted">Queueing is closed until live customer mail is enabled. This reply has not been sent.</p>}
+      {!model.caseClosed && entry.lifecycle === "REVIEWED" && model.liveMailEnabled && !conversation.recipientSuppressed && entry.version && (
         <QueueCommunicationForm communicationId={entry.id} version={entry.version} />
+      )}
+      {model.caseClosed && (entry.lifecycle === "DRAFT" || entry.lifecycle === "REVIEWED") && (
+        <p className="muted">This case is closed or cancelled. This reply is not reviewed or queued from here.</p>
       )}
       {entry.attachments?.map(attachment => <div key={attachment.id}>
         <p className="muted">
@@ -178,8 +186,7 @@ function ConversationThread({
     <CloseForm conversationId={conversation.id} version={conversation.version} state={conversation.state} />
     <AttentionForm conversationId={conversation.id} version={conversation.version} needsAttention={conversation.needsAttention} />
     <PhoneNoteForm conversationId={conversation.id} />
-    {conversation.caseId === caseId && <ContactRecoveryForm conversationId={conversation.id} version={conversation.version} />}
-    {conversation.state === "OPEN" && !conversation.recipientSuppressed && (
+    {!model.caseClosed && conversation.state === "OPEN" && !conversation.recipientSuppressed && (
       <DraftReplyForm conversationId={conversation.id} version={conversation.version} />
     )}
     <details>

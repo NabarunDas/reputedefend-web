@@ -92,6 +92,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_jobs_outbox_operational_health_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 45000)
 

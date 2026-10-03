@@ -183,5 +183,94 @@ describe("communications workspace view", () => {
     expect(screen.getByText(/Accepted by email provider/)).toBeTruthy()
     expect(screen.getByText(/Delivery is not yet confirmed/)).toBeTruthy()
     expect(screen.queryByText(/^Email sent$/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create contact recovery task" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Draft reply" })).toBeTruthy()
+  })
+
+  it("shows the contact-recovery task only when that is the case journey and a case conversation is open", () => {
+    const conversationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    const detail: ConversationDetail = {
+      status: "success",
+      conversation: {
+        id: conversationId, state: "OPEN", subject: "Hello", caseId: CASE_ID, caseReference: "PR-1001",
+        assignedAdminId: null, needsAttention: true, replyAlias: "c".repeat(32), version: 2, recipientSuppressed: false,
+      },
+      entries: [{ id: "entry-1", kind: "INBOUND_EMAIL", bodyText: "Please call me.", senderMatch: "NONE" }],
+    }
+    const conversations = {
+      status: "success" as const, complete: true, total: 1, returned: 1,
+      conversations: [{
+        id: conversationId, state: "OPEN" as const, subject: "Hello", sender: "alex@example.com",
+        receivedAt: "2026-10-01T00:00:00.000Z", caseId: CASE_ID, caseReference: "PR-1001",
+        senderMatch: "NONE" as const, hasAttachment: false, assignedAdminId: null, needsAttention: true, version: 2,
+      }],
+    }
+    show(base({
+      history: {
+        status: "success", complete: true, total: 1, returned: 1, verifiedEmail: "alex@example.com", verifiedEmailSuppressed: false,
+        communications: [message({
+          lifecycle: "QUEUED", deliveryStatus: "BOUNCED", lastError: "Recipient address permanently bounced",
+          failedAt: "2026-10-02T12:00:00.000Z", queuedAt: "2026-10-01T13:00:00.000Z",
+        })],
+      },
+      primaryAction: action("RECOVER_CUSTOMER_CONTACT"),
+      conversations,
+      selectedConversationId: conversationId,
+      selectedConversation: detail,
+    }))
+    expect(screen.getByRole("button", { name: "Create contact recovery task" })).toBeTruthy()
+    expect(screen.getByText(/Failed recipient snapshot: alex@example.com/)).toBeTruthy()
+  })
+
+  it.each(["CLOSED", "CANCELLED"] as const)("does not offer draft reply, contact recovery or queueing when the case is %s", status => {
+    const conversationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    const detail: ConversationDetail = {
+      status: "success",
+      conversation: {
+        id: conversationId, state: "OPEN", subject: "Hello", caseId: CASE_ID, caseReference: "PR-1001",
+        assignedAdminId: null, needsAttention: false, replyAlias: "c".repeat(32), version: 2, recipientSuppressed: false,
+      },
+      entries: [{
+        id: COMM, kind: "OUTBOUND_EMAIL", bodyText: "A reviewed reply.", lifecycle: "REVIEWED", deliveryStatus: "NONE", version: 4,
+      }],
+    }
+    show(base({
+      caseStatus: status,
+      liveMailEnabled: true,
+      history: {
+        status: "success", complete: true, total: 1, returned: 1, verifiedEmail: "alex@example.com", verifiedEmailSuppressed: false,
+        communications: [message({ lifecycle: "REVIEWED" })],
+      },
+      primaryAction: action("SEND_EVIDENCE_REQUEST"),
+      conversations: {
+        status: "success", complete: true, total: 1, returned: 1,
+        conversations: [{
+          id: conversationId, state: "OPEN", subject: "Hello", sender: "alex@example.com",
+          receivedAt: "2026-10-01T00:00:00.000Z", caseId: CASE_ID, caseReference: "PR-1001",
+          senderMatch: "NONE", hasAttachment: false, assignedAdminId: null, needsAttention: false, version: 2,
+        }],
+      },
+      selectedConversationId: conversationId,
+      selectedConversation: detail,
+    }))
+    expect(screen.queryByRole("button", { name: "Draft reply" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create contact recovery task" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+    expect(screen.getByText(/not reviewed or queued from here/)).toBeTruthy()
+  })
+
+  it("withholds reconciliation when the delivery-event history is truncated", () => {
+    show(base({
+      history: {
+        status: "success", complete: true, total: 1, returned: 1, verifiedEmail: "alex@example.com", verifiedEmailSuppressed: false,
+        communications: [message({
+          lifecycle: "QUEUED", deliveryStatus: "ACCEPTANCE_UNKNOWN", queuedAt: "2026-10-01T13:00:00.000Z", eventsTruncated: true,
+        })],
+      },
+      primaryAction: action("RECONCILE_EMAIL_DELIVERY"),
+    }))
+    expect(screen.queryByRole("button", { name: "Record provider acceptance" })).toBeNull()
+    expect(screen.getByText(/reconciliation is withheld/)).toBeTruthy()
+    expect(screen.getByText(/not treated as acceptance/)).toBeTruthy()
   })
 })

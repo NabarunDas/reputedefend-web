@@ -32,6 +32,9 @@ const situationLabels = {
 } as const
 
 const permanentFailure = new Set<DeliveryStatus>(["BOUNCED", "COMPLAINED", "SUPPRESSED", "FAILED"])
+const caseFlowFailedDelivery = new Set<DeliveryStatus>([
+  "BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "SUPPRESSED", "FAILED",
+])
 
 const recoveryLimitation = "Creating a contact-recovery task does not change the customer email, does not finish recovery, and does not check whether an equivalent task is already open. The existing command has no way to recognise an open equivalent task."
 
@@ -67,6 +70,7 @@ export type CommunicationsCommands = {
   queueEvidenceRequest: boolean
   reconcileAcceptance: boolean
   replaceDraft: boolean
+  createContactRecoveryTask: boolean
 }
 
 export type CommunicationsCaseAction =
@@ -108,6 +112,7 @@ export type CommunicationsWorkspaceModel = {
   conversationsIncomplete: boolean
   selected: SelectedConversation
   liveMailEnabled: boolean
+  caseClosed: boolean
 }
 
 export function honestDeliveryLabel(row: Pick<CaseCommunicationRow, "deliveryStatus" | "legacyStatus">): string {
@@ -295,6 +300,15 @@ export function buildCommunicationsWorkspaceModel(input: {
   const reconcileAcceptance = !rowActionsBlocked
     && journey(input.primaryAction, "RECONCILE_EMAIL_DELIVERY")
     && current.row?.deliveryStatus === "ACCEPTANCE_UNKNOWN"
+    && current.row.eventsTruncated !== true
+  if (
+    !rowActionsBlocked
+    && journey(input.primaryAction, "RECONCILE_EMAIL_DELIVERY")
+    && current.row?.deliveryStatus === "ACCEPTANCE_UNKNOWN"
+    && current.row.eventsTruncated === true
+  ) {
+    notices.push("The delivery-event history for this message is incomplete, so provider-acceptance reconciliation is withheld. The missing events are not treated as acceptance or as a failure.")
+  }
   const replaceDraft = !rowActionsBlocked
     && journey(input.primaryAction, "RECOVER_CUSTOMER_CONTACT")
     && current.row?.canReplace === true
@@ -373,6 +387,16 @@ export function buildCommunicationsWorkspaceModel(input: {
     notices.push("Communication records disagree: the selected conversation is not in this case's conversation list.")
   }
 
+  const selectedCaseConversation = selected.kind === "open" && selected.detail.conversation.caseId === input.caseId
+    ? selected.detail.conversation
+    : null
+  const createContactRecoveryTask = !historyBlocked
+    && journey(input.primaryAction, "RECOVER_CUSTOMER_CONTACT")
+    && contact === "FAILED"
+    && !!current.row
+    && caseFlowFailedDelivery.has(current.row.deliveryStatus as DeliveryStatus)
+    && !!selectedCaseConversation
+
   const situation = historyMissing
     ? "The communication history could not be loaded."
     : historyIncomplete
@@ -405,6 +429,7 @@ export function buildCommunicationsWorkspaceModel(input: {
       queueEvidenceRequest,
       reconcileAcceptance,
       replaceDraft,
+      createContactRecoveryTask,
     },
     sendBlocked: sendBlocked && !queueEvidenceRequest,
     sendBlockedReason: "Queueing is closed until live customer mail is enabled. The reviewed draft is kept. This page does not turn sending on.",
@@ -418,6 +443,7 @@ export function buildCommunicationsWorkspaceModel(input: {
     conversationsIncomplete,
     selected,
     liveMailEnabled: input.liveMailEnabled,
+    caseClosed: closed,
   }
 }
 

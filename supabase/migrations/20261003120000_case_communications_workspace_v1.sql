@@ -17,6 +17,16 @@
 -- that window, clears the status so a new send can start, or lets an operator
 -- mark the message delivered. Delivery still changes only when a stored
 -- provider webhook is applied by the existing private reconcile function.
+--
+-- A provider message id already stored on another communication is refused
+-- before the update, so the unique index is not the operator's error. Neither
+-- row is changed.
+--
+-- The historical command functions are not edited. This migration renames each
+-- one and puts a closed-case guard in front of it. A communication linked to a
+-- CLOSED or CANCELLED case cannot newly become QUEUED. contact_recovery cannot
+-- create a task for such a case. Cancelling an unsent draft is left to the
+-- existing command.
 
 BEGIN;
 
@@ -236,6 +246,16 @@ BEGIN
   IF row.record_version <> p_version THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
   IF row.lifecycle <> 'QUEUED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
 
+  IF EXISTS (
+    SELECT 1 FROM public.communications other
+    WHERE other.id <> row.id
+      AND other.lifecycle IS NOT NULL
+      AND other.provider = 'resend'
+      AND other.provider_message_id = message
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied');
+  END IF;
+
   IF row.delivery_status = 'PROVIDER_ACCEPTED' AND row.provider_message_id = message THEN
     PERFORM admin_private.communication_reconcile_webhooks_v1(row.id, 'resend', message);
     SELECT * INTO row FROM public.communications WHERE id = row.id;
@@ -247,21 +267,25 @@ BEGIN
     RETURN jsonb_build_object('status', 'denied');
   END IF;
 
-  UPDATE public.communications
-    SET status = 'SENT',
-        delivery_status = 'PROVIDER_ACCEPTED',
-        provider = 'resend',
-        provider_message_id = message,
-        provider_accepted_at = now(),
-        first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
-        delivery_occurred_at = coalesce(delivery_occurred_at, now()),
-        sent_at = coalesce(sent_at, now()),
-        error_message = NULL,
-        updated_at = now(),
-        record_version = row.record_version + 1
-    WHERE id = row.id AND delivery_status = 'ACCEPTANCE_UNKNOWN' AND record_version = p_version
-    RETURNING * INTO row;
-  IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  BEGIN
+    UPDATE public.communications
+      SET status = 'SENT',
+          delivery_status = 'PROVIDER_ACCEPTED',
+          provider = 'resend',
+          provider_message_id = message,
+          provider_accepted_at = now(),
+          first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
+          delivery_occurred_at = coalesce(delivery_occurred_at, now()),
+          sent_at = coalesce(sent_at, now()),
+          error_message = NULL,
+          updated_at = now(),
+          record_version = row.record_version + 1
+      WHERE id = row.id AND delivery_status = 'ACCEPTANCE_UNKNOWN' AND record_version = p_version
+      RETURNING * INTO row;
+    IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  EXCEPTION WHEN unique_violation THEN
+    RETURN jsonb_build_object('status', 'denied');
+  END;
 
   PERFORM admin_private.append_delivery_event_v1(
     row.id, 'PROVIDER_ACCEPTED', 'Email provider accepted the message', 'resend', NULL, message, now()
@@ -288,5 +312,112 @@ REVOKE ALL ON FUNCTION public.admin_communication_reconcile_acceptance_v1(text, 
 GRANT EXECUTE ON FUNCTION public.admin_case_communications_v1(text, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_case_conversations_v1(text, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_communication_reconcile_acceptance_v1(text, uuid, uuid, uuid, integer, text, text) TO service_role;
+
+-- Newly entering the customer-send path. An already queued message can still
+-- receive provider events. Cancelling a draft does not come through here.
+CREATE FUNCTION admin_private.refuse_closed_case_customer_send_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  case_status text;
+BEGIN
+  IF NEW.lifecycle IS DISTINCT FROM 'QUEUED' THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND OLD.lifecycle = 'QUEUED' THEN RETURN NEW; END IF;
+  SELECT status INTO case_status FROM public.cases WHERE id = NEW.case_id;
+  IF case_status IN ('CLOSED', 'CANCELLED') THEN
+    RAISE EXCEPTION 'closed_case_send_refused' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.refuse_closed_case_customer_send_v1() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER communications_refuse_closed_case_send
+  BEFORE INSERT OR UPDATE OF lifecycle ON public.communications
+  FOR EACH ROW
+  EXECUTE FUNCTION admin_private.refuse_closed_case_customer_send_v1();
+
+ALTER FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer)
+  RENAME TO admin_communication_command_core_v1;
+
+CREATE FUNCTION public.admin_communication_command_v1(
+  p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  case_status text;
+  result jsonb;
+BEGIN
+  IF btrim(coalesce(p_operation, '')) = 'queue'
+    AND p_payload IS NOT NULL
+    AND jsonb_typeof(p_payload) = 'object'
+    AND NULLIF(p_payload->>'communicationId', '') IS NOT NULL
+  THEN
+    SELECT c.status INTO case_status
+      FROM public.communications m
+      JOIN public.cases c ON c.id = m.case_id
+      WHERE m.id = NULLIF(p_payload->>'communicationId', '')::uuid
+      FOR UPDATE OF c;
+    IF case_status IN ('CLOSED', 'CANCELLED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+  END IF;
+  BEGIN
+    result := public.admin_communication_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
+    RETURN result;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'closed_case_send_refused' THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    RAISE;
+  END;
+END;
+$$;
+
+ALTER FUNCTION public.admin_conversation_command_v1(text, uuid, text, jsonb, integer)
+  RENAME TO admin_conversation_command_core_v1;
+
+CREATE FUNCTION public.admin_conversation_command_v1(
+  p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  case_status text;
+  result jsonb;
+BEGIN
+  IF btrim(coalesce(p_operation, '')) = 'contact_recovery'
+    AND p_payload IS NOT NULL
+    AND jsonb_typeof(p_payload) = 'object'
+    AND NULLIF(p_payload->>'conversationId', '') IS NOT NULL
+  THEN
+    SELECT c.status INTO case_status
+      FROM public.conversations v
+      JOIN public.cases c ON c.id = v.case_id
+      WHERE v.id = NULLIF(p_payload->>'conversationId', '')::uuid
+      FOR UPDATE OF c;
+    IF case_status IN ('CLOSED', 'CANCELLED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+  END IF;
+  result := public.admin_conversation_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
+  RETURN result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_communication_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_conversation_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_conversation_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_conversation_command_v1(text, uuid, text, jsonb, integer) TO service_role;
 
 COMMIT;

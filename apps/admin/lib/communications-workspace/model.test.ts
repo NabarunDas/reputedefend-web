@@ -220,6 +220,17 @@ describe("communications workspace model", () => {
     expect(unknown.commands.reconcileAcceptance).toBe(true)
     expect(unknown.commands.queueEvidenceRequest).toBe(false)
     expect(unknown.commands.replaceDraft).toBe(false)
+    const truncated = model({
+      rows: [row({
+        lifecycle: "QUEUED",
+        deliveryStatus: "ACCEPTANCE_UNKNOWN",
+        eventsTruncated: true,
+      })],
+      primary: action("RECONCILE_EMAIL_DELIVERY"),
+    })
+    expect(truncated.commands.reconcileAcceptance).toBe(false)
+    expect(truncated.notices.join(" ")).toMatch(/reconciliation is withheld/)
+    expect(truncated.notices.join(" ")).toMatch(/not treated as acceptance/)
     expect(unknown.waitingNote).toMatch(/cannot mark the message delivered/)
     expect(unknown.waitingNote).toMatch(/does not send again/)
   })
@@ -240,8 +251,86 @@ describe("communications workspace model", () => {
     expect(recovered.recovery?.reason).toMatch(new RegExp(reason, "i"))
     expect(recovered.recovery?.limitation).toMatch(/does not change the customer email/)
     expect(recovered.commands.replaceDraft).toBe(false)
+    expect(recovered.commands.createContactRecoveryTask).toBe(false)
     expect(recovered.communications[0].recipient).toBe("alex@example.com")
     expect(recovered.communications[0].role).toBe("current")
+  })
+
+  it("offers the contact-recovery task only for the recovery journey and a case conversation", () => {
+    const conversationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    const conversations = {
+      status: "success" as const,
+      complete: true,
+      total: 1,
+      returned: 1,
+      conversations: [{
+        id: conversationId,
+        state: "OPEN" as const,
+        subject: "About the case",
+        sender: "alex@example.com",
+        receivedAt: "2026-10-01T00:00:00.000Z",
+        caseId: CASE_ID,
+        caseReference: "PR-1001",
+        senderMatch: "NONE" as const,
+        hasAttachment: false,
+        assignedAdminId: null,
+        needsAttention: true,
+        version: 2,
+      }],
+    }
+    const selected = {
+      status: "success" as const,
+      conversation: {
+        id: conversationId,
+        state: "OPEN" as const,
+        subject: "About the case",
+        caseId: CASE_ID,
+        caseReference: "PR-1001",
+        assignedAdminId: null,
+        needsAttention: true,
+        replyAlias: "c".repeat(32),
+        version: 2,
+        recipientSuppressed: false,
+      },
+      entries: [],
+    }
+    const linkedOnly = model({
+      rows: [row()],
+      primary: action("REVIEW_EVIDENCE_REQUEST_MESSAGE"),
+      conversations,
+      selectedId: conversationId,
+      selected,
+    })
+    expect(linkedOnly.commands.createContactRecoveryTask).toBe(false)
+    const recovering = model({
+      rows: [failed("BOUNCED")],
+      primary: action("RECOVER_CUSTOMER_CONTACT"),
+      conversations,
+      selectedId: conversationId,
+      selected,
+    })
+    expect(recovering.commands.createContactRecoveryTask).toBe(true)
+    expect(recovering.recovery?.recipient).toBe("alex@example.com")
+    const closed = model({
+      caseStatus: "CLOSED",
+      rows: [failed("BOUNCED")],
+      primary: action("RECOVER_CUSTOMER_CONTACT"),
+      conversations,
+      selectedId: conversationId,
+      selected,
+    })
+    expect(closed.commands.createContactRecoveryTask).toBe(false)
+    expect(closed.caseClosed).toBe(true)
+    const cancelled = model({
+      caseStatus: "CANCELLED",
+      rows: [failed("SUPPRESSED")],
+      primary: action("RECOVER_CUSTOMER_CONTACT"),
+      conversations,
+      selectedId: conversationId,
+      selected,
+    })
+    expect(cancelled.commands.createContactRecoveryTask).toBe(false)
+    expect(cancelled.caseClosed).toBe(true)
   })
 
   it("offers a replacement draft only after a different verified address is available, and keeps it a draft", () => {

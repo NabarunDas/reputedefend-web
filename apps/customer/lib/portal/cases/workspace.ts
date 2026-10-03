@@ -7,7 +7,7 @@
  *
  * It is not Admin CaseFlow. It does not expose phases, blockers, or actions.
  */
-import { caseTypeLabel, customerCaseState, formatPortalDate, presentAttention, serviceLabel, statusLabel } from "./model"
+import { caseTypeLabel, customerCaseState, formatPortalDate, presentAttention, serviceLabel } from "./model"
 import type { CaseStatus, CaseType, CustomerCaseDetail, CustomerTimelineCode, OutcomeCode, WorkStage } from "./parse"
 
 export const CUSTOMER_PROGRESS_STEPS = [

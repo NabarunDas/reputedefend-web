@@ -83,8 +83,6 @@ const versionId = "77777777-7777-4777-8777-777777777777"
 describe("evidence workspace presentation", () => {
   it("starts an empty case in one place", () => {
     show(evidence([], []))
-    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
-    expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy()
     expect(screen.getByText("No evidence has been requested or uploaded for this case.")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Create request" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Add evidence" })).toBeTruthy()

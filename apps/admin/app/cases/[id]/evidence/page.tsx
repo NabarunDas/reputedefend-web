@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
@@ -5,6 +6,7 @@ import { resolveCaseFlow } from "@/lib/case-flow/resolve"
 import { getEvidenceCase } from "@/lib/evidence/queries"
 import { buildEvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import { getPreparedPackCase } from "@/lib/packs/queries"
+import { PageHeader } from "../../../ui"
 import { EvidenceWorkspace } from "./workspace-view"
 
 export const metadata = { title: "Evidence" }
@@ -28,5 +30,12 @@ export default async function EvidencePage({ params }: { params: Promise<{ id: s
     now: now.toISOString(),
     hasPack: packs.packs.length > 0 || packs.eligible.length > 0,
   })
-  return <EvidenceWorkspace caseDetail={caseDetail} evidence={evidence} packs={packs} model={model} />
+  return <section className="page evidence-workspace">
+    <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>
+    <PageHeader
+      title="Evidence"
+      description={<>{caseDetail.reference} · {caseDetail.client} — {caseDetail.business}. Files are stored privately. A clean scan is required before view, download or review.</>}
+    />
+    <EvidenceWorkspace caseDetail={caseDetail} evidence={evidence} packs={packs} model={model} />
+  </section>
 }

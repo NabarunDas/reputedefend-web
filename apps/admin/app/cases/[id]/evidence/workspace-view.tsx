@@ -6,7 +6,6 @@ import type { EvidenceDocumentWorkspace, EvidenceRequestWorkspace, EvidenceVersi
 import { evidenceVersionPipeline } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
 import type { CaseDetail } from "@/lib/cases/model"
-import { PageHeader } from "../../../ui"
 import {
   AccessButtons, CreateRequestForm, PreparedPackPanel, RequestStatusForm, ReviewForms, ScanRefreshForm, UploadEvidenceForm, VisibilityForm,
 } from "./forms"
@@ -128,13 +127,7 @@ export function EvidenceWorkspace({
   model: EvidenceWorkspaceModel
 }) {
   const openRequests = evidence.requests.filter(request => request.status === "OPEN")
-  return <section className="page evidence-workspace">
-    <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>
-    <PageHeader
-      title="Evidence"
-      description={<>{caseDetail.reference} · {caseDetail.client} — {caseDetail.business}. Files are stored privately. A clean scan is required before view, download or review.</>}
-    />
-
+  return <>
     {model.parityMismatches.length > 0 && <section className="panel">
       <h2>Evidence records disagree</h2>
       <p className="notice-danger">The evidence records and the case-flow reading of this case disagree. Files stay with the request stored on the document. Nothing was attached by filename, date or subject.</p>
@@ -189,5 +182,5 @@ export function EvidenceWorkspace({
 
       <PreparedPackPanel caseId={caseDetail.id} packs={packs} />
     </>}
-  </section>
+  </>
 }

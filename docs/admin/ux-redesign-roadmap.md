@@ -11,7 +11,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-3 | Case list, queue and batch fact projection | COMPLETE |
 | UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | COMPLETE |
-| UX-6 | Evidence workspace | IN PROGRESS |
+| UX-6 | Evidence workspace | COMPLETE |
 | UX-7 | Commercial and money surfaces | NOT STARTED |
 | UX-8 | Communications and conversations | NOT STARTED |
 | UX-9 | Visual system, wording and accessibility | NOT STARTED |

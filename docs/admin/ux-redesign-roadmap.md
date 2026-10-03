@@ -70,13 +70,13 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 | UX-10I | Messages and Account | NOT STARTED |
 | UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
 
-UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The applied migration head remains the UX-10C migration `20261003154314_customer_portal_dashboard_cases_v1.sql`. The repository also contains the unapplied UX-10D migration `20261003183002_customer_portal_case_workspace_v1.sql`. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
+UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The current repository/dev migration head is the applied UX-10D migration `20261003183002_customer_portal_case_workspace_v1.sql`. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
 UX-10B copies the approved ProfileRelaunch logo and icons into the customer app, applies the marketing palette with Inter and Manrope, and adds the customer header, footer, login presentation, and portal shell. At the end of UX-10B only Dashboard linked somewhere. No migration. See `docs/customer/ux-10b-brand-portal-shell.md`.
 
 UX-10C replaces the placeholder dashboard and adds `/portal/cases`. A customer sees only cases where `cases.customer_id` is the portal session customer. Attention is a presentation of live evidence obligations and usable secure actions. The portal still cannot complete those steps. `CUSTOMER_PORTAL_ENABLED` stays off. Its migration is applied to `profilerelaunch-dev`. See `docs/customer/ux-10c-dashboard-cases.md`.
 
-UX-10D adds `/portal/cases/[reference]`. The customer opens one owned case by its public reference and sees a read-only header, what happens next, a six-step progress presentation, a curated timeline, and case details. Case cards link with "View case". Direct portal actions remain deferred. Its migration is not applied to `profilerelaunch-dev`. See `docs/customer/ux-10d-case-workspace.md`.
+UX-10D adds `/portal/cases/[reference]`. The customer opens one owned case by its public reference and sees a read-only header, what happens next, a six-step progress presentation, a curated timeline, and case details. Case cards link with "View case". Direct portal actions remain deferred. Its migration is applied to `profilerelaunch-dev`. See `docs/customer/ux-10d-case-workspace.md`.
 
 ## Sequencing notes
 

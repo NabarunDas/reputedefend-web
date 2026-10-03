@@ -1,6 +1,13 @@
+const PUBLIC_BRAND_ASSETS = new Set([
+  "/icon.png",
+  "/apple-icon.png",
+  "/brand/profile-relaunch-logo.png",
+  "/brand/profile-relaunch-logo-light.png",
+])
+
 export function isPublicRead(pathname: string, method: string): boolean {
   if (method !== "GET" && method !== "HEAD") return false
-  return pathname === "/" || pathname === "/robots.txt" || pathname === "/pay/return" || pathname.startsWith("/action/") || pathname.startsWith("/_next/static/")
+  return pathname === "/" || pathname === "/robots.txt" || pathname === "/pay/return" || pathname.startsWith("/action/") || pathname.startsWith("/_next/static/") || pathname === "/_next/image" || PUBLIC_BRAND_ASSETS.has(pathname)
 }
 
 export const privateResponseHeaders = {

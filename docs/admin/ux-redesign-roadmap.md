@@ -55,12 +55,12 @@ Complete. The shared visual language, the wording review and the accessibility s
 
 ## UX-10 — Customer-facing surfaces
 
-In progress. The Customer Portal is not launched. UX-10A is the security boundary later portal phases will use. It does not design the portal, and it does not change the existing customer-action screens.
+In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. It does not add dashboard data, later portal routes, or a migration.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | UX-10A | Authentication and security foundation | COMPLETE |
-| UX-10B | Brand and portal shell | NOT STARTED |
+| UX-10B | Brand and portal shell | COMPLETE |
 | UX-10C | Dashboard and cases | NOT STARTED |
 | UX-10D | Case workspace | NOT STARTED |
 | UX-10E | Documents and evidence | NOT STARTED |
@@ -72,6 +72,8 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 
 UX-10A adds passwordless email OTP, a separate eight-hour portal session, and the migration `20261003125151_customer_portal_auth_foundation_v1.sql`. That migration is applied to `profilerelaunch-dev` and is the current dev/repository head. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
+UX-10B copies the approved ProfileRelaunch logo and icons into the customer app, applies the marketing palette with Inter and Manrope, and adds the customer header, footer, login presentation, and portal shell. Only Dashboard links somewhere. Cases, Documents, Payments, Relaunch Guard, and Account are visible and unavailable. No migration. See `docs/customer/ux-10b-brand-portal-shell.md`.
+
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A is complete and UX-10B through UX-10J are not started. No phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A and UX-10B are complete and UX-10C through UX-10J are not started. No phase should be marked complete until its own acceptance evidence exists.

@@ -21,8 +21,9 @@ export function LoginClient() {
   const [typedEmail, setTypedEmail] = useState("")
   const [code, setCode] = useState("")
   const [error, setError] = useState("")
-  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<"" | "send" | "resend" | "verify">("")
   const [resendIn, setResendIn] = useState(0)
+  const busy = pending !== ""
 
   useEffect(() => {
     if (resendIn <= 0) return
@@ -38,7 +39,7 @@ export function LoginClient() {
       setError(PORTAL_EMAIL_INVALID)
       return
     }
-    setBusy(true)
+    setPending("send")
     try {
       const result = await postJson("/api/portal/auth/start", { email: typed })
       if (result.status === 400) {
@@ -56,14 +57,14 @@ export function LoginClient() {
     } catch {
       setError(PORTAL_UNAVAILABLE)
     } finally {
-      setBusy(false)
+      setPending("")
     }
   }
 
   async function resend() {
     if (resendIn > 0 || busy) return
     setError("")
-    setBusy(true)
+    setPending("resend")
     try {
       const result = await postJson("/api/portal/auth/resend", {})
       if (!result.ok) setError(PORTAL_UNAVAILABLE)
@@ -71,7 +72,7 @@ export function LoginClient() {
     } catch {
       setError(PORTAL_UNAVAILABLE)
     } finally {
-      setBusy(false)
+      setPending("")
     }
   }
 
@@ -79,7 +80,7 @@ export function LoginClient() {
     event.preventDefault()
     setError("")
     if (!/^\d{6}$/.test(code)) return
-    setBusy(true)
+    setPending("verify")
     try {
       const result = await postJson("/api/portal/auth/verify", { code })
       if (!result.ok || result.payload?.status !== "ok") {
@@ -90,40 +91,46 @@ export function LoginClient() {
     } catch {
       setError(PORTAL_VERIFY_ERROR)
     } finally {
-      setBusy(false)
+      setPending("")
     }
   }
 
   if (phase === "email") {
-    return <section>
+    return <section className="auth-card">
+      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Sign in to your ProfileRelaunch account</h1>
-      <p>Use the email address verified with ProfileRelaunch. We&apos;ll send you a six-digit code. You do not need a password.</p>
+      <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you a six-digit code. You do not need a password.</p>
       <form onSubmit={sendCode}>
         <label htmlFor="portal-email">Email address</label>
         <input id="portal-email" name="email" type="email" autoComplete="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} required />
         {error ? <p className="notice-danger" role="alert">{error}</p> : null}
-        <button type="submit" disabled={busy}>Send code</button>
+        <button type="submit" disabled={busy}>{pending === "send" ? "Sending code…" : "Send code"}</button>
       </form>
+      <p className="auth-note">Secure passwordless sign-in.</p>
     </section>
   }
 
-  return <section>
+  return <section className="auth-card">
+    <p className="eyebrow">CUSTOMER PORTAL</p>
     <h1>Check your email</h1>
-    <p role="status">{portalLoginNotice(typedEmail)}</p>
+    <p className="lead" role="status">{portalLoginNotice(typedEmail)}</p>
     <form onSubmit={verify}>
-      <label htmlFor="portal-code">Six-digit code</label>
-      <input
-        id="portal-code"
-        name="code"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        maxLength={6}
-        value={code}
-        onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-        required
-      />
+      <div className="otp-field">
+        <label htmlFor="portal-code">Six-digit code</label>
+        <input
+          id="portal-code"
+          className="otp-input"
+          name="code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={code}
+          onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          required
+        />
+      </div>
       {error ? <p className="notice-danger" role="alert">{error}</p> : null}
-      <button type="submit" disabled={busy || !/^\d{6}$/.test(code)}>Verify and sign in</button>
+      <button type="submit" disabled={busy || !/^\d{6}$/.test(code)}>{pending === "verify" ? "Verifying…" : "Verify and sign in"}</button>
     </form>
     <div className="button-row">
       <button type="button" className="secondary" disabled={busy || resendIn > 0} onClick={resend}>

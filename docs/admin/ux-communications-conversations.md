@@ -85,4 +85,4 @@ There is no admin action that marks a message delivered, and no admin action tha
 
 `admin_case_flow_facts_v1` is unchanged and still caps its communication projection at 50 rows. The workspace compares that reading with its own history when the history is complete. If they disagree, it stops and says the records disagree rather than picking a row.
 
-The migration is in the repository and is not applied to `profilerelaunch-dev`. Apply `20261003120000_case_communications_workspace_v1.sql` there before production cutover. Do not replay migrations that are already applied.
+The migration `20261003120000_case_communications_workspace_v1.sql` was applied to `profilerelaunch-dev` on 2026-10-03 and its remote migration version is aligned with the repository. It is now immutable. Do not replay migrations that are already applied.

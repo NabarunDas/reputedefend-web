@@ -19,8 +19,8 @@ export function CustomerFooter() {
           alt={brandName}
           width={logoSize.width}
           height={logoSize.height}
+          sizes="180px"
           className="customer-logo customer-logo-footer"
-          unoptimized
         />
         <p className="customer-footer-tagline">{brandTagline}</p>
         <nav className="customer-footer-nav" aria-label="ProfileRelaunch">

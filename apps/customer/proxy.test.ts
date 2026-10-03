@@ -45,6 +45,33 @@ describe("customer portal proxy isolation", () => {
     }
   })
 
+  it("allows only the exact Next image optimiser path", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      expect((await ask("/_next/image", method)).headers.get("x-middleware-next")).toBe("1")
+    }
+    const posted = await ask("/_next/image", "POST")
+    expect(posted.headers.get("x-middleware-next")).toBeNull()
+    expect(posted.status).toBe(401)
+    for (const path of ["/_next/image/extra", "/_next/data", "/_next/webpack"]) {
+      const blocked = await ask(path)
+      expect(blocked.headers.get("x-middleware-next")).toBeNull()
+      expect(blocked.status).toBe(303)
+      expect(blocked.headers.get("location")).toBe(`${origin}/`)
+    }
+    const portal = await ask("/portal")
+    expect(portal.status).toBe(303)
+    expect(portal.headers.get("location")).toBe(`${origin}/login`)
+    const casePage = await ask("/case")
+    expect(casePage.status).toBe(303)
+    expect(casePage.headers.get("location")).toBe(`${origin}/`)
+    expect((await ask("/api/action/payment", "POST")).status).toBe(401)
+    expect((await ask("/api/action/exchange", "GET")).status).toBe(401)
+    expect((await ask("/api/portal/auth/start", "GET")).status).toBe(401)
+    expect((await ask("/api/portal/auth/verify", "GET")).status).toBe(401)
+    expect((await ask("/api/portal/auth/start", "POST")).headers.get("x-middleware-next")).toBe("1")
+    expect((await ask("/api/portal/auth/sign-out", "POST")).headers.get("x-middleware-next")).toBe("1")
+  })
+
   it("renders login only while the portal gate is on", async () => {
     expect((await ask("/login")).headers.get("x-middleware-next")).toBe("1")
     expect((await ask("/login", "POST")).status).toBe(401)

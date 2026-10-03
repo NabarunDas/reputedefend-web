@@ -53,9 +53,9 @@ public/apple-icon.png
   -> apps/customer/public/apple-icon.png
 ```
 
-`apps/customer/lib/brand-assets.test.ts` compares the file bytes. Filename checks are not enough.
+`apps/customer/lib/brand-assets.test.ts` compares the file bytes. Filename checks are not enough. The header and footer ask Next to serve a resized derivative through `/_next/image`. The copied source files stay exact.
 
-The customer proxy only treats those four files, plus the existing public reads, as readable without a session. Other `/brand/` files stay unavailable. This does not open `/portal`, `/case`, or any action API.
+The customer proxy treats those four files, `/_next/static/`, and the exact path `/_next/image` as readable without a session. It does not open `/_next/*`. Other `/brand/` files stay unavailable. This does not open `/portal`, `/case`, or any action API. Remote image hosts are not configured.
 
 ## Header and footer
 

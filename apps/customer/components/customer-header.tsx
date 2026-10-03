@@ -26,9 +26,9 @@ export function CustomerHeader() {
             alt=""
             width={logoSize.width}
             height={logoSize.height}
+            sizes="(max-width: 767px) 160px, 200px"
             className="customer-logo"
             priority
-            unoptimized
           />
         </a>
         {portal ? (

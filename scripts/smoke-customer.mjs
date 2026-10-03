@@ -43,6 +43,23 @@ try {
     const bytes = Buffer.from(await assetResponse.arrayBuffer())
     assert.ok(bytes.byteLength > 1000, asset)
   }
+  const optimised = await fetch(`${origin}/_next/image?url=${encodeURIComponent("/brand/profile-relaunch-logo.png")}&w=256&q=75`, {
+    redirect: "manual",
+    headers: { accept: "image/avif,image/webp,image/png,*/*" },
+  })
+  assert.equal(optimised.status, 200)
+  assert.equal(optimised.headers.get("location"), null)
+  const optimisedType = optimised.headers.get("content-type") ?? ""
+  assert.match(optimisedType, /^image\//)
+  const optimisedBytes = Buffer.from(await optimised.arrayBuffer())
+  assert.ok(optimisedBytes.byteLength > 0)
+  if (/image\/(avif|webp|jpe?g)/.test(optimisedType)) {
+    assert.ok(optimisedBytes.byteLength < 283215, `optimised logo was ${optimisedBytes.byteLength} bytes`)
+  }
+  const remote = await fetch(`${origin}/_next/image?url=${encodeURIComponent("https://example.com/logo.png")}&w=256&q=75`, { redirect: "manual" })
+  assert.notEqual(remote.status, 200)
+  assert.doesNotMatch(remote.headers.get("content-type") ?? "", /^image\//)
+  await remote.arrayBuffer()
   for (const path of ["/", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/pay/return", "/case", "/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command", "/api/action/payment", "/api/case/evidence/access", "/api/case/evidence/upload", "/robots.txt"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)

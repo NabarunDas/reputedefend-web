@@ -48,9 +48,9 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(34)
-    // A clean rebuild and profilerelaunch-dev now share the UX-10F migration head.
-    expect(migrationHead.version).toBe("20261003204538")
+    expect(migrationChain).toHaveLength(35)
+    // A clean rebuild includes the pending UX-10G migration. profilerelaunch-dev stays at UX-10F.
+    expect(migrationHead.version).toBe("20261003224746")
     expect(appliedMigrationHead.version).toBe("20261003204538")
   })
 

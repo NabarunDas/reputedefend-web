@@ -49,7 +49,7 @@ Attention is not reimplemented. The case RPC calls `admin_private.customer_porta
 
 When there is no attention, the wording follows the UX-10C customer case state: received, in progress, submitted, waiting for Google, a recognised complete outcome, the generic complete fallback, or cancelled. The page does not promise a Google response time and does not imply a refund.
 
-UX-10E later made evidence upload a portal action. UX-10F later moved quote, agreement, and permission review into `/portal/cases/[reference]/service`. Payment support copy still points at the secure link in the ProfileRelaunch email until UX-10G.
+UX-10E later made evidence upload a portal action. UX-10F later moved quote, agreement, and permission review into `/portal/cases/[reference]/service`. UX-10G later moved payment attention to `/portal/cases/[reference]/payments`. That migration is pending and has not been applied. The emailed secure payment link remains.
 
 ## Timeline
 

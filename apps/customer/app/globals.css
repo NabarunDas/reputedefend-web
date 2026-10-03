@@ -968,6 +968,41 @@ main.customer-main > section .document-list a {
   outline-offset: 3px;
 }
 
+.payments-page { display: grid; gap: 1.5rem; }
+.payments-case,
+.payments-order,
+.payments-obligation,
+.payments-authority,
+.payments-receipts,
+.payments-invoice { display: grid; gap: 0.75rem; min-width: 0; }
+.payments-order,
+.payments-authority {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--warm);
+}
+.payments-order-ref { margin: 0; color: var(--muted); }
+.payments-notice {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+}
+.payments-page a,
+.payments-page button,
+.payments-page p,
+.payments-page h1,
+.payments-page h2,
+.payments-page h3,
+.payments-page h4 { overflow-wrap: anywhere; }
+.payments-page a:focus-visible,
+.payments-page button:focus-visible,
+.payments-page input:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

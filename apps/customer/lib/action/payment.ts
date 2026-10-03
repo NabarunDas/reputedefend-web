@@ -64,7 +64,7 @@ export async function paymentCommand(request: NextRequest) {
     })
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
     if (result.status === "needs_cancel") {
-      const cancelled = await cancelPriorIntent(result)
+      const cancelled = await settleRecoveryCancel(result)
       if (cancelled === "paid") {
         return NextResponse.json({ status: "ok", confirming: true, message: "We’re confirming your payment." }, { headers: privateResponseHeaders })
       }
@@ -72,13 +72,13 @@ export async function paymentCommand(request: NextRequest) {
       const retry = await backend().rpc<typeof result>("customer_payment_command_v1", {
         p_token_hash: tokenHash(token), p_request: crypto.randomUUID(), p_operation: operation, p_data: data,
       })
-      return await beginCheckout(config.origin, retry)
+      return await openCustomerCheckout(config.origin, retry)
     }
     if (result.status !== "success") return reply()
     if (operation === "confirm_consent") {
       return NextResponse.json({ status: "ok", consentId: result.consentId, message: "Consent recorded. No fee is due today." }, { headers: privateResponseHeaders })
     }
-    return await beginCheckout(config.origin, result)
+    return await openCustomerCheckout(config.origin, result)
   } catch (error) {
     if (error instanceof PaymentsDisabledError) {
       return NextResponse.json({ status: "disabled", message: "Secure Stripe Checkout is not available yet." }, { status: 503, headers: privateResponseHeaders })
@@ -87,7 +87,7 @@ export async function paymentCommand(request: NextRequest) {
   }
 }
 
-async function beginCheckout(origin: string, result: {
+export async function openCustomerCheckout(origin: string, result: {
   status?: string
   providerOperationId?: string
   idempotencyKey?: string
@@ -179,7 +179,7 @@ async function ensureCustomer(customerId: string): Promise<string> {
   return mapped.stripeCustomerId
 }
 
-async function cancelPriorIntent(result: {
+export async function settleRecoveryCancel(result: {
   paymentIntentId?: string
   providerOperationId?: string
   idempotencyKey?: string

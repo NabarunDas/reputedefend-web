@@ -78,14 +78,21 @@ describe("customer case presentation", () => {
       ["PAYMENT_RECOVERY", "Complete payment authentication"],
       ["INVOICE_PAYMENT", "Pay your invoice"],
     ] as const
+    const paymentSupport = {
+      GUIDED_PAYMENT: "Complete your payment in the customer portal.",
+      MANAGED_PAYMENT_SETUP: "Save your payment method in the customer portal.",
+      PAYMENT_RECOVERY: "Complete payment authentication in the customer portal.",
+      INVOICE_PAYMENT: "Open your invoice from the customer portal.",
+    } as const
     for (const [code, label] of paymentActions) {
       expect(presentAttention({ code, expiresAt: due }, "PR-26-ABCDEF")).toEqual({
         label,
-        timing: "Secure link expires 8 October 2026",
-        support: "Use the secure link in the ProfileRelaunch email for this step.",
-        href: null,
-        actionLabel: null,
+        timing: "Available until 8 October 2026",
+        support: paymentSupport[code],
+        href: "/portal/cases/PR-26-ABCDEF/payments",
+        actionLabel: "Open payments for PR-26-ABCDEF",
       })
+      expect(presentAttention({ code, expiresAt: due }).href).toBeNull()
     }
     const presented = presentCase({ ...base, serviceTrack: "MANAGED", attentionItems: [{ code: "QUOTE_ACCEPTANCE", expiresAt: due }] })
     expect(presented).toMatchObject({

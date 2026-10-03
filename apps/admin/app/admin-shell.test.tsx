@@ -85,6 +85,30 @@ describe("admin shell", () => {
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false")
   })
 
+  it("moves focus into the mobile navigation and returns it when Escape closes the menu", () => {
+    pathname = "/cases"
+    const previous = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    render(<AdminShell><h1>Cases</h1></AdminShell>)
+    const sidebar = document.getElementById("admin-sidebar")
+    expect(sidebar).toHaveAttribute("aria-hidden", "true")
+    expect(sidebar).toHaveAttribute("inert")
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }))
+    expect(sidebar).not.toHaveAttribute("aria-hidden")
+    expect(sidebar).not.toHaveAttribute("inert")
+    expect(sidebar).toContainElement(document.activeElement as HTMLElement)
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus()
+    expect(sidebar).toHaveAttribute("inert")
+    if (previous) window.matchMedia = previous
+    else delete (window as { matchMedia?: unknown }).matchMedia
+  })
+
   it("does not give search results a sidebar current page", () => {
     pathname = "/search"
     render(<AdminShell><h1>Search</h1></AdminShell>)

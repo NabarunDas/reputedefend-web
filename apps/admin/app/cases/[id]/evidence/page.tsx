@@ -30,7 +30,7 @@ export default async function EvidencePage({ params }: { params: Promise<{ id: s
     now: now.toISOString(),
     hasPack: packs.packs.length > 0 || packs.eligible.length > 0,
   })
-  return <section className="page evidence-workspace">
+  return <section className="page case-workspace evidence-workspace">
     <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>
     <PageHeader
       title="Evidence"

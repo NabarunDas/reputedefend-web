@@ -183,4 +183,54 @@ describe("workspace accessibility invariants", () => {
       .map(entry => `${relative(entry.file)}: ${entry.tag.slice(0, 70)}`)
     expect(unreachable).toEqual([])
   })
+
+  it("gives every image alternative text, including an empty alternative for decoration", () => {
+    const missing = components
+      .flatMap(file => [...read(file).matchAll(/<img\b[^>]*>/g)].map(match => ({ file, tag: match[0] })))
+      .filter(entry => !/\balt=/.test(entry.tag))
+      .map(entry => `${relative(entry.file)}: ${entry.tag.slice(0, 80)}`)
+    expect(missing).toEqual([])
+  })
+
+  it("does not put a control earlier in the tab order than the document", () => {
+    const positive = components
+      .flatMap(file => [...read(file).matchAll(/tabIndex=(?:\{[1-9][^}]*\}|"[1-9][^"]*")/g)].map(match => `${relative(file)}: ${match[0]}`))
+    expect(positive).toEqual([])
+  })
+
+  it("does not leave a button without an accessible name", () => {
+    const empty = components
+      .flatMap(file => [...read(file).matchAll(/<button\b([^>]*)>\s*<\/button>/g)].map(match => ({ file, tag: match[0], attrs: match[1] })))
+      .filter(entry => !/aria-label=/.test(entry.attrs))
+      .map(entry => `${relative(entry.file)}: ${entry.tag.slice(0, 80)}`)
+    expect(empty).toEqual([])
+  })
+
+  it("says when a link opens in a new tab", () => {
+    const silent = components.flatMap(file => {
+      const source = read(file)
+      return [...source.matchAll(/<a\b[^>]*target="_blank"[^>]*>[\s\S]*?<\/a>/g)]
+        .filter(match => !/new tab/i.test(match[0]))
+        .map(match => `${relative(file)}: ${match[0].replace(/\s+/g, " ").slice(0, 120)}`)
+    })
+    expect(silent).toEqual([])
+  })
+
+  it("does not use placeholder text as the only label", () => {
+    const placeholderOnly: string[] = []
+    for (const file of components) {
+      const source = read(file)
+      for (const match of source.matchAll(/<(input|select|textarea)\b[^>]*>/g)) {
+        const tag = match[0]
+        if (!/placeholder=/.test(tag) || /type="hidden"/.test(tag) || /aria-label[=}]/.test(tag)) continue
+        const before = source.slice(Math.max(0, match.index - 500), match.index)
+        const inLabel = /<label[^>]*>[^<]*$/.test(before) || /<label[^>]*>/.test(before.slice(before.lastIndexOf("</label>") + 1))
+        if (inLabel) continue
+        const id = tag.match(/\bid="([^"]+)"/)?.[1]
+        if (id && (source.includes(`htmlFor="${id}"`) || source.includes(`htmlFor={'${id}'}`) || source.includes(`htmlFor={"${id}"}`))) continue
+        placeholderOnly.push(`${relative(file)}: ${tag.slice(0, 80)}`)
+      }
+    }
+    expect(placeholderOnly).toEqual([])
+  })
 })

@@ -55,7 +55,7 @@ export default async function CaseCommunicationsPage({
     selectedConversation,
     liveMailEnabled: communicationsSendEnabled() && facts.capabilities.liveMailEnabled,
   })
-  return <section className="page commercial-workspace">
+  return <section className="page case-workspace">
     <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>
     <PageHeader
       title="Communications"

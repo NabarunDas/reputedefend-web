@@ -2,7 +2,7 @@
 import { useState, useRef, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { recordPath, type Entity, type Membership, type RecordItem } from "@/lib/records/model"
-export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save", submitName }: { endpoint: string; payload: (form: FormData) => unknown; children?: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string; submitName?: string }) {
+export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save", submitName, submitClass }: { endpoint: string; payload: (form: FormData) => unknown; children?: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string; submitName?: string; submitClass?: string }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("")
   const [uncertain, setUncertain] = useState(false)
   const [completed, setCompleted] = useState(false)
@@ -24,7 +24,7 @@ export function CommandForm({ endpoint, payload, children, destination, actionUr
     } catch { setMessage("We couldn’t confirm the change. Reload the record before trying again."); setUncertain(true) }
     finally { setBusy(false) }
   }
-  return <form className="record-form" onSubmit={submit}><fieldset disabled={busy || uncertain || completed}>{children}<button type="submit" aria-label={submitName}>{busy ? "Saving…" : submitLabel}</button></fieldset><p role="status">{message}</p>{(uncertain || completed) && <button type="button" className="secondary" onClick={() => window.location.reload()}>Reload record</button>}</form>
+  return <form className="record-form" onSubmit={submit}><fieldset disabled={busy || uncertain || completed}>{children}<button type="submit" className={submitClass} aria-label={submitName}>{busy ? "Saving…" : submitLabel}</button></fieldset><p role="status">{message}</p>{(uncertain || completed) && <button type="button" className="secondary" onClick={() => window.location.reload()}>Reload record</button>}</form>
 }
 export function Reason({ label = "Reason for this change", name = "reason", maxLength = 1000 }: { label?: string; name?: string; maxLength?: number }) {
   return <label>{label}<textarea name={name} required minLength={10} maxLength={maxLength} rows={3} /><span className="muted">Use a brief factual note. Don’t include passwords, codes or sensitive document contents.</span></label>

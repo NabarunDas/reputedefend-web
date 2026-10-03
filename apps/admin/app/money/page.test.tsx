@@ -31,6 +31,12 @@ vi.mock("@/lib/guard/queries", () => ({
     adjustments: [],
   }),
 }))
+vi.mock("@/lib/payments/success-fee-cases", () => ({
+  loadSuccessFeeCaseOutcomes: async () => new Map([
+    ["55555555-5555-4555-8555-555555555555", { caseType: "PROFILE_RECOVERY", outcome: "RESTORED" }],
+    ["66666666-6666-4666-8666-666666666666", { caseType: "PROFILE_RECOVERY", outcome: null }],
+  ]),
+}))
 vi.mock("@/lib/payments/queries", () => ({
   loadMoney: async () => ({
     orders: [{
@@ -71,6 +77,25 @@ vi.mock("@/lib/payments/queries", () => ({
       approvalId: null,
       receiptId: null,
       acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }],
+    }, {
+      orderId: "88888888-8888-4888-8888-888888888888",
+      orderRef: "SO-26-EARLY",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      caseId: "66666666-6666-4666-8666-666666666666",
+      serviceCode: "MANAGED_RELAUNCH",
+      amountMinor: 29900,
+      currency: "GBP",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      version: 1,
+      obligationId: null,
+      obligationKind: null,
+      obligationState: null,
+      setupReady: true,
+      consentId: "88888888-8888-4888-8888-888888888888",
+      approvalId: null,
+      receiptId: null,
+      acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "early.png", versionNumber: 1 }],
     }],
   }),
 }))
@@ -102,6 +127,18 @@ describe("money workspace", () => {
     render(await MoneyPage())
     expect(screen.getByRole("combobox", { name: /accepted outcome evidence/i })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: /outcome.png/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Approve success fee" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Approve success fee" })).toHaveLength(1)
+  })
+
+  it("does not offer success-fee approval before a qualifying outcome", async () => {
+    render(await MoneyPage())
+    expect(screen.getByText("SO-26-EARLY")).toBeInTheDocument()
+    expect(screen.getByText(/Success-fee approval is not due yet/)).toBeInTheDocument()
+    const links = screen.getAllByRole("link", { name: "Open case commercial and money" }).map(link => link.getAttribute("href"))
+    expect(links).toEqual([
+      "/cases/55555555-5555-4555-8555-555555555555/commercial",
+      "/cases/55555555-5555-4555-8555-555555555555/commercial",
+      "/cases/66666666-6666-4666-8666-666666666666/commercial",
+    ])
   })
 })

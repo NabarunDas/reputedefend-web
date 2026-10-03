@@ -103,7 +103,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
           <IssueActionForm caseId={caseId} operation="create_revocation_action" extra={{ authorizationId: row.id }} />
         </details>
         <details><summary>Admin emergency revocation</summary>
-          <CommandForm actionUrl={authEndpoint} endpoint="command" submitLabel="Revoke authorisation" payload={form => ({
+          <CommandForm actionUrl={authEndpoint} endpoint="command" submitLabel="Revoke authorisation" submitClass="danger" payload={form => ({
             operation: "admin_revoke_authorization", caseId, authorizationId: row.id, recordVersion: row.recordVersion,
             reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
           })}>
@@ -125,7 +125,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
     </details>
     {data.actions.filter(action => action.status === "OPEN").map(action => <details key={action.id}>
       <summary>Revoke open action {action.id.slice(0, 8)} · {action.kind}</summary>
-      <CommandForm actionUrl={authEndpoint} endpoint="command" submitLabel="Revoke open action" payload={form => ({
+      <CommandForm actionUrl={authEndpoint} endpoint="command" submitLabel="Revoke open action" submitClass="danger" payload={form => ({
         operation: "revoke_action", caseId, actionId: action.id, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
       })}>
         <p>{LOST_LINK_NOTE}</p>
@@ -149,7 +149,7 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
         </CommandForm>
       </details>
       {data.managerAccess?.status === "VERIFIED" && <details><summary>Revoke Manager access</summary>
-        <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Revoke Manager access" payload={form => ({
+        <CommandForm actionUrl={managerEndpoint} endpoint="command" submitLabel="Revoke Manager access" submitClass="danger" payload={form => ({
           operation: "revoke", caseId, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
           recordVersion: data.managerAccess!.recordVersion,
         })}>

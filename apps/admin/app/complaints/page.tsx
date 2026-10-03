@@ -56,7 +56,7 @@ export default async function ComplaintsPage({ searchParams }: { searchParams: P
                 fields={[{ name: "resolution", label: "Resolution", required: true, maxLength: 2000 }]}
               />
             )}
-            {(row.status === "OPEN" || row.status === "ACKNOWLEDGED") && <ApproveButton operation="cancel_complaint" id={row.id} version={row.recordVersion ?? 1} label="Cancel complaint" record={row.title} />}
+            {(row.status === "OPEN" || row.status === "ACKNOWLEDGED") && <ApproveButton operation="cancel_complaint" id={row.id} version={row.recordVersion ?? 1} label="Cancel complaint" record={row.title} tone="danger" />}
           </li>
         ))}</ul>
       )}

@@ -45,7 +45,7 @@ export default async function CaseCommercialPage({ params }: { params: Promise<{
     money: orderId ? money.orders.filter(row => row.orderId === orderId) : [],
     prices: catalogue.prices,
   })
-  return <section className="page commercial-workspace">
+  return <section className="page case-workspace commercial-workspace">
     <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>
     <PageHeader
       title="Commercial and money"

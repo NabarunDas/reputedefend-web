@@ -67,7 +67,7 @@ The existing `contact_recovery` conversation command creates a task. It does not
 
 If the current message’s delivery-event read is truncated, the workspace does not offer reconciliation. The missing older events are not read as acceptance or as failure. The rows that were returned are still shown.
 
-A CLOSED or CANCELLED case cannot newly queue a communication. The public command checks the case before the existing command runs, and a trigger refuses the lifecycle change into `QUEUED` if that check is bypassed. Cancelling an unsent draft or reviewed message is unchanged. Messages that are already queued can still receive provider events. Draft reply, review, queue, replacement and the contact-recovery task are not offered on a closed or cancelled case.
+A CLOSED or CANCELLED case cannot newly queue a communication. The public command checks the case before the existing command runs, and a trigger refuses the lifecycle change into `QUEUED` if that check is bypassed. The historical command bodies live in `admin_private` and are not executable by `service_role`, so the application cannot skip the public guard. Cancelling an unsent draft or reviewed message is unchanged. Messages that are already queued can still receive provider events. Draft reply, review, queue, replacement and the contact-recovery task are not offered on a closed or cancelled case.
 
 ## What UX-8 does not change
 

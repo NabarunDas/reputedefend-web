@@ -23,10 +23,11 @@
 -- row is changed.
 --
 -- The historical command functions are not edited. This migration renames each
--- one and puts a closed-case guard in front of it. A communication linked to a
--- CLOSED or CANCELLED case cannot newly become QUEUED. contact_recovery cannot
--- create a task for such a case. Cancelling an unsent draft is left to the
--- existing command.
+-- one, moves that core into admin_private, and puts a closed-case guard in
+-- front of it. service_role can execute only the public wrappers. A
+-- communication linked to a CLOSED or CANCELLED case cannot newly become
+-- QUEUED. contact_recovery cannot create a task for such a case. Cancelling an
+-- unsent draft is left to the existing command.
 
 BEGIN;
 
@@ -342,6 +343,8 @@ CREATE TRIGGER communications_refuse_closed_case_send
 
 ALTER FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer)
   RENAME TO admin_communication_command_core_v1;
+ALTER FUNCTION public.admin_communication_command_core_v1(text, uuid, text, jsonb, integer)
+  SET SCHEMA admin_private;
 
 CREATE FUNCTION public.admin_communication_command_v1(
   p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer DEFAULT NULL
@@ -369,7 +372,7 @@ BEGIN
     END IF;
   END IF;
   BEGIN
-    result := public.admin_communication_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
+    result := admin_private.admin_communication_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
     RETURN result;
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM = 'closed_case_send_refused' THEN
@@ -382,6 +385,8 @@ $$;
 
 ALTER FUNCTION public.admin_conversation_command_v1(text, uuid, text, jsonb, integer)
   RENAME TO admin_conversation_command_core_v1;
+ALTER FUNCTION public.admin_conversation_command_core_v1(text, uuid, text, jsonb, integer)
+  SET SCHEMA admin_private;
 
 CREATE FUNCTION public.admin_conversation_command_v1(
   p_token text, p_request uuid, p_operation text, p_payload jsonb, p_version integer DEFAULT NULL
@@ -408,13 +413,13 @@ BEGIN
       RETURN jsonb_build_object('status', 'denied');
     END IF;
   END IF;
-  result := public.admin_conversation_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
+  result := admin_private.admin_conversation_command_core_v1(p_token, p_request, p_operation, p_payload, p_version);
   RETURN result;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_communication_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.admin_conversation_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.admin_communication_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.admin_conversation_command_core_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_conversation_command_v1(text, uuid, text, jsonb, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_communication_command_v1(text, uuid, text, jsonb, integer) TO service_role;

@@ -481,9 +481,9 @@ describe("communications outgoing mail SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_communications_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_conversations_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_reconcile_acceptance_v1(text,uuid,uuid,uuid,integer,text,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
-      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.admin_communication_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_conversation_command_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
-      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_conversation_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.admin_conversation_command_core_v1(text,uuid,text,jsonb,integer)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
     }
   })
 

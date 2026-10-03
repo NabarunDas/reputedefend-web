@@ -320,7 +320,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
   },
   {
     area: "Outgoing communications",
-    routes: ["/communications"],
+    routes: ["/communications", "/cases/[id]/communications"],
     surfaces: ["/api/operations/communications", "/api/webhooks/resend"],
     action: "Prepare a templated message against a case and follow its delivery state.",
     expected:
@@ -336,6 +336,8 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "lib/communications/mail.test.ts",
       "lib/communications/webhook.test.ts",
       "app/communications/page.test.tsx",
+      "app/cases/[id]/communications/workspace-view.test.tsx",
+      "lib/communications-workspace/model.test.ts",
       "lib/workday.database.test.ts",
     ],
     status: "DEFERRED_EXTERNAL",

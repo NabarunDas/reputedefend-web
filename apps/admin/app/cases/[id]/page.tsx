@@ -5,6 +5,7 @@ import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadCaseFlow } from "@/lib/case-flow/load"
 import { outcomes } from "@/lib/cases/model"
 import { ukDate } from "@/lib/admin/activity"
+import { caseDestination } from "@/lib/case-flow/destinations"
 import { isUuid, safeWebUrl } from "@/lib/records/model"
 import { PlanForm, TransitionForm, NoteForm, TaskForm, ResolveTask, SubmissionForm, ResolveSubmission, CloseForm } from "../forms"
 import { AuthorizationPanel } from "./authorization-forms"
@@ -171,7 +172,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       <section className="panel">
         <h3>Communications</h3>
         <p className="muted">Draft, review and queue customer email. Provider acceptance is not delivery, and live sending stays blocked on the current daily scheduler.</p>
-        <p><Link className="button-link secondary" href={`/communications?case=${c.id}`}>Open case communications</Link></p>
+        {caseDestination("CASE_COMMUNICATIONS", c.id) && <p><Link className="button-link secondary" href={caseDestination("CASE_COMMUNICATIONS", c.id)!.href}>Open case communications</Link></p>}
       </section>
       <section className="panel">
         <h3>Related records</h3>

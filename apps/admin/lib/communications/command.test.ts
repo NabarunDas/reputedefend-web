@@ -119,4 +119,44 @@ describe("communications admin commands", () => {
       fromAddress: "ops@example.com",
     }))
   })
+
+  it("records provider acceptance without a control that marks delivery", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", deliveryStatus: "PROVIDER_ACCEPTED" })
+    const recorded = await communicationsCommand(req({
+      operation: "reconcile_acceptance",
+      caseId,
+      communicationId: key,
+      version: 2,
+      providerMessageId: "msg_reconcile",
+      reason: "Provider dashboard shows this message id.",
+    }))
+    expect(recorded.status).toBe(200)
+    expect(await recorded.json()).toEqual({
+      message: "Provider acceptance was recorded. Delivery is not confirmed, and the message was not sent again.",
+    })
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_communication_reconcile_acceptance_v1", expect.objectContaining({
+      p_case: caseId,
+      p_communication: key,
+      p_version: 2,
+      p_provider_message_id: "msg_reconcile",
+      p_reason: "Provider dashboard shows this message id.",
+    }))
+    mocks.rpc.mockResolvedValue({ status: "success", deliveryStatus: "DELIVERED" })
+    const applied = await communicationsCommand(req({
+      operation: "reconcile_acceptance",
+      caseId,
+      communicationId: key,
+      version: 3,
+      providerMessageId: "msg_delivered",
+      reason: "The provider id was confirmed in the dashboard.",
+    }))
+    expect(applied.status).toBe(200)
+    expect(await applied.json()).toEqual({
+      message: "Provider delivery evidence already on record was applied. This action did not mark the message delivered.",
+    })
+    mocks.rpc.mockClear()
+    const marked = await communicationsCommand(req({ operation: "mark_delivered", communicationId: key, version: 1 }))
+    expect(marked.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
 })

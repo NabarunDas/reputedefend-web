@@ -1,6 +1,6 @@
 # UX-7 — Commercial and money
 
-The case page `/cases/[id]/commercial` is where an operator reads one case from quote to acceptance, to the service order, and on to upfront payment or success-fee setup. UX-1 to UX-6 are complete. UX-7 is in progress. UX-8 is not started.
+The case page `/cases/[id]/commercial` is where an operator reads one case from quote to acceptance, to the service order, and on to upfront payment or success-fee setup. UX-1 to UX-7 are complete.
 
 No migration. The page reads the case, one `loadCaseFlowFacts` call, the catalogue, and the existing money list. Quote and order detail are `loadQuote` and `loadOrder` for the identifiers that projection already named. It resolves the case once with `resolveCaseFlow`.
 

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { caseCommunicationsHref } from "@/lib/communications-workspace/model"
 import { ukDate } from "@/lib/admin/activity"
 import { loadConversation, loadConversations } from "@/lib/conversations/queries"
 import { conversationStateLabel, senderMatchLabel } from "@/lib/conversations/model"
@@ -50,7 +51,10 @@ export default async function ConversationsPage({ searchParams }: { searchParams
               {row.needsAttention && <><br /><Badge tone="warning">Needs attention</Badge></>}
               {row.assignedAdminId && <><br /><span className="muted">Assigned</span></>}
             </td>
-            <td>{row.caseReference || "Not linked"}</td>
+            <td>
+              {row.caseReference || "Not linked"}
+              {caseCommunicationsHref(row.caseId || "") && <><br /><Link href={caseCommunicationsHref(row.caseId || "")!}>Open the case communications workspace</Link></>}
+            </td>
             <td>{ukDate(row.receivedAt)}</td>
           </tr>)}</tbody>
         </table>

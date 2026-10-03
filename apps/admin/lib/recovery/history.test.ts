@@ -26,9 +26,9 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("has no pending migration now the UX-3 projection is applied", () => {
+  it("keeps the unapplied case-communications read out of remote history", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(entry => entry.version)).toEqual(["20261003120000"])
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])

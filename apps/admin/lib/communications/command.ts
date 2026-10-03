@@ -44,6 +44,13 @@ const messages: Record<string, string> = {
   resend_draft: "A replacement communication was drafted for the newly verified address.",
 }
 
+function reconcileMessage(deliveryStatus: string | undefined): string {
+  if (deliveryStatus === "DELIVERED") {
+    return "Provider delivery evidence already on record was applied. This action did not mark the message delivered."
+  }
+  return "Provider acceptance was recorded. Delivery is not confirmed, and the message was not sent again."
+}
+
 export async function communicationsCommand(request: NextRequest) {
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
@@ -60,7 +67,33 @@ export async function communicationsCommand(request: NextRequest) {
       return reply("Check the fields before saving.", 400)
     }
     const operation = (body as { operation: string }).operation
-    if (!["draft", "review", "queue", "cancel", "resend_draft"].includes(operation)) return reply("Check the fields before saving.", 400)
+    if (!["draft", "review", "queue", "cancel", "resend_draft", "reconcile_acceptance"].includes(operation)) return reply("Check the fields before saving.", 400)
+    if (operation === "reconcile_acceptance") {
+      const bodyRecord = body as Record<string, unknown>
+      const version = bodyRecord.version
+      const providerMessageId = bodyRecord.providerMessageId
+      const reason = bodyRecord.reason
+      if (!isUuid(bodyRecord.caseId) || !isUuid(bodyRecord.communicationId)) return reply("Check the fields before saving.", 400)
+      if (typeof version !== "number" || !Number.isInteger(version) || version < 1) return reply("Check the fields before saving.", 400)
+      if (typeof providerMessageId !== "string" || providerMessageId.trim().length < 1 || providerMessageId.trim().length > 200) {
+        return reply("Check the fields before saving.", 400)
+      }
+      if (typeof reason !== "string" || reason.trim().length < 10 || reason.trim().length > 500) return reply("Check the fields before saving.", 400)
+      const reconciled = await backend().rpc<{ status?: string; deliveryStatus?: string }>("admin_communication_reconcile_acceptance_v1", {
+        p_token: tokenHash(token),
+        p_request: key,
+        p_case: bodyRecord.caseId,
+        p_communication: bodyRecord.communicationId,
+        p_version: version,
+        p_provider_message_id: providerMessageId.trim(),
+        p_reason: reason.trim(),
+      })
+      if (reconciled?.status === "success") return reply(reconcileMessage(reconciled.deliveryStatus), 200)
+      if (reconciled?.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
+      if (reconciled?.status === "conflict") return reply("That communication changed. Reload the page and try again.", 409)
+      if (reconciled?.status === "denied") return reply("That message cannot be reconciled this way. Delivery cannot be marked from here, and another send is not offered.", 403)
+      return reply("We couldn’t record that provider acceptance.", mapStatus(reconciled?.status))
+    }
     const payload: Record<string, unknown> = { ...(body as Record<string, unknown>) }
     // These reach SQL as uuid parameters and the case and evidence-request
     // references are typed by hand, so a typo has to read as a field problem

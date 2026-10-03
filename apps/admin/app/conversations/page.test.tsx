@@ -44,4 +44,29 @@ describe("conversations page", () => {
     expect(document.body.textContent).not.toMatch(/RESEND_API_KEY|webhook secret|#t=/i)
     expect(document.body.textContent).toMatch(/Google Workspace inbox/)
   })
+
+  it("links a case-linked conversation to the case communications workspace", async () => {
+    loadConversations.mockResolvedValue({
+      conversations: [{
+        id: "77777777-7777-4777-8777-777777777777",
+        state: "OPEN",
+        subject: "Reply about the listing",
+        sender: "alex@example.com",
+        receivedAt: "2026-09-29T12:00:00.000Z",
+        caseId: "55555555-5555-4555-8555-555555555555",
+        caseReference: "PR-26-6CKR5M",
+        senderMatch: "NONE",
+        hasAttachment: false,
+        assignedAdminId: null,
+        needsAttention: false,
+        version: 2,
+      }],
+    })
+    loadConversation.mockResolvedValue(null)
+    render(await ConversationsPage({ searchParams: Promise.resolve({}) }))
+    expect(screen.getByRole("link", { name: "Open the case communications workspace" })).toHaveAttribute(
+      "href",
+      "/cases/55555555-5555-4555-8555-555555555555/communications",
+    )
+  })
 })

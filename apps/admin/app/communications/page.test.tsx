@@ -55,6 +55,7 @@ describe("communications page", () => {
     expect(screen.getByText(/not enabled yet/)).toBeTruthy()
     expect(screen.getByText(/operationally acceptable cadence/)).toBeTruthy()
     expect(screen.getByText("Draft communication")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open the case communications workspace" })).toHaveAttribute("href", "/cases/55555555-5555-4555-8555-555555555555/communications")
     expect(document.body.textContent).not.toMatch(/RESEND_API_KEY|webhook|raw payload|svix/i)
   })
 })

@@ -155,12 +155,14 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     // The UX-3 batch projection has been applied to dev, so the repository
     // and the project agree on one head and nothing is waiting to be applied.
-    expect(pendingMigrations()).toEqual([])
-    expect(appliedMigrationHead).toBe(migrationHead)
+    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261003120000"])
+    expect(appliedMigrationHead.version).toBe("20261002194215")
+    expect(migrationHead.version).toBe("20261003120000")
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
-    expect(supabase?.requirement).toContain(migrationHead.version)
+    expect(supabase?.requirement).toContain(appliedMigrationHead.version)
     expect(supabase?.requirement).toContain("admin_case_flow_batch_v1")
+    expect(supabase?.requirement).toContain("20261003120000")
     expect(supabase?.evidence).toContain("profilerelaunch-dev")
     expect(supabase?.externalAction).toBeNull()
   })

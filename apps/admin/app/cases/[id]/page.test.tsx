@@ -298,7 +298,7 @@ describe("the case workspace below the cockpit", () => {
 
   it("keeps the case communications link", async () => {
     await show("newCase")
-    expect(screen.getByRole("link", { name: "Open case communications" })).toHaveAttribute("href", `/communications?case=${CASE_ID}`)
+    expect(screen.getByRole("link", { name: "Open case communications" })).toHaveAttribute("href", `/cases/${CASE_ID}/communications`)
   })
 
   it("puts open tasks above the ones already dealt with, and counts them", async () => {

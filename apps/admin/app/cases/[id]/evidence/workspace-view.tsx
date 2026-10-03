@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { caseDestination } from "@/lib/case-flow/destinations"
 import { ukDate } from "@/lib/admin/activity"
 import { fileTypeLabel, formatBytes } from "@/lib/evidence/model"
 import type { EvidenceCase } from "@/lib/evidence/model"
@@ -98,7 +99,7 @@ function CustomerContact({ caseId, model }: { caseId: string; model: EvidenceWor
       ? <p>The requirement is recorded, but no evidence-request email has been prepared for this case.</p>
       : <p className={failed ? "notice-danger" : undefined}>Latest evidence-request email for this case: {model.contactLabel}.</p>}
     <p>Email delivery is currently tracked at case level, not per evidence request.</p>
-    <p><Link href={`/communications?case=${caseId}`}>View case communications</Link></p>
+    {caseDestination("CASE_COMMUNICATIONS", caseId) && <p><Link href={caseDestination("CASE_COMMUNICATIONS", caseId)!.href}>View case communications</Link></p>}
   </section>
 }
 

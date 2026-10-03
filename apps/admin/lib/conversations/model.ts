@@ -25,6 +25,20 @@ export type ConversationList = {
   conversations: ConversationRow[]
 }
 
+/**
+ * Conversations linked to one case.
+ *
+ * This is not a filtered copy of the global inbox. `complete` is false when
+ * the case has more linked conversations than this read returned.
+ */
+export type CaseConversationRead = {
+  status: "success" | "invalid" | "unavailable"
+  complete: boolean
+  total: number
+  returned: number
+  conversations: ConversationRow[]
+}
+
 export type ConversationAttachment = {
   id: string
   filename: string

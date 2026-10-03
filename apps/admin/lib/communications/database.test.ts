@@ -32,8 +32,14 @@ type RpcResult = {
     version: number
     subject: string | null
     lastError: string | null
+    canReplace?: boolean
     events: Array<{ eventType: string }>
   }>
+  conversations?: Array<{ id: string; caseId: string | null; subject: string | null }>
+  complete?: boolean
+  total?: number
+  returned?: number
+  replay?: boolean
   jobs?: Array<{ jobId: string; jobType: string; idempotencyKey: string; payload: Record<string, unknown>; leaseToken: string; attempts: number }>
   promoted?: number
   duplicate?: boolean
@@ -99,6 +105,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_jobs_outbox_operational_health_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 45000)
 
@@ -471,6 +478,9 @@ describe("communications outgoing mail SQL", () => {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.communication_begin_provider_attempt_v1(uuid,integer,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.protect_customer_action_scope_v1()','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'admin_private.protect_communication_snapshot_v1()','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_communications_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_case_conversations_v1(text,uuid)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege($1,'public.admin_communication_reconcile_acceptance_v1(text,uuid,uuid,uuid,integer,text,text)','EXECUTE') as ok", [role])).rows[0].ok).toBe(false)
     }
   })
 
@@ -807,5 +817,130 @@ describe("communications outgoing mail SQL", () => {
       delivery_status: "PROVIDER_ACCEPTED",
       provider_message_id: "msg_lock",
     })
+  })
+
+  it("returns a complete case communication history and says when the cap is exceeded", async () => {
+    const created = await draft()
+    expect(created?.status).toBe("success")
+    const small = await rpc("admin_case_communications_v1", [token, caseId])
+    expect(small).toMatchObject({ status: "success", complete: true, total: 1, returned: 1 })
+    expect(small?.communications?.[0].id).toBe(created!.id)
+    await db.query(
+      `insert into public.communications(case_id, communication_type, direction, recipient, status)
+       select $1, 'NOTE', 'OUTBOUND', 'alex@example.com', 'PENDING' from generate_series(1, 100)`,
+      [caseId],
+    )
+    const capped = await rpc("admin_case_communications_v1", [token, caseId])
+    expect(capped).toMatchObject({ status: "success", complete: false, total: 101, returned: 100 })
+    expect(capped?.communications).toHaveLength(100)
+  })
+
+  it("lists only conversations linked to the requested case", async () => {
+    const otherCase = "77777777-7777-4777-8777-777777777777"
+    await db.query(
+      `insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track)
+       values($1,'PROFILE_RECOVERY',$2,$3,$4,'Other profile','2026-01-02',now(),now(),'MANAGED')`,
+      [otherCase, customer, business, location],
+    )
+    const own = await db.query<{ id: string }>(
+      `insert into public.conversations(state, case_id, customer_id, reply_alias, subject)
+       values('OPEN',$1,$2,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','About this case') returning id`,
+      [caseId, customer],
+    )
+    await db.query(
+      `insert into public.conversations(state, case_id, customer_id, reply_alias, subject)
+       values('OPEN',$1,$2,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','About another case')`,
+      [otherCase, customer],
+    )
+    await db.query(
+      `insert into public.conversations(state, reply_alias, subject)
+       values('UNMATCHED','cccccccccccccccccccccccccccccccc','Not linked')`,
+    )
+    const listed = await rpc("admin_case_conversations_v1", [token, caseId])
+    expect(listed).toMatchObject({ status: "success", complete: true, total: 1, returned: 1 })
+    expect(listed?.conversations).toEqual([expect.objectContaining({ id: own.rows[0].id, caseId, subject: "About this case" })])
+  })
+
+  it("keeps the failed recipient and allows replacement only for a different verified address", async () => {
+    const row = await reviewed()
+    await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    await rpc("communication_mark_provider_accepted_v1", [row.id, "resend", "msg_replace", `send-email:${row.id}:v1`])
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_replace_bounce", "email.bounced", "msg_replace", "2026-09-29T12:12:00.000Z", "permanent"])).toMatchObject({ applied: true })
+    const same = await rpc("admin_case_communications_v1", [token, caseId])
+    expect(same?.communications?.[0]).toMatchObject({ id: row.id, recipient: "alex@example.com", deliveryStatus: "BOUNCED", canReplace: false })
+    await db.query(
+      "update public.customer_contact_verifications set verified_value='alex.new@example.com' where customer_id=$1 and channel='email'",
+      [customer],
+    )
+    const different = await rpc("admin_case_communications_v1", [token, caseId])
+    expect(different?.communications?.[0]).toMatchObject({ id: row.id, recipient: "alex@example.com", canReplace: true })
+    await db.query(
+      "insert into admin_private.email_suppressions(address_normalized, reason) values('alex.new@example.com','SUPPRESSED')",
+    )
+    const suppressed = await rpc("admin_case_communications_v1", [token, caseId])
+    expect(suppressed?.communications?.[0]).toMatchObject({ recipient: "alex@example.com", canReplace: false })
+    expect((await db.query<{ recipient: string }>("select recipient from public.communications where id=$1", [row.id])).rows[0].recipient).toBe("alex@example.com")
+  })
+
+  it("records provider acceptance on reconciliation and does not mark delivery itself", async () => {
+    const row = await reviewed()
+    const queued = await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    expect(queued?.status).toBe("success")
+    expect(await rpc("communication_mark_acceptance_unknown_v1", [row.id, `send-email:${row.id}:v1`])).toMatchObject({ status: "success" })
+    const version = (await db.query<{ record_version: number }>("select record_version from public.communications where id=$1", [row.id])).rows[0].record_version
+    const requestId = key()
+    const recorded = await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, requestId, caseId, row.id, version, "msg_reconcile", "Confirmed this provider message id in the provider dashboard.",
+    ])
+    expect(recorded).toMatchObject({ status: "success", deliveryStatus: "PROVIDER_ACCEPTED", replay: false })
+    const stored = await db.query<{ delivery_status: string; delivered_at: string | null; provider_message_id: string; recipient: string }>(
+      "select delivery_status, delivered_at, provider_message_id, recipient from public.communications where id=$1",
+      [row.id],
+    )
+    expect(stored.rows[0]).toEqual({
+      delivery_status: "PROVIDER_ACCEPTED",
+      delivered_at: null,
+      provider_message_id: "msg_reconcile",
+      recipient: "alex@example.com",
+    })
+    const audit = await db.query<{ reason: string }>(
+      "select reason from public.admin_audit_events where target_id=$1 and action='COMMUNICATION_CHANGED' order by created_at desc limit 1",
+      [row.id],
+    )
+    expect(audit.rows[0].reason).toBe("Recorded provider acceptance during reconciliation. This is not delivery.")
+    const replay = await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, requestId, caseId, row.id, version, "msg_reconcile", "Confirmed this provider message id in the provider dashboard.",
+    ])
+    expect(replay).toEqual(recorded)
+    expect(await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, key(), caseId, row.id, version, "msg_other", "A different provider message id from a later check.",
+    ])).toMatchObject({ status: "conflict" })
+    expect(await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, key(), "77777777-7777-4777-8777-777777777777", row.id, recorded?.version, "msg_reconcile", "Confirmed this provider message id in the provider dashboard.",
+    ])).toMatchObject({ status: "unavailable" })
+  })
+
+  it("applies a stored delivery webhook during reconciliation and refuses to mark delivery otherwise", async () => {
+    const row = await reviewed()
+    const queued = await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    expect(queued?.status).toBe("success")
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_reconcile_delivered", "email.delivered", "msg_reconcile_delivered", "2026-09-29T12:20:00.000Z"])).toMatchObject({ applied: false })
+    expect(await rpc("communication_mark_acceptance_unknown_v1", [row.id, `send-email:${row.id}:v1`])).toMatchObject({ status: "success" })
+    const version = (await db.query<{ record_version: number }>("select record_version from public.communications where id=$1", [row.id])).rows[0].record_version
+    const recorded = await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, key(), caseId, row.id, version, "msg_reconcile_delivered", "The provider message id matches a delivery event already stored.",
+    ])
+    expect(recorded).toMatchObject({ status: "success", deliveryStatus: "DELIVERED" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.communication_delivery_events where communication_id=$1 and event_type='DELIVERED'", [row.id])).rows[0].n).toBe(1)
+
+    const bounced = await reviewed()
+    await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(bounced.id), bounced.version])
+    await rpc("communication_mark_provider_accepted_v1", [bounced.id, "resend", "msg_already", `send-email:${bounced.id}:v1`])
+    expect(await rpc("communication_apply_provider_event_v1", ["resend", "evt_already_bounced", "email.bounced", "msg_already", "2026-09-29T12:30:00.000Z", "permanent"])).toMatchObject({ applied: true })
+    const bouncedVersion = (await db.query<{ record_version: number }>("select record_version from public.communications where id=$1", [bounced.id])).rows[0].record_version
+    expect(await rpc("admin_communication_reconcile_acceptance_v1", [
+      token, key(), caseId, bounced.id, bouncedVersion, "msg_already", "Trying to treat a bounce as delivered from the admin screen.",
+    ])).toMatchObject({ status: "denied" })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [bounced.id])).rows[0].delivery_status).toBe("BOUNCED")
   })
 })

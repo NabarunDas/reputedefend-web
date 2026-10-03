@@ -239,10 +239,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head is 20261002194215 admin_case_flow_batch_v1 and the repository has no migration waiting to be applied.",
+      "The applied migration head on profilerelaunch-dev is 20261002194215 admin_case_flow_batch_v1. The repository also contains 20261003120000 case_communications_workspace_v1, which has not been applied to that project.",
     status: "READY",
     evidence:
-      "The UX-3 batch CaseFlow projection was independently reviewed, applied to profilerelaunch-dev on 2026-10-02 and verified live. The remote ledger assigned 20261002194215, so the repository file was renamed to match and its contents left untouched. apps/admin/lib/recovery/manifest.ts records the chain, pendingMigrations() is empty, and manifest.test.ts asserts the applied head is the chain head.",
+      "The UX-3 batch CaseFlow projection was independently reviewed, applied to profilerelaunch-dev on 2026-10-02 and verified live. The remote ledger assigned 20261002194215, so the repository file was renamed to match and its contents left untouched. apps/admin/lib/recovery/manifest.ts records that applied head separately from 20261003120000_case_communications_workspace_v1.sql, which is present in the repository and not marked applied.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: true,

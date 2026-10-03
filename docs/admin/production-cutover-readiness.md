@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head is 20261002194215 admin_case_flow_batch_v1 and the repository has no migration waiting to be applied. |
+| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261002194215 admin_case_flow_batch_v1. The repository also contains 20261003120000 case_communications_workspace_v1, which has not been applied to that project. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -212,9 +212,12 @@ The applied head is `20261002194215 admin_case_flow_batch_v1`, file
 `profilerelaunch-dev` on 2026-10-02 after independent review. The remote ledger
 assigned `20261002194215` rather than the version the local CLI generated, so
 the repository file was renamed to match the applied one and its contents left
-byte-for-byte as applied. It is not modified, not replayed, and no Step 24
-migration exists. `pendingMigrations()` is empty, which
-`apps/admin/lib/recovery/manifest.test.ts` asserts.
+byte-for-byte as applied. It is not modified and not replayed. The repository
+also contains `20261003120000_case_communications_workspace_v1.sql`, which has
+not been applied to `profilerelaunch-dev`. `pendingMigrations()` is that one
+version, which `apps/admin/lib/recovery/manifest.test.ts` asserts. Apply it to
+the development project before any production cutover. Do not replay the
+migrations that are already applied.
 
 ### The ledger discrepancy, recorded rather than repaired
 

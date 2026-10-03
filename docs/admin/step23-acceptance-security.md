@@ -61,7 +61,7 @@ exercised. Rendering a component is not acceptance and was not accepted as such.
 | Customer preview | `/records/client/[id]/preview` | PASS |
 | Commercial catalogue, quotes and orders | `/commercial`, `/cases/[id]/commercial` | PASS |
 | Money, payments and invoices | `/money` | DEFERRED_EXTERNAL |
-| Outgoing communications | `/communications` | DEFERRED_EXTERNAL |
+| Outgoing communications | `/communications`, `/cases/[id]/communications` | DEFERRED_EXTERNAL |
 | Inbound mail and conversations | `/conversations` | PASS |
 | Guard subscriptions and billing | `/guard` | DEFERRED_EXTERNAL |
 | Guard manual checks | `/guard/checks`, `/guard/checks/[obligationId]` | PASS |

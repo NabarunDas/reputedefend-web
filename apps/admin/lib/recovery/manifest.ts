@@ -319,6 +319,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "batch case flow projection", probe: "public.admin_case_flow_facts_v1" },
   },
+  {
+    version: "20261003120000",
+    filename: "20261003120000_case_communications_workspace_v1.sql",
+    step: "UX-8 case communications workspace",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "case communications read", probe: "public.admin_case_communications_v1" },
+  },
 ]
 
 /**

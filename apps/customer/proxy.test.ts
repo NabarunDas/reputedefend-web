@@ -128,12 +128,15 @@ describe("customer portal proxy isolation", () => {
     const portalCookie = `${portalSessionCookieName()}=${portalToken}`
     const actionCookie = `${sessionCookie}=${actionToken}`
     expect((await ask("/api/portal/evidence", "POST", portalCookie)).headers.get("x-middleware-next")).toBe("1")
+    expect((await ask("/api/portal/service", "POST", portalCookie)).headers.get("x-middleware-next")).toBe("1")
     expect((await ask("/api/portal/documents/download?reference=PR-26-ABCDEF&selector=pd-1", "GET", portalCookie)).headers.get("x-middleware-next")).toBe("1")
     expect((await ask("/api/portal/evidence", "POST", actionCookie)).status).toBe(401)
+    expect((await ask("/api/portal/service", "POST", actionCookie)).status).toBe(401)
     expect((await ask("/api/portal/documents/download", "GET", actionCookie)).status).toBe(401)
     expect((await ask("/api/portal/evidence", "GET", portalCookie)).status).toBe(401)
     vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
     expect((await ask("/api/portal/evidence", "POST", portalCookie)).status).toBe(404)
+    expect((await ask("/api/portal/service", "POST", portalCookie)).status).toBe(404)
     expect((await ask("/api/case/evidence/upload", "POST", actionCookie)).headers.get("x-middleware-next")).toBe("1")
   })
 

@@ -57,8 +57,23 @@ export function quoteAmounts(standardMinor: number, discountBps: number, behavio
 }
 
 export function formatGbp(minor: number): string {
+  return formatMoney(minor, GBP)
+}
+
+/** Formats stored minor units in the quote currency. 29900 GBP is £299.00. */
+export function formatMoney(minor: number, currency: string): string {
   if (!Number.isInteger(minor)) throw new Error("amount must be an integer minor unit")
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error("currency must be a three-letter code")
+  const sample = new Intl.NumberFormat("en-GB", { style: "currency", currency, currencyDisplay: "narrowSymbol" })
+  const digits = sample.resolvedOptions().maximumFractionDigits ?? 2
+  const parts = sample.formatToParts(1)
+  const symbol = parts.find(part => part.type === "currency")?.value ?? currency
+  const symbolFirst = parts.findIndex(part => part.type === "currency") < parts.findIndex(part => part.type === "integer")
   const sign = minor < 0 ? "-" : ""
   const absolute = Math.abs(minor)
-  return `${sign}£${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`
+  const factor = 10 ** digits
+  const whole = Math.floor(absolute / factor)
+  const fraction = absolute % factor
+  const amount = digits === 0 ? String(whole) : `${whole}.${String(fraction).padStart(digits, "0")}`
+  return symbolFirst ? `${sign}${symbol}${amount}` : `${sign}${amount} ${symbol}`
 }

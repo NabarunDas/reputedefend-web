@@ -104,8 +104,9 @@ describe("what happens next", () => {
       ],
     })
     expect(oneMore.title).toBe("Accept your service agreement")
-    expect(oneMore.support).toBe("Use the secure link in the ProfileRelaunch email for this step.")
+    expect(oneMore.support).toBe("Review your Service Agreement in the customer portal.")
     expect(oneMore.href).toBeNull()
+    expect(oneMore.actionLabel).toBeNull()
     expect(oneMore.alsoWaiting).toBe("You also have 1 other step waiting for you.")
     expect(oneMore.remaining).toEqual(["Confirm case-management permission"])
   })

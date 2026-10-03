@@ -384,6 +384,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal documents", probe: "public.customer_portal_documents_v1" },
   },
+  {
+    version: "20261003204538",
+    filename: "20261003204538_customer_portal_quotes_agreements_permissions_v1.sql",
+    step: "UX-10F customer quotes, agreements and permissions",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal service", probe: "public.customer_portal_case_service_v1" },
+  },
 ]
 
 /**

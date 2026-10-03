@@ -2,7 +2,7 @@
 
 UX-10D is the first individual case workspace in the Customer Portal. It is read-only. A customer can open one case they directly own and see what the case is, where it currently sits, whether ProfileRelaunch needs anything, what has happened, and what happens next.
 
-The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. This document describes the read-only UX-10D workspace. UX-10E later added documents and evidence inside the portal; quote acceptance, agreement acceptance, permission acceptance, payment, Guard, messaging, and account editing remain outside it.
+The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. This document describes the UX-10D workspace. UX-10E later added documents and evidence. UX-10F later added quote, agreement, and permission actions. Payment, Guard, messaging, and account editing remain outside it.
 
 ## Route
 
@@ -49,7 +49,7 @@ Attention is not reimplemented. The case RPC calls `admin_private.customer_porta
 
 When there is no attention, the wording follows the UX-10C customer case state: received, in progress, submitted, waiting for Google, a recognised complete outcome, the generic complete fallback, or cancelled. The page does not promise a Google response time and does not imply a refund.
 
-UX-10E later made evidence upload the one portal action. Quote, agreement, permission, and payment support copy still point at the secure link in the ProfileRelaunch email. UX-10F and UX-10G replace those later.
+UX-10E later made evidence upload a portal action. UX-10F later moved quote, agreement, and permission review into `/portal/cases/[reference]/service`. Payment support copy still points at the secure link in the ProfileRelaunch email until UX-10G.
 
 ## Timeline
 

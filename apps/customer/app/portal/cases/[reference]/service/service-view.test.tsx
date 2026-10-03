@@ -15,7 +15,6 @@ vi.mock("next/navigation", () => ({
 
 const selector = `ca-${"ab".repeat(32)}`
 const agreementSelector = `ca-${"cd".repeat(32)}`
-const permissionSelector = `ca-${"ef".repeat(32)}`
 const revokeSelector = `ca-${"12".repeat(32)}`
 const validUntil = "2026-11-01T12:00:00.000Z"
 const acceptedAt = "2026-10-02T12:00:00.000Z"

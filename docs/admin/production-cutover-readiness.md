@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003194353 customer_portal_documents_evidence_v1. UX-10F is in the repository and has not been applied. |
+| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003204538 customer_portal_quotes_agreements_permissions_v1, matching the repository migration head. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -208,17 +208,14 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The applied head is `20261003194353 customer_portal_documents_evidence_v1`, file
-`supabase/migrations/20261003194353_customer_portal_documents_evidence_v1.sql`,
+The applied head is `20261003204538 customer_portal_quotes_agreements_permissions_v1`, file
+`supabase/migrations/20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`,
 applied to `profilerelaunch-dev` on 2026-10-03 after independent review.
-Supabase MCP initially registered `20261003202103`; that single history row
-was repaired immediately to `20261003194353` so the remote ledger matches the
-repository filename. `appliedMigrationHead` remains
-`20261003194353_customer_portal_documents_evidence_v1.sql`. The repository
-head is the unapplied UX-10F migration
-`20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`, and
-`pendingMigrations()` contains only that file. Applied migrations stay
-immutable. Do not replay them, and do not apply UX-10F from this change.
+Supabase MCP initially registered `20261003220517`; that single history row
+was repaired immediately to `20261003204538` so the remote ledger matches the
+repository filename. `appliedMigrationHead` and `migrationHead` now match,
+and `pendingMigrations()` is empty. Applied migrations stay immutable. Do not
+replay them.
 
 ### The ledger discrepancy, recorded rather than repaired
 
@@ -243,7 +240,7 @@ re-runs its seed data, so a replay to close the gap would be destructive.
 here.
 
 **Strategy A — build production from the canonical repository chain.** Create a
-new Supabase project and apply the 33 migrations in order from empty.
+new Supabase project and apply the 34 migrations in order from empty.
 
 The discrepancy then does not exist in production, because the three foundation
 migrations are applied there normally. The history validator can read clean, so

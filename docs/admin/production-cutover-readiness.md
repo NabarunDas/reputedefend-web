@@ -207,17 +207,14 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The applied head is `20261002194215 admin_case_flow_batch_v1`, file
-`supabase/migrations/20261002194215_admin_case_flow_batch_v1.sql`, applied to
-`profilerelaunch-dev` on 2026-10-02 after independent review. The remote ledger
-assigned `20261002194215` rather than the version the local CLI generated, so
-the repository file was renamed to match the applied one and its contents left
-byte-for-byte as applied. It is not modified and not replayed. The repository
-also contains `20261003120000_case_communications_workspace_v1.sql`, which has
-not been applied to `profilerelaunch-dev`. `pendingMigrations()` is that one
-version, which `apps/admin/lib/recovery/manifest.test.ts` asserts. Apply it to
-the development project before any production cutover. Do not replay the
-migrations that are already applied.
+The applied head is `20261003120000 case_communications_workspace_v1`, file
+`supabase/migrations/20261003120000_case_communications_workspace_v1.sql`,
+applied to `profilerelaunch-dev` on 2026-10-03 after independent review.
+Supabase MCP initially registered a generated migration timestamp; that single
+history row was repaired immediately to `20261003120000` so the remote ledger
+matches the repository filename. `pendingMigrations()` is now empty, which
+`apps/admin/lib/recovery/manifest.test.ts` asserts. The migration is immutable.
+Do not replay migrations that are already applied.
 
 ### The ledger discrepancy, recorded rather than repaired
 
@@ -242,7 +239,7 @@ re-runs its seed data, so a replay to close the gap would be destructive.
 here.
 
 **Strategy A — build production from the canonical repository chain.** Create a
-new Supabase project and apply the 28 migrations in order from empty.
+new Supabase project and apply the 29 migrations in order from empty.
 
 The discrepancy then does not exist in production, because the three foundation
 migrations are applied there normally. The history validator can read clean, so

@@ -69,7 +69,7 @@ Identical replay of a portal request returns the stored result from `admin_priva
 
 ## Migration
 
-`supabase/migrations/20261003224746_customer_portal_payments_receipts_v1.sql` is additive and has not been applied. It does not create a table, grant table access, or add an index. Lookups use the existing customer, case, and order keys. Selectors are computed.
+`supabase/migrations/20261003224746_customer_portal_payments_receipts_v1.sql` is additive. It does not create a table, grant table access, or add an index. Lookups use the existing customer, case, and order keys. Selectors are computed. The file header still describes the pre-application review; that text is left unchanged because the applied file is immutable.
 
 Public functions, granted only to `service_role`:
 
@@ -86,6 +86,6 @@ Private helpers, not executable by `PUBLIC`, `anon`, `authenticated`, or `servic
 - `admin_private.customer_payment_apply_v1(...)`
 - `admin_private.customer_portal_case_payments_body_v1(uuid, uuid, text)`
 
-The applied head on `profilerelaunch-dev` remains `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`. Repository head is this pending file. `pendingMigrations()` returns only this file. Do not apply it from this change.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003234725`; that single history row was aligned to repository version `20261003224746` without replaying the schema. `appliedMigrationHead` and `migrationHead` both point to `20261003224746_customer_portal_payments_receipts_v1.sql`, and `pendingMigrations()` is empty. The migration is immutable. Do not replay it. Production has not received it.
 
 Rollback is a later migration that drops the new functions and restores `public.customer_payment_command_v1` from `20260930132106_stripe_payments_v1.sql`. Do not edit that applied file. A forward fix is a later `CREATE OR REPLACE` of these functions.

@@ -37,7 +37,7 @@ export const cutoverSequence: readonly CutoverPhase[] = [
       "Resolve everything that is a decision or an external account fact, while nothing is live and nothing can be broken.",
     prerequisites: [
       "Step 23 is complete and merged.",
-      "20261003204538 customer_portal_quotes_agreements_permissions_v1 is applied to profilerelaunch-dev. Repository head 20261003224746 customer_portal_payments_receipts_v1 is pending and has not been applied. Applied migrations are not replayed.",
+      "20261003224746 customer_portal_payments_receipts_v1 is applied to profilerelaunch-dev and matches the repository head. pendingMigrations() is empty. Applied migrations are not replayed.",
     ],
     steps: [
       "Record an answer to each Owner decision, or record explicitly that it is deferred and what that defers.",

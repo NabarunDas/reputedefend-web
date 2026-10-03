@@ -398,11 +398,15 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "customer portal service", probe: "public.customer_portal_case_service_v1" },
   },
   {
+    // Applied to profilerelaunch-dev on 2026-10-03. Supabase MCP initially
+    // registered 20261003234725; the history row was aligned to 20261003224746
+    // so the remote ledger matches the repository filename. The schema was not
+    // replayed during that alignment.
     version: "20261003224746",
     filename: "20261003224746_customer_portal_payments_receipts_v1.sql",
     step: "UX-10G customer payments and receipts",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "customer portal payments", probe: "public.customer_portal_payments_v1" },

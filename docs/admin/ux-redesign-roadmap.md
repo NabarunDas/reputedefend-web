@@ -70,7 +70,7 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 | UX-10I | Messages and Account | NOT STARTED |
 | UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
 
-UX-10A adds passwordless email OTP, a separate eight-hour portal session, and the migration `20261003125151_customer_portal_auth_foundation_v1.sql`. That migration is not applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
+UX-10A adds passwordless email OTP, a separate eight-hour portal session, and the migration `20261003125151_customer_portal_auth_foundation_v1.sql`. That migration is applied to `profilerelaunch-dev` and is the current dev/repository head. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
 ## Sequencing notes
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "@/lib/action/identity"
-import { customerConfig } from "@/lib/config"
+import { customerBackendConfig } from "@/lib/config"
 import {
   PORTAL_EMAIL_INVALID,
   PORTAL_LOGIN_MESSAGE,
@@ -44,7 +44,7 @@ async function readJson(request: NextRequest, limit: number) {
 }
 
 function originOk(request: NextRequest) {
-  const config = customerConfig()
+  const config = customerBackendConfig()
   return !!config && request.headers.get("origin") === config.origin && request.nextUrl.origin === config.origin
 }
 
@@ -125,12 +125,15 @@ export async function verifyLogin(request: NextRequest) {
     if (allowed.status !== "ok" || !allowed.email || allowed.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return verifyDenied()
     const service = backend()
     const { data, error } = await service.identity.auth.verifyOtp({ email: allowed.email, token: body.code, type: "email" })
+    const accessToken = data?.session?.access_token
+    if (typeof accessToken !== "string" || !accessToken) return verifyDenied()
+    const revoked = await service.revokeProviderSession(accessToken)
+    if (!revoked || revoked.error) return verifyDenied()
     const user = data?.user
     const authEmail = user?.email
-    if (error || !data?.session?.access_token || !user?.id || !authEmail || authEmail.toLowerCase() !== allowed.email || !user.email_confirmed_at) {
+    if (error || !user?.id || !authEmail || authEmail.toLowerCase() !== allowed.email || !user.email_confirmed_at) {
       return verifyDenied()
     }
-    await service.revokeProviderSession(data.session.access_token)
     const token = newToken()
     if (token === pending) return verifyDenied()
     const finished = await service.rpc<{ status?: string }>("customer_portal_finish_otp_v1", {
@@ -150,11 +153,12 @@ export async function verifyLogin(request: NextRequest) {
 }
 
 export async function signOutPortal(request: NextRequest) {
+  if (!portalAvailable()) return refused(404)
   if (!originOk(request) || !jsonRequest(request)) return refused()
   const body = await readJson(request, 256)
   if (!body || !exactKeys(body, [])) return refused()
   const token = request.cookies.get(portalSessionCookieName())?.value
-  if (customerConfig() && validToken(token)) {
+  if (customerBackendConfig() && validToken(token)) {
     try { await backend().rpc("customer_portal_sign_out_v1", { p_token_hash: tokenHash(token) }) }
     catch { /* Clearing the cookie is still required. */ }
   }

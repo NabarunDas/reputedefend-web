@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { customerConfig } from "@/lib/config"
+import { customerBackendConfig, customerConfig } from "@/lib/config"
 import { portalAvailable, portalCookieOptions, portalPendingCookieName, portalSessionCookieName } from "./config"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -16,18 +16,53 @@ function customerEnv() {
 afterEach(() => vi.unstubAllEnvs())
 
 describe("portal feature gate", () => {
-  it("stays closed unless the portal flag and the existing customer backend config are both valid", () => {
-    expect(portalAvailable()).toBe(false)
-    customerEnv()
-    expect(customerConfig()?.origin).toBe(origin)
-    expect(portalAvailable()).toBe(false)
-    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "TRUE")
-    expect(portalAvailable()).toBe(false)
-    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
-    expect(portalAvailable()).toBe(true)
-    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+  it("keeps the action gate and the portal gate independent of each other", () => {
+    expect(customerBackendConfig()).toBeNull()
     expect(customerConfig()).toBeNull()
     expect(portalAvailable()).toBe(false)
+    customerEnv()
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
+    expect(customerBackendConfig()?.origin).toBe(origin)
+    expect(customerConfig()).toBeNull()
+    expect(portalAvailable()).toBe(false)
+
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
+    expect(customerConfig()?.origin).toBe(origin)
+    expect(portalAvailable()).toBe(false)
+
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    expect(customerConfig()).toBeNull()
+    expect(portalAvailable()).toBe(true)
+
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
+    expect(customerConfig()?.origin).toBe(origin)
+    expect(portalAvailable()).toBe(true)
+
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "TRUE")
+    expect(portalAvailable()).toBe(false)
+    expect(customerConfig()?.origin).toBe(origin)
+  })
+
+  it("closes both capabilities when the shared backend configuration is missing or malformed", () => {
+    customerEnv()
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    for (const [name, value] of [
+      ["CUSTOMER_ORIGIN", ""],
+      ["SUPABASE_URL", ""],
+      ["SUPABASE_SECRET_KEY", ""],
+      ["SUPABASE_PUBLISHABLE_KEY", ""],
+      ["SUPABASE_URL", "http://example.supabase.co"],
+      ["CUSTOMER_ORIGIN", "https://user:secret@customer.profilerelaunch.com"],
+    ] as const) {
+      customerEnv()
+      vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+      vi.stubEnv(name, value)
+      expect(customerBackendConfig()).toBeNull()
+      expect(customerConfig()).toBeNull()
+      expect(portalAvailable()).toBe(false)
+    }
   })
 
   it("uses host-only production cookie names and development names otherwise", () => {

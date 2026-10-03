@@ -9,7 +9,7 @@ The Customer Portal is not launched.
 - Passwordless login with a six-digit email code.
 - A ProfileRelaunch portal session, separate from the existing 15-minute action session.
 - Sign-out that revokes that session.
-- A feature gate, `CUSTOMER_PORTAL_ENABLED`, left unset.
+- A feature gate, `CUSTOMER_PORTAL_ENABLED`, left unset. It uses `customerBackendConfig()` and does not read `CUSTOMER_AUTH_ENABLED`. Customer actions stay on `customerConfig()`.
 - Request checks in `apps/customer/proxy.ts`.
 - Database tables and RPCs in `supabase/migrations/20261003125151_customer_portal_auth_foundation_v1.sql`.
 
@@ -36,7 +36,7 @@ No dashboard, case list, timeline, documents, evidence, messages, account editin
 
 The customer enters the email verified with ProfileRelaunch. The server normalises it, asks `customer_portal_begin_login_v1` whether a verified customer exists, and only then ensures the Auth identity and calls `signInWithOtp` with `shouldCreateUser: false`. After the provider accepts the send, `customer_portal_confirm_otp_sent_v1` records `sent_at` and the ten-minute expiry.
 
-The code screen always follows a syntactically acceptable email. The visible sentence is: "If this email is linked to a ProfileRelaunch account, we've sent a six-digit code." Verify checks the Auth user id, the email, and `email_confirmed_at`, revokes the provider session with `admin.signOut(jwt, "local")`, and inserts a new session hash that is not the pending hash.
+The code screen always follows a syntactically acceptable email. The visible sentence is: "If this email is linked to a ProfileRelaunch account, we've sent a six-digit code." If `verifyOtp()` returns an access token, the server revokes that provider session with `admin.signOut(jwt, "local")` before it accepts the user id, the email, or `email_confirmed_at`. A failed revocation does not create a portal session or set the portal cookie. A successful login inserts a new session hash that is not the pending hash.
 
 Failure copy is: "We couldn't verify that code. Check it and try again, or request a new code."
 
@@ -50,7 +50,7 @@ Sign-out calls `customer_portal_sign_out_v1`, clears both portal cookies, and re
 
 Action cookies stay `__Host-pr-action` and `__Host-pr-action-pending`. Portal cookies are `__Host-pr-portal` and `__Host-pr-portal-pending`. Neither token is accepted by the other session function.
 
-If the customer's current verified email changes, `customer_portal_session_v1` returns null immediately.
+If the customer's current verified email changes, `customer_portal_session_v1` returns null immediately. It also returns null when the stored Supabase Auth user no longer has that email, is unconfirmed, is marked deleted, or is actively banned. An expired `banned_until` does not keep the session invalid. Login uses the same `customer_portal_auth_identity_current_v1` check.
 
 ## Tests
 

@@ -312,6 +312,30 @@ BEGIN
 END;
 $$;
 
+-- The Auth identity captured at login must still be that same confirmed user.
+-- An expired ban does not stick. An active ban, a deleted user, a changed
+-- email, or the Admin identity does not.
+CREATE FUNCTION admin_private.customer_portal_auth_identity_current_v1(p_auth_user uuid, p_snapshot text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path=''
+AS $$
+  SELECT p_auth_user IS NOT NULL
+    AND p_snapshot IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM auth.users u
+      WHERE u.id = p_auth_user
+        AND lower(u.email) = p_snapshot
+        AND u.email_confirmed_at IS NOT NULL
+        AND u.deleted_at IS NULL
+        AND (u.banned_until IS NULL OR u.banned_until <= now())
+        AND public.admin_identity_id_v1() IS DISTINCT FROM u.id
+    );
+$$;
+
 CREATE FUNCTION admin_private.customer_portal_finish_otp_v1(
   p_pending_hash text, p_session_hash text, p_auth_user uuid, p_email text
 ) RETURNS jsonb
@@ -321,7 +345,6 @@ SET search_path=''
 AS $$
 DECLARE
   challenge admin_private.customer_portal_login_challenges;
-  uid uuid;
   authenticated_at timestamptz;
 BEGIN
   IF p_pending_hash IS NULL OR p_pending_hash !~ '^[a-f0-9]{64}$'
@@ -349,14 +372,7 @@ BEGIN
   IF NOT admin_private.customer_portal_email_current_v1(challenge.customer_id, challenge.expected_email_snapshot) THEN
     RETURN jsonb_build_object('status', 'unavailable');
   END IF;
-  SELECT id INTO uid
-  FROM auth.users
-  WHERE id = p_auth_user
-    AND lower(email) = lower(p_email)
-    AND email_confirmed_at IS NOT NULL
-    AND deleted_at IS NULL
-    AND banned_until IS NULL;
-  IF uid IS NULL OR public.admin_identity_id_v1() IS NOT DISTINCT FROM uid THEN
+  IF NOT admin_private.customer_portal_auth_identity_current_v1(p_auth_user, challenge.expected_email_snapshot) THEN
     RETURN jsonb_build_object('status', 'unavailable');
   END IF;
   authenticated_at := now();
@@ -366,7 +382,7 @@ BEGIN
   INSERT INTO admin_private.customer_portal_sessions (
     token_hash, customer_id, auth_user_id, email_snapshot, authenticated_at, created_at, expires_at, revoked_at, revocation_reason
   ) VALUES (
-    p_session_hash, challenge.customer_id, uid, challenge.expected_email_snapshot,
+    p_session_hash, challenge.customer_id, p_auth_user, challenge.expected_email_snapshot,
     authenticated_at, authenticated_at, authenticated_at + interval '8 hours', NULL, ''
   );
   RETURN jsonb_build_object('status', 'ok');
@@ -395,6 +411,7 @@ BEGIN
   verified := admin_private.verified_current_email_v1(sess.customer_id);
   IF verified IS NULL OR verified IS DISTINCT FROM sess.email_snapshot THEN RETURN NULL; END IF;
   IF NOT admin_private.customer_portal_email_current_v1(sess.customer_id, sess.email_snapshot) THEN RETURN NULL; END IF;
+  IF NOT admin_private.customer_portal_auth_identity_current_v1(sess.auth_user_id, sess.email_snapshot) THEN RETURN NULL; END IF;
   RETURN jsonb_build_object(
     'customerId', sess.customer_id,
     'authUserId', sess.auth_user_id,
@@ -492,6 +509,7 @@ COMMENT ON FUNCTION public.customer_portal_session_v1(text) IS
   'Opaque Customer Portal session. Not a customer-action session and not case, payment, Guard, or business authorisation.';
 
 REVOKE ALL ON FUNCTION admin_private.customer_portal_email_current_v1(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.customer_portal_auth_identity_current_v1(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_reserve_send_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_begin_login_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_confirm_otp_sent_v1(text) FROM PUBLIC, anon, authenticated, service_role;

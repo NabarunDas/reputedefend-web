@@ -9,7 +9,7 @@ The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` is unset.
 | Boundary | What it may do |
 | --- | --- |
 | Browser | Submit an email and a six-digit code. Hold two HttpOnly cookies. It never sees a Supabase access token, a refresh token, a raw session token in a response body, or a database identifier. |
-| Customer server | Checks origin, calls the public portal RPCs with the service role, asks Supabase Auth to send and verify OTP, then discards the provider session. |
+| Customer server | Checks origin, calls the public portal RPCs with the service role, asks Supabase Auth to send and verify OTP, then revokes that temporary provider session before any later decision. |
 | PostgreSQL | Decides eligibility, send limits, challenge state and session validity. The browser cannot call these functions. |
 | Supabase Auth | Proves possession of the verified email during login. It is not the portal session. |
 
@@ -19,9 +19,13 @@ The customer app sends no marketing analytics and no Google Analytics.
 
 ## Authentication and authorisation
 
+`customerBackendConfig()` checks only `CUSTOMER_ORIGIN`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `SUPABASE_PUBLISHABLE_KEY`, plus the existing origin and https rules. It does not read either feature gate.
+
+`customerConfig()` is customer-action availability: `CUSTOMER_AUTH_ENABLED` exactly `true`, plus that shared backend configuration. `portalAvailable()` is `CUSTOMER_PORTAL_ENABLED` exactly `true`, plus the same shared backend configuration. Either gate can be on while the other is off. `backend()` uses the shared configuration, so a portal request does not need the action gate.
+
 Login is allowed when all of these are true:
 
-- `CUSTOMER_PORTAL_ENABLED` is exactly `true` and the existing customer backend configuration is valid;
+- `CUSTOMER_PORTAL_ENABLED` is exactly `true` and `customerBackendConfig()` is valid;
 - a customer row exists for the normalised email;
 - `admin_private.verified_current_email_v1(customer_id)` returns that same email;
 - the address is not `admin@profilerelaunch.com`;
@@ -83,7 +87,7 @@ Requests that change login state are POST only, require `application/json`, a bo
 
 ## Stale verified email
 
-`customer_portal_session_v1` returns null unless the session exists, is unrevoked, is unexpired, the customer still exists, and `verified_current_email_v1` still equals the email stored on the session. Changing the customer email, or leaving a verification that no longer matches the current email, invalidates the session on the next request. The server does not wait for the eight-hour expiry and does not depend on the browser deleting the cookie.
+Changing the customer email, or leaving a verification that no longer matches the current email, invalidates the portal session on the next request. The server does not wait for the eight-hour expiry and does not depend on the browser deleting the cookie. The same request also rechecks the stored Supabase Auth identity, as described below.
 
 ## Future IDOR and step-up
 
@@ -95,6 +99,18 @@ Sensitive later actions, including payment and Guard changes, keep their own ste
 
 The three new tables live in `admin_private` with row-level security enabled and no direct grants to `PUBLIC`, `anon`, `authenticated`, or `service_role`. Private functions are not executable by those roles. The public wrappers revoke `PUBLIC`, `anon` and `authenticated`, and grant execute only to `service_role`. The browser never receives the service-role key. There is no Data API exposure and no `USING (true)` policy for `authenticated`.
 
+## Temporary provider session
+
+`verifyOtp()` may return an access token before ProfileRelaunch accepts the result. If that token is present, the server calls `admin.signOut(jwt, "local")` before it checks the user id, the email, or `email_confirmed_at`, and before it writes a portal session. A mismatch still returns the generic verification error, and the tokens are not put in the response.
+
+If that revocation fails, login fails closed: no portal session row and no portal cookie. The provider error text is not returned.
+
+## Portal session revalidation
+
+`customer_portal_session_v1` returns null unless the opaque session is unrevoked and unexpired, the customer still exists, `verified_current_email_v1` still equals the session email, and `customer_portal_auth_identity_current_v1` still accepts the stored Auth user. That identity check requires the same `auth.users` row, the same email, a confirmed email, `deleted_at` null, and no active ban. A `banned_until` timestamp in the past does not keep the session invalid. The Admin identity is not a portal identity. The check is in the database. A portal request does not call Supabase Auth again.
+
+`customer_portal_finish_otp_v1` uses the same identity helper, so login and later requests cannot drift.
+
 ## Feature gate
 
-`CUSTOMER_PORTAL_ENABLED` is independent of `CUSTOMER_AUTH_ENABLED`. When it is off, `/login` does not offer portal login, the portal auth routes refuse, and `/portal` is unavailable. Existing `/action/...` flows stay as they are. This change does not set the variable in any deployed environment.
+`CUSTOMER_PORTAL_ENABLED` does not read `CUSTOMER_AUTH_ENABLED`. When the portal gate is off, `/login` does not offer portal login, the portal auth routes refuse, and `/portal` is unavailable. Existing `/action/...` flows stay on `CUSTOMER_AUTH_ENABLED`. Missing or malformed shared origin or Supabase configuration closes both. This change does not set either variable in any deployed environment.

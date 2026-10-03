@@ -46,6 +46,8 @@ describe("portal session lookup", () => {
   it("returns only the server projection and ignores a closed gate", async () => {
     state.rpc.mockResolvedValue({ ...session, businessId: "secret" })
     await expect(portalSessionFromToken(token)).resolves.toEqual(session)
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    await expect(portalSessionFromToken(token)).resolves.toEqual(session)
     vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
     expect(await portalSessionFromToken(token)).toBeNull()
   })

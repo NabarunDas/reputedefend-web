@@ -1,8 +1,12 @@
 import "server-only"
 
-export function customerConfig() {
-  const { CUSTOMER_AUTH_ENABLED, CUSTOMER_ORIGIN, SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY } = process.env
-  if (CUSTOMER_AUTH_ENABLED !== "true" || !CUSTOMER_ORIGIN || !SUPABASE_URL || !SUPABASE_SECRET_KEY || !SUPABASE_PUBLISHABLE_KEY) return null
+/**
+ * Infrastructure shared by customer actions and the Customer Portal.
+ * It does not read CUSTOMER_AUTH_ENABLED or CUSTOMER_PORTAL_ENABLED.
+ */
+export function customerBackendConfig() {
+  const { CUSTOMER_ORIGIN, SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY } = process.env
+  if (!CUSTOMER_ORIGIN || !SUPABASE_URL || !SUPABASE_SECRET_KEY || !SUPABASE_PUBLISHABLE_KEY) return null
   try {
     const origin = new URL(CUSTOMER_ORIGIN)
     const supabase = new URL(SUPABASE_URL)
@@ -10,6 +14,12 @@ export function customerConfig() {
     if (origin.protocol !== "https:" && !(process.env.NODE_ENV === "development" && ["localhost", "127.0.0.1"].includes(origin.hostname))) return null
     return { origin: origin.origin, url: supabase.origin, secret: SUPABASE_SECRET_KEY, publishable: SUPABASE_PUBLISHABLE_KEY }
   } catch { return null }
+}
+
+/** Customer-action availability. The portal gate is separate. */
+export function customerConfig() {
+  if (process.env.CUSTOMER_AUTH_ENABLED !== "true") return null
+  return customerBackendConfig()
 }
 export const sessionCookie = process.env.NODE_ENV === "production" ? "__Host-pr-action" : "pr-action-dev"
 export const pendingCookie = process.env.NODE_ENV === "production" ? "__Host-pr-action-pending" : "pr-action-pending-dev"

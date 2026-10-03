@@ -1,16 +1,15 @@
 import "server-only"
-import { customerConfig } from "@/lib/config"
+import { customerBackendConfig } from "@/lib/config"
 
 export const PORTAL_SESSION_SECONDS = 60 * 60 * 8
 export const PORTAL_PENDING_SECONDS = 60 * 10
 
 /**
- * Independent of customer-action availability. Action links stay on
- * CUSTOMER_AUTH_ENABLED via customerConfig(); this flag only opens the portal.
- * It is not enabled in deployed environments by this change.
+ * Independent of customer-action availability. This flag does not read
+ * CUSTOMER_AUTH_ENABLED. It is not enabled in deployed environments.
  */
 export function portalAvailable() {
-  return process.env.CUSTOMER_PORTAL_ENABLED === "true" && customerConfig() !== null
+  return process.env.CUSTOMER_PORTAL_ENABLED === "true" && customerBackendConfig() !== null
 }
 
 export function portalSessionCookieName() {

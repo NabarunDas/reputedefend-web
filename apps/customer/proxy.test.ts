@@ -86,6 +86,14 @@ describe("customer portal proxy isolation", () => {
     }
   })
 
+  it("opens the portal while the customer-action flag is off", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    expect((await ask("/login")).headers.get("x-middleware-next")).toBe("1")
+    const signedIn = await ask("/portal", "GET", `${portalSessionCookieName()}=${portalToken}`)
+    expect(signedIn.headers.get("x-middleware-next")).toBe("1")
+    expect(sessions.portal).toHaveBeenCalled()
+  })
+
   it("hides the portal when the gate is off", async () => {
     vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
     const portal = await ask("/portal", "GET", `${portalSessionCookieName()}=${portalToken}`)

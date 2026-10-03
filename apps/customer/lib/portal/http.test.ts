@@ -33,6 +33,7 @@ import { POST as resendPost } from "@/app/api/portal/auth/resend/route"
 import { POST as verifyPost } from "@/app/api/portal/auth/verify/route"
 import { POST as signOutPost } from "@/app/api/portal/auth/sign-out/route"
 import { POST as commandPost } from "@/app/api/action/command/route"
+import { POST as exchangePost } from "@/app/api/action/exchange/route"
 import { pendingCookie, sessionCookie } from "@/lib/config"
 import { PORTAL_LOGIN_MESSAGE, PORTAL_VERIFY_ERROR } from "@/lib/portal/email"
 import { portalPendingCookieName, portalSessionCookieName } from "@/lib/portal/config"
@@ -254,7 +255,12 @@ describe("portal login verify", () => {
       error: null,
     })
     const unconfirmed = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
-    for (const response of [provider, mismatch, unconfirmed]) {
+    state.verifyOtp.mockResolvedValueOnce({
+      data: { session: { access_token: "jwt-no-user" }, user: { email: "alex@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
+      error: null,
+    })
+    const missingUser = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    for (const response of [provider, mismatch, unconfirmed, missingUser]) {
       expect(response.status).toBe(401)
       expect(response.cookies.get(portalSessionCookieName())).toBeUndefined()
     }
@@ -262,8 +268,36 @@ describe("portal login verify", () => {
       "customer_portal_attempt_otp_v1",
       "customer_portal_attempt_otp_v1",
       "customer_portal_attempt_otp_v1",
+      "customer_portal_attempt_otp_v1",
     ])
-    expect(state.signOut).not.toHaveBeenCalled()
+    expect(state.signOut).toHaveBeenCalledTimes(3)
+    expect(state.signOut).toHaveBeenNthCalledWith(1, "jwt")
+    expect(state.signOut).toHaveBeenNthCalledWith(2, "jwt")
+    expect(state.signOut).toHaveBeenNthCalledWith(3, "jwt-no-user")
+    for (const response of [mismatch, unconfirmed]) {
+      expect(JSON.stringify(await response.json())).not.toMatch(/jwt|refresh/)
+    }
+  })
+
+  it("does not create a portal session when provider revocation fails", async () => {
+    state.rpc.mockResolvedValue({ status: "ok", email: "alex@example.com", customerId })
+    state.signOut.mockResolvedValue({ error: { message: "revoke failed jwt-must-not-leak" } })
+    state.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak", refresh_token: "refresh-must-not-leak" },
+        user: { id: authUser, email: "alex@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload).toEqual({ message: PORTAL_VERIFY_ERROR })
+    expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak|revoke failed/)
+    expect(response.cookies.get(portalSessionCookieName())).toBeUndefined()
+    expect(state.signOut).toHaveBeenCalledTimes(1)
+    expect(state.signOut).toHaveBeenCalledWith("jwt-must-not-leak")
+    expect(state.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_attempt_otp_v1"])
   })
 
   it("revokes the provider session and sets a different host-only portal cookie", async () => {
@@ -286,6 +320,7 @@ describe("portal login verify", () => {
     expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak|alex@example.com|customerId/)
     expect(sessionToken).toMatch(/^[a-f0-9]{64}$/)
     expect(sessionToken).not.toBe(pending)
+    expect(state.signOut).toHaveBeenCalledTimes(1)
     expect(state.signOut).toHaveBeenCalledWith("jwt-must-not-leak")
     expect(state.rpc.mock.calls[1][1].p_session_hash).toBe(hash(sessionToken ?? ""))
     expect(state.rpc.mock.calls[1][1].p_session_hash).not.toBe(hash(pending))
@@ -349,6 +384,79 @@ describe("portal sign-out", () => {
     expect(setCookie).not.toContain(sessionCookie)
     expect(setCookie).not.toContain(pendingCookie)
     expect(state.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_sign_out_v1"])
+  })
+})
+
+describe("independent action and portal gates", () => {
+  const actionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+  function sharedBackend() {
+    vi.stubEnv("CUSTOMER_ORIGIN", origin)
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co")
+    vi.stubEnv("SUPABASE_SECRET_KEY", "test")
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
+  }
+
+  it("keeps actions available while the portal is closed", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "false")
+    sharedBackend()
+    state.rpc.mockResolvedValue({ status: "unavailable" })
+    expect((await startPost(req("/api/portal/auth/start", { email: "alex@example.com" }))).status).toBe(404)
+    expect(state.rpc).not.toHaveBeenCalled()
+    const action = await exchangePost(req("/api/action/exchange", { actionId, secret: "b".repeat(64) }))
+    expect(action.status).toBe(401)
+    expect(state.rpc).toHaveBeenCalledWith("customer_action_exchange_v1", expect.any(Object))
+  })
+
+  it("keeps portal authentication available while actions are closed", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    sharedBackend()
+    state.rpc.mockResolvedValue({ status: "ineligible" })
+    const portal = await startPost(req("/api/portal/auth/start", { email: "alex@example.com" }))
+    expect(portal.status).toBe(200)
+    expect(await portal.json()).toEqual({ message: PORTAL_LOGIN_MESSAGE })
+    expect(state.rpc).toHaveBeenCalledWith("customer_portal_begin_login_v1", expect.objectContaining({ p_email: "alex@example.com" }))
+    state.rpc.mockClear()
+    expect((await exchangePost(req("/api/action/exchange", { actionId, secret: "b".repeat(64) }))).status).toBe(401)
+    expect(state.rpc).not.toHaveBeenCalled()
+    state.rpc.mockResolvedValue({ status: "ok" })
+    const signedOut = await signOutPost(req("/api/portal/auth/sign-out", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(signedOut.status).toBe(200)
+    expect(state.rpc).toHaveBeenCalledWith("customer_portal_sign_out_v1", expect.any(Object))
+  })
+
+  it("lets both capabilities operate when both gates are on", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    sharedBackend()
+    state.rpc.mockResolvedValueOnce({ status: "ineligible" }).mockResolvedValueOnce({ status: "unavailable" })
+    expect((await startPost(req("/api/portal/auth/start", { email: "alex@example.com" }))).status).toBe(200)
+    expect((await exchangePost(req("/api/action/exchange", { actionId, secret: "b".repeat(64) }))).status).toBe(401)
+    expect(state.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_portal_begin_login_v1",
+      "customer_action_exchange_v1",
+    ])
+  })
+
+  it("closes both capabilities when both gates are off", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "false")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "false")
+    sharedBackend()
+    expect((await startPost(req("/api/portal/auth/start", { email: "alex@example.com" }))).status).toBe(404)
+    expect((await exchangePost(req("/api/action/exchange", { actionId, secret: "b".repeat(64) }))).status).toBe(401)
+    expect(state.rpc).not.toHaveBeenCalled()
+  })
+
+  it("closes both capabilities when the shared origin or Supabase configuration is missing", async () => {
+    vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    sharedBackend()
+    vi.stubEnv("SUPABASE_URL", "")
+    expect((await startPost(req("/api/portal/auth/start", { email: "alex@example.com" }))).status).toBe(404)
+    expect((await exchangePost(req("/api/action/exchange", { actionId, secret: "b".repeat(64) }))).status).toBe(401)
+    expect(state.rpc).not.toHaveBeenCalled()
   })
 })
 

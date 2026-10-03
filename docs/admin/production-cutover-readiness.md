@@ -101,12 +101,12 @@ capability gate is expected to be missing.
 | --- | --- | --- | --- | --- | --- |
 | `ADMIN_AUTH_ENABLED` | admin | FEATURE_GATE | non-secret | PRESENT | authConfig() is null, every Admin page redirects to /login and /login says sign-in is not available yet. |
 | `ADMIN_ORIGIN` | admin | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() is null, so Admin has no sign-in at all. |
-| `SUPABASE_URL` | marketing, admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerConfig() are null; the marketing site falls back to its email-only intake path. |
-| `SUPABASE_SECRET_KEY` | marketing, admin, customer | PROVIDER_SECRET | secret | PRESENT | authConfig() and customerConfig() are null; no Admin or Customer request can reach the database. |
-| `SUPABASE_PUBLISHABLE_KEY` | admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerConfig() are null, so no one-time code can be issued or verified. |
-| `CUSTOMER_AUTH_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | customerConfig() is null, so no customer action link can be opened. Admin is unaffected. |
+| `SUPABASE_URL` | marketing, admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerBackendConfig() are null, so customer actions and the Customer Portal both stay closed. The marketing site falls back to its email-only intake path. |
+| `SUPABASE_SECRET_KEY` | marketing, admin, customer | PROVIDER_SECRET | secret | PRESENT | authConfig() and customerBackendConfig() are null, so no Admin, customer-action, or Customer Portal request can reach the database. |
+| `SUPABASE_PUBLISHABLE_KEY` | admin, customer | REQUIRED_FOR_ADMIN_CORE | non-secret | PRESENT | authConfig() and customerBackendConfig() are null, so no Admin or customer one-time code can be issued or verified. |
+| `CUSTOMER_AUTH_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | customerConfig() is null, so no customer action link can be opened. The Customer Portal keeps its own gate. Admin is unaffected. |
 | `CUSTOMER_PORTAL_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | Portal login, /portal and the portal auth routes stay closed. Existing customer action links keep using CUSTOMER_AUTH_ENABLED. |
-| `CUSTOMER_ORIGIN` | admin, customer, marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | OPTIONAL | customerConfig() is null and no customer-facing link can be composed. |
+| `CUSTOMER_ORIGIN` | admin, customer, marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | OPTIONAL | customerBackendConfig() is null, so customer actions and the Customer Portal both stay closed and no customer-facing link can be composed. |
 | `NODE_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Next.js sets it. A non-production value would select the development cookie names, which is why the production smoke test checks the cookie name. |
 | `VERCEL_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Every one of those capabilities stays off, which is the safe direction. |
 | `VERCEL_DEPLOYMENT_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The heartbeat records null. Nothing else changes. |

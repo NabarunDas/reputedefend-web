@@ -342,6 +342,35 @@ describe("portal challenges and sessions", () => {
     expect(await rpc<{ status: string }>("customer_portal_sign_out_v1", [sessionHash])).toEqual({ status: "ok" })
     expect(await rpc<{ status: string }>("customer_portal_sign_out_v1", [hash(token())])).toEqual({ status: "ok" })
   })
+
+  it("returns null when the Auth identity changes, is unconfirmed, deleted, or actively banned", async () => {
+    await releaseCooldown("alex@example.com")
+    const pending = await sentChallenge("alex@example.com")
+    const sessionHash = hash(token())
+    expect((await rpc<{ status: string }>("customer_portal_finish_otp_v1", [pending, sessionHash, alexAuth, "alex@example.com"])).status).toBe("ok")
+
+    await db.query("update auth.users set email = 'moved@example.com' where id = $1", [alexAuth])
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    await db.query("update auth.users set email = 'alex@example.com' where id = $1", [alexAuth])
+    expect(await rpc<{ customerId: string } | null>("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: alex })
+
+    await db.query("update auth.users set email_confirmed_at = null where id = $1", [alexAuth])
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    await db.query("update auth.users set email_confirmed_at = now() where id = $1", [alexAuth])
+    expect(await rpc<{ email: string } | null>("customer_portal_session_v1", [sessionHash])).toMatchObject({ email: "alex@example.com" })
+
+    await db.query("update auth.users set deleted_at = now() where id = $1", [alexAuth])
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    await db.query("update auth.users set deleted_at = null where id = $1", [alexAuth])
+    expect(await rpc<{ customerId: string } | null>("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: alex })
+
+    await db.query("update auth.users set banned_until = now() + interval '1 hour' where id = $1", [alexAuth])
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    const bannedPending = await sentChallenge("alex@example.com")
+    expect(await rpc<{ status: string }>("customer_portal_finish_otp_v1", [bannedPending, hash(token()), alexAuth, "alex@example.com"])).toEqual({ status: "unavailable" })
+    await db.query("update auth.users set banned_until = now() - interval '1 hour' where id = $1", [alexAuth])
+    expect(await rpc<{ customerId: string } | null>("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: alex })
+  })
 })
 
 describe("action session and portal session stay separate", () => {
@@ -401,6 +430,7 @@ describe("portal privileges", () => {
   ]
   const cores = [
     "admin_private.customer_portal_email_current_v1(uuid,text)",
+    "admin_private.customer_portal_auth_identity_current_v1(uuid,text)",
     "admin_private.customer_portal_reserve_send_v1(uuid)",
     ...wrappers.map(signature => signature.replace("public.", "admin_private.")),
   ]

@@ -26,9 +26,13 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps the unapplied case-communications read out of remote history", () => {
+  it("keeps the applied UX-8 migration in remote history with no pending migrations", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual(["20261003120000"])
+    expect(pending).toEqual([])
+    expect(healthyRemote.at(-1)).toEqual({
+      version: "20261003120000",
+      name: "case_communications_workspace_v1",
+    })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])

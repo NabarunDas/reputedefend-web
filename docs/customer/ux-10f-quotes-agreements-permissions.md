@@ -74,4 +74,4 @@ Private helpers, not executable by `PUBLIC`, `anon`, `authenticated`, or `servic
 
 `admin_private.customer_action_command_core_v1` is replaced so the secure-link path delegates commercial mutations to the shared helper.
 
-The migration is in the repository and has **not** been applied to `profilerelaunch-dev`. `appliedMigrationHead` remains `20261003194353_customer_portal_documents_evidence_v1.sql`. `migrationHead` is `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`. `pendingMigrations()` contains only UX-10F. Do not apply it from this change, and do not mark it applied.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003220517`; that single history row was repaired immediately to repository version `20261003204538`. `appliedMigrationHead` and `migrationHead` now both point to `20261003204538_customer_portal_quotes_agreements_permissions_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.

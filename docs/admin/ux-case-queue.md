@@ -221,7 +221,7 @@ The remote ledger assigned `20261002194215` rather than the version the local CL
 
 The live function was verified on the project after application: `SECURITY DEFINER` is on, `search_path` is pinned empty, `service_role` can execute it, `PUBLIC`, `anon` and `authenticated` cannot, and an invalid Admin session returns `NULL` rather than data. The Supabase security advisor reported no new finding; the existing unrelated warnings are unchanged.
 
-The recovery manifest records this migration as `appliedToDev: true`. UX-8, UX-10A, UX-10C and UX-10D were later applied as well. The applied development head remains `20261003183002_customer_portal_case_workspace_v1.sql`. The repository head is the unapplied UX-10E migration `20261003194353_customer_portal_documents_evidence_v1.sql`, and `pendingMigrations()` contains only that file. The release readiness check reports `supabase.applied-head` as `READY` against the applied UX-10D head.
+The recovery manifest records this migration as `appliedToDev: true`. UX-8, UX-10A, UX-10C, UX-10D and UX-10E were later applied as well. The current repository/dev head is `20261003194353_customer_portal_documents_evidence_v1.sql`, and `pendingMigrations()` is empty. The release readiness check reports `supabase.applied-head` as `READY` against that aligned head.
 
 This is the development project. Nothing has been applied to a production database, no Supabase branch was created, and no cost-bearing cloud resource exists. The migration chain, the recovery rehearsal and the upgrade path continue to be tested in PGlite, which is local and disposable.
 

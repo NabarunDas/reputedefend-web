@@ -33,6 +33,7 @@ import {
   type ServiceOrder,
 } from "../commerce/model"
 import type { MoneyOrder } from "../payments/model"
+import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
 import { isUuid } from "../records/model"
 
 export type JourneyTone = "complete" | "current" | "attention" | "not_started" | "not_applicable" | "unknown"
@@ -440,6 +441,7 @@ export function buildCommercialWorkspaceModel(input: {
     caseHref: isUuid(caseId) ? `/cases/${caseId}` : "/cases",
   })
 
+  const qualifyingOutcome = isQualifyingSuccessFeeOutcome(facts.caseType, facts.outcome)
   const commands = commandsFor({
     primary: input.primaryAction,
     kind,
@@ -452,11 +454,14 @@ export function buildCommercialWorkspaceModel(input: {
     consent: payment.managedConsentRecorded,
     setupConflict,
     approvalId: moneyOrder?.approvalId ?? null,
+    qualifyingOutcome,
     recovery: !!moneyOrder && moneyOrder.paymentModel === "SUCCESS_FEE" && moneyOrder.obligationState === "AUTHENTICATION_REQUIRED" && !!moneyOrder.obligationId,
     paymentsEnabled: facts.capabilities.paymentsEnabled,
   })
 
-  const managed = mode === "managed" && (accepted || !!payment.successFeeOrder) ? managedSection(payment, moneyOrder, setupConflict, managedSetupExpired) : null
+  const managed = mode === "managed" && (accepted || !!payment.successFeeOrder)
+    ? managedSection(payment, moneyOrder, setupConflict, managedSetupExpired, qualifyingOutcome)
+    : null
   const guardNote = mode === "guard"
     ? "This is a recurring Guard subscription, not a one-off case payment. Accepting the quote does not start billing or take money. Guard billing exceptions stay on Money."
     : null
@@ -731,6 +736,7 @@ function managedSection(
   moneyOrder: MoneyOrder | null,
   setupConflict: boolean,
   managedSetupExpired: boolean,
+  qualifyingOutcome: boolean,
 ): NonNullable<CommercialWorkspaceModel["managed"]> {
   const hasOrder = !!payment.successFeeOrder
   const consent = payment.managedConsentRecorded
@@ -766,12 +772,14 @@ function managedSection(
   ]
   const collectedNow = hasOrder && ready ? COLLECTED_NOW : hasOrder ? "£0 collected now. Nothing has been collected." : null
   let approval: string | null = null
-  if (hasOrder && ready && moneyOrder && !moneyOrder.approvalId) {
-    approval = "Success-fee approval is required before a qualifying outcome can be charged. Approval uses the immutable accepted amount and accepted evidence. It does not charge a card."
+  if (hasOrder && !ready) {
+    approval = "The outcome is not yet chargeable. Setup is still incomplete, so success-fee approval is not available."
   } else if (hasOrder && ready && moneyOrder?.approvalId) {
     approval = "Success-fee approval is recorded. That is not a collection, and it is not a charge."
-  } else if (hasOrder && !ready) {
-    approval = "The outcome is not yet chargeable. Setup is still incomplete, so success-fee approval is not available."
+  } else if (hasOrder && ready && moneyOrder && !qualifyingOutcome) {
+    approval = "No success fee is due yet. Approval becomes available only after the qualifying service outcome has been recorded. For Profile Recovery, the qualifying outcome is restoration. For Review Protection, the qualifying outcome is removal."
+  } else if (hasOrder && ready && moneyOrder && qualifyingOutcome) {
+    approval = "Success-fee approval uses the immutable accepted amount and accepted evidence. Approval is not itself proof of payment, and it does not charge a card."
   }
   return { rows, collectedNow, approval }
 }
@@ -821,10 +829,15 @@ function priceGapFor(input: {
  * and revoke of an open acceptance link. They do not stand in for verify
  * contact, verify authority, or any earlier prerequisite.
  *
- * Success-fee approval is not a CaseFlow action. It is offered only once the
- * payment projection says setup is ready, consent is recorded and no approval
- * exists. It does not charge a card. Recovery is the existing success-fee
- * authentication command, and it stays hidden when payment collection is off.
+ * Success-fee approval is not a CaseFlow action. It is offered only when the
+ * payment projection says setup is ready, consent is recorded, no approval
+ * exists, the records are complete, and `isQualifyingSuccessFeeOutcome`
+ * matches the case. That helper copies the database rule for display.
+ * `approve_success_fee` checks the rule again. Approval does not charge a
+ * card. It is not gated by the payment-link switch: the command does not
+ * consult that switch, and collection afterwards still uses the existing
+ * payment path. Recovery is the existing success-fee authentication command,
+ * and it stays hidden when payment collection is off.
  *
  * `quoteServiceForCase`, `currentApprovedPrice`, `expectedModel` and
  * `moneyMode` only choose presentation. The database remains the authority
@@ -842,6 +855,7 @@ function commandsFor(input: {
   consent: boolean
   setupConflict: boolean
   approvalId: string | null
+  qualifyingOutcome: boolean
   recovery: boolean
   paymentsEnabled: boolean
 }): CommercialCommands {
@@ -862,7 +876,7 @@ function commandsFor(input: {
     issueUpfront: payOpen && journey("START_UPFRONT_PAYMENT"),
     issueRecovery: payOpen && input.recovery,
     issueManagedSetup: payOpen && journey("START_MANAGED_PAYMENT_SETUP"),
-    approveSuccessFee: !input.paymentBlocked && input.hasOrderContext && input.setupReady && input.consent && !input.setupConflict && !input.approvalId,
+    approveSuccessFee: !input.paymentBlocked && input.hasOrderContext && input.setupReady && input.consent && !input.setupConflict && !input.approvalId && input.qualifyingOutcome,
   }
 }
 

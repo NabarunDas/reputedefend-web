@@ -425,11 +425,12 @@ describe("commercial workspace model", () => {
     expect(model.commands.issueUpfront).toBe(false)
   })
 
-  it("shows success-fee approval only once setup is ready", () => {
-    const ready = managed({ consentRecorded: true, setupReady: true })
+  it("shows success-fee approval only once setup is ready and the outcome qualifies", () => {
+    const ready = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED" })
     expect(ready.commands.approveSuccessFee).toBe(true)
+    expect(ready.managed?.approval).toMatch(/immutable accepted amount/i)
     expect(ready.managed?.approval).toMatch(/does not charge a card/i)
-    const waiting = managed({ consentRecorded: false, setupReady: false })
+    const waiting = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED" })
     expect(waiting.commands.approveSuccessFee).toBe(false)
     expect(waiting.managed?.approval).toMatch(/not yet chargeable/i)
   })
@@ -525,6 +526,35 @@ describe("commercial workspace model", () => {
     expect(model.failClosed).toBe(true)
     expect(model.commands.issueUpfront).toBe(false)
     expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.commands.approveSuccessFee).toBe(false)
+  })
+
+  it("does not offer success-fee approval before a qualifying outcome", () => {
+    const none = managed({ consentRecorded: true, setupReady: true })
+    expect(none.commands.approveSuccessFee).toBe(false)
+    expect(none.managed?.approval).toMatch(/No success fee is due yet/i)
+    expect(none.managed?.approval).toMatch(/restoration/i)
+    expect(none.managed?.approval).toMatch(/removal/i)
+    expect(none.managed?.approval).not.toMatch(/has been restored|has been removed/i)
+
+    const partial = managed({ consentRecorded: true, setupReady: true }, { outcome: "PARTIALLY_RESTORED" })
+    expect(partial.commands.approveSuccessFee).toBe(false)
+    const notRestored = managed({ consentRecorded: true, setupReady: true }, { outcome: "NOT_RESTORED" })
+    expect(notRestored.commands.approveSuccessFee).toBe(false)
+
+    const restored = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED" })
+    expect(restored.commands.approveSuccessFee).toBe(true)
+
+    const removed = managed({ consentRecorded: true, setupReady: true }, { outcome: "REMOVED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    expect(removed.commands.approveSuccessFee).toBe(true)
+    const recommended = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESPONSE_RECOMMENDED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    expect(recommended.commands.approveSuccessFee).toBe(false)
+    const restoredReview = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    expect(restoredReview.commands.approveSuccessFee).toBe(false)
+
+    const already = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED", approvalId: "approval-1" })
+    expect(already.commands.approveSuccessFee).toBe(false)
+    expect(already.managed?.approval).toMatch(/not a collection/i)
   })
 
   it("does not offer quote creation while the case still needs a service track", () => {
@@ -714,9 +744,15 @@ function guided(obligationState: string, orderOverrides: Partial<CaseFlowOrderFa
   })
 }
 
-function managed(flags: { consentRecorded: boolean; setupReady: boolean }): CommercialWorkspaceModel {
+function managed(
+  flags: { consentRecorded: boolean; setupReady: boolean },
+  options: { outcome?: string | null; caseType?: string; serviceCode?: string; approvalId?: string | null } = {},
+): CommercialWorkspaceModel {
+  const serviceCode = options.serviceCode ?? "MANAGED_RELAUNCH"
   return modelFor({
     serviceTrack: "MANAGED",
+    caseType: options.caseType ?? "PROFILE_RECOVERY",
+    outcome: options.outcome ?? null,
     technicalStage: "AUTHORIZATION_REQUIRED",
     commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
     payment: {
@@ -730,16 +766,17 @@ function managed(flags: { consentRecorded: boolean; setupReady: boolean }): Comm
       })],
     },
   }, {
-    quote: detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED", serviceCode: "MANAGED_RELAUNCH", serviceName: "Managed Relaunch", paymentModel: "SUCCESS_FEE" }),
-    order: serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" }),
+    quote: detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED", serviceCode, serviceName: serviceCode === "MANAGED_REVIEW" ? "Managed Review" : "Managed Relaunch", paymentModel: "SUCCESS_FEE" }),
+    order: serviceOrder({ serviceCode, paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" }),
     money: [money({
-      serviceCode: "MANAGED_RELAUNCH",
+      serviceCode,
       paymentModel: "SUCCESS_FEE",
       orderState: "ACCEPTED_SUCCESS_FEE",
       obligationKind: null,
       obligationState: null,
       setupReady: flags.setupReady,
       consentId: flags.consentRecorded ? "consent-1" : null,
+      approvalId: options.approvalId ?? null,
       acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }],
     })],
   })

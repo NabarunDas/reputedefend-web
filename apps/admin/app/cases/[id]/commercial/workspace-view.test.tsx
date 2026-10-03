@@ -74,7 +74,11 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
   }
 }
 
-function renderWorkspace(overrides: Partial<CaseFlowFacts> = {}, prices: Array<{ id: string; serviceCode: string; displayName: string; amountMinor: number; paymentModel: string; status: string; effectiveFrom: string; effectiveTo: null }> = []) {
+function renderWorkspace(
+  overrides: Partial<CaseFlowFacts> = {},
+  prices: Array<{ id: string; serviceCode: string; displayName: string; amountMinor: number; paymentModel: string; status: string; effectiveFrom: string; effectiveTo: null }> = [],
+  options: { evidence?: boolean } = {},
+) {
   const loaded = facts(overrides)
   const flow = resolveCaseFlow(loaded, NOW)
   const projected = loaded.commercial.quotes[0]
@@ -163,7 +167,7 @@ function renderWorkspace(overrides: Partial<CaseFlowFacts> = {}, prices: Array<{
       consentId: managed && loaded.payment.orders[0]?.consentRecorded ? "consent-1" : null,
       approvalId: null,
       receiptId: loaded.payment.orders[0]?.receiptRecorded ? "receipt-1" : null,
-      acceptedEvidence: [],
+      acceptedEvidence: options.evidence ? [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }] : [],
     }] : [],
     prices: prices as never,
   })
@@ -337,5 +341,43 @@ describe("commercial workspace view", () => {
     expect(screen.getByText(/does not apply a discount/i)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open Guard qualification" })).toHaveAttribute("href", "/commercial?tab=quotes")
     expect(screen.getByRole("button", { name: "Create draft quote" })).toBeInTheDocument()
+  })
+
+  it("keeps success-fee approval behind a qualifying outcome and accepted evidence", () => {
+    const ready = {
+      serviceTrack: "MANAGED" as const,
+      technicalStage: "AUTHORIZATION_REQUIRED" as const,
+      authorization: {
+        membershipStatus: "verified",
+        customerEmailVerified: true,
+        businessAuthorityVerified: true,
+        serviceAgreementAccepted: true,
+        caseManagementPermissionActive: true,
+        managerAccessVerified: true,
+        authorizationReady: true,
+        reviewRequired: [],
+        agreementKinds: ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"],
+        hasLocation: true,
+      },
+      commercial: { complete: true, quotes: [{ id: QUOTE_ID, status: "ACCEPTED", taxBehaviour: "INCLUSIVE", validUntil: "2026-11-03T12:00:00.000Z", actionStatus: null, actionExpiresAt: null, orderId: ORDER_ID }] },
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true, receiptRecorded: false }] },
+    }
+    renderWorkspace(ready)
+    expect(screen.getByText(/No success fee is due yet/i)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Approve success fee" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Open evidence" })).toBeNull()
+    cleanup()
+
+    renderWorkspace({ ...ready, outcome: "RESTORED" })
+    expect(screen.getByText(/needs accepted evidence/i)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open evidence" })).toHaveAttribute("href", `/cases/${CASE_ID}/evidence`)
+    expect(screen.queryByRole("button", { name: "Approve success fee" })).toBeNull()
+    cleanup()
+
+    renderWorkspace({ ...ready, outcome: "RESTORED" }, [], { evidence: true })
+    expect(screen.getByRole("button", { name: "Approve success fee" })).toBeInTheDocument()
+    expect(screen.getByText(/fresh sign-in/i)).toBeInTheDocument()
+    expect(screen.getByText(/immutable accepted order total/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/does not charge a card/i).length).toBeGreaterThan(0)
   })
 })

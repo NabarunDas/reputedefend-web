@@ -16,13 +16,10 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("records the UX-3 migration as both the repository head and the dev head", () => {
-    // The UX-3 batch projection was independently reviewed and applied to
-    // profilerelaunch-dev on 2026-10-02, so the two heads agree again. The
-    // version is the one the remote ledger assigned, which is why the file
-    // was renamed from the version the local CLI generated.
-    expect(migrationHead.filename).toBe("20261002194215_admin_case_flow_batch_v1.sql")
-    expect(migrationHead.step).toBe("UX-3 batch CaseFlow fact projection")
+  it("keeps the applied dev head aligned with the repository through UX-8", () => {
+    expect(appliedMigrationHead.filename).toBe("20261003120000_case_communications_workspace_v1.sql")
+    expect(appliedMigrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261003120000_case_communications_workspace_v1.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead).toBe(migrationHead)
   })
@@ -31,7 +28,7 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has nothing waiting to be applied", () => {
+  it("has no pending migrations after UX-8 was applied to dev", () => {
     expect(pendingMigrations()).toEqual([])
   })
 

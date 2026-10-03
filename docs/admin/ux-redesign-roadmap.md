@@ -12,8 +12,8 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-4 | Today as an operator home | COMPLETE |
 | UX-5 | Navigation and information architecture | COMPLETE |
 | UX-6 | Evidence workspace | COMPLETE |
-| UX-7 | Commercial and money surfaces | IN PROGRESS |
-| UX-8 | Communications and conversations | NOT STARTED |
+| UX-7 | Commercial and money surfaces | COMPLETE |
+| UX-8 | Communications and conversations | COMPLETE |
 | UX-9 | Visual system, wording and accessibility | NOT STARTED |
 | UX-10 | Customer-facing surfaces | NOT STARTED |
 
@@ -43,11 +43,11 @@ Complete. The case Evidence page (`/cases/[id]/evidence`) reads the same request
 
 ## UX-7 — Commercial and money surfaces
 
-In progress. `/cases/[id]/commercial` reads `summariseCommercial`, `summarisePayment` and `resolveCaseFlow`, and shows quote, acceptance, service order and Guided payment or Managed setup for that case. Case-specific commercial and money destinations point there. `/commercial` stays the catalogue and the queues. `/money` stays cross-case obligations, approval, recovery and Guard billing. No migration. See ux-commercial-money.md. UX-8 is not started.
+Complete. `/cases/[id]/commercial` reads `summariseCommercial`, `summarisePayment` and `resolveCaseFlow`, and shows quote, acceptance, service order and Guided payment or Managed setup for that case. Case-specific commercial and money destinations point there. `/commercial` stays the catalogue and the queues. `/money` stays cross-case obligations, approval, recovery and Guard billing. No migration. See ux-commercial-money.md.
 
 ## UX-8 — Communications and conversations
 
-Case-scoped communications, the contact-recovery and alternate-contact flow that currently does not exist, a place to reconcile a message whose provider acceptance was never established, and delivery state presented honestly, with provider acceptance never shown as delivery.
+Complete. `/cases/[id]/communications` is the case communications workspace. `CASE_COMMUNICATIONS` goes there. `/communications` and `/conversations` stay the global queues and link back when a row belongs to a case. Contact and delivery stay `evidenceContactState` and the existing delivery statuses. See ux-communications-conversations.md. UX-9 is not started.
 
 ## UX-9 — Visual system, wording and accessibility
 
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5 and UX-6 are complete. UX-7 is in progress. UX-8 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 and UX-8 are complete. UX-9 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.

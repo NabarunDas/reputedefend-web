@@ -1,4 +1,6 @@
+import Link from "next/link"
 import { ukDate } from "@/lib/admin/activity"
+import { caseCommunicationsHref } from "@/lib/communications-workspace/model"
 import { loadCommunications } from "@/lib/communications/queries"
 import { deliveryLabel, lifecycleLabel, templateLabel } from "@/lib/communications/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
@@ -35,7 +37,9 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
           <tbody>{data.communications.map(row => <tr key={row.id}>
             <td>
               {templateLabel(row.templateKey)}<br />
-              <span className="muted">{row.caseReference || row.communicationType}</span><br />
+              <span className="muted">{row.caseReference || row.communicationType}</span>
+              {caseCommunicationsHref(row.caseId || "") && <> · <Link href={caseCommunicationsHref(row.caseId || "")!}>Open the case communications workspace</Link></>}
+              <br />
               <span className="muted">{row.subject}</span>
             </td>
             <td>{row.recipient}</td>

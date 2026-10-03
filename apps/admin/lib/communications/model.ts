@@ -51,6 +51,29 @@ export type CommunicationList = {
   templates: Array<{ templateKey: string; version: number; name: string }>
 }
 
+/** A case-history row. `canReplace` is the address rule from the case read; the command checks it again. */
+export type CaseCommunicationRow = CommunicationRow & {
+  evidenceRequestId: string | null
+  eventsTruncated: boolean
+  canReplace: boolean
+}
+
+/**
+ * Case-scoped outbound history.
+ *
+ * `complete` is false when the case has more communications than this read
+ * returned. An incomplete read is not the case history.
+ */
+export type CaseCommunicationRead = {
+  status: "success" | "invalid" | "unavailable"
+  complete: boolean
+  total: number
+  returned: number
+  verifiedEmail: string | null
+  verifiedEmailSuppressed: boolean
+  communications: CaseCommunicationRow[]
+}
+
 export function lifecycleLabel(value: string | null): string {
   if (value === "DRAFT") return "Draft"
   if (value === "REVIEWED") return "Reviewed"

@@ -228,7 +228,7 @@ describe("evidence workspace presentation", () => {
     expect(contact.textContent).not.toMatch(/Delivered/)
     expect(contact.textContent).toMatch(/not per evidence request/)
     expect(contact.textContent).not.toMatch(/Proof of ownership|Utility bill/)
-    expect(screen.getByRole("link", { name: "View case communications" })).toHaveAttribute("href", `/communications?case=${caseId}`)
+    expect(screen.getByRole("link", { name: "View case communications" })).toHaveAttribute("href", `/cases/${caseId}/communications`)
     for (const card of document.querySelectorAll(".evidence-request")) expect(card.textContent).not.toMatch(/Delivered|email provider/)
   })
 
@@ -244,7 +244,7 @@ describe("evidence workspace presentation", () => {
     show(evidence([request(requestId)], []), [message({ deliveryStatus: "FAILED" })])
     const contact = screen.getByRole("region", { name: "Customer contact" })
     expect(contact.textContent).toMatch(/Delivery failed/)
-    expect(screen.getByRole("link", { name: "View case communications" })).toHaveAttribute("href", `/communications?case=${caseId}`)
+    expect(screen.getByRole("link", { name: "View case communications" })).toHaveAttribute("href", `/cases/${caseId}/communications`)
     expect(screen.queryByRole("button", { name: /resend|draft email/i })).toBeNull()
   })
 

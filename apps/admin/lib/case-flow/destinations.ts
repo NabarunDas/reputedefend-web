@@ -66,9 +66,7 @@ export function caseDestination(
   if (kind === "CASE") return { kind, href: `/cases/${caseId}`, label: "Case" }
   if (kind === "CASE_EVIDENCE") return { kind, href: `/cases/${caseId}/evidence`, label: "Evidence and documents" }
   if (kind === "CASE_COMMERCIAL") return { kind, href: `/cases/${caseId}/commercial`, label: "Commercial and money" }
-  // Case communications live on the shared surface behind a case filter;
-  // there is no `/cases/[id]/communications` route in this build.
-  return { kind, href: `/communications?case=${caseId}`, label: "Case communications" }
+  return { kind, href: `/cases/${caseId}/communications`, label: "Case communications" }
 }
 
 /** The client or business record behind the case, for verification work. */

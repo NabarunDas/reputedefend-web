@@ -214,14 +214,14 @@ All are Server Components. There is no client-side CaseFlow resolution, no fetch
 - applied to: `profilerelaunch-dev`
 - applied on: 2026-10-02
 - remote migration head afterwards: `20261002194215 admin_case_flow_batch_v1`
-- repository head: `20261002194215`, the same
+- applied development head: `20261002194215`, the same
 - live function: `public.admin_case_flow_facts_v1(text, uuid[])`
 
 The remote ledger assigned `20261002194215` rather than the version the local CLI had generated, so the repository file was renamed to match the applied one. Its contents were not touched: the file is byte-for-byte the SQL that was applied.
 
 The live function was verified on the project after application: `SECURITY DEFINER` is on, `search_path` is pinned empty, `service_role` can execute it, `PUBLIC`, `anon` and `authenticated` cannot, and an invalid Admin session returns `NULL` rather than data. The Supabase security advisor reported no new finding; the existing unrelated warnings are unchanged.
 
-The recovery manifest now records the migration as `appliedToDev: true`, `pendingMigrations()` is empty, and the release readiness check reports `supabase.applied-head` as `READY` with no external action left on it.
+The recovery manifest records this migration as `appliedToDev: true`. A later repository migration, `20261003120000_case_communications_workspace_v1.sql`, is not applied to `profilerelaunch-dev`, so `pendingMigrations()` is that version. The release readiness check still reports `supabase.applied-head` as `READY`, and it names the unapplied migration rather than claiming the queue is empty.
 
 This is the development project. Nothing has been applied to a production database, no Supabase branch was created, and no cost-bearing cloud resource exists. The migration chain, the recovery rehearsal and the upgrade path continue to be tested in PGlite, which is local and disposable.
 

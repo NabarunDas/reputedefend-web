@@ -1,6 +1,6 @@
 # UX-6 — Evidence workspace
 
-The case Evidence page, `/cases/[id]/evidence`, is the place an operator answers what was requested, what arrived, and how far that file has got. UX-1 through UX-6 are complete. UX-7 is in progress.
+The case Evidence page, `/cases/[id]/evidence`, is the place an operator answers what was requested, what arrived, and how far that file has got. UX-1 through UX-7 are complete.
 
 No migration. The page reads `getCase`, `getEvidenceCase`, `getPreparedPackCase` and one `loadCaseFlowFacts` call, together, then resolves the case flow once with a single `now`.
 
@@ -62,7 +62,7 @@ If the evidence case and the case-flow evidence facts disagree on request ids, v
 
 Contact state comes from `evidenceContactState`: the newest `EVIDENCE_REQUEST` communication on the case. The communications projection does not store an evidence-request id, so the page cannot say which request an email belongs to. It says “Latest evidence-request email for this case” and “Email delivery is currently tracked at case level, not per evidence request.”
 
-Provider acceptance is “Accepted by email provider — delivery not confirmed.” Only `DELIVERED` is called delivered, and even then not for a named request. A failed delivery is a case-level warning with a link to `/communications?case=<caseId>`. The page does not draft, send, resend or edit recipients. If a request exists and no evidence-request email has been prepared, the page says the requirement is recorded and does not say the customer is waiting.
+Provider acceptance is “Accepted by email provider — delivery not confirmed.” Only `DELIVERED` is called delivered, and even then not for a named request. A failed delivery is a case-level warning with a link to `/cases/[id]/communications`. The page does not draft, send, resend or edit recipients. If a request exists and no evidence-request email has been prepared, the page says the requirement is recorded and does not say the customer is waiting.
 
 ## Case next action
 

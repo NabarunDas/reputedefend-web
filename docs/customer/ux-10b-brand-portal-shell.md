@@ -55,6 +55,8 @@ public/apple-icon.png
 
 `apps/customer/lib/brand-assets.test.ts` compares the file bytes. Filename checks are not enough.
 
+The customer proxy only treats those four files, plus the existing public reads, as readable without a session. Other `/brand/` files stay unavailable. This does not open `/portal`, `/case`, or any action API.
+
 ## Header and footer
 
 `CustomerHeader` replaces the old plain text header. The logo links to `https://profilerelaunch.com` in the same tab, with the accessible name "ProfileRelaunch home". Other pages show a text link, "Back to ProfileRelaunch". `/portal` shows the non-link text "Secure customer area" instead. The header does not show an email, an identifier, or an Admin link.

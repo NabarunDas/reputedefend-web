@@ -19,8 +19,6 @@
   --radius-pill: 999px;
   --shadow-card: 0 18px 45px rgba(16, 38, 31, 0.06);
   --shadow-button: 0 8px 18px rgba(16, 38, 31, 0.1);
-  --font-body-stack: var(--font-body), "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-display-stack: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -33,7 +31,7 @@ body {
   flex-direction: column;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-body-stack);
+  font-family: var(--font-body), "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 1.65;
 }
@@ -223,7 +221,7 @@ main.customer-main > section.auth-card {
 
 /* typography */
 h1, h2, h3, .portal-context-title {
-  font-family: var(--font-display-stack);
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
   color: var(--ink);
   font-weight: 800;
   letter-spacing: -0.035em;

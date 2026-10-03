@@ -35,6 +35,14 @@ try {
     await delay(250)
   }
   assert.ok(ready, "Customer production server did not become ready")
+  for (const asset of ["/icon.png", "/apple-icon.png", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"]) {
+    const assetResponse = await fetch(`${origin}${asset}`, { redirect: "manual" })
+    assert.equal(assetResponse.status, 200, asset)
+    assert.match(assetResponse.headers.get("content-type") ?? "", /image\/png/)
+    assert.match(assetResponse.headers.get("x-robots-tag") ?? "", /noindex/)
+    const bytes = Buffer.from(await assetResponse.arrayBuffer())
+    assert.ok(bytes.byteLength > 1000, asset)
+  }
   for (const path of ["/", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/pay/return", "/case", "/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command", "/api/action/payment", "/api/case/evidence/access", "/api/case/evidence/upload", "/robots.txt"]) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)

@@ -34,9 +34,12 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("customer portal proxy isolation", () => {
   it("keeps existing public reads and action pre-auth posts", async () => {
-    for (const path of ["/", "/robots.txt", "/pay/return", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]) {
+    for (const path of ["/", "/robots.txt", "/pay/return", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/icon.png", "/apple-icon.png", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"]) {
       expect((await ask(path)).headers.get("x-middleware-next")).toBe("1")
     }
+    const otherBrand = await ask("/brand/profile-relaunch-source.png")
+    expect(otherBrand.status).toBe(303)
+    expect(otherBrand.headers.get("location")).toBe(`${origin}/`)
     for (const path of ["/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command"]) {
       expect((await ask(path, "POST")).headers.get("x-middleware-next")).toBe("1")
     }

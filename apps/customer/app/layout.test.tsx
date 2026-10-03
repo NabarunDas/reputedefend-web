@@ -20,6 +20,8 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("next/image", () => ({
   default: ({ alt, src, className }: { alt: string; src: string; className?: string }) => (
+    // Test double only. The app uses next/image.
+    // eslint-disable-next-line @next/next/no-img-element
     <img alt={alt} src={src} className={className} />
   ),
 }))

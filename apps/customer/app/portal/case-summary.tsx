@@ -10,7 +10,7 @@ const STATE_CLASS: Record<PresentedCase["state"], string> = {
   CANCELLED: "status-cancelled",
 }
 
-/** Shared case summary. It is not a link: the case workspace is a later phase. */
+/** Shared case summary. The card itself is not a link; "View case" is. */
 export function CaseSummary({ item, titleLevel = 2 }: { item: PresentedCase; titleLevel?: 2 | 3 }) {
   const Title = titleLevel === 3 ? "h3" : "h2"
   return (
@@ -33,6 +33,12 @@ export function CaseSummary({ item, titleLevel = 2 }: { item: PresentedCase; tit
           ))}
         </ul>
       ) : null}
+      <p className="case-open">
+        <a href={`/portal/cases/${item.reference}`}>
+          <span aria-hidden="true">View case</span>
+          <span className="sr-only">View case {item.reference}</span>
+        </a>
+      </p>
     </article>
   )
 }

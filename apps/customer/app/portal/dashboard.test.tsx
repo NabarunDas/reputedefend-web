@@ -77,7 +77,10 @@ describe("customer dashboard", () => {
     expect(screen.getAllByText("Review your quote").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Secure link expires 20 October 2026").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Use the secure link in the ProfileRelaunch email for this step.").length).toBeGreaterThan(0)
-    expect(screen.queryByRole("link", { name: /view case|PR-26-ABCDEF/i })).toBeNull()
+    const viewCase = screen.getAllByRole("link", { name: "View case PR-26-ABCDEF" })
+    expect(viewCase.length).toBeGreaterThan(0)
+    expect(viewCase[0]).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF")
+    expect(viewCase[0].textContent).toMatch(/View case/)
     expect(screen.queryByRole("button")).toBeNull()
     expect(document.body.textContent).not.toMatch(/QUOTE_ACCEPTANCE|UNDER_REVIEW|EVIDENCE_COLLECTION|issue description/)
   })
@@ -98,7 +101,13 @@ describe("customer dashboard", () => {
     const recent = screen.getByRole("heading", { name: "Your cases" }).parentElement
     expect(recent?.querySelectorAll("article")).toHaveLength(3)
     expect(screen.getByRole("link", { name: "View all cases" })).toHaveAttribute("href", "/portal/cases?view=all")
-    expect(recent?.querySelector(".case-list a")).toBeNull()
+    const cardLinks = [...(recent?.querySelectorAll(".case-list a") ?? [])]
+    expect(cardLinks.map(link => link.getAttribute("href"))).toEqual([
+      "/portal/cases/PR-26-AAAAA2",
+      "/portal/cases/PR-26-AAAAA3",
+      "/portal/cases/PR-26-AAAAA4",
+    ])
+    expect(cardLinks.every(link => !link.getAttribute("href")?.match(/[0-9a-f]{8}-[0-9a-f]{4}/))).toBe(true)
   })
 
   it("keeps previous cases visible when nothing is active", () => {

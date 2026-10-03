@@ -78,7 +78,7 @@ Service labels are Guided service and Managed service. `UNDECIDED` shows no serv
 
 `/portal/cases` lists cases in views `active`, `previous`, and `all`. The default is active. An invalid view or a half-present cursor is a 404, not a query. Pages are fixed at 20 rows. The next-page cursor is `submitted_at` plus the public reference. It does not contain a case UUID. There is no previous-page control and no search box.
 
-Case cards are not links. There is no `/portal/cases/[id]` route.
+At the end of UX-10C the case cards were not links, and there was no `/portal/cases/[id]` route. UX-10D adds a textual "View case" link to `/portal/cases/{public reference}`. The UUID route still does not exist.
 
 Dashboard and Cases stay server-rendered. Only the portal navigation reads the pathname in the browser, so Dashboard is current only on `/portal` and Cases is current on `/portal/cases` and its descendants. Documents, Payments, Relaunch Guard, and Account stay unavailable. There is no Messages destination.
 
@@ -90,4 +90,4 @@ These reads do not weaken UX-10A. Portal sessions and action sessions stay separ
 
 `supabase/migrations/20261003154314_customer_portal_dashboard_cases_v1.sql` is additive. It creates the private attention helper and the two public RPCs. It creates no table and no index. The public RPCs are `SECURITY DEFINER`, with an empty search path, revoked from `PUBLIC`, `anon`, and `authenticated`, and granted only to `service_role`. The private helper is also revoked from `service_role`.
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003180252`; that single history row was repaired immediately to repository version `20261003154314`. `appliedMigrationHead` and `migrationHead` now both point to `20261003154314_customer_portal_dashboard_cases_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003180252`; that single history row was repaired immediately to repository version `20261003154314`. `appliedMigrationHead` remains `20261003154314_customer_portal_dashboard_cases_v1.sql`. UX-10D later added `20261003183002_customer_portal_case_workspace_v1.sql`, which is in the repository and is not applied, so `pendingMigrations()` contains that file. The UX-10C migration is immutable.

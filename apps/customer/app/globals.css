@@ -563,6 +563,7 @@ form button { margin: 1rem 0; }
 .case-location,
 .case-service,
 .case-started,
+.case-closed,
 .attention-label,
 .attention-timing,
 .attention-support {
@@ -641,9 +642,133 @@ form button { margin: 1rem 0; }
 .case-pagination { margin: 1.25rem 0 0; }
 
 .case-more a,
-.case-pagination a {
+.case-pagination a,
+.case-open a,
+.case-back a,
+.case-breadcrumb a {
   color: var(--green-dark);
   font-weight: 700;
+}
+
+.case-open,
+.case-back { margin: 1rem 0 0; }
+
+.case-workspace {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.case-breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.case-breadcrumb li + li::before {
+  content: "/";
+  margin-right: 0.5rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.case-workspace-header { min-width: 0; }
+
+.case-workspace-header h1,
+.case-next h2,
+.case-next h3 { margin-bottom: 0.35rem; }
+
+.case-progress-section,
+.case-updates,
+.case-details-section { margin-top: 2rem; }
+
+.case-progress {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case-progress li {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.case-progress-earlier { border-color: var(--green); }
+
+.case-progress li[aria-current="step"] {
+  border-color: var(--green);
+  background: var(--lime);
+  font-weight: 700;
+}
+
+.case-progress-upcoming { color: var(--muted); }
+
+.case-timeline {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case-timeline li {
+  min-width: 0;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.case-timeline time {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+}
+
+.case-timeline p { margin: 0; }
+
+.case-details {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0.75rem 0 0;
+}
+
+.case-details div { min-width: 0; }
+
+.case-details dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.case-details dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .case-details {
+    grid-template-columns: 11rem 1fr;
+  }
+
+  .case-details div {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+
+  .case-details dd { margin: 0; }
+}
+
+@media (min-width: 1024px) {
+  .case-progress {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 /* portal navigation */

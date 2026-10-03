@@ -358,6 +358,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal dashboard", probe: "public.customer_portal_dashboard_v1" },
   },
+  {
+    version: "20261003183002",
+    filename: "20261003183002_customer_portal_case_workspace_v1.sql",
+    step: "UX-10D customer case workspace",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal case", probe: "public.customer_portal_case_v1" },
+  },
 ]
 
 /**

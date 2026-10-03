@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseCasePage, parseCasesRequest, parseDashboard } from "./parse"
+import { isPublicCaseReference, parseCaseDetail, parseCasePage, parseCasesRequest, parseDashboard } from "./parse"
 
 const submittedAt = "2026-10-08T12:00:00.000Z"
 
@@ -74,5 +74,62 @@ describe("customer case response parsing", () => {
       attentionCases: [],
       recentCases: [row()],
     })).toBeNull()
+  })
+})
+
+function workspaceCase(overrides: Record<string, unknown> = {}) {
+  return { ...row(), outcomeCode: null, ...overrides }
+}
+
+function detail(overrides: Record<string, unknown> = {}, caseOverrides: Record<string, unknown> = {}) {
+  return {
+    found: true,
+    case: workspaceCase(caseOverrides),
+    timeline: [{ code: "CASE_RECEIVED", occurredAt: submittedAt }],
+    timelineTruncated: false,
+    ...overrides,
+  }
+}
+
+describe("customer case detail parsing", () => {
+  it("accepts a public reference and an exact owned-case envelope", () => {
+    expect(isPublicCaseReference("PR-26-ABC234")).toBe(true)
+    expect(isPublicCaseReference("RV-26-XYZ567")).toBe(true)
+    expect(isPublicCaseReference("PR-26-ABC23")).toBe(false)
+    expect(isPublicCaseReference("PR-26-ABC2345")).toBe(false)
+    expect(isPublicCaseReference("XX-26-ABC234")).toBe(false)
+    expect(isPublicCaseReference("PR-26-ABC23I")).toBe(false)
+    const parsed = parseCaseDetail(detail({
+      case: workspaceCase({ outcomeCode: "RESTORED", attentionItems: [{ code: "EVIDENCE_REQUIRED", dueAt: null }] }),
+    }))
+    expect(parsed && parsed.found && parsed.case.outcomeCode).toBe("RESTORED")
+    expect(parseCaseDetail({ found: false })).toEqual({ found: false })
+  })
+
+  it("rejects extra keys, unknown timeline codes, unsafe outcomes, and a long timeline", () => {
+    expect(parseCaseDetail({ found: false, reason: "other-customer" })).toBeNull()
+    expect(parseCaseDetail({ found: false, id: "x" })).toBeNull()
+    expect(parseCaseDetail(detail({ note: "secret" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcome: "RESTORED" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "REMOVED" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "CUSTOM_TEXT" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { id: "secret" }))).toBeNull()
+    expect(parseCaseDetail(detail({
+      timeline: [{ code: "CASE_NOTE_ADDED", occurredAt: submittedAt }],
+    }))).toBeNull()
+    expect(parseCaseDetail(detail({
+      timeline: [{ code: "CASE_RECEIVED", occurredAt: submittedAt, note: "hidden" }],
+    }))).toBeNull()
+    const tooMany = Array.from({ length: 21 }, () => ({ code: "CASE_RECEIVED", occurredAt: submittedAt }))
+    expect(parseCaseDetail(detail({ timeline: tooMany, timelineTruncated: true }))).toBeNull()
+    expect(parseCaseDetail(detail({ timeline: tooMany.slice(0, 19), timelineTruncated: true }))).toBeNull()
+    const twenty = tooMany.slice(0, 20)
+    expect(parseCaseDetail(detail({ timeline: twenty, timelineTruncated: true }))?.found).toBe(true)
+    expect(parseCaseDetail(detail({ timeline: twenty, timelineTruncated: false }))?.found).toBe(true)
+    expect(parseCaseDetail(null)).toBeNull()
+    expect(parseCaseDetail(detail({
+      case: workspaceCase({ outcomeCode: "REMOVED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }),
+    })) && true).toBe(true)
   })
 })

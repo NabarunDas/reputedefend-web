@@ -72,7 +72,7 @@ describe("portal shell", () => {
     expect(existsSync(join(portalDir, "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "cases", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "cases", "[id]"))).toBe(false)
-    expect(existsSync(join(portalDir, "cases", "[reference]"))).toBe(false)
+    expect(existsSync(join(portalDir, "cases", "[reference]", "page.tsx"))).toBe(true)
     for (const name of ["documents", "payments", "guard", "account", "relaunch-guard"]) {
       expect(existsSync(join(portalDir, name))).toBe(false)
       expect(existsSync(join(portalDir, name, "page.tsx"))).toBe(false)

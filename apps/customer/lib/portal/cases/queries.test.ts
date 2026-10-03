@@ -74,4 +74,43 @@ describe("customer portal case loaders", () => {
     await expect(loadCustomerDashboard()).resolves.toEqual({ status: "unauthenticated" })
     expect(rpc).not.toHaveBeenCalled()
   })
+
+  it("loads one case from the token hash and the public reference only", async () => {
+    jar.set("pr-portal-dev", token)
+    const detail = {
+      found: true,
+      case: {
+        reference: "PR-26-ABCDEF",
+        caseType: "PROFILE_RECOVERY",
+        serviceTrack: "GUIDED",
+        businessName: "Harbour Bakery",
+        locationName: "High Street",
+        status: "UNDER_REVIEW",
+        workStage: "EVIDENCE_COLLECTION",
+        submittedAt,
+        closedAt: null,
+        attentionItems: [],
+        outcomeCode: null,
+      },
+      timeline: [{ code: "CASE_RECEIVED", occurredAt: submittedAt }],
+      timelineTruncated: false,
+    }
+    rpc.mockResolvedValueOnce(detail)
+    const { loadCustomerCase } = await import("./queries")
+    await expect(loadCustomerCase("PR-26-ABCDEF")).resolves.toEqual({ status: "ready", detail })
+    expect(rpc).toHaveBeenCalledWith("customer_portal_case_v1", {
+      p_token_hash: createHash("sha256").update(token).digest("hex"),
+      p_reference: "PR-26-ABCDEF",
+    })
+    expect(JSON.stringify(rpc.mock.calls)).not.toMatch(/customerId|p_customer|caseId/)
+
+    rpc.mockResolvedValueOnce(null)
+    await expect(loadCustomerCase("PR-26-ABCDEF")).resolves.toEqual({ status: "unauthenticated" })
+    rpc.mockResolvedValueOnce({ found: false })
+    await expect(loadCustomerCase("PR-26-ABCDEF")).resolves.toEqual({ status: "not_found" })
+    rpc.mockResolvedValueOnce({ found: false, owner: "other" })
+    await expect(loadCustomerCase("PR-26-ABCDEF")).resolves.toEqual({ status: "unavailable" })
+    rpc.mockRejectedValueOnce(new Error("database down"))
+    await expect(loadCustomerCase("PR-26-ABCDEF")).resolves.toEqual({ status: "unavailable" })
+  })
 })

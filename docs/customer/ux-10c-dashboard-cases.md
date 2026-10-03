@@ -90,4 +90,4 @@ These reads do not weaken UX-10A. Portal sessions and action sessions stay separ
 
 `supabase/migrations/20261003154314_customer_portal_dashboard_cases_v1.sql` is additive. It creates the private attention helper and the two public RPCs. It creates no table and no index. The public RPCs are `SECURITY DEFINER`, with an empty search path, revoked from `PUBLIC`, `anon`, and `authenticated`, and granted only to `service_role`. The private helper is also revoked from `service_role`.
 
-The migration is in the repository and is not applied to `profilerelaunch-dev`. `appliedMigrationHead` remains `20261003125151_customer_portal_auth_foundation_v1.sql`. `pendingMigrations()` contains this file only.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003180252`; that single history row was repaired immediately to repository version `20261003154314`. `appliedMigrationHead` and `migrationHead` now both point to `20261003154314_customer_portal_dashboard_cases_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.

@@ -70,4 +70,4 @@ Private helpers are not executable by `service_role`:
 - `admin_private.customer_published_pack_documents_v1(uuid)`
 - `admin_private.customer_portal_case_evidence_v1(uuid)`
 
-The migration is **not applied** to `profilerelaunch-dev`. `appliedMigrationHead` remains `20261003183002_customer_portal_case_workspace_v1.sql`. `pendingMigrations()` contains only this file.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003202103`; that single history row was repaired immediately to repository version `20261003194353`. `appliedMigrationHead` and `migrationHead` now both point to `20261003194353_customer_portal_documents_evidence_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.

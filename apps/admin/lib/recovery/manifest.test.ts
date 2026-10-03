@@ -16,22 +16,20 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("keeps the applied dev head at UX-10D while the repository head is UX-10E", () => {
-    expect(appliedMigrationHead.filename).toBe("20261003183002_customer_portal_case_workspace_v1.sql")
+  it("keeps the applied dev head aligned with the repository through UX-10E", () => {
+    expect(appliedMigrationHead.filename).toBe("20261003194353_customer_portal_documents_evidence_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(migrationHead.filename).toBe("20261003194353_customer_portal_documents_evidence_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead).not.toBe(migrationHead)
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead).toBe(migrationHead)
   })
 
   it("never marks any migration as safe to replay", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("records only the unapplied UX-10E migration as pending", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261003194353_customer_portal_documents_evidence_v1.sql",
-    ])
+  it("has no pending migrations after UX-10E was applied to dev", () => {
+    expect(pendingMigrations()).toEqual([])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

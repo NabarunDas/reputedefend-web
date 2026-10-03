@@ -29,8 +29,12 @@ export function SignOutButton() {
     }
   }
 
-  return <>
-    {error ? <p className="notice-danger" role="alert">{error}</p> : null}
-    <button type="button" onClick={signOut} disabled={busy}>Sign out</button>
-  </>
+  return (
+    <div className="portal-sign-out">
+      {error ? <p className="notice-danger" role="alert">{error}</p> : null}
+      <button type="button" className="secondary" onClick={signOut} disabled={busy}>
+        {busy ? "Signing out…" : "Sign out"}
+      </button>
+    </div>
+  )
 }

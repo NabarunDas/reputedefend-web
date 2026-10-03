@@ -6,6 +6,16 @@ import { fileURLToPath } from "node:url"
 import { createRequire } from "node:module"
 
 const require = createRequire(import.meta.url)
+
+function assertCustomerBrand(html) {
+  assert.match(html, /profile-relaunch-logo\.png/)
+  assert.match(html, /profile-relaunch-logo-light\.png/)
+  assert.match(html, /ProfileRelaunch home/)
+  assert.match(html, /Restore visibility\. Protect your reputation\./)
+  assert.match(html, /independent of Google/)
+  assert.doesNotMatch(html, /class="brand"|Cookie Settings|Get Help|googletagmanager|google-analytics|Customer Login|admin@profilerelaunch/)
+}
+
 const port = 4320
 const origin = `http://127.0.0.1:${port}`
 const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
@@ -40,7 +50,8 @@ try {
     assert.match(csp, /base-uri 'self'/)
     assert.match(csp, /object-src 'none'/)
     assert.match(csp, /form-action 'self'/)
-    assert.doesNotMatch(csp, /googletagmanager|google-analytics|fonts\.googleapis|unsafe-eval/)
+    assert.match(csp, /font-src 'self'/)
+    assert.doesNotMatch(csp, /googletagmanager|google-analytics|fonts\.googleapis|fonts\.gstatic|unsafe-eval/)
     if (path === "/robots.txt") {
       assert.match(await response.text(), /Disallow: \//)
     } else if (path.startsWith("/api")) {
@@ -53,12 +64,13 @@ try {
       assert.equal(response.status, 200)
       const html = await response.text()
       assert.match(html, /confirming your payment/i)
-      assert.doesNotMatch(html, /Payment successful|googletagmanager|google-analytics|admin@profilerelaunch/)
+      assertCustomerBrand(html)
+      assert.doesNotMatch(html, /Payment successful/)
     } else {
       assert.equal(response.status, 200)
       const html = await response.text()
       assert.match(html, /unavailable or has expired|Checking this link|Secure action/)
-      assert.doesNotMatch(html, /googletagmanager|google-analytics|Customer Login|admin@profilerelaunch/)
+      assertCustomerBrand(html)
     }
   }
   console.log("Customer production HTTP smoke checks passed")

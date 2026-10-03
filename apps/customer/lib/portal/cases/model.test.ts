@@ -48,12 +48,14 @@ describe("customer case presentation", () => {
 
   it("uses the eight attention sentences and does not hand raw enums to the presented case", () => {
     const due = "2026-10-08T12:00:00.000Z"
-    expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: due })).toEqual({
+    expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: due }, "PR-26-ABCDEF")).toEqual({
       label: "Upload evidence",
       timing: "Requested by 8 October 2026",
-      support: "Use the secure case link in the ProfileRelaunch email to provide the requested evidence.",
+      support: "Upload the requested evidence in your customer portal.",
+      href: "/portal/cases/PR-26-ABCDEF/documents",
     })
     expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: null }).timing).toBeNull()
+    expect(presentAttention({ code: "EVIDENCE_REQUIRED", dueAt: null }).href).toBeNull()
     const actions = [
       ["QUOTE_ACCEPTANCE", "Review your quote"],
       ["SERVICE_AGREEMENT", "Accept your service agreement"],
@@ -64,10 +66,11 @@ describe("customer case presentation", () => {
       ["INVOICE_PAYMENT", "Pay your invoice"],
     ] as const
     for (const [code, label] of actions) {
-      expect(presentAttention({ code, expiresAt: due })).toEqual({
+      expect(presentAttention({ code, expiresAt: due }, "PR-26-ABCDEF")).toEqual({
         label,
         timing: "Secure link expires 8 October 2026",
         support: "Use the secure link in the ProfileRelaunch email for this step.",
+        href: null,
       })
     }
     const presented = presentCase({ ...base, serviceTrack: "MANAGED", attentionItems: [{ code: "QUOTE_ACCEPTANCE", expiresAt: due }] })

@@ -2,7 +2,7 @@
 
 UX-10D is the first individual case workspace in the Customer Portal. It is read-only. A customer can open one case they directly own and see what the case is, where it currently sits, whether ProfileRelaunch needs anything, what has happened, and what happens next.
 
-The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. UX-10E is not started. There is no evidence upload, document list, quote acceptance, agreement acceptance, permission acceptance, payment, Guard, messaging, or account editing in the portal.
+The Customer Portal is not launched. `CUSTOMER_PORTAL_ENABLED` stays unset. This document describes the read-only UX-10D workspace. UX-10E later added documents and evidence inside the portal; quote acceptance, agreement acceptance, permission acceptance, payment, Guard, messaging, and account editing remain outside it.
 
 ## Route
 
@@ -49,7 +49,7 @@ Attention is not reimplemented. The case RPC calls `admin_private.customer_porta
 
 When there is no attention, the wording follows the UX-10C customer case state: received, in progress, submitted, waiting for Google, a recognised complete outcome, the generic complete fallback, or cancelled. The page does not promise a Google response time and does not imply a refund.
 
-Direct portal actions stay deferred. The support copy still points the customer at the secure link in the ProfileRelaunch email. UX-10E, UX-10F, and UX-10G replace that later.
+UX-10E later made evidence upload the one portal action. Quote, agreement, permission, and payment support copy still point at the secure link in the ProfileRelaunch email. UX-10F and UX-10G replace those later.
 
 ## Timeline
 
@@ -78,4 +78,4 @@ Events are newest first. The query reads 21 rows and returns 20. `timelineTrunca
 
 The public function is `SECURITY DEFINER`, with an empty search path, revoked from `PUBLIC`, `anon`, and `authenticated`, and granted only to `service_role`. The private timeline helper is also revoked from `service_role`. No new table grant is made.
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003191113`; that single history row was repaired immediately to repository version `20261003183002`. `appliedMigrationHead` and `migrationHead` now both point to `20261003183002_customer_portal_case_workspace_v1.sql`, and `pendingMigrations()` is empty. The migration is now immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003191113`; that single history row was repaired immediately to repository version `20261003183002`. At UX-10D completion, `appliedMigrationHead` and `migrationHead` both pointed at `20261003183002_customer_portal_case_workspace_v1.sql`. UX-10E later added and applied `20261003194353_customer_portal_documents_evidence_v1.sql`; UX-10D remains immutable and is not replayed.

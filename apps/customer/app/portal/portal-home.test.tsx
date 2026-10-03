@@ -54,11 +54,13 @@ describe("portal shell", () => {
     const cases = screen.getByRole("link", { name: "Cases" })
     expect(cases).toHaveAttribute("href", "/portal/cases")
     expect(cases).not.toHaveAttribute("aria-current")
-    expect(navigation.querySelectorAll("a")).toHaveLength(2)
+    const documents = screen.getByRole("link", { name: "Documents" })
+    expect(documents).toHaveAttribute("href", "/portal/documents")
+    expect(documents).not.toHaveAttribute("aria-current")
+    expect(navigation.querySelectorAll("a")).toHaveLength(3)
     const unavailable = [...navigation.querySelectorAll("[aria-disabled='true']")]
-    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN", "SPAN", "SPAN", "SPAN"])
+    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN", "SPAN", "SPAN"])
     expect(unavailable.map(item => item.textContent)).toEqual([
-      "Documents not available yet",
       "Payments not available yet",
       "Relaunch Guard not available yet",
       "Account not available yet",
@@ -73,7 +75,9 @@ describe("portal shell", () => {
     expect(existsSync(join(portalDir, "cases", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "cases", "[id]"))).toBe(false)
     expect(existsSync(join(portalDir, "cases", "[reference]", "page.tsx"))).toBe(true)
-    for (const name of ["documents", "payments", "guard", "account", "relaunch-guard"]) {
+    expect(existsSync(join(portalDir, "documents", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "cases", "[reference]", "documents", "page.tsx"))).toBe(true)
+    for (const name of ["payments", "guard", "account", "relaunch-guard"]) {
       expect(existsSync(join(portalDir, name))).toBe(false)
       expect(existsSync(join(portalDir, name, "page.tsx"))).toBe(false)
     }

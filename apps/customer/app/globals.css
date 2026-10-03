@@ -897,6 +897,42 @@ main.customer-main > section .document-list a {
   }
 }
 
+.document-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-list > li { min-width: 0; }
+
+.documents-page section + section { margin-top: 2rem; }
+
+.evidence-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  max-width: 100%;
+}
+
+.evidence-upload input[type="file"] { max-width: 100%; }
+
+.evidence-upload input:focus-visible,
+.evidence-upload button:focus-visible,
+.documents-page a:focus-visible,
+.case-documents-link a:focus-visible,
+.attention-action a:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.case-documents-link,
+.attention-action { margin: 0.75rem 0 0; }
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

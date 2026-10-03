@@ -5,7 +5,7 @@
  * or decide whether a case may progress. The order of attention codes is
  * display order only.
  */
-import type { AttentionCode, AttentionItem, CaseStatus, CaseType, CustomerCaseRow, ServiceTrack, WorkStage } from "./parse"
+import { isPublicCaseReference, type AttentionCode, type AttentionItem, type CaseStatus, type CaseType, type CustomerCaseRow, type ServiceTrack, type WorkStage } from "./parse"
 
 export type CustomerCaseState =
   | "ACTION_NEEDED"
@@ -43,7 +43,7 @@ const ATTENTION_LABELS: Record<AttentionCode, string> = {
 }
 
 const ACTION_SUPPORT = "Use the secure link in the ProfileRelaunch email for this step."
-const EVIDENCE_SUPPORT = "Use the secure case link in the ProfileRelaunch email to provide the requested evidence."
+const EVIDENCE_SUPPORT = "Upload the requested evidence in your customer portal."
 
 const ukDate = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
@@ -84,20 +84,23 @@ export type PresentedAttention = {
   label: string
   timing: string | null
   support: string
+  href: string | null
 }
 
-export function presentAttention(item: AttentionItem): PresentedAttention {
+export function presentAttention(item: AttentionItem, reference?: string): PresentedAttention {
   if (item.code === "EVIDENCE_REQUIRED") {
     return {
       label: ATTENTION_LABELS.EVIDENCE_REQUIRED,
       timing: item.dueAt ? `Requested by ${formatPortalDate(item.dueAt)}` : null,
       support: EVIDENCE_SUPPORT,
+      href: reference && isPublicCaseReference(reference) ? `/portal/cases/${reference}/documents` : null,
     }
   }
   return {
     label: ATTENTION_LABELS[item.code],
     timing: `Secure link expires ${formatPortalDate(item.expiresAt)}`,
     support: ACTION_SUPPORT,
+    href: null,
   }
 }
 
@@ -124,7 +127,7 @@ export function presentCase(row: CustomerCaseRow): PresentedCase {
     state,
     statusLabel: statusLabel(state),
     startedLabel: `Started ${formatPortalDate(row.submittedAt)}`,
-    attention: row.attentionItems.map(presentAttention),
+    attention: row.attentionItems.map(item => presentAttention(item, row.reference)),
   }
 }
 

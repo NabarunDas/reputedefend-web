@@ -50,6 +50,7 @@ export function CaseWorkspace({ detail }: { detail: CustomerCaseDetail }) {
         {service ? <p className="case-service">{service}</p> : null}
         <p className="case-started">Started {formatPortalDate(item.submittedAt)}</p>
         {item.closedAt ? <p className="case-closed">Closed {formatPortalDate(item.closedAt)}</p> : null}
+        <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/documents`}>Documents and evidence</a></p>
       </header>
 
       <section className="attention-surface case-next" aria-labelledby="next-heading">
@@ -58,6 +59,7 @@ export function CaseWorkspace({ detail }: { detail: CustomerCaseDetail }) {
         {next.timing ? <p className="attention-timing">{next.timing}</p> : null}
         {next.body ? <p>{next.body}</p> : null}
         {next.support ? <p className="attention-support">{next.support}</p> : null}
+        {next.href ? <p className="attention-action"><a href={next.href}>Upload evidence for {item.reference}</a></p> : null}
         {next.alsoWaiting ? <p>{next.alsoWaiting}</p> : null}
         {next.remaining.length > 0 ? (
           <ul className="attention-list">

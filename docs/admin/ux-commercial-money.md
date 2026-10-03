@@ -2,7 +2,7 @@
 
 The case page `/cases/[id]/commercial` is where an operator reads one case from quote to acceptance, to the service order, and on to upfront payment or success-fee setup. UX-1 to UX-6 are complete. UX-7 is in progress. UX-8 is not started.
 
-No migration. The page reads the case, one `loadCaseFlowFacts` call, and the existing catalogue, quote, order and money reads. It resolves the case once with `resolveCaseFlow`.
+No migration. The page reads the case, one `loadCaseFlowFacts` call, the catalogue, and the existing money list. Quote and order detail are `loadQuote` and `loadOrder` for the identifiers that projection already named. It resolves the case once with `resolveCaseFlow`.
 
 ## What this workspace is for
 
@@ -20,9 +20,13 @@ Raw identifiers sit behind Technical identifiers. Amounts use `formatGbp`. Times
 
 Quote relevance, draft readiness and acceptance-link expiry come from `summariseCommercial`. Upfront paid, failed, collecting and authentication, and the separate Managed consent and setup flags, come from `summarisePayment`. The next action is `flow.primaryAction`. The page does not keep a second ranking of quotes or a second definition of paid, ready or accepted.
 
-Amounts, scope, public references and the command versions come from the existing quote, order and money reads, matched by the identifier the case projection already holds. If those records disagree with the projection, the page says commercial records disagree and withholds the commands that would assume a single happy path.
+Amounts, scope, public references and the command versions come from the exact quote and order reads, and from the money row for that same order. The page does not search the global quote or order queue, and it does not substitute another row when the named one is missing. If those records disagree with the projection, the page says commercial records disagree and withholds the commands that would assume a single happy path.
 
-`commercial.complete === false` or `payment.complete === false` is an incomplete list, not proof that nothing exists.
+Journey controls follow `primaryAction`. Create quote, offer, acceptance, upfront payment and Managed setup are enabled only when that action is the one CaseFlow chose and its state is `ACTION_REQUIRED`. A waiting or blocked action does not gain a second issue button. Cancel, a new version, supersede and revoke stay available as quote administration on a live quote; they are not the next step. Success-fee approval stays the existing command once setup is ready. It is not a CaseFlow action and it does not charge a card.
+
+An open payment or setup action counts only while `expiresAt` is still ahead of `now`. An expired open action does not leave the case waiting. Guided payment returns to sending the payment link, or to resolving a failed or unauthenticated attempt when that is the payment state. Managed setup returns to sending the setup link once the earlier Managed prerequisites are already complete. The payment command still revokes the expired action when a new one is issued.
+
+`commercial.complete === false` or `payment.complete === false` is an incomplete case projection, not proof that nothing exists. The case-scoped projection normally reports both as complete.
 
 ## Guided and Managed
 
@@ -44,6 +48,10 @@ A quote acceptance, payment, setup or recovery command may return a customer URL
 
 It does not add Mark paid, Force success, an arbitrary charge, or an amount override. It does not change immutable accepted amounts, fresh-auth, idempotency, optimistic versions, RLS or RPC security. It does not treat a saved payment method as permission to charge, a Stripe subscription as Guard entitlement, or included Guard as paid Guard. It does not enable live payment, live mail or Google submission. Provider gates stay as they are.
 
+## Guard discount
+
+The case quote form creates a normal quote. It does not record a qualification snapshot and it does not apply a discount. Before that form, a Managed Relaunch or Managed Review case says that paid Direct Guard may qualify for the existing discount policy and links to the qualification snapshot on `/commercial?tab=quotes`. The page does not decide that this customer qualifies, and it does not change the qualification rule.
+
 ## Known limit
 
-The quote and money lists the case page reads are the existing global reads. A capped list is shown as incomplete rather than as an empty case. Receipts still have no timestamp on `admin_payment_list_v1`, so a recorded receipt is described as recorded and is not given a fabricated time. TEST-MODE invoice fallback stays on `/money`. A Guard discount still has to be applied from the global quote form, where the qualification snapshot is recorded; the case form does not invent one.
+Receipts still have no timestamp on `admin_payment_list_v1`, so a recorded receipt is described as recorded and is not given a fabricated time. Payment command versions still come from `loadMoney()`, filtered to the order this case already named. There is no exact payment read, so an order that is absent from that list cannot be issued from this page. TEST-MODE invoice fallback stays on `/money`. Quote and order detail for this case no longer depend on the 100-row global queues.

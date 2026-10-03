@@ -59,6 +59,7 @@ export function CommercialWorkspace({ model, caseDetail }: { model: CommercialWo
 
     <section className="panel" aria-labelledby="commercial-quote-heading">
       <h2 id="commercial-quote-heading">Quote</h2>
+      {model.guardDiscount && <p>{model.guardDiscount.message} <Link href={model.guardDiscount.href}>{model.guardDiscount.hrefLabel}</Link></p>}
       {model.priceGap && <p>{model.priceGap.message} <Link href={model.priceGap.href}>{model.priceGap.hrefLabel}</Link></p>}
       {showCreate && <CaseQuoteForm
         caseId={caseDetail.id}

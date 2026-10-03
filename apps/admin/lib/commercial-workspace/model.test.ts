@@ -205,7 +205,15 @@ function price(overrides: Partial<PriceVersion> = {}): PriceVersion {
 
 function modelFor(
   factOverrides: Partial<CaseFlowFacts>,
-  extras: { quotes?: QuoteListItem[]; orders?: ServiceOrder[]; money?: MoneyOrder[]; prices?: PriceVersion[]; primaryAction?: CaseNextAction | null } = {},
+  extras: {
+    quote?: QuoteListItem | null
+    quoteDetailMissing?: boolean
+    order?: ServiceOrder | null
+    orderDetailMissing?: boolean
+    money?: MoneyOrder[]
+    prices?: PriceVersion[]
+    primaryAction?: CaseNextAction | null
+  } = {},
 ): CommercialWorkspaceModel {
   const loaded = facts(factOverrides)
   const flow = resolveCaseFlow(loaded, NOW)
@@ -213,8 +221,10 @@ function modelFor(
     facts: loaded,
     primaryAction: extras.primaryAction === undefined ? flow.primaryAction : extras.primaryAction,
     now: NOW,
-    quotes: extras.quotes ?? [],
-    orders: extras.orders ?? [],
+    quote: extras.quote ?? null,
+    quoteDetailMissing: extras.quoteDetailMissing,
+    order: extras.order ?? null,
+    orderDetailMissing: extras.orderDetailMissing,
     money: extras.money ?? [],
     prices: extras.prices ?? [],
   })
@@ -242,7 +252,7 @@ describe("commercial workspace model", () => {
   it("keeps an unconfigured draft short of offer", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] },
-    }, { quotes: [detail({}, { taxBehaviour: "UNCONFIRMED" })] })
+    }, { quote: detail({}, { taxBehaviour: "UNCONFIRMED" }) })
     expect(model.quoteHeadline).toBe("Draft quote — tax treatment is not confirmed")
     expect(stage(model, "quote").toneLabel).toBe("Needs attention")
     expect(model.commands.setTax).toBe(true)
@@ -253,7 +263,7 @@ describe("commercial workspace model", () => {
   it("treats a configured draft as ready to offer", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact()] },
-    }, { quotes: [detail()] })
+    }, { quote: detail() })
     expect(model.quoteHeadline).toBe("Draft quote — ready to offer")
     expect(stage(model, "quote").toneLabel).toBe("In progress")
     expect(model.commands.offer).toBe(true)
@@ -265,7 +275,7 @@ describe("commercial workspace model", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", actionStatus: "OPEN", actionExpiresAt: FUTURE })] },
     }, {
-      quotes: [detail({ status: "OFFERED", action: { id: "action-1", status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" } }, { status: "OFFERED" })],
+      quote: detail({ status: "OFFERED", action: { id: "action-1", status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" } }, { status: "OFFERED" }),
     })
     expect(model.quoteHeadline).toBe("Offered — waiting for the customer")
     expect(stage(model, "acceptance").toneLabel).toBe("In progress")
@@ -280,7 +290,7 @@ describe("commercial workspace model", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", actionStatus: "OPEN", actionExpiresAt: PAST })] },
     }, {
-      quotes: [detail({ status: "OFFERED", action: { id: "action-1", status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" } }, { status: "OFFERED" })],
+      quote: detail({ status: "OFFERED", action: { id: "action-1", status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" } }, { status: "OFFERED" }),
     })
     expect(model.quoteHeadline).toBe("Offered — the acceptance link has expired")
     expect(stage(model, "acceptance").toneLabel).toBe("Needs attention")
@@ -292,7 +302,7 @@ describe("commercial workspace model", () => {
   it("shows an offered quote with no usable acceptance action", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", actionStatus: "REVOKED" })] },
-    }, { quotes: [detail({ status: "OFFERED" }, { status: "OFFERED" })] })
+    }, { quote: detail({ status: "OFFERED" }, { status: "OFFERED" }) })
     expect(model.quoteHeadline).toBe("Offered — the customer has no usable acceptance link")
     expect(model.commands.issueAcceptance).toBe(true)
     expect(model.commands.revokeAcceptance).toBe(false)
@@ -302,7 +312,7 @@ describe("commercial workspace model", () => {
   it("treats a declined quote as terminal", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ status: "DECLINED" })] },
-    }, { quotes: [detail({ status: "DECLINED" }, { status: "DECLINED" })] })
+    }, { quote: detail({ status: "DECLINED" }, { status: "DECLINED" }) })
     expect(model.quoteHeadline).toBe("Quote declined")
     expect(stage(model, "acceptance").toneLabel).toBe("Needs attention")
     expect(model.commands.offer).toBe(false)
@@ -316,8 +326,8 @@ describe("commercial workspace model", () => {
       commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
       payment: { complete: true, orders: [orderFact()] },
     }, {
-      quotes: [detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" })],
-      orders: [serviceOrder()],
+      quote: detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" }),
+      order: serviceOrder(),
       money: [money()],
     })
     expect(model.quoteHeadline).toBe("Quote accepted")
@@ -334,7 +344,7 @@ describe("commercial workspace model", () => {
   it("fails closed when an accepted quote has no service order", () => {
     const model = modelFor({
       commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED" })] },
-    }, { quotes: [detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z" }, { status: "ACCEPTED" })] })
+    }, { quote: detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z" }, { status: "ACCEPTED" }) })
     expect(model.orderHeadline).toBe("The quote is accepted, but the service order is missing")
     expect(stage(model, "order").toneLabel).toBe("Needs attention")
     expect(stage(model, "payment").toneLabel).toBe("Needs attention")
@@ -371,7 +381,9 @@ describe("commercial workspace model", () => {
     const model = guided("FAILED")
     expect(model.paymentHeadline).toBe("Payment failed")
     expect(model.paymentDetail).toMatch(/nothing has been collected/i)
-    expect(model.commands.issueUpfront).toBe(true)
+    expect(model.commands.issueUpfront).toBe(false)
+    expect(model.commands.issueRecovery).toBe(false)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Resolve a payment problem" })
   })
 
   it("shows a Guided payment as paid without a collection control", () => {
@@ -389,7 +401,8 @@ describe("commercial workspace model", () => {
     expect(model.managed?.rows.find(row => row.label === "Later-charge consent")?.state).toBe("Missing")
     expect(model.managed?.rows.find(row => row.label === "Reusable payment method")?.state).toBe("Missing")
     expect(model.managed?.collectedNow).not.toContain("Payment method saved")
-    expect(model.commands.issueManagedSetup).toBe(true)
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.caseAction).not.toMatchObject({ label: "Send the payment-setup link" })
     expect(model.commands.approveSuccessFee).toBe(false)
   })
 
@@ -399,7 +412,8 @@ describe("commercial workspace model", () => {
     expect(model.managed?.rows.find(row => row.label === "Reusable payment method")?.state).toBe("Missing")
     expect(stage(model, "payment").toneLabel).toBe("Needs attention")
     expect(model.managed?.collectedNow).not.toContain("Payment method saved")
-    expect(model.commands.issueManagedSetup).toBe(true)
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Resolve a payment-setup problem" })
   })
 
   it("shows Managed setup ready without claiming money was collected", () => {
@@ -426,7 +440,8 @@ describe("commercial workspace model", () => {
     expect(stage(model, "quote").toneLabel).toBe("Unknown — source data is incomplete")
     expect(model.commands.createQuote).toBe(false)
     expect(model.commands.offer).toBe(false)
-    expect(model.notices.some(notice => /capped/i.test(notice))).toBe(true)
+    expect(model.notices.some(notice => /commercial projection/i.test(notice))).toBe(true)
+    expect(model.notices.some(notice => /global quote|capped at 100/i.test(notice))).toBe(false)
     expect(model.caseAction).toMatchObject({ kind: "here", label: "Check the commercial position for this case" })
   })
 
@@ -436,13 +451,13 @@ describe("commercial workspace model", () => {
       commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
       payment: { complete: false, orders: [] },
     }, {
-      quotes: [detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" })],
+      quote: detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" }),
     })
     expect(model.paymentHeadline).not.toBe("Paid")
     expect(model.paymentHeadline).not.toBe("Payment due")
     expect(stage(model, "payment").tone).toBe("unknown")
     expect(model.commands.issueUpfront).toBe(false)
-    expect(model.notices.some(notice => /payment list/i.test(notice))).toBe(true)
+    expect(model.notices.some(notice => /payment projection/i.test(notice))).toBe(true)
   })
 
   it("sends a non-commercial next action out of this workspace, and drops an unsafe href", () => {
@@ -474,7 +489,7 @@ describe("commercial workspace model", () => {
     for (const status of ["SUPERSEDED", "CANCELLED", "EXPIRED"] as const) {
       const model = modelFor({
         commercial: { complete: true, quotes: [quoteFact({ status })] },
-      }, { quotes: [detail({ status }, { status })] })
+      }, { quote: detail({ status }, { status }) })
       expect(model.quoteHeadline.toLowerCase()).toContain(status === "SUPERSEDED" ? "superseded" : status === "CANCELLED" ? "cancelled" : "expired")
       expect(model.commands.offer).toBe(false)
       expect(stage(model, "acceptance").toneLabel).toBe("Not applicable")
@@ -487,8 +502,8 @@ describe("commercial workspace model", () => {
       commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
       payment: { complete: true, orders: [orderFact({ paymentModel: "RECURRING_MONTHLY", orderState: "ACCEPTED_RECURRING", obligationKind: null, obligationState: null })] },
     }, {
-      quotes: [detail({ status: "ACCEPTED", orderId: ORDER_ID }, { serviceCode: "RELAUNCH_GUARD", serviceName: "Relaunch Guard", paymentModel: "RECURRING_MONTHLY", status: "ACCEPTED" })],
-      orders: [serviceOrder({ serviceCode: "RELAUNCH_GUARD", paymentModel: "RECURRING_MONTHLY", state: "ACCEPTED_RECURRING" })],
+      quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { serviceCode: "RELAUNCH_GUARD", serviceName: "Relaunch Guard", paymentModel: "RECURRING_MONTHLY", status: "ACCEPTED" }),
+      order: serviceOrder({ serviceCode: "RELAUNCH_GUARD", paymentModel: "RECURRING_MONTHLY", state: "ACCEPTED_RECURRING" }),
       money: [money({ serviceCode: "RELAUNCH_GUARD", paymentModel: "RECURRING_MONTHLY", obligationKind: null, obligationState: null })],
     })
     expect(model.guardNote).toMatch(/recurring Guard/i)
@@ -503,13 +518,187 @@ describe("commercial workspace model", () => {
       commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
       payment: { complete: true, orders: [orderFact({ paymentModel: "SUCCESS_FEE", obligationKind: null, obligationState: null })] },
     }, {
-      quotes: [detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED", paymentModel: "UPFRONT" })],
-      orders: [serviceOrder({ paymentModel: "SUCCESS_FEE" })],
+      quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED", paymentModel: "UPFRONT" }),
+      order: serviceOrder({ paymentModel: "SUCCESS_FEE" }),
       money: [money({ paymentModel: "SUCCESS_FEE", obligationKind: null, obligationState: null })],
     })
     expect(model.failClosed).toBe(true)
     expect(model.commands.issueUpfront).toBe(false)
     expect(model.commands.issueManagedSetup).toBe(false)
+  })
+
+  it("does not offer quote creation while the case still needs a service track", () => {
+    const model = modelFor({ technicalStage: "SERVICE_SELECTION", serviceTrack: "UNDECIDED" }, { prices: [price()] })
+    expect(model.caseAction).toMatchObject({ label: "Choose the service track" })
+    expect(model.commands.createQuote).toBe(false)
+    expect(model.priceChoices).toHaveLength(0)
+    expect(model.guardDiscount).toBeNull()
+  })
+
+  it("does not issue Managed setup while authorisation is still incomplete", () => {
+    const model = modelFor({
+      serviceTrack: "MANAGED",
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: {
+        membershipStatus: "pending",
+        customerEmailVerified: false,
+        businessAuthorityVerified: false,
+        serviceAgreementAccepted: false,
+        caseManagementPermissionActive: false,
+        managerAccessVerified: false,
+        authorizationReady: false,
+        reviewRequired: [],
+        agreementKinds: [],
+        hasLocation: true,
+      },
+      commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
+      payment: { complete: true, orders: [orderFact({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })] },
+    }, {
+      quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED", serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE" }),
+      order: serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE" }),
+      money: [money({ paymentModel: "SUCCESS_FEE", obligationKind: null, obligationState: null })],
+    })
+    expect(model.caseAction).toMatchObject({ label: "Verify the customer's email address" })
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.commands.issueUpfront).toBe(false)
+    expect(model.commands.issueRecovery).toBe(false)
+  })
+
+  it("waits on an active Managed setup link and does not offer another", () => {
+    const model = managedSetup("OPEN", FUTURE)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Waiting for the customer to save a payment method" })
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.paymentDetail).toMatch(/open until/i)
+    expect(model.paymentDetail).toContain("2026")
+  })
+
+  it("returns an expired Managed setup link to issuing another", () => {
+    const model = managedSetup("OPEN", PAST)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Send the payment-setup link" })
+    expect(model.commands.issueManagedSetup).toBe(true)
+    expect(model.paymentDetail).toMatch(/expired/i)
+    expect(model.caseAction.kind === "here" ? model.caseAction.description : "").not.toMatch(/waiting/i)
+  })
+
+  it("waits on an active Guided payment link and does not offer another", () => {
+    const model = guidedLink("GUIDED_PAYMENT", FUTURE)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Waiting for the upfront payment" })
+    expect(model.commands.issueUpfront).toBe(false)
+    expect(model.commands.issueRecovery).toBe(false)
+    expect(model.paymentDetail).toMatch(/open until/i)
+  })
+
+  it("returns an expired Guided payment link to sending another", () => {
+    const model = guidedLink("GUIDED_PAYMENT", PAST)
+    expect(model.caseAction).toMatchObject({ kind: "here", label: "Send the payment link" })
+    expect(model.commands.issueUpfront).toBe(true)
+    expect(model.paymentDetail).toMatch(/expired/i)
+  })
+
+  it("returns an expired Guided recovery link to sending the upfront payment", () => {
+    const model = guidedLink("PAYMENT_RECOVERY", PAST)
+    expect(model.caseAction).toMatchObject({ label: "Send the payment link" })
+    expect(model.commands.issueUpfront).toBe(true)
+    expect(model.commands.issueRecovery).toBe(false)
+  })
+
+  it("does not enable payment or setup issuance when payments are switched off", () => {
+    const guidedOff = modelFor({
+      technicalStage: "PAYMENT_REQUIRED",
+      capabilities: { liveMailEnabled: false, paymentsEnabled: false, googleSubmissionLive: false },
+      commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
+      payment: { complete: true, orders: [orderFact()] },
+    }, {
+      quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED" }),
+      order: serviceOrder(),
+      money: [money()],
+    })
+    expect(guidedOff.caseAction).toMatchObject({ kind: "here", label: "Send the payment link" })
+    if (guidedOff.caseAction.kind === "here") expect(guidedOff.caseAction.description).toMatch(/switched off/i)
+    expect(guidedOff.commands.issueUpfront).toBe(false)
+    expect(guidedOff.commands.issueManagedSetup).toBe(false)
+    expect(guidedOff.commands.issueRecovery).toBe(false)
+
+    const managedOff = managedSetup("NONE", null, false)
+    expect(managedOff.commands.issueManagedSetup).toBe(false)
+    expect(managedOff.commands.issueUpfront).toBe(false)
+    expect(managedOff.commands.issueRecovery).toBe(false)
+    if (managedOff.caseAction.kind === "here") expect(managedOff.caseAction.description).toMatch(/switched off/i)
+  })
+
+  it("does not issue acceptance while the customer email is unverified", () => {
+    const model = offered({ customerEmailVerified: false, businessAuthorityVerified: true })
+    expect(model.caseAction).toMatchObject({ label: "Verify the customer's email address" })
+    expect(model.commands.issueAcceptance).toBe(false)
+  })
+
+  it("does not issue acceptance while business authority is unverified", () => {
+    const model = offered({ customerEmailVerified: true, businessAuthorityVerified: false })
+    expect(model.caseAction).toMatchObject({ label: "Verify the customer's authority over the business" })
+    expect(model.commands.issueAcceptance).toBe(false)
+  })
+
+  it("uses the exact quote it was given and does not substitute another", () => {
+    const model = modelFor({
+      commercial: { complete: true, quotes: [quoteFact()] },
+    }, { quote: detail() })
+    expect(model.summary.some(row => row.value.includes("QT-26-ABCDEF"))).toBe(true)
+    expect(model.failClosed).toBe(false)
+    expect(model.quoteContext?.quoteId).toBe(QUOTE_ID)
+  })
+
+  it("fails closed when the named quote cannot be loaded", () => {
+    const model = modelFor({
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED" })] },
+    }, {
+      quote: detail({ id: "99999999-9999-4999-8999-999999999999", publicRef: "QT-OTHER", status: "OFFERED" }, { status: "OFFERED" }),
+      quoteDetailMissing: true,
+    })
+    expect(model.failClosed).toBe(true)
+    expect(model.quoteHeadline).not.toBe("No quote")
+    expect(model.notices.some(notice => /could not be loaded/i.test(notice))).toBe(true)
+    expect(JSON.stringify(model.summary)).not.toContain("QT-OTHER")
+    expect(model.commands.issueAcceptance).toBe(false)
+    expect(model.commands.offer).toBe(false)
+    expect(model.commands.createQuote).toBe(false)
+    expect(model.quoteContext).toBeNull()
+  })
+
+  it("fails closed when the loaded order is not the order the case names", () => {
+    const other = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    const model = modelFor({
+      technicalStage: "PAYMENT_REQUIRED",
+      commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
+      payment: { complete: true, orders: [orderFact()] },
+    }, {
+      quote: detail({ status: "ACCEPTED", orderId: other }, { status: "ACCEPTED" }),
+      order: serviceOrder({ id: other }),
+      orderDetailMissing: true,
+      money: [money({ orderId: other })],
+    })
+    expect(model.failClosed).toBe(true)
+    expect(model.notices.some(notice => /different service order|not the order this case names|does not belong/i.test(notice))).toBe(true)
+    expect(model.commands.issueUpfront).toBe(false)
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.orderContext).toBeNull()
+  })
+
+  it("says a Managed quote form does not apply the Guard discount", () => {
+    const model = modelFor({
+      serviceTrack: "MANAGED",
+      caseType: "PROFILE_RECOVERY",
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: authorised(),
+      commercial: { complete: true, quotes: [] },
+      payment: { complete: true, orders: [] },
+    }, {
+      prices: [price({ serviceCode: "MANAGED_RELAUNCH", displayName: "Managed Relaunch", paymentModel: "SUCCESS_FEE" })],
+    })
+    expect(model.commands.createQuote).toBe(true)
+    expect(model.guardDiscount?.href).toBe("/commercial?tab=quotes")
+    expect(model.guardDiscount?.message).toMatch(/does not apply a discount/i)
+    expect(model.guardDiscount?.message).toMatch(/Paid Direct Guard/i)
+    expect(model.guardDiscount?.message).not.toMatch(/qualifies|eligible/i)
   })
 })
 
@@ -519,8 +708,8 @@ function guided(obligationState: string, orderOverrides: Partial<CaseFlowOrderFa
     commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
     payment: { complete: true, orders: [orderFact({ obligationState, ...orderOverrides })] },
   }, {
-    quotes: [detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" })],
-    orders: [serviceOrder()],
+    quote: detail({ status: "ACCEPTED", acceptedAt: "2026-10-02T09:00:00.000Z", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED" }),
+    order: serviceOrder(),
     money: [money({ obligationState, receiptId: orderOverrides.receiptRecorded ? "receipt-1" : null })],
   })
 }
@@ -541,8 +730,8 @@ function managed(flags: { consentRecorded: boolean; setupReady: boolean }): Comm
       })],
     },
   }, {
-    quotes: [detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED", serviceCode: "MANAGED_RELAUNCH", serviceName: "Managed Relaunch", paymentModel: "SUCCESS_FEE" })],
-    orders: [serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" })],
+    quote: detail({ status: "ACCEPTED", orderId: ORDER_ID, orderRef: "SO-26-ABCDEF" }, { status: "ACCEPTED", serviceCode: "MANAGED_RELAUNCH", serviceName: "Managed Relaunch", paymentModel: "SUCCESS_FEE" }),
+    order: serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" }),
     money: [money({
       serviceCode: "MANAGED_RELAUNCH",
       paymentModel: "SUCCESS_FEE",
@@ -553,5 +742,61 @@ function managed(flags: { consentRecorded: boolean; setupReady: boolean }): Comm
       consentId: flags.consentRecorded ? "consent-1" : null,
       acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }],
     })],
+  })
+}
+
+function authorised(): CaseFlowFacts["authorization"] {
+  return {
+    membershipStatus: "verified",
+    customerEmailVerified: true,
+    businessAuthorityVerified: true,
+    serviceAgreementAccepted: true,
+    caseManagementPermissionActive: true,
+    managerAccessVerified: true,
+    authorizationReady: true,
+    reviewRequired: [],
+    agreementKinds: ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"],
+    hasLocation: true,
+  }
+}
+
+function offered(auth: { customerEmailVerified: boolean; businessAuthorityVerified: boolean }): CommercialWorkspaceModel {
+  return modelFor({
+    authorization: { ...facts().authorization, ...auth },
+    commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", actionStatus: null })] },
+  }, { quote: detail({ status: "OFFERED" }, { status: "OFFERED" }) })
+}
+
+function guidedLink(kind: string, expiresAt: string): CommercialWorkspaceModel {
+  return modelFor({
+    technicalStage: "PAYMENT_REQUIRED",
+    commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
+    payment: { complete: true, orders: [orderFact()] },
+    customerActions: [{ id: "pay-1", kind, agreementKind: null, status: "OPEN", expiresAt }],
+  }, {
+    quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED" }),
+    order: serviceOrder(),
+    money: [money()],
+  })
+}
+
+function managedSetup(status: "OPEN" | "NONE", expiresAt: string | null, paymentsEnabled = true): CommercialWorkspaceModel {
+  return modelFor({
+    serviceTrack: "MANAGED",
+    technicalStage: "AUTHORIZATION_REQUIRED",
+    authorization: authorised(),
+    capabilities: { liveMailEnabled: false, paymentsEnabled, googleSubmissionLive: false },
+    commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },
+    payment: {
+      complete: true,
+      orders: [orderFact({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })],
+    },
+    customerActions: status === "OPEN" && expiresAt
+      ? [{ id: "setup-1", kind: "MANAGED_PAYMENT_SETUP", agreementKind: null, status: "OPEN", expiresAt }]
+      : [],
+  }, {
+    quote: detail({ status: "ACCEPTED", orderId: ORDER_ID }, { status: "ACCEPTED", serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE" }),
+    order: serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" }),
+    money: [money({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", obligationKind: null, obligationState: null })],
   })
 }

@@ -830,6 +830,55 @@ const scenarios: Scenario[] = [
     waitingOn: "CUSTOMER",
   },
   {
+    name: "a Guided case whose payment link is open but already expired",
+    facts: guided({
+      technicalStage: "PAYMENT_REQUIRED",
+      customerActions: [customerAction({ kind: "GUIDED_PAYMENT", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "START_UPFRONT_PAYMENT",
+    state: "ACTION_REQUIRED",
+    blockers: ["UPFRONT_PAYMENT_OUTSTANDING"],
+  },
+  {
+    name: "a Guided case whose payment link expires at the moment the case is read",
+    facts: guided({
+      technicalStage: "PAYMENT_REQUIRED",
+      customerActions: [customerAction({ kind: "GUIDED_PAYMENT", status: "OPEN", expiresAt: NOW })],
+    }),
+    primary: "START_UPFRONT_PAYMENT",
+    state: "ACTION_REQUIRED",
+  },
+  {
+    name: "a Guided case whose recovery link is open but already expired",
+    facts: guided({
+      technicalStage: "PAYMENT_REQUIRED",
+      customerActions: [customerAction({ kind: "PAYMENT_RECOVERY", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "START_UPFRONT_PAYMENT",
+    state: "ACTION_REQUIRED",
+  },
+  {
+    name: "a Guided case whose expired payment link does not hide a failed attempt",
+    facts: guided({
+      technicalStage: "PAYMENT_REQUIRED",
+      payment: { complete: true, orders: [order({ obligationState: "FAILED" })] },
+      customerActions: [customerAction({ kind: "GUIDED_PAYMENT", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "RESOLVE_PAYMENT_EXCEPTION",
+    attention: ["PAYMENT_FAILED"],
+  },
+  {
+    name: "an expired Guided payment link still cannot be reissued when payments are switched off",
+    facts: guided({
+      technicalStage: "PAYMENT_REQUIRED",
+      capabilities: { liveMailEnabled: false, paymentsEnabled: false, googleSubmissionLive: false },
+      customerActions: [customerAction({ kind: "GUIDED_PAYMENT", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "START_UPFRONT_PAYMENT",
+    state: "BLOCKED",
+    blockers: ["PAYMENTS_NOT_ENABLED"],
+  },
+  {
     name: "a Guided case where the customer finished checkout but nothing is collected yet",
     facts: guided({ technicalStage: "PAYMENT_REQUIRED", payment: { complete: true, orders: [order({ obligationState: "COLLECTING" })] } }),
     primary: "WAIT_FOR_UPFRONT_PAYMENT",
@@ -1028,6 +1077,38 @@ const scenarios: Scenario[] = [
     }),
     primary: "WAIT_FOR_MANAGED_PAYMENT_SETUP",
     waitingOn: "CUSTOMER",
+  },
+  {
+    name: "a Managed case whose setup link is open but already expired",
+    facts: managed({
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: fullyAuthorised(),
+      customerActions: [customerAction({ kind: "MANAGED_PAYMENT_SETUP", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "START_MANAGED_PAYMENT_SETUP",
+    state: "ACTION_REQUIRED",
+    blockers: ["MANAGED_PAYMENT_SETUP_INCOMPLETE"],
+  },
+  {
+    name: "an expired Managed setup link does not overtake an unverified contact",
+    facts: managed({
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      customerActions: [customerAction({ kind: "MANAGED_PAYMENT_SETUP", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "VERIFY_CUSTOMER_CONTACT",
+    blockers: ["AUTHORISATION_INCOMPLETE"],
+  },
+  {
+    name: "an expired Managed setup link still cannot be reissued when payments are switched off",
+    facts: managed({
+      technicalStage: "AUTHORIZATION_REQUIRED",
+      authorization: fullyAuthorised(),
+      capabilities: { liveMailEnabled: false, paymentsEnabled: false, googleSubmissionLive: false },
+      customerActions: [customerAction({ kind: "MANAGED_PAYMENT_SETUP", status: "OPEN", expiresAt: PAST })],
+    }),
+    primary: "START_MANAGED_PAYMENT_SETUP",
+    state: "BLOCKED",
+    blockers: ["PAYMENTS_NOT_ENABLED"],
   },
   {
     name: "a Managed case where the setup link was used but no method was saved",

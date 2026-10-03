@@ -3,9 +3,14 @@
  *
  * Quote rank, acceptance expiry and payment flags come from `summariseCommercial`
  * and `summarisePayment`. The next action is the one `resolveCaseFlow` already
- * chose. This module arranges those answers for the page. It does not decide
- * a second meaning of ready, paid, accepted or set up, and it does not read
- * the database.
+ * chose. Journey controls (create quote, offer, acceptance, upfront payment,
+ * Managed setup) are enabled only when that action says so. This module
+ * arranges those answers for the page. It does not decide a second meaning of
+ * ready, paid, accepted or set up, and it does not read the database.
+ *
+ * Quote and order detail are the exact records for the identifiers the case
+ * projection already named. This module does not search a global queue for a
+ * substitute.
  */
 
 import { ukDate } from "../admin/activity"
@@ -135,6 +140,11 @@ export type CommercialWorkspaceModel = {
   guided: { kind: GuidedPaymentKind; label: string; detail: string } | null
   managed: { rows: ManagedSetupRow[]; collectedNow: string | null; approval: string | null } | null
   guardNote: string | null
+  /**
+   * Shown before a Managed quote is drafted here. The case form does not
+   * record a Guard qualification or apply a discount.
+   */
+  guardDiscount: { message: string; href: string; hrefLabel: string } | null
   commands: CommercialCommands
   priceChoices: CommercialPriceChoice[]
   priceGap: { message: string; href: string; hrefLabel: string } | null
@@ -266,14 +276,20 @@ function guidedKind(payment: PaymentView, facts: CaseFlowFacts, now: string): Gu
   if (payment.upfrontAuthenticationRequired) return "authentication"
   if (payment.upfrontFailed) return "failed"
   if (payment.upfrontCollecting) return "collecting"
-  const open = facts.customerActions.find(item =>
-    (item.kind === "GUIDED_PAYMENT" || item.kind === "PAYMENT_RECOVERY") && item.status === "OPEN",
-  )
-  if (open && open.expiresAt <= now) return "action_expired"
-  if (open) return "action_issued"
+  if (expiredCustomerAction(facts, ["GUIDED_PAYMENT", "PAYMENT_RECOVERY"], now)) return "action_expired"
+  if (activeCustomerAction(facts, ["GUIDED_PAYMENT", "PAYMENT_RECOVERY"], now)) return "action_issued"
   if (payment.upfrontState === "DUE") return "due"
   if (!payment.upfrontState) return "not_started"
   return "unknown"
+}
+
+/** Wording only. CaseFlow decides whether the link is still the next action. */
+function activeCustomerAction(facts: CaseFlowFacts, kinds: string[], now: string) {
+  return facts.customerActions.find(item => kinds.includes(item.kind) && item.status === "OPEN" && item.expiresAt > now) ?? null
+}
+
+function expiredCustomerAction(facts: CaseFlowFacts, kinds: string[], now: string) {
+  return facts.customerActions.find(item => kinds.includes(item.kind) && item.status === "OPEN" && item.expiresAt <= now) ?? null
 }
 
 function moneyMode(serviceCode: string | null, paymentModel: string | null, track: string): "guided" | "managed" | "guard" | "none" {
@@ -288,8 +304,15 @@ export function buildCommercialWorkspaceModel(input: {
   facts: CaseFlowFacts
   primaryAction: CaseNextAction | null
   now: string
-  quotes: QuoteListItem[]
-  orders: ServiceOrder[]
+  /** Exact `loadQuote` result for the quote id CaseFlow already named. */
+  quote: QuoteListItem | null
+  /** The named quote id did not come back from that exact read. */
+  quoteDetailMissing?: boolean
+  /** Exact `loadOrder` result for the order id the accepted quote already named. */
+  order: ServiceOrder | null
+  /** That order id did not come back, or the row that came back is a different order. */
+  orderDetailMissing?: boolean
+  /** Payment rows already restricted to the authoritative order id. */
   money: MoneyOrder[]
   prices: PriceVersion[]
 }): CommercialWorkspaceModel {
@@ -300,31 +323,56 @@ export function buildCommercialWorkspaceModel(input: {
   const kind: QuoteKind = tied ? "ambiguous" : quoteKindOf(commercial)
   const notices: string[] = []
   const caseId = facts.caseId
-  const caseQuotes = input.quotes.filter(quote => quote.caseId === caseId)
-  const detail = commercial.quote ? caseQuotes.find(quote => quote.id === commercial.quote!.id) ?? input.quotes.find(quote => quote.id === commercial.quote!.id) ?? null : null
+  const quoteId = commercial.quote?.id ?? null
+  const detail = input.quote && input.quote.id === quoteId ? input.quote : null
+  const namedQuoteMissing = !!quoteId && (input.quoteDetailMissing || !detail)
 
   if (commercial.truncated) {
-    notices.push("The quote list this view reads is capped, so this is not proof of the full commercial position.")
+    notices.push("The commercial projection for this case is incomplete, so this is not proof of the full commercial position.")
   }
   if (payment.truncated) {
-    notices.push("The payment list this view reads is capped, so this is not proof of the full payment position.")
+    notices.push("The payment projection for this case is incomplete, so this is not proof of the full payment position.")
   }
   if (tied) {
     notices.push("Commercial records disagree: more than one quote shares the same relevance, so none is treated as the current quote.")
   }
+  if (namedQuoteMissing) {
+    notices.push("Commercial records disagree: the quote named for this case could not be loaded.")
+  }
   if (detail && commercial.quote && detail.status !== commercial.quote.status) {
-    notices.push("Commercial records disagree: the quote list and the case projection do not show the same quote status.")
+    notices.push("Commercial records disagree: the quote detail and the case projection do not show the same quote status.")
   }
 
   const quoteOrderId = commercial.quote?.orderId ?? null
-  const serviceOrder = input.orders.find(order => order.id === quoteOrderId)
-    ?? input.orders.find(order => order.caseId === caseId && order.quoteId === commercial.quote?.id)
-    ?? null
-  const moneyOrder = input.money.find(order => order.orderId === (quoteOrderId || serviceOrder?.id))
-    ?? input.money.find(order => order.caseId === caseId && order.orderId === serviceOrder?.id)
-    ?? null
-  const flowOrder = facts.payment.orders.find(order => order.orderId === (quoteOrderId || serviceOrder?.id))
-    ?? (facts.payment.orders.length === 1 ? facts.payment.orders[0] : null)
+  if (detail?.orderId && quoteOrderId && detail.orderId !== quoteOrderId) {
+    notices.push("Commercial records disagree: the quote detail names a different service order from the case projection.")
+  }
+  if (detail?.orderId && !quoteOrderId) {
+    notices.push("Commercial records disagree: the quote detail names a service order the case projection does not.")
+  }
+
+  const loadedOrder = input.order
+  const orderIdMismatch = !!loadedOrder && !!quoteOrderId && loadedOrder.id !== quoteOrderId
+  const serviceOrder = loadedOrder && !orderIdMismatch && (!quoteOrderId || loadedOrder.id === quoteOrderId) ? loadedOrder : null
+  if (orderIdMismatch || (!!quoteOrderId && !!input.orderDetailMissing && !serviceOrder)) {
+    notices.push("Commercial records disagree: the loaded service order is not the order this case names.")
+  }
+  if (serviceOrder?.quoteId && quoteId && serviceOrder.quoteId !== quoteId) {
+    notices.push("Commercial records disagree: the loaded service order does not belong to the quote this case names.")
+  }
+
+  const strayMoney = input.money.some(row => row.orderId !== quoteOrderId)
+  if (quoteOrderId && strayMoney) {
+    notices.push("Commercial records disagree: a payment record does not belong to the accepted service order.")
+  }
+  const moneyMatches = quoteOrderId ? input.money.filter(row => row.orderId === quoteOrderId) : []
+  if (moneyMatches.length > 1) {
+    notices.push("Commercial records disagree: more than one payment record matches this service order.")
+  }
+  const moneyOrder = moneyMatches.length === 1 ? moneyMatches[0] : null
+  const flowOrder = quoteOrderId
+    ? facts.payment.orders.find(order => order.orderId === quoteOrderId) ?? null
+    : facts.payment.orders.length === 1 ? facts.payment.orders[0] : null
 
   const serviceCode = detail?.currentVersion.serviceCode ?? null
   const paymentModel = flowOrder?.paymentModel ?? serviceOrder?.paymentModel ?? detail?.currentVersion.paymentModel ?? null
@@ -333,9 +381,9 @@ export function buildCommercialWorkspaceModel(input: {
   const accepted = kind === "accepted"
   const listsComplete = !commercial.truncated && !payment.truncated
   const orderPresent = !!(serviceOrder || moneyOrder || (flowOrder && (!quoteOrderId || flowOrder.orderId === quoteOrderId)))
-  const orderMissing = accepted && listsComplete && !orderPresent
-  const orderUnexpected = listsComplete && !!flowOrder && kind !== "accepted" && kind !== "ambiguous" && kind !== "unknown"
-  const orphanOrder = listsComplete && !!flowOrder && accepted && !!quoteOrderId && flowOrder.orderId !== quoteOrderId
+  const orderMissing = accepted && listsComplete && !orderPresent && !namedQuoteMissing
+  const orderUnexpected = listsComplete && !!flowOrder && !quoteOrderId && kind !== "accepted" && kind !== "ambiguous" && kind !== "unknown"
+  const orphanOrder = listsComplete && accepted && facts.payment.orders.some(order => !!quoteOrderId && order.orderId !== quoteOrderId)
   if (orderMissing) {
     notices.push(quoteOrderId
       ? "Commercial records disagree: the accepted quote names a service order that is not in the loaded records."
@@ -362,15 +410,10 @@ export function buildCommercialWorkspaceModel(input: {
     notices.push("Commercial records disagree: the paid obligation and the receipt do not match.")
   }
 
+  const guidedExpiresAt = activeCustomerAction(facts, ["GUIDED_PAYMENT", "PAYMENT_RECOVERY"], now)?.expiresAt ?? null
+  const managedSetupExpiresAt = activeCustomerAction(facts, ["MANAGED_PAYMENT_SETUP"], now)?.expiresAt ?? null
+  const managedSetupExpired = !!expiredCustomerAction(facts, ["MANAGED_PAYMENT_SETUP"], now)
   const guided = mode === "guided" && !orderMissing && (accepted || !!payment.upfrontOrder) ? guidedKind(payment, facts, now) : null
-  if (guided === "action_expired" && input.primaryAction?.id === "WAIT_FOR_UPFRONT_PAYMENT") {
-    notices.push("Commercial records disagree: a payment action is still marked open after its expiry.")
-  }
-  const openPayment = facts.customerActions.find(item => item.kind === "MANAGED_PAYMENT_SETUP" && item.status === "OPEN")
-  const managedSetupExpired = !!openPayment && openPayment.expiresAt <= now
-  if (managedSetupExpired && input.primaryAction?.id === "WAIT_FOR_MANAGED_PAYMENT_SETUP") {
-    notices.push("Commercial records disagree: a setup action is still marked open after its expiry.")
-  }
 
   const failClosed = notices.some(notice => notice.startsWith("Commercial records disagree"))
   const quoteBlocked = failClosed || commercial.truncated || !detail
@@ -380,9 +423,9 @@ export function buildCommercialWorkspaceModel(input: {
   const journey = buildJourney({ kind, commercial, accepted, orderMissing, orderUnexpected, orderPresent, mode, guided, payment, setupConflict, managedSetupExpired, listsComplete })
 
   const serviceForQuote = quoteServiceForCase(facts.serviceTrack, facts.caseType)
-  const canStartQuote = kind === "none" || kind === "declined" || kind === "expired" || kind === "cancelled" || kind === "superseded"
+  const creatingQuote = input.primaryAction?.id === "CREATE_QUOTE" && input.primaryAction.state === "ACTION_REQUIRED"
   const price = serviceForQuote ? currentApprovedPrice(input.prices, serviceForQuote, now) : null
-  const priceChoices: CommercialPriceChoice[] = price && price !== "ambiguous" ? [{
+  const priceChoices: CommercialPriceChoice[] = creatingQuote && price && price !== "ambiguous" ? [{
     id: price.id,
     serviceCode: price.serviceCode,
     serviceName: price.displayName || serviceLabel(price.serviceCode),
@@ -390,7 +433,7 @@ export function buildCommercialWorkspaceModel(input: {
     paymentLabel: paymentModelLabel(price.paymentModel),
   }] : []
   const priceGap = priceGapFor({
-    canStartQuote,
+    canStartQuote: creatingQuote,
     blocked: commercial.truncated || tied || failClosed,
     serviceForQuote,
     price,
@@ -398,26 +441,33 @@ export function buildCommercialWorkspaceModel(input: {
   })
 
   const commands = commandsFor({
+    primary: input.primaryAction,
     kind,
     quoteBlocked,
     paymentBlocked,
-    canStartQuote: canStartQuote && !commercial.truncated && !tied && !failClosed,
+    creatingQuote: creatingQuote && !commercial.truncated && !tied && !failClosed,
     actionOpen: commercial.quote?.actionStatus === "OPEN" && !!detail?.action?.id,
-    guided,
-    mode,
     hasOrderContext: !!moneyOrder,
     setupReady: payment.managedSetupReady,
     consent: payment.managedConsentRecorded,
     setupConflict,
-    hasSuccessOrder: !!payment.successFeeOrder,
     approvalId: moneyOrder?.approvalId ?? null,
-    recovery: moneyOrder?.paymentModel === "SUCCESS_FEE" && moneyOrder.obligationState === "AUTHENTICATION_REQUIRED" && !!moneyOrder.obligationId,
+    recovery: !!moneyOrder && moneyOrder.paymentModel === "SUCCESS_FEE" && moneyOrder.obligationState === "AUTHENTICATION_REQUIRED" && !!moneyOrder.obligationId,
+    paymentsEnabled: facts.capabilities.paymentsEnabled,
   })
 
   const managed = mode === "managed" && (accepted || !!payment.successFeeOrder) ? managedSection(payment, moneyOrder, setupConflict, managedSetupExpired) : null
   const guardNote = mode === "guard"
     ? "This is a recurring Guard subscription, not a one-off case payment. Accepting the quote does not start billing or take money. Guard billing exceptions stay on Money."
     : null
+  const guardDiscount = commands.createQuote && (serviceForQuote === "MANAGED_RELAUNCH" || serviceForQuote === "MANAGED_REVIEW")
+    ? {
+        message: "Paid Direct Guard may qualify for the existing discount policy. This form creates a normal quote. It does not record a qualification snapshot and it does not apply a discount.",
+        href: "/commercial?tab=quotes",
+        hrefLabel: "Open Guard qualification",
+      }
+    : null
+  const detailText = paymentDetail(mode, guided, payment, managedSetupExpired, guidedExpiresAt, managedSetupExpiresAt)
 
   return {
     notices,
@@ -429,20 +479,21 @@ export function buildCommercialWorkspaceModel(input: {
     orderHeadline: orderHeadline(kind, orderMissing, orderUnexpected || orphanOrder, orderPresent, serviceOrder, moneyOrder, listsComplete),
     orderDetail: orderDetail(serviceOrder, moneyOrder, flowOrder, accepted, orderMissing),
     paymentHeadline: paymentHeadline(mode, guided, managed, guardNote, accepted),
-    paymentDetail: paymentDetail(mode, guided, payment, managedSetupExpired),
-    guided: guided ? { kind: guided, label: guidedLabels[guided], detail: paymentDetail(mode, guided, payment, managedSetupExpired) } : null,
+    paymentDetail: detailText,
+    guided: guided ? { kind: guided, label: guidedLabels[guided], detail: detailText } : null,
     managed,
     guardNote,
+    guardDiscount,
     commands,
     priceChoices,
     priceGap,
-    quoteContext: detail ? {
+    quoteContext: detail && !failClosed ? {
       quoteId: detail.id,
       version: detail.version,
       quoteVersionId: detail.currentVersion.id,
       actionId: detail.action?.status === "OPEN" ? detail.action.id : null,
     } : null,
-    orderContext: moneyOrder ? {
+    orderContext: moneyOrder && !failClosed ? {
       orderId: moneyOrder.orderId,
       version: moneyOrder.version,
       obligationId: moneyOrder.obligationId,
@@ -646,18 +697,30 @@ function paymentHeadline(
   return "Payment or setup cannot be confirmed"
 }
 
-function paymentDetail(mode: "guided" | "managed" | "guard" | "none", guided: GuidedPaymentKind | null, payment: PaymentView, managedSetupExpired: boolean): string {
+function paymentDetail(
+  mode: "guided" | "managed" | "guard" | "none",
+  guided: GuidedPaymentKind | null,
+  payment: PaymentView,
+  managedSetupExpired: boolean,
+  guidedExpiresAt: string | null,
+  managedSetupExpiresAt: string | null,
+): string {
   if (mode === "guard") return "Recurring collection is a later Guard billing step. It is not taken by accepting this quote."
   if (guided === "collecting") return "Collection has started. A completed checkout page is not a payment."
   if (guided === "paid") return "The payment provider has confirmed the money was taken."
   if (guided === "authentication") return "The bank asked for extra authentication and it has not been given."
   if (guided === "failed") return "The last attempt failed and nothing has been collected."
   if (guided === "due") return "The upfront amount is due. It has not been collected."
-  if (guided === "action_issued") return "A payment link is open. Returning from checkout does not mean the payment succeeded."
-  if (guided === "action_expired") return "The payment link is marked open, but it has already expired. It cannot be shown again. Revoke it or issue another."
+  if (guided === "action_issued") {
+    return guidedExpiresAt
+      ? `A payment link is open until ${ukDate(guidedExpiresAt)}. Returning from checkout does not mean the payment succeeded.`
+      : "A payment link is open. Returning from checkout does not mean the payment succeeded."
+  }
+  if (guided === "action_expired") return "The payment link has expired. It cannot be shown again. Another link is issued only when that is this case's next action."
   if (guided === "contradictory") return "Do not treat this as paid until the obligation and the receipt agree."
   if (guided === "void") return "The obligation is void. Nothing is being collected."
-  if (mode === "managed" && managedSetupExpired) return "The setup link is marked open, but it has already expired."
+  if (mode === "managed" && managedSetupExpiresAt) return `A setup link is open until ${ukDate(managedSetupExpiresAt)}. Waiting for the customer to save a payment method. Saving a method is not a collection.`
+  if (mode === "managed" && managedSetupExpired) return "The setup link has expired. It cannot be shown again. Another link is issued only when that is this case's next action."
   if (mode === "managed" && payment.managedSetupReady && payment.managedConsentRecorded) return COLLECTED_NOW
   if (mode === "managed") return "£0 collected now. A success fee is not taken by saving a payment method, and it is not taken unless the qualifying outcome is achieved and approved."
   return "Nothing is due until a quote has been accepted and an order exists."
@@ -745,40 +808,61 @@ function priceGapFor(input: {
   return null
 }
 
+/**
+ * Journey commands follow `primaryAction`.
+ *
+ * Create quote, offer, acceptance, upfront payment and Managed setup are the
+ * case's next step only when CaseFlow names that step and it is
+ * `ACTION_REQUIRED`. A `BLOCKED` or `WAITING` action does not gain an enabled
+ * control because a lower-level command might accept the call.
+ *
+ * These are quote administration, not the next step, so they stay available
+ * on a live quote whose exact detail loaded: cancel, new version, supersede,
+ * and revoke of an open acceptance link. They do not stand in for verify
+ * contact, verify authority, or any earlier prerequisite.
+ *
+ * Success-fee approval is not a CaseFlow action. It is offered only once the
+ * payment projection says setup is ready, consent is recorded and no approval
+ * exists. It does not charge a card. Recovery is the existing success-fee
+ * authentication command, and it stays hidden when payment collection is off.
+ *
+ * `quoteServiceForCase`, `currentApprovedPrice`, `expectedModel` and
+ * `moneyMode` only choose presentation. The database remains the authority
+ * for service compatibility, the current price and the payment model.
+ */
 function commandsFor(input: {
+  primary: CaseNextAction | null
   kind: QuoteKind
   quoteBlocked: boolean
   paymentBlocked: boolean
-  canStartQuote: boolean
+  creatingQuote: boolean
   actionOpen: boolean
-  guided: GuidedPaymentKind | null
-  mode: "guided" | "managed" | "guard" | "none"
   hasOrderContext: boolean
   setupReady: boolean
   consent: boolean
   setupConflict: boolean
-  hasSuccessOrder: boolean
   approvalId: string | null
   recovery: boolean
+  paymentsEnabled: boolean
 }): CommercialCommands {
   const liveDraft = input.kind === "draft_unconfigured" || input.kind === "draft_ready"
   const liveOffered = input.kind === "offered_awaiting" || input.kind === "offered_expired" || input.kind === "offered_no_action"
   const quoteOpen = !input.quoteBlocked
-  const payOpen = !input.paymentBlocked && input.hasOrderContext
-  const upfrontOpen = input.guided === "due" || input.guided === "not_started" || input.guided === "failed" || input.guided === "authentication" || input.guided === "action_expired"
+  const payOpen = !input.paymentBlocked && input.hasOrderContext && input.paymentsEnabled && input.primary?.state !== "BLOCKED"
+  const journey = (id: string) => input.primary?.id === id && input.primary.state === "ACTION_REQUIRED"
   return {
-    createQuote: input.canStartQuote,
-    setTax: quoteOpen && liveDraft,
-    offer: quoteOpen && input.kind === "draft_ready",
+    createQuote: input.creatingQuote,
+    setTax: quoteOpen && input.primary?.id === "COMPLETE_QUOTE_CONFIGURATION",
+    offer: quoteOpen && journey("OFFER_QUOTE"),
     cancel: quoteOpen && (liveDraft || liveOffered),
     newVersion: quoteOpen && (liveDraft || liveOffered),
-    issueAcceptance: quoteOpen && (input.kind === "offered_expired" || input.kind === "offered_no_action"),
+    issueAcceptance: quoteOpen && journey("ISSUE_QUOTE_ACCEPTANCE"),
     revokeAcceptance: quoteOpen && liveOffered && input.actionOpen,
     supersede: quoteOpen && liveOffered,
-    issueUpfront: payOpen && input.mode === "guided" && upfrontOpen,
+    issueUpfront: payOpen && journey("START_UPFRONT_PAYMENT"),
     issueRecovery: payOpen && input.recovery,
-    issueManagedSetup: payOpen && input.mode === "managed" && input.hasSuccessOrder && !input.setupReady && !input.setupConflict,
-    approveSuccessFee: payOpen && input.mode === "managed" && input.setupReady && input.consent && !input.setupConflict && !input.approvalId,
+    issueManagedSetup: payOpen && journey("START_MANAGED_PAYMENT_SETUP"),
+    approveSuccessFee: !input.paymentBlocked && input.hasOrderContext && input.setupReady && input.consent && !input.setupConflict && !input.approvalId,
   }
 }
 

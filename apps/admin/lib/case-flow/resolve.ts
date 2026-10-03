@@ -397,8 +397,19 @@ function openAgreement(facts: CaseFlowFacts, kind: string): boolean {
   )
 }
 
-function openAction(facts: CaseFlowFacts, kind: string): boolean {
-  return facts.customerActions.some(action => action.kind === kind && action.status === "OPEN")
+/**
+ * An action the customer can still use.
+ *
+ * `OPEN` alone is not enough. `prepare_payment_action_v1` treats an action
+ * as finished once `expiresAt` has passed, and the resolver has to do the
+ * same or a dead link keeps the case on `WAIT_FOR_*`. Agreement acceptances
+ * stay on `openAgreement`: their expiry is already part of the commercial
+ * summary, and this helper is only the payment and setup links.
+ */
+function openAction(facts: CaseFlowFacts, kind: string, now: string): boolean {
+  return facts.customerActions.some(
+    action => action.kind === kind && action.status === "OPEN" && action.expiresAt > now,
+  )
 }
 
 function completedAction(facts: CaseFlowFacts, kind: string): boolean {
@@ -953,7 +964,7 @@ function guidedPrerequisiteRules(collector: Collector): void {
 
   block(collector, "UPFRONT_PAYMENT_OUTSTANDING", "money")
   if (payment.upfrontFailed || payment.upfrontAuthenticationRequired) return
-  if (payment.upfrontCollecting || openAction(facts, "GUIDED_PAYMENT") || openAction(facts, "PAYMENT_RECOVERY")) {
+  if (payment.upfrontCollecting || openAction(facts, "GUIDED_PAYMENT", collector.now) || openAction(facts, "PAYMENT_RECOVERY", collector.now)) {
     propose(collector, { id: "WAIT_FOR_UPFRONT_PAYMENT", reasonCodes: ["UPFRONT_COLLECTION_STARTED"] })
     return
   }
@@ -1053,7 +1064,7 @@ function managedPaymentRules(collector: Collector): void {
 
   block(collector, "MANAGED_PAYMENT_SETUP_INCOMPLETE", "money")
   if (payment.managedConsentRecorded) return
-  if (openAction(facts, "MANAGED_PAYMENT_SETUP")) {
+  if (openAction(facts, "MANAGED_PAYMENT_SETUP", collector.now)) {
     propose(collector, { id: "WAIT_FOR_MANAGED_PAYMENT_SETUP", reasonCodes: ["MANAGED_SETUP_LINK_OPEN"] })
     return
   }

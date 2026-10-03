@@ -55,6 +55,8 @@ export function CaseQuoteForm({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    // A normal draft. Guard discount qualification stays on Commercial;
+    // this form does not send a qualification snapshot or applyDiscount.
     await run("/api/operations/quotes", "create_draft", {
       serviceCode: choice.serviceCode,
       customerId,

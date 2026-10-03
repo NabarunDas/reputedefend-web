@@ -174,7 +174,7 @@ export function ResolveIncidentForm({ id, version, record }: { id: string; versi
 }
 
 export function ApproveButton({
-  operation, id, version, label, extras, record,
+  operation, id, version, label, extras, record, tone,
 }: {
   operation: string
   id: string
@@ -182,10 +182,11 @@ export function ApproveButton({
   label: string
   extras?: Record<string, unknown>
   record?: string
+  tone?: "danger"
 }) {
   const [message, setMessage] = useState("")
   return <span>
-    <button type="button" aria-label={forRecord(label, record)} onClick={() => {
+    <button type="button" className={tone === "danger" ? "danger" : undefined} aria-label={forRecord(label, record)} onClick={() => {
       void send(operation, { id, ...(extras || {}) }, version).then(result => {
         setMessage(result.message)
         if (result.ok) window.location.reload()

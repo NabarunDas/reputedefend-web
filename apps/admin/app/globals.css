@@ -6,12 +6,12 @@
   --accent: #009838;
   --lime: #C5E8B4;
   --paper: #F7F8F3;
-  --muted: #5D6D66;
+  --muted: #4A5C55;
   --ink: #10261F;
   --surface: #ffffff;
   --line: #dfe5dc;
   --danger: #8b1e1e;
-  --warning: #8a5a00;
+  --warning: #6b4500;
   --info: #0A6E3C;
   font-family: Arial, Helvetica, sans-serif;
   color: var(--ink);
@@ -27,6 +27,7 @@ a { color: var(--green-dark); }
 a:hover { color: var(--green); }
 button, input, textarea, select { font: inherit; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.admin-sidebar :focus-visible { outline-color: var(--lime); outline-offset: 2px; }
 ::selection { background: var(--lime); color: var(--ink); }
 
 .skip-link {
@@ -345,8 +346,35 @@ p:last-child { margin-bottom: 0; }
   padding: .9rem 1rem;
   margin: 0 0 1rem;
   border-radius: 0 .4rem .4rem 0;
+  overflow-wrap: anywhere;
 }
 .notice p { margin: 0; }
+.notice + .notice { margin-top: -.35rem; }
+.notice-warning {
+  background: #f7e7c4;
+  border-left: 3px solid var(--warning);
+  color: #3d2a00;
+  padding: .9rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 0 .4rem .4rem 0;
+  overflow-wrap: anywhere;
+}
+.notice-success {
+  background: color-mix(in srgb, var(--lime) 55%, white);
+  border-left: 3px solid var(--green-dark);
+  padding: .9rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 0 .4rem .4rem 0;
+}
+.notice-blocked {
+  background: var(--paper);
+  border-left: 3px solid var(--muted);
+  color: var(--ink);
+  padding: .9rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 0 .4rem .4rem 0;
+  overflow-wrap: anywhere;
+}
 
 .muted { color: var(--muted); font-size: .9rem; }
 .empty-state {
@@ -388,17 +416,35 @@ p:last-child { margin-bottom: 0; }
 button {
   background: var(--green);
   color: white;
-  border: 0;
+  border: 2px solid transparent;
   border-radius: .4rem;
   padding: .7rem 1rem;
   cursor: pointer;
   font-weight: 700;
 }
-button:disabled { opacity: .65; cursor: not-allowed; }
+button:disabled {
+  background: #d5ddd6;
+  color: #24312c;
+  border-color: #8aa096;
+  opacity: 1;
+  cursor: not-allowed;
+}
 .secondary {
   background: var(--paper);
   color: var(--green-dark);
-  border: 1px solid var(--line);
+  border: 1px solid #8aa096;
+}
+button.danger {
+  background: var(--surface);
+  color: var(--danger);
+  border: 2px solid var(--danger);
+}
+button.danger:hover:not(:disabled) { background: #f4d4d1; }
+button.secondary:disabled,
+button.danger:disabled {
+  background: #eef1ec;
+  color: #24312c;
+  border-color: #8aa096;
 }
 .button-link {
   display: inline-block;
@@ -456,20 +502,24 @@ form button { margin: 1rem 0; }
   overflow-x: auto;
   max-width: 100%;
 }
+.table-scroll:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 table { width: 100%; border-collapse: collapse; font-size: .95rem; text-align: left; }
 caption { text-align: left; color: var(--muted); padding: 0 0 .75rem; }
-th, td { padding: .85rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th, td { padding: .85rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 th { background: color-mix(in srgb, var(--lime) 22%, var(--surface)); font-size: .82rem; letter-spacing: .02em; }
 
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
   padding: .15rem .5rem;
   border-radius: 999px;
-  font-size: .75rem;
+  font-size: .8rem;
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
 }
+.badge-mark { font-weight: 800; }
 .badge-neutral { background: #ecefe8; color: var(--forest); }
 .badge-info { background: color-mix(in srgb, var(--lime) 55%, white); color: var(--green-dark); }
 .badge-success { background: color-mix(in srgb, var(--accent) 18%, white); color: var(--green-dark); }
@@ -552,6 +602,7 @@ summary { cursor: pointer; }
   margin: 0 0 1rem;
   border-radius: 0 .4rem .4rem 0;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 /* --- Today workbench ---------------------------------------------------- */
@@ -860,7 +911,10 @@ summary { cursor: pointer; }
 /* --- Evidence workspace -------------------------------------------------- */
 
 .journey-unknown { border-left-color: var(--warning); }
+.case-workspace,
 .commercial-workspace { min-width: 0; }
+.case-workspace .panel,
+.case-workspace .page-header { min-width: 0; max-width: 100%; }
 .commercial-workspace .panel,
 .commercial-workspace .journey-step { min-width: 0; max-width: 100%; }
 .commercial-headline { font-weight: 700; }

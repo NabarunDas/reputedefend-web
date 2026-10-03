@@ -10,6 +10,7 @@ import {
   SetDraftTaxForm,
 } from "../../../commercial/forms"
 import { ApproveSuccessFeeForm, IssuePaymentActionForm } from "../../../money/forms"
+import { Notice } from "../../../ui"
 import { CaseQuoteForm } from "./forms"
 
 /**
@@ -21,9 +22,7 @@ export function CommercialWorkspace({ model, caseDetail }: { model: CommercialWo
   const order = model.orderContext
   const showCreate = model.commands.createQuote && model.priceChoices.length === 1
   return <>
-    {model.notices.length > 0 && <div className="notice" role="alert">
-      {model.notices.map(notice => <p key={notice}>{notice}</p>)}
-    </div>}
+    {model.notices.map(notice => <Notice key={notice} tone="warning">{notice}</Notice>)}
 
     <section className="panel" aria-labelledby="commercial-next-heading">
       <h2 id="commercial-next-heading">Next action</h2>

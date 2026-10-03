@@ -4,7 +4,7 @@ import type { CommunicationsWorkspaceModel } from "@/lib/communications-workspac
 import { deliveryLabel, lifecycleLabel, type DeliveryStatus } from "@/lib/communications/model"
 import { conversationStateLabel, senderMatchLabel } from "@/lib/conversations/model"
 import type { CaseDetail } from "@/lib/cases/model"
-import { Badge } from "../../../ui"
+import { Badge, Notice } from "../../../ui"
 import { QueueCommunicationForm, ResendDraftForm, ReviewCommunicationForm } from "../../../communications/forms"
 import {
   AssignForm, AttentionForm, CloseForm, ContactRecoveryForm, DraftReplyForm, PhoneNoteForm, PromoteAttachmentForm,
@@ -18,11 +18,17 @@ function CaseAction({ model }: { model: CommunicationsWorkspaceModel }) {
     <h2 id="communications-next-heading">Next action</h2>
     <p className="commercial-headline">{action.label}</p>
     <p>{action.description}</p>
-    {action.kind === "here" && action.withheld && <p className="notice-danger">{action.withheld}</p>}
+    {action.kind === "here" && action.withheld && <Notice tone="warning">{action.withheld}</Notice>}
     {action.kind === "elsewhere" && (action.href
       ? <p><Link href={action.href}>{action.destinationLabel || "Open the next action"}</Link></p>
-      : <p className="notice-danger">That next action does not have a safe destination on this site.</p>)}
+      : <Notice tone="danger">That next action does not have a safe destination on this site.</Notice>)}
   </section>
+}
+
+function noticeTone(notice: string): "danger" | "warning" | "info" {
+  if (notice.startsWith("Communication records disagree")) return "danger"
+  if (/could not be loaded|incomplete|withheld|not shown/.test(notice)) return "warning"
+  return "info"
 }
 
 function roleLabel(role: "current" | "superseded" | "earlier"): string {
@@ -34,7 +40,7 @@ function roleLabel(role: "current" | "superseded" | "earlier"): string {
 export function CommunicationsWorkspace({ caseDetail, model }: { caseDetail: CaseDetail; model: CommunicationsWorkspaceModel }) {
   const current = model.communications.find(row => row.id === model.currentCommunicationId) ?? null
   return <>
-    {model.notices.map(notice => <p key={notice} className="notice-danger" role="status">{notice}</p>)}
+    {model.notices.map(notice => <Notice key={notice} tone={noticeTone(notice)}>{notice}</Notice>)}
     <CaseAction model={model} />
     <section className="panel" aria-labelledby="communications-situation-heading">
       <h2 id="communications-situation-heading">Contact and delivery</h2>

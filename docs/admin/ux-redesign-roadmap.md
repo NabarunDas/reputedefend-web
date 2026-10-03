@@ -14,7 +14,7 @@ The whole programme is additive to the existing domain. No phase in this roadmap
 | UX-6 | Evidence workspace | COMPLETE |
 | UX-7 | Commercial and money surfaces | COMPLETE |
 | UX-8 | Communications and conversations | COMPLETE |
-| UX-9 | Visual system, wording and accessibility | NOT STARTED |
+| UX-9 | Visual system, wording and accessibility | COMPLETE |
 | UX-10 | Customer-facing surfaces | NOT STARTED |
 
 ## UX-1 — Canonical case journey and next action engine
@@ -47,11 +47,11 @@ Complete. `/cases/[id]/commercial` reads `summariseCommercial`, `summarisePaymen
 
 ## UX-8 — Communications and conversations
 
-Complete. `/cases/[id]/communications` is the case communications workspace. `CASE_COMMUNICATIONS` goes there. `/communications` and `/conversations` stay the global queues and link back when a row belongs to a case. Contact and delivery stay `evidenceContactState` and the existing delivery statuses. See ux-communications-conversations.md. UX-9 is not started.
+Complete. `/cases/[id]/communications` is the case communications workspace. `CASE_COMMUNICATIONS` goes there. `/communications` and `/conversations` stay the global queues and link back when a row belongs to a case. Contact and delivery stay `evidenceContactState` and the existing delivery statuses. See ux-communications-conversations.md.
 
 ## UX-9 — Visual system, wording and accessibility
 
-The shared visual language, the central wording review across every surface, and the accessibility sweep extended from the Step 23 baseline to the redesigned pages. Deliberately late: a visual system settled before the surfaces exist would be a guess.
+Complete. The shared visual language, the wording review and the accessibility sweep over the Admin surfaces UX-2 to UX-8 already built. See ux-visual-wording-accessibility.md. No migration. UX-10 is not started.
 
 ## UX-10 — Customer-facing surfaces
 
@@ -59,4 +59,4 @@ The customer portal and the customer-visible previews brought into line with the
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 and UX-8 are complete. UX-9 onwards is not started, and no phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is not started, and no phase should be marked complete until its own acceptance evidence exists.

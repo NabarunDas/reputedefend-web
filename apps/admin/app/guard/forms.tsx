@@ -211,7 +211,7 @@ export function RevokePermissionForm({ coverageId, version }: { coverageId: stri
   }
   return <form onSubmit={submit}>
     <label>Revocation reason<textarea name="reason" required minLength={10} maxLength={2000} /></label>
-    <button type="submit" disabled={busy}>Revoke monitoring permission</button>
+    <button type="submit" className="danger" disabled={busy}>Revoke monitoring permission</button>
     <p className="muted">This does not cancel a separate case or financial order.</p>
     <p role="status">{message}</p>
   </form>

@@ -17,12 +17,14 @@ function ConversationForm({
   version,
   label,
   children,
+  tone,
 }: {
   operation: string
   conversationId: string
   version?: number
   label: string
   children?: ReactNode
+  tone?: "danger"
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
@@ -54,7 +56,7 @@ function ConversationForm({
   }
   return <form onSubmit={submit}>
     {children}
-    <button type="submit" disabled={busy}>{busy ? "Saving…" : label}</button>
+    <button type="submit" className={tone === "danger" ? "danger" : undefined} disabled={busy}>{busy ? "Saving…" : label}</button>
     <p role="status" className="muted">{message}</p>
   </form>
 }
@@ -75,7 +77,7 @@ export function AssignForm({ conversationId, version, assigned }: { conversation
 
 export function CloseForm({ conversationId, version, state }: { conversationId: string; version: number; state: string }) {
   if (state === "CLOSED") return <ConversationForm operation="reopen" conversationId={conversationId} version={version} label="Reopen" />
-  if (state === "OPEN" || state === "UNMATCHED") return <ConversationForm operation="close" conversationId={conversationId} version={version} label="Close" />
+  if (state === "OPEN" || state === "UNMATCHED") return <ConversationForm operation="close" conversationId={conversationId} version={version} label="Close conversation" tone="danger" />
   return null
 }
 

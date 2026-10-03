@@ -86,7 +86,7 @@ export function CancelForm({ obligationId, version }: { obligationId: string; ve
     <label>Cancel reason
       <input name="reason" required minLength={3} maxLength={200} />
     </label>
-    <button type="submit" disabled={busy}>Cancel check</button>
+    <button type="submit" className="danger" disabled={busy}>Cancel check</button>
     <p role="status">{message}</p>
   </form>
 }

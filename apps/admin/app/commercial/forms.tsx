@@ -176,7 +176,7 @@ export function RecordQualificationForm() {
     })
   }
   return <form onSubmit={submit}>
-    <p className="muted">Do not infer paid coverage from a monitoring request, included period, or Admin labels. QUALIFIED snapshots must pin the exact active Direct Guard coverage UUID. The database checks coverage and billing facts.</p>
+    <p className="muted">Do not infer paid coverage from a monitoring request, an included period, or an Admin label. A qualified snapshot has to name the exact active Direct Guard coverage. The database checks the coverage and the billing facts.</p>
     <label>Guard coverage ID<input name="coverageId" maxLength={36} /></label>
     <p className="muted">Required for QUALIFIED. Included, paused, ending, ended, or unpaid Direct Guard cannot qualify.</p>
     <label>Service
@@ -252,7 +252,7 @@ export function QuoteActionForm({ operation, quoteId, version, quoteVersionId, l
 }) {
   const { busy, message, run } = useCommand()
   return <form onSubmit={event => { event.preventDefault(); void run("/api/operations/quotes", operation, { quoteId, version, quoteVersionId, ...extra }) }}>
-    <button type="submit" disabled={busy}>{busy ? "Saving…" : label}</button>
+    <button type="submit" className={operation === "cancel" ? "danger" : undefined} disabled={busy}>{busy ? "Saving…" : label}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }
@@ -337,7 +337,7 @@ export function RevokeQuoteActionForm({ quoteId, actionId }: { quoteId: string; 
   }
   return <form onSubmit={submit}>
     <label>Reason<textarea name="reason" required minLength={10} maxLength={2000} rows={2} /></label>
-    <button type="submit" disabled={busy}>{busy ? "Revoking…" : "Revoke open quote action"}</button>
+    <button type="submit" className="danger" disabled={busy}>{busy ? "Revoking…" : "Revoke open quote action"}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }

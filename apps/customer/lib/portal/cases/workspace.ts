@@ -93,11 +93,13 @@ export type PresentedNextStep = {
   body: string | null
   timing: string | null
   support: string | null
+  href: string | null
   alsoWaiting: string | null
   remaining: string[]
 }
 
 export function presentNextStep(input: {
+  reference?: string
   status: CaseStatus
   workStage: WorkStage
   caseType: CaseType
@@ -105,13 +107,14 @@ export function presentNextStep(input: {
   attentionItems: CustomerCaseDetail["case"]["attentionItems"]
 }): PresentedNextStep {
   if (input.attentionItems.length > 0) {
-    const [first, ...rest] = input.attentionItems.map(presentAttention)
+    const [first, ...rest] = input.attentionItems.map(item => presentAttention(item, input.reference))
     const extra = rest.length
     return {
       title: first.label,
       body: null,
       timing: first.timing,
       support: first.support,
+      href: first.href,
       alsoWaiting: extra === 0
         ? null
         : extra === 1
@@ -128,6 +131,7 @@ export function presentNextStep(input: {
       body: "We've received your request and are reviewing the information you provided.",
       timing: null,
       support: null,
+      href: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -138,6 +142,7 @@ export function presentNextStep(input: {
       body: "Nothing is needed from you right now. We'll let you know when that changes.",
       timing: null,
       support: null,
+      href: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -148,6 +153,7 @@ export function presentNextStep(input: {
       body: "We've recorded the submission to Google. Nothing is needed from you right now.",
       timing: null,
       support: null,
+      href: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -158,6 +164,7 @@ export function presentNextStep(input: {
       body: "Your case is with Google. We'll update you when a decision or further action is recorded.",
       timing: null,
       support: null,
+      href: null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -168,21 +175,23 @@ export function presentNextStep(input: {
       body: "No further action is currently available for this case.",
       timing: null,
       support: null,
+      href: null,
       alsoWaiting: null,
       remaining: [],
     }
   }
   if (input.caseType === "PROFILE_RECOVERY" && input.outcomeCode === "RESTORED") {
-    return { title: "Your profile was restored", body: "This case is complete.", timing: null, support: null, alsoWaiting: null, remaining: [] }
+    return { title: "Your profile was restored", body: "This case is complete.", timing: null, support: null, href: null, alsoWaiting: null, remaining: [] }
   }
   if (input.caseType === "REVIEW_PROTECTION" && input.outcomeCode === "REMOVED") {
-    return { title: "The review was removed", body: "This case is complete.", timing: null, support: null, alsoWaiting: null, remaining: [] }
+    return { title: "The review was removed", body: "This case is complete.", timing: null, support: null, href: null, alsoWaiting: null, remaining: [] }
   }
   return {
     title: "Your case is complete",
     body: "No further action is currently needed for this case.",
     timing: null,
     support: null,
+    href: null,
     alsoWaiting: null,
     remaining: [],
   }

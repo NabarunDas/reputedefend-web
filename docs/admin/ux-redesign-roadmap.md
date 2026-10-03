@@ -55,7 +55,7 @@ Complete. The shared visual language, the wording review and the accessibility s
 
 ## UX-10 — Customer-facing surfaces
 
-In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the read-only case workspace. It does not complete an action inside the portal.
+In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the case workspace. UX-10E is documents and evidence, including the first action a customer completes inside the portal.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
@@ -63,21 +63,23 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 | UX-10B | Brand and portal shell | COMPLETE |
 | UX-10C | Dashboard and cases | COMPLETE |
 | UX-10D | Case workspace | COMPLETE |
-| UX-10E | Documents and evidence | NOT STARTED |
+| UX-10E | Documents and evidence | COMPLETE |
 | UX-10F | Quotes, agreements and permissions | NOT STARTED |
 | UX-10G | Payments and receipts | NOT STARTED |
 | UX-10H | Relaunch Guard | NOT STARTED |
 | UX-10I | Messages and Account | NOT STARTED |
 | UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
 
-UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The current repository/dev migration head is the applied UX-10D migration `20261003183002_customer_portal_case_workspace_v1.sql`. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
+UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The applied development head remains the UX-10D migration `20261003183002_customer_portal_case_workspace_v1.sql`. The repository head is the unapplied UX-10E migration `20261003194353_customer_portal_documents_evidence_v1.sql`. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
 UX-10B copies the approved ProfileRelaunch logo and icons into the customer app, applies the marketing palette with Inter and Manrope, and adds the customer header, footer, login presentation, and portal shell. At the end of UX-10B only Dashboard linked somewhere. No migration. See `docs/customer/ux-10b-brand-portal-shell.md`.
 
 UX-10C replaces the placeholder dashboard and adds `/portal/cases`. A customer sees only cases where `cases.customer_id` is the portal session customer. Attention is a presentation of live evidence obligations and usable secure actions. The portal still cannot complete those steps. `CUSTOMER_PORTAL_ENABLED` stays off. Its migration is applied to `profilerelaunch-dev`. See `docs/customer/ux-10c-dashboard-cases.md`.
 
-UX-10D adds `/portal/cases/[reference]`. The customer opens one owned case by its public reference and sees a read-only header, what happens next, a six-step progress presentation, a curated timeline, and case details. Case cards link with "View case". Direct portal actions remain deferred. Its migration is applied to `profilerelaunch-dev`. See `docs/customer/ux-10d-case-workspace.md`.
+UX-10D adds `/portal/cases/[reference]`. The customer opens one owned case by its public reference and sees a header, what happens next, a six-step progress presentation, a curated timeline, and case details. Case cards link with "View case". Its migration is applied to `profilerelaunch-dev`. See `docs/customer/ux-10d-case-workspace.md`.
+
+UX-10E adds `/portal/documents` and `/portal/cases/[reference]/documents`. A customer sees evidence requests, submitted evidence, and documents ProfileRelaunch has published for cases they directly own, and can upload a file for an eligible open request. The upload reuses the existing evidence records, storage, scan, and review lifecycle. Quote, agreement, permission, and payment actions stay on the secure email link. Its migration is not applied to `profilerelaunch-dev`. See `docs/customer/ux-10e-documents-evidence.md`.
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A, UX-10B, UX-10C and UX-10D are complete and UX-10E through UX-10J are not started. No phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A, UX-10B, UX-10C, UX-10D and UX-10E are complete and UX-10F through UX-10J are not started. No phase should be marked complete until its own acceptance evidence exists.

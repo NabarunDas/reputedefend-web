@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation"
 const linked = [
   { label: "Dashboard", href: "/portal" },
   { label: "Cases", href: "/portal/cases" },
+  { label: "Documents", href: "/portal/documents" },
 ] as const
 
-const unavailable = ["Documents", "Payments", "Relaunch Guard", "Account"] as const
+const unavailable = ["Payments", "Relaunch Guard", "Account"] as const
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"

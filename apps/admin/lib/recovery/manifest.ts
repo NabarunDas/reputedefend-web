@@ -371,6 +371,17 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal case", probe: "public.customer_portal_case_v1" },
   },
+  {
+    // Not applied to profilerelaunch-dev. The applied head remains UX-10D.
+    version: "20261003194353",
+    filename: "20261003194353_customer_portal_documents_evidence_v1.sql",
+    step: "UX-10E customer documents and evidence",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal documents", probe: "public.customer_portal_documents_v1" },
+  },
 ]
 
 /**

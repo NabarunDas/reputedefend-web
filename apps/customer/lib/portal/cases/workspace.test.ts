@@ -75,6 +75,7 @@ describe("customer progress presentation", () => {
 describe("what happens next", () => {
   it("uses the first UX-10C attention label and lists the rest", () => {
     const next = presentNextStep({
+      reference: "PR-26-ABCDEF",
       status: "AWAITING_CUSTOMER",
       workStage: "EVIDENCE_COLLECTION",
       caseType: "PROFILE_RECOVERY",
@@ -86,7 +87,8 @@ describe("what happens next", () => {
       ],
     })
     expect(next.title).toBe("Upload evidence")
-    expect(next.support).toBe("Use the secure case link in the ProfileRelaunch email to provide the requested evidence.")
+    expect(next.support).toBe("Upload the requested evidence in your customer portal.")
+    expect(next.href).toBe("/portal/cases/PR-26-ABCDEF/documents")
     expect(next.alsoWaiting).toBe("You also have 2 other steps waiting for you.")
     expect(next.remaining).toEqual(["Review your quote", "Complete your payment"])
     expect(next.body).toBeNull()
@@ -103,6 +105,7 @@ describe("what happens next", () => {
     })
     expect(oneMore.title).toBe("Accept your service agreement")
     expect(oneMore.support).toBe("Use the secure link in the ProfileRelaunch email for this step.")
+    expect(oneMore.href).toBeNull()
     expect(oneMore.alsoWaiting).toBe("You also have 1 other step waiting for you.")
     expect(oneMore.remaining).toEqual(["Confirm case-management permission"])
   })

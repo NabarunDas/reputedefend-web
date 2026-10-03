@@ -103,6 +103,7 @@ describe("customer dashboard", () => {
     expect(screen.getByRole("link", { name: "View all cases" })).toHaveAttribute("href", "/portal/cases?view=all")
     const cardLinks = [...(recent?.querySelectorAll(".case-list a") ?? [])]
     expect(cardLinks.map(link => link.getAttribute("href"))).toEqual([
+      "/portal/cases/PR-26-AAAAA2/documents",
       "/portal/cases/PR-26-AAAAA2",
       "/portal/cases/PR-26-AAAAA3",
       "/portal/cases/PR-26-AAAAA4",

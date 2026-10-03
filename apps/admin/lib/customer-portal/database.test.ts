@@ -85,7 +85,7 @@ beforeAll(async () => {
   const upgraded = await applyUpgrade(db, appliedHead)
   const upgradedNames = upgraded.applied.map(item => item.entry.filename)
   if (!upgradedNames.includes(migration)) throw new Error(`UX-10A migration missing from ${upgraded.head}`)
-  if (!upgradedNames.at(-1)?.endsWith("_customer_portal_case_workspace_v1.sql")) {
+  if (!upgradedNames.at(-1)?.endsWith("_customer_portal_documents_evidence_v1.sql")) {
     throw new Error(`upgrade stopped at ${upgraded.head}`)
   }
   await db.exec(`

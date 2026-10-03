@@ -106,4 +106,4 @@ The authenticated customer environment stays tracking-free. The layout does not 
 
 `CUSTOMER_PORTAL_ENABLED` stays off. This phase does not set it in Production, Preview, or Development, and it does not add a Customer Login link to the marketing site.
 
-Migration required: No. No Supabase object, Auth setting, or migration file changes. At the end of this phase the migration head was `20261003125151_customer_portal_auth_foundation_v1.sql`. That file remains the applied dev head. UX-10C adds a later, unapplied migration.
+Migration required: No. No Supabase object, Auth setting, or migration file changes. At the end of UX-10B the migration head was `20261003125151_customer_portal_auth_foundation_v1.sql`. UX-10C later added and applied `20261003154314_customer_portal_dashboard_cases_v1.sql`; UX-10B itself still has no database change.

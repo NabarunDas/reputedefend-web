@@ -320,11 +320,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "batch case flow projection", probe: "public.admin_case_flow_facts_v1" },
   },
   {
+    // Applied to profilerelaunch-dev on 2026-10-03. Supabase MCP initially
+    // assigned a generated ledger version; the history row was repaired
+    // immediately to the repository version below so remote and source stay aligned.
     version: "20261003120000",
     filename: "20261003120000_case_communications_workspace_v1.sql",
     step: "UX-8 case communications workspace",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "case communications read", probe: "public.admin_case_communications_v1" },

@@ -48,9 +48,9 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(30)
-    // A clean rebuild and profilerelaunch-dev now share the UX-10A migration head.
-    expect(migrationHead.version).toBe("20261003125151")
+    expect(migrationChain).toHaveLength(31)
+    // A clean rebuild includes the unapplied UX-10C migration. Dev is still at UX-10A.
+    expect(migrationHead.version).toBe("20261003154314")
     expect(appliedMigrationHead.version).toBe("20261003125151")
   })
 
@@ -286,7 +286,7 @@ describe("the recovery fingerprint", () => {
     expect(fingerprint.jobStateCounts["jobs.status=DEAD_LETTER"]).toBe(1)
     expect(fingerprint.outboxCounts).toEqual({ promoted: 1, unpromoted: 1 })
     expect(fingerprint.migrationSequence).toEqual(sequence)
-    expect(fingerprint.schemaHead).toBe("20261003125151")
+    expect(fingerprint.schemaHead).toBe(migrationHead.version)
   })
 
   it("carries no plaintext customer data", () => {

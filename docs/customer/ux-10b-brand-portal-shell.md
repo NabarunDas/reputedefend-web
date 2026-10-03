@@ -78,9 +78,9 @@ Relaunch Guard
 Account
 ```
 
-Only Dashboard is a link in this phase. It goes to `/portal` and sets `aria-current="page"`. The other destinations are non-links with `aria-disabled="true"` and the screen-reader text "not available yet". They are muted and have no href. There is no "Coming soon" label.
+In this phase only Dashboard was a link. It goes to `/portal` and sets `aria-current="page"`. The other destinations were non-links with `aria-disabled="true"` and the screen-reader text "not available yet". They are muted and have no href. There is no "Coming soon" label. UX-10C later links Cases to `/portal/cases` and leaves Documents, Payments, Relaunch Guard, and Account unavailable.
 
-Future routes are not created here. `/portal/cases`, `/portal/documents`, and the rest belong to the phase that implements them. An empty route would look available and would have to be secured before it had a real purpose.
+Future routes were not created here. `/portal/documents` and the rest belong to the phase that implements them. An empty route would look available and would have to be secured before it had a real purpose.
 
 The active item uses dark green text, heavier type, and a green underline. Colour is not the only signal.
 
@@ -106,4 +106,4 @@ The authenticated customer environment stays tracking-free. The layout does not 
 
 `CUSTOMER_PORTAL_ENABLED` stays off. This phase does not set it in Production, Preview, or Development, and it does not add a Customer Login link to the marketing site.
 
-Migration required: No. No Supabase object, Auth setting, or migration file changes. The migration head remains `20261003125151_customer_portal_auth_foundation_v1.sql`.
+Migration required: No. No Supabase object, Auth setting, or migration file changes. At the end of this phase the migration head was `20261003125151_customer_portal_auth_foundation_v1.sql`. That file remains the applied dev head. UX-10C adds a later, unapplied migration.

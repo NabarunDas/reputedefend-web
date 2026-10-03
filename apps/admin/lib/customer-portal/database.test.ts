@@ -83,8 +83,10 @@ beforeAll(async () => {
   )
   if (before !== 0) throw new Error("portal session function existed before the UX-10A upgrade")
   const upgraded = await applyUpgrade(db, appliedHead)
-  if (upgraded.applied.map(item => item.entry.filename).join(",")) {
-    if (upgraded.applied.at(-1)?.entry.filename !== migration) throw new Error(`upgrade stopped at ${upgraded.head}`)
+  const upgradedNames = upgraded.applied.map(item => item.entry.filename)
+  if (!upgradedNames.includes(migration)) throw new Error(`UX-10A migration missing from ${upgraded.head}`)
+  if (!upgradedNames.at(-1)?.endsWith("_customer_portal_dashboard_cases_v1.sql")) {
+    throw new Error(`upgrade stopped at ${upgraded.head}`)
   }
   await db.exec(`
     insert into auth.users(id, email, email_confirmed_at) values

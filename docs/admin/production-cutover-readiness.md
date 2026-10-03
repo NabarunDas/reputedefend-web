@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003125151 customer_portal_auth_foundation_v1, matching the repository migration head. |
+| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003125151 customer_portal_auth_foundation_v1. The repository also contains 20261003154314 customer_portal_dashboard_cases_v1, which is not applied. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -213,10 +213,11 @@ The applied head is `20261003125151 customer_portal_auth_foundation_v1`, file
 applied to `profilerelaunch-dev` on 2026-10-03 after independent review.
 Supabase MCP initially registered `20261003134234`; that single history row
 was repaired immediately to `20261003125151` so the remote ledger matches the
-repository filename. `pendingMigrations()` is now empty, and
-`apps/admin/lib/recovery/manifest.test.ts` asserts that the applied and
-repository heads are the same. Applied migrations stay immutable. Do not replay
-them.
+repository filename. The repository head is now the unapplied UX-10C migration
+`20261003154314_customer_portal_dashboard_cases_v1.sql`. `pendingMigrations()`
+contains that file only, and `appliedMigrationHead` stays on the UX-10A file.
+Do not apply UX-10C to `profilerelaunch-dev` as part of this change. Applied
+migrations stay immutable. Do not replay them.
 
 ### The ledger discrepancy, recorded rather than repaired
 

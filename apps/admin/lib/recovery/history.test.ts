@@ -4,10 +4,8 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
-// Remote history contains only what the dev project actually received. Every
-// migration in the tracked chain has now been applied, so this fixture is the
-// whole manifest; a reviewed migration still waiting to be applied would be
-// absent from it.
+// Remote history contains only what the dev project actually received.
+// UX-10C is in the repository and absent from this fixture until it is applied.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -28,7 +26,9 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through the applied UX-10A migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual([
+      "20261003154314_customer_portal_dashboard_cases_v1.sql",
+    ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261003125151",
       name: "customer_portal_auth_foundation_v1",

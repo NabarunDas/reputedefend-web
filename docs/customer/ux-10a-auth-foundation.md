@@ -13,7 +13,7 @@ The Customer Portal is not launched.
 - Request checks in `apps/customer/proxy.ts`.
 - Database tables and RPCs in `supabase/migrations/20261003125151_customer_portal_auth_foundation_v1.sql`.
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after review. The remote migration ledger is aligned to repository version `20261003125151`, `pendingMigrations()` is empty, and `appliedMigrationHead` is `20261003125151_customer_portal_auth_foundation_v1.sql`. The migration is now immutable.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after review. The remote migration ledger is aligned to repository version `20261003125151`, and `appliedMigrationHead` remains `20261003125151_customer_portal_auth_foundation_v1.sql`. When it was applied, it was the repository head and `pendingMigrations()` was empty. Later repository migrations can be pending without replaying this file. The migration is immutable.
 
 ## What this phase does not do
 

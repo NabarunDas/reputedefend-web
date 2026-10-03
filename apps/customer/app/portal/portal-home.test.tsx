@@ -9,12 +9,19 @@ import PortalLayout from "./layout"
 import { PortalHome } from "./portal-home"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
-vi.mock("next/navigation", () => ({ useRouter: () => router }))
+const nav = vi.hoisted(() => ({ pathname: "/portal" }))
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => nav.pathname }))
 
 const fetchMock = vi.fn()
 
+const emptyDashboard = {
+  summary: { activeCases: 0, attentionCases: 0, previousCases: 0 },
+  attentionCases: [],
+  recentCases: [],
+}
+
 function renderPortal() {
-  return render(<PortalLayout><PortalHome /></PortalLayout>)
+  return render(<PortalLayout><PortalHome dashboard={emptyDashboard} /></PortalLayout>)
 }
 
 beforeEach(() => {
@@ -34,22 +41,23 @@ describe("portal shell", () => {
     expect(screen.getByText("Secure customer area")).toBeTruthy()
     expect(screen.getByText("CUSTOMER PORTAL")).toBeTruthy()
     expect(screen.getByRole("heading", { level: 1, name: "Welcome to My ProfileRelaunch" })).toBeTruthy()
-    expect(screen.getByText("You're signed in securely.")).toBeTruthy()
-    expect(screen.getByRole("heading", { level: 2, name: "Your customer space" })).toBeTruthy()
-    expect(screen.getByText("Your ProfileRelaunch case information and actions will appear here.")).toBeTruthy()
-    expect(screen.getAllByRole("heading")).toHaveLength(2)
+    expect(screen.getByText("See what needs your attention and where your cases stand.")).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 2, name: "No active cases" })).toBeTruthy()
+    expect(screen.getByText("When you start a ProfileRelaunch case, it will appear here.")).toBeTruthy()
 
-    const nav = screen.getByRole("navigation", { name: "Customer portal" })
-    const labels = [...nav.querySelectorAll("li")].map(item => item.textContent?.replace("not available yet", "").trim())
+    const navigation = screen.getByRole("navigation", { name: "Customer portal" })
+    const labels = [...navigation.querySelectorAll("li")].map(item => item.textContent?.replace("not available yet", "").trim())
     expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Payments", "Relaunch Guard", "Account"])
     const dashboard = screen.getByRole("link", { name: "Dashboard" })
     expect(dashboard).toHaveAttribute("href", "/portal")
     expect(dashboard).toHaveAttribute("aria-current", "page")
-    expect(nav.querySelectorAll("a")).toHaveLength(1)
-    const unavailable = [...nav.querySelectorAll("[aria-disabled='true']")]
-    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN", "SPAN", "SPAN", "SPAN", "SPAN"])
+    const cases = screen.getByRole("link", { name: "Cases" })
+    expect(cases).toHaveAttribute("href", "/portal/cases")
+    expect(cases).not.toHaveAttribute("aria-current")
+    expect(navigation.querySelectorAll("a")).toHaveLength(2)
+    const unavailable = [...navigation.querySelectorAll("[aria-disabled='true']")]
+    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN", "SPAN", "SPAN", "SPAN"])
     expect(unavailable.map(item => item.textContent)).toEqual([
-      "Cases not available yet",
       "Documents not available yet",
       "Payments not available yet",
       "Relaunch Guard not available yet",
@@ -62,7 +70,10 @@ describe("portal shell", () => {
   it("does not create placeholder portal routes", () => {
     const portalDir = join(process.cwd(), "app/portal")
     expect(existsSync(join(portalDir, "page.tsx"))).toBe(true)
-    for (const name of ["cases", "documents", "payments", "guard", "account", "relaunch-guard"]) {
+    expect(existsSync(join(portalDir, "cases", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "cases", "[id]"))).toBe(false)
+    expect(existsSync(join(portalDir, "cases", "[reference]"))).toBe(false)
+    for (const name of ["documents", "payments", "guard", "account", "relaunch-guard"]) {
       expect(existsSync(join(portalDir, name))).toBe(false)
       expect(existsSync(join(portalDir, name, "page.tsx"))).toBe(false)
     }

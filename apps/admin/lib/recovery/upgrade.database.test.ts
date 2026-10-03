@@ -53,15 +53,16 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(15)
+    expect(chainAfter(checkpoint)).toHaveLength(16)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail now carries the UX-10A portal-auth migration, proving that the
+    // The tail now carries the unapplied UX-10C migration, proving that the
     // full additive chain still upgrades cleanly from this earlier checkpoint.
-    expect(pending.at(-1)?.version).toBe("20261003125151")
+    expect(pending.at(-1)?.version).toBe("20261003154314")
+    expect(pending.some(entry => entry.version === "20261003125151")).toBe(true)
     expect(upgradeMs).toBeGreaterThan(0)
     expect(await count(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name = 'provider_oauth_states'",

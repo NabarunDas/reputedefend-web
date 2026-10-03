@@ -95,6 +95,8 @@ export type ServiceOrder = {
   customerName: string
   businessName: string
   caseReference: string | null
+  /** Present on `admin_order_list_v1`. Null when the order is not on a case. */
+  caseId?: string | null
   serviceCode: string
   amountMinor: number
   currency: string
@@ -137,6 +139,17 @@ export function taxLabel(value: string): string {
   if (value === "INCLUSIVE") return "Inclusive"
   if (value === "EXCLUSIVE") return "Exclusive"
   if (value === "NOT_APPLICABLE") return "Not applicable"
+  return value
+}
+
+export function quoteStatusLabel(value: string): string {
+  if (value === "DRAFT") return "Draft"
+  if (value === "OFFERED") return "Offered"
+  if (value === "ACCEPTED") return "Accepted"
+  if (value === "DECLINED") return "Declined"
+  if (value === "EXPIRED") return "Expired"
+  if (value === "SUPERSEDED") return "Superseded"
+  if (value === "CANCELLED") return "Cancelled"
   return value
 }
 

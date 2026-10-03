@@ -137,7 +137,7 @@ Several recommendations are performed on this page. Linking them to the case's o
 
 This map decides nothing about whether an action is allowed. It decides where on the page to go. The section it points at is opened on arrival, which opens a disclosure and nothing else: the form inside is the form that was already there, with the server checks it already had. An action with no entry simply gets no link.
 
-Destinations outside this page — the evidence workspace, communications, Commercial, Money, Tasks, Complaints, the client and business records — are ordinary internal links built by UX-1's destination module, which cannot produce an external href.
+Destinations outside this page — the evidence workspace, communications, the case Commercial and money workspace, Tasks, Complaints, the client and business records — are ordinary internal links built by the destination module, which cannot produce an external href. Case-specific commercial and payment work goes to `/cases/[id]/commercial`. Catalogue administration and cross-case money operations stay on `/commercial` and `/money`.
 
 ## Progressive disclosure
 
@@ -190,6 +190,6 @@ Every cockpit component is a Server Component. Nothing was marked `"use client"`
 - **UX-4** — Today.
 - **UX-5** — navigation.
 - **UX-6** — the evidence workspace, which is where the manual scan refresh and the request-fulfilment step should become first-class actions rather than things the cockpit can only point at.
-- **UX-7** — Commercial and Money, including the per-case filters whose absence makes the model report the commercial and payment position as possibly incomplete.
+- **UX-7** — in progress. The case Commercial and money workspace is `/cases/[id]/commercial`. See ux-commercial-money.md. A capped commercial or payment list is still reported as incomplete rather than treated as empty.
 - **UX-8** — communications, including contact recovery.
 - **UX-9** — the shared visual system and the central wording review; the cockpit uses the existing Admin tokens and adds no new palette. The task list still prints its stored `kind` and `status` columns verbatim — `FOLLOW_UP`, `OPEN` — which predates UX-2 and was left alone because UX-2 was asked to keep the task functionality as it was. Those are the legacy task record's own columns rather than anything from the flow model, and humanising them belongs with the rest of the wording work.

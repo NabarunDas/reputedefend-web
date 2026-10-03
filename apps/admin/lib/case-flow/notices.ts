@@ -45,14 +45,14 @@ export const blockerCatalogue = {
     category: "DATA",
     title: "The commercial position could not be confirmed",
     explanation:
-      "The quote list this view reads is capped, and this case was not in the page that came back. An empty result is therefore not proof that no quote exists, so no quote is being recommended. Open Commercial and check.",
+      "The quote list this view reads is capped, and this case was not in the page that came back. An empty result is therefore not proof that no quote exists, so no quote is being recommended. Open this case's Commercial and money workspace and check.",
     owner: "ADMIN",
   },
   PAYMENT_STATE_UNKNOWN: {
     category: "DATA",
     title: "The payment position could not be confirmed",
     explanation:
-      "The order list this view reads did not come back complete, so the absence of an order here does not mean there is none. Open Money and check before issuing anything.",
+      "The order list this view reads did not come back complete, so the absence of an order here does not mean there is none. Open this case's Commercial and money workspace and check before issuing anything.",
     owner: "ADMIN",
   },
   QUOTE_TAX_UNCONFIRMED: {

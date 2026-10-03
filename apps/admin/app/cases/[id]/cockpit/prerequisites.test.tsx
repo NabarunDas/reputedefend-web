@@ -69,7 +69,7 @@ describe("case prerequisites", () => {
     prerequisitesFor("guidedWaitingForPayment")
     const items = screen.getAllByRole("listitem")
     expect(items[0].querySelector("a")).toBeNull()
-    expect(items[1].querySelector("a")).toHaveAttribute("href", "/money")
+    expect(items[1].querySelector("a")).toHaveAttribute("href", `/cases/${cockpitScenarios.guidedWaitingForPayment.caseId}/commercial`)
   })
 
   it("does not turn the list into a row of commands", () => {

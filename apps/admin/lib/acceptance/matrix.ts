@@ -275,7 +275,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
   },
   {
     area: "Commercial catalogue, quotes and orders",
-    routes: ["/commercial"],
+    routes: ["/commercial", "/cases/[id]/commercial"],
     surfaces: ["/api/operations/catalogue", "/api/operations/quotes"],
     action: "Price a service, offer a quote and follow it to an order.",
     expected:
@@ -289,6 +289,8 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "lib/commerce/quote-surface-fixes.database.test.ts",
       "lib/commerce/command.test.ts",
       "app/commercial/page.test.tsx",
+      "app/cases/[id]/commercial/page.test.tsx",
+      "lib/commercial-workspace/model.test.ts",
       "lib/workday.database.test.ts",
     ],
     status: "PASS",

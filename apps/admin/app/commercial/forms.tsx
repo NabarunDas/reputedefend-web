@@ -1,5 +1,6 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -321,7 +322,7 @@ export function OfferQuoteActionForm({ quoteId, expiresAt }: { quoteId: string; 
     <label>Action expires<input name="expiresAt" type="datetime-local" required defaultValue={expiresAt} /></label>
     <button type="submit" disabled={busy}>{busy ? "Creating…" : "Issue customer acceptance link"}</button>
     {message && <p role="status">{message}</p>}
-    {actionUrl && <p><label>Customer link<input readOnly value={actionUrl} /></label></p>}
+    {actionUrl && <p role="status">This is a one-time customer link. Copy it now. It cannot be shown again. {LOST_QUOTE_LINK_NOTE}<label>Customer link<input readOnly value={actionUrl} /></label></p>}
   </form>
 }
 

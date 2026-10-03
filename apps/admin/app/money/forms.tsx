@@ -1,5 +1,6 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import { LOST_PAYMENT_LINK_NOTE } from "@/lib/payments/model"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -64,8 +65,8 @@ export function IssuePaymentActionForm({
     <label>Expires<input name="expiresAt" type="datetime-local" required min={minFrom} suppressHydrationWarning /></label>
     {operation === "issue_invoice_fallback" && <p>This creates a TEST-MODE hosted payment fallback. It does not mark the obligation paid. Sign in again within the last five minutes.</p>}
     <button type="submit" disabled={busy}>{label}</button>
-    {actionUrl && <p><a href={actionUrl}>Open the one-time customer link</a></p>}
-    <p role="status">{message}</p>
+    <p role="status">{message}{actionUrl ? ` This is a one-time customer link. Copy it now. It cannot be shown again. ${LOST_PAYMENT_LINK_NOTE}` : ""}</p>
+    {actionUrl && <p><label>Customer link<input readOnly value={actionUrl} /></label></p>}
   </form>
 }
 

@@ -53,7 +53,7 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(14)
+    expect(chainAfter(checkpoint)).toHaveLength(15)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
@@ -62,7 +62,7 @@ describe("upgrading a database that is already running", () => {
     // The tail carries the UX-3 batch projection, which is what proved that
     // migration applied cleanly onto the real chain before it was applied to
     // the dev project, and still proves it for any later rebuild.
-    expect(pending.at(-1)?.version).toBe("20261003120000")
+    expect(pending.at(-1)?.version).toBe("20261003125151")
     expect(upgradeMs).toBeGreaterThan(0)
     expect(await count(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name = 'provider_oauth_states'",

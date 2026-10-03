@@ -239,16 +239,16 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head on profilerelaunch-dev is 20261003120000 case_communications_workspace_v1, matching the repository migration head.",
+      "The applied migration head on profilerelaunch-dev remains 20261003120000 case_communications_workspace_v1. The repository head is 20261003125151 customer_portal_auth_foundation_v1, which has not been applied.",
     status: "READY",
     evidence:
-      "UX-8 case communications was independently reviewed, applied to profilerelaunch-dev on 2026-10-03 and verified in the live schema. Supabase MCP initially registered a generated ledger timestamp, which was repaired immediately to 20261003120000 so the remote ledger and repository filename are aligned. apps/admin/lib/recovery/manifest.ts records the same applied head.",
+      "UX-8 case communications was independently reviewed, applied to profilerelaunch-dev on 2026-10-03 and verified in the live schema. apps/admin/lib/recovery/manifest.ts records that applied head and lists supabase/migrations/20261003125151_customer_portal_auth_foundation_v1.sql as the only pending migration. Do not apply it from this readiness record.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
-      "Read the migration head of the production database and compare it with migrationHead in the manifest. Write both into the release record.",
+      "Read the migration head of the production database and compare it with appliedMigrationHead in the manifest. Record pendingMigrations() separately. Write both into the release record.",
     stopCondition:
       "If the heads differ, stop. Do not replay a migration to close the gap and do not edit an applied migration. Establish which chain the database actually carries first.",
   },

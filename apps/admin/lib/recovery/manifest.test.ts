@@ -16,20 +16,22 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("keeps the applied dev head aligned with the repository through UX-8", () => {
+  it("keeps the applied dev head at UX-8 while the repository head is the unapplied portal migration", () => {
     expect(appliedMigrationHead.filename).toBe("20261003120000_case_communications_workspace_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261003120000_case_communications_workspace_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead).toBe(migrationHead)
+    expect(migrationHead.filename).toBe("20261003125151_customer_portal_auth_foundation_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
+    expect(appliedMigrationHead).not.toBe(migrationHead)
   })
 
   it("never marks any migration as safe to replay", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no pending migrations after UX-8 was applied to dev", () => {
-    expect(pendingMigrations()).toEqual([])
+  it("leaves only the UX-10A portal migration waiting to be applied", () => {
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261003125151_customer_portal_auth_foundation_v1.sql",
+    ])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

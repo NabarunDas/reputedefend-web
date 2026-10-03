@@ -150,6 +150,19 @@ export const environmentContract: readonly EnvVariable[] = [
     readBy: ["apps/customer/lib/config.ts"],
   },
   {
+    name: "CUSTOMER_PORTAL_ENABLED",
+    apps: ["customer"],
+    classification: "FEATURE_GATE",
+    secret: false,
+    scope: "PRODUCTION_AND_PREVIEW",
+    atAdminCutover: "OPTIONAL",
+    controls: "The Customer Portal login. Exactly \"true\" opens /login and the portal session routes, and it does not change customer action links.",
+    whenAbsent: "Portal login, /portal and the portal auth routes stay closed. Existing customer action links keep using CUSTOMER_AUTH_ENABLED.",
+    blocksAdminLaunch: false,
+    blocksOptionalCapabilityOnly: true,
+    readBy: ["apps/customer/lib/portal/config.ts"],
+  },
+  {
     name: "CUSTOMER_ORIGIN",
     apps: ["admin", "customer", "marketing"],
     classification: "REQUIRED_FOR_OPTIONAL_FEATURE",
@@ -176,6 +189,7 @@ export const environmentContract: readonly EnvVariable[] = [
     readBy: [
       "apps/admin/lib/auth/config.ts",
       "apps/customer/lib/config.ts",
+      "apps/customer/lib/portal/config.ts",
       "lib/cases/intake.ts",
       "lib/enquiries/intake.ts",
       "lib/enquiry-config.ts",

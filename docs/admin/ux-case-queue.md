@@ -221,7 +221,7 @@ The remote ledger assigned `20261002194215` rather than the version the local CL
 
 The live function was verified on the project after application: `SECURITY DEFINER` is on, `search_path` is pinned empty, `service_role` can execute it, `PUBLIC`, `anon` and `authenticated` cannot, and an invalid Admin session returns `NULL` rather than data. The Supabase security advisor reported no new finding; the existing unrelated warnings are unchanged.
 
-The recovery manifest records this migration as `appliedToDev: true`. A later repository migration, `20261003120000_case_communications_workspace_v1.sql`, is not applied to `profilerelaunch-dev`, so `pendingMigrations()` is that version. The release readiness check still reports `supabase.applied-head` as `READY`, and it names the unapplied migration rather than claiming the queue is empty.
+The recovery manifest records this migration as `appliedToDev: true`. UX-8 (`20261003120000_case_communications_workspace_v1.sql`) was later applied as well. The only migration still waiting is `20261003125151_customer_portal_auth_foundation_v1.sql`. The release readiness check still reports `supabase.applied-head` as `READY`, and it names that unapplied portal migration rather than claiming the queue is empty.
 
 This is the development project. Nothing has been applied to a production database, no Supabase branch was created, and no cost-bearing cloud resource exists. The migration chain, the recovery rehearsal and the upgrade path continue to be tested in PGlite, which is local and disposable.
 

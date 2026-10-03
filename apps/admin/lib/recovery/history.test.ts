@@ -26,9 +26,11 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps the applied UX-8 migration in remote history with no pending migrations", () => {
+  it("keeps remote history at the applied UX-8 migration while UX-10A stays unapplied", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual([
+      "20261003125151_customer_portal_auth_foundation_v1.sql",
+    ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261003120000",
       name: "case_communications_workspace_v1",

@@ -269,13 +269,16 @@ function collectKeys(value: unknown, found = new Set<string>()) {
 }
 
 async function attentionFor(session: string, reference: string) {
-  let cursor: { submittedAt: string; reference: string } | null = null
+  let beforeTime: string | null = null
+  let beforeRef: string | null = null
   for (let page = 0; page < 5; page += 1) {
-    const result: CasePage | null = await rpc<CasePage | null>("customer_portal_cases_v1", [session, "all", cursor?.submittedAt ?? null, cursor?.reference ?? null])
-    const found: CaseRow | undefined = result?.cases.find(item => item.reference === reference)
+    const result: CasePage | null = await rpc<CasePage | null>("customer_portal_cases_v1", [session, "all", beforeTime, beforeRef])
+    if (!result) return null
+    const found = result.cases.find(item => item.reference === reference)
     if (found) return found.attentionItems
-    if (!result?.nextCursor) return null
-    cursor = result.nextCursor
+    if (!result.nextCursor) return null
+    beforeTime = result.nextCursor.submittedAt
+    beforeRef = result.nextCursor.reference
   }
   return null
 }

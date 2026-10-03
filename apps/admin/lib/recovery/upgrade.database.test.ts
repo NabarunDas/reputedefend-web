@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail now carries the unapplied UX-10D migration, proving that the
-    // full additive chain still upgrades cleanly from this earlier checkpoint.
+    // The tail now carries the UX-10D migration, proving that the full
+    // additive chain still upgrades cleanly from this earlier checkpoint.
     expect(pending.at(-1)?.version).toBe("20261003183002")
     expect(pending.some(entry => entry.version === "20261003154314")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003125151")).toBe(true)

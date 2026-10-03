@@ -1,6 +1,6 @@
 # UX-8 — Communications and conversations
 
-The case page `/cases/[id]/communications` is where an operator reads and acts on communication for one case. UX-1 to UX-7 are complete. UX-8 is in progress. UX-9 is not started.
+The case page `/cases/[id]/communications` is where an operator reads and acts on communication for one case. UX-1 to UX-8 are complete. UX-9 is not started.
 
 `CASE_COMMUNICATIONS` now resolves to that route. The path is built only by `caseDestination` after the case id has passed the existing UUID check. `/communications` remains the outbound queue. `/conversations` remains the inbox and the unmatched-triage surface. A global row with a valid case id links back to the case workspace. Neither global page is removed, and neither is filtered down in the browser to stand in for the case page.
 

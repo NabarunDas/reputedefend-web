@@ -259,7 +259,8 @@ export function buildCommunicationsWorkspaceModel(input: {
     }
   }
   const disagree = notices.some(notice => notice.startsWith("Communication records disagree"))
-  const rowActionsBlocked = closed || historyMissing || historyIncomplete || disagree || !current.row
+  const historyBlocked = closed || historyMissing || historyIncomplete || disagree
+  const rowActionsBlocked = historyBlocked || !current.row
 
   if (historyMissing) {
     notices.unshift("The case communication history could not be loaded. That is not the same as no message having been prepared.")
@@ -279,7 +280,7 @@ export function buildCommunicationsWorkspaceModel(input: {
       ? "The control for that action is withheld because the communication records disagree."
       : null
 
-  const draftEvidenceRequest = !rowActionsBlocked && journey(input.primaryAction, "PREPARE_EVIDENCE_REQUEST_MESSAGE") && evidenceRequests.length > 0
+  const draftEvidenceRequest = !historyBlocked && !current.row && journey(input.primaryAction, "PREPARE_EVIDENCE_REQUEST_MESSAGE") && evidenceRequests.length > 0
   if (!closed && !historyMissing && !historyIncomplete && !disagree && journey(input.primaryAction, "PREPARE_EVIDENCE_REQUEST_MESSAGE") && evidenceRequests.length === 0) {
     notices.push("CaseFlow asked for an evidence-request message, but this case has no open evidence request to attach it to.")
   }

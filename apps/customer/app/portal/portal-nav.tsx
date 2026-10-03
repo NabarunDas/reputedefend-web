@@ -1,26 +1,40 @@
-const destinations = [
+"use client"
+
+import { usePathname } from "next/navigation"
+
+const linked = [
   { label: "Dashboard", href: "/portal" },
-  { label: "Cases" },
-  { label: "Documents" },
-  { label: "Payments" },
-  { label: "Relaunch Guard" },
-  { label: "Account" },
+  { label: "Cases", href: "/portal/cases" },
 ] as const
 
+const unavailable = ["Documents", "Payments", "Relaunch Guard", "Account"] as const
+
+function current(pathname: string, href: string) {
+  if (href === "/portal") return pathname === "/portal"
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 export function PortalNav() {
+  const pathname = usePathname()
   return (
     <nav className="portal-nav" aria-label="Customer portal">
       <ul className="portal-nav-list">
-        {destinations.map(item => (
-          <li key={item.label}>
-            {"href" in item ? (
-              <a className="portal-nav-link" href={item.href} aria-current="page">{item.label}</a>
-            ) : (
-              <span className="portal-nav-disabled" aria-disabled="true">
+        {linked.map(item => {
+          const active = current(pathname, item.href)
+          return (
+            <li key={item.label}>
+              <a className="portal-nav-link" href={item.href} {...(active ? { "aria-current": "page" as const } : {})}>
                 {item.label}
-                <span className="sr-only"> not available yet</span>
-              </span>
-            )}
+              </a>
+            </li>
+          )
+        })}
+        {unavailable.map(label => (
+          <li key={label}>
+            <span className="portal-nav-disabled" aria-disabled="true">
+              {label}
+              <span className="sr-only"> not available yet</span>
+            </span>
           </li>
         ))}
       </ul>

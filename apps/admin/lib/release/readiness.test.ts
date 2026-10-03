@@ -154,14 +154,15 @@ describe("readiness model", () => {
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations()).toEqual([])
-    expect(appliedMigrationHead.version).toBe("20261003125151")
-    expect(migrationHead.version).toBe("20261003125151")
+    expect(appliedMigrationHead.version).toBe("20261003154314")
+    expect(migrationHead.version).toBe("20261003154314")
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
-    expect(supabase?.requirement).toContain("customer_portal_auth_foundation_v1")
+    expect(supabase?.requirement).toContain("customer_portal_dashboard_cases_v1")
     expect(supabase?.evidence).toContain("profilerelaunch-dev")
     expect(supabase?.evidence).toContain("2026-10-03")
+    expect(supabase?.evidence).toContain("20261003154314")
     expect(supabase?.externalAction).toBeNull()
   })
 })

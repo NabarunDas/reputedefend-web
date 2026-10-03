@@ -345,6 +345,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal session", probe: "public.customer_portal_session_v1" },
   },
+  {
+    // Applied to profilerelaunch-dev on 2026-10-03. Supabase MCP initially
+    // registered 20261003180252; the history row was repaired immediately to
+    // 20261003154314 so the remote ledger matches the repository filename.
+    version: "20261003154314",
+    filename: "20261003154314_customer_portal_dashboard_cases_v1.sql",
+    step: "UX-10C customer dashboard and cases",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal dashboard", probe: "public.customer_portal_dashboard_v1" },
+  },
 ]
 
 /**

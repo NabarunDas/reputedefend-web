@@ -21,7 +21,7 @@ Where the existing rows support it, a location shows the business and location n
 
 Monitoring sentences are only: No issue detected; Change detected — being reviewed; Profile unavailable — being reviewed; Check incomplete. Profile availability is three-state: available, unavailable, or unknown. Unknown is `null` and is not described as unavailable. An open or acknowledged alert is shown as “ProfileRelaunch is reviewing a detected issue.”
 
-A recorded cancellation request that the provider has not confirmed says the request is awaiting confirmation. The page says cancellation is scheduled only when `cancel_at_period_end` is true. An undo that has not been confirmed by the provider is not described as already reversed.
+A recorded cancellation request that the provider has not confirmed says the request is awaiting confirmation. The page says cancellation is scheduled only when `cancel_at_period_end` is true. `UNDO_PERIOD_END` stays a request awaiting confirmation until the existing provider-confirmation path clears that intent. While it is pending, the portal offers neither another period-end cancellation nor another undo.
 
 The page may say that Guard is monitored according to the active service arrangement. It does not state a check time, a response time, or any other operating commitment.
 
@@ -34,7 +34,7 @@ Every read and command starts from `admin_private.customer_portal_actor_v1`. The
 The portal exposes only existing customer actions, and only for an owned location:
 
 - `GUARD_PERMISSION` accept and decline, using `GUARD_PERMISSION_V1` and the existing permission helpers.
-- `GUARD_SUBSCRIPTION_START` recurring-consent acceptance, then checkout, recovery, period-end cancellation, undo, and immediate-cancellation review only when that action is already bound to the subscription, is still within its existing window, and `admin_private.customer_portal_guard_subscription_capabilities_v1` says the current lifecycle makes the operation meaningful. Checkout is limited to `PENDING_CUSTOMER`, `PENDING_PROVIDER`, and `INCOMPLETE`. Recovery is only `PAST_DUE`. `CANCELED` and `ENDED` expose none of these mutations. The portal command checks the same helper again. The emailed command does not use it.
+- `GUARD_SUBSCRIPTION_START` recurring-consent acceptance, then checkout, recovery, period-end cancellation, undo, and immediate-cancellation review only when that action is already bound to the subscription, is still within its existing window, and `admin_private.customer_portal_guard_subscription_capabilities_v1` says the current lifecycle makes the operation meaningful. Checkout is limited to `PENDING_CUSTOMER`, `PENDING_PROVIDER`, and `INCOMPLETE`. Recovery is only `PAST_DUE`. A pending `UNDO_PERIOD_END` intent closes period-end cancellation and undo. `CANCELED` and `ENDED` expose none of these mutations. The portal command checks the same helper again. The emailed command does not use it.
 - `GUARD_PRICE_CHANGE_ACCEPTANCE` accept and decline, using the stored notice. No response is not acceptance.
 
 Permission decline now lives in `admin_private.decline_guard_permission_v1`. Checkout, recovery, and cancellation now live in `admin_private.customer_guard_subscription_apply_v1`. `public.customer_guard_subscription_command_v1` and `admin_private.customer_action_command_core_v1` delegate to those helpers. The emailed command still accepts its existing `subscriptionId` fallback. The portal command rejects `subscriptionId`, `customerId`, and `coverageId`.

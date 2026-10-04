@@ -443,16 +443,52 @@ describe("customer portal relaunch guard", () => {
     expect((await post("start_checkout")).status).toBe("unavailable")
     expect((await post("request_period_end_cancellation")).status).toBe("unavailable")
 
+    expect((await post("undo_period_end_cancellation")).status).toBe("success")
+    expect((await rows<{
+      requested_cancel_at_period_end: boolean
+      cancellation_intent: string | null
+      cancel_at_period_end: boolean
+    }>(
+      "select requested_cancel_at_period_end, cancellation_intent, cancel_at_period_end from public.guard_subscriptions where id = $1",
+      [subscriptionId],
+    ))[0]).toEqual({
+      requested_cancel_at_period_end: false,
+      cancellation_intent: "UNDO_PERIOD_END",
+      cancel_at_period_end: false,
+    })
+    current = await location()
+    expect(current.cancellation).toBe("Your request to keep this subscription is recorded and is awaiting confirmation.")
+    expect(JSON.stringify(current)).not.toMatch(/The cancellation has been reversed/)
+    expect(subscription(current)).toMatchObject({
+      checkout: false, periodEndCancellation: false, undoPeriodEndCancellation: false,
+    })
+    expect((await post("request_period_end_cancellation")).status).toBe("unavailable")
+    expect((await post("undo_period_end_cancellation")).status).toBe("unavailable")
+    expect((await rows<{ cancellation_intent: string | null }>(
+      "select cancellation_intent from public.guard_subscriptions where id = $1",
+      [subscriptionId],
+    ))[0].cancellation_intent).toBe("UNDO_PERIOD_END")
+
+    await db.query("select admin_private.guard_confirm_cancel_flag_v1($1, false)", [subscriptionId])
+    current = await location()
+    expect(current.cancellation).toBeUndefined()
+    expect(subscription(current)).toMatchObject({
+      checkout: false, periodEndCancellation: true, undoPeriodEndCancellation: false,
+    })
+    expect((await rows<{ cancellation_intent: string | null; cancel_at_period_end: boolean }>(
+      "select cancellation_intent, cancel_at_period_end from public.guard_subscriptions where id = $1",
+      [subscriptionId],
+    ))[0]).toEqual({ cancellation_intent: null, cancel_at_period_end: false })
+
     await setState("lifecycle_state = 'CANCEL_AT_PERIOD_END', cancel_at_period_end = true, requested_cancel_at_period_end = true, cancellation_intent = 'CANCEL_AT_PERIOD_END'")
     current = await location()
     expect(current.cancellation).toBe("Cancellation is scheduled for the end of the paid period.")
     expect(subscription(current)).toMatchObject({ checkout: false, periodEndCancellation: false, undoPeriodEndCancellation: true })
 
-    await setState("lifecycle_state = 'ACTIVE', cancel_at_period_end = false, requested_cancel_at_period_end = false, cancellation_intent = 'UNDO_PERIOD_END'")
+    await setState("lifecycle_state = 'ACTIVE', cancel_at_period_end = true, requested_cancel_at_period_end = false, cancellation_intent = 'UNDO_PERIOD_END'")
     current = await location()
-    expect(current.cancellation).toBe("The cancellation has been reversed.")
-    expect(subscription(current)?.undoPeriodEndCancellation).toBe(false)
-    expect(subscription(current)?.checkout).toBe(false)
+    expect(current.cancellation).toBe("Your request to keep this subscription is recorded. Cancellation stays scheduled until the provider confirms the change.")
+    expect(subscription(current)).toMatchObject({ periodEndCancellation: false, undoPeriodEndCancellation: false, checkout: false })
 
     await setState("lifecycle_state = 'PAST_DUE', cancellation_intent = null")
     current = await location()

@@ -33,7 +33,10 @@ $$;
 -- secure-link command does not call this helper and keeps its own contract.
 -- Checkout is only an initial setup step. Recovery is only PAST_DUE.
 -- Period-end cancellation and its undo follow the stored request and the
--- provider-confirmed flag. Ended subscriptions gain no mutation.
+-- provider-confirmed flag. An UNDO_PERIOD_END intent is still awaiting
+-- provider confirmation, so neither another cancellation nor another undo
+-- is offered until that confirmation clears the intent. Ended subscriptions
+-- gain no mutation.
 CREATE FUNCTION admin_private.customer_portal_guard_subscription_capabilities_v1(
   p_subscription public.guard_subscriptions,
   p_consent boolean
@@ -51,13 +54,15 @@ AS $$
       AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
       AND p_subscription.cancel_at_period_end IS NOT TRUE
       AND p_subscription.requested_cancel_at_period_end IS NOT TRUE
-      AND p_subscription.cancellation_intent IS DISTINCT FROM 'CANCEL_AT_PERIOD_END',
+      AND p_subscription.cancellation_intent IS DISTINCT FROM 'CANCEL_AT_PERIOD_END'
+      AND p_subscription.cancellation_intent IS DISTINCT FROM 'UNDO_PERIOD_END',
     'undoPeriodEndCancellation', coalesce(p_consent, false)
       AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
+      AND p_subscription.cancellation_intent IS DISTINCT FROM 'UNDO_PERIOD_END'
       AND (
         p_subscription.cancel_at_period_end IS TRUE
         OR p_subscription.requested_cancel_at_period_end IS TRUE
-        OR p_subscription.cancellation_intent = 'CANCEL_AT_PERIOD_END'
+        OR p_subscription.cancellation_intent IS NOT DISTINCT FROM 'CANCEL_AT_PERIOD_END'
       ),
     'immediateCancellationReview', coalesce(p_consent, false)
       AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
@@ -466,14 +471,14 @@ BEGIN
   cancellation := CASE
     WHEN sub.id IS NULL THEN NULL
     WHEN sub.cancellation_intent = 'REQUEST_IMMEDIATE_CANCELLATION' THEN 'Immediate cancellation is with ProfileRelaunch for review. A refund is not promised.'
-    WHEN sub.cancel_at_period_end IS TRUE AND sub.cancellation_intent = 'UNDO_PERIOD_END'
+    WHEN sub.cancellation_intent = 'UNDO_PERIOD_END' AND sub.cancel_at_period_end IS TRUE
       THEN 'Your request to keep this subscription is recorded. Cancellation stays scheduled until the provider confirms the change.'
+    WHEN sub.cancellation_intent = 'UNDO_PERIOD_END'
+      THEN 'Your request to keep this subscription is recorded and is awaiting confirmation.'
     WHEN sub.cancel_at_period_end IS TRUE
       THEN 'Cancellation is scheduled for the end of the paid period.'
     WHEN sub.requested_cancel_at_period_end IS TRUE OR sub.cancellation_intent = 'CANCEL_AT_PERIOD_END'
       THEN 'Your cancellation request is recorded and is awaiting confirmation.'
-    WHEN sub.cancellation_intent = 'UNDO_PERIOD_END'
-      THEN 'The cancellation has been reversed.'
     ELSE NULL
   END;
   FOR action IN

@@ -53,15 +53,15 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(20)
+    expect(chainAfter(checkpoint)).toHaveLength(21)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the applied UX-10G migration, proving that the full additive
-    // chain still upgrades cleanly from this earlier checkpoint.
-    expect(pending.at(-1)?.version).toBe("20261003224746")
+    // The tail is the source-only UX-10H migration. The applied development
+    // head remains the UX-10G migration.
+    expect(pending.at(-1)?.version).toBe("20261004000625")
     expect(pending.some(entry => entry.version === "20261003194353")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003183002")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003154314")).toBe(true)

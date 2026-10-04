@@ -996,6 +996,37 @@ main.customer-main > section .document-list a {
 .payments-page h2,
 .payments-page h3,
 .payments-page h4 { overflow-wrap: anywhere; }
+.guard-page { display: grid; gap: 1.5rem; }
+.guard-list { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.guard-location,
+.guard-detail,
+.guard-action { display: grid; gap: 0.75rem; min-width: 0; }
+.guard-location,
+.guard-action {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--warm);
+}
+.guard-notice {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+}
+.guard-page a,
+.guard-page button,
+.guard-page p,
+.guard-page h1,
+.guard-page h2,
+.guard-page h3 { overflow-wrap: anywhere; }
+.guard-page a:focus-visible,
+.guard-page button:focus-visible,
+.guard-page input:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
 .payments-page a:focus-visible,
 .payments-page button:focus-visible,
 .payments-page input:focus-visible {

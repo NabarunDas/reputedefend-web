@@ -9,6 +9,7 @@ const upgradedFiles = [
   migration,
   "20261003204538_customer_portal_quotes_agreements_permissions_v1.sql",
   "20261003224746_customer_portal_payments_receipts_v1.sql",
+  "20261004000625_customer_portal_relaunch_guard_v1.sql",
 ].join(",")
 const db = new PGlite()
 

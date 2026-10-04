@@ -55,7 +55,7 @@ Complete. The shared visual language, the wording review and the accessibility s
 
 ## UX-10 — Customer-facing surfaces
 
-In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the case workspace. UX-10E is documents and evidence. UX-10F is quotes, agreements, and permissions. UX-10G is payments and receipts. UX-10H is Relaunch Guard in the customer portal. UX-10I is messages and account. The UX-10G, UX-10H and UX-10I migrations are applied to `profilerelaunch-dev`.
+Customer portal build complete. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the case workspace. UX-10E is documents and evidence. UX-10F is quotes, agreements, and permissions. UX-10G is payments and receipts. UX-10H is Relaunch Guard in the customer portal. UX-10I is messages and account. UX-10J is the integration, security, accessibility, and launch-readiness pass. The UX-10G, UX-10H and UX-10I migrations are applied to `profilerelaunch-dev`. No UX-10J migration was added.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 | UX-10G | Payments and receipts | COMPLETE |
 | UX-10H | Relaunch Guard | COMPLETE |
 | UX-10I | Messages and Account | COMPLETE |
-| UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
+| UX-10J | Final integration, security, accessibility and launch | COMPLETE IN SOURCE / EXTERNAL LAUNCH GATES REMAIN |
 
 UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The applied development head and repository head are both the UX-10I migration `20261004080853_customer_portal_messages_account_v1.sql`, and `pendingMigrations()` is empty. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
@@ -86,8 +86,10 @@ UX-10G adds `/portal/payments` and `/portal/cases/[reference]/payments`. A custo
 
 UX-10H adds `/portal/guard` and `/portal/guard/[selector]`. A customer sees owned Guard coverage in customer language and can respond to an existing eligible Guard permission, recurring-consent, subscription, or price-change action. The portal and the emailed secure link call the same private helpers. Checkout does not activate a subscription, and a disabled provider does not produce a paid result. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. See `docs/customer/ux-10h-relaunch-guard.md`.
 
-UX-10I adds `/portal/messages`, `/portal/messages/[selector]`, and `/portal/account`. A customer sees communication that already crossed the existing delivery boundary, and the contact details on the authenticated customer. The page does not send messages, and it does not edit name, email, phone, or verification. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. UX-10J is not started. See `docs/customer/ux-10i-messages-account.md`.
+UX-10I adds `/portal/messages`, `/portal/messages/[selector]`, and `/portal/account`. A customer sees communication that already crossed the existing delivery boundary, and the contact details on the authenticated customer. The page does not send messages, and it does not edit name, email, phone, or verification. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. See `docs/customer/ux-10i-messages-account.md`.
+
+UX-10J reviews the assembled portal. It adds a route security inventory, whole-portal ownership and privilege checks, an accessibility and link regression, a portal-disabled production smoke, and `npm run release:customer-check`. That command runs every Customer Portal database suite under `apps/admin/lib/customer-portal/`. The signed-in browser viewport sweep remains an external launch gate. It adds no migration and no new portal feature. `CUSTOMER_PORTAL_ENABLED` stays off. External launch gates remain. See `docs/customer/ux-10j-launch-readiness.md`.
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A through UX-10I are complete. UX-10J is not started. The UX-10I migration is applied to `profilerelaunch-dev`. The Customer Portal is not launched. No phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is customer portal build complete / not yet launched: UX-10A through UX-10I are complete, and UX-10J is complete in source with external launch gates remaining. The UX-10I migration is applied to `profilerelaunch-dev`. `pendingMigrations()` is empty. The Customer Portal is not launched. No phase should be marked complete until its own acceptance evidence exists.

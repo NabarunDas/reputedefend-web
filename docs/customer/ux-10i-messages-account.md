@@ -1,6 +1,6 @@
 # UX-10I — Customer Portal Messages and Account
 
-Complete in source and applied to `profilerelaunch-dev`. The Customer Portal stays disabled. UX-10J is not started.
+Complete in source and applied to `profilerelaunch-dev`. The Customer Portal stays disabled. UX-10J is complete in source; the portal is not launched.
 
 ## Routes
 

@@ -18,6 +18,7 @@
     "check:admin": "npm run test:admin && npm run typecheck:admin",
     "rehearse:recovery": "npm run test --workspace=@profilerelaunch/admin -- lib/recovery/",
     "release:admin-check": "node scripts/release-admin-check.mjs",
+    "release:customer-check": "node scripts/release-customer-check.mjs",
     "smoke:admin": "node scripts/smoke-admin.mjs",
     "dev:customer": "npm run dev --workspace=@profilerelaunch/customer",
     "build:customer": "npm run build --workspace=@profilerelaunch/customer",

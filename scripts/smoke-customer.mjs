@@ -21,7 +21,12 @@ const origin = `http://127.0.0.1:${port}`
 const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
   cwd: fileURLToPath(new URL("../apps/customer", import.meta.url)),
   stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", CUSTOMER_AUTH_ENABLED: "false" },
+  env: {
+    ...process.env,
+    NEXT_TELEMETRY_DISABLED: "1",
+    CUSTOMER_AUTH_ENABLED: "false",
+    CUSTOMER_PORTAL_ENABLED: "",
+  },
 })
 let serverLog = ""
 server.stdout.on("data", chunk => { serverLog += chunk })
@@ -97,6 +102,79 @@ try {
       assert.match(html, /unavailable or has expired|Checking this link|Secure action/)
       assertCustomerBrand(html)
     }
+  }
+  const portalPages = [
+    "/login",
+    "/portal",
+    "/portal/cases",
+    "/portal/cases/PR-26-AAAAAA",
+    "/portal/cases/PR-26-AAAAAA/documents",
+    "/portal/cases/PR-26-AAAAAA/service",
+    "/portal/cases/PR-26-AAAAAA/payments",
+    "/portal/documents",
+    "/portal/payments",
+    "/portal/guard",
+    `/portal/guard/gd-${"ab".repeat(32)}`,
+    "/portal/messages",
+    `/portal/messages/mc-${"ab".repeat(32)}`,
+    "/portal/account",
+  ]
+  for (const path of portalPages) {
+    const response = await fetch(`${origin}${path}`, { redirect: "manual" })
+    assert.equal(response.status, 303, path)
+    const location = response.headers.get("location") ?? ""
+    const target = new URL(location, origin)
+    assert.equal(target.origin, origin, path)
+    assert.equal(target.pathname, "/", path)
+    assert.equal(target.search, "", path)
+    assert.equal(target.hash, "", path)
+    assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
+    assert.match(response.headers.get("cache-control") ?? "", /no-store/)
+    assert.equal(response.headers.get("x-frame-options"), "DENY")
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer")
+    assert.equal(response.headers.get("set-cookie"), null)
+    const html = await response.text()
+    assert.doesNotMatch(html, /Welcome to My ProfileRelaunch|ALEX_BUSINESS_SECRET|Sign in to your ProfileRelaunch account/)
+  }
+  const portalPosts = [
+    ["/api/portal/auth/start", { email: "alex@example.com" }],
+    ["/api/portal/auth/resend", {}],
+    ["/api/portal/auth/verify", { code: "000000" }],
+    ["/api/portal/auth/sign-out", {}],
+    ["/api/portal/evidence", { operation: "begin" }],
+    ["/api/portal/service", { operation: "accept_quote" }],
+    ["/api/portal/payments", { operation: "start_checkout" }],
+    ["/api/portal/guard", { operation: "accept" }],
+  ]
+  for (const [path, body] of portalPosts) {
+    const response = await fetch(`${origin}${path}`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify(body),
+    })
+    assert.equal(response.status, 404, path)
+    const payload = await response.json()
+    assert.match(payload.message, /unavailable/)
+    assert.equal(response.headers.get("set-cookie"), null)
+    assert.match(response.headers.get("cache-control") ?? "", /no-store/)
+    assert.doesNotMatch(JSON.stringify(payload), /alex@example.com|stripe|supabase/i)
+  }
+  const portalReads = [
+    "/api/portal/documents/download?reference=PR-26-AAAAAA&selector=pd-1",
+    `/api/portal/payments/receipt?selector=rc-${"ab".repeat(32)}`,
+    `/api/portal/payments/invoice?reference=PR-26-AAAAAA&selector=ca-${"ab".repeat(32)}`,
+    "/api/portal/not-a-route",
+  ]
+  for (const path of portalReads) {
+    const response = await fetch(`${origin}${path}`, {
+      redirect: "manual",
+      headers: { cookie: "__Host-pr-portal=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    })
+    assert.equal(response.status, 404, path)
+    assert.equal(response.headers.get("set-cookie"), null)
+    const payload = await response.text()
+    assert.doesNotMatch(payload, /Welcome to My ProfileRelaunch|storageKey|storageBucket/)
   }
   console.log("Customer production HTTP smoke checks passed")
 } finally {

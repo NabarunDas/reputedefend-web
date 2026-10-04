@@ -43,6 +43,17 @@ describe("portal feature gate", () => {
     vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "TRUE")
     expect(portalAvailable()).toBe(false)
     expect(customerConfig()?.origin).toBe(origin)
+
+    for (const value of ["", "false", "1", "yes", "on", "True", "true "]) {
+      customerEnv()
+      vi.stubEnv("CUSTOMER_PORTAL_ENABLED", value)
+      expect(portalAvailable()).toBe(false)
+      expect(customerConfig()?.origin).toBe(origin)
+    }
+    vi.unstubAllEnvs()
+    customerEnv()
+    expect(process.env.CUSTOMER_PORTAL_ENABLED).toBeUndefined()
+    expect(portalAvailable()).toBe(false)
   })
 
   it("closes both capabilities when the shared backend configuration is missing or malformed", () => {

@@ -257,6 +257,53 @@ describe("customer portal relaunch guard", () => {
     expect(samView.locations[0].monitoring).toBeUndefined()
   })
 
+  it("keeps an unknown incomplete check distinct from an unavailable profile", async () => {
+    const schedule = (await rows<{ id: string }>(
+      "select id from public.guard_check_schedule_versions where status = 'APPROVED' order by effective_from desc limit 1",
+    ))[0].id
+    const rota = randomUUID()
+    const obligation = randomUUID()
+    const attempt = randomUUID()
+    const observation = randomUUID()
+    await db.query(
+      `insert into public.guard_rota_assignments(id, coverage_id, assignee_auth_user_id, created_by)
+       values ($1,$2,$3,$3)`,
+      [rota, samCoverage, admin],
+    )
+    await db.query(
+      `insert into public.guard_check_obligations(
+        id, coverage_id, customer_id, business_id, location_id, service_date, window_code, schedule_version_id,
+        rota_assignment_id, coverage_basis, timezone, local_start, local_end, window_start_utc, window_end_utc, state, completed_at
+      ) values (
+        $1,$2,$3,$4,$5,current_date,'MORNING',$6,$7,'DIRECT_GUARD','Europe/London','08:00','12:00',
+        admin_private.guard_local_window_utc_v1(current_date, '08:00'::time, 'Europe/London'),
+        admin_private.guard_local_window_utc_v1(current_date, '12:00'::time, 'Europe/London'),
+        'COMPLETED', now()
+      )`,
+      [obligation, samCoverage, sam, samBusiness, samLocation, schedule, rota],
+    )
+    await db.query(
+      `insert into public.guard_check_attempts(id, obligation_id, attempt_number, actor_id, finished_at, outcome)
+       values ($1,$2,1,$3,now(),'COMPLETED')`,
+      [attempt, obligation, admin],
+    )
+    await db.query(
+      `insert into public.guard_check_observations(
+        id, obligation_id, attempt_id, coverage_id, location_id, observed_at, capture_method,
+        profile_availability, location_identified, classification, comparison_status, notes
+      ) values ($1,$2,$3,$4,$5,'2026-10-03T11:00:00Z','MANUAL','UNKNOWN',false,'INCOMPLETE','INCOMPLETE','secret operator note')`,
+      [observation, obligation, attempt, samCoverage, samLocation],
+    )
+    const view = await rpc<{ locations: Array<Record<string, unknown>> }>("customer_portal_guard_v1", [samSession])
+    expect(view.locations[0].monitoring).toBe("Check incomplete")
+    expect(view.locations[0].profileAvailable).toBeNull()
+    expect(JSON.stringify(view)).not.toMatch(/The profile did not appear available/)
+    leak(view)
+    const alexView = await rpc<{ locations: Array<Record<string, unknown>> }>("customer_portal_guard_v1", [alexSession])
+    expect(alexView.locations[0].monitoring).toBe("Change detected — being reviewed")
+    expect(alexView.locations[0].profileAvailable).toBe(true)
+  })
+
   it("accepts and declines owned Guard permission and keeps the emailed path", async () => {
     const first = await issuePermission(alexCoverage)
     const selector = await guardSelector(alexCoverage)
@@ -342,6 +389,9 @@ describe("customer portal relaunch guard", () => {
     expect(command).toContain("customer_guard_subscription_apply_v1")
     expect(command).toContain("subscriptionId")
     expect(command).not.toContain("INSERT INTO public.provider_operations")
+    expect(command).not.toContain("customer_portal_guard_subscription_capabilities_v1")
+    const portal = (await rows<{ def: string }>("select pg_get_functiondef('public.customer_portal_guard_command_v1(text,uuid,text,text,text,jsonb)'::regprocedure) as def"))[0].def
+    expect(portal).toContain("customer_portal_guard_subscription_capabilities_v1")
     const core = (await rows<{ def: string }>("select pg_get_functiondef('admin_private.customer_action_command_core_v1(text,uuid,text,jsonb)'::regprocedure) as def"))[0].def
     expect(core).toContain("decline_guard_permission_v1")
     expect(core).toContain("accept_guard_permission_v1")
@@ -352,6 +402,104 @@ describe("customer portal relaunch guard", () => {
     }])
     expect(forged.status).toBe("unavailable")
     expect(await count("select count(*)::int as n from public.guard_billing where coverage_id = $1 and billing_state = 'CURRENT'", [alexCoverage])).toBe(0)
+  })
+
+  it("follows the stored cancellation and lifecycle before exposing a portal mutation", async () => {
+    const secretHash = hash(token())
+    const issued = await rpc<Json>("admin_guard_command_v1", [adminToken, key(), "issue_subscription_start_action", {
+      coverageId: alexCoverage, expiresAt: actionExpiry(), secretHash,
+    }, null])
+    expect(issued.status).toBe("success")
+    const subscriptionId = String(issued.subscriptionId)
+    const actionId = String(issued.id)
+    const selector = await guardSelector(alexCoverage)
+    const action = await actionSelector(actionId)
+    const session = await completeOtp(actionId, secretHash)
+    expect(await rpc("customer_action_command_v1", [session, key(), "accept", {
+      accepted: true, consentVersion: "GUARD_RECURRING_CONSENT_V1",
+    }])).toMatchObject({ status: "success" })
+    const emailed = await rpc<Json>("customer_guard_subscription_command_v1", [session, key(), "start_checkout", { idempotencyKey: key() }])
+    expect(emailed.status).not.toBe("unavailable")
+    expect(["success", "denied"]).toContain(emailed.status)
+
+    const location = async () => (await rpc<{ locations: Array<Record<string, unknown>> }>("customer_portal_guard_v1", [alexSession])).locations[0]
+    const subscription = (value: Record<string, unknown>) =>
+      (value.actions as Array<Record<string, unknown>>).find(item => item.kind === "subscription")
+    const setup = await location()
+    expect(subscription(setup)?.checkout).toBe(true)
+    expect(subscription(setup)?.recovery).toBe(false)
+    const setState = (sql: string) => db.query(`update public.guard_subscriptions set ${sql} where id = $1`, [subscriptionId])
+    const post = (operation: string) => rpc<Json>("customer_portal_guard_command_v1", [
+      alexSession, key(), selector, action, operation, { idempotencyKey: key() },
+    ])
+
+    await setState("lifecycle_state = 'ACTIVE', requested_cancel_at_period_end = true, cancellation_intent = 'CANCEL_AT_PERIOD_END', cancel_at_period_end = false")
+    let current = await location()
+    expect(current.cancellation).toBe("Your cancellation request is recorded and is awaiting confirmation.")
+    expect(subscription(current)).toMatchObject({
+      checkout: false, recovery: false, periodEndCancellation: false, undoPeriodEndCancellation: true,
+    })
+    leak(current)
+    expect((await post("start_checkout")).status).toBe("unavailable")
+    expect((await post("request_period_end_cancellation")).status).toBe("unavailable")
+
+    await setState("lifecycle_state = 'CANCEL_AT_PERIOD_END', cancel_at_period_end = true, requested_cancel_at_period_end = true, cancellation_intent = 'CANCEL_AT_PERIOD_END'")
+    current = await location()
+    expect(current.cancellation).toBe("Cancellation is scheduled for the end of the paid period.")
+    expect(subscription(current)).toMatchObject({ checkout: false, periodEndCancellation: false, undoPeriodEndCancellation: true })
+
+    await setState("lifecycle_state = 'ACTIVE', cancel_at_period_end = false, requested_cancel_at_period_end = false, cancellation_intent = 'UNDO_PERIOD_END'")
+    current = await location()
+    expect(current.cancellation).toBe("The cancellation has been reversed.")
+    expect(subscription(current)?.undoPeriodEndCancellation).toBe(false)
+    expect(subscription(current)?.checkout).toBe(false)
+
+    await setState("lifecycle_state = 'PAST_DUE', cancellation_intent = null")
+    current = await location()
+    expect(subscription(current)).toMatchObject({ checkout: false, recovery: true })
+    expect((await post("start_checkout")).status).toBe("unavailable")
+    expect((await post("start_recovery")).status).toBe("success")
+
+    await setState("lifecycle_state = 'CANCELED', cancel_at_period_end = false, requested_cancel_at_period_end = false, cancellation_intent = null")
+    current = await location()
+    expect(subscription(current)).toMatchObject({
+      checkout: false, recovery: false, periodEndCancellation: false, undoPeriodEndCancellation: false, immediateCancellationReview: false,
+    })
+    for (const operation of ["start_checkout", "start_recovery", "request_period_end_cancellation", "undo_period_end_cancellation", "request_immediate_cancellation"]) {
+      expect((await post(operation)).status, operation).toBe("unavailable")
+    }
+    expect((await rows<{ lifecycle_state: string; cancellation_intent: string | null }>(
+      "select lifecycle_state, cancellation_intent from public.guard_subscriptions where id = $1",
+      [subscriptionId],
+    ))[0]).toEqual({ lifecycle_state: "CANCELED", cancellation_intent: null })
+    expect(await rpc("customer_portal_guard_command_v1", [samSession, key(), selector, action, "start_checkout", { idempotencyKey: key() }])).toEqual({ status: "not_found" })
+
+    const endedSecret = hash(token())
+    const ended = await rpc<Json>("admin_guard_command_v1", [adminToken, key(), "issue_subscription_start_action", {
+      coverageId: alexCoverage, expiresAt: actionExpiry(), secretHash: endedSecret,
+    }, null])
+    expect(ended.status).toBe("success")
+    const endedSession = await completeOtp(String(ended.id), endedSecret)
+    expect(await rpc("customer_action_command_v1", [endedSession, key(), "accept", {
+      accepted: true, consentVersion: "GUARD_RECURRING_CONSENT_V1",
+    }])).toMatchObject({ status: "success" })
+    await db.query(
+      "update public.guard_subscriptions set lifecycle_state = 'ENDED', cancel_at_period_end = false, requested_cancel_at_period_end = false, cancellation_intent = null where id = $1",
+      [String(ended.subscriptionId)],
+    )
+    const endedAction = await actionSelector(String(ended.id))
+    current = await location()
+    const endedControls = (current.actions as Array<Record<string, unknown>>).filter(item => item.selector === endedAction)
+    expect(endedControls[0]).toMatchObject({
+      checkout: false, recovery: false, periodEndCancellation: false, undoPeriodEndCancellation: false, immediateCancellationReview: false,
+    })
+    expect((await rpc<Json>("customer_portal_guard_command_v1", [
+      alexSession, key(), selector, endedAction, "start_checkout", { idempotencyKey: key() },
+    ])).status).toBe("unavailable")
+    expect((await rpc<Json>("customer_portal_guard_command_v1", [
+      alexSession, key(), selector, endedAction, "request_immediate_cancellation", { idempotencyKey: key() },
+    ])).status).toBe("unavailable")
+    leak(current)
   })
 
   it("keeps the new functions service-role only", async () => {
@@ -365,6 +513,7 @@ describe("customer portal relaunch guard", () => {
       "admin_private.decline_guard_permission_v1(customer_actions,uuid,uuid)",
       "admin_private.customer_guard_subscription_apply_v1(customer_actions,uuid,uuid,text,text,jsonb,uuid)",
       "admin_private.customer_portal_guard_location_body_v1(uuid,uuid,text)",
+      "admin_private.customer_portal_guard_subscription_capabilities_v1(guard_subscriptions,boolean)",
     ]
     const can = async (role: string, signature: string) =>
       (await rows<{ ok: boolean }>("select has_function_privilege($1, $2, 'EXECUTE') as ok", [role, signature]))[0].ok

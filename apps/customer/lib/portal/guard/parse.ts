@@ -245,11 +245,17 @@ export function parseGuardLocation(value: unknown): GuardLocation | null {
   if (value.cancellation != null && !cancellation) return null
   const lastCheckedAt = value.lastCheckedAt === undefined ? null : value.lastCheckedAt === null ? null : time(value.lastCheckedAt)
   if (value.lastCheckedAt != null && !lastCheckedAt) return null
-  const profileAvailable = value.profileAvailable === undefined ? null : value.profileAvailable
-  if (profileAvailable !== null && typeof profileAvailable !== "boolean") return null
+  const profileAvailablePresent = Object.hasOwn(value, "profileAvailable")
+  const profileAvailable = !profileAvailablePresent || value.profileAvailable === null
+    ? null
+    : value.profileAvailable === true || value.profileAvailable === false
+      ? value.profileAvailable
+      : undefined
+  if (profileAvailable === undefined) return null
   const monitoring = value.monitoring === undefined ? null : oneOf(value.monitoring, MONITORING)
   if (value.monitoring != null && !monitoring) return null
-  if ((lastCheckedAt === null) !== (monitoring === null) || (lastCheckedAt === null) !== (profileAvailable === null)) return null
+  const monitoringKeys = (lastCheckedAt !== null ? 1 : 0) + (monitoring !== null ? 1 : 0) + (profileAvailablePresent ? 1 : 0)
+  if (monitoringKeys !== 0 && monitoringKeys !== 3) return null
   return {
     selector, businessName, locationName, arrangement, status, monitoringActive: value.monitoringActive, permission,
     activatedAt, includedEndsAt, billing, subscription, amountMinor, currency, taxBehaviour, periodEnd, cancellation,

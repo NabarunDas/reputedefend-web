@@ -29,6 +29,42 @@ AS $$
   SELECT 'gd-' || encode(extensions.digest(p_coverage::text, 'sha256'), 'hex');
 $$;
 
+-- Read-only portal capability. These booleans are not stored. The emailed
+-- secure-link command does not call this helper and keeps its own contract.
+-- Checkout is only an initial setup step. Recovery is only PAST_DUE.
+-- Period-end cancellation and its undo follow the stored request and the
+-- provider-confirmed flag. Ended subscriptions gain no mutation.
+CREATE FUNCTION admin_private.customer_portal_guard_subscription_capabilities_v1(
+  p_subscription public.guard_subscriptions,
+  p_consent boolean
+) RETURNS jsonb
+LANGUAGE sql
+STABLE
+SET search_path=''
+AS $$
+  SELECT jsonb_build_object(
+    'checkout', coalesce(p_consent, false)
+      AND p_subscription.lifecycle_state IN ('PENDING_CUSTOMER', 'PENDING_PROVIDER', 'INCOMPLETE'),
+    'recovery', coalesce(p_consent, false)
+      AND p_subscription.lifecycle_state = 'PAST_DUE',
+    'periodEndCancellation', coalesce(p_consent, false)
+      AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
+      AND p_subscription.cancel_at_period_end IS NOT TRUE
+      AND p_subscription.requested_cancel_at_period_end IS NOT TRUE
+      AND p_subscription.cancellation_intent IS DISTINCT FROM 'CANCEL_AT_PERIOD_END',
+    'undoPeriodEndCancellation', coalesce(p_consent, false)
+      AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
+      AND (
+        p_subscription.cancel_at_period_end IS TRUE
+        OR p_subscription.requested_cancel_at_period_end IS TRUE
+        OR p_subscription.cancellation_intent = 'CANCEL_AT_PERIOD_END'
+      ),
+    'immediateCancellationReview', coalesce(p_consent, false)
+      AND p_subscription.lifecycle_state NOT IN ('CANCELED', 'ENDED')
+      AND p_subscription.cancellation_intent IS DISTINCT FROM 'REQUEST_IMMEDIATE_CANCELLATION'
+  );
+$$;
+
 CREATE FUNCTION admin_private.decline_guard_permission_v1(
   p_action public.customer_actions, p_actor uuid, p_request uuid
 ) RETURNS jsonb
@@ -329,6 +365,8 @@ DECLARE
   subscription_label text;
   cancellation text;
   show_here boolean;
+  caps jsonb;
+  body jsonb;
 BEGIN
   SELECT * INTO cov FROM public.guard_coverages WHERE id = p_coverage AND customer_id = p_customer;
   IF cov.id IS NULL OR p_email IS NULL THEN RETURN NULL; END IF;
@@ -428,8 +466,14 @@ BEGIN
   cancellation := CASE
     WHEN sub.id IS NULL THEN NULL
     WHEN sub.cancellation_intent = 'REQUEST_IMMEDIATE_CANCELLATION' THEN 'Immediate cancellation is with ProfileRelaunch for review. A refund is not promised.'
-    WHEN sub.cancel_at_period_end OR sub.requested_cancel_at_period_end OR sub.cancellation_intent = 'CANCEL_AT_PERIOD_END'
+    WHEN sub.cancel_at_period_end IS TRUE AND sub.cancellation_intent = 'UNDO_PERIOD_END'
+      THEN 'Your request to keep this subscription is recorded. Cancellation stays scheduled until the provider confirms the change.'
+    WHEN sub.cancel_at_period_end IS TRUE
       THEN 'Cancellation is scheduled for the end of the paid period.'
+    WHEN sub.requested_cancel_at_period_end IS TRUE OR sub.cancellation_intent = 'CANCEL_AT_PERIOD_END'
+      THEN 'Your cancellation request is recorded and is awaiting confirmation.'
+    WHEN sub.cancellation_intent = 'UNDO_PERIOD_END'
+      THEN 'The cancellation has been reversed.'
     ELSE NULL
   END;
   FOR action IN
@@ -463,6 +507,7 @@ BEGIN
       IF show_here THEN
         SELECT * INTO consent FROM public.guard_recurring_consents WHERE subscription_id = linked.id;
         IF consent.id IS NOT NULL OR admin_private.customer_action_eligible_v1(action) THEN
+          caps := admin_private.customer_portal_guard_subscription_capabilities_v1(linked, consent.id IS NOT NULL);
           actions := actions || jsonb_build_array(jsonb_build_object(
             'selector', admin_private.customer_portal_action_selector_v1(action.id),
             'kind', 'subscription',
@@ -473,11 +518,11 @@ BEGIN
             'consentText', admin_private.guard_recurring_consent_text_v1(),
             'consentRecorded', consent.id IS NOT NULL,
             'cancellationTerms', admin_private.guard_cancellation_terms_text_v1(),
-            'checkout', consent.id IS NOT NULL,
-            'recovery', consent.id IS NOT NULL AND linked.lifecycle_state = 'PAST_DUE',
-            'periodEndCancellation', consent.id IS NOT NULL AND NOT linked.requested_cancel_at_period_end AND NOT linked.cancel_at_period_end,
-            'undoPeriodEndCancellation', consent.id IS NOT NULL AND (linked.requested_cancel_at_period_end OR linked.cancel_at_period_end),
-            'immediateCancellationReview', consent.id IS NOT NULL
+            'checkout', caps->'checkout',
+            'recovery', caps->'recovery',
+            'periodEndCancellation', caps->'periodEndCancellation',
+            'undoPeriodEndCancellation', caps->'undoPeriodEndCancellation',
+            'immediateCancellationReview', caps->'immediateCancellationReview'
           ));
         END IF;
       END IF;
@@ -507,7 +552,7 @@ BEGIN
       END IF;
     END IF;
   END LOOP;
-  RETURN jsonb_strip_nulls(jsonb_build_object(
+  body := jsonb_strip_nulls(jsonb_build_object(
     'selector', admin_private.customer_portal_guard_selector_v1(cov.id),
     'businessName', biz.display_name,
     'locationName', loc.location_name,
@@ -525,7 +570,6 @@ BEGIN
     'periodEnd', sub.current_period_end,
     'cancellation', cancellation,
     'lastCheckedAt', CASE WHEN monitoring IS NULL THEN NULL ELSE observed_at END,
-    'profileAvailable', CASE WHEN monitoring IS NULL THEN NULL ELSE availability = 'AVAILABLE' END,
     'monitoring', monitoring,
     'issueUnderReview', EXISTS (
       SELECT 1 FROM public.guard_alerts alert
@@ -533,6 +577,19 @@ BEGIN
     ),
     'actions', actions
   ));
+  -- Keep an explicit null so UNKNOWN is distinct from UNAVAILABLE. strip_nulls
+  -- would otherwise drop the key and the customer page would treat it as absent.
+  IF monitoring IS NOT NULL THEN
+    body := body || jsonb_build_object(
+      'profileAvailable',
+      CASE availability
+        WHEN 'AVAILABLE' THEN 'true'::jsonb
+        WHEN 'UNAVAILABLE' THEN 'false'::jsonb
+        ELSE 'null'::jsonb
+      END
+    );
+  END IF;
+  RETURN body;
 END;
 $body$;
 
@@ -603,6 +660,8 @@ DECLARE
   cov public.guard_coverages;
   a public.customer_actions;
   sub public.guard_subscriptions;
+  consent public.guard_recurring_consents;
+  caps jsonb;
   fp text;
   cached jsonb;
   result jsonb;
@@ -730,9 +789,14 @@ BEGIN
         AND (cont.included_coverage_id = cov.id OR cont.paid_coverage_id = cov.id)
     )
   THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
-  IF p_operation = 'start_recovery' AND sub.lifecycle_state IS DISTINCT FROM 'PAST_DUE' THEN
-    RETURN jsonb_build_object('status', 'unavailable');
-  END IF;
+  SELECT * INTO consent FROM public.guard_recurring_consents WHERE subscription_id = sub.id;
+  caps := admin_private.customer_portal_guard_subscription_capabilities_v1(sub, consent.id IS NOT NULL);
+  IF (p_operation = 'start_checkout' AND (caps->>'checkout') IS DISTINCT FROM 'true')
+    OR (p_operation = 'start_recovery' AND (caps->>'recovery') IS DISTINCT FROM 'true')
+    OR (p_operation = 'request_period_end_cancellation' AND (caps->>'periodEndCancellation') IS DISTINCT FROM 'true')
+    OR (p_operation = 'undo_period_end_cancellation' AND (caps->>'undoPeriodEndCancellation') IS DISTINCT FROM 'true')
+    OR (p_operation = 'request_immediate_cancellation' AND (caps->>'immediateCancellationReview') IS DISTINCT FROM 'true')
+  THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   RETURN admin_private.customer_guard_subscription_apply_v1(
     a, v_auth, p_request, fp, p_operation, p_data, a.guard_subscription_id
   );
@@ -743,6 +807,7 @@ REVOKE ALL ON FUNCTION admin_private.customer_portal_guard_selector_v1(uuid) FRO
 REVOKE ALL ON FUNCTION admin_private.decline_guard_permission_v1(public.customer_actions, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_guard_subscription_apply_v1(public.customer_actions, uuid, uuid, text, text, jsonb, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_guard_location_body_v1(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.customer_portal_guard_subscription_capabilities_v1(public.guard_subscriptions, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_action_command_core_v1(text, uuid, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION public.customer_portal_guard_v1(text) FROM PUBLIC, anon, authenticated;

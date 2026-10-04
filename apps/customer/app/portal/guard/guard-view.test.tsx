@@ -102,6 +102,44 @@ describe("guard screens", () => {
     })
   })
 
+  it("does not describe an unknown check as an unavailable profile", () => {
+    render(<GuardView locations={[location({
+      profileAvailable: null,
+      monitoring: "Check incomplete",
+      issueUnderReview: false,
+      actions: [],
+    })]} focused />)
+    expect(screen.getByText("Check incomplete")).toBeTruthy()
+    expect(screen.queryByText("The profile did not appear available.")).toBeNull()
+    expect(screen.queryByText("The profile appeared available.")).toBeNull()
+  })
+
+  it("hides checkout once the subscription is no longer in setup", () => {
+    const billing = {
+      selector: action,
+      kind: "subscription" as const,
+      amountMinor: 4900,
+      currency: "GBP",
+      taxBehaviour: "NOT_APPLICABLE" as const,
+      consentVersion: "GUARD_RECURRING_CONSENT_V1" as const,
+      consentText: "I authorise monthly billing for this location.",
+      consentRecorded: true,
+      cancellationTerms: "Normal cancellation takes effect at the end of the already-paid period.",
+      checkout: false,
+      recovery: false,
+      periodEndCancellation: true,
+      undoPeriodEndCancellation: false,
+      immediateCancellationReview: true,
+    }
+    render(<GuardView locations={[location({
+      subscription: "Billing is active",
+      actions: [billing],
+    })]} focused />)
+    expect(screen.queryByRole("button", { name: "Continue to secure Stripe Checkout" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Update the payment method securely" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Cancel at period end" })).toBeTruthy()
+  })
+
   it("offers price acceptance and decline as separate responses", () => {
     render(<GuardView locations={[location({
       actions: [{

@@ -39,5 +39,16 @@ describe("guard projection parser", () => {
     expect(parseGuard({ locations: [checked] })?.locations[0].monitoring).toBe("Change detected — being reviewed")
     expect(parseGuard({ locations: [location({ lastCheckedAt: "2026-10-03T10:00:00Z" })] })).toBeNull()
     expect(parseGuard({ locations: [location({ monitoring: "No issue detected" })] })).toBeNull()
+    expect(parseGuard({ locations: [location({
+      lastCheckedAt: "2026-10-03T10:00:00Z",
+      monitoring: "Check incomplete",
+    })] })).toBeNull()
+    const incomplete = location({
+      lastCheckedAt: "2026-10-03T10:00:00Z",
+      profileAvailable: null,
+      monitoring: "Check incomplete",
+    })
+    expect(parseGuard({ locations: [incomplete] })?.locations[0].profileAvailable).toBeNull()
+    expect(parseGuard({ locations: [incomplete] })?.locations[0].monitoring).toBe("Check incomplete")
   })
 })

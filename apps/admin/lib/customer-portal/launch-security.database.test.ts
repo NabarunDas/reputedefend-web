@@ -148,12 +148,19 @@ describe("whole customer portal ownership", () => {
     expect(ownCase.found).toBe(true)
   })
 
-  it("does not let a guessed selector or Sam's case open documents, payments, Guard, or messages", async () => {
+  it("keeps Sam's business name out of Alex's document, payment, Guard, and message lists", async () => {
     const documents = serialised(await rpc("customer_portal_documents_v1", [alexSession]))
     const payments = serialised(await rpc("customer_portal_payments_v1", [alexSession]))
     const guard = serialised(await rpc("customer_portal_guard_v1", [alexSession]))
     const messages = serialised(await rpc("customer_portal_messages_v1", [alexSession, null, null]))
     expect(`${documents}\n${payments}\n${guard}\n${messages}`).not.toContain("SAM_BUSINESS_SECRET")
+  })
+
+  // These selectors were never created. A matching not-found result shows that
+  // an unknown selector is refused. Real Customer B selector denial is proved
+  // in documents-evidence, quotes-agreements, payments-receipts,
+  // relaunch-guard, and messages-account database tests.
+  it("returns not-found for unknown document, receipt, invoice, Guard, and message selectors", async () => {
     expect(await rpc("customer_portal_document_resolve_v1", [alexSession, samRef, "pd-1"])).toEqual(
       await rpc("customer_portal_document_resolve_v1", [alexSession, guessed, "pd-1"]),
     )

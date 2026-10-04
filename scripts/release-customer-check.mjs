@@ -12,9 +12,17 @@
 
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { customerPortalDatabaseSuiteFiles, missingCustomerPortalDatabaseSuites } from "./customer-portal-database-suites.mjs"
 
 const repoRoot = new URL("../", import.meta.url)
 const node = process.execPath
+const databaseSuites = customerPortalDatabaseSuiteFiles()
+const missingDatabaseSuites = missingCustomerPortalDatabaseSuites(databaseSuites)
+if (databaseSuites.length === 0 || missingDatabaseSuites.length > 0) {
+  console.error("Customer portal release check did not discover the required database suites.")
+  for (const file of missingDatabaseSuites) console.error(`  missing ${file}`)
+  process.exit(1)
+}
 
 const customerSuites = [
   ["route and security inventory", "lib/portal/route-inventory.test.ts"],
@@ -29,7 +37,9 @@ const customerSuites = [
 
 const adminSuites = [
   ["migration manifest and head", "lib/recovery/manifest.test.ts"],
-  ["whole-portal database security", "lib/customer-portal/launch-security.database.test.ts"],
+  ["migration history validation", "lib/recovery/history.test.ts"],
+  ["customer portal database coverage", "lib/customer-portal/release-coverage.test.ts"],
+  ...databaseSuites.map(file => [file, file]),
 ]
 
 function run(command, args, cwd) {
@@ -41,6 +51,9 @@ function run(command, args, cwd) {
 
 console.log("Customer portal release check — repository-safe only.")
 console.log("Contacts no provider, sends no mail or one-time code, reads no production secret.\n")
+console.log("Customer Portal database suites:")
+for (const file of databaseSuites) console.log(`  - ${file}`)
+console.log("")
 
 const vitest = fileURLToPath(new URL("node_modules/vitest/vitest.mjs", repoRoot))
 const customer = await run(node, [vitest, "run", "--config", "vitest.config.ts", ...customerSuites.flatMap(([, file]) => [file])], fileURLToPath(new URL("apps/customer/", repoRoot)))

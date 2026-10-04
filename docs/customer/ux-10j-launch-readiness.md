@@ -10,13 +10,14 @@ The repository route inventory matches the assembled portal: `/login`, the porta
 - `apps/customer/lib/portal/route-inventory.ts` classifies every portal page and API. It is not the authorisation engine. The proxy and each loader or handler still decide access. A new file under `apps/customer/app/api/portal/` or `apps/customer/app/portal/` fails the inventory test until it is classified. An unclassified `/api/portal/**` path fails closed and is not opened by an action session or a portal session.
 - Portal pages require the gate and a portal session. Portal mutation and download routes require the gate, a portal session, and their own origin, content-type, and ownership checks. Pre-auth login posts reach the handler, which returns 404 when the gate is off and does not call a provider.
 - A portal session does not open `/case` or an action API. An action session does not open `/portal` or a portal API. Portal sign-out revokes the current portal token and does not change action-session rows. The portal lifetime stays eight hours and the session read does not extend it.
-- Customer A cannot read Customer B's case, documents, service, payments, receipt, invoice, Guard location, messages, or account. The same business and the same location do not grant access. A guessed reference or selector matches the not-found result. A changed verified email, an unconfirmed Auth user, or an active Auth ban fails the existing session closed across the portal reads.
+- Customer A cannot read Customer B's real case references, including a case that shares Customer A's business and location. The aggregate suite compares those references with a missing reference for the case, documents, service, and payments reads, and the results match. Alex's document, payment, Guard, and message lists do not contain Sam's business name. A changed verified email, an unconfirmed Auth user, or an active Auth ban fails the existing session closed across the portal reads.
+- Unknown document, receipt, invoice, Guard, and message selectors also return the customer-safe not-found result. Those aggregate assertions use selectors that were never created, so they prove enumeration refusal, not isolation of a real Customer B selector. Real selector isolation is proved by the phase database suites that `release:customer-check` runs: documents and evidence (`pd-1` on another customer's published document, and an evidence begin on another customer's real request), quotes and agreements (another customer's real revocation selector), payments and receipts (another customer's real checkout selector, receipt selector, and invoice selector), Relaunch Guard (another customer's real Guard location selector), and messages (another customer's real message selector).
 - Public `customer_portal_*` functions are security definer, pin an empty `search_path`, and are executable by `service_role` only. `admin_private` portal helpers are not executable by `public`, `anon`, `authenticated`, or `service_role`. Portal auth tables stay in `admin_private`, with row level security and without browser-role grants or policies.
 - Customer-facing portal views do not use `dangerouslySetInnerHTML`. Portal links stay on the inventoried routes. They do not put a session token, one-time code, email address, or internal UUID in the URL. Login still continues to `/portal` only after verify succeeds in the handler.
 - The accessibility regression checks `lang="en-GB"`, the skip link to `#main-content`, one `h1` on each assembled surface, the named portal navigation and `aria-current`, labelled fields, image alternatives, and the absence of a positive tab index or an empty control. Portal navigation items are real links, so keyboard users can reach them when the list scrolls.
-- The layout is fluid at 320, 360, 390, 768, 1024, and 1280 pixels: containers use a percentage width with a minimum of zero, long text wraps, and the page clips horizontal overflow. The existing breakpoints are 359, 480, 768, and 1024 pixels. Reduced motion remains respected. Authenticated portal pages were not opened in a browser in this phase because that requires a live portal session, and the gate stays off.
+- Source and component checks cover the responsive safeguards: percentage container widths, `min-width: 0`, long-text wrapping, horizontal portal-nav scrolling with a scroll margin, the existing 359, 480, 768, and 1024 pixel breakpoints, reduced motion, and `overflow-x: clip` on the page. Those checks do not measure a signed-in browser layout. The authenticated viewport sweep is an external launch gate below.
 - `scripts/smoke-customer.mjs` covers `/login`, the portal pages, portal pre-auth posts, portal mutations, and receipt, invoice, and download reads while `CUSTOMER_PORTAL_ENABLED` is off. Those requests redirect or return 404, set no portal cookie, and do not call a provider.
-- `npm run release:customer-check` runs the inventory, gate, security, accessibility, manifest, and database checks, then the customer typecheck, build, and smoke. Its closing line is: “Repository checks passed. This is not production launch approval.”
+- `npm run release:customer-check` discovers every `database.test.ts` and `*.database.test.ts` file under `apps/admin/lib/customer-portal/`, including the UX-10A auth suite and each later phase suite, and runs those files together with the migration manifest and migration history tests. A coverage test fails if a future Customer Portal database file in that directory is left out. It then runs the customer typecheck, build, and smoke. Its closing line is: “Repository checks passed. This is not production launch approval.”
 - The applied development head and the repository head are both `20261004080853_customer_portal_messages_account_v1.sql`. `pendingMigrations()` is empty.
 - Google API, Stripe, outgoing mail, inbound mail, Guard automation, privacy deletion, job workers, and Cron are unchanged. The marketing site does not gain a Customer Login link.
 
@@ -43,6 +44,25 @@ After the production database strategy is chosen, verify the actual production m
 ### Customer OTP
 
 Perform a real one-time-code delivery and login against the intended production customer email path. Do not do that as part of UX-10J.
+
+### Authenticated Customer Portal responsive browser verification
+
+This check is not completed. It is required before `CUSTOMER_PORTAL_ENABLED=true`.
+
+The repository proves source and component responsive safeguards only. It does not prove the signed-in layout in a browser.
+
+Inspect these signed-in routes at 320, 360, 390, 768, 1024, and 1280 pixels:
+
+- Dashboard (`/portal`)
+- Case
+- Documents
+- Service
+- Payments
+- Guard
+- Messages
+- Account
+
+Confirm there is no page-level horizontal overflow, the portal navigation stays keyboard reachable, long values wrap, controls are not clipped, and focus styles stay visible.
 
 ### Customer evidence storage
 
@@ -77,7 +97,8 @@ This sequence is documentation only. UX-10J does not execute it.
 7. Verify the production Customer app while the portal gate remains off.
 8. Perform a controlled one-time-code login check.
 9. Confirm the providers that should stay disabled are still disabled.
-10. Set `CUSTOMER_PORTAL_ENABLED=true` deliberately.
-11. Verify login and an owned-customer portal journey.
-12. Only then expose the marketing Customer Login entry point.
-13. Watch authentication and errors closely during the first controlled use.
+10. Complete the authenticated responsive browser verification at 320, 360, 390, 768, 1024, and 1280 pixels on the dashboard, case, documents, service, payments, Guard, messages, and account. This check is not done.
+11. Set `CUSTOMER_PORTAL_ENABLED=true` deliberately.
+12. Verify login and an owned-customer portal journey.
+13. Only then expose the marketing Customer Login entry point.
+14. Watch authentication and errors closely during the first controlled use.

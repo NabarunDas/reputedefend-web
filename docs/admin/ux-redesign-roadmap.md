@@ -88,7 +88,7 @@ UX-10H adds `/portal/guard` and `/portal/guard/[selector]`. A customer sees owne
 
 UX-10I adds `/portal/messages`, `/portal/messages/[selector]`, and `/portal/account`. A customer sees communication that already crossed the existing delivery boundary, and the contact details on the authenticated customer. The page does not send messages, and it does not edit name, email, phone, or verification. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. See `docs/customer/ux-10i-messages-account.md`.
 
-UX-10J reviews the assembled portal. It adds a route security inventory, whole-portal ownership and privilege checks, an accessibility and link regression, a portal-disabled production smoke, and `npm run release:customer-check`. It adds no migration and no new portal feature. `CUSTOMER_PORTAL_ENABLED` stays off. External launch gates remain. See `docs/customer/ux-10j-launch-readiness.md`.
+UX-10J reviews the assembled portal. It adds a route security inventory, whole-portal ownership and privilege checks, an accessibility and link regression, a portal-disabled production smoke, and `npm run release:customer-check`. That command runs every Customer Portal database suite under `apps/admin/lib/customer-portal/`. The signed-in browser viewport sweep remains an external launch gate. It adds no migration and no new portal feature. `CUSTOMER_PORTAL_ENABLED` stays off. External launch gates remain. See `docs/customer/ux-10j-launch-readiness.md`.
 
 ## Sequencing notes
 

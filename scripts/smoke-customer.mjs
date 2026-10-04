@@ -122,7 +122,12 @@ try {
   for (const path of portalPages) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
     assert.equal(response.status, 303, path)
-    assert.equal(response.headers.get("location"), `${origin}/`)
+    const location = response.headers.get("location") ?? ""
+    const target = new URL(location, origin)
+    assert.equal(target.origin, origin, path)
+    assert.equal(target.pathname, "/", path)
+    assert.equal(target.search, "", path)
+    assert.equal(target.hash, "", path)
     assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/)
     assert.match(response.headers.get("cache-control") ?? "", /no-store/)
     assert.equal(response.headers.get("x-frame-options"), "DENY")

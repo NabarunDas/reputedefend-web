@@ -12,7 +12,7 @@ export const MESSAGE_STATES = [
   "Message from ProfileRelaunch",
 ] as const
 
-export const MESSAGE_ROLES = ["ProfileRelaunch", "You"] as const
+export const MESSAGE_ROLES = ["ProfileRelaunch", "From your verified email address"] as const
 
 export const DELIVERY_LABELS = [
   "Delivered by email",

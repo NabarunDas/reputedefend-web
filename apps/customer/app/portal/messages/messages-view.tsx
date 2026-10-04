@@ -33,7 +33,7 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
     <div className="messages-page">
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Messages</h1>
-      <p className="lead">Messages from ProfileRelaunch about your cases, and email you sent from your verified address.</p>
+      <p className="lead">Messages from ProfileRelaunch about your cases, and email received from the verified email address on your ProfileRelaunch account.</p>
       <p>To reply, use the email ProfileRelaunch sent you. This page does not send messages.</p>
       {page.threads.length === 0 ? (
         earlier ? (

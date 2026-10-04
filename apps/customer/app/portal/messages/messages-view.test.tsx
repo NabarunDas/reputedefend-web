@@ -48,6 +48,8 @@ describe("messages page", () => {
     expect(screen.getByText("Plain update for you.")).toBeTruthy()
     expect(screen.getByRole("link", { name: "View conversation" })).toHaveAttribute("href", `/portal/messages/${selector}`)
     expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByText(/email received from the verified email address on your ProfileRelaunch account/)).toBeTruthy()
+    expect(screen.queryByText(/email you sent/i)).toBeNull()
     expect(screen.getByText(/This page does not send messages/)).toBeTruthy()
     expect(screen.queryByRole("textbox")).toBeNull()
     expect(screen.queryByRole("button", { name: /reply|send/i })).toBeNull()
@@ -89,7 +91,7 @@ describe("messages page", () => {
           delivery: "Accepted by the email provider. Delivery is not confirmed.",
         },
         {
-          role: "You",
+          role: "From your verified email address",
           at: "2026-09-05T12:00:00Z",
           subject: null,
           body: "Thanks, this is my reply.",
@@ -103,7 +105,10 @@ describe("messages page", () => {
     expect(screen.getByText("Hello <strong>there</strong>")).toBeTruthy()
     expect(document.querySelector("strong")).toBeNull()
     expect(screen.getByText("Accepted by the email provider. Delivery is not confirmed.")).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 2, name: "From your verified email address" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "You" })).toBeNull()
     expect(screen.getByText("Thanks, this is my reply.")).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/authenticated sender|confirmed sender|confirmed customer|verified sender|sent by you|MATCHES_VERIFIED_CONTACT/i)
     expect(screen.getByText("Earlier messages in this conversation are not shown here.")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/\b(read|seen|opened)\b/i)
     expect(screen.queryByRole("textbox")).toBeNull()

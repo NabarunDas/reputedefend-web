@@ -147,6 +147,7 @@ async function inbound(input: {
   match?: string
   at?: string
   kind?: string
+  subject?: string
 }) {
   const id = randomUUID()
   const email = input.kind === "PHONE_NOTE"
@@ -163,7 +164,7 @@ async function inbound(input: {
       email ? null : "resend",
       email ? null : randomUUID(),
       email ? null : input.sender,
-      email ? null : "Re: About your case",
+      email ? null : input.subject ?? "Re: About your case",
       input.body,
       input.html ?? null,
       input.at ?? "2026-09-03T12:00:00Z",
@@ -340,6 +341,9 @@ function leak(value: unknown) {
   expect(serialised).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
   for (const secret of secrets) expect(serialised).not.toContain(secret)
   expect(serialised).not.toMatch(/\b(read|seen|opened)\b/i)
+  expect(serialised).not.toMatch(/\bYou\b/)
+  expect(serialised).not.toContain("MATCHES_VERIFIED_CONTACT")
+  expect(serialised).not.toMatch(/authenticated sender|confirmed sender|confirmed customer|verified sender|sent by you/i)
   expect(serialised).not.toMatch(/PROVIDER_ACCEPTED|DELIVERED|DRAFT|REVIEWED|PHONE_NOTE|INBOUND_EMAIL|needs_attention|reply_alias/)
   return serialised
 }
@@ -365,6 +369,7 @@ describe("customer portal messages", () => {
     })
     expect(alexView.threads[1]).toMatchObject({
       selector: await selector("mc-", alexConversation),
+      subject: "Re: About your case",
       state: "Open conversation",
       caseReference: alexRef,
       businessName: "Harbour Bakery",
@@ -396,8 +401,9 @@ describe("customer portal messages", () => {
       role: "ProfileRelaunch",
       delivery: "Accepted by the email provider. Delivery is not confirmed.",
     })
+    expect(detail.thread?.subject).toBe("Re: About your case")
     expect(detail.thread?.entries[2]).toMatchObject({
-      role: "You",
+      role: "From your verified email address",
       body: "Thanks, this is my reply.",
     })
     expect(detail.thread?.entries[2].delivery).toBeUndefined()
@@ -405,6 +411,64 @@ describe("customer portal messages", () => {
     leak(detail)
     expect(deliveredId).toBeTruthy()
     expect(acceptedId).toBeTruthy()
+  })
+
+  it("uses a visible subject and omits an outbound whose case parent disagrees", async () => {
+    const otherCase = randomUUID()
+    await openCase(otherCase, alex)
+    const secretConversation = await conversation("OPEN", alexCase, alex, "THIRD_PARTY_SUBJECT_SECRET")
+    await inbound({
+      conversationId: secretConversation,
+      sender: "other.person@example.com",
+      subject: "THIRD_PARTY_SUBJECT_SECRET",
+      body: "THIRD_PARTY_SECRET",
+      at: "2026-09-08T12:00:00Z",
+    })
+    await outbound({
+      caseId: alexCase,
+      customerId: alex,
+      conversationId: secretConversation,
+      subject: "Visible case update",
+      body: "VISIBLE_CASE_UPDATE_BODY",
+      lifecycle: "QUEUED",
+      delivery: "DELIVERED",
+      locked: true,
+      at: "2026-09-07T12:00:00Z",
+      providerMessageId: "msg_visible_case_update",
+    })
+    await outbound({
+      caseId: otherCase,
+      customerId: alex,
+      conversationId: secretConversation,
+      subject: "MISPARENTED_SUBJECT_SECRET",
+      body: "MISPARENTED_BODY_SECRET",
+      lifecycle: "QUEUED",
+      delivery: "DELIVERED",
+      locked: true,
+      at: "2026-09-09T12:00:00Z",
+      providerMessageId: "msg_misparented_case",
+    })
+    const list = await rpc<MessagePage>("customer_portal_messages_v1", [alexSession, null, null])
+    const listed = list.threads.find(item => item.preview === "VISIBLE_CASE_UPDATE_BODY")
+    expect(listed).toMatchObject({
+      selector: await selector("mc-", secretConversation),
+      subject: "Visible case update",
+      state: "Open conversation",
+    })
+    const detail = await rpc<MessageDetail>(
+      "customer_portal_message_v1",
+      [alexSession, listed?.selector ?? ""],
+    )
+    expect(detail.found).toBe(true)
+    expect(detail.thread?.subject).toBe("Visible case update")
+    expect(detail.thread?.entries.map(item => item.body)).toEqual(["VISIBLE_CASE_UPDATE_BODY"])
+    const serialised = `${JSON.stringify(list)}\n${JSON.stringify(detail)}`
+    expect(serialised).not.toContain("THIRD_PARTY_SUBJECT_SECRET")
+    expect(serialised).not.toContain("MISPARENTED_SUBJECT_SECRET")
+    expect(serialised).not.toContain("MISPARENTED_BODY_SECRET")
+    expect(serialised).not.toContain("THIRD_PARTY_SECRET")
+    leak(list)
+    leak(detail)
   })
 
   it("keeps a delivered message after the case is closed and still refuses a new send", async () => {

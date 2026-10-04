@@ -9,7 +9,11 @@ BEGIN;
 -- snapshot is locked, and delivery is PROVIDER_ACCEPTED or DELIVERED.
 -- PROVIDER_ACCEPTED is not described as delivered. Inbound email is visible
 -- only on a case the portal customer owns, and only when the sender is that
--- customer's current verified email. Phone notes, loops, and rejected
+-- customer's current verified email. A matching sender address is not
+-- authentication, so the portal does not call that mail "You". Thread titles
+-- come only from customer-visible entries, never from conversations.subject.
+-- An outbound row is shown inside a case conversation only when its canonical
+-- case parent is that conversation's case. Phone notes, loops, and rejected
 -- imports stay internal. Attachments are not exposed.
 --
 -- Rollback: DROP the functions created below. Do not edit applied migrations.
@@ -133,7 +137,7 @@ AS $$
   conversation_threads AS (
     SELECT
       admin_private.customer_portal_message_selector_v1('mc-', conv.id) AS selector,
-      coalesce(nullif(btrim(conv.subject), ''), nullif(btrim(latest.subject), ''), 'Message') AS subject,
+      coalesce(nullif(btrim(latest.subject), ''), 'Message') AS subject,
       parent_case.public_ref AS case_reference,
       biz.display_name AS business_name,
       loc.location_name AS location_name,
@@ -153,6 +157,7 @@ AS $$
         SELECT outbound.activity_at, outbound.subject, outbound.body_text, outbound.id
         FROM visible_outbound outbound
         WHERE outbound.conversation_id = conv.id
+          AND outbound.case_id = conv.case_id
         UNION ALL
         SELECT inbound.activity_at, inbound.subject, inbound.body_text, inbound.id
         FROM visible_inbound inbound
@@ -209,13 +214,19 @@ AS $$
     FROM public.communications comm
     WHERE admin_private.customer_portal_outbound_visible_v1(comm, p_customer) IS TRUE
       AND (
-        (p_conversation IS NOT NULL AND comm.conversation_id = p_conversation)
+        (
+          p_conversation IS NOT NULL
+          AND comm.conversation_id = p_conversation
+          AND comm.case_id = (
+            SELECT conv.case_id FROM public.conversations conv WHERE conv.id = p_conversation
+          )
+        )
         OR (p_communication IS NOT NULL AND comm.id = p_communication AND comm.conversation_id IS NULL)
       )
     UNION ALL
     SELECT
       msg.id,
-      'You'::text,
+      'From your verified email address'::text,
       coalesce(msg.received_at, msg.created_at),
       nullif(btrim(msg.subject), ''),
       msg.body_text,

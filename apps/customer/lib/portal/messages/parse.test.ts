@@ -61,11 +61,27 @@ describe("message projection parser", () => {
   })
 
   it("accepts a thread and rejects raw delivery or html fields", () => {
-    const you = { role: "You" as const, at, body: "Thanks, this is my reply." }
+    const received = { role: "From your verified email address" as const, at, body: "Thanks, this is my reply." }
     expect(parseMessageDetail({
       found: true,
-      thread: { ...thread(), entries: [entry(), you], complete: true },
+      thread: { ...thread(), entries: [entry(), received], complete: true },
     })?.found).toBe(true)
+    expect(parseMessageDetail({
+      found: true,
+      thread: { ...thread(), entries: [entry({ role: "You" })], complete: true },
+    })).toBeNull()
+    expect(parseMessageDetail({
+      found: true,
+      thread: { ...thread(), entries: [entry({ role: "MATCHES_VERIFIED_CONTACT" })], complete: true },
+    })).toBeNull()
+    expect(parseMessageDetail({
+      found: true,
+      thread: { ...thread(), entries: [entry({ role: "authenticated sender" })], complete: true },
+    })).toBeNull()
+    expect(parseMessageDetail({
+      found: true,
+      thread: { ...thread(), entries: [entry({ senderMatch: "MATCHES_VERIFIED_CONTACT" })], complete: true },
+    })).toBeNull()
     expect(parseMessageDetail({ found: false })).toEqual({ found: false })
     expect(parseMessageDetail({ found: false, reason: "missing" })).toBeNull()
     expect(parseMessageDetail({

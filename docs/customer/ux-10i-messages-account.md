@@ -36,7 +36,11 @@ An inbound `public.conversation_messages` row is visible only when all of these 
 - the sender address equals that customer's current verified email, checked again now
 - the conversation is `OPEN` or `CLOSED`, its case belongs to the portal customer, and its own `customer_id` is null or that customer
 
-`MATCHES_VERIFIED_CONTACT` is not authority. A third party in the same conversation stays hidden even when that flag is set. Loop and rejected imports stay hidden. An `UNMATCHED` conversation stays hidden. After the customer's verified email changes, mail from the previous address is no longer shown.
+`MATCHES_VERIFIED_CONTACT` is not authority, and a matching sender address is not authentication. It does not prove the signed-in customer wrote the email. The portal therefore does not label that entry “You”, and it does not say the sender is verified, authenticated, or confirmed. The customer-facing role is “From your verified email address”. The Messages introduction says the page shows email received from the verified email address on the ProfileRelaunch account. `MATCHES_VERIFIED_CONTACT` is not returned to the browser. A third party in the same conversation stays hidden even when that flag is set. Loop and rejected imports stay hidden. An `UNMATCHED` conversation stays hidden. After the customer's verified email changes, mail from the previous address is no longer shown.
+
+A thread title comes only from customer-visible entries. `public.conversations.subject` is not used, because it can be copied from an inbound email the portal hides, including a third-party sender. The title is the newest visible entry's subject when that subject is non-blank, otherwise “Message”.
+
+An outbound row is included in an `mc-` conversation only when `conversation_id` is that conversation and `case_id` is that conversation's case. A Guard-alert or monitoring communication, or an outbound row whose canonical case is a different case, stays out of the thread even if its `conversation_id` points at the conversation. The read does not re-parent the row. `communications_exactly_one_parent` requires one of `case_id`, `monitoring_request_id`, or `guard_alert_id`. It does not require that parent to match `conversation_id`, so the portal check is the fail-closed rule.
 
 `PHONE_NOTE` is internal. The schema does not record that a phone note was published to the customer, and this phase does not add that flag. Phone notes are omitted.
 
@@ -102,7 +106,7 @@ Each public function is `SECURITY DEFINER` with an empty `search_path` and resol
 
 ## Tests
 
-`apps/admin/lib/customer-portal/messages-account.database.test.ts` covers ownership, the same business and location, guessed selectors, session failure, a changed verified email, hidden drafts, unsent reviews, phone notes, loops, rejected imports, third-party senders, provider and storage identifiers, delivery wording, bounded pages, account fields, the absence of a mutation command, current-session sign-out, and grants.
+`apps/admin/lib/customer-portal/messages-account.database.test.ts` covers ownership, the same business and location, guessed selectors, session failure, a changed verified email, hidden drafts, unsent reviews, phone notes, loops, rejected imports, third-party senders, a hidden third-party conversation subject, an outbound row whose case parent disagrees with the conversation, provider and storage identifiers, delivery wording, the inbound role, bounded pages, account fields, the absence of a mutation command, current-session sign-out, and grants.
 
 Customer parser, loader, and view tests reject unexpected keys and render message text as text.
 
@@ -114,7 +118,7 @@ Customer parser, loader, and view tests reject unexpected keys and render messag
 
 - Portal compose and reply are not available, for the reason above.
 - Phone notes are not shown.
-- Inbound mail is shown only from the customer's current verified email, on a case that customer owns.
+- Inbound mail is shown only when the sender address equals the customer's current verified email, on a case that customer owns. That match is not treated as proof the customer wrote it.
 - HTML-only messages are omitted.
 - Conversation attachments are not downloadable.
 - There is no unread count.

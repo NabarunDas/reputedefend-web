@@ -250,9 +250,9 @@ describe("the cutover document matches the model", () => {
 
   it("reports the status counts the model actually holds", () => {
     const counts = statusCounts()
-    expect(counts).toEqual({ READY: 12, READY_DISABLED: 8, ACTION_REQUIRED: 9, BLOCKED: 3, DEFERRED: 3 })
+    expect(counts).toEqual({ READY: 14, READY_DISABLED: 8, ACTION_REQUIRED: 8, BLOCKED: 2, DEFERRED: 3 })
     expect(doc).toContain(
-      "Twelve items are `READY`, eight are `READY_DISABLED`, nine are\n`ACTION_REQUIRED`, three are `BLOCKED` and three are `DEFERRED`",
+      "Fourteen items are `READY`, eight are `READY_DISABLED`, eight are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
     )
   })
 })

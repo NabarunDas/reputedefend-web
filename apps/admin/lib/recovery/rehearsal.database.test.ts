@@ -49,10 +49,9 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(37)
-    // A clean rebuild includes the source-only UX-10I migration. profilerelaunch-dev
-    // remains at the applied UX-10H migration.
+    // A clean rebuild and profilerelaunch-dev now end at the same applied UX-10I migration.
     expect(migrationHead.version).toBe("20261004080853")
-    expect(appliedMigrationHead.version).toBe("20261004000625")
+    expect(appliedMigrationHead.version).toBe("20261004080853")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

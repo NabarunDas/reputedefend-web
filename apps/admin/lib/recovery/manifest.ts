@@ -439,6 +439,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal messages", probe: "public.customer_portal_messages_v1" },
   },
+  {
+    // Applied to profilerelaunch-dev on 2026-10-04. Supabase MCP assigned this
+    // exact version, so source and the remote ledger use the same identifier.
+    // The migration changes only future default privileges; existing objects
+    // and data are unchanged.
+    version: "20261004223358",
+    filename: "20261004223358_data_api_default_privileges_hardening_v1.sql",
+    step: "Production hardening — Data API default privileges",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "future Data API grants", probe: "public.cases" },
+  },
 ]
 
 /**

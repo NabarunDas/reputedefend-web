@@ -1,6 +1,6 @@
 # UX-10I — Customer Portal Messages and Account
 
-Complete in source. The migration has not been applied. The Customer Portal stays disabled. UX-10J is not started.
+Complete in source and applied to `profilerelaunch-dev`. The Customer Portal stays disabled. UX-10J is not started.
 
 ## Routes
 
@@ -84,9 +84,9 @@ The list returns at most 20 threads, newest activity first, with the selector as
 
 ## Migration and grants
 
-`supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql` is additive. It creates no table, no index, and no message or profile state. It has not been applied to `profilerelaunch-dev`.
+`supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql` is additive. It creates no table, no index, and no message or profile state. It was applied to `profilerelaunch-dev` on 2026-10-04 after independent review. Supabase MCP initially registered `20261004090629`; that single history row was aligned to the repository version `20261004080853` without replaying the schema.
 
-The applied development head remains `20261004000625_customer_portal_relaunch_guard_v1.sql`. The repository head is `20261004080853_customer_portal_messages_account_v1.sql`. `pendingMigrations()` contains that migration alone.
+The applied development head and repository head are both `20261004080853_customer_portal_messages_account_v1.sql`. `pendingMigrations()` is empty.
 
 Public functions, granted only to `service_role`:
 

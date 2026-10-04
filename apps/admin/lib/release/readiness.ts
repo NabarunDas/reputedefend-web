@@ -239,13 +239,13 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head on profilerelaunch-dev is 20261004000625 customer_portal_relaunch_guard_v1. The repository head is 20261004080853 customer_portal_messages_account_v1. pendingMigrations() contains that migration alone.",
+      "The applied migration head on profilerelaunch-dev and the repository head are both 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty.",
     status: "READY",
     evidence:
-      "UX-10H customer relaunch guard, version 20261004000625, remains the applied head on profilerelaunch-dev. Supabase MCP first registered 20261004074806; that single history row was aligned to 20261004000625 without replaying the schema. The previous applied head was 20261003224746 customer_portal_payments_receipts_v1. supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql is in the repository and has not been applied. pendingMigrations() contains that migration alone. Production has not received UX-10H or UX-10I.",
+      "UX-10I customer messages and account, version 20261004080853, is applied on profilerelaunch-dev. Supabase MCP first registered 20261004090629; that single history row was aligned to 20261004080853 without replaying the schema. The previous applied head was 20261004000625 customer_portal_relaunch_guard_v1. Repository and DEV heads now match and pendingMigrations() is empty. Production has not received UX-10I.",
     codeAction: null,
     externalAction:
-      "Do not apply the UX-10I migration to profilerelaunch-dev from this change. Do not apply UX-10H or UX-10I to production as part of this record.",
+      "No DEV migration action remains for UX-10I. Do not apply UX-10I to production as part of this record-only change.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:

@@ -23,7 +23,8 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; }
+html, body { margin: 0; max-width: 100%; }
+html { overflow-x: clip; }
 
 body {
   min-height: 100vh;
@@ -258,6 +259,7 @@ p { margin: 0 0 1rem; }
 .lead {
   font-size: 17px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .eyebrow {
@@ -555,6 +557,7 @@ form button { margin: 1rem 0; }
   color: var(--muted);
   font-size: 0.9rem;
   letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
 }
 
 .case-title { margin: 0 0 0.35rem; }
@@ -810,6 +813,7 @@ form button { margin: 1rem 0; }
 
 .portal-nav-link {
   color: var(--ink);
+  scroll-margin-inline: 1rem;
 }
 
 .portal-nav-link[aria-current="page"] {

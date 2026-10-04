@@ -14,7 +14,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
-import { applyChain, preparePlatform } from "./recovery/harness"
+import { applyChain, migrationSql, preparePlatform } from "./recovery/harness"
 
 const db = new PGlite()
 
@@ -131,11 +131,17 @@ describe("schema-wide database hardening", () => {
   })
 
   it("defaults every future public Data API object to explicit grants only", async () => {
-    // The production-hardening migration revokes Supabase's legacy automatic
-    // grants. A later migration must grant each new object deliberately.
+    // PGlite implements table/sequence default ACLs closely enough to execute
+    // those assertions. Its function creation still reports PostgreSQL's
+    // built-in PUBLIC EXECUTE despite ALTER DEFAULT PRIVILEGES, so the function
+    // revoke is asserted from the migration text here and is separately proven
+    // against the real DEV PostgreSQL project during promotion.
+    const hardening = migrationSql("20261004223358_data_api_default_privileges_hardening_v1.sql").replace(/\s+/g, " ").toLowerCase()
+    expect(hardening).toContain("revoke execute on functions from anon, authenticated, service_role")
+    expect(hardening).toContain("revoke execute on functions from public")
+
     await db.exec(`
       create table public.__default_acl_probe_table(id integer);
-      create function public.__default_acl_probe_function() returns integer language sql as 'select 1';
       create sequence public.__default_acl_probe_sequence;
     `)
     try {
@@ -144,21 +150,15 @@ describe("schema-wide database hardening", () => {
           "select has_table_privilege($1, 'public.__default_acl_probe_table', 'SELECT') as ok",
           [role],
         )
-        const fn = await db.query<{ ok: boolean }>(
-          "select has_function_privilege($1, 'public.__default_acl_probe_function()', 'EXECUTE') as ok",
-          [role],
-        )
         const sequence = await db.query<{ ok: boolean }>(
           "select has_sequence_privilege($1, 'public.__default_acl_probe_sequence', 'USAGE') as ok",
           [role],
         )
         expect(table.rows[0].ok).toBe(false)
-        expect(fn.rows[0].ok).toBe(false)
         expect(sequence.rows[0].ok).toBe(false)
       }
     } finally {
       await db.exec(`
-        drop function if exists public.__default_acl_probe_function();
         drop table if exists public.__default_acl_probe_table;
         drop sequence if exists public.__default_acl_probe_sequence;
       `)

@@ -425,6 +425,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal guard", probe: "public.customer_portal_guard_v1" },
   },
+  {
+    // Source review only. Do not apply this migration to profilerelaunch-dev
+    // from the UX-10I change. The applied development head stays UX-10H.
+    version: "20261004080853",
+    filename: "20261004080853_customer_portal_messages_account_v1.sql",
+    step: "UX-10I customer messages and account",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal messages", probe: "public.customer_portal_messages_v1" },
+  },
 ]
 
 /**

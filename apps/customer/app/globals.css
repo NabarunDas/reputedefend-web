@@ -1026,6 +1026,50 @@ main.customer-main > section .document-list a {
   outline: 3px solid var(--green);
   outline-offset: 3px;
 }
+.messages-page,
+.account-page { display: grid; gap: 1.5rem; min-width: 0; }
+.messages-list,
+.message-entries { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.messages-thread,
+.message-entry,
+.account-facts {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.messages-thread,
+.message-entry {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--warm);
+}
+.account-facts { margin: 0; }
+.account-facts div { display: grid; gap: 0.25rem; }
+.account-facts dt { font-weight: 600; }
+.account-facts dd { margin: 0; }
+.messages-page a,
+.messages-page button,
+.messages-page p,
+.messages-page h1,
+.messages-page h2,
+.messages-page h3,
+.messages-page time,
+.account-page a,
+.account-page button,
+.account-page p,
+.account-page h1,
+.account-page h2,
+.account-page dd {
+  overflow-wrap: anywhere;
+}
+.messages-page a:focus-visible,
+.messages-page button:focus-visible,
+.account-page a:focus-visible,
+.account-page button:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
 
 .payments-page a:focus-visible,
 .payments-page button:focus-visible,

@@ -9,7 +9,7 @@ Complete in source and applied to `profilerelaunch-dev`. The Customer Portal sta
 
 The selector is `gd-` plus the SHA-256 hex of the coverage id, computed by `admin_private.customer_portal_guard_selector_v1`. It is not stored and it is not authority. Each request resolves it again against the portal session customer. A selector that belongs to someone else, and a selector that does not exist, both return `{ found: false }`.
 
-Navigation now links Dashboard, Cases, Documents, Payments, and Relaunch Guard. Account stays unavailable. Messages are not added.
+Navigation at the end of UX-10H linked Dashboard, Cases, Documents, Payments, and Relaunch Guard. UX-10I later links Messages and Account.
 
 Guard customer actions have no case, so they are not case attention items. They appear on the Guard pages.
 
@@ -55,7 +55,7 @@ The portal does not activate Guard, pause or resume coverage, assign rota, recor
 
 `supabase/migrations/20261004000625_customer_portal_relaunch_guard_v1.sql` is additive. It creates no table and no index. It was applied to `profilerelaunch-dev` on 2026-10-04 after independent review. Supabase MCP initially registered `20261004074806`; that single history row was aligned to the repository version `20261004000625` without replaying the schema.
 
-Applied development head and repository head are both `20261004000625_customer_portal_relaunch_guard_v1.sql`. `pendingMigrations()` is empty.
+At the end of UX-10H the applied development head and repository head were both `20261004000625_customer_portal_relaunch_guard_v1.sql`. UX-10I later added source-only `20261004080853_customer_portal_messages_account_v1.sql`. That file is the repository head and has not been applied. The applied development head remains the UX-10H migration.
 
 Public functions, granted only to `service_role`:
 

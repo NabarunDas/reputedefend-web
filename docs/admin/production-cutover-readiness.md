@@ -74,8 +74,8 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `privacy.deletion-disabled` | Privacy | READY_DISABLED | Physical deletion stays off. A privacy request records the decision and deletes nothing. |
 | `privacy.export-and-holds` | Privacy | READY | A subject access export works and a legal hold blocks deletion in the database, not only in the interface. |
 
-Twelve items are `READY`, eight are `READY_DISABLED`, nine are
-`ACTION_REQUIRED`, three are `BLOCKED` and three are `DEFERRED` — the Step 22B
+Fourteen items are `READY`, eight are `READY_DISABLED`, eight are
+`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED` — the Step 22B
 recovery rehearsal plus the two mail activations, each deferred to its own
 phase.
 

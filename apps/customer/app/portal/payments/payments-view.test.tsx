@@ -110,7 +110,8 @@ describe("payments screens", () => {
     expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("aria-current", "page")
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).not.toHaveAttribute("aria-current")
-    expect(screen.queryByRole("link", { name: "Account" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("href", "/portal/messages")
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
   })
 
   it("shows managed consent and a saved-method state without card data", () => {

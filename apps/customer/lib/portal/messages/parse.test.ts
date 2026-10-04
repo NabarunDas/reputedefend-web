@@ -61,13 +61,7 @@ describe("message projection parser", () => {
   })
 
   it("accepts a thread and rejects raw delivery or html fields", () => {
-    const detail = {
-      found: true,
-      thread: { ...thread(), entries: [entry(), entry({ role: "You", delivery: undefined, subject: undefined })], complete: true },
-    }
-    const you = { ...entry({ role: "You" }) }
-    delete you.delivery
-    delete you.subject
+    const you = { role: "You" as const, at, body: "Thanks, this is my reply." }
     expect(parseMessageDetail({
       found: true,
       thread: { ...thread(), entries: [entry(), you], complete: true },
@@ -90,7 +84,6 @@ describe("message projection parser", () => {
       found: true,
       thread: { ...thread(), entries: [], complete: true },
     })).toBeNull()
-    expect(detail.found).toBe(true)
   })
 
   it("keeps the cursor pair together", () => {

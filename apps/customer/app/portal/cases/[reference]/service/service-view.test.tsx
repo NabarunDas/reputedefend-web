@@ -123,7 +123,8 @@ describe("service and permissions", () => {
     expect(screen.queryByRole("button", { name: "Withdraw this permission" })).toBeNull()
     expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/portal/payments")
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
-    expect(screen.queryByRole("link", { name: "Account" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("href", "/portal/messages")
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
     expect(screen.queryByText(/Stripe|PaymentIntent|checkout|card number/i)).toBeNull()
     const html = document.body.innerHTML
     expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)

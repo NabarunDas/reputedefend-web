@@ -315,7 +315,7 @@ export const readinessModel: readonly ReadinessItem[] = [
       "The Admin application authenticates with one-time codes only and never accepts a password. The production Supabase Auth user was provisioned separately so the project-level password protection setting still matters as defense in depth; repository code cannot configure it.",
     codeAction: null,
     externalAction:
-      "In the Supabase dashboard: Authentication → Policies → enable leaked-password protection on the project that becomes production.",
+      "In the Supabase dashboard: Authentication → Providers → Email → enable leaked-password protection on the production project.",
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:

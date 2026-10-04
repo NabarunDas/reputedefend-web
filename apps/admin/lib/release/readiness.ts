@@ -239,7 +239,7 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The repository and profilerelaunch-dev end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() empty. Production must receive that reviewed forward migration before Admin production access.",
+      "The repository and profilerelaunch-dev end at 20261004223358 data_api_default_privileges_hardening_v1 and pendingMigrations() is empty. Production must receive that reviewed forward migration before Admin production access.",
     status: "ACTION_REQUIRED",
     evidence:
       "On 2026-10-04 profilerelaunch-dev applied 20261004223358 data_api_default_privileges_hardening_v1 and verification confirmed new public tables, functions and sequences no longer inherit automatic anon, authenticated or service_role Data API grants. The repository and DEV now carry the canonical chain from 20260915120000 core_data_foundation_v1 through 20261004223358 with pendingMigrations() empty. The existing Strategy A production project still ends at the prior 20261004080853 customer_portal_messages_account_v1 head until this reviewed migration is promoted.",

@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the source-only UX-10H migration. The applied development
-    // head remains the UX-10G migration.
+    // The tail is the applied UX-10H migration, which is also the current
+    // profilerelaunch-dev head.
     expect(pending.at(-1)?.version).toBe("20261004000625")
     expect(pending.some(entry => entry.version === "20261003194353")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003183002")).toBe(true)

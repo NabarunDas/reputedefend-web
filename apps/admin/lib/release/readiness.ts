@@ -257,10 +257,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.migration-ledger-discrepancy",
     area: "Supabase",
     requirement:
-      "The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen.",
+      "Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production.",
     status: "READY",
     evidence:
-      "Strategy A was chosen and executed on 2026-10-04. Production was created from empty from the canonical repository chain, so its ledger contains all three foundation migrations normally and matches the 37-entry manifest exactly. The historical profilerelaunch-dev discrepancy remains documented but is not inherited by production.",
+      "Strategy A was chosen and executed on 2026-10-04. Production was created from empty from the canonical supabase/migrations chain, so its ledger contains all three foundation migrations normally and matches the 37-entry manifest exactly. apps/admin/lib/recovery/history.ts continues to report the historical profilerelaunch-dev discrepancy honestly; it is not inherited by production.",
     codeAction:
       "None. The history validator continues to report the historical DEV shape honestly; production does not need that discrepancy repaired.",
     externalAction: null,
@@ -275,10 +275,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.legacy-objects",
     area: "Supabase",
     requirement:
-      "public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place.",
+      "Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain.",
     status: "READY",
     evidence:
-      "Strategy A production was built from the canonical repository chain. Direct production inspection on 2026-10-04 confirmed public.set_case_public_ref and public.rls_auto_enable are both absent, while the repository-managed cases_assign_public_ref path is present through the canonical migrations.",
+      "No file under supabase/migrations creates public.set_case_public_ref or public.rls_auto_enable. Strategy A production was built from that canonical chain, and direct production inspection on 2026-10-04 confirmed both objects are absent while the repository-managed cases_assign_public_ref path is present.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: false,

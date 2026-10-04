@@ -8,9 +8,9 @@ const linked = [
   { label: "Documents", href: "/portal/documents" },
   { label: "Payments", href: "/portal/payments" },
   { label: "Relaunch Guard", href: "/portal/guard" },
+  { label: "Messages", href: "/portal/messages" },
+  { label: "Account", href: "/portal/account" },
 ] as const
-
-const unavailable = ["Account"] as const
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"
@@ -32,14 +32,6 @@ export function PortalNav() {
             </li>
           )
         })}
-        {unavailable.map(label => (
-          <li key={label}>
-            <span className="portal-nav-disabled" aria-disabled="true">
-              {label}
-              <span className="sr-only"> not available yet</span>
-            </span>
-          </li>
-        ))}
       </ul>
     </nav>
   )

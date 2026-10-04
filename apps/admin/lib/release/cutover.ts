@@ -37,7 +37,7 @@ export const cutoverSequence: readonly CutoverPhase[] = [
       "Resolve everything that is a decision or an external account fact, while nothing is live and nothing can be broken.",
     prerequisites: [
       "Step 23 is complete and merged.",
-      "20261004000625 customer_portal_relaunch_guard_v1 is the applied head on profilerelaunch-dev and the repository head. pendingMigrations() is empty. Applied migrations are not replayed.",
+      "20261004000625 customer_portal_relaunch_guard_v1 remains the applied head on profilerelaunch-dev. The repository head is 20261004080853 customer_portal_messages_account_v1, which is pending and must not be applied during cutover. Applied migrations are not replayed.",
     ],
     steps: [
       "Record an answer to each Owner decision, or record explicitly that it is deferred and what that defers.",

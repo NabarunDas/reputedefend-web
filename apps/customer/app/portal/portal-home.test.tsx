@@ -47,7 +47,7 @@ describe("portal shell", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Customer portal" })
     const labels = [...navigation.querySelectorAll("li")].map(item => item.textContent?.replace("not available yet", "").trim())
-    expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Payments", "Relaunch Guard", "Account"])
+    expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Payments", "Relaunch Guard", "Messages", "Account"])
     const dashboard = screen.getByRole("link", { name: "Dashboard" })
     expect(dashboard).toHaveAttribute("href", "/portal")
     expect(dashboard).toHaveAttribute("aria-current", "page")
@@ -63,12 +63,14 @@ describe("portal shell", () => {
     const guard = screen.getByRole("link", { name: "Relaunch Guard" })
     expect(guard).toHaveAttribute("href", "/portal/guard")
     expect(guard).not.toHaveAttribute("aria-current")
-    expect(navigation.querySelectorAll("a")).toHaveLength(5)
-    const unavailable = [...navigation.querySelectorAll("[aria-disabled='true']")]
-    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN"])
-    expect(unavailable.map(item => item.textContent)).toEqual([
-      "Account not available yet",
-    ])
+    const messages = screen.getByRole("link", { name: "Messages" })
+    expect(messages).toHaveAttribute("href", "/portal/messages")
+    expect(messages).not.toHaveAttribute("aria-current")
+    const account = screen.getByRole("link", { name: "Account" })
+    expect(account).toHaveAttribute("href", "/portal/account")
+    expect(account).not.toHaveAttribute("aria-current")
+    expect(navigation.querySelectorAll("a")).toHaveLength(7)
+    expect(navigation.querySelector("[aria-disabled='true']")).toBeNull()
     expect(document.body.textContent).not.toMatch(/@|customerId|session token|£|sample case|coming soon|Get Help|Admin/i)
     expect(screen.getByRole("button", { name: "Sign out" })).toHaveClass("secondary")
   })
@@ -85,10 +87,11 @@ describe("portal shell", () => {
     expect(existsSync(join(portalDir, "cases", "[reference]", "payments", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "guard", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "guard", "[selector]", "page.tsx"))).toBe(true)
-    for (const name of ["account", "relaunch-guard"]) {
-      expect(existsSync(join(portalDir, name))).toBe(false)
-      expect(existsSync(join(portalDir, name, "page.tsx"))).toBe(false)
-    }
+    expect(existsSync(join(portalDir, "messages", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "messages", "[selector]", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "account", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "relaunch-guard"))).toBe(false)
+    expect(existsSync(join(portalDir, "relaunch-guard", "page.tsx"))).toBe(false)
   })
 
   it("signs out through the portal endpoint and returns to login", async () => {

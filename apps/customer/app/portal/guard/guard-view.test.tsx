@@ -72,8 +72,9 @@ describe("guard screens", () => {
     expect(screen.getByRole("link", { name: "Open this location" })).toHaveAttribute("href", `/portal/guard/${selector}`)
     const guard = screen.getByRole("link", { name: "Relaunch Guard" })
     expect(guard).toHaveAttribute("aria-current", "page")
-    expect(screen.queryByRole("link", { name: "Account" })).toBeNull()
-    expect(document.querySelector(".portal-nav-disabled")).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("href", "/portal/messages")
+    expect(document.querySelector(".portal-nav-disabled")).toBeNull()
     expect(document.body.textContent).not.toMatch(/customerId|coverageId|sub_|cus_|REQUESTED|AWAITING_AUTHORIZATION/)
   })
 

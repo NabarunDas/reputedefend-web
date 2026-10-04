@@ -55,7 +55,7 @@ Complete. The shared visual language, the wording review and the accessibility s
 
 ## UX-10 — Customer-facing surfaces
 
-In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the case workspace. UX-10E is documents and evidence. UX-10F is quotes, agreements, and permissions. UX-10G is payments and receipts. The UX-10G migration is applied to `profilerelaunch-dev`.
+In progress. The Customer Portal is not launched. UX-10A is the security boundary. UX-10B is the visual and navigational shell. UX-10C is the customer dashboard and case list. UX-10D is the case workspace. UX-10E is documents and evidence. UX-10F is quotes, agreements, and permissions. UX-10G is payments and receipts. UX-10H is Relaunch Guard in the customer portal. The UX-10G migration is applied to `profilerelaunch-dev`. The UX-10H migration is source only and has not been applied.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
@@ -66,11 +66,11 @@ In progress. The Customer Portal is not launched. UX-10A is the security boundar
 | UX-10E | Documents and evidence | COMPLETE |
 | UX-10F | Quotes, agreements and permissions | COMPLETE |
 | UX-10G | Payments and receipts | COMPLETE |
-| UX-10H | Relaunch Guard | NOT STARTED |
+| UX-10H | Relaunch Guard | COMPLETE IN SOURCE / MIGRATION PENDING |
 | UX-10I | Messages and Account | NOT STARTED |
 | UX-10J | Final integration, security, accessibility and launch | NOT STARTED |
 
-UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The applied development head and the repository head are the UX-10G migration `20261003224746_customer_portal_payments_receipts_v1.sql`. `pendingMigrations()` is empty. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
+UX-10A adds passwordless email OTP and a separate eight-hour portal session. Its migration `20261003125151_customer_portal_auth_foundation_v1.sql` is applied to `profilerelaunch-dev`. The applied development head remains the UX-10G migration `20261003224746_customer_portal_payments_receipts_v1.sql`. The repository head is the source-only UX-10H migration `20261004000625_customer_portal_relaunch_guard_v1.sql`, and `pendingMigrations()` contains that migration alone. `CUSTOMER_PORTAL_ENABLED` is not set. See `docs/customer/ux-10a-auth-foundation.md` and `docs/customer/customer-portal-security.md`.
 
 UX-10B copies the approved ProfileRelaunch logo and icons into the customer app, applies the marketing palette with Inter and Manrope, and adds the customer header, footer, login presentation, and portal shell. At the end of UX-10B only Dashboard linked somewhere. No migration. See `docs/customer/ux-10b-brand-portal-shell.md`.
 
@@ -82,8 +82,10 @@ UX-10E adds `/portal/documents` and `/portal/cases/[reference]/documents`. A cus
 
 UX-10F adds `/portal/cases/[reference]/service`. A customer reviews the offered quote snapshot, the stored Service Agreement, and the stored Case Management Permission, and can accept or decline those existing actions. An existing eligible authorization revocation can be completed. The portal and the emailed secure link call the same private mutation helper. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. See `docs/customer/ux-10f-quotes-agreements-permissions.md`.
 
-UX-10G adds `/portal/payments` and `/portal/cases/[reference]/payments`. A customer sees the stored payment position for an owned case and can continue the existing guided checkout, managed payment-method setup, recovery authentication, success-fee consent, issued-invoice redirect, and receipt download. The portal and the emailed secure link call the same private payment helper. Checkout does not mark a payment paid, and a disabled payment provider does not produce a successful payment. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. UX-10H is not started. See `docs/customer/ux-10g-payments-receipts.md`.
+UX-10G adds `/portal/payments` and `/portal/cases/[reference]/payments`. A customer sees the stored payment position for an owned case and can continue the existing guided checkout, managed payment-method setup, recovery authentication, success-fee consent, issued-invoice redirect, and receipt download. The portal and the emailed secure link call the same private payment helper. Checkout does not mark a payment paid, and a disabled payment provider does not produce a successful payment. Its migration is applied to `profilerelaunch-dev`. `CUSTOMER_PORTAL_ENABLED` stays off. See `docs/customer/ux-10g-payments-receipts.md`.
+
+UX-10H adds `/portal/guard` and `/portal/guard/[selector]`. A customer sees owned Guard coverage in customer language and can respond to an existing eligible Guard permission, recurring-consent, subscription, or price-change action. The portal and the emailed secure link call the same private helpers. Checkout does not activate a subscription, and a disabled provider does not produce a paid result. Its migration is source only and has not been applied. `CUSTOMER_PORTAL_ENABLED` stays off. UX-10I and UX-10J are not started. See `docs/customer/ux-10h-relaunch-guard.md`.
 
 ## Sequencing notes
 
-UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A through UX-10G are complete. UX-10H through UX-10J are not started. The UX-10G migration is applied to `profilerelaunch-dev`. No phase should be marked complete until its own acceptance evidence exists.
+UX-1 is a precondition for everything else, which is why it is non-visual and why it ships on its own. UX-3 is a precondition for UX-4. UX-2 and UX-6 are independent of each other but both consume the same model, so divergence between them would be a defect rather than a difference of opinion. UX-1 implements none of the later phases. UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 and UX-9 are complete. UX-10 is in progress: UX-10A through UX-10G are complete. UX-10H is complete in source and its migration is pending. UX-10I and UX-10J are not started. The UX-10G migration is applied to `profilerelaunch-dev`. No phase should be marked complete until its own acceptance evidence exists.

@@ -86,6 +86,6 @@ Private helpers, not executable by `PUBLIC`, `anon`, `authenticated`, or `servic
 - `admin_private.customer_payment_apply_v1(...)`
 - `admin_private.customer_portal_case_payments_body_v1(uuid, uuid, text)`
 
-The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003234725`; that single history row was aligned to repository version `20261003224746` without replaying the schema. `appliedMigrationHead` and `migrationHead` both point to `20261003224746_customer_portal_payments_receipts_v1.sql`, and `pendingMigrations()` is empty. The migration is immutable. Do not replay it. Production has not received it.
+The migration was applied to `profilerelaunch-dev` on 2026-10-03 after independent review. Supabase MCP initially registered `20261003234725`; that single history row was aligned to repository version `20261003224746` without replaying the schema. `appliedMigrationHead` remains `20261003224746_customer_portal_payments_receipts_v1.sql`. UX-10H later added source-only `20261004000625_customer_portal_relaunch_guard_v1.sql`, which is now the repository head. `pendingMigrations()` contains that migration alone. It has not been applied. The UX-10G migration is immutable. Do not replay it. Production has not received it.
 
 Rollback is a later migration that drops the new functions and restores `public.customer_payment_command_v1` from `20260930132106_stripe_payments_v1.sql`. Do not edit that applied file. A forward fix is a later `CREATE OR REPLACE` of these functions.

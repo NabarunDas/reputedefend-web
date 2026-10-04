@@ -27,6 +27,7 @@ export async function proxy(request: NextRequest) {
   const portalEvidence = method === "POST" && pathname === "/api/portal/evidence"
   const portalService = method === "POST" && pathname === "/api/portal/service"
   const portalPayment = method === "POST" && pathname === "/api/portal/payments"
+  const portalGuard = method === "POST" && pathname === "/api/portal/guard"
   const portalReceipt = method === "GET" && pathname === "/api/portal/payments/receipt"
   const portalInvoice = method === "GET" && pathname === "/api/portal/payments/invoice"
   const portalDownload = method === "GET" && pathname === "/api/portal/documents/download"
@@ -40,7 +41,7 @@ export async function proxy(request: NextRequest) {
     if (!portalOn) response = redirectTo(request, "/")
     else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = NextResponse.next()
     else response = redirectTo(request, "/login")
-  } else if (portalEvidence || portalDownload || portalService || portalPayment || portalReceipt || portalInvoice) {
+  } else if (portalEvidence || portalDownload || portalService || portalPayment || portalReceipt || portalInvoice || portalGuard) {
     if (!portalOn) response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 404 })
     else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = NextResponse.next()
     else response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 401 })

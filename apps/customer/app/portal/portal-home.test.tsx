@@ -60,11 +60,13 @@ describe("portal shell", () => {
     const payments = screen.getByRole("link", { name: "Payments" })
     expect(payments).toHaveAttribute("href", "/portal/payments")
     expect(payments).not.toHaveAttribute("aria-current")
-    expect(navigation.querySelectorAll("a")).toHaveLength(4)
+    const guard = screen.getByRole("link", { name: "Relaunch Guard" })
+    expect(guard).toHaveAttribute("href", "/portal/guard")
+    expect(guard).not.toHaveAttribute("aria-current")
+    expect(navigation.querySelectorAll("a")).toHaveLength(5)
     const unavailable = [...navigation.querySelectorAll("[aria-disabled='true']")]
-    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN", "SPAN"])
+    expect(unavailable.map(item => item.tagName)).toEqual(["SPAN"])
     expect(unavailable.map(item => item.textContent)).toEqual([
-      "Relaunch Guard not available yet",
       "Account not available yet",
     ])
     expect(document.body.textContent).not.toMatch(/@|customerId|session token|£|sample case|coming soon|Get Help|Admin/i)
@@ -81,7 +83,9 @@ describe("portal shell", () => {
     expect(existsSync(join(portalDir, "cases", "[reference]", "documents", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "payments", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "cases", "[reference]", "payments", "page.tsx"))).toBe(true)
-    for (const name of ["guard", "account", "relaunch-guard"]) {
+    expect(existsSync(join(portalDir, "guard", "page.tsx"))).toBe(true)
+    expect(existsSync(join(portalDir, "guard", "[selector]", "page.tsx"))).toBe(true)
+    for (const name of ["account", "relaunch-guard"]) {
       expect(existsSync(join(portalDir, name))).toBe(false)
       expect(existsSync(join(portalDir, name, "page.tsx"))).toBe(false)
     }

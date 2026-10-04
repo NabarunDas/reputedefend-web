@@ -108,7 +108,9 @@ describe("payments screens", () => {
     expect(screen.queryByRole("link", { name: /Open invoice/ })).toBeNull()
     expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/portal/payments")
     expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("aria-current", "page")
-    expect(screen.queryByRole("link", { name: /Relaunch Guard|Account/ })).toBeNull()
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).not.toHaveAttribute("aria-current")
+    expect(screen.queryByRole("link", { name: "Account" })).toBeNull()
   })
 
   it("shows managed consent and a saved-method state without card data", () => {

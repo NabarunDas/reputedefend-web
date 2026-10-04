@@ -239,13 +239,13 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The applied migration head on profilerelaunch-dev and the repository head are both 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty.",
+      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty and production carries the full canonical 37-migration ledger.",
     status: "READY",
     evidence:
-      "UX-10I customer messages and account, version 20261004080853, is applied on profilerelaunch-dev. Supabase MCP first registered 20261004090629; that single history row was aligned to 20261004080853 without replaying the schema. The previous applied head was 20261004000625 customer_portal_relaunch_guard_v1. Repository and DEV heads now match and pendingMigrations() is empty. Production has not received UX-10I.",
+      "On 2026-10-04 the clean production project was built from empty using the canonical repository chain. All 37 migration versions and names match the manifest exactly, from 20260915120000 core_data_foundation_v1 through 20261004080853 customer_portal_messages_account_v1. The production database contains no copied customer, business, case or enquiry rows. profilerelaunch-dev and the repository also end at 20261004080853 and pendingMigrations() is empty.",
     codeAction: null,
     externalAction:
-      "No DEV migration action remains for UX-10I. Do not apply UX-10I to production as part of this record-only change.",
+      "No migration action remains for the current production schema head. Future migrations remain forward-only and must be reviewed before production application.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
@@ -258,13 +258,12 @@ export const readinessModel: readonly ReadinessItem[] = [
     area: "Supabase",
     requirement:
       "The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen.",
-    status: "BLOCKED",
+    status: "READY",
     evidence:
-      "The repository chain begins at 20260915120000_core_data_foundation_v1.sql, 20260915193000_case_intake_transaction_v1.sql and 20260916000000_relaunch_guard_data_foundation_v1.sql. Remote history on profilerelaunch-dev begins at 20260917080553 single_admin_auth_v1. Those three are present in the live schema and absent from the ledger.",
+      "Strategy A was chosen and executed on 2026-10-04. Production was created from empty from the canonical repository chain, so its ledger contains all three foundation migrations normally and matches the 37-entry manifest exactly. The historical profilerelaunch-dev discrepancy remains documented but is not inherited by production.",
     codeAction:
-      "None. The history validator in apps/admin/lib/recovery/history.ts already reports this shape rather than hiding it, and Step 24A does not mark the live ledger clean.",
-    externalAction:
-      "Owner decision between Strategy A and Strategy B, recorded in docs/admin/production-cutover-readiness.md before a production database exists. Neither strategy is implemented in this PR.",
+      "None. The history validator continues to report the historical DEV shape honestly; production does not need that discrepancy repaired.",
+    externalAction: null,
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
@@ -277,13 +276,11 @@ export const readinessModel: readonly ReadinessItem[] = [
     area: "Supabase",
     requirement:
       "public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place.",
-    status: "ACTION_REQUIRED",
+    status: "READY",
     evidence:
-      "No file under supabase/migrations creates either object. They exist on profilerelaunch-dev only, which is itself evidence that the development database carries history the repository does not describe.",
-    codeAction:
-      "None. docs/admin/operator-sql/legacy-object-inspection.sql inspects them and is read-only; it is not wired into any build, start or deploy path and must be pasted into a SQL console by a person.",
-    externalAction:
-      "Run the inspection SQL against whichever database becomes production, read the dependency output, and only then decide whether to drop them. Do not use CASCADE.",
+      "Strategy A production was built from the canonical repository chain. Direct production inspection on 2026-10-04 confirmed public.set_case_public_ref and public.rls_auto_enable are both absent, while the repository-managed cases_assign_public_ref path is present through the canonical migrations.",
+    codeAction: null,
+    externalAction: null,
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:

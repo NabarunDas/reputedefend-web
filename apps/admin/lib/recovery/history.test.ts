@@ -5,7 +5,7 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // Remote history contains only what the dev project actually received.
-// The healthy remote ends at the applied UX-10G migration.
+// The healthy remote ends at the applied UX-10H migration.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -24,15 +24,12 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps remote history aligned through the applied UX-10G migration", () => {
+  it("keeps remote history aligned through the applied UX-10H migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261004000625_customer_portal_relaunch_guard_v1.sql",
-    ])
-    expect(pending[0]?.appliedToDev).toBe(false)
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261003224746",
-      name: "customer_portal_payments_receipts_v1",
+      version: "20261004000625",
+      name: "customer_portal_relaunch_guard_v1",
     })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
@@ -40,14 +37,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("does not treat the source-only UX-10H migration as a replay against the healthy remote", () => {
+  it("refuses to replay the UX-10H Guard migration now that dev has received it", () => {
     const result = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261004000625_customer_portal_relaunch_guard_v1.sql"],
     })
-    expect(codes(result)).not.toContain("replay_of_applied_migration")
-    expect(mayApplyMigrations(result)).toBe(true)
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("refuses to replay the UX-10G payments migration now that dev has received it", () => {

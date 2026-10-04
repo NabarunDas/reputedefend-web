@@ -18,7 +18,7 @@ The repository route inventory matches the assembled portal: `/login`, the porta
 - Source and component checks cover the responsive safeguards: percentage container widths, `min-width: 0`, long-text wrapping, horizontal portal-nav scrolling with a scroll margin, the existing 359, 480, 768, and 1024 pixel breakpoints, reduced motion, and `overflow-x: clip` on the page. Those checks do not measure a signed-in browser layout. The authenticated viewport sweep is an external launch gate below.
 - `scripts/smoke-customer.mjs` covers `/login`, the portal pages, portal pre-auth posts, portal mutations, and receipt, invoice, and download reads while `CUSTOMER_PORTAL_ENABLED` is off. Those requests redirect or return 404, set no portal cookie, and do not call a provider.
 - `npm run release:customer-check` discovers every `database.test.ts` and `*.database.test.ts` file under `apps/admin/lib/customer-portal/`, including the UX-10A auth suite and each later phase suite, and runs those files together with the migration manifest and migration history tests. A coverage test fails if a future Customer Portal database file in that directory is left out. It then runs the customer typecheck, build, and smoke. Its closing line is: “Repository checks passed. This is not production launch approval.”
-- The applied development head and the repository head are both `20261004080853_customer_portal_messages_account_v1.sql`. `pendingMigrations()` is empty.
+- The repository, development project and clean Strategy A production project all end at `20261004080853_customer_portal_messages_account_v1.sql`. Production carries all 37 canonical migrations and `pendingMigrations()` is empty.
 - Google API, Stripe, outgoing mail, inbound mail, Guard automation, privacy deletion, job workers, and Cron are unchanged. The marketing site does not gain a Customer Login link.
 
 ## B. External action required before portal launch
@@ -35,11 +35,11 @@ Confirm the exact production origin that portal cookies and origin checks will u
 
 ### Supabase production database strategy
 
-The historical foundation migration-ledger discrepancy is still unresolved. It is recorded in `docs/admin/production-cutover-readiness.md` and is not repaired here. Do not choose or promote a production database until that discrepancy is resolved deliberately.
+Resolved for production by Strategy A on 2026-10-04. The production project was built from empty from the canonical repository chain, so the historical DEV-only ledger discrepancy is not inherited by production.
 
 ### Production migration head
 
-After the production database strategy is chosen, verify the actual production migration head before anyone enables the portal.
+Verified on 2026-10-04: the production migration ledger contains all 37 canonical entries and ends at `20261004080853 customer_portal_messages_account_v1`. Continue to re-check this head before portal enablement if any later migration is merged.
 
 ### Customer OTP
 
@@ -88,7 +88,7 @@ Stripe, outgoing mail, inbound mail, the Google Business Profile API, Guard auto
 
 This sequence is documentation only. UX-10J does not execute it.
 
-1. Resolve the production database strategy and the historical ledger discrepancy.
+1. Production database strategy and historical ledger handling — COMPLETE by clean Strategy A build.
 2. Complete the required recovery and cloud prerequisites, including Step 22B.
 3. Confirm the Customer Vercel project and domain.
 4. Configure production customer backend variables without enabling the portal.

@@ -49,35 +49,33 @@ describe("assembled portal accessibility", () => {
   })
 
   it("marks the current portal destination and gives each surface one heading", () => {
-    const surfaces: Array<[string, string, React.ReactElement]> = [
-      ["/portal", "Welcome to My ProfileRelaunch", <PortalHome dashboard={{ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }} />],
-      ["/portal", "We couldn't load your customer space", <PortalUnavailable />],
-      ["/portal/cases", "Cases", <CasesView view="active" page={{ cases: [], nextCursor: null }} />],
-      ["/portal/cases", "Cases", <CasesUnavailable />],
-      ["/portal/documents", "Documents", <DocumentsView documents={{ needs: [], submissions: [], documents: [] }} />],
-      ["/portal/documents", "We couldn't load your documents", <DocumentsUnavailable />],
-      ["/portal/cases/PR-26-AAAAAA", "We couldn't load this case", <CaseUnavailable />],
-      ["/portal/cases/PR-26-AAAAAA/documents", "We couldn't load documents for this case", <CaseDocumentsUnavailable />],
-      ["/portal/cases/PR-26-AAAAAA/service", "We couldn't load service details", <ServiceUnavailable />],
-      ["/portal/payments", "Payments", <PaymentsView cases={[]} focused={false} />],
-      ["/portal/payments", "We couldn't load payments", <PaymentsUnavailable />],
-      ["/portal/guard", "Relaunch Guard", <GuardView locations={[]} focused={false} />],
-      ["/portal/guard", "We couldn't load Relaunch Guard", <GuardUnavailable />],
-      ["/portal/messages", "Messages", <MessagesView page={{ threads: [], complete: true, nextCursor: null }} earlier={false} />],
-      ["/portal/messages", "Messages", <MessagesUnavailable />],
-      ["/portal/account", "Account", <AccountView account={{ name: "Alex Customer", email: `${"a".repeat(80)}@example.com`, phone: null, emailVerified: true, phoneVerified: false }} />],
-      ["/portal/account", "Account", <AccountUnavailable />],
-    ]
-    for (const [pathname, heading, view] of surfaces) {
+    function check(pathname: string, heading: string, view: React.ReactElement) {
       nav.pathname = pathname
       const { unmount } = render(<PortalLayout>{view}</PortalLayout>)
       oneHeading(heading)
       const current = screen.getByRole("navigation", { name: "Customer portal" }).querySelector("[aria-current='page']")
       expect(current).toBeTruthy()
       expect(current?.getAttribute("href")).toBeTruthy()
-      const long = document.querySelector(".account-page dd, .lead, .case-ref, h1")
-      expect(long).toBeTruthy()
+      expect(document.querySelector("h1")).toBeTruthy()
       unmount()
     }
+    const emptyDashboard = { summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }
+    check("/portal", "Welcome to My ProfileRelaunch", <PortalHome dashboard={emptyDashboard} />)
+    check("/portal", "We couldn't load your customer space", <PortalUnavailable />)
+    check("/portal/cases", "Cases", <CasesView view="active" page={{ cases: [], nextCursor: null }} />)
+    check("/portal/cases", "Cases", <CasesUnavailable />)
+    check("/portal/documents", "Documents", <DocumentsView documents={{ needs: [], submissions: [], documents: [] }} />)
+    check("/portal/documents", "We couldn't load your documents", <DocumentsUnavailable />)
+    check("/portal/cases/PR-26-AAAAAA", "We couldn't load this case", <CaseUnavailable />)
+    check("/portal/cases/PR-26-AAAAAA/documents", "We couldn't load documents for this case", <CaseDocumentsUnavailable />)
+    check("/portal/cases/PR-26-AAAAAA/service", "We couldn't load service details", <ServiceUnavailable />)
+    check("/portal/payments", "Payments", <PaymentsView cases={[]} focused={false} />)
+    check("/portal/payments", "We couldn't load payments", <PaymentsUnavailable />)
+    check("/portal/guard", "Relaunch Guard", <GuardView locations={[]} focused={false} />)
+    check("/portal/guard", "We couldn't load Relaunch Guard", <GuardUnavailable />)
+    check("/portal/messages", "Messages", <MessagesView page={{ threads: [], complete: true, nextCursor: null }} earlier={false} />)
+    check("/portal/messages", "Messages", <MessagesUnavailable />)
+    check("/portal/account", "Account", <AccountView account={{ name: "Alex Customer", email: `${"a".repeat(80)}@example.com`, phone: null, emailVerified: true, phoneVerified: false }} />)
+    check("/portal/account", "Account", <AccountUnavailable />)
   })
 })

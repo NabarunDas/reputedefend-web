@@ -16,10 +16,10 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("keeps the applied dev head aligned with the repository head at UX-10I", () => {
-    expect(appliedMigrationHead.filename).toBe("20261004080853_customer_portal_messages_account_v1.sql")
+  it("keeps the applied dev head aligned with the repository hardening head", () => {
+    expect(appliedMigrationHead.filename).toBe("20261004223358_data_api_default_privileges_hardening_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261004080853_customer_portal_messages_account_v1.sql")
+    expect(migrationHead.filename).toBe("20261004223358_data_api_default_privileges_hardening_v1.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead).toBe(migrationHead)
   })
@@ -28,7 +28,7 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no pending migration after UX-10I is applied to dev", () => {
+  it("has no pending migration after Data API hardening is applied to dev", () => {
     expect(pendingMigrations()).toEqual([])
   })
 

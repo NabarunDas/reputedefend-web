@@ -47,9 +47,9 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev and the repository head are both 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty. |
-| `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
-| `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
+| `supabase.applied-head` | Supabase | READY | The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty and production carries the full canonical 37-migration ledger. |
+| `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
+| `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
 | `supabase.leaked-password-protection` | Supabase | ACTION_REQUIRED | Leaked-password protection is enabled on the Supabase project as a project-level hardening measure. |
 | `supabase.recovery-rehearsal` | Supabase | DEFERRED | A recovery rehearsal against a real restored project proves the database and its evidence objects can be recovered together. |
@@ -208,16 +208,15 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The applied head is `20261004080853 customer_portal_messages_account_v1`, file
-`supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql`,
-applied to `profilerelaunch-dev` on 2026-10-04 after independent review.
-Supabase MCP initially registered `20261004090629`; that single history row
-was aligned to `20261004080853` so the remote ledger matches the repository
-filename. The live schema was not replayed during that alignment.
-`appliedMigrationHead` and the repository head are now the same UX-10I
-migration, and `pendingMigrations()` is empty. The previous applied head was
-`20261004000625 customer_portal_relaunch_guard_v1`. Applied migrations stay
-immutable. Do not replay them. Production has not received UX-10I.
+The repository, profilerelaunch-dev and the production Strategy A project all
+end at `20261004080853 customer_portal_messages_account_v1`, file
+`supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql`.
+On 2026-10-04 the production project was built from empty using all 37
+repository migrations in strict canonical order. Its migration ledger matches
+the manifest exactly from `20260915120000 core_data_foundation_v1` through
+`20261004080853 customer_portal_messages_account_v1`. `pendingMigrations()`
+is empty. No development customer, business, case or enquiry rows were copied.
+Applied migrations remain immutable and forward-only.
 
 ### The ledger discrepancy, recorded rather than repaired
 
@@ -241,8 +240,9 @@ re-runs its seed data, so a replay to close the gap would be destructive.
 **OWNER DECISION REQUIRED.** Two strategies exist and neither is implemented
 here.
 
-**Strategy A — build production from the canonical repository chain.** Create a
-new Supabase project and apply the 34 migrations in order from empty.
+**Strategy A — build production from the canonical repository chain.** This
+strategy was chosen and executed on 2026-10-04. A new production Supabase
+project was built from empty using all 37 canonical migrations in order.
 
 The discrepancy then does not exist in production, because the three foundation
 migrations are applied there normally. The history validator can read clean, so
@@ -289,8 +289,9 @@ Supabase SQL Editor. A person pastes it in and reads the output. Do not run it
 as a cutover step without reading what it returns first.
 `apps/admin/lib/release/operator-sql.test.ts` holds the file to all of that.
 
-Under Strategy A the question closes by construction, because neither object is
-ever created.
+Under the executed Strategy A build the question closes by construction and by
+observation: neither object was created, and direct production inspection
+confirmed both are absent.
 
 ## Smoke-test runbook
 

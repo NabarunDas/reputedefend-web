@@ -1,6 +1,6 @@
 # UX-10H — Relaunch Guard in the Customer Portal
 
-Source complete. Migration pending. The Customer Portal stays disabled.
+Complete in source and applied to `profilerelaunch-dev`. The Customer Portal stays disabled.
 
 ## Routes
 
@@ -53,9 +53,9 @@ The portal does not activate Guard, pause or resume coverage, assign rota, recor
 
 ## Migration and grants
 
-`supabase/migrations/20261004000625_customer_portal_relaunch_guard_v1.sql` is additive. It creates no table and no index. It is source review only and has not been applied.
+`supabase/migrations/20261004000625_customer_portal_relaunch_guard_v1.sql` is additive. It creates no table and no index. It was applied to `profilerelaunch-dev` on 2026-10-04 after independent review. Supabase MCP initially registered `20261004074806`; that single history row was aligned to the repository version `20261004000625` without replaying the schema.
 
-Applied development head remains `20261003224746_customer_portal_payments_receipts_v1.sql`. The repository head is `20261004000625_customer_portal_relaunch_guard_v1.sql`. `pendingMigrations()` contains that migration alone.
+Applied development head and repository head are both `20261004000625_customer_portal_relaunch_guard_v1.sql`. `pendingMigrations()` is empty.
 
 Public functions, granted only to `service_role`:
 

@@ -124,7 +124,6 @@ describe("readiness model", () => {
     const blockers = adminAccessBlockers()
     expect(blockers.map(entry => entry.id).sort()).toEqual([
       "email.auth-otp",
-      "supabase.migration-ledger-discrepancy",
       "vercel.admin-project-and-domain",
       "vercel.environment-contract",
     ])
@@ -163,14 +162,12 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("customer_portal_messages_account_v1")
     expect(supabase?.requirement).toContain("pendingMigrations() is empty")
     expect(supabase?.requirement).not.toContain("|")
-    expect(supabase?.evidence).toContain("profilerelaunch-dev")
-    expect(supabase?.evidence).toContain("20261004090629")
-    expect(supabase?.evidence).toContain("20261004000625")
+    expect(supabase?.evidence).toContain("production")
+    expect(supabase?.evidence).toContain("37")
+    expect(supabase?.evidence).toContain("20260915120000")
     expect(supabase?.evidence).toContain("20261004080853")
-    expect(supabase?.evidence).toContain("without replaying the schema")
     expect(supabase?.evidence).toContain("pendingMigrations() is empty")
-    expect(supabase?.externalAction).toContain("No DEV migration action remains")
-    expect(supabase?.externalAction).toContain("Do not apply UX-10I to production")
+    expect(supabase?.externalAction).toContain("No migration action remains")
     expect(supabase?.stopCondition).toContain("If the heads differ, stop")
   })
 })
@@ -207,8 +204,9 @@ describe("owner decisions and database strategies", () => {
       expect(entry.prerequisites.length).toBeGreaterThan(0)
       expect(entry.prohibited.length).toBeGreaterThan(0)
     }
-    expect(item("supabase.migration-ledger-discrepancy")?.status).toBe("BLOCKED")
-    expect(item("supabase.migration-ledger-discrepancy")?.externalAction).toContain("Owner decision")
+    expect(item("supabase.migration-ledger-discrepancy")?.status).toBe("READY")
+    expect(item("supabase.migration-ledger-discrepancy")?.externalAction).toBeNull()
+    expect(item("supabase.legacy-objects")?.status).toBe("READY")
   })
 
   it("forbids replaying or fabricating history under either strategy", () => {

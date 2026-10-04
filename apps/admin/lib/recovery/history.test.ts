@@ -26,12 +26,10 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through the applied UX-10H migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261004080853_customer_portal_messages_account_v1.sql",
-    ])
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261004000625",
-      name: "customer_portal_relaunch_guard_v1",
+      version: "20261004080853",
+      name: "customer_portal_messages_account_v1",
     })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
@@ -180,15 +178,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(false)
   })
 
-  it("treats the unapplied UX-10I migration as new rather than a replay", () => {
+  it("refuses to replay the UX-10I migration now that dev has received it", () => {
     const result = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261004080853_customer_portal_messages_account_v1.sql"],
     })
-    expect(result.status).toBe("clean")
-    expect(codes(result)).not.toContain("replay_of_applied_migration")
-    expect(mayApplyMigrations(result)).toBe(true)
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("permits a genuinely new migration once the chain is confirmed", () => {

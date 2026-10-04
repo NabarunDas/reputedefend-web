@@ -411,6 +411,17 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer portal payments", probe: "public.customer_portal_payments_v1" },
   },
+  {
+    // Source review only. Not applied to profilerelaunch-dev.
+    version: "20261004000625",
+    filename: "20261004000625_customer_portal_relaunch_guard_v1.sql",
+    step: "UX-10H customer relaunch guard",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer portal guard", probe: "public.customer_portal_guard_v1" },
+  },
 ]
 
 /**

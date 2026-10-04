@@ -84,9 +84,9 @@ export async function guardSubscriptionCommand(request: NextRequest) {
       }, { headers: privateResponseHeaders })
     }
     if (operation === "request_period_end_cancellation" || operation === "undo_period_end_cancellation") {
-      return await applyCancellation(result, operation === "request_period_end_cancellation")
+      return await settleGuardCancellation(result, operation === "request_period_end_cancellation")
     }
-    return await beginCheckout(config.origin, result)
+    return await openGuardSubscriptionCheckout(config.origin, result)
   } catch (error) {
     if (error instanceof PaymentsDisabledError) {
       return NextResponse.json({ status: "disabled", message: "Secure Stripe Checkout is not available yet." }, { status: 503, headers: privateResponseHeaders })
@@ -95,7 +95,7 @@ export async function guardSubscriptionCommand(request: NextRequest) {
   }
 }
 
-async function applyCancellation(result: {
+export async function settleGuardCancellation(result: {
   providerOperationId?: string
   idempotencyKey?: string
   stripeSubscriptionId?: string
@@ -137,7 +137,7 @@ async function applyCancellation(result: {
   }, { headers: privateResponseHeaders })
 }
 
-async function beginCheckout(origin: string, result: {
+export async function openGuardSubscriptionCheckout(origin: string, result: {
   providerOperationId?: string
   idempotencyKey?: string
   stripeCustomerId?: string

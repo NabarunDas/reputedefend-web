@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev is 20261003224746 customer_portal_payments_receipts_v1 and matches the repository head. pendingMigrations() is empty. |
+| `supabase.applied-head` | Supabase | READY | The applied migration head on profilerelaunch-dev remains 20261003224746 customer_portal_payments_receipts_v1. Repository migration 20261004000625 customer_portal_relaunch_guard_v1 is pending and source only. pendingMigrations() contains that migration alone. |
 | `supabase.migration-ledger-discrepancy` | Supabase | BLOCKED | The difference between the repository chain and the remote ledger on profilerelaunch-dev is resolved deliberately before a production database is chosen. |
 | `supabase.legacy-objects` | Supabase | ACTION_REQUIRED | public.set_case_public_ref and public.rls_auto_enable are accounted for. Neither is created by any repository migration, and Step 1 created the hardened public.cases_assign_public_ref in their place. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -214,11 +214,13 @@ applied to `profilerelaunch-dev` on 2026-10-03 after independent review.
 Supabase MCP initially registered `20261003234725`; that single history row
 was aligned to `20261003224746` so the remote ledger matches the repository
 filename. The live schema was not replayed during that alignment.
-`appliedMigrationHead` and the repository head are that UX-10G migration, and
-`pendingMigrations()` is empty. The previous applied head was
-`20261003204538 customer_portal_quotes_agreements_permissions_v1`. Applied
-migrations stay immutable. Do not replay them. Production has not received
-this migration.
+`appliedMigrationHead` remains that UX-10G migration. The repository head is
+the source-only UX-10H migration
+`20261004000625 customer_portal_relaunch_guard_v1`, and `pendingMigrations()`
+contains that migration alone. It has not been applied. The previous applied
+head was `20261003204538 customer_portal_quotes_agreements_permissions_v1`.
+Applied migrations stay immutable. Do not replay them. Production has not
+received the UX-10G migration or the pending UX-10H migration.
 
 ### The ledger discrepancy, recorded rather than repaired
 

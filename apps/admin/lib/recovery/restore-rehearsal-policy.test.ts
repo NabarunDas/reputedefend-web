@@ -27,11 +27,15 @@ describe("production database restore rehearsal policy", () => {
     expect(workflow).toContain("--single-transaction")
     expect(workflow).toContain("Confirm no application database roles are defined")
     expect(workflow).not.toContain("--file /restore/roles.sql")
+    expect(workflow).toContain("Apply restore privilege baseline")
+    expect(workflow).toContain("20261004223358_data_api_default_privileges_hardening_v1.sql")
     expect(workflow).toContain("--file /restore/schema.sql")
     expect(workflow).toContain('SET session_replication_role = replica')
     expect(workflow).toContain("--file /restore/data.sql")
     expect(workflow).toContain("--file /restore/history_schema.sql")
     expect(workflow).toContain("--file /restore/history_data.sql")
+    expect(workflow).toContain("Restore security mismatch:")
+    expect(workflow).toContain("rls_auto_enable")
   })
 
   it("requires the restore secret to point to the approved Session pooler", () => {

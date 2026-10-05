@@ -122,9 +122,18 @@ not both. For a managed-Supabase-to-managed-Supabase restore, preserve the fresh
 project's Supabase-managed database roles instead of replaying protected platform role
 settings from `roles.sql`. Before doing that, confirm the application defines no custom
 database roles; if it does, stop and restore those roles explicitly rather than silently
-dropping them. Then confirm the migration history matches the manifest, reconcile evidence
-objects against the restored metadata, validate prepared packs, reconcile the job queue,
-and compare the restored fingerprint against the pre-incident one if you have it.
+dropping them.
+
+Also apply the production Data API default-privilege hardening **before** recreating
+application tables, functions and sequences. A fresh Supabase project can otherwise grant
+`anon` and `authenticated` direct privileges while the restored migration history still
+looks correct. The restore must fail closed unless no public base table grants direct CRUD
+to those roles and no unexpected `SECURITY DEFINER` RPC is executable by them.
+A green structural restore is not accepted as recovered until these privilege-parity checks pass.
+
+Then confirm the migration history matches the manifest, reconcile evidence objects against
+the restored metadata, validate prepared packs, reconcile the job queue, and compare the
+restored fingerprint against the pre-incident one if you have it.
 
 A logical restore is a point in time. Everything written after the dump is gone, and the
 gap has to be stated explicitly rather than assumed small.

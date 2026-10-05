@@ -47,11 +47,11 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | The repository, profilerelaunch-dev and production all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() empty. Production verification confirms future Data API objects inherit no automatic anon/authenticated/service_role grants. |
+| `supabase.applied-head` | Supabase | READY | The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() is empty. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
-| `supabase.leaked-password-protection` | Supabase | ACTION_REQUIRED | Leaked-password protection is enabled on the Supabase project as a project-level hardening measure. |
+| `supabase.leaked-password-protection` | Supabase | READY | Leaked-password protection is enabled on the production Supabase project; a fresh Security Advisor run no longer reports the leaked-password warning. |
 | `supabase.recovery-rehearsal` | Supabase | DEFERRED | A recovery rehearsal against a real restored project proves the database and its evidence objects can be recovered together. |
 | `aws.evidence-role-and-bucket` | AWS evidence | ACTION_REQUIRED | The evidence bucket exists, is private, and the Admin and Customer runtimes reach it through two separate assumed roles scoped to what each one needs. |
 | `aws.evidence-scan-boundary` | AWS evidence | READY | An uploaded file is reviewable only after a clean scan result is recorded. |
@@ -74,7 +74,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `privacy.deletion-disabled` | Privacy | READY_DISABLED | Physical deletion stays off. A privacy request records the decision and deletes nothing. |
 | `privacy.export-and-holds` | Privacy | READY | A subject access export works and a legal hold blocks deletion in the database, not only in the interface. |
 
-Fourteen items are `READY`, eight are `READY_DISABLED`, eight are
+Fifteen items are `READY`, eight are `READY_DISABLED`, seven are
 `ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED` — the Step 22B
 recovery rehearsal plus the two mail activations, each deferred to its own
 phase.

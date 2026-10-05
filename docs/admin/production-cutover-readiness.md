@@ -51,7 +51,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
-| `supabase.leaked-password-protection` | Supabase | READY | Leaked-password protection is enabled on the production Supabase project; a fresh Security Advisor run no longer reports the leaked-password warning. |
+| `supabase.leaked-password-protection` | Supabase | READY | Leaked-password protection is enabled on the Supabase project as a project-level hardening measure. |
 | `supabase.recovery-rehearsal` | Supabase | DEFERRED | A recovery rehearsal against a real restored project proves the database and its evidence objects can be recovered together. |
 | `aws.evidence-role-and-bucket` | AWS evidence | ACTION_REQUIRED | The evidence bucket exists, is private, and the Admin and Customer runtimes reach it through two separate assumed roles scoped to what each one needs. |
 | `aws.evidence-scan-boundary` | AWS evidence | READY | An uploaded file is reviewable only after a clean scan result is recorded. |

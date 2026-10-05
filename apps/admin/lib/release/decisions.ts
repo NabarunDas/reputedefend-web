@@ -32,6 +32,14 @@ export type OwnerDecision = {
   priorSuggestion: string | null
 }
 
+export const approvedRecoveryObjectives = {
+  approvedAt: "2026-10-05",
+  databaseRpoHours: 4,
+  coreServiceRtoHours: 4,
+  logicalBackupCadenceHours: 3,
+  logicalBackupRetentionDays: 7,
+} as const
+
 export const ownerDecisions: readonly OwnerDecision[] = [
   {
     id: "guard.check-windows",
@@ -77,15 +85,6 @@ export const ownerDecisions: readonly OwnerDecision[] = [
       "Seeded prices are explicitly tax-unconfirmed. Tax behaviour is an explicit field on a quote rather than an assumption.",
     blocks: "Taking the first payment.",
     priorSuggestion: null,
-  },
-  {
-    id: "recovery.objectives",
-    area: "Recovery objectives",
-    question: "What recovery point and recovery time objective is ProfileRelaunch committing to for the database and for evidence objects?",
-    currentBehaviour:
-      "Step 22A measured local rehearsal timings. Those are measurements of a rebuild on a developer machine and are not a commitment.",
-    blocks: "Final production sign-off, and any customer-facing availability statement.",
-    priorSuggestion: "Local rehearsal timings exist in the Step 22A report. They must not be promoted into a target.",
   },
   {
     id: "database.production-topology",

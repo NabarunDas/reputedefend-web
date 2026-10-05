@@ -10,7 +10,7 @@ import {
   statusCounts,
 } from "./readiness"
 import { liveCapabilities } from "./gates"
-import { ownerDecisions, productionDatabaseStrategies, strategy } from "./decisions"
+import { approvedRecoveryObjectives, ownerDecisions, productionDatabaseStrategies, strategy } from "./decisions"
 import { appliedMigrationHead, migrationHead, pendingMigrations } from "../recovery/manifest"
 
 const doc = readFileSync(new URL("../../../../docs/admin/production-cutover-readiness.md", import.meta.url), "utf8")
@@ -180,7 +180,6 @@ describe("owner decisions and database strategies", () => {
       "database.production-topology",
       "guard.capacity",
       "guard.check-windows",
-      "recovery.objectives",
       "retention.periods",
       "service.first-response",
     ])
@@ -188,6 +187,17 @@ describe("owner decisions and database strategies", () => {
       .filter(entry => entry.question.trim().length < 30 || entry.currentBehaviour.trim().length < 30 || entry.blocks.trim().length < 10)
       .map(entry => entry.id)
     expect(incomplete).toEqual([])
+  })
+
+  it("records the approved launch recovery objectives separately from unresolved decisions", () => {
+    expect(approvedRecoveryObjectives).toEqual({
+      approvedAt: "2026-10-05",
+      databaseRpoHours: 4,
+      coreServiceRtoHours: 4,
+      logicalBackupCadenceHours: 3,
+      logicalBackupRetentionDays: 7,
+    })
+    expect(ownerDecisions.some(entry => entry.id === "recovery.objectives")).toBe(false)
   })
 
   it("marks an old suggested figure as prior art rather than as an answer", () => {

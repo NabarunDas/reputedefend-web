@@ -1,13 +1,25 @@
 import "server-only"
 
 export const ADMIN_EMAIL = "admin@profilerelaunch.com"
+const DEV_SUPABASE_PROJECT_REF = "rmzozuiamjcclvtgutgd"
+const PROD_SUPABASE_PROJECT_REF = "cxwwekdzkkjjbiyofrov"
+
+function supabaseMatchesVercelEnvironment(url: URL) {
+  const environment = process.env.VERCEL_ENV
+  if (environment === "production") return url.hostname === `${PROD_SUPABASE_PROJECT_REF}.supabase.co`
+  if (environment === "preview" || environment === "development") {
+    return url.hostname === `${DEV_SUPABASE_PROJECT_REF}.supabase.co`
+  }
+  return true
+}
+
 export function authConfig() {
   const { ADMIN_AUTH_ENABLED, ADMIN_ORIGIN, SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY } = process.env
   if (ADMIN_AUTH_ENABLED !== "true" || !ADMIN_ORIGIN || !SUPABASE_URL || !SUPABASE_SECRET_KEY || !SUPABASE_PUBLISHABLE_KEY) return null
   try {
     const origin = new URL(ADMIN_ORIGIN)
     const supabase = new URL(SUPABASE_URL)
-    if (origin.origin !== ADMIN_ORIGIN || origin.username || origin.password || supabase.protocol !== "https:") return null
+    if (origin.origin !== ADMIN_ORIGIN || origin.username || origin.password || supabase.protocol !== "https:" || !supabaseMatchesVercelEnvironment(supabase)) return null
     if (origin.protocol !== "https:" && !(process.env.NODE_ENV === "development" && ["localhost", "127.0.0.1"].includes(origin.hostname))) return null
     return { origin: origin.origin, url: supabase.origin, secret: SUPABASE_SECRET_KEY, publishable: SUPABASE_PUBLISHABLE_KEY, customerOrigin: parseOrigin(process.env.CUSTOMER_ORIGIN) }
   } catch { return null }

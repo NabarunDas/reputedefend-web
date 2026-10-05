@@ -535,6 +535,11 @@ does today in the absence of an answer, what the answer unblocks, and — where
 an older document suggested a figure — that figure marked as prior art rather
 than as a decision.
 
+Recovery objectives are no longer an open Owner decision. On 5 October 2026 the
+launch targets were approved as **database RPO <=4 hours** and **core-service
+RTO <=4 hours**, with a three-hour independent logical-backup cadence and
+seven-day retention.
+
 | ID | Area | Question |
 | --- | --- | --- |
 | `guard.check-windows` | Guard operations | What are the production Guard check windows, in Europe/London, including weekends and bank holidays? |
@@ -542,7 +547,6 @@ than as a decision.
 | `service.first-response` | Service commitments | What is the first-response target for an enquiry and for a case, and during which service hours? |
 | `retention.periods` | Data retention | What is the retention period for each data category, and which categories are retained regardless of a deletion request? |
 | `commercial.tax` | Commercial and legal | Is ProfileRelaunch VAT registered, do catalogue prices include tax, and which terms apply at the point of payment? |
-| `recovery.objectives` | Recovery objectives | What recovery point and recovery time objective is ProfileRelaunch committing to for the database and for evidence objects? |
 | `database.production-topology` | Production database | Does production come from a new project built from the canonical migration chain (Strategy A), or from promoting the existing development project (Strategy B)? |
 | `activation.order` | Activation order | In what order are the optional capabilities activated after Admin is in production, and who approves each one? |
 

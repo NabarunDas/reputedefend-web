@@ -22,19 +22,22 @@ exactly on the RPO boundary.
 `.github/workflows/prod-db-backup.yml` runs at minute 17 every three hours and can also
 be started manually. It:
 
-1. assumes a dedicated AWS IAM role using GitHub OIDC;
-2. checks the age of the most recent S3 backup object and records a policy failure if the
-   previous successful object is more than four hours old;
-3. uses Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
+1. stays skipped on scheduled runs until `DB_BACKUP_ENABLED=true`; manual dispatch remains
+   available for bootstrap;
+2. assumes a dedicated AWS IAM role using GitHub OIDC;
+3. checks the age of the most recent completed-backup marker and records a policy failure
+   if the previous successful backup is more than four hours old;
+4. uses Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
    logical-backup path;
-4. separately exports the `supabase_migrations` schema and data so migration history is
+5. separately exports the `supabase_migrations` schema and data so migration history is
    recoverable;
-5. records the repository and live database migration heads in a manifest;
-6. packages the SQL and manifest into a gzip archive;
-7. writes a SHA-256 checksum;
-8. uploads the archive, checksum and manifest to private S3 with SSE-S3 encryption;
-9. verifies all three S3 objects exist; and
-10. fails the workflow after upload if the database migration head differs from the
+6. records the repository and live database migration heads in a manifest;
+7. packages the SQL and manifest into a gzip archive;
+8. writes a SHA-256 checksum;
+9. uploads the archive, checksum and manifest to private S3 with SSE-S3 encryption;
+10. verifies all three S3 objects exist;
+11. writes a small `completed/<backup-id>.json` marker only after verification; and
+12. fails the workflow after preserving the completed backup if the database migration head differs from the
     repository or if the previous successful backup gap exceeded four hours.
 
 The backup is never uploaded as a GitHub Actions artifact and is never committed to the
@@ -47,6 +50,8 @@ s3://<bucket>/backups/YYYY/MM/DD/<backup-id>/
   profilerelaunch-prod-db-<backup-id>.tar.gz
   profilerelaunch-prod-db-<backup-id>.tar.gz.sha256
   manifest.json
+
+s3://<bucket>/completed/<backup-id>.json
 ```
 
 ## Retention and cost position
@@ -105,6 +110,7 @@ Repository **variables**:
 - `AWS_DB_BACKUP_BUCKET` — stack output `BackupBucketName`.
 - `AWS_DB_BACKUP_ROLE_ARN` — stack output `BackupRoleArn`.
 - `AWS_DB_BACKUP_REGION` — `eu-west-2`.
+- `DB_BACKUP_ENABLED` — leave absent/false until the first manual backup succeeds; then set to `true` to activate the three-hour schedule.
 
 The AWS role ARN and bucket name are identifiers rather than credentials; the database URL
 is a secret.
@@ -120,8 +126,9 @@ After AWS and GitHub configuration:
 2. require a green workflow;
 3. confirm the S3 prefix contains the archive, checksum and manifest;
 4. inspect `manifest.json`: `migration_aligned` must be `true`;
-5. record the backup timestamp; and
-6. leave the next scheduled run enabled.
+5. record the backup timestamp;
+6. set repository variable `DB_BACKUP_ENABLED=true`; and
+7. confirm the next scheduled run executes rather than skips.
 
 A backup that is uploaded but followed by a red policy step is **not** accepted as a
 healthy recovery state until the reported migration drift or >4-hour gap is understood.

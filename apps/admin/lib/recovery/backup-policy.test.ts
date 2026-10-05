@@ -57,7 +57,7 @@ describe("production database backup policy", () => {
   it("limits GitHub OIDC assumption to this repository main branch", () => {
     expect(cloudFormation).toContain("token.actions.githubusercontent.com:aud: sts.amazonaws.com")
     expect(cloudFormation).toContain(
-      'token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}"',
+      'token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepository}@${GitHubRepositoryId}:ref:refs/heads/${GitHubBranch}"',
     )
   })
 })

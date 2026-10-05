@@ -239,7 +239,7 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() empty.",
+      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() is empty.",
     status: "READY",
     evidence:
       "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. Repository, DEV and PROD now share the same head and pendingMigrations() is empty.",
@@ -310,12 +310,11 @@ export const readinessModel: readonly ReadinessItem[] = [
     area: "Supabase",
     requirement:
       "Leaked-password protection is enabled on the Supabase project as a project-level hardening measure.",
-    status: "ACTION_REQUIRED",
+    status: "READY",
     evidence:
-      "The Admin application authenticates with one-time codes only and never accepts a password. The production Supabase Auth user was provisioned separately so the project-level password protection setting still matters as defense in depth; repository code cannot configure it.",
+      "Enabled on the production Supabase project on 2026-10-05. A fresh Supabase Security Advisor run no longer reports auth_leaked_password_protection. The Admin application remains OTP-only and does not enable password login.",
     codeAction: null,
-    externalAction:
-      "In the Supabase dashboard: Authentication → Providers → Email → enable leaked-password protection on the production project.",
+    externalAction: null,
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:

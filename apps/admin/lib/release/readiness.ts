@@ -329,10 +329,11 @@ export const readinessModel: readonly ReadinessItem[] = [
       "A recovery rehearsal against a real restored project proves the database and its evidence objects can be recovered together.",
     status: "DEFERRED",
     evidence:
-      "Step 22A is complete: the chain rebuilds from zero and upgrades from the Step 10 checkpoint in apps/admin/lib/recovery, and the rehearsal reports execution and verified recovery as separate statuses. Step 22B, the rehearsal against a restored project, has not been performed.",
-    codeAction: null,
+      "Step 22A is complete. The launch objectives are approved at RPO <=4 hours and core-service RTO <=4 hours. .github/workflows/prod-db-backup.yml plus infra/aws/prod-db-backup.yaml implement the source-controlled three-hour logical-backup path with seven-day S3 retention. Step 22B, the rehearsal against a real restored project, has not yet been performed.",
+    codeAction:
+      "Deploy the source-controlled backup stack, configure the GitHub secret/variables, and obtain one accepted live backup before the restore rehearsal.",
     externalAction:
-      "Step 22B. It is not performed here: no Supabase branch or project is created, no restore or point-in-time recovery is run, and no AWS evidence object is touched.",
+      "In AWS, deploy infra/aws/prod-db-backup.yaml. In GitHub, set PROD_SUPABASE_DB_URL and the three AWS_DB_BACKUP_* variables, manually run Production database backup, then execute Step 22B against a throwaway Supabase project.",
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:

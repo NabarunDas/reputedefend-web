@@ -239,13 +239,13 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The repository and profilerelaunch-dev end at 20261004223358 data_api_default_privileges_hardening_v1 and pendingMigrations() is empty. Production must receive that reviewed forward migration before Admin production access.",
-    status: "ACTION_REQUIRED",
+      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() is empty.",
+    status: "READY",
     evidence:
-      "On 2026-10-04 profilerelaunch-dev applied 20261004223358 data_api_default_privileges_hardening_v1 and verification confirmed new public tables, functions and sequences no longer inherit automatic anon, authenticated or service_role Data API grants. The repository and DEV now carry the canonical chain from 20260915120000 core_data_foundation_v1 through 20261004223358, and pendingMigrations() is empty. The existing Strategy A production project still ends at the prior 20261004080853 customer_portal_messages_account_v1 head until this reviewed migration is promoted.",
+      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. The canonical chain still starts at 20260915120000 core_data_foundation_v1. Repository, DEV and PROD now share the same head and pendingMigrations() is empty.",
     codeAction: null,
     externalAction:
-      "After this source change is merged, apply exactly 20261004223358 data_api_default_privileges_hardening_v1 to production, verify the default ACLs, and confirm the production migration head matches appliedMigrationHead.",
+      "No migration action remains for the current production schema head. Future migrations remain forward-only and require review before production application.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
@@ -310,12 +310,11 @@ export const readinessModel: readonly ReadinessItem[] = [
     area: "Supabase",
     requirement:
       "Leaked-password protection is enabled on the Supabase project as a project-level hardening measure.",
-    status: "ACTION_REQUIRED",
+    status: "READY",
     evidence:
-      "The Admin application authenticates with one-time codes only and never accepts a password. The production Supabase Auth user was provisioned separately so the project-level password protection setting still matters as defense in depth; repository code cannot configure it.",
+      "Enabled on the production Supabase project on 2026-10-05. apps/admin/lib/release/external-evidence.ts records the observation from a fresh Supabase Security Advisor run: auth_leaked_password_protection is absent. The Admin application remains OTP-only and does not enable password login.",
     codeAction: null,
-    externalAction:
-      "In the Supabase dashboard: Authentication → Providers → Email → enable leaked-password protection on the production project.",
+    externalAction: null,
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:

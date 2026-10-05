@@ -124,7 +124,6 @@ describe("readiness model", () => {
     const blockers = adminAccessBlockers()
     expect(blockers.map(entry => entry.id).sort()).toEqual([
       "email.auth-otp",
-      "supabase.applied-head",
       "vercel.admin-project-and-domain",
       "vercel.environment-contract",
     ])
@@ -158,17 +157,17 @@ describe("readiness model", () => {
     expect(migrationHead.version).toBe("20261004223358")
     expect(appliedMigrationHead).toBe(migrationHead)
     const supabase = item("supabase.applied-head")
-    expect(supabase?.status).toBe("ACTION_REQUIRED")
+    expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
     expect(supabase?.requirement).toContain("data_api_default_privileges_hardening_v1")
     expect(supabase?.requirement).toContain("pendingMigrations() is empty")
     expect(supabase?.requirement).not.toContain("|")
     expect(supabase?.evidence).toContain("production")
-    expect(supabase?.evidence).toContain("20261004080853")
+    expect(supabase?.evidence).toContain("PROD")
     expect(supabase?.evidence).toContain("20260915120000")
     expect(supabase?.evidence).toContain("20261004223358")
     expect(supabase?.evidence).toContain("pendingMigrations() is empty")
-    expect(supabase?.externalAction).toContain("apply exactly 20261004223358")
+    expect(supabase?.externalAction).toContain("No migration action remains")
     expect(supabase?.stopCondition).toContain("If the heads differ, stop")
   })
 })
@@ -251,9 +250,9 @@ describe("the cutover document matches the model", () => {
 
   it("reports the status counts the model actually holds", () => {
     const counts = statusCounts()
-    expect(counts).toEqual({ READY: 13, READY_DISABLED: 8, ACTION_REQUIRED: 9, BLOCKED: 2, DEFERRED: 3 })
+    expect(counts).toEqual({ READY: 15, READY_DISABLED: 8, ACTION_REQUIRED: 7, BLOCKED: 2, DEFERRED: 3 })
     expect(doc).toContain(
-      "Fourteen items are `READY`, eight are `READY_DISABLED`, eight are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
+      "Fifteen items are `READY`, eight are `READY_DISABLED`, seven are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
     )
   })
 })

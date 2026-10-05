@@ -18,7 +18,7 @@ The repository route inventory matches the assembled portal: `/login`, the porta
 - Source and component checks cover the responsive safeguards: percentage container widths, `min-width: 0`, long-text wrapping, horizontal portal-nav scrolling with a scroll margin, the existing 359, 480, 768, and 1024 pixel breakpoints, reduced motion, and `overflow-x: clip` on the page. Those checks do not measure a signed-in browser layout. The authenticated viewport sweep is an external launch gate below.
 - `scripts/smoke-customer.mjs` covers `/login`, the portal pages, portal pre-auth posts, portal mutations, and receipt, invoice, and download reads while `CUSTOMER_PORTAL_ENABLED` is off. Those requests redirect or return 404, set no portal cookie, and do not call a provider.
 - `npm run release:customer-check` discovers every `database.test.ts` and `*.database.test.ts` file under `apps/admin/lib/customer-portal/`, including the UX-10A auth suite and each later phase suite, and runs those files together with the migration manifest and migration history tests. A coverage test fails if a future Customer Portal database file in that directory is left out. It then runs the customer typecheck, build, and smoke. Its closing line is: “Repository checks passed. This is not production launch approval.”
-- The repository and development project end at `20261004223358_data_api_default_privileges_hardening_v1.sql` with `pendingMigrations()` empty. The clean Strategy A production project remains at the prior `20261004080853_customer_portal_messages_account_v1.sql` head until the reviewed hardening migration is promoted.
+- The repository, development project and clean Strategy A production project all end at `20261004223358_data_api_default_privileges_hardening_v1.sql` with `pendingMigrations()` empty. Production verification confirms the future Data API default-grant hardening is active.
 - Google API, Stripe, outgoing mail, inbound mail, Guard automation, privacy deletion, job workers, and Cron are unchanged. The marketing site does not gain a Customer Login link.
 
 ## B. External action required before portal launch
@@ -39,7 +39,7 @@ Resolved for production by Strategy A on 2026-10-04. The production project was 
 
 ### Production migration head
 
-The Strategy A production ledger was verified through `20261004080853 customer_portal_messages_account_v1`. Before portal enablement, promote the reviewed `20261004223358 data_api_default_privileges_hardening_v1` migration, verify its default ACL effect, and confirm production then matches the repository/dev head.
+Verified on 2026-10-05: production ends at `20261004223358 data_api_default_privileges_hardening_v1`, matching repository and DEV. The default ACL verification confirms future public tables, functions and sequences receive no automatic Data API grants.
 
 ### Customer OTP
 

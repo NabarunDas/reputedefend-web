@@ -6,6 +6,29 @@ export type SupabaseServerConfig = {
   ready: boolean
 }
 
+export const DEV_SUPABASE_PROJECT_REF = "rmzozuiamjcclvtgutgd"
+export const PROD_SUPABASE_PROJECT_REF = "cxwwekdzkkjjbiyofrov"
+
+function expectedProjectRef(vercelEnv: string | undefined): string | null {
+  if (vercelEnv === "production") return PROD_SUPABASE_PROJECT_REF
+  if (vercelEnv === "preview" || vercelEnv === "development") return DEV_SUPABASE_PROJECT_REF
+  return null
+}
+
+export function supabaseUrlMatchesEnvironment(
+  value: string,
+  vercelEnv: string | undefined,
+): boolean {
+  const expected = expectedProjectRef(vercelEnv)
+  if (!expected) return true
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && url.hostname === `${expected}.supabase.co`
+  } catch {
+    return false
+  }
+}
+
 function trimEnv(value: string | undefined) {
   return value?.trim() ?? ""
 }
@@ -23,7 +46,7 @@ export function readSupabaseConfig(
   return {
     url,
     secretKey,
-    ready: Boolean(url && secretKey),
+    ready: Boolean(url && secretKey && supabaseUrlMatchesEnvironment(url, env.VERCEL_ENV)),
   }
 }
 

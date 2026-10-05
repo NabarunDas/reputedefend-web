@@ -43,7 +43,16 @@ Required in the Admin Production Vercel project only:
 - `AWS_EVIDENCE_BUCKET`
 - `AWS_EVIDENCE_ROLE_ARN`
 
-Do not set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`. Production fails closed if a required variable is missing or if static keys are present. Preview and local environments must not silently use the production role: `VERCEL_ENV` other than `production` disables the adapter, and tests inject a mock S3 adapter.
+Do not set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`. Static keys always fail closed.
+
+Environment isolation is explicit:
+
+| Vercel environment | Supabase | Evidence S3 | OIDC role |
+| --- | --- | --- | --- |
+| Preview / Development | `profilerelaunch-dev` (`rmzozuiamjcclvtgutgd`) | `profilerelaunch-evidence-dev-01` | DEV Admin/Customer evidence role |
+| Production | `ProfileRelaunch-prod` (`cxwwekdzkkjjbiyofrov`) | `profilerelaunch-evidence-prod-euw2-337909767363` | `ProfileRelaunchProdAdminEvidence` / `ProfileRelaunchProdCustomerEvidence` |
+
+The application checks this mapping at runtime and fails closed on a cross-environment Supabase URL, evidence bucket or production role. Preview is therefore allowed to exercise the real DEV S3 upload/scan path without access to the production bucket. Local/test code may continue to use injected mocks.
 
 This PR does not create or modify AWS infrastructure or Vercel project settings.
 
@@ -147,3 +156,17 @@ Preserve the existing Admin origin/CORS behaviour. Do not change AWS from this P
 ## Future work
 
 Payment/permission workflow gates, Google submission and customer replacement upload remain later stages. Step 8 is complete. Step 9A live Service Agreement acceptance has succeeded. Step 9B1 is live-tested complete. Step 9B2 is source-only until the migration is applied and `s3:PutObject` is added to the existing customer role.
+
+
+## Production evidence infrastructure
+
+`infra/aws/prod-evidence.yaml` is the canonical production evidence stack. It creates:
+
+- the private production evidence bucket in `eu-west-2`;
+- S3 Block Public Access, BucketOwnerEnforced ownership, SSE-S3 encryption and versioning;
+- production-only CORS for `admin.profilerelaunch.com` and `customer.profilerelaunch.com`;
+- separate Vercel OIDC roles for Admin and Customer, each restricted to the exact Vercel project and `environment:production`;
+- no static AWS credentials and no `DeleteObject` or `ListBucket` permission for the application roles; and
+- GuardDuty Malware Protection for the `cases/` prefix with `GuardDutyMalwareScanStatus` tagging enabled.
+
+The DEV evidence bucket and DEV IAM roles are separate resources and are not modified by this production stack.

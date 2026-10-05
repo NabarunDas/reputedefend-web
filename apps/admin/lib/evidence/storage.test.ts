@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
-import { evidenceAwsConfig } from "./config"
+import { DEV_EVIDENCE_BUCKET, PROD_EVIDENCE_BUCKET, evidenceAwsConfig } from "./config"
 import { createEvidenceStorage, isMissingS3Object, presignedPostInput, probeFromTaggingError, contentDisposition, readObjectInput, signedUrlExpiresSeconds, isAllowedReadExpiry } from "./storage"
 import { MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, evidenceObjectKey, isOpaqueEvidenceKey, mapGuardDutyStatus, usesConfiguredEvidenceBucket } from "./model"
 
@@ -52,12 +52,24 @@ describe("evidence storage policy", () => {
     expect(createEvidenceStorage()).toBeNull()
   })
 
-  it("does not use preview or missing environment credentials", () => {
+  it("pins Preview to DEV evidence and Production to PROD evidence", () => {
     process.env.AWS_REGION = "eu-west-2"
-    process.env.AWS_EVIDENCE_BUCKET = "evidence-test-bucket-01"
-    process.env.AWS_EVIDENCE_ROLE_ARN = "arn:aws:iam::123456789012:role/AdminEvidenceTestRole"
     process.env.VERCEL_ENV = "preview"
+    process.env.AWS_EVIDENCE_BUCKET = DEV_EVIDENCE_BUCKET
+    process.env.AWS_EVIDENCE_ROLE_ARN = "arn:aws:iam::123456789012:role/ProfileRelaunchDevAdminEvidence"
+    expect(evidenceAwsConfig()?.bucket).toBe(DEV_EVIDENCE_BUCKET)
+
+    process.env.AWS_EVIDENCE_BUCKET = PROD_EVIDENCE_BUCKET
+    process.env.AWS_EVIDENCE_ROLE_ARN = "arn:aws:iam::123456789012:role/ProfileRelaunchProdAdminEvidence"
     expect(evidenceAwsConfig()).toBeNull()
+
+    process.env.VERCEL_ENV = "production"
+    expect(evidenceAwsConfig()?.bucket).toBe(PROD_EVIDENCE_BUCKET)
+
+    process.env.AWS_EVIDENCE_BUCKET = DEV_EVIDENCE_BUCKET
+    process.env.AWS_EVIDENCE_ROLE_ARN = "arn:aws:iam::123456789012:role/ProfileRelaunchDevAdminEvidence"
+    expect(evidenceAwsConfig()).toBeNull()
+
     delete process.env.VERCEL_ENV
     delete process.env.AWS_EVIDENCE_ROLE_ARN
     expect(evidenceAwsConfig()).toBeNull()

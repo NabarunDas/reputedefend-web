@@ -129,6 +129,7 @@ application tables, functions and sequences. A fresh Supabase project can otherw
 `anon` and `authenticated` direct privileges while the restored migration history still
 looks correct. The restore must fail closed unless no public base table grants direct CRUD
 to those roles and no unexpected `SECURITY DEFINER` RPC is executable by them.
+A green structural restore is not accepted as recovered until these privilege-parity checks pass.
 
 Then confirm the migration history matches the manifest, reconcile evidence objects against
 the restored metadata, validate prepared packs, reconcile the job queue, and compare the

@@ -94,7 +94,7 @@ If the AWS account already has the GitHub OIDC provider
 - `GitHubBranch`: `main`.
 - `ExistingGitHubOidcProviderArn`: blank unless one already exists.
 
-The stack requires acknowledgement of IAM resource creation.
+The stack creates a named IAM role, so CloudFormation requires acknowledgement of `CAPABILITY_NAMED_IAM`.
 
 ## GitHub configuration
 

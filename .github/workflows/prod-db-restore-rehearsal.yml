@@ -128,11 +128,24 @@ jobs:
           echo "started_epoch=$started_epoch" >> "$GITHUB_OUTPUT"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
-      - name: Restore roles schema and data
+      - name: Confirm no application database roles are defined
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm             -v "$PWD/restore-set:/restore:ro"             -e DB_URL="$RESTORE_DB_URL"             postgres:17-alpine             sh -c 'psql               --single-transaction               --variable ON_ERROR_STOP=1               --file /restore/roles.sql               --file /restore/schema.sql               --command "SET session_replication_role = replica"               --file /restore/data.sql               --dbname "$DB_URL"'
+          if git grep -Eni '\\b(CREATE[[:space:]]+(ROLE|USER)|ALTER[[:space:]]+ROLE)\\b' -- 'supabase/migrations/*.sql'; then
+            echo "::error::Repository defines application database roles. Managed-role restore policy must be reviewed before continuing."
+            exit 1
+          fi
+
+      - name: Restore schema and data
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A fresh managed Supabase project already owns and configures its platform roles.
+          # Replaying roles.sql can try to change protected settings such as
+          # postgres.log_min_messages, so this managed-to-managed rehearsal preserves
+          # the target project's platform roles. Application-specific roles are forbidden above.
+          docker run --rm             -v "$PWD/restore-set:/restore:ro"             -e DB_URL="$RESTORE_DB_URL"             postgres:17-alpine             sh -c 'psql               --single-transaction               --variable ON_ERROR_STOP=1               --file /restore/schema.sql               --command "SET session_replication_role = replica"               --file /restore/data.sql               --dbname "$DB_URL"'
 
       - name: Restore migration history
         shell: bash

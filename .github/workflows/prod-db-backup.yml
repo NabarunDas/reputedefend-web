@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   backup:
+    if: github.event_name == 'workflow_dispatch' || vars.DB_BACKUP_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -49,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           previous_last_modified="$(
-            aws s3api list-objects-v2               --bucket "$AWS_BACKUP_BUCKET"               --prefix "backups/"               --query 'sort_by(Contents,&LastModified)[-1].LastModified'               --output text
+            aws s3api list-objects-v2               --bucket "$AWS_BACKUP_BUCKET"               --prefix "completed/"               --query 'Contents[-1].LastModified'               --output text
           )"
 
           gap=false
@@ -165,6 +166,14 @@ jobs:
           aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/${ARCHIVE}.sha256" >/dev/null
           aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/manifest.json" >/dev/null
 
+      - name: Write completed-backup marker
+        shell: bash
+        env:
+          BACKUP_ID: ${{ steps.dump.outputs.backup_id }}
+        run: |
+          set -euo pipefail
+          aws s3 cp backup-set/manifest.json             "s3://$AWS_BACKUP_BUCKET/completed/${BACKUP_ID}.json"             --sse AES256 --content-type application/json --only-show-errors
+
       - name: Record backup summary
         shell: bash
         env:
@@ -176,13 +185,13 @@ jobs:
           {
             echo "### Production database backup"
             echo ""
-            echo "- Backup ID: `$BACKUP_ID`"
+            echo "- Backup ID: $BACKUP_ID"
             echo "- Cadence: 3 hours"
             echo "- RPO target: <=4 hours"
             echo "- Retention: 7 days"
-            echo "- Migration head aligned: `$MIGRATION_ALIGNED`"
-            echo "- Previous backup gap >4h: `$PREVIOUS_GAP`"
-            echo "- Previous backup age (seconds): `$PREVIOUS_AGE`"
+            echo "- Migration head aligned: $MIGRATION_ALIGNED"
+            echo "- Previous backup gap >4h: $PREVIOUS_GAP"
+            echo "- Previous backup age (seconds): $PREVIOUS_AGE"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail closed on recovery-policy drift

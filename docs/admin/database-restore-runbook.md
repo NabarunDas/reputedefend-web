@@ -210,24 +210,38 @@ gates re-opened one at a time.
 
 ## RPO and RTO position
 
-Every number below was measured against in-process PostgreSQL on synthetic data. **None of
-them is a production recovery target.** A test runtime is not an RTO, and nothing here has
-been approved.
+Approved for launch on 5 October 2026:
 
-| Scenario | Demonstrated in rehearsal | External dependency | Data-loss exposure | Current limitation | Owner decision |
+- **Database RPO: <= 4 hours**
+- **Core-service RTO: <= 4 hours**
+
+The production design uses two independent recovery paths:
+
+1. Supabase Pro's managed daily backup retained for seven days.
+2. A ProfileRelaunch logical database export every three hours, retained for
+   seven days in a separate private AWS S3 bucket.
+
+The three-hour cadence leaves one hour of margin inside the RPO target. The
+source-controlled implementation is in
+`.github/workflows/prod-db-backup.yml` and
+`infra/aws/prod-db-backup.yaml`. It does not count as demonstrated recovery
+until the AWS stack is deployed, a real backup succeeds, and Step 22B restores
+one of those backups into a throwaway project.
+
+| Scenario | Demonstrated in rehearsal | External dependency | Data-loss exposure | Current limitation | Launch target |
 | --- | --- | --- | --- | --- | --- |
-| Schema rebuild, empty environment | ~2 s to apply all 26 migrations | None | None — no data involved | In-process PostgreSQL, not a provisioned Supabase project | Not yet approved |
-| Existing database upgrade | ~2 s for the additive tail from the Step 10 checkpoint | None | None — additive only | Synthetic dataset; real volumes untested | Not yet approved |
-| Logical backup restore | Not demonstrated | Supabase, dump size | Everything after the dump | No dump has been taken or restored | Not yet approved |
-| Supabase scheduled backup | Not demonstrated | Supabase retention | Up to the backup interval | Configured retention unconfirmed | Not yet approved |
-| Point-in-time recovery | Not demonstrated | Supabase PITR window | Up to the recovery point | PITR availability unconfirmed for this project | Not yet approved |
-| Forward fix after a faulty migration | Backfill sequence and interruption-resumption rehearsed locally | Deployment pipeline | None if the fix is additive | Rehearsed on synthetic rows only | Not yet approved |
-| Catastrophic project loss | Not demonstrated | Supabase, Vercel, AWS, DNS | Everything after the last backup | External configuration is the real cost and is unmeasured | Not yet approved |
-| Evidence object recovery | Reconciliation logic rehearsed against synthetic objects | AWS S3 versioning or backup | Unknown — depends on bucket configuration | No live S3 operation performed; with no content hash stored, a real restore can reach a structural match but never byte verification | Not yet approved |
-| Job queue reconciliation | Classification rehearsed on synthetic rows | None | None directly; duplicate provider effects are the risk | Volume and provider reconciliation untested | Not yet approved |
+| Schema rebuild, empty environment | Local only | None | None — no data involved | In-process PostgreSQL, not a provisioned Supabase project | Supports RTO evidence only |
+| Existing database upgrade | Local only | None | None — additive only | Synthetic dataset; real volumes untested | Supports RTO evidence only |
+| Three-hour logical backup restore | Not yet live-demonstrated | GitHub Actions, Supabase connection, AWS S3 | Up to three hours normally; policy alarm if prior successful object is >4h old | AWS bootstrap and first live backup still required | RPO <=4h / RTO <=4h |
+| Supabase scheduled backup | Platform-managed | Supabase | Up to the daily backup interval | Daily cadence does not meet the four-hour RPO by itself | Secondary recovery path |
+| Point-in-time recovery | Not enabled | Supabase PITR | Minutes if enabled | Cost intentionally deferred at launch | Not required for launch |
+| Forward fix after a faulty migration | Rehearsed locally | Deployment pipeline | None if the fix is additive | Real volumes untested | Prefer over restore where safe |
+| Catastrophic project loss | Not yet live-demonstrated | Supabase, GitHub, AWS, Vercel, DNS | Since last recoverable backup | External reconfiguration and storage reconciliation are unmeasured | RTO <=4h |
+| Evidence object recovery | Reconciliation logic rehearsed synthetically | AWS S3 | Separate from database RPO | Production bucket inventory and byte-integrity gap still need Step 22B evidence | Must not push overall recovery beyond RTO |
+| Job queue reconciliation | Rehearsed synthetically | None | None directly; duplicate provider effects are the risk | Provider reconciliation untested live | Included within RTO |
 
-Database and storage are separate streams. Overall recovery is bounded by whichever
-finishes last, which is likely to be S3 reconciliation, not the database.
+Database and evidence storage are separate recovery streams. Overall recovery is
+bounded by whichever finishes last.
 
 ## Forward fix or restore
 
@@ -248,9 +262,9 @@ consequences, and the tooling reports facts rather than choosing.
 
 ## Open items for Step 22B
 
-- Execute Scenario C against a throwaway project and time it.
-- Reconcile a real S3 inventory against restored metadata.
-- Confirm the Supabase backup and PITR retention configured for production.
+- Deploy the production logical-backup AWS stack and accept the first live three-hour backup.
+- Execute Scenario B with that logical backup against a throwaway project and time it.
+- Reconcile a real S3 evidence inventory against restored metadata.
+- Confirm the native Supabase daily-backup retention observed in production.
 - Add an evidence content hash so byte-level integrity can be proved.
-- Obtain Owner-approved RPO and RTO targets to replace `Not yet approved`.
 - Decide whether recovery access may continue to depend on a single Admin identity.

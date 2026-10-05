@@ -124,7 +124,6 @@ describe("readiness model", () => {
     const blockers = adminAccessBlockers()
     expect(blockers.map(entry => entry.id).sort()).toEqual([
       "email.auth-otp",
-      "supabase.applied-head",
       "vercel.admin-project-and-domain",
       "vercel.environment-contract",
     ])
@@ -251,9 +250,9 @@ describe("the cutover document matches the model", () => {
 
   it("reports the status counts the model actually holds", () => {
     const counts = statusCounts()
-    expect(counts).toEqual({ READY: 13, READY_DISABLED: 8, ACTION_REQUIRED: 9, BLOCKED: 2, DEFERRED: 3 })
+    expect(counts).toEqual({ READY: 15, READY_DISABLED: 8, ACTION_REQUIRED: 7, BLOCKED: 2, DEFERRED: 3 })
     expect(doc).toContain(
-      "Fourteen items are `READY`, eight are `READY_DISABLED`, eight are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
+      "Fifteen items are `READY`, eight are `READY_DISABLED`, seven are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
     )
   })
 })

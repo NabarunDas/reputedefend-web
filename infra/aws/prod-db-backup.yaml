@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ProfileRelaunch production database logical-backup bucket and GitHub OIDC role.
+
+Parameters:
+  BackupBucketName:
+    Type: String
+    Description: Globally unique private S3 bucket name for production database backups.
+  GitHubOwner:
+    Type: String
+    Default: NabarunDas
+  GitHubRepository:
+    Type: String
+    Default: reputedefend-web
+  GitHubBranch:
+    Type: String
+    Default: main
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Leave blank to create the GitHub OIDC provider. If one already exists in this AWS account, supply its ARN.
+
+Conditions:
+  CreateGitHubOidcProvider: !Equals [!Ref ExistingGitHubOidcProviderArn, ""]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Purpose
+          Value: ProductionDatabaseBackup
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BackupBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireDatabaseBackupsAfterSevenDays
+            Status: Enabled
+            ExpirationInDays: 7
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: Production
+        - Key: Purpose
+          Value: DatabaseBackup
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub "${BackupBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GitHubBackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchGitHubDbBackup
+      Description: GitHub Actions role for encrypted ProfileRelaunch production database backups.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateGitHubOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}"
+      Policies:
+        - PolicyName: ProfileRelaunchDatabaseBackupBucketAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BucketMetadata
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                Resource: !GetAtt BackupBucket.Arn
+              - Sid: ListBackupPrefix
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt BackupBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - "backups/*"
+              - Sid: WriteAndVerifyBackupObjects
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "${BackupBucket.Arn}/backups/*"
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Purpose
+          Value: ProductionDatabaseBackup
+
+Outputs:
+  BackupBucketName:
+    Description: Set this as GitHub repository variable AWS_DB_BACKUP_BUCKET.
+    Value: !Ref BackupBucket
+  BackupRoleArn:
+    Description: Set this as GitHub repository variable AWS_DB_BACKUP_ROLE_ARN.
+    Value: !GetAtt GitHubBackupRole.Arn
+  BackupRegion:
+    Description: Set this as GitHub repository variable AWS_DB_BACKUP_REGION.
+    Value: !Ref AWS::Region

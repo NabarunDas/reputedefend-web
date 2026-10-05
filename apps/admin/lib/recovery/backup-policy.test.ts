@@ -17,6 +17,8 @@ const runbook = readFileSync(
 describe("production database backup policy", () => {
   it("runs inside the four-hour RPO with a three-hour cadence", () => {
     expect(workflow).toContain('cron: "17 */3 * * *"')
+    expect(workflow).toContain("vars.DB_BACKUP_ENABLED == 'true'")
+    expect(workflow).toContain('--prefix "completed/"')
     expect(workflow).toContain("age_seconds > 14400")
     expect(runbook).toContain("RPO: <= 4 hours")
     expect(runbook).toContain("RTO: <= 4 hours")
@@ -47,6 +49,7 @@ describe("production database backup policy", () => {
     expect(cloudFormation).toContain("ExpirationInDays: 7")
     expect(cloudFormation).toContain("s3:PutObject")
     expect(cloudFormation).toContain("s3:GetObject")
+    expect(cloudFormation).toContain('"completed/*"')
     expect(cloudFormation).not.toContain("s3:DeleteObject")
     expect(cloudFormation).not.toContain('Action: "s3:*"\n                Resource: !Sub')
   })

@@ -5,6 +5,7 @@ const DEV_SUPABASE_PROJECT_REF = "rmzozuiamjcclvtgutgd"
 const PROD_SUPABASE_PROJECT_REF = "cxwwekdzkkjjbiyofrov"
 
 function supabaseMatchesVercelEnvironment(url: URL) {
+  if (process.env.NODE_ENV === "test" && url.hostname === "example.supabase.co") return true
   const environment = process.env.VERCEL_ENV
   if (environment === "production") return url.hostname === `${PROD_SUPABASE_PROJECT_REF}.supabase.co`
   if (environment === "preview" || environment === "development") {

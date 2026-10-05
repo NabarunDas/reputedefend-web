@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { readEnquiryEmailConfig } from "@/lib/enquiry-config"
-import { readSupabaseConfig, requireSupabaseConfig } from "@/lib/supabase/config"
+import {
+  DEV_SUPABASE_PROJECT_REF,
+  PROD_SUPABASE_PROJECT_REF,
+  readSupabaseConfig,
+  requireSupabaseConfig,
+} from "@/lib/supabase/config"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 describe("readSupabaseConfig", () => {
@@ -24,6 +29,30 @@ describe("readSupabaseConfig", () => {
     expect(config.ready).toBe(true)
     expect(config.url).toBe("https://example.supabase.co")
     expect(config.secretKey).toBe("test-secret-key")
+  })
+
+  it("enforces preview -> DEV and production -> PROD project refs", () => {
+    const secret = "server-secret"
+    expect(readSupabaseConfig({
+      VERCEL_ENV: "preview",
+      SUPABASE_URL: `https://${DEV_SUPABASE_PROJECT_REF}.supabase.co`,
+      SUPABASE_SECRET_KEY: secret,
+    }).ready).toBe(true)
+    expect(readSupabaseConfig({
+      VERCEL_ENV: "preview",
+      SUPABASE_URL: `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+      SUPABASE_SECRET_KEY: secret,
+    }).ready).toBe(false)
+    expect(readSupabaseConfig({
+      VERCEL_ENV: "production",
+      SUPABASE_URL: `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+      SUPABASE_SECRET_KEY: secret,
+    }).ready).toBe(true)
+    expect(readSupabaseConfig({
+      VERCEL_ENV: "production",
+      SUPABASE_URL: `https://${DEV_SUPABASE_PROJECT_REF}.supabase.co`,
+      SUPABASE_SECRET_KEY: secret,
+    }).ready).toBe(false)
   })
 
   it("does not require credentials to import unrelated modules", () => {

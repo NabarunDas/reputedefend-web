@@ -118,7 +118,11 @@ continuously by `rehearsal.database.test.ts`.
 Use when a logical dump of the database is the source of truth and the target is empty.
 
 Restore into a new project built by Scenario A, or let the dump create the schema — but
-not both. Then confirm the migration history matches the manifest, reconcile evidence
+not both. For a managed-Supabase-to-managed-Supabase restore, preserve the fresh target
+project's Supabase-managed database roles instead of replaying protected platform role
+settings from `roles.sql`. Before doing that, confirm the application defines no custom
+database roles; if it does, stop and restore those roles explicitly rather than silently
+dropping them. Then confirm the migration history matches the manifest, reconcile evidence
 objects against the restored metadata, validate prepared packs, reconcile the job queue,
 and compare the restored fingerprint against the pre-incident one if you have it.
 

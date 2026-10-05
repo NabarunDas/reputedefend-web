@@ -90,9 +90,16 @@ If the AWS account already has the GitHub OIDC provider
 - `BackupBucketName`: choose a globally unique name, for example
   `profilerelaunch-prod-db-backups-<account-id>`.
 - `GitHubOwner`: `NabarunDas`.
+- `GitHubOwnerId`: `34938163`.
 - `GitHubRepository`: `reputedefend-web`.
+- `GitHubRepositoryId`: `1361952578`.
 - `GitHubBranch`: `main`.
 - `ExistingGitHubOidcProviderArn`: blank unless one already exists.
+
+GitHub repositories created after 15 July 2026 use immutable OIDC subject claims that include
+the owner ID and repository ID. The IAM trust policy therefore matches
+`repo:NabarunDas@34938163/reputedefend-web@1361952578:ref:refs/heads/main`,
+rather than the older name-only subject format.
 
 The stack creates a named IAM role, so CloudFormation requires acknowledgement of `CAPABILITY_NAMED_IAM`.
 

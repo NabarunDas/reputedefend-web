@@ -1,0 +1,210 @@
+name: Production database restore rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_id:
+        description: "Completed production backup ID to restore (YYYYMMDDTHHMMSSZ)"
+        required: true
+        default: "20261005T134341Z"
+      target_project_ref:
+        description: "Throwaway Supabase recovery target project ref"
+        required: true
+        default: "mguynvowyhupycznwbyd"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-database-restore-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RESTORE_DB_URL: ${{ secrets.RESTORE_SUPABASE_DB_URL }}
+      AWS_BACKUP_BUCKET: ${{ vars.AWS_DB_BACKUP_BUCKET }}
+      AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_DB_BACKUP_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_DB_BACKUP_REGION }}
+      EXPECTED_TARGET_PROJECT_REF: mguynvowyhupycznwbyd
+      PRODUCTION_PROJECT_REF: cxwwekdzkkjjbiyofrov
+      BACKUP_ID: ${{ inputs.backup_id }}
+      TARGET_PROJECT_REF: ${{ inputs.target_project_ref }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate rehearsal target and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${RESTORE_DB_URL:?Missing RESTORE_SUPABASE_DB_URL repository secret}"
+          : "${AWS_BACKUP_BUCKET:?Missing AWS_DB_BACKUP_BUCKET repository variable}"
+          : "${AWS_BACKUP_ROLE_ARN:?Missing AWS_DB_BACKUP_ROLE_ARN repository variable}"
+          : "${AWS_REGION:?Missing AWS_DB_BACKUP_REGION repository variable}"
+
+          [[ "$BACKUP_ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || {
+            echo "::error::backup_id must use YYYYMMDDTHHMMSSZ format"
+            exit 1
+          }
+
+          if [[ "$TARGET_PROJECT_REF" != "$EXPECTED_TARGET_PROJECT_REF" ]]; then
+            echo "::error::Restore target is not the approved throwaway project."
+            exit 1
+          fi
+
+          if [[ "$RESTORE_DB_URL" != *"$EXPECTED_TARGET_PROJECT_REF"* ]]; then
+            echo "::error::RESTORE_SUPABASE_DB_URL does not point to the approved throwaway project."
+            exit 1
+          fi
+
+          if [[ "$RESTORE_DB_URL" == *"$PRODUCTION_PROJECT_REF"* ]]; then
+            echo "::error::Refusing to restore to the production Supabase project."
+            exit 1
+          fi
+
+          if [[ "$RESTORE_DB_URL" != *":5432/postgres"* ]]; then
+            echo "::error::Use the Supabase Session pooler connection string on port 5432."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ env.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: ProfileRelaunchDbRestoreRehearsal
+
+      - name: Confirm target database is empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          public_tables="$(
+            docker run --rm -e DB_URL="$RESTORE_DB_URL" postgres:17-alpine               sh -c 'psql "$DB_URL" -Atqc "select count(*) from pg_tables where schemaname = '\''public'\'';"'
+          )"
+          if [[ "$public_tables" != "0" ]]; then
+            echo "::error::Restore target is not empty: found $public_tables public tables."
+            exit 1
+          fi
+
+      - name: Download and verify completed backup
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_epoch="$(date -u +%s)"
+          yyyy="${BACKUP_ID:0:4}"
+          mm="${BACKUP_ID:4:2}"
+          dd="${BACKUP_ID:6:2}"
+          key_prefix="backups/$yyyy/$mm/$dd/$BACKUP_ID"
+          archive="profilerelaunch-prod-db-$BACKUP_ID.tar.gz"
+
+          mkdir -p restore-set
+          aws s3 cp "s3://$AWS_BACKUP_BUCKET/$key_prefix/$archive" "$archive" --only-show-errors
+          aws s3 cp "s3://$AWS_BACKUP_BUCKET/$key_prefix/${archive}.sha256" "${archive}.sha256" --only-show-errors
+          aws s3 cp "s3://$AWS_BACKUP_BUCKET/$key_prefix/manifest.json" restore-set/manifest.json --only-show-errors
+
+          expected_checksum="$(tr -d '[:space:]' < "${archive}.sha256")"
+          actual_checksum="$(sha256sum "$archive" | awk '{print $1}')"
+          [[ "$actual_checksum" == "$expected_checksum" ]] || {
+            echo "::error::Backup SHA-256 verification failed."
+            exit 1
+          }
+
+          jq -e --arg id "$BACKUP_ID" --arg source "$PRODUCTION_PROJECT_REF" '
+            .backup_format == "profilerelaunch-logical-v1"
+            and .backup_id == $id
+            and .source_project_ref == $source
+            and .migration_aligned == true
+          ' restore-set/manifest.json >/dev/null
+
+          tar -xzf "$archive" -C restore-set
+          for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql manifest.json; do
+            test -s "restore-set/$file"
+          done
+
+          echo "started_epoch=$started_epoch" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Restore roles schema and data
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm             -v "$PWD/restore-set:/restore:ro"             -e DB_URL="$RESTORE_DB_URL"             postgres:17-alpine             sh -c 'psql               --single-transaction               --variable ON_ERROR_STOP=1               --file /restore/roles.sql               --file /restore/schema.sql               --command "SET session_replication_role = replica"               --file /restore/data.sql               --dbname "$DB_URL"'
+
+      - name: Restore migration history
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm             -v "$PWD/restore-set:/restore:ro"             -e DB_URL="$RESTORE_DB_URL"             postgres:17-alpine             sh -c 'psql               --single-transaction               --variable ON_ERROR_STOP=1               --file /restore/history_schema.sql               --file /restore/history_data.sql               --dbname "$DB_URL"'
+
+      - name: Verify restored database
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          verification="$(
+            docker run --rm -e DB_URL="$RESTORE_DB_URL" postgres:17-alpine               sh -c 'psql "$DB_URL" -At -F "|" -c "
+                select
+                  (select count(*) from pg_tables where schemaname = '\''public'\'')::text,
+                  (select count(*) from auth.users)::text,
+                  (select count(*) from public.admin_identity)::text,
+                  coalesce((select version || '\''|'\'' || name
+                    from supabase_migrations.schema_migrations
+                    order by version desc limit 1), '\''NONE'\'');
+              "'
+          )"
+
+          IFS='|' read -r public_tables auth_users admin_count migration_version migration_name <<< "$verification"
+          repo_head_file="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | sort | tail -n 1)"
+          repo_head_name="$(basename "$repo_head_file" .sql)"
+          repo_head_version="${repo_head_name%%_*}"
+
+          [[ "$public_tables" -gt 0 ]] || {
+            echo "::error::No public tables were restored."
+            exit 1
+          }
+          [[ "$admin_count" -eq 1 ]] || {
+            echo "::error::Expected exactly one admin_identity row after restore."
+            exit 1
+          }
+          [[ "$migration_version" == "$repo_head_version" ]] || {
+            echo "::error::Restored migration head does not match repository head."
+            exit 1
+          }
+
+          echo "public_tables=$public_tables" >> "$GITHUB_OUTPUT"
+          echo "auth_users=$auth_users" >> "$GITHUB_OUTPUT"
+          echo "admin_count=$admin_count" >> "$GITHUB_OUTPUT"
+          echo "migration_head=$migration_version|$migration_name" >> "$GITHUB_OUTPUT"
+
+      - name: Record recovery rehearsal summary
+        if: always()
+        shell: bash
+        env:
+          STARTED_EPOCH: ${{ steps.backup.outputs.started_epoch }}
+          PUBLIC_TABLES: ${{ steps.verify.outputs.public_tables }}
+          AUTH_USERS: ${{ steps.verify.outputs.auth_users }}
+          ADMIN_COUNT: ${{ steps.verify.outputs.admin_count }}
+          MIGRATION_HEAD: ${{ steps.verify.outputs.migration_head }}
+        run: |
+          set -euo pipefail
+          finished_epoch="$(date -u +%s)"
+          elapsed_seconds=""
+          if [[ -n "${STARTED_EPOCH:-}" ]]; then
+            elapsed_seconds="$((finished_epoch - STARTED_EPOCH))"
+          fi
+          {
+            echo "## Production database restore rehearsal"
+            echo "- Target project ref: $TARGET_PROJECT_REF"
+            echo "- Backup ID: $BACKUP_ID"
+            echo "- Restore elapsed seconds: ${elapsed_seconds:-not measured}"
+            echo "- RTO target seconds: 14400"
+            echo "- Public tables restored: ${PUBLIC_TABLES:-not verified}"
+            echo "- Auth users restored: ${AUTH_USERS:-not verified}"
+            echo "- Admin identity rows: ${ADMIN_COUNT:-not verified}"
+            echo "- Restored migration head: ${MIGRATION_HEAD:-not verified}"
+            echo "- Production project modified: no"
+          } >> "$GITHUB_STEP_SUMMARY"

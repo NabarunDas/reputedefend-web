@@ -239,13 +239,13 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004080853 customer_portal_messages_account_v1. pendingMigrations() is empty and production carries the full canonical 37-migration ledger.",
-    status: "READY",
+      "The repository and profilerelaunch-dev end at 20261004223358 data_api_default_privileges_hardening_v1 and pendingMigrations() is empty. Production must receive that reviewed forward migration before Admin production access.",
+    status: "ACTION_REQUIRED",
     evidence:
-      "On 2026-10-04 the clean production project was built from empty using the canonical repository chain. All 37 migration versions and names match the manifest exactly, from 20260915120000 core_data_foundation_v1 through 20261004080853 customer_portal_messages_account_v1. The production database contains no copied customer, business, case or enquiry rows. profilerelaunch-dev and the repository also end at 20261004080853 and pendingMigrations() is empty.",
+      "On 2026-10-04 profilerelaunch-dev applied 20261004223358 data_api_default_privileges_hardening_v1 and verification confirmed new public tables, functions and sequences no longer inherit automatic anon, authenticated or service_role Data API grants. The repository and DEV now carry the canonical chain from 20260915120000 core_data_foundation_v1 through 20261004223358, and pendingMigrations() is empty. The existing Strategy A production project still ends at the prior 20261004080853 customer_portal_messages_account_v1 head until this reviewed migration is promoted.",
     codeAction: null,
     externalAction:
-      "No migration action remains for the current production schema head. Future migrations remain forward-only and must be reviewed before production application.",
+      "After this source change is merged, apply exactly 20261004223358 data_api_default_privileges_hardening_v1 to production, verify the default ACLs, and confirm the production migration head matches appliedMigrationHead.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
@@ -260,7 +260,7 @@ export const readinessModel: readonly ReadinessItem[] = [
       "Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production.",
     status: "READY",
     evidence:
-      "Strategy A was chosen and executed on 2026-10-04. Production was created from empty from the canonical supabase/migrations chain, so its ledger contains all three foundation migrations normally and matches the 37-entry manifest exactly. apps/admin/lib/recovery/history.ts continues to report the historical profilerelaunch-dev discrepancy honestly; it is not inherited by production.",
+      "Strategy A was chosen and executed on 2026-10-04. Production was created from empty from the canonical supabase/migrations chain, so its ledger contains all three foundation migrations normally. The new default-privilege hardening migration is forward-only and does not change that historical fact. apps/admin/lib/recovery/history.ts continues to report the historical profilerelaunch-dev discrepancy honestly; it is not inherited by production.",
     codeAction:
       "None. The history validator continues to report the historical DEV shape honestly; production does not need that discrepancy repaired.",
     externalAction: null,
@@ -312,16 +312,16 @@ export const readinessModel: readonly ReadinessItem[] = [
       "Leaked-password protection is enabled on the Supabase project as a project-level hardening measure.",
     status: "ACTION_REQUIRED",
     evidence:
-      "Admin authentication is one-time-code only: there is no password field anywhere in apps/admin and no password is ever set for the Admin identity, so the setting protects no current flow. It remains an Auth project setting that should be on, and it is not something repository code can configure.",
+      "The Admin application authenticates with one-time codes only and never accepts a password. The production Supabase Auth user was provisioned separately so the project-level password protection setting still matters as defense in depth; repository code cannot configure it.",
     codeAction: null,
     externalAction:
-      "In the Supabase dashboard: Authentication → Policies → enable leaked-password protection on the project that becomes production.",
+      "In the Supabase dashboard: Authentication → Providers → Email → enable leaked-password protection on the production project.",
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:
       "Observe the setting in the dashboard and record the date it was enabled. Do not record it as configured on the strength of this document.",
     stopCondition:
-      "Not a launch blocker on its own, because no password exists to leak. If it cannot be enabled, record the exception rather than leaving the item silently open.",
+      "If it cannot be enabled, record the exception rather than leaving the item silently open. Do not weaken the OTP-only Admin application flow as a workaround.",
   },
   {
     id: "supabase.recovery-rehearsal",

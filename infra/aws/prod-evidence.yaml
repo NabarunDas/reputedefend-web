@@ -9,9 +9,6 @@ Parameters:
     Type: String
     Default: profilerelaunch-evidence-prod-euw2-337909767363
     Description: Globally unique production evidence bucket name.
-  VercelTeamSlug:
-    Type: String
-    Default: clientcove
   VercelOidcProviderArn:
     Type: String
     Default: arn:aws:iam::337909767363:oidc-provider/oidc.vercel.com/clientcove
@@ -98,8 +95,8 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "oidc.vercel.com/${VercelTeamSlug}:aud": !Sub "https://vercel.com/${VercelTeamSlug}"
-                !Sub "oidc.vercel.com/${VercelTeamSlug}:sub": !Sub "owner:${VercelTeamSlug}:project:${AdminVercelProject}:environment:production"
+                "oidc.vercel.com/clientcove:aud": "https://vercel.com/clientcove"
+                "oidc.vercel.com/clientcove:sub": !Sub "owner:clientcove:project:${AdminVercelProject}:environment:production"
       Policies:
         - PolicyName: ProductionEvidenceAdminAccess
           PolicyDocument:
@@ -137,8 +134,8 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "oidc.vercel.com/${VercelTeamSlug}:aud": !Sub "https://vercel.com/${VercelTeamSlug}"
-                !Sub "oidc.vercel.com/${VercelTeamSlug}:sub": !Sub "owner:${VercelTeamSlug}:project:${CustomerVercelProject}:environment:production"
+                "oidc.vercel.com/clientcove:aud": "https://vercel.com/clientcove"
+                "oidc.vercel.com/clientcove:sub": !Sub "owner:clientcove:project:${CustomerVercelProject}:environment:production"
       Policies:
         - PolicyName: ProductionEvidenceCustomerAccess
           PolicyDocument:

@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  ProfileRelaunch production evidence storage. Creates a private production-only S3 bucket,
+  Vercel production OIDC roles for Admin and Customer evidence access, and GuardDuty Malware
+  Protection for the cases/ prefix. Preview/Development must continue using separate DEV resources.
+
+Parameters:
+  EvidenceBucketName:
+    Type: String
+    Default: profilerelaunch-evidence-prod-euw2-337909767363
+    Description: Globally unique production evidence bucket name.
+  VercelTeamSlug:
+    Type: String
+    Default: clientcove
+  VercelOidcProviderArn:
+    Type: String
+    Default: arn:aws:iam::337909767363:oidc-provider/oidc.vercel.com/clientcove
+    Description: Existing Vercel team OIDC provider in this AWS account.
+  AdminVercelProject:
+    Type: String
+    Default: profilerelaunch-admin
+  CustomerVercelProject:
+    Type: String
+    Default: profilerelaunch-customer
+
+Resources:
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref EvidenceBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketKeyEnabled: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - Id: ProductionEvidenceBrowserAccess
+            AllowedOrigins:
+              - https://admin.profilerelaunch.com
+              - https://customer.profilerelaunch.com
+            AllowedMethods:
+              - GET
+              - HEAD
+              - POST
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 300
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+        - Key: DataClass
+          Value: customer-evidence
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub "${EvidenceBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  AdminEvidenceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchProdAdminEvidence
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref VercelOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                !Sub "oidc.vercel.com/${VercelTeamSlug}:aud": !Sub "https://vercel.com/${VercelTeamSlug}"
+                !Sub "oidc.vercel.com/${VercelTeamSlug}:sub": !Sub "owner:${VercelTeamSlug}:project:${AdminVercelProject}:environment:production"
+      Policies:
+        - PolicyName: ProductionEvidenceAdminAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EvidenceObjectWrite
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+              - Sid: EvidenceObjectReadAndScanStatus
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectTagging
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+        - Key: Surface
+          Value: admin
+
+  CustomerEvidenceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchProdCustomerEvidence
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref VercelOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                !Sub "oidc.vercel.com/${VercelTeamSlug}:aud": !Sub "https://vercel.com/${VercelTeamSlug}"
+                !Sub "oidc.vercel.com/${VercelTeamSlug}:sub": !Sub "owner:${VercelTeamSlug}:project:${CustomerVercelProject}:environment:production"
+      Policies:
+        - PolicyName: ProductionEvidenceCustomerAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EvidenceObjectWrite
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+              - Sid: EvidenceObjectReadAndScanStatus
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectTagging
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+        - Key: Surface
+          Value: customer
+
+  GuardDutyMalwareRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchProdEvidenceGuardDuty
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: malware-protection-plan.guardduty.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ProductionEvidenceMalwareScan
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowManagedRuleToSendS3EventsToGuardDuty
+                Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*"
+                Condition:
+                  StringLike:
+                    events:ManagedBy: malware-protection-plan.guardduty.amazonaws.com
+              - Sid: AllowGuardDutyToMonitorEventBridgeManagedRule
+                Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*"
+              - Sid: AllowPostScanTag
+                Effect: Allow
+                Action:
+                  - s3:PutObjectTagging
+                  - s3:GetObjectTagging
+                  - s3:PutObjectVersionTagging
+                  - s3:GetObjectVersionTagging
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+              - Sid: AllowEnableS3EventBridgeEvents
+                Effect: Allow
+                Action:
+                  - s3:PutBucketNotification
+                  - s3:GetBucketNotification
+                Resource: !GetAtt EvidenceBucket.Arn
+              - Sid: AllowPutValidationObject
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/malware-protection-resource-validation-object"
+              - Sid: AllowCheckBucketOwnership
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt EvidenceBucket.Arn
+              - Sid: AllowMalwareScan
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/cases/*"
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+        - Key: Surface
+          Value: guardduty
+
+  MalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    DependsOn:
+      - EvidenceBucketPolicy
+      - GuardDutyMalwareRole
+    Properties:
+      Role: !GetAtt GuardDutyMalwareRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref EvidenceBucket
+          ObjectPrefixes:
+            - cases/
+      Actions:
+        Tagging:
+          Status: ENABLED
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+
+Outputs:
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+    Description: Set as AWS_EVIDENCE_BUCKET in Production only.
+  EvidenceRegion:
+    Value: !Ref AWS::Region
+    Description: Set as AWS_REGION in Production only.
+  AdminEvidenceRoleArn:
+    Value: !GetAtt AdminEvidenceRole.Arn
+    Description: Set as AWS_EVIDENCE_ROLE_ARN on the Admin Production environment only.
+  CustomerEvidenceRoleArn:
+    Value: !GetAtt CustomerEvidenceRole.Arn
+    Description: Set as AWS_CUSTOMER_EVIDENCE_ROLE_ARN on the Customer Production environment only.
+  MalwareProtectionPlanId:
+    Value: !GetAtt MalwareProtectionPlan.MalwareProtectionPlanId
+  MalwareProtectionPlanStatus:
+    Value: !GetAtt MalwareProtectionPlan.Status

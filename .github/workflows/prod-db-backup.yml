@@ -1,0 +1,194 @@
+name: Production database backup
+
+on:
+  schedule:
+    # Three-hour cadence gives one hour of margin against the <=4h RPO target.
+    # Minute 17 avoids GitHub's busiest top-of-hour scheduling window.
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.PROD_SUPABASE_DB_URL }}
+      AWS_BACKUP_BUCKET: ${{ vars.AWS_DB_BACKUP_BUCKET }}
+      AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_DB_BACKUP_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_DB_BACKUP_REGION }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate backup configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_DB_URL:?Missing PROD_SUPABASE_DB_URL repository secret}"
+          : "${AWS_BACKUP_BUCKET:?Missing AWS_DB_BACKUP_BUCKET repository variable}"
+          : "${AWS_BACKUP_ROLE_ARN:?Missing AWS_DB_BACKUP_ROLE_ARN repository variable}"
+          : "${AWS_REGION:?Missing AWS_DB_BACKUP_REGION repository variable}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ env.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: ProfileRelaunchDbBackup
+
+      - name: Check previous successful backup age
+        id: freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_last_modified="$(
+            aws s3api list-objects-v2               --bucket "$AWS_BACKUP_BUCKET"               --prefix "backups/"               --query 'sort_by(Contents,&LastModified)[-1].LastModified'               --output text
+          )"
+
+          gap=false
+          age_seconds=0
+          if [[ -n "$previous_last_modified" && "$previous_last_modified" != "None" ]]; then
+            previous_epoch="$(date -d "$previous_last_modified" +%s)"
+            now_epoch="$(date -u +%s)"
+            age_seconds="$((now_epoch - previous_epoch))"
+            if (( age_seconds > 14400 )); then
+              gap=true
+            fi
+          fi
+
+          echo "previous_backup_gap=$gap" >> "$GITHUB_OUTPUT"
+          echo "previous_backup_age_seconds=$age_seconds" >> "$GITHUB_OUTPUT"
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.119.0
+
+      - name: Create logical backup set
+        id: dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          backup_id="$(date -u +'%Y%m%dT%H%M%SZ')"
+          created_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          repo_head_file="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | sort | tail -n 1)"
+          repo_head_name="$(basename "$repo_head_file" .sql)"
+          repo_head_version="${repo_head_name%%_*}"
+
+          remote_head="$(
+            docker run --rm postgres:17-alpine               psql "$SUPABASE_DB_URL" -Atqc               "select version || '|' || name from supabase_migrations.schema_migrations order by version desc limit 1"
+          )"
+          remote_head_version="${remote_head%%|*}"
+          remote_head_name="${remote_head#*|}"
+
+          migration_aligned=false
+          if [[ "$remote_head_version" == "$repo_head_version" ]]; then
+            migration_aligned=true
+          fi
+
+          mkdir -p backup-set
+
+          # Supabase CLI wraps pg_dump with the provider-specific exclusions
+          # required for a restore-compatible logical export.
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup-set/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup-set/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup-set/data.sql --use-copy --data-only             -x "storage.buckets_vectors" -x "storage.vector_indexes"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup-set/history_schema.sql --schema supabase_migrations
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup-set/history_data.sql --use-copy --data-only --schema supabase_migrations
+
+          for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql; do
+            test -s "backup-set/$file"
+          done
+
+          jq -n             --arg backup_id "$backup_id"             --arg created_at "$created_at"             --arg source_project_ref "cxwwekdzkkjjbiyofrov"             --arg repository "${GITHUB_REPOSITORY}"             --arg repository_sha "${GITHUB_SHA}"             --arg workflow_run_id "${GITHUB_RUN_ID}"             --arg repo_migration_head "$repo_head_name"             --arg database_migration_head "$remote_head_version|$remote_head_name"             --argjson migration_aligned "$migration_aligned"             '{
+              backup_format: "profilerelaunch-logical-v1",
+              backup_id: $backup_id,
+              created_at_utc: $created_at,
+              source_project_ref: $source_project_ref,
+              repository: $repository,
+              repository_sha: $repository_sha,
+              workflow_run_id: $workflow_run_id,
+              repo_migration_head: $repo_migration_head,
+              database_migration_head: $database_migration_head,
+              migration_aligned: $migration_aligned,
+              schedule_hours: 3,
+              rpo_target_hours: 4,
+              retention_days: 7,
+              files: [
+                "roles.sql",
+                "schema.sql",
+                "data.sql",
+                "history_schema.sql",
+                "history_data.sql"
+              ]
+            }' > backup-set/manifest.json
+
+          archive="profilerelaunch-prod-db-${backup_id}.tar.gz"
+          tar -czf "$archive" -C backup-set             roles.sql schema.sql data.sql history_schema.sql history_data.sql manifest.json
+          sha256sum "$archive" | awk '{print $1}' > "${archive}.sha256"
+
+          key_prefix="backups/$(date -u +'%Y/%m/%d')/${backup_id}"
+
+          echo "backup_id=$backup_id" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "key_prefix=$key_prefix" >> "$GITHUB_OUTPUT"
+          echo "migration_aligned=$migration_aligned" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted backup set
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.dump.outputs.archive }}
+          KEY_PREFIX: ${{ steps.dump.outputs.key_prefix }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$ARCHIVE"             "s3://$AWS_BACKUP_BUCKET/$KEY_PREFIX/$ARCHIVE"             --sse AES256 --only-show-errors
+          aws s3 cp "${ARCHIVE}.sha256"             "s3://$AWS_BACKUP_BUCKET/$KEY_PREFIX/${ARCHIVE}.sha256"             --sse AES256 --content-type text/plain --only-show-errors
+          aws s3 cp backup-set/manifest.json             "s3://$AWS_BACKUP_BUCKET/$KEY_PREFIX/manifest.json"             --sse AES256 --content-type application/json --only-show-errors
+
+      - name: Verify uploaded objects
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.dump.outputs.archive }}
+          KEY_PREFIX: ${{ steps.dump.outputs.key_prefix }}
+        run: |
+          set -euo pipefail
+          aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/$ARCHIVE" >/dev/null
+          aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/${ARCHIVE}.sha256" >/dev/null
+          aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/manifest.json" >/dev/null
+
+      - name: Record backup summary
+        shell: bash
+        env:
+          BACKUP_ID: ${{ steps.dump.outputs.backup_id }}
+          MIGRATION_ALIGNED: ${{ steps.dump.outputs.migration_aligned }}
+          PREVIOUS_GAP: ${{ steps.freshness.outputs.previous_backup_gap }}
+          PREVIOUS_AGE: ${{ steps.freshness.outputs.previous_backup_age_seconds }}
+        run: |
+          {
+            echo "### Production database backup"
+            echo ""
+            echo "- Backup ID: `$BACKUP_ID`"
+            echo "- Cadence: 3 hours"
+            echo "- RPO target: <=4 hours"
+            echo "- Retention: 7 days"
+            echo "- Migration head aligned: `$MIGRATION_ALIGNED`"
+            echo "- Previous backup gap >4h: `$PREVIOUS_GAP`"
+            echo "- Previous backup age (seconds): `$PREVIOUS_AGE`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed on recovery-policy drift
+        if: steps.dump.outputs.migration_aligned != 'true' || steps.freshness.outputs.previous_backup_gap == 'true'
+        shell: bash
+        run: |
+          echo "Backup was uploaded, but the recovery policy check failed."
+          echo "Investigate migration-head drift or a >4h gap between successful backup objects."
+          exit 1

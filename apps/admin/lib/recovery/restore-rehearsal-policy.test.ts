@@ -25,7 +25,8 @@ describe("production database restore rehearsal policy", () => {
   it("refuses a non-empty target and uses transactional Supabase restore order", () => {
     expect(workflow).toContain("Restore target is not empty")
     expect(workflow).toContain("--single-transaction")
-    expect(workflow).toContain("--file /restore/roles.sql")
+    expect(workflow).toContain("Confirm no application database roles are defined")
+    expect(workflow).not.toContain("--file /restore/roles.sql")
     expect(workflow).toContain("--file /restore/schema.sql")
     expect(workflow).toContain('SET session_replication_role = replica')
     expect(workflow).toContain("--file /restore/data.sql")

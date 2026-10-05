@@ -34,7 +34,6 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-      BucketKeyEnabled: false
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced

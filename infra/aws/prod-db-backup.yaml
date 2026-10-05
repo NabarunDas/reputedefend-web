@@ -8,9 +8,17 @@ Parameters:
   GitHubOwner:
     Type: String
     Default: NabarunDas
+  GitHubOwnerId:
+    Type: String
+    Default: "34938163"
+    Description: Immutable GitHub owner ID used in OIDC subject claims for repositories created after 15 July 2026.
   GitHubRepository:
     Type: String
     Default: reputedefend-web
+  GitHubRepositoryId:
+    Type: String
+    Default: "1361952578"
+    Description: Immutable GitHub repository ID used in OIDC subject claims for repositories created after 15 July 2026.
   GitHubBranch:
     Type: String
     Default: main
@@ -104,7 +112,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepository}@${GitHubRepositoryId}:ref:refs/heads/${GitHubBranch}"
       Policies:
         - PolicyName: ProfileRelaunchDatabaseBackupBucketAccess
           PolicyDocument:

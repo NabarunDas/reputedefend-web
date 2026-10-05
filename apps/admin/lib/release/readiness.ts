@@ -242,7 +242,7 @@ export const readinessModel: readonly ReadinessItem[] = [
       "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() is empty.",
     status: "READY",
     evidence:
-      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. Repository, DEV and PROD now share the same head and pendingMigrations() is empty.",
+      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. The canonical chain still starts at 20260915120000 core_data_foundation_v1. Repository, DEV and PROD now share the same head and pendingMigrations() is empty.",
     codeAction: null,
     externalAction:
       "No migration action remains for the current production schema head. Future migrations remain forward-only and require review before production application.",
@@ -312,7 +312,7 @@ export const readinessModel: readonly ReadinessItem[] = [
       "Leaked-password protection is enabled on the Supabase project as a project-level hardening measure.",
     status: "READY",
     evidence:
-      "Enabled on the production Supabase project on 2026-10-05. A fresh Supabase Security Advisor run no longer reports auth_leaked_password_protection. The Admin application remains OTP-only and does not enable password login.",
+      "Enabled on the production Supabase project on 2026-10-05. apps/admin/lib/release/external-evidence.ts records the observation from a fresh Supabase Security Advisor run: auth_leaked_password_protection is absent. The Admin application remains OTP-only and does not enable password login.",
     codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: false,

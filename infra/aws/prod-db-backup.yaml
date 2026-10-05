@@ -124,12 +124,15 @@ Resources:
                   StringLike:
                     s3:prefix:
                       - "backups/*"
+                      - "completed/*"
               - Sid: WriteAndVerifyBackupObjects
                 Effect: Allow
                 Action:
                   - s3:PutObject
                   - s3:GetObject
-                Resource: !Sub "${BackupBucket.Arn}/backups/*"
+                Resource:
+                  - !Sub "${BackupBucket.Arn}/backups/*"
+                  - !Sub "${BackupBucket.Arn}/completed/*"
       Tags:
         - Key: Application
           Value: ProfileRelaunch

@@ -2,9 +2,10 @@ name: Production database backup
 
 on:
   schedule:
-    # Three-hour cadence gives one hour of margin against the <=4h RPO target.
+    # Hourly watchdog: scheduled GitHub events can be delayed/dropped.
+    # A full backup is taken only when the last verified backup is old enough.
     # Minute 17 avoids GitHub's busiest top-of-hour scheduling window.
-    - cron: "17 */3 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -54,8 +55,11 @@ jobs:
           )"
 
           gap=false
+          due=false
+          has_previous=false
           age_seconds=0
           if [[ -n "$previous_last_modified" && "$previous_last_modified" != "None" ]]; then
+            has_previous=true
             previous_epoch="$(date -d "$previous_last_modified" +%s)"
             now_epoch="$(date -u +%s)"
             age_seconds="$((now_epoch - previous_epoch))"
@@ -64,15 +68,24 @@ jobs:
             fi
           fi
 
+          # Manual dispatch always creates a backup. Scheduled watchdog runs
+          # create one only when the last verified backup is at least two hours old.
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$has_previous" == "false" ]] || (( age_seconds >= 7200 )); then
+            due=true
+          fi
+
           echo "previous_backup_gap=$gap" >> "$GITHUB_OUTPUT"
           echo "previous_backup_age_seconds=$age_seconds" >> "$GITHUB_OUTPUT"
+          echo "backup_due=$due" >> "$GITHUB_OUTPUT"
 
       - name: Install Supabase CLI
+        if: steps.freshness.outputs.backup_due == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: 2.119.0
 
       - name: Create logical backup set
+        if: steps.freshness.outputs.backup_due == 'true'
         id: dump
         shell: bash
         run: |
@@ -121,7 +134,8 @@ jobs:
               repo_migration_head: $repo_migration_head,
               database_migration_head: $database_migration_head,
               migration_aligned: $migration_aligned,
-              schedule_hours: 3,
+              scheduler_check_hours: 1,
+              full_backup_due_after_hours: 2,
               rpo_target_hours: 4,
               retention_days: 7,
               files: [
@@ -145,6 +159,7 @@ jobs:
           echo "migration_aligned=$migration_aligned" >> "$GITHUB_OUTPUT"
 
       - name: Upload encrypted backup set
+        if: steps.freshness.outputs.backup_due == 'true'
         shell: bash
         env:
           ARCHIVE: ${{ steps.dump.outputs.archive }}
@@ -156,6 +171,7 @@ jobs:
           aws s3 cp backup-set/manifest.json             "s3://$AWS_BACKUP_BUCKET/$KEY_PREFIX/manifest.json"             --sse AES256 --content-type application/json --only-show-errors
 
       - name: Verify uploaded objects
+        if: steps.freshness.outputs.backup_due == 'true'
         shell: bash
         env:
           ARCHIVE: ${{ steps.dump.outputs.archive }}
@@ -167,6 +183,7 @@ jobs:
           aws s3api head-object --bucket "$AWS_BACKUP_BUCKET" --key "$KEY_PREFIX/manifest.json" >/dev/null
 
       - name: Write completed-backup marker
+        if: steps.freshness.outputs.backup_due == 'true'
         shell: bash
         env:
           BACKUP_ID: ${{ steps.dump.outputs.backup_id }}
@@ -175,6 +192,7 @@ jobs:
           aws s3 cp backup-set/manifest.json             "s3://$AWS_BACKUP_BUCKET/completed/${BACKUP_ID}.json"             --sse AES256 --content-type application/json --only-show-errors
 
       - name: Record backup summary
+        if: steps.freshness.outputs.backup_due == 'true'
         shell: bash
         env:
           BACKUP_ID: ${{ steps.dump.outputs.backup_id }}
@@ -186,7 +204,8 @@ jobs:
             echo "### Production database backup"
             echo ""
             echo "- Backup ID: $BACKUP_ID"
-            echo "- Cadence: 3 hours"
+            echo "- Scheduler watchdog: hourly"
+            echo "- Full backup threshold: 2 hours"
             echo "- RPO target: <=4 hours"
             echo "- Retention: 7 days"
             echo "- Migration head aligned: $MIGRATION_ALIGNED"
@@ -194,8 +213,23 @@ jobs:
             echo "- Previous backup age (seconds): $PREVIOUS_AGE"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Record watchdog skip summary
+        if: steps.freshness.outputs.backup_due != 'true'
+        shell: bash
+        env:
+          PREVIOUS_AGE: ${{ steps.freshness.outputs.previous_backup_age_seconds }}
+        run: |
+          {
+            echo "### Production database backup watchdog"
+            echo ""
+            echo "- No full backup required on this hourly check."
+            echo "- Previous verified backup age (seconds): $PREVIOUS_AGE"
+            echo "- Full backup threshold: 7200 seconds"
+            echo "- RPO target: <=4 hours"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fail closed on recovery-policy drift
-        if: steps.dump.outputs.migration_aligned != 'true' || steps.freshness.outputs.previous_backup_gap == 'true'
+        if: steps.freshness.outputs.backup_due == 'true' && (steps.dump.outputs.migration_aligned != 'true' || steps.freshness.outputs.previous_backup_gap == 'true')
         shell: bash
         run: |
           echo "Backup was uploaded, but the recovery policy check failed."

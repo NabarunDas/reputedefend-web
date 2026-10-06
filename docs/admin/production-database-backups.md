@@ -12,32 +12,34 @@ ProfileRelaunch launch recovery objectives are:
 Supabase Pro provides a daily managed database backup with seven days of retention. The
 daily copy remains the platform recovery path. It is not frequent enough by itself to
 meet the four-hour RPO, so ProfileRelaunch also takes an independent logical backup every
-three hours and keeps those copies for seven days.
+a few hours apart and keeps those copies for seven days.
 
-The three-hour schedule intentionally leaves one hour of margin rather than scheduling
-exactly on the RPO boundary.
+GitHub scheduled workflows are not an exact-time scheduler, so the workflow uses an hourly
+watchdog instead of relying on a single three-hour trigger. The watchdog performs a full
+logical backup only when the last verified backup is at least two hours old. This gives the
+four-hour RPO more scheduling margin while avoiding a full dump on every hourly check.
 
 ## Backup design
 
-`.github/workflows/prod-db-backup.yml` runs at minute 17 every three hours and can also
-be started manually. It:
+`.github/workflows/prod-db-backup.yml` runs an hourly watchdog at minute 17 and can also be started manually. It:
 
 1. stays skipped on scheduled runs until `DB_BACKUP_ENABLED=true`; manual dispatch remains
    available for bootstrap;
 2. assumes a dedicated AWS IAM role using GitHub OIDC;
-3. checks the age of the most recent completed-backup marker and records a policy failure
-   if the previous successful backup is more than four hours old;
-4. uses Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
+3. checks the age of the most recent completed-backup marker; scheduled runs skip the full
+   dump while that marker is under two hours old, while manual dispatch always runs;
+4. records a policy failure if the previous successful backup is more than four hours old;
+5. uses Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
    logical-backup path;
-5. separately exports the `supabase_migrations` schema and data so migration history is
+6. separately exports the `supabase_migrations` schema and data so migration history is
    recoverable;
-6. records the repository and live database migration heads in a manifest;
-7. packages the SQL and manifest into a gzip archive;
-8. writes a SHA-256 checksum;
-9. uploads the archive, checksum and manifest to private S3 with SSE-S3 encryption;
-10. verifies all three S3 objects exist;
-11. writes a small `completed/<backup-id>.json` marker only after verification; and
-12. fails the workflow after preserving the completed backup if the database migration head differs from the
+7. records the repository and live database migration heads in a manifest;
+8. packages the SQL and manifest into a gzip archive;
+9. writes a SHA-256 checksum;
+10. uploads the archive, checksum and manifest to private S3 with SSE-S3 encryption;
+11. verifies all three S3 objects exist;
+12. writes a small `completed/<backup-id>.json` marker only after verification; and
+13. fails the workflow after preserving the completed backup if the database migration head differs from the
     repository or if the previous successful backup gap exceeded four hours.
 
 The backup is never uploaded as a GitHub Actions artifact and is never committed to the
@@ -58,8 +60,8 @@ s3://<bucket>/completed/<backup-id>.json
 
 The dedicated S3 bucket expires backup objects after seven days. There is no incremental
 chain and no Glacier tier: at the current business scale a complete compressed logical
-backup every three hours is simpler to restore and materially cheaper to operate than
-PITR. Supabase's own seven-day daily backups remain unchanged.
+backup on the watchdog's due threshold is simpler to restore and materially cheaper to operate than
+PITR. Hourly checks that find a recent verified backup exit without creating another dump. Supabase's own seven-day daily backups remain unchanged.
 
 ## AWS bootstrap
 
@@ -117,7 +119,7 @@ Repository **variables**:
 - `AWS_DB_BACKUP_BUCKET` — stack output `BackupBucketName`.
 - `AWS_DB_BACKUP_ROLE_ARN` — stack output `BackupRoleArn`.
 - `AWS_DB_BACKUP_REGION` — `eu-west-2`.
-- `DB_BACKUP_ENABLED` — leave absent/false until the first manual backup succeeds; then set to `true` to activate the three-hour schedule.
+- `DB_BACKUP_ENABLED` — leave absent/false until the first manual backup succeeds; then set to `true` to activate the hourly watchdog.
 
 The AWS role ARN and bucket name are identifiers rather than credentials; the database URL
 is a secret.

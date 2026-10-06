@@ -15,8 +15,10 @@ const runbook = readFileSync(
 )
 
 describe("production database backup policy", () => {
-  it("runs inside the four-hour RPO with a three-hour cadence", () => {
-    expect(workflow).toContain('cron: "17 */3 * * *"')
+  it("uses an hourly watchdog with a conditional full backup inside the four-hour RPO", () => {
+    expect(workflow).toContain('cron: "17 * * * *"')
+    expect(workflow).toContain("age_seconds >= 7200")
+    expect(workflow).toContain("backup_due=$due")
     expect(workflow).toContain("vars.DB_BACKUP_ENABLED == 'true'")
     expect(workflow).toContain('--prefix "completed/"')
     expect(workflow).toContain("age_seconds > 14400")

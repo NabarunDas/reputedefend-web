@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  ProfileRelaunch AWS-native production database backup scheduler. Uses EventBridge Scheduler
+  to start CodeBuild every three hours. CodeBuild clones the public repository, reads the
+  production Supabase Session Pooler URL from Secrets Manager, and writes verified logical
+  backups into the existing production backup S3 bucket.
+
+Parameters:
+  BackupBucketName:
+    Type: String
+    Default: profilerelaunch-prod-db-backups-euw2-20261005
+    Description: Existing production database backup bucket.
+
+  ProdSupabaseDbUrlSecretArn:
+    Type: String
+    Description: >
+      ARN of the AWS Secrets Manager secret containing the full production Supabase Session
+      Pooler connection string.
+
+  RepositoryCloneUrl:
+    Type: String
+    Default: https://github.com/NabarunDas/reputedefend-web.git
+
+  RepositoryBranch:
+    Type: String
+    Default: main
+
+  ScheduleExpression:
+    Type: String
+    Default: rate(3 hours)
+
+  ScheduleState:
+    Type: String
+    Default: ENABLED
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+
+Resources:
+  BackupBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/codebuild/ProfileRelaunchProdDbBackupAwsNative
+      RetentionInDays: 14
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+
+  BackupCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchProdDbBackupCodeBuild
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ProfileRelaunchProdDbBackup
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadBackupBucketMetadata
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${BackupBucketName}"
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - completed/*
+                      - backups/*
+              - Sid: ReadWriteBackupObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${BackupBucketName}/backups/*"
+                  - !Sub "arn:aws:s3:::${BackupBucketName}/completed/*"
+              - Sid: ReadProductionDatabaseSecret
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref ProdSupabaseDbUrlSecretArn
+              - Sid: WriteBackupBuildLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "${BackupBuildLogGroup.Arn}:*"
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+
+  BackupBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: ProfileRelaunchProdDbBackupAwsNative
+      Description: ProfileRelaunch production logical database backup
+      ServiceRole: !GetAtt BackupCodeBuildRole.Arn
+      ConcurrentBuildLimit: 1
+      TimeoutInMinutes: 30
+      QueuedTimeoutInMinutes: 15
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - node --version
+                - npm --version
+                - docker --version
+                - aws --version
+                - git --version
+            pre_build:
+              commands:
+                - git clone --depth 1 --branch "$REPOSITORY_BRANCH" "$REPOSITORY_CLONE_URL" repo
+                - chmod +x repo/scripts/prod-db-backup-aws.sh
+            build:
+              commands:
+                - cd repo
+                - ./scripts/prod-db-backup-aws.sh
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: SUPABASE_DB_URL
+            Type: SECRETS_MANAGER
+            Value: !Ref ProdSupabaseDbUrlSecretArn
+          - Name: AWS_BACKUP_BUCKET
+            Type: PLAINTEXT
+            Value: !Ref BackupBucketName
+          - Name: REPOSITORY_CLONE_URL
+            Type: PLAINTEXT
+            Value: !Ref RepositoryCloneUrl
+          - Name: REPOSITORY_BRANCH
+            Type: PLAINTEXT
+            Value: !Ref RepositoryBranch
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref BackupBuildLogGroup
+          StreamName: production-db-backup
+      Visibility: PRIVATE
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+
+  BackupSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProfileRelaunchProdDbBackupScheduler
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartProductionDatabaseBackup
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                Resource: !GetAtt BackupBuildProject.Arn
+      Tags:
+        - Key: Application
+          Value: ProfileRelaunch
+        - Key: Environment
+          Value: production
+
+  BackupSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: profilerelaunch-prod-db-backup-3h
+      Description: Start the ProfileRelaunch production DB backup every three hours.
+      ScheduleExpression: !Ref ScheduleExpression
+      State: !Ref ScheduleState
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt BackupBuildProject.Arn
+        RoleArn: !GetAtt BackupSchedulerRole.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 3
+
+Outputs:
+  BackupBuildProjectName:
+    Value: !Ref BackupBuildProject
+    Description: CodeBuild project to use for a manual backup validation.
+
+  BackupBuildProjectArn:
+    Value: !GetAtt BackupBuildProject.Arn
+
+  BackupScheduleName:
+    Value: !Ref BackupSchedule
+
+  BackupScheduleArn:
+    Value: !GetAtt BackupSchedule.Arn
+
+  BackupBucketName:
+    Value: !Ref BackupBucketName
+
+  ProdSupabaseDbUrlSecretArn:
+    Value: !Ref ProdSupabaseDbUrlSecretArn

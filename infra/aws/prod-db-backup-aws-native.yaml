@@ -93,7 +93,7 @@ Resources:
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: !Sub "${BackupBuildLogGroup.Arn}:*"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/ProfileRelaunchProdDbBackupAwsNative:*"
       Tags:
         - Key: Application
           Value: ProfileRelaunch

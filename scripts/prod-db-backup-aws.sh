@@ -5,6 +5,18 @@ set -euo pipefail
 : "${AWS_BACKUP_BUCKET:?Missing AWS_BACKUP_BUCKET}"
 : "${AWS_REGION:?Missing AWS_REGION}"
 
+EXPECTED_DB_PREFIX="postgresql://postgres.cxwwekdzkkjjbiyofrov:"
+EXPECTED_DB_SUFFIX="@aws-0-eu-west-2.pooler.supabase.com:5432/postgres"
+
+if [[ "$SUPABASE_DB_URL" != "$EXPECTED_DB_PREFIX"*"$EXPECTED_DB_SUFFIX" ]]; then
+  echo "ERROR: SUPABASE_DB_URL does not have the expected production Session Pooler shape."
+  echo "Store the entire percent-encoded postgresql:// connection string as the Secrets Manager secret plaintext value."
+  exit 2
+fi
+
+echo "Configuration shape validated."
+echo "Checking previous verified backup marker..."
+
 RPO_SECONDS=14400
 DUPLICATE_GUARD_SECONDS=7200
 CLI_VERSION=2.119.0
@@ -33,6 +45,9 @@ if [[ -n "$previous_last_modified" && "$previous_last_modified" != "None" ]]; th
   fi
 fi
 
+echo "Previous backup marker check completed."
+echo "Checking production database connectivity and migration head..."
+
 backup_id="$(date -u +'%Y%m%dT%H%M%SZ')"
 created_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 repository_sha="$(git rev-parse HEAD)"
@@ -40,9 +55,15 @@ repo_head_file="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | s
 repo_head_name="$(basename "$repo_head_file" .sql)"
 repo_head_version="${repo_head_name%%_*}"
 
-remote_head="$(
+if ! remote_head="$(
   docker run --rm postgres:17-alpine     psql "$SUPABASE_DB_URL" -Atqc     "select version || '|' || name from supabase_migrations.schema_migrations order by version desc limit 1"
-)"
+)"; then
+  echo "ERROR: Could not connect to the production Supabase database using the configured Session Pooler secret."
+  echo "Check the Secrets Manager value, percent-encoding of the password, and that the URL uses port 5432."
+  exit 2
+fi
+
+echo "Production database connection succeeded."
 remote_head_version="${remote_head%%|*}"
 remote_head_name="${remote_head#*|}"
 
@@ -53,6 +74,8 @@ fi
 
 umask 077
 mkdir -p backup-set
+
+echo "Creating logical backup set..."
 
 npx --yes "supabase@${CLI_VERSION}" db dump --db-url "$SUPABASE_DB_URL" -f backup-set/roles.sql --role-only
 npx --yes "supabase@${CLI_VERSION}" db dump --db-url "$SUPABASE_DB_URL" -f backup-set/schema.sql

@@ -1,6 +1,6 @@
 # Production database backups
 
-Status: **SOURCE READY / AWS BOOTSTRAP AND FIRST LIVE BACKUP REQUIRED**
+Status: **LIVE / AWS-NATIVE PRIMARY SCHEDULER PROVEN**
 
 ## Recovery objectives
 
@@ -14,32 +14,33 @@ daily copy remains the platform recovery path. It is not frequent enough by itse
 meet the four-hour RPO, so ProfileRelaunch also takes an independent logical backup every
 a few hours apart and keeps those copies for seven days.
 
-GitHub scheduled workflows are not an exact-time scheduler, so the workflow uses an hourly
-watchdog instead of relying on a single three-hour trigger. The watchdog performs a full
-logical backup only when the last verified backup is at least two hours old. This gives the
-four-hour RPO more scheduling margin while avoiding a full dump on every hourly check.
+GitHub scheduled workflows proved too unreliable to guarantee the four-hour RPO. Production
+scheduling therefore runs in AWS: EventBridge Scheduler starts the CodeBuild backup job every
+three hours. The GitHub workflow remains available only as a manual emergency/fallback path.
 
 ## Backup design
 
-`.github/workflows/prod-db-backup.yml` runs an hourly watchdog at minute 17 and can also be started manually. It:
+Primary scheduling is `AWS EventBridge Scheduler -> CodeBuild`, defined by
+`infra/aws/prod-db-backup-aws-native.yaml`. It runs every three hours and invokes
+`scripts/prod-db-backup-aws.sh`.
 
-1. stays skipped on scheduled runs until `DB_BACKUP_ENABLED=true`; manual dispatch remains
-   available for bootstrap;
-2. assumes a dedicated AWS IAM role using GitHub OIDC;
-3. checks the age of the most recent completed-backup marker; scheduled runs skip the full
-   dump while that marker is under two hours old, while manual dispatch always runs;
-4. records a policy failure if the previous successful backup is more than four hours old;
-5. uses Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
+The GitHub workflow `.github/workflows/prod-db-backup.yml` is manual fallback only.
+
+Both paths:
+
+1. check the age of the most recent completed-backup marker;
+2. record a policy failure if the previous successful backup is more than four hours old;
+3. use Supabase CLI 2.119.0 to export roles, schema and data using Supabase's supported
    logical-backup path;
-6. separately exports the `supabase_migrations` schema and data so migration history is
+4. separately export the `supabase_migrations` schema and data so migration history is
    recoverable;
-7. records the repository and live database migration heads in a manifest;
-8. packages the SQL and manifest into a gzip archive;
-9. writes a SHA-256 checksum;
-10. uploads the archive, checksum and manifest to private S3 with SSE-S3 encryption;
-11. verifies all three S3 objects exist;
-12. writes a small `completed/<backup-id>.json` marker only after verification; and
-13. fails the workflow after preserving the completed backup if the database migration head differs from the
+5. record the repository and live database migration heads in a manifest;
+6. package the SQL and manifest into a gzip archive;
+7. write a SHA-256 checksum;
+8. upload the archive, checksum and manifest to private S3 with SSE-S3 encryption;
+9. verify all three S3 objects exist;
+10. write a small `completed/<backup-id>.json` marker only after verification; and
+11. fail only after preserving the completed backup if the database migration head differs from the
     repository or if the previous successful backup gap exceeded four hours.
 
 The backup is never uploaded as a GitHub Actions artifact and is never committed to the
@@ -60,8 +61,7 @@ s3://<bucket>/completed/<backup-id>.json
 
 The dedicated S3 bucket expires backup objects after seven days. There is no incremental
 chain and no Glacier tier: at the current business scale a complete compressed logical
-backup on the watchdog's due threshold is simpler to restore and materially cheaper to operate than
-PITR. Hourly checks that find a recent verified backup exit without creating another dump. Supabase's own seven-day daily backups remain unchanged.
+backup every three hours through AWS CodeBuild is simpler to restore and materially cheaper to operate than PITR. Supabase's own seven-day daily backups remain unchanged.
 
 ## AWS bootstrap
 
@@ -119,7 +119,7 @@ Repository **variables**:
 - `AWS_DB_BACKUP_BUCKET` — stack output `BackupBucketName`.
 - `AWS_DB_BACKUP_ROLE_ARN` — stack output `BackupRoleArn`.
 - `AWS_DB_BACKUP_REGION` — `eu-west-2`.
-- `DB_BACKUP_ENABLED` — leave absent/false until the first manual backup succeeds; then set to `true` to activate the hourly watchdog.
+- `DB_BACKUP_ENABLED` is no longer used for scheduling; the GitHub workflow is manual fallback only.
 
 The AWS role ARN and bucket name are identifiers rather than credentials; the database URL
 is a secret.
@@ -136,8 +136,8 @@ After AWS and GitHub configuration:
 3. confirm the S3 prefix contains the archive, checksum and manifest;
 4. inspect `manifest.json`: `migration_aligned` must be `true`;
 5. record the backup timestamp;
-6. set repository variable `DB_BACKUP_ENABLED=true`; and
-7. confirm the next scheduled run executes rather than skips.
+6. prove the AWS-native CodeBuild job succeeds manually; and
+7. leave EventBridge Scheduler enabled for the three-hour production schedule.
 
 A backup that is uploaded but followed by a red policy step is **not** accepted as a
 healthy recovery state until the reported migration drift or >4-hour gap is understood.

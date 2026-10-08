@@ -1,6 +1,6 @@
 # AWS-native production database backup scheduler
 
-Status: **SOURCE READY / AWS DEPLOYMENT REQUIRED**
+Status: **LIVE / MANUAL CODEBUILD ACCEPTANCE PASSED**
 
 ## Why this exists
 
@@ -8,8 +8,8 @@ The GitHub Actions logical backup itself is healthy, but GitHub scheduled workfl
 not executed frequently enough to guarantee the agreed **RPO <= 4 hours**. The primary
 production scheduler therefore moves to Amazon EventBridge Scheduler.
 
-The existing GitHub workflow remains available as a manual fallback until the AWS-native
-path is proven, after which its scheduled trigger can be disabled.
+The AWS-native path is now proven. The existing GitHub workflow remains available only as
+a manual fallback; its scheduled trigger is disabled.
 
 ## Runtime design
 
@@ -102,8 +102,7 @@ After CloudFormation reaches `CREATE_COMPLETE`:
 5. Confirm the existing S3 bucket receives the new backup objects and a new
    `completed/<backup-id>.json` marker.
 6. Leave the EventBridge schedule enabled.
-7. After the first successful EventBridge-triggered build, disable the GitHub scheduled
-   backup trigger while preserving manual `workflow_dispatch` fallback.
+7. Keep the GitHub workflow as manual `workflow_dispatch` fallback only.
 
 A build that uploads a valid backup but then reports a previous >4-hour gap is evidence
 that the previous recovery interval breached policy; it does not mean the new backup was

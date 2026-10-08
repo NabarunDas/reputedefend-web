@@ -15,15 +15,15 @@ const runbook = readFileSync(
 )
 
 describe("production database backup policy", () => {
-  it("uses an hourly watchdog with a conditional full backup inside the four-hour RPO", () => {
-    expect(workflow).toContain('cron: "17 * * * *"')
-    expect(workflow).toContain("age_seconds >= 7200")
-    expect(workflow).toContain("backup_due=$due")
-    expect(workflow).toContain("vars.DB_BACKUP_ENABLED == 'true'")
+  it("keeps GitHub as manual fallback while AWS owns production scheduling", () => {
+    expect(workflow).toContain("workflow_dispatch:")
+    expect(workflow).not.toContain("schedule:")
+    expect(workflow).not.toContain("DB_BACKUP_ENABLED")
     expect(workflow).toContain('--prefix "completed/"')
     expect(workflow).toContain("age_seconds > 14400")
     expect(runbook).toContain("RPO: <= 4 hours")
     expect(runbook).toContain("RTO: <= 4 hours")
+    expect(runbook).toContain("AWS EventBridge Scheduler")
   })
 
   it("uses short-lived AWS identity and never GitHub artifacts", () => {

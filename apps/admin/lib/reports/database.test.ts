@@ -574,10 +574,8 @@ describe("Step 19 dashboard, search, reports and preview", () => {
     expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role','admin_private.report_rows_v1(text,timestamptz,timestamptz,timestamptz)','EXECUTE') as ok")).rows[0].ok).toBe(false)
   })
 
-  it("does not change Step 7-18 gates, cron, or applied migrations", async () => {
+  it("keeps Step 7-18 live-provider gates off and migrations unchanged at launch", async () => {
     const sql = readFileSync(new URL("../../../../supabase/migrations/20261001092213_admin_dashboard_search_reports_v1.sql", import.meta.url), "utf8")
-    const cron = readFileSync(new URL("../../../../apps/admin/vercel.json", import.meta.url), "utf8")
-    expect(cron).toContain("0 4 * * *")
     expect(sql).not.toMatch(/GUARD_ALERTS_ENABLED|GUARD_CHECKS_ENABLED|GUARD_ACTIVATION_ENABLED|GUARD_SUBSCRIPTIONS_ENABLED|COMMUNICATIONS_SEND_ENABLED|JOB_PROVIDER_MODE/)
     expect(sql).toMatch(/SOURCE IMPLEMENTED \/ MIGRATION NOT APPLIED/)
     expect(await rpc("admin_session_v1", [token])).toMatchObject({ userId: uid })

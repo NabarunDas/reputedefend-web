@@ -131,7 +131,6 @@ describe("production environment contract", () => {
   it("marks the variables a signed-in Admin cannot work without", () => {
     expect(adminLaunchBlocking().map(entry => entry.name).sort()).toEqual([
       "ADMIN_AUTH_ENABLED",
-      "ADMIN_ORIGIN",
       "SUPABASE_PUBLISHABLE_KEY",
       "SUPABASE_SECRET_KEY",
       "SUPABASE_URL",

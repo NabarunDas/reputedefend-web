@@ -1,11 +1,6 @@
 name: Production database backup
 
 on:
-  schedule:
-    # Hourly watchdog: scheduled GitHub events can be delayed/dropped.
-    # A full backup is taken only when the last verified backup is old enough.
-    # Minute 17 avoids GitHub's busiest top-of-hour scheduling window.
-    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -18,7 +13,6 @@ concurrency:
 
 jobs:
   backup:
-    if: github.event_name == 'workflow_dispatch' || vars.DB_BACKUP_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -68,11 +62,8 @@ jobs:
             fi
           fi
 
-          # Manual dispatch always creates a backup. Scheduled watchdog runs
-          # create one only when the last verified backup is at least two hours old.
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$has_previous" == "false" ]] || (( age_seconds >= 7200 )); then
-            due=true
-          fi
+          # This GitHub workflow is now manual fallback only, so every invocation is due.
+          due=true
 
           echo "previous_backup_gap=$gap" >> "$GITHUB_OUTPUT"
           echo "previous_backup_age_seconds=$age_seconds" >> "$GITHUB_OUTPUT"

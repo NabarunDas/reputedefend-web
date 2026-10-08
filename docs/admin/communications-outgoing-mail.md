@@ -1,10 +1,10 @@
 # Communications ledger and outgoing mail — Step 11
 
-DATABASE APPLIED / LIVE DELIVERY DISABLED. The additive migration `20260929210000_communications_outgoing_mail_v1.sql` is applied to `profilerelaunch-dev` as `20260929210000 communications_outgoing_mail_v1`, exactly once after `20260929183214_jobs_outbox_operational_health_v1`. No Resend webhook is configured. `JOB_PROVIDER_MODE` remains `disabled`. `COMMUNICATIONS_SEND_ENABLED` is not set. Cron remains `0 4 * * *`. No real customer email is sent.
+DATABASE APPLIED / LIVE DELIVERY DISABLED. The additive migration `20260929210000_communications_outgoing_mail_v1.sql` is applied to `profilerelaunch-dev` as `20260929210000 communications_outgoing_mail_v1`, exactly once after `20260929183214_jobs_outbox_operational_health_v1`. No Resend webhook is configured. `JOB_PROVIDER_MODE` remains `disabled`. `COMMUNICATIONS_SEND_ENABLED` is not set. No production Admin cron is configured at launch. No real customer email is sent.
 
 **Live outgoing customer email remains disabled.** Step 11 is not fully live: Resend sending is still gated off, the webhook is unconfigured, the scheduler is still daily, and no live outbound-email acceptance test has occurred.
 
-The current Admin Cron remains `0 4 * * *` (Hobby-compatible, once daily). Do not change it to five minutes in this step. Do not send email synchronously from the Admin browser request.
+The Admin production cron is intentionally absent at launch. Do not add a schedule until transactional mail/background jobs are deliberately activated, at which point the cadence and CRON_SECRET must be configured together. Do not send email synchronously from the Admin browser request.
 
 Step 10 is COMPLETE / LIVE-TESTED. Applied migration: `20260929183214_jobs_outbox_operational_health_v1.sql`.
 
@@ -38,7 +38,7 @@ Queueing requires `communicationsSendEnabled()`:
 - valid `RESEND_API_KEY` and `COMMUNICATIONS_FROM_EMAIL`
 - worker cadence of 300 seconds or faster
 
-The current daily cadence cannot satisfy the gate. Admin therefore refuses Queue and does not insert a `SEND_EMAIL` outbox row. Do not configure `COMMUNICATIONS_SEND_ENABLED` in Vercel from this PR.
+No production worker schedule is configured, so Admin refuses Queue and does not insert a `SEND_EMAIL` outbox row. Do not configure `COMMUNICATIONS_SEND_ENABLED` in Vercel from this PR.
 
 ## Legacy `public.communications`
 
@@ -147,7 +147,7 @@ Step 11 communications have a unique `(provider, provider_message_id)` index whe
 - `JOB_PROVIDER_MODE=production`
 - `COMMUNICATIONS_SEND_ENABLED`
 - `COMMUNICATIONS_LINK_SECRET` / `RESEND_WEBHOOK_SECRET` in Vercel
-- Cron cadence change
+- Background cron/scheduler activation
 - Stripe, incoming mail, Google API, Guard automation
 - Step 18 Guard alert notifications (`GUARD_ALERT` template exists only as unapplied source; live alert email remains disabled)
 - `PREPARATION` / `READY_TO_SUBMIT`

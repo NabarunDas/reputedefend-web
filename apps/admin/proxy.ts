@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { isPublicRead, privateResponseHeaders } from "./lib/access"
 import { sessionFromToken } from "./lib/auth/backend"
-import { PROD_ADMIN_ORIGIN, sessionCookie } from "./lib/auth/config"
+import { isProductionAdminEnvironment, PROD_ADMIN_ORIGIN, sessionCookie } from "./lib/auth/config"
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const productionBrowserRead = process.env.VERCEL_ENV === "production"
+  const productionBrowserRead = isProductionAdminEnvironment()
     && (request.method === "GET" || request.method === "HEAD")
     && pathname !== "/api"
     && !pathname.startsWith("/api/")

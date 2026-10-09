@@ -45,7 +45,8 @@ export function OtpInput({
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
-        pattern="[0-9]{8}"
+        pattern={`[0-9]{${ADMIN_OTP_DIGITS}}`}
+        aria-label="Eight-digit code"
         value={value}
         onChange={event => onChange(normalizeOtp(event.target.value))}
         onFocus={() => setFocused(true)}

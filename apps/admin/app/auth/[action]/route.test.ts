@@ -52,28 +52,29 @@ describe("admin OTP routes",()=> {
     expect(response.status).toBe(503);expect(response.headers.get("set-cookie")).toBeNull()
   })
   it("rejects guesses without a challenge and malformed codes",async()=> {
-    expect((await call("verify",{code:"123456"},{cookie:""})).status).toBe(400)
+    expect((await call("verify",{code:"12345678"},{cookie:""})).status).toBe(400)
+    expect((await call("verify",{code:"123456"})).status).toBe(400)
     expect((await call("verify",{code:"abc"})).status).toBe(400)
     expect(mocks.verify).not.toHaveBeenCalled()
   })
   it("does not call Supabase when attempts are exhausted",async()=> {
     mocks.rpc.mockResolvedValue(null)
-    expect((await call("verify",{code:"123456"})).status).toBe(429)
+    expect((await call("verify",{code:"12345678"})).status).toBe(429)
     expect(mocks.verify).not.toHaveBeenCalled()
   })
   it("rejects invalid provider codes without issuing a session",async()=> {
     mocks.verify.mockResolvedValue({error:{message:"expired"},data:{}})
-    const r=await call("verify",{code:"123456"})
+    const r=await call("verify",{code:"12345678"})
     expect(r.status).toBe(401);expect(r.headers.get("set-cookie")).toBeNull()
   })
   it("rejects a valid OTP for an identity other than the bound admin",async()=> {
     mocks.verify.mockResolvedValue({error:null,data:{session:{access_token:"secret"},user:{id:"another-user",email:"admin@profilerelaunch.com",email_confirmed_at:"yes"}}})
-    expect((await call("verify",{code:"123456"})).status).toBe(403)
+    expect((await call("verify",{code:"12345678"})).status).toBe(403)
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
   it("issues only opaque cookie, hashes token in database and revokes provider session",async()=> {
     mocks.rpc.mockResolvedValueOnce(uid).mockResolvedValueOnce(true)
-    const r=await call("verify",{code:"123456"})
+    const r=await call("verify",{code:"12345678"})
     expect(r.status).toBe(200)
     expect(mocks.revoke).toHaveBeenCalledWith("provider-token")
     expect(r.headers.get("set-cookie")).toMatch(new RegExp(`${sessionCookie}=[a-f0-9]{64}`))
@@ -83,7 +84,7 @@ describe("admin OTP routes",()=> {
   })
   it("fails closed if challenge completion loses a race",async()=> {
     mocks.rpc.mockResolvedValueOnce(uid).mockResolvedValueOnce(false)
-    const r=await call("verify",{code:"123456"})
+    const r=await call("verify",{code:"12345678"})
     expect(r.status).toBe(401);expect(r.headers.get("set-cookie")).toBeNull()
   })
   it("revokes server session before deleting cookie",async()=> {

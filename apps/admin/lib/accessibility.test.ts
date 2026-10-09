@@ -136,7 +136,7 @@ describe("workspace accessibility invariants", () => {
       const source = read(file)
       for (const match of source.matchAll(/<(input|select|textarea)\b[^>]*>/g)) {
         const tag = match[0]
-        if (/type="hidden"/.test(tag) || /aria-label[=}]/.test(tag) || /\bid="/.test(tag)) continue
+        if (/type="hidden"/.test(tag) || /aria-label[=}]/.test(tag) || /\bid=(?:"|\{)/.test(tag)) continue
         const before = source.slice(Math.max(0, match.index - 400), match.index)
         if (/<label[^>]*>[^<]*$|<label[^>]*>\s*$/.test(before)) continue
         if (/<label[^>]*>/.test(before.slice(before.lastIndexOf("</label>") + 1))) continue

@@ -35,6 +35,10 @@ describe("Admin environment isolation", () => {
     configure(DEV, "preview")
     expect(authConfig()?.url).toBe(`https://${DEV}.supabase.co`)
     expect(authConfig()?.origin).toBe("https://profilerelaunch-admin-git-preview-clientcove.vercel.app")
+    expect(authConfig()?.allowedOrigins).toEqual([
+      "https://profilerelaunch-admin-git-preview-clientcove.vercel.app",
+      "https://profilerelaunch-admin-random-clientcove.vercel.app",
+    ])
     configure(PROD, "preview")
     expect(authConfig()).toBeNull()
   })
@@ -44,6 +48,7 @@ describe("Admin environment isolation", () => {
     process.env.ADMIN_ORIGIN = "https://attacker.example"
     expect(authConfig()?.url).toBe(`https://${PROD}.supabase.co`)
     expect(authConfig()?.origin).toBe("https://admin.profilerelaunch.com")
+    expect(authConfig()?.allowedOrigins).toEqual(["https://admin.profilerelaunch.com"])
     expect(authConfig()?.customerOrigin).toBe("https://customer.profilerelaunch.com")
     configure(DEV, "production")
     expect(authConfig()).toBeNull()

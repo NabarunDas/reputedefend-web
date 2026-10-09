@@ -34,6 +34,21 @@ describe("admin OTP routes",()=> {
     expect((await call("send",{}, {origin:bad})).status).toBe(403)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+  it("accepts the Vercel deployment URL as a trusted Preview origin", async()=> {
+    const deploymentOrigin = "https://profilerelaunch-admin-random-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV","preview")
+    vi.stubEnv("VERCEL_BRANCH_URL","profilerelaunch-admin-git-preview-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_URL","profilerelaunch-admin-random-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL","https://rmzozuiamjcclvtgutgd.supabase.co")
+    const request = new NextRequest(`${deploymentOrigin}/auth/send`, {
+      method:"POST",
+      headers:{origin:deploymentOrigin,"content-type":"application/json"},
+      body:"{}",
+    })
+    const result = await POST(request,{params:Promise.resolve({action:"send"})})
+    expect(result.status).toBe(200)
+    expect(mocks.send).toHaveBeenCalledOnce()
+  })
   it("fails closed when not configured",async()=> {
     vi.stubEnv("ADMIN_AUTH_ENABLED","false")
     expect((await call("send")).status).toBe(503);expect(mocks.send).not.toHaveBeenCalled()

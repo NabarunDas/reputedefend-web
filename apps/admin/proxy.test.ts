@@ -4,6 +4,35 @@ import { proxy } from "./proxy"
 import { GET, POST } from "./app/api/[[...path]]/route"
 
 describe("admin access boundary", () => {
+  it("redirects Production browser traffic from Vercel aliases to the canonical Admin domain", async () => {
+    const previous = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = "production"
+    try {
+      const result = await proxy(new NextRequest("https://profilerelaunch-admin.vercel.app/login?source=bookmark"))
+      expect(result.status).toBe(308)
+      expect(result.headers.get("location")).toBe("https://admin.profilerelaunch.com/login?source=bookmark")
+      expect(result.headers.get("cache-control")).toContain("no-store")
+
+      const canonical = await proxy(new NextRequest("https://admin.profilerelaunch.com/login"))
+      expect(canonical.headers.get("x-middleware-next")).toBe("1")
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previous
+    }
+  })
+
+  it("does not canonical-redirect provider or internal API routes", async () => {
+    const previous = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = "production"
+    try {
+      const result = await proxy(new NextRequest("https://profilerelaunch-admin.vercel.app/api/webhooks/stripe", { method: "POST" }))
+      expect(result.headers.get("x-middleware-next")).toBe("1")
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previous
+    }
+  })
+
   it.each(["/", "/today", "/security", "/clients/customer-id", "/documents/private.pdf", "/exports/data.csv", "/login/extra", "/_next/image", "/brand/secret.png"])("blocks %s without leaking the destination", async path => {
     const result = await proxy(new NextRequest(`https://admin.profilerelaunch.com${path}?email=private@example.com&next=https://example.com`, {
       headers: { cookie: "staff=true; role=OWNER", "x-staff-role": "OWNER" },

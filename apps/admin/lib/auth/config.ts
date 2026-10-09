@@ -4,6 +4,7 @@ export const ADMIN_EMAIL = "admin@profilerelaunch.com"
 const DEV_SUPABASE_PROJECT_REF = "rmzozuiamjcclvtgutgd"
 const PROD_SUPABASE_PROJECT_REF = "cxwwekdzkkjjbiyofrov"
 export const PROD_ADMIN_ORIGIN = "https://admin.profilerelaunch.com"
+export const isProductionAdminEnvironment = () => process.env.VERCEL_ENV === "production"
 const PROD_CUSTOMER_ORIGIN = "https://customer.profilerelaunch.com"
 
 function previewOrigins(): string[] {

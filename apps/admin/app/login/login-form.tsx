@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
+import { ADMIN_OTP_DIGITS } from "@/lib/auth/otp"
 
 export function LoginForm() {
   const [sent, setSent] = useState(false)
@@ -41,10 +42,10 @@ export function LoginForm() {
   return <>
     <p>We’ll send a sign-in code to the registered admin email.</p>
     {sent && <form onSubmit={event => { event.preventDefault(); void submit("verify") }}>
-      <label htmlFor="code">Six-digit code</label>
-      <input ref={codeInput} id="code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ""))} required aria-describedby="code-help" />
+      <label htmlFor="code">Eight-digit code</label>
+      <input ref={codeInput} id="code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{8}" maxLength={ADMIN_OTP_DIGITS} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ""))} required aria-describedby="code-help" />
       <p id="code-help" className="muted">Use your latest code within 10 minutes. You have five attempts.</p>
-      <button type="submit" disabled={busy || code.length !== 6}>{busy ? "Please wait…" : "Sign in"}</button>
+      <button type="submit" disabled={busy || code.length !== ADMIN_OTP_DIGITS}>{busy ? "Please wait…" : "Sign in"}</button>
     </form>}
     <button type="button" className={sent ? "secondary" : ""} disabled={busy || cooldown > 0} onClick={() => void submit("send")}>
       {cooldown > 0 ? `Send another code in ${cooldown}s` : busy ? "Please wait…" : sent ? "Send another code" : "Send sign-in code"}

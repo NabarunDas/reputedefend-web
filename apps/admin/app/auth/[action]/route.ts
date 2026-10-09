@@ -12,8 +12,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ac
   if (!["send", "verify", "logout", "logout-all"].includes(action)) return reply("Page not found.", 404)
   const config = authConfig()
   if (!config) return reply("Sign-in is not available. Please check the admin setup.", 503)
-  // Exact configured origin; never trust forwarded host headers or user-supplied redirects.
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return reply("Please reload this page and try again.", 403)
+  // Trust only Vercel-provided Preview origins or the one hard-pinned Production origin.
+  // The browser Origin and request URL must also agree with each other.
+  const requestOrigin = request.headers.get("origin")
+  if (!requestOrigin || request.nextUrl.origin !== requestOrigin || !config.allowedOrigins.includes(requestOrigin)) {
+    return reply("Please reload this page and try again.", 403)
+  }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply("Please reload this page and try again.", 415)
   try {
     // Bounded streamed read, including requests that omit Content-Length.

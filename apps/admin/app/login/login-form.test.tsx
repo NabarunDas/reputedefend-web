@@ -24,5 +24,7 @@ describe("admin login copy", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send sign-in code" }))
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("A sign-in code has been sent to the registered admin email."))
     expect(container.textContent).not.toContain("admin@profilerelaunch.com")
+    expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("maxlength", "8")
+    expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("pattern", "[0-9]{8}")
   })
 })

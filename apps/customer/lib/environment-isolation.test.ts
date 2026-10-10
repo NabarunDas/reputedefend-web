@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { customerBackendConfig } from "./config"
+import { customerBackendConfig, customerRequestOriginAllowed } from "./config"
 
 const PROD = "cxwwekdzkkjjbiyofrov"
 const DEV = "rmzozuiamjcclvtgutgd"
@@ -32,6 +32,23 @@ describe("Customer environment isolation", () => {
     configure(DEV, "preview")
     expect(customerBackendConfig()?.url).toBe(`https://${DEV}.supabase.co`)
     expect(customerBackendConfig()?.origin).toBe("https://profilerelaunch-customer-git-preview-clientcove.vercel.app")
+    expect(customerBackendConfig()?.allowedOrigins).toEqual([
+      "https://profilerelaunch-customer-git-preview-clientcove.vercel.app",
+      "https://profilerelaunch-customer-random-clientcove.vercel.app",
+    ])
+    expect(customerRequestOriginAllowed(
+      "https://profilerelaunch-customer-random-clientcove.vercel.app",
+      "https://profilerelaunch-customer-random-clientcove.vercel.app",
+    )).toBe(true)
+    expect(customerRequestOriginAllowed(
+      "https://profilerelaunch-customer-git-preview-clientcove.vercel.app",
+      "https://profilerelaunch-customer-git-preview-clientcove.vercel.app",
+    )).toBe(true)
+    expect(customerRequestOriginAllowed(
+      "https://profilerelaunch-customer-git-preview-clientcove.vercel.app",
+      "https://profilerelaunch-customer-random-clientcove.vercel.app",
+    )).toBe(false)
+    expect(customerRequestOriginAllowed("https://evil.example", "https://evil.example")).toBe(false)
     configure(PROD, "preview")
     expect(customerBackendConfig()).toBeNull()
   })
@@ -41,6 +58,15 @@ describe("Customer environment isolation", () => {
     process.env.CUSTOMER_ORIGIN = "https://attacker.example"
     expect(customerBackendConfig()?.url).toBe(`https://${PROD}.supabase.co`)
     expect(customerBackendConfig()?.origin).toBe("https://customer.profilerelaunch.com")
+    expect(customerBackendConfig()?.allowedOrigins).toEqual(["https://customer.profilerelaunch.com"])
+    expect(customerRequestOriginAllowed(
+      "https://customer.profilerelaunch.com",
+      "https://customer.profilerelaunch.com",
+    )).toBe(true)
+    expect(customerRequestOriginAllowed(
+      "https://profilerelaunch-customer.vercel.app",
+      "https://profilerelaunch-customer.vercel.app",
+    )).toBe(false)
     configure(DEV, "production")
     expect(customerBackendConfig()).toBeNull()
   })

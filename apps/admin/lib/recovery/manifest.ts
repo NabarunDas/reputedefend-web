@@ -454,14 +454,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "future Data API grants", probe: "public.cases" },
   },
   {
-    // Source only. Not applied to profilerelaunch-dev or production.
-    // appliedMigrationHead stays on the Data API hardening migration until a
-    // separate reviewed apply. Do not replay earlier migrations to land this.
+    // Applied and verified on profilerelaunch-dev on 2026-10-10.
+    // Production remains on 20261004223358 pending a separate SEC-02 release
+    // and coordinated AWS backup ApprovedMigrationHead update.
     version: "20261010200000",
     filename: "20261010200000_customer_action_otp_limits_v1.sql",
     step: "SEC-02 customer-action OTP limits",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "customer action OTP limits", probe: "public.customer_action_begin_otp_v1" },

@@ -49,10 +49,9 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(39)
-    // A clean rebuild includes the unapplied OTP limit migration. profilerelaunch-dev
-    // still ends at the applied Data API hardening migration.
+    // DEV and a clean rebuild now both end at the reviewed SEC-02 migration.
     expect(migrationHead.version).toBe("20261010200000")
-    expect(appliedMigrationHead.version).toBe("20261004223358")
+    expect(appliedMigrationHead.version).toBe("20261010200000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

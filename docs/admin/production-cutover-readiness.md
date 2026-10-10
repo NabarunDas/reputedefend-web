@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV is verified at 20261010200000 customer_action_otp_limits_v1; PROD remains at 20261004223358 until the separately coordinated migration and AWS backup-head update. pendingMigrations() is empty for DEV. |
+| `supabase.applied-head` | Supabase | READY | DEV and repository migration head are 20261010200000 customer_action_otp_limits_v1, applied and verified. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting coordinated migration and AWS backup-head update. pendingMigrations() is empty for DEV. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -208,15 +208,17 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The repository, profilerelaunch-dev and the production Strategy A project all
-end at `20261004080853 customer_portal_messages_account_v1`, file
-`supabase/migrations/20261004080853_customer_portal_messages_account_v1.sql`.
-On 2026-10-04 the production project was built from empty using all 37
-repository migrations in strict canonical order. Its migration ledger matches
-the manifest exactly from `20260915120000 core_data_foundation_v1` through
-`20261004080853 customer_portal_messages_account_v1`. `pendingMigrations()`
-is empty. No development customer, business, case or enquiry rows were copied.
-Applied migrations remain immutable and forward-only.
+The repository and profilerelaunch-dev both end at
+`20261010200000 customer_action_otp_limits_v1`. That migration is applied on
+DEV, and `pendingMigrations()` is empty. Production remains at
+`20261004223358 data_api_default_privileges_hardening_v1` until SEC-02 and
+the AWS backup head are updated together. Applied migrations remain immutable
+and forward-only.
+
+On 2026-10-04 the production project was built from empty. Its ledger then
+matched the manifest from `20260915120000 core_data_foundation_v1` through
+`20261004080853 customer_portal_messages_account_v1`. No development customer,
+business, case or enquiry rows were copied.
 
 ### The ledger discrepancy, recorded rather than repaired
 

@@ -14,10 +14,10 @@ export function normalizePortalEmail(value: unknown): string | null {
 }
 
 export const PORTAL_LOGIN_MESSAGE =
-  "If this email is linked to a ProfileRelaunch account, we've sent a eight-digit code."
+  "If this email is linked to a ProfileRelaunch account, we've sent an eight-digit code."
 
 export function portalLoginNotice(typedEmail: string) {
-  return `If ${typedEmail} is linked to a ProfileRelaunch account, we've sent a eight-digit code.`
+  return `If ${typedEmail} is linked to a ProfileRelaunch account, we've sent an eight-digit code.`
 }
 
 export const PORTAL_VERIFY_ERROR =

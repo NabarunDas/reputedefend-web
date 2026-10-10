@@ -16,21 +16,19 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("keeps the applied dev head on Data API hardening while the OTP limit migration is unapplied", () => {
-    expect(appliedMigrationHead.filename).toBe("20261004223358_data_api_default_privileges_hardening_v1.sql")
+  it("records SEC-02 as the applied DEV migration head", () => {
+    expect(appliedMigrationHead.filename).toBe("20261010200000_customer_action_otp_limits_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(migrationHead.filename).toBe("20261010200000_customer_action_otp_limits_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
   })
 
   it("never marks any migration as safe to replay", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("leaves only the customer-action OTP limit migration pending", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261010200000_customer_action_otp_limits_v1.sql",
-    ])
+  it("leaves no migrations pending against DEV after SEC-02", () => {
+    expect(pendingMigrations()).toEqual([])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

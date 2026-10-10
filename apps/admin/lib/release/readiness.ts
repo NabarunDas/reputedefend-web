@@ -239,19 +239,19 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "profilerelaunch-dev and the production Strategy A project remain at applied head 20261004223358 data_api_default_privileges_hardening_v1. The repository head is the unapplied customer-action OTP limit migration. pendingMigrations() contains that migration only, and this change does not apply it.",
+      "DEV and repository migration head are 20261010200000 customer_action_otp_limits_v1, applied and verified. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting coordinated migration and AWS backup-head update. pendingMigrations() is empty for DEV.",
     status: "READY",
     evidence:
-      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. The canonical chain still starts at 20260915120000 core_data_foundation_v1. SEC-02 adds supabase/migrations/20261010200000_customer_action_otp_limits_v1.sql with appliedToDev false. DEV and PROD stay on 20261004223358. pendingMigrations() lists that file alone.",
+      "On 2026-10-10 SEC-02 was applied from merged commit 2be435047769e5e7ff0108f657f7f55c34c7e682 to profilerelaunch-dev, and the Supabase-generated migration history version was aligned to canonical 20261010200000 customer_action_otp_limits_v1. Live verification confirmed five SECURITY DEFINER functions, empty search_path, service_role-only EXECUTE, private RLS, no direct customer or service_role challenge-column access, and generic rejection of invalid tokens. Five existing customer actions remained and no OTP challenge was active. The canonical chain starts at 20260915120000. appliedToDev true; pendingMigrations() empty. PROD remains at 20261004223358.",
     codeAction: null,
     externalAction:
-      "No migration action remains for the current production schema head. Future migrations remain forward-only and require review before production application.",
+      "Production SEC-02 migration remains unapplied. Verify SEC-01 live AWS backups before Production cutover, then apply the reviewed forward-only migration with a coordinated AWS ApprovedMigrationHead update. Keep feature gates disabled.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
-      "Read the migration head of the production database and compare it with appliedMigrationHead in the manifest. Record pendingMigrations() separately. Write both into the release record.",
+      "Compare the DEV migration history with appliedMigrationHead (20261010200000); check PROD separately against 20261004223358 until its release. Verify schema permissions, then record both heads.",
     stopCondition:
-      "If the heads differ, stop. Compare production and profilerelaunch-dev with appliedMigrationHead, not with the unapplied OTP limit migration. Do not replay a migration to close the gap and do not edit an applied migration.",
+      "If the DEV ledger differs from appliedMigrationHead, stop. PROD is intentionally one reviewed migration behind DEV; never replay an applied migration or update its AWS backup head prematurely.",
   },
   {
     id: "supabase.migration-ledger-discrepancy",

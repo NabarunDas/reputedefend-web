@@ -48,9 +48,10 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(38)
-    // A clean rebuild and profilerelaunch-dev now end at the same applied hardening migration.
-    expect(migrationHead.version).toBe("20261004223358")
+    expect(migrationChain).toHaveLength(39)
+    // A clean rebuild includes the unapplied OTP limit migration. profilerelaunch-dev
+    // still ends at the applied Data API hardening migration.
+    expect(migrationHead.version).toBe("20261010200000")
     expect(appliedMigrationHead.version).toBe("20261004223358")
   })
 

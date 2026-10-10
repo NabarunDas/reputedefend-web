@@ -53,15 +53,16 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(23)
+    expect(chainAfter(checkpoint)).toHaveLength(24)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the applied Data API hardening migration, which is also the
-    // current profilerelaunch-dev head.
-    expect(pending.at(-1)?.version).toBe("20261004223358")
+    // The tail is the unapplied OTP limit migration. profilerelaunch-dev remains
+    // on the Data API hardening migration.
+    expect(pending.at(-1)?.version).toBe("20261010200000")
+    expect(pending.some(entry => entry.version === "20261004223358")).toBe(true)
     expect(pending.some(entry => entry.version === "20261004000625")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003194353")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003183002")).toBe(true)

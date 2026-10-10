@@ -193,6 +193,51 @@ describe("customer action HTTP", () => {
     expect(mocks.signOut).toHaveBeenCalledWith("jwt-must-not-leak")
     expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak/)
     expect(response.cookies.get(sessionCookie)?.value).toBe("c".repeat(64))
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_action_attempt_otp_v1",
+      "customer_action_finish_otp_v1",
+      "customer_action_session_v1",
+    ])
+  })
+  it.each([
+    ["an error", { error: { message: "revoke failed jwt-must-not-leak alex@example.com" } }],
+    ["a null result", null],
+    ["an undefined result", undefined],
+  ])("does not create an action session when provider revocation returns %s", async (_label, revoked) => {
+    mocks.rpc.mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+    mocks.signOut.mockResolvedValue(revoked)
+    mocks.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak", refresh_token: "refresh-must-not-leak" },
+        user: { id: "66666666-6666-4666-8666-666666666666", email: "alex@example.com", email_confirmed_at: "2026-09-18T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload).toEqual({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." })
+    expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak|alex@example.com|revoke failed/)
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_attempt_otp_v1"])
+  })
+  it("does not create an action session when provider revocation throws", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+    mocks.signOut.mockRejectedValue(new Error("revoke threw jwt-must-not-leak alex@example.com"))
+    mocks.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak", refresh_token: "refresh-must-not-leak" },
+        user: { id: "66666666-6666-4666-8666-666666666666", email: "alex@example.com", email_confirmed_at: "2026-09-18T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload.message).toMatch(/unavailable or has expired/)
+    expect(JSON.stringify(payload)).not.toMatch(/jwt-must-not-leak|refresh-must-not-leak|alex@example.com|revoke threw/)
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_attempt_otp_v1"])
   })
   it("does not set the action cookie when the session projection is unexpectedly null", async () => {
     mocks.rpc

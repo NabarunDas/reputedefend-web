@@ -14,6 +14,7 @@ const upgradedFiles = [
   "20261004000625_customer_portal_relaunch_guard_v1.sql",
   "20261004080853_customer_portal_messages_account_v1.sql",
   "20261004223358_data_api_default_privileges_hardening_v1.sql",
+  "20261010200000_customer_action_otp_limits_v1.sql",
 ].join(",")
 const db = new PGlite()
 

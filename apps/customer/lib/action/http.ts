@@ -90,7 +90,8 @@ export async function verifyOtp(request: NextRequest) {
     const service = backend()
     const { data, error } = await service.identity.auth.verifyOtp({ email: allowed.email, token: body.code, type: "email" })
     if (error || !data.session || !data.user?.id || data.user.email?.toLowerCase() !== allowed.email || !data.user.email_confirmed_at) return reply()
-    await service.revokeProviderSession(data.session.access_token)
+    const revoked = await service.revokeProviderSession(data.session.access_token)
+    if (!revoked || revoked.error) return reply()
     const token = newToken()
     const finished = await service.rpc<{ status?: string }>("customer_action_finish_otp_v1", {
       p_pending_hash: tokenHash(pending), p_session_hash: tokenHash(token), p_auth_user: data.user.id, p_email: allowed.email,

@@ -1,8 +1,9 @@
 "use client"
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { PORTAL_EMAIL_INVALID, PORTAL_UNAVAILABLE, PORTAL_VERIFY_ERROR, normalizePortalEmail, portalLoginNotice } from "@/lib/portal/email"
-import { CUSTOMER_OTP_DIGITS, CUSTOMER_OTP_PATTERN, normalizeCustomerOtp } from "@/lib/otp"
+import { CUSTOMER_OTP_PATTERN } from "@/lib/otp"
+import { OtpInput } from "./otp-input"
 
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(path, {
@@ -24,7 +25,12 @@ export function LoginClient() {
   const [error, setError] = useState("")
   const [pending, setPending] = useState<"" | "send" | "resend" | "verify">("")
   const [resendIn, setResendIn] = useState(0)
+  const codeInput = useRef<HTMLInputElement>(null)
   const busy = pending !== ""
+
+  useEffect(() => {
+    if (phase === "code") codeInput.current?.focus()
+  }, [phase])
 
   useEffect(() => {
     if (resendIn <= 0) return
@@ -116,20 +122,8 @@ export function LoginClient() {
     <h1>Check your email</h1>
     <p className="lead" role="status">{portalLoginNotice(typedEmail)}</p>
     <form onSubmit={verify}>
-      <div className="otp-field">
-        <label htmlFor="portal-code">Eight-digit code</label>
-        <input
-          id="portal-code"
-          className="otp-input"
-          name="code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={CUSTOMER_OTP_DIGITS}
-          value={code}
-          onChange={event => setCode(normalizeCustomerOtp(event.target.value))}
-          required
-        />
-      </div>
+      <label htmlFor="portal-code">Eight-digit code</label>
+      <OtpInput id="portal-code" value={code} onChange={setCode} inputRef={codeInput} />
       {error ? <p className="notice-danger" role="alert">{error}</p> : null}
       <button type="submit" disabled={busy || !CUSTOMER_OTP_PATTERN.test(code)}>{pending === "verify" ? "Verifying…" : "Verify and sign in"}</button>
     </form>

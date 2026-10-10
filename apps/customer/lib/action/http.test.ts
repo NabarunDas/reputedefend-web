@@ -170,7 +170,7 @@ describe("customer action HTTP", () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it("rejects extra verify fields", async () => {
-    const response = await verifyPost(req("/api/action/verify", { code: "123456", email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678", email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
     expect(response.status).toBe(401)
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.verifyOtp).not.toHaveBeenCalled()
@@ -187,7 +187,7 @@ describe("customer action HTTP", () => {
       },
       error: null,
     })
-    const response = await verifyPost(req("/api/action/verify", { code: "123456" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
     const payload = await response.json()
     expect(response.status).toBe(200)
     expect(mocks.signOut).toHaveBeenCalledWith("jwt-must-not-leak")
@@ -206,7 +206,7 @@ describe("customer action HTTP", () => {
       },
       error: null,
     })
-    const response = await verifyPost(req("/api/action/verify", { code: "123456" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
     const payload = await response.json()
     expect(response.status).toBe(401)
     expect(payload.message).toMatch(/unavailable or has expired/)

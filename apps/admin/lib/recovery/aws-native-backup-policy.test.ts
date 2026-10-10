@@ -40,11 +40,14 @@ describe("AWS-native production database backup policy", () => {
   })
 
   it("preserves the logical backup, migration and RPO guardrails", () => {
-    expect(runner).toContain('npx --yes "supabase@${CLI_VERSION}"')
+    expect(runner).toContain("npm ci --ignore-scripts --omit=dev --prefix infra/aws/backup-cli")
+    expect(runner).toContain("CLI_VERSION=2.119.0")
+    expect(runner).not.toContain("npx")
     expect(runner).toContain("--role-only")
     expect(runner).toContain("--data-only")
     expect(runner).toContain("--schema supabase_migrations")
     expect(runner).toContain("RPO_SECONDS=14400")
+    expect(runner).toContain("APPROVED_MIGRATION_HEAD")
     expect(runner).toContain("migration_aligned")
     expect(runner).toContain('completed/${backup_id}.json')
     expect(runner).toContain("sha256sum")
@@ -53,5 +56,15 @@ describe("AWS-native production database backup policy", () => {
   it("uses a duplicate guard so scheduler retries do not create duplicate full dumps", () => {
     expect(runner).toContain("DUPLICATE_GUARD_SECONDS=7200")
     expect(runner).toContain("No full backup is required for this invocation.")
+  })
+
+  it("keeps one schedule and does not execute a branch tip", () => {
+    expect(stack.match(/Type: AWS::Scheduler::Schedule/g)).toHaveLength(1)
+    expect(stack).toContain("Name: profilerelaunch-prod-db-backup-3h")
+    expect(stack).not.toContain("RepositoryBranch")
+    expect(stack).not.toContain("REPOSITORY_BRANCH")
+    expect(stack).not.toContain("git clone")
+    expect(stack).toContain('AllowedPattern: "^[0-9a-f]{40}$"')
+    expect(stack).not.toContain("BACKUP_RUNNER_ALLOW_FIXTURE")
   })
 })

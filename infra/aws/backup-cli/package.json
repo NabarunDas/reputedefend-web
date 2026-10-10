@@ -1,0 +1,8 @@
+{
+  "name": "profilerelaunch-prod-db-backup-cli",
+  "private": true,
+  "description": "Pinned Supabase CLI 2.119.0 for the production database backup runner. Installed only by scripts/prod-db-backup-aws.sh with npm ci --ignore-scripts.",
+  "dependencies": {
+    "supabase": "2.119.0"
+  }
+}

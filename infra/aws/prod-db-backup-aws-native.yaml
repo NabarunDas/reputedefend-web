@@ -1,9 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   ProfileRelaunch AWS-native production database backup scheduler. Uses EventBridge Scheduler
-  to start CodeBuild every three hours. CodeBuild clones the public repository, reads the
-  production Supabase Session Pooler URL from Secrets Manager, and writes verified logical
-  backups into the existing production backup S3 bucket.
+  to start CodeBuild every three hours. CodeBuild fetches one approved commit, verifies the
+  runner and CLI lock checksums, reads the production Supabase Session Pooler URL from
+  Secrets Manager, and writes verified logical backups into the existing production backup
+  S3 bucket. A branch name is not an execution source.
 
 Parameters:
   BackupBucketName:
@@ -20,10 +21,44 @@ Parameters:
   RepositoryCloneUrl:
     Type: String
     Default: https://github.com/NabarunDas/reputedefend-web.git
+    Description: Public repository URL. Used only to fetch ApprovedRunnerCommit.
 
-  RepositoryBranch:
+  ApprovedRunnerCommit:
     Type: String
-    Default: main
+    AllowedPattern: "^[0-9a-f]{40}$"
+    MinLength: 40
+    MaxLength: 40
+    Description: >
+      Full lowercase commit SHA of the reviewed backup runner. Update this only when the
+      runner itself is approved. Do not set a branch name.
+
+  ApprovedRunnerScriptSha256:
+    Type: String
+    Default: "d2114b21d11c5f3ac52f8d8b1369cc9aaee0bcdcdc79c05a9fd5db8ef289fa3d"
+    AllowedPattern: "^[0-9a-f]{64}$"
+    MinLength: 64
+    MaxLength: 64
+    Description: >
+      SHA-256 of scripts/prod-db-backup-aws.sh at ApprovedRunnerCommit. The build fails
+      closed when the fetched file does not match.
+
+  ApprovedBackupCliLockSha256:
+    Type: String
+    Default: "49e0391e0cff428d9487e09001092297ed8c9edb2c63bde4539da9499b382e14"
+    AllowedPattern: "^[0-9a-f]{64}$"
+    MinLength: 64
+    MaxLength: 64
+    Description: >
+      SHA-256 of infra/aws/backup-cli/package-lock.json at ApprovedRunnerCommit. The build
+      fails closed when the fetched lockfile does not match.
+
+  ApprovedMigrationHead:
+    Type: String
+    Default: "20261004223358_data_api_default_privileges_hardening_v1"
+    AllowedPattern: "^[0-9]{14}_[a-z0-9_]+$"
+    Description: >
+      Migration id (filename without .sql) the live database head must match. Update this
+      when a reviewed migration is applied. It is independent of ApprovedRunnerCommit.
 
   ScheduleExpression:
     Type: String
@@ -123,18 +158,25 @@ Resources:
                 - docker --version
                 - aws --version
                 - git --version
+                - python3 --version
+                - jq --version
             pre_build:
               commands:
-                - git clone --depth 1 --branch "$REPOSITORY_BRANCH" "$REPOSITORY_CLONE_URL" repo
-                - chmod +x repo/scripts/prod-db-backup-aws.sh
+                # Decoded bytes are scripts/prod-db-backup-verify-source.sh. The build
+                # fails closed before any repository script runs.
+                - python3 -c "import base64,pathlib; pathlib.Path('/tmp/prod-db-backup-verify-source.sh').write_bytes(base64.b64decode('IyEvdXNyL2Jpbi9lbnYgYmFzaAojIEZhaWwgY2xvc2VkIHVubGVzcyB0aGUgY2hlY2tvdXQgaXMgZXhhY3RseSB0aGUgYXBwcm92ZWQgY29tbWl0IGFuZCB0aGUKIyByZXZpZXdlZCBydW5uZXIgZmlsZXMgbWF0Y2ggdGhlaXIgYXBwcm92ZWQgY2hlY2tzdW1zLiBBIGJyYW5jaCBuYW1lIGlzIG5vdAojIGFuIGV4ZWN1dGlvbiBzb3VyY2UuIFRoaXMgc2NyaXB0IGlzIHRoZSBDb2RlQnVpbGQgdHJ1c3QgYm91bmRhcnk6IHRoZQojIENsb3VkRm9ybWF0aW9uIGJ1aWxkc3BlYyBkZWNvZGVzIHRoaXMgZmlsZSBhbmQgcnVucyBpdCBiZWZvcmUgYW55IHJlcG9zaXRvcnkKIyBzY3JpcHQuCnNldCAtZXVvIHBpcGVmYWlsCnNldCAreAoKOiAiJHtBUFBST1ZFRF9SVU5ORVJfQ09NTUlUOj9NaXNzaW5nIEFQUFJPVkVEX1JVTk5FUl9DT01NSVR9Igo6ICIke0FQUFJPVkVEX1JVTk5FUl9TQ1JJUFRfU0hBMjU2Oj9NaXNzaW5nIEFQUFJPVkVEX1JVTk5FUl9TQ1JJUFRfU0hBMjU2fSIKOiAiJHtBUFBST1ZFRF9CQUNLVVBfQ0xJX0xPQ0tfU0hBMjU2Oj9NaXNzaW5nIEFQUFJPVkVEX0JBQ0tVUF9DTElfTE9DS19TSEEyNTZ9Igo6ICIke1JFUE9TSVRPUllfQ0xPTkVfVVJMOj9NaXNzaW5nIFJFUE9TSVRPUllfQ0xPTkVfVVJMfSIKCkNIRUNLT1VUX0RJUj0iJHtDSEVDS09VVF9ESVI6LXJlcG99IgpleHBvcnQgR0lUX1RFUk1JTkFMX1BST01QVD0wCgppZiBbWyAhICIkQVBQUk9WRURfUlVOTkVSX0NPTU1JVCIgPX4gXlswLTlhLWZdezQwfSQgXV07IHRoZW4KICBlY2hvICJFUlJPUjogQXBwcm92ZWQgcnVubmVyIGNvbW1pdCBtdXN0IGJlIGEgZnVsbCA0MC1jaGFyYWN0ZXIgbG93ZXJjYXNlIGhleCBTSEEuIEJyYW5jaCBuYW1lcyBhcmUgcmVqZWN0ZWQuIgogIGV4aXQgMgpmaQppZiBbWyAhICIkQVBQUk9WRURfUlVOTkVSX1NDUklQVF9TSEEyNTYiID1+IF5bMC05YS1mXXs2NH0kIF1dOyB0aGVuCiAgZWNobyAiRVJST1I6IEFwcHJvdmVkIHJ1bm5lciBzY3JpcHQgY2hlY2tzdW0gbXVzdCBiZSBhIDY0LWNoYXJhY3RlciBsb3dlcmNhc2UgaGV4IFNIQS0yNTYuIgogIGV4aXQgMgpmaQppZiBbWyAhICIkQVBQUk9WRURfQkFDS1VQX0NMSV9MT0NLX1NIQTI1NiIgPX4gXlswLTlhLWZdezY0fSQgXV07IHRoZW4KICBlY2hvICJFUlJPUjogQXBwcm92ZWQgYmFja3VwIENMSSBsb2NrIGNoZWNrc3VtIG11c3QgYmUgYSA2NC1jaGFyYWN0ZXIgbG93ZXJjYXNlIGhleCBTSEEtMjU2LiIKICBleGl0IDIKZmkKaWYgW1sgISAiJENIRUNLT1VUX0RJUiIgPX4gXltBLVphLXowLTkuXy8tXSskIHx8ICIkQ0hFQ0tPVVRfRElSIiA9PSAqLi4qIHx8ICIkQ0hFQ0tPVVRfRElSIiA9PSAvKiBdXTsgdGhlbgogIGVjaG8gIkVSUk9SOiBDaGVja291dCBkaXJlY3RvcnkgaXMgbm90IGFsbG93ZWQuIgogIGV4aXQgMgpmaQoKY2FzZSAiJEFQUFJPVkVEX1JVTk5FUl9DT01NSVQiIGluCiAgbWFpbnxtYXN0ZXJ8SEVBRHxoZWFkKQogICAgZWNobyAiRVJST1I6IFJlZnVzaW5nIHRvIGV4ZWN1dGUgYSBicmFuY2ggdGlwLiIKICAgIGV4aXQgMgogICAgOzsKZXNhYwoKcm0gLXJmICIkQ0hFQ0tPVVRfRElSIgpnaXQgaW5pdCAtLXF1aWV0ICIkQ0hFQ0tPVVRfRElSIgpnaXQgLUMgIiRDSEVDS09VVF9ESVIiIHJlbW90ZSBhZGQgb3JpZ2luICIkUkVQT1NJVE9SWV9DTE9ORV9VUkwiCgppZiAhIGdpdCAtQyAiJENIRUNLT1VUX0RJUiIgLWMgcHJvdG9jb2wudmVyc2lvbj0yIGZldGNoIC0tcXVpZXQgLS1kZXB0aCAxIC0tbm8tdGFncyBvcmlnaW4gIiRBUFBST1ZFRF9SVU5ORVJfQ09NTUlUIjsgdGhlbgogIGVjaG8gIkVSUk9SOiBDb3VsZCBub3QgZmV0Y2ggdGhlIGFwcHJvdmVkIHJ1bm5lciBjb21taXQuIgogIHJtIC1yZiAiJENIRUNLT1VUX0RJUiIKICBleGl0IDIKZmkKCmZldGNoZWQ9IiQoZ2l0IC1DICIkQ0hFQ0tPVVRfRElSIiByZXYtcGFyc2UgRkVUQ0hfSEVBRCkiCmlmIFtbICIkZmV0Y2hlZCIgIT0gIiRBUFBST1ZFRF9SVU5ORVJfQ09NTUlUIiBdXTsgdGhlbgogIGVjaG8gIkVSUk9SOiBGZXRjaGVkIG9iamVjdCBkb2VzIG5vdCBtYXRjaCB0aGUgYXBwcm92ZWQgcnVubmVyIGNvbW1pdC4iCiAgcm0gLXJmICIkQ0hFQ0tPVVRfRElSIgogIGV4aXQgMgpmaQoKaWYgISBnaXQgLUMgIiRDSEVDS09VVF9ESVIiIGNoZWNrb3V0IC0tZGV0YWNoIC0tcXVpZXQgIiRBUFBST1ZFRF9SVU5ORVJfQ09NTUlUIjsgdGhlbgogIGVjaG8gIkVSUk9SOiBDb3VsZCBub3QgY2hlY2sgb3V0IHRoZSBhcHByb3ZlZCBydW5uZXIgY29tbWl0LiIKICBybSAtcmYgIiRDSEVDS09VVF9ESVIiCiAgZXhpdCAyCmZpCgpoZWFkX3NoYT0iJChnaXQgLUMgIiRDSEVDS09VVF9ESVIiIHJldi1wYXJzZSBIRUFEKSIKaWYgW1sgIiRoZWFkX3NoYSIgIT0gIiRBUFBST1ZFRF9SVU5ORVJfQ09NTUlUIiBdXTsgdGhlbgogIGVjaG8gIkVSUk9SOiBDaGVja291dCBkb2VzIG5vdCBtYXRjaCB0aGUgYXBwcm92ZWQgcnVubmVyIGNvbW1pdC4iCiAgcm0gLXJmICIkQ0hFQ0tPVVRfRElSIgogIGV4aXQgMgpmaQoKdmVyaWZ5X2ZpbGUoKSB7CiAgbG9jYWwgcmVsYXRpdmU9IiQxIgogIGxvY2FsIGV4cGVjdGVkPSIkMiIKICBsb2NhbCBwYXRoPSIkQ0hFQ0tPVVRfRElSLyRyZWxhdGl2ZSIKICBpZiBbWyAhIC1mICIkcGF0aCIgXV07IHRoZW4KICAgIGVjaG8gIkVSUk9SOiBBcHByb3ZlZCBjb21taXQgaXMgbWlzc2luZyAke3JlbGF0aXZlfS4iCiAgICBybSAtcmYgIiRDSEVDS09VVF9ESVIiCiAgICBleGl0IDIKICBmaQogIGxvY2FsIGFjdHVhbAogIGFjdHVhbD0iJChzaGEyNTZzdW0gIiRwYXRoIiB8IGF3ayAne3ByaW50ICQxfScpIgogIGlmIFtbICIkYWN0dWFsIiAhPSAiJGV4cGVjdGVkIiBdXTsgdGhlbgogICAgZWNobyAiRVJST1I6IENoZWNrc3VtIG1pc21hdGNoIGZvciAke3JlbGF0aXZlfS4iCiAgICBybSAtcmYgIiRDSEVDS09VVF9ESVIiCiAgICBleGl0IDIKICBmaQp9Cgp2ZXJpZnlfZmlsZSAic2NyaXB0cy9wcm9kLWRiLWJhY2t1cC1hd3Muc2giICIkQVBQUk9WRURfUlVOTkVSX1NDUklQVF9TSEEyNTYiCnZlcmlmeV9maWxlICJpbmZyYS9hd3MvYmFja3VwLWNsaS9wYWNrYWdlLWxvY2suanNvbiIgIiRBUFBST1ZFRF9CQUNLVVBfQ0xJX0xPQ0tfU0hBMjU2IgoKZWNobyAiQXBwcm92ZWQgcnVubmVyIGNvbW1pdCB2ZXJpZmllZC4iCg=='))"
+                - bash /tmp/prod-db-backup-verify-source.sh
             build:
               commands:
-                - cd repo
-                - ./scripts/prod-db-backup-aws.sh
+                - cd repo && bash scripts/prod-db-backup-aws.sh
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/standard:7.0
+        # PrivilegedMode stays on. The proven dump path runs postgres:17-alpine for the
+        # migration-head query and the Supabase CLI runs pg_dump inside a container.
+        # CodeBuild's standard image only starts that Docker daemon in privileged mode.
+        # Turning it off would change the backup output path. See the backup runbook.
         PrivilegedMode: true
         EnvironmentVariables:
           - Name: SUPABASE_DB_URL
@@ -146,9 +188,18 @@ Resources:
           - Name: REPOSITORY_CLONE_URL
             Type: PLAINTEXT
             Value: !Ref RepositoryCloneUrl
-          - Name: REPOSITORY_BRANCH
+          - Name: APPROVED_RUNNER_COMMIT
             Type: PLAINTEXT
-            Value: !Ref RepositoryBranch
+            Value: !Ref ApprovedRunnerCommit
+          - Name: APPROVED_RUNNER_SCRIPT_SHA256
+            Type: PLAINTEXT
+            Value: !Ref ApprovedRunnerScriptSha256
+          - Name: APPROVED_BACKUP_CLI_LOCK_SHA256
+            Type: PLAINTEXT
+            Value: !Ref ApprovedBackupCliLockSha256
+          - Name: APPROVED_MIGRATION_HEAD
+            Type: PLAINTEXT
+            Value: !Ref ApprovedMigrationHead
       LogsConfig:
         CloudWatchLogs:
           Status: ENABLED
@@ -222,3 +273,9 @@ Outputs:
 
   ProdSupabaseDbUrlSecretArn:
     Value: !Ref ProdSupabaseDbUrlSecretArn
+
+  ApprovedRunnerCommit:
+    Value: !Ref ApprovedRunnerCommit
+
+  ApprovedMigrationHead:
+    Value: !Ref ApprovedMigrationHead

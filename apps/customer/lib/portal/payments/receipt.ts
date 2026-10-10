@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
-import { customerBackendConfig } from "@/lib/config"
+import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { moneyLabel, paidOn, taxNote } from "./model"
 import { parseReceiptDownload } from "./parse"
@@ -19,7 +19,7 @@ function textReply(message: string, http: number) {
 
 export async function portalReceiptDownload(request: NextRequest) {
   const config = customerBackendConfig()
-  if (!portalAvailable() || !config || request.nextUrl.origin !== config.origin) return textReply(UNAVAILABLE, 404)
+  if (!portalAvailable() || !config || !customerRequestOriginAllowed(null, request.nextUrl.origin, false)) return textReply(UNAVAILABLE, 404)
   const token = request.cookies.get(portalSessionCookieName())?.value
   if (!validToken(token)) return textReply("Sign in again to download this receipt.", 401)
   const params = request.nextUrl.searchParams

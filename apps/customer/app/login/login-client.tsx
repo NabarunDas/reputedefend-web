@@ -100,7 +100,7 @@ export function LoginClient() {
     return <section className="auth-card">
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Sign in to your ProfileRelaunch account</h1>
-      <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you a eight-digit code. You do not need a password.</p>
+      <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you an eight-digit code. You do not need a password.</p>
       <form onSubmit={sendCode}>
         <label htmlFor="portal-email">Email address</label>
         <input id="portal-email" name="email" type="email" autoComplete="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} required />

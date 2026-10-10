@@ -3,6 +3,7 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "@/lib/action/identity"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
+import { validCustomerOtp } from "@/lib/otp"
 import {
   PORTAL_EMAIL_INVALID,
   PORTAL_LOGIN_MESSAGE,
@@ -116,7 +117,7 @@ export async function verifyLogin(request: NextRequest) {
   if (!originOk(request) || !jsonRequest(request)) return refused()
   const pending = request.cookies.get(portalPendingCookieName())?.value
   const body = await readJson(request, 1024)
-  if (!validToken(pending) || !body || !exactKeys(body, ["code"]) || typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) {
+  if (!validToken(pending) || !body || !exactKeys(body, ["code"]) || !validCustomerOtp(body.code)) {
     return verifyDenied()
   }
   try {

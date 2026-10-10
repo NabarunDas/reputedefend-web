@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ACTION_UNAVAILABLE } from "@/lib/access"
+import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
@@ -232,9 +233,9 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <form onSubmit={sendOtp}><button type="submit">Send code</button></form>
     </>}
     {otpSent && <>
-      <p>We sent a six-digit code to {maskedEmail}.</p>
+      <p>We sent a eight-digit code to {maskedEmail}.</p>
       <form onSubmit={verify}>
-        <label>Six-digit code<input name="code" inputMode="numeric" pattern="\d{6}" maxLength={6} required autoComplete="one-time-code" /></label>
+        <label>Eight-digit code<input name="code" inputMode="numeric" pattern={`[0-9]{${CUSTOMER_OTP_DIGITS}}`} maxLength={CUSTOMER_OTP_DIGITS} required autoComplete="one-time-code" onInput={event => { event.currentTarget.value = normalizeCustomerOtp(event.currentTarget.value) }} /></label>
         <button type="submit">Verify code</button>
       </form>
       {resendReady && <form onSubmit={sendOtp}><button type="submit">Resend code</button></form>}

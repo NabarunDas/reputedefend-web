@@ -66,8 +66,8 @@ describe("customer action page", () => {
     expect(screen.getByRole("button", { name: "Send code" })).toBeTruthy()
     expect(screen.getByText(/d\*\*\*@gmail.com/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
-    expect(screen.queryByLabelText("Six-digit code")).toBeNull()
-    expect(screen.queryByText(/We sent a six-digit code/)).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
+    expect(screen.queryByText(/We sent a eight-digit code/)).toBeNull()
   })
 
   it("hides Send code and shows Verify after a successful send", async () => {
@@ -75,8 +75,8 @@ describe("customer action page", () => {
     await sendCodeSuccessfully()
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.getByRole("button", { name: "Verify code" })).toBeTruthy()
-    expect(screen.getByLabelText("Six-digit code")).toBeTruthy()
-    expect(screen.getByText(/We sent a six-digit code to d\*\*\*@gmail.com/)).toBeTruthy()
+    expect(screen.getByLabelText("Eight-digit code")).toBeTruthy()
+    expect(screen.getByText(/We sent a eight-digit code to d\*\*\*@gmail.com/)).toBeTruthy()
     expect(document.body.textContent).not.toContain("das.nabarun@gmail.com")
     expect(screen.queryByRole("button", { name: "Resend code" })).toBeNull()
   })
@@ -85,21 +85,21 @@ describe("customer action page", () => {
     await renderAfterExchange()
     await sendCodeSuccessfully()
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok", session }) })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy())
     expect(screen.getByText("Managed recovery service agreement")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
-    expect(screen.queryByLabelText("Six-digit code")).toBeNull()
-    expect(screen.queryByText(/We sent a six-digit code/)).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
+    expect(screen.queryByText(/We sent a eight-digit code/)).toBeNull()
   })
 
   it("shows only the completed state after acceptance", async () => {
     await renderAfterExchange()
     await sendCodeSuccessfully()
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok", session }) })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy())
     fireEvent.click(screen.getByRole("checkbox"))
@@ -108,7 +108,7 @@ describe("customer action page", () => {
     await waitFor(() => expect(screen.getByText("This action is complete.")).toBeTruthy())
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
-    expect(screen.queryByLabelText("Six-digit code")).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
   })
 
@@ -152,7 +152,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept quote" })).toBeTruthy())
     expect(screen.getByText("Managed Relaunch")).toBeTruthy()
@@ -172,7 +172,7 @@ describe("customer action page", () => {
         session: { ...session, kind: "CASE_ACCESS", agreement: null },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/case"))
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
@@ -207,7 +207,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Pay securely with Stripe" })).toBeTruthy())
     expect(screen.getByText(/SO-26-ABCDE2/)).toBeTruthy()
@@ -248,7 +248,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("link", { name: "Open the secure Stripe hosted invoice" })).toBeTruthy())
     expect(screen.getByRole("link", { name: "Open the secure Stripe hosted invoice" })).toHaveAttribute("href", "https://invoice.stripe.test/in_test")
@@ -277,7 +277,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept Guard permission" })).toBeTruthy())
     expect(screen.getByText(/30 days start only when Guard is activated/)).toBeTruthy()
@@ -315,7 +315,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept monthly billing for this location" })).toBeTruthy())
     expect(screen.getByText(/£9.99/)).toBeTruthy()
@@ -354,7 +354,7 @@ describe("customer action page", () => {
         },
       }),
     })
-    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept price change" })).toBeTruthy())
     expect(screen.getByText(/£9.99/)).toBeTruthy()
@@ -368,9 +368,9 @@ describe("customer action page", () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }) })
     fireEvent.click(screen.getByRole("button", { name: "Send code" }))
     await waitFor(() => expect(screen.getByText(/unavailable or has expired/)).toBeTruthy())
-    expect(screen.queryByText(/We sent a six-digit code/)).toBeNull()
+    expect(screen.queryByText(/We sent a eight-digit code/)).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
-    expect(screen.queryByLabelText("Six-digit code")).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
   })
 
   it("keeps the send screen and shows the server message on 429", async () => {
@@ -383,8 +383,8 @@ describe("customer action page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send code" }))
     await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/unavailable or has expired/))
     expect(screen.getByRole("button", { name: "Send code" })).toBeTruthy()
-    expect(screen.queryByText(/We sent a six-digit code/)).toBeNull()
+    expect(screen.queryByText(/We sent a eight-digit code/)).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
-    expect(screen.queryByLabelText("Six-digit code")).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
   })
 })

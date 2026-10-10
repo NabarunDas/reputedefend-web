@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
-import { customerBackendConfig } from "@/lib/config"
+import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openGuardSubscriptionCheckout, settleGuardCancellation } from "@/lib/action/guard-subscription"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
 import { guardSubscriptionsEnabled } from "../../../../../lib/guard-billing/config"
@@ -53,8 +53,7 @@ async function readJson(request: NextRequest, limit: number) {
 }
 
 function originOk(request: NextRequest) {
-  const config = customerBackendConfig()
-  return !!config && request.headers.get("origin") === config.origin && request.nextUrl.origin === config.origin
+  return customerRequestOriginAllowed(request.headers.get("origin"), request.nextUrl.origin)
 }
 
 function onlyKeys(body: Record<string, unknown>, allowed: string[]) {

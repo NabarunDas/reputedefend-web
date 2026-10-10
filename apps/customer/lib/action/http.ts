@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
-import { cookieOptions, customerConfig, pendingCookie, sessionCookie } from "@/lib/config"
+import { cookieOptions, customerConfig, pendingCookie, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
+import { validCustomerOtp } from "@/lib/otp"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "./identity"
 import { isUuid } from "../uuid"
 
@@ -24,8 +25,7 @@ async function readJson(request: NextRequest, limit: number) {
 }
 
 function originOk(request: NextRequest) {
-  const config = customerConfig()
-  return !!config && request.headers.get("origin") === config.origin && request.nextUrl.origin === config.origin
+  return customerRequestOriginAllowed(request.headers.get("origin"), request.nextUrl.origin)
 }
 
 function jsonRequest(request: NextRequest) {
@@ -83,7 +83,7 @@ export async function verifyOtp(request: NextRequest) {
   if (!config || !originOk(request) || !jsonRequest(request)) return reply()
   const pending = request.cookies.get(pendingCookie)?.value
   const body = await readJson(request, 1024)
-  if (!validToken(pending) || !body || !exactKeys(body, ["code"]) || typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) return reply()
+  if (!validToken(pending) || !body || !exactKeys(body, ["code"]) || !validCustomerOtp(body.code)) return reply()
   try {
     const allowed = await backend().rpc<{ status?: string; email?: string }>("customer_action_attempt_otp_v1", { p_pending_hash: tokenHash(pending) })
     if (allowed.status !== "ok" || !allowed.email) return reply()

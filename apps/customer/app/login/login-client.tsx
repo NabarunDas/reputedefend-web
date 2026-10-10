@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { PORTAL_EMAIL_INVALID, PORTAL_UNAVAILABLE, PORTAL_VERIFY_ERROR, normalizePortalEmail, portalLoginNotice } from "@/lib/portal/email"
+import { CUSTOMER_OTP_DIGITS, CUSTOMER_OTP_PATTERN, normalizeCustomerOtp } from "@/lib/otp"
 
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(path, {
@@ -79,7 +80,7 @@ export function LoginClient() {
   async function verify(event: FormEvent) {
     event.preventDefault()
     setError("")
-    if (!/^\d{6}$/.test(code)) return
+    if (!CUSTOMER_OTP_PATTERN.test(code)) return
     setPending("verify")
     try {
       const result = await postJson("/api/portal/auth/verify", { code })
@@ -99,7 +100,7 @@ export function LoginClient() {
     return <section className="auth-card">
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Sign in to your ProfileRelaunch account</h1>
-      <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you a six-digit code. You do not need a password.</p>
+      <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you a eight-digit code. You do not need a password.</p>
       <form onSubmit={sendCode}>
         <label htmlFor="portal-email">Email address</label>
         <input id="portal-email" name="email" type="email" autoComplete="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} required />
@@ -116,21 +117,21 @@ export function LoginClient() {
     <p className="lead" role="status">{portalLoginNotice(typedEmail)}</p>
     <form onSubmit={verify}>
       <div className="otp-field">
-        <label htmlFor="portal-code">Six-digit code</label>
+        <label htmlFor="portal-code">Eight-digit code</label>
         <input
           id="portal-code"
           className="otp-input"
           name="code"
           inputMode="numeric"
           autoComplete="one-time-code"
-          maxLength={6}
+          maxLength={CUSTOMER_OTP_DIGITS}
           value={code}
-          onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          onChange={event => setCode(normalizeCustomerOtp(event.target.value))}
           required
         />
       </div>
       {error ? <p className="notice-danger" role="alert">{error}</p> : null}
-      <button type="submit" disabled={busy || !/^\d{6}$/.test(code)}>{pending === "verify" ? "Verifying…" : "Verify and sign in"}</button>
+      <button type="submit" disabled={busy || !CUSTOMER_OTP_PATTERN.test(code)}>{pending === "verify" ? "Verifying…" : "Verify and sign in"}</button>
     </form>
     <div className="button-row">
       <button type="button" className="secondary" disabled={busy || resendIn > 0} onClick={resend}>

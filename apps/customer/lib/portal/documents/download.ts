@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
-import { customerBackendConfig } from "@/lib/config"
+import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { canDownloadItem, isOpaqueEvidenceKey } from "@/lib/case/model"
 import { createCustomerEvidenceStorage, isAllowedReadExpiry, signedUrlExpiresSeconds, type CustomerEvidenceStorage } from "@/lib/case/storage"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
@@ -32,7 +32,7 @@ export async function portalDocumentDownload(
   storage: CustomerEvidenceStorage | null = createCustomerEvidenceStorage(),
 ) {
   const config = customerBackendConfig()
-  if (!portalAvailable() || !config || request.nextUrl.origin !== config.origin) return textReply(UNAVAILABLE, 404)
+  if (!portalAvailable() || !config || !customerRequestOriginAllowed(null, request.nextUrl.origin, false)) return textReply(UNAVAILABLE, 404)
   const token = request.cookies.get(portalSessionCookieName())?.value
   if (!validToken(token)) return textReply("Sign in again to download this document.", 401)
   const params = request.nextUrl.searchParams

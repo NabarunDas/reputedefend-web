@@ -34,7 +34,7 @@ Parameters:
 
   ApprovedRunnerScriptSha256:
     Type: String
-    Default: "53527fe989a555c5ce9bb02c67875c52dc9ffd9907649992ac3e45174e4ab06f"
+    Default: "d2114b21d11c5f3ac52f8d8b1369cc9aaee0bcdcdc79c05a9fd5db8ef289fa3d"
     AllowedPattern: "^[0-9a-f]{64}$"
     MinLength: 64
     MaxLength: 64

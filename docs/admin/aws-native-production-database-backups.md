@@ -62,8 +62,9 @@ Three CloudFormation parameters are the release boundary.
 ### Runner release
 
 1. Review the runner, verifier, lockfile, and template together.
-2. Merge only after review. A squash merge produces a new commit SHA. Use the SHA that
-   GitHub will actually serve, not the pull-request branch tip and not the branch name.
+2. Merge only after review. `ApprovedRunnerCommit` is the **post-merge SHA** on the
+   branch GitHub will serve. A squash merge produces a new commit. Do not use the draft
+   pull request HEAD, the pre-merge branch tip, or a branch name.
 3. At that SHA, compute both checksums:
 
    ```bash
@@ -255,6 +256,9 @@ role names stay the same.
 
 Apply the update shortly after a successful scheduled backup, while that completed marker
 is still inside the four-hour RPO. Leave `ScheduleState=ENABLED`.
+
+`ApprovedRunnerCommit` must be the post-merge SHA. The draft pull request HEAD is not
+that commit when the pull request is squash-merged.
 
 ```bash
 aws cloudformation update-stack \

@@ -468,12 +468,23 @@ describe("production backup runner behaviour", () => {
     expect(productionResult.output).toContain("Fixture mode cannot be used")
     expect(productionResult.output).not.toContain("not-a-real-prod-password")
 
+    const escaped = fixture()
+    const escapedResult = runRunner(
+      escaped,
+      { SUPABASE_DB_URL: "postgresql://fixture:a%22b%5Cc@127.0.0.1:5432/postgres" },
+      { extraCliLine: 'export PGPASSWORD="a\\"b\\\\c"' },
+    )
+    expect(escapedResult.status).toBe(0)
+    expect(escapedResult.output).not.toContain('a\\"b\\\\c')
+    expect(escapedResult.output).not.toContain('a"b\\c')
+    expect(escapedResult.output).toContain("PGPASSWORD=[redacted]")
+
     const refused = fixture()
     const refusedResult = runRunner(refused, {}, { dockerFail: true, extraCliLine: "" })
     expect(refusedResult.status).toBe(2)
     expect(refusedResult.output).toContain("Could not connect")
     assertNoSecret(refusedResult.output)
-    for (const created of [missing, invalid, productionShaped, refused]) {
+    for (const created of [missing, invalid, productionShaped, escaped, refused]) {
       rmSync(created.root, { recursive: true, force: true })
     }
   })

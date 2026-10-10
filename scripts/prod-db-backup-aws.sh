@@ -132,6 +132,7 @@ run_redacted() {
   status=$?
   set -e
   python3 - "$cred" "$log" << 'PY'
+import re
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -146,10 +147,15 @@ if url_file.exists():
     parts = urlparse(raw)
     if parts.password:
         secrets.append(parts.password)
-        secrets.append(unquote(parts.password))
+        decoded = unquote(parts.password)
+        secrets.append(decoded)
+        # db dump errors can echo a shell script that escapes quotes and backslashes.
+        secrets.append(decoded.replace("\\", "\\\\").replace('"', '\\"'))
 for secret in secrets:
     if secret:
         text = text.replace(secret, "[redacted]")
+text = re.sub(r"postgres(?:ql)?://\S+", "[redacted]", text)
+text = re.sub(r'PGPASSWORD=(?:"(?:\\.|[^"])*"|\'(?:\\.|[^\'])*\'|\S+)', "PGPASSWORD=[redacted]", text)
 sys.stdout.write(text)
 if text and not text.endswith("\n"):
     sys.stdout.write("\n")

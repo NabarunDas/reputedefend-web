@@ -30,8 +30,14 @@ const REMOTE_HEAD = "20261004223358|data_api_default_privileges_hardening_v1"
 function git(cwd: string, args: string[]) {
   const result = spawnSync(
     "git",
-    ["-c", "user.email=backup-test@example.com", "-c", "user.name=Backup Test", ...args],
-    { cwd, encoding: "utf8" },
+    [
+      "-c", "user.email=backup-test@example.com",
+      "-c", "user.name=Backup Test",
+      "-c", "commit.gpgsign=false",
+      "-c", "core.fsmonitor=false",
+      ...args,
+    ],
+    { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
   )
   if (result.status !== 0) {
     throw new Error(result.stderr || result.stdout || `git ${args.join(" ")} failed`)
@@ -95,7 +101,7 @@ type RunnerResult = {
   output: string
 }
 
-function createRunnerFixture(options?: { listResult?: string; remoteHead?: string; npmVersion?: string; skipBinary?: boolean; dockerFail?: boolean; extraCliLine?: string }) {
+function createRunnerFixture() {
   const root = mkdtempSync(path.join(tmpdir(), "pr-backup-run-"))
   const repo = path.join(root, "repo")
   const bin = path.join(root, "bin")
@@ -111,9 +117,6 @@ function createRunnerFixture(options?: { listResult?: string; remoteHead?: strin
   git(repo, ["add", "."])
   git(repo, ["commit", "--quiet", "-m", "approved runner"])
   const sha = git(repo, ["rev-parse", "HEAD"])
-  if (options?.listResult !== undefined) {
-    writeFileSync(path.join(awsRoot, "list-result.txt"), options.listResult)
-  }
   writeExecutable(
     path.join(bin, "aws"),
     `#!/usr/bin/env bash
@@ -166,7 +169,7 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
-if [[ "$*" == *"\${FIXTURE_SECRET}"* || "$*" == *"${ENCODED_SECRET}"* || "$*" == *"postgresql://"* ]]; then
+if [[ "\$*" == *"${FIXTURE_SECRET}"* || "\$*" == *"${ENCODED_SECRET}"* || "\$*" == *"postgresql://"* ]]; then
   echo "secret in docker argv" >> "$FAKE_DOCKER_LOG"
 fi
 if [[ "\${FAKE_DOCKER_FAIL:-}" == "1" ]]; then
@@ -258,7 +261,11 @@ function runRunner(
     cwd: fixture.repo,
     env,
     encoding: "utf8",
+    timeout: 8000,
   })
+  if (result.error) {
+    throw new Error(`${result.error.message}\n${result.stdout}\n${result.stderr}`)
+  }
   const stdout = result.stdout ?? ""
   const stderr = result.stderr ?? ""
   return {
@@ -377,11 +384,8 @@ describe("approved backup runner source", () => {
 })
 
 describe("production backup runner behaviour", () => {
-  const roots: string[] = []
   function fixture() {
-    const created = createRunnerFixture()
-    roots.push(created.root)
-    return created
+    return createRunnerFixture()
   }
 
   it("creates the logical backup set, uploads it, and verifies the checksum", () => {

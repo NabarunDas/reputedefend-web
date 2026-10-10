@@ -217,7 +217,7 @@ unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 # Docker may print image-pull messages on stderr before psql's stdout.
 # run_redacted combines both streams to avoid leaking secrets, so use exactly
 # one strictly formatted SQL migration row; zero or multiple rows fail closed.
-remote_head="$(printf '%s\n' "$remote_head" | tr -d '\r' | grep -E '^[0-9]{14}\\|[A-Za-z0-9_-]+
+remote_head="$(printf '%s\n' "$remote_head" | tr -d '\r' | grep -E '^[0-9]{14}[|][A-Za-z0-9_-]+$' || true)"
 if [[ ! "$remote_head" =~ ^[0-9]{14}\|[A-Za-z0-9_-]+$ ]]; then
   echo "ERROR: Migration head query returned an unexpected shape."
   exit 2

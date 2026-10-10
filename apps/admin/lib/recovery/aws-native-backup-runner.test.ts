@@ -448,7 +448,7 @@ describe("production backup runner behaviour", () => {
     const firstPull = fixture()
     const chatter = ["Unable to find image 'postgres:17-alpine' locally",
       "17-alpine: Pulling from library/postgres",
-      "Status: Downloaded newer image for postgres:17-alpine", REMOTE_HEAD].join("\\n")
+      "Status: Downloaded newer image for postgres:17-alpine", REMOTE_HEAD].join("\n")
     const accepted = runRunner(firstPull, {}, { remoteHead: chatter, extraCliLine: "" })
     expect(accepted.status).toBe(0)
     assertNoSecret(accepted.output)
@@ -457,7 +457,7 @@ describe("production backup runner behaviour", () => {
     expect(JSON.parse(readFileSync(marker!, "utf8")).database_migration_head).toBe(REMOTE_HEAD)
 
     const ambiguous = fixture()
-    const refused = runRunner(ambiguous, {}, { remoteHead: [REMOTE_HEAD, REMOTE_HEAD].join("\\n"), extraCliLine: "" })
+    const refused = runRunner(ambiguous, {}, { remoteHead: [REMOTE_HEAD, REMOTE_HEAD].join("\n"), extraCliLine: "" })
     expect(refused.status).toBe(2)
     expect(refused.output).toContain("Migration head query returned an unexpected shape")
     expect(uploadedFiles(ambiguous.root)).toEqual([])

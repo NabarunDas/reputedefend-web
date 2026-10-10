@@ -218,12 +218,12 @@ describe("portal login resend", () => {
 })
 
 describe("portal login verify", () => {
-  it("requires exactly six digits and a valid pending cookie", async () => {
-    expect((await verifyPost(req("/api/portal/auth/verify", { code: "12345" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
+  it("requires exactly eight digits and a valid pending cookie", async () => {
+    expect((await verifyPost(req("/api/portal/auth/verify", { code: "123456789" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
     expect((await verifyPost(req("/api/portal/auth/verify", { code: "1234567" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
-    expect((await verifyPost(req("/api/portal/auth/verify", { code: "12345a" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
-    expect((await verifyPost(req("/api/portal/auth/verify", { code: "123456", email: "alex@example.com" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
-    const missing = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }))
+    expect((await verifyPost(req("/api/portal/auth/verify", { code: "1234567a" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
+    expect((await verifyPost(req("/api/portal/auth/verify", { code: "12345678", email: "alex@example.com" }, { cookie: `${portalPendingCookieName()}=${pending}` }))).status).toBe(401)
+    const missing = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }))
     expect(missing.status).toBe(401)
     expect(await missing.json()).toEqual({ message: PORTAL_VERIFY_ERROR })
     expect(state.rpc).not.toHaveBeenCalled()
@@ -232,7 +232,7 @@ describe("portal login verify", () => {
 
   it("denies an expired, unsent, or exhausted challenge without a portal session", async () => {
     state.rpc.mockResolvedValue({ status: "unavailable" })
-    const response = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const response = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     const payload = await response.json()
     expect(response.status).toBe(401)
     expect(payload).toEqual({ message: PORTAL_VERIFY_ERROR })
@@ -244,22 +244,22 @@ describe("portal login verify", () => {
   it("does not create a session on provider error, email mismatch, or an unconfirmed email", async () => {
     state.rpc.mockResolvedValue({ status: "ok", email: "alex@example.com", customerId })
     state.verifyOtp.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: "bad code" } })
-    const provider = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const provider = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     state.verifyOtp.mockResolvedValueOnce({
       data: { session: { access_token: "jwt" }, user: { id: authUser, email: "other@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
       error: null,
     })
-    const mismatch = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const mismatch = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     state.verifyOtp.mockResolvedValueOnce({
       data: { session: { access_token: "jwt" }, user: { id: authUser, email: "alex@example.com", email_confirmed_at: null } },
       error: null,
     })
-    const unconfirmed = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const unconfirmed = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     state.verifyOtp.mockResolvedValueOnce({
       data: { session: { access_token: "jwt-no-user" }, user: { email: "alex@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
       error: null,
     })
-    const missingUser = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const missingUser = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     for (const response of [provider, mismatch, unconfirmed, missingUser]) {
       expect(response.status).toBe(401)
       expect(response.cookies.get(portalSessionCookieName())).toBeUndefined()
@@ -289,7 +289,7 @@ describe("portal login verify", () => {
       },
       error: null,
     })
-    const response = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const response = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     const payload = await response.json()
     expect(response.status).toBe(401)
     expect(payload).toEqual({ message: PORTAL_VERIFY_ERROR })
@@ -312,7 +312,7 @@ describe("portal login verify", () => {
       },
       error: null,
     })
-    const response = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
+    const response = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `${portalPendingCookieName()}=${pending}` }))
     const payload = await response.json()
     const sessionToken = response.cookies.get(portalSessionCookieName())?.value
     expect(response.status).toBe(200)
@@ -349,7 +349,7 @@ describe("portal login verify", () => {
       },
       error: null,
     })
-    const response = await verifyPost(req("/api/portal/auth/verify", { code: "123456" }, { cookie: `__Host-pr-portal-pending=${pending}` }))
+    const response = await verifyPost(req("/api/portal/auth/verify", { code: "12345678" }, { cookie: `__Host-pr-portal-pending=${pending}` }))
     const setCookie = response.headers.getSetCookie().join("\n")
     expect(response.cookies.get("__Host-pr-portal")?.value).toMatch(/^[a-f0-9]{64}$/)
     expect(setCookie).toContain("__Host-pr-portal=")

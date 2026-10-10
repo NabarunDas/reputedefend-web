@@ -21,8 +21,13 @@ three hours. The GitHub workflow remains available only as a manual emergency/fa
 ## Backup design
 
 Primary scheduling is `AWS EventBridge Scheduler -> CodeBuild`, defined by
-`infra/aws/prod-db-backup-aws-native.yaml`. It runs every three hours and invokes
-`scripts/prod-db-backup-aws.sh`.
+`infra/aws/prod-db-backup-aws-native.yaml`. It runs every three hours. CodeBuild fetches
+one reviewed commit, checks the runner and CLI-lock checksums, and only then invokes
+`scripts/prod-db-backup-aws.sh`. The approval and cutover steps are in
+`docs/admin/aws-native-production-database-backups.md`. A branch name is not the execution
+source. `ApprovedMigrationHead` is updated on its own when a reviewed migration is applied,
+so a normal migration does not require a new runner commit and does not leave the drift
+check pointed at a stale file inside an immutable script.
 
 The GitHub workflow `.github/workflows/prod-db-backup.yml` is manual fallback only.
 
@@ -34,14 +39,14 @@ Both paths:
    logical-backup path;
 4. separately export the `supabase_migrations` schema and data so migration history is
    recoverable;
-5. record the repository and live database migration heads in a manifest;
+5. record the approved migration head and the live database migration head in a manifest;
 6. package the SQL and manifest into a gzip archive;
 7. write a SHA-256 checksum;
 8. upload the archive, checksum and manifest to private S3 with SSE-S3 encryption;
 9. verify all three S3 objects exist;
 10. write a small `completed/<backup-id>.json` marker only after verification; and
-11. fail only after preserving the completed backup if the database migration head differs from the
-    repository or if the previous successful backup gap exceeded four hours.
+11. fail only after preserving the completed backup if the database migration version differs from
+    `ApprovedMigrationHead` or if the previous successful backup gap exceeded four hours.
 
 The backup is never uploaded as a GitHub Actions artifact and is never committed to the
 repository.
@@ -161,3 +166,7 @@ production. Before restore:
 The logical dump includes database data such as Supabase Auth user records, but it does not
 restore external configuration such as Auth settings/API keys or evidence bytes. Those
 remain explicit Step 22B reconciliation work.
+
+Manifest fields added for the approved runner (`runner_script_sha256`,
+`backup_cli_lock_sha256`, `cli_version`) are informational. Restore still uses the five SQL
+files and the archive checksum. Unknown manifest keys do not change those steps.

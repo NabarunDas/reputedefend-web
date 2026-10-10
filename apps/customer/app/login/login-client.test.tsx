@@ -46,17 +46,17 @@ describe("portal login screen", () => {
     const sending = await screen.findByRole("button", { name: "Sending code…" })
     expect(sending).toBeDisabled()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    resolveFetch({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent a eight-digit code." }) })
+    resolveFetch({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent an eight-digit code." }) })
     await waitFor(() => expect(screen.getByRole("heading", { name: "Check your email" })).toBeTruthy())
   })
 
   it("moves to the code screen with the enumeration-safe sentence and the typed email", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent a eight-digit code." }) })
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent an eight-digit code." }) })
     render(<LoginClient />)
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "Alex@Example.com" } })
     fireEvent.click(screen.getByRole("button", { name: "Send code" }))
     await waitFor(() => expect(screen.getByRole("heading", { name: "Check your email" })).toBeTruthy())
-    expect(screen.getByRole("status").textContent).toBe("If Alex@Example.com is linked to a ProfileRelaunch account, we've sent a eight-digit code.")
+    expect(screen.getByRole("status").textContent).toBe("If Alex@Example.com is linked to a ProfileRelaunch account, we've sent an eight-digit code.")
     const code = screen.getByLabelText("Eight-digit code")
     expect(document.querySelectorAll("input")).toHaveLength(1)
     expect(code).toHaveAttribute("inputmode", "numeric")
@@ -78,7 +78,7 @@ describe("portal login screen", () => {
   it("shows verifying copy until the request finishes", async () => {
     let resolveVerify: (value: unknown) => void = () => {}
     fetchMock
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent a eight-digit code." }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent an eight-digit code." }) })
       .mockReturnValueOnce(new Promise(resolve => { resolveVerify = resolve }))
     render(<LoginClient />)
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "alex@example.com" } })
@@ -94,7 +94,7 @@ describe("portal login screen", () => {
 
   it("shows the generic verification error and does not navigate on failure", async () => {
     fetchMock
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent a eight-digit code." }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: "If this email is linked to a ProfileRelaunch account, we've sent an eight-digit code." }) })
       .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ message: "We couldn't verify that code. Check it and try again, or request a new code." }) })
     render(<LoginClient />)
     fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "alex@example.com" } })

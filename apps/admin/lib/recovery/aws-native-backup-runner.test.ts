@@ -444,6 +444,31 @@ describe("production backup runner behaviour", () => {
     rmSync(created.root, { recursive: true, force: true })
   })
 
+  it("handles Docker pull chatter before the SQL migration head but refuses ambiguous output", () => {
+    const firstPull = fixture()
+    const chatter = ["Unable to find image 'postgres:17-alpine' locally",
+      "17-alpine: Pulling from library/postgres",
+      "Status: Downloaded newer image for postgres:17-alpine", REMOTE_HEAD].join("\n")
+    const accepted = runRunner(firstPull, {}, { remoteHead: chatter, extraCliLine: "" })
+    expect(accepted.status).toBe(0)
+    assertNoSecret(accepted.output)
+    const marker = uploadedFiles(firstPull.root).find((file) => file.includes("/completed/"))
+    expect(marker).toBeTruthy()
+    expect(JSON.parse(readFileSync(marker!, "utf8")).database_migration_head).toBe(REMOTE_HEAD)
+
+    const ambiguous = fixture()
+    const refused = runRunner(ambiguous, {}, { remoteHead: [REMOTE_HEAD, REMOTE_HEAD].join("\n"), extraCliLine: "" })
+    expect(refused.status).toBe(2)
+    expect(refused.output).toContain("Migration head query returned an unexpected shape")
+    expect(uploadedFiles(ambiguous.root)).toEqual([])
+
+    const noRow = fixture()
+    const absent = runRunner(noRow, {}, { remoteHead: "Status: Downloaded newer image", extraCliLine: "" })
+    expect(absent.status).toBe(2)
+    expect(uploadedFiles(noRow.root)).toEqual([])
+    for (const created of [firstPull, ambiguous, noRow]) rmSync(created.root, { recursive: true, force: true })
+  })
+
   it("keeps secrets out of logs when the credential is missing, invalid, or rejected", () => {
     const missing = fixture()
     const missingResult = runRunner(missing, { SUPABASE_DB_URL: undefined })

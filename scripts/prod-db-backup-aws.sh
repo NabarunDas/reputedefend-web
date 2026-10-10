@@ -214,7 +214,10 @@ if ! remote_head="$(
 fi
 unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 
-remote_head="$(printf '%s' "$remote_head" | tr -d '\r' | head -n 1)"
+# Ignore Docker image-pull/status chatter on a fresh CodeBuild host.
+# The redacting wrapper combines stderr and stdout; accept one exact SQL
+# migration-head row only. Zero or multiple rows fail closed.
+remote_head="$(printf '%s\n' "$remote_head" | tr -d '\r' | grep -E '^[0-9]{14}[|][A-Za-z0-9_-]+$' || true)"
 if [[ ! "$remote_head" =~ ^[0-9]{14}\|[A-Za-z0-9_-]+$ ]]; then
   echo "ERROR: Migration head query returned an unexpected shape."
   exit 2

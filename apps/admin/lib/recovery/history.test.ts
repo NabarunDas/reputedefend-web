@@ -26,7 +26,7 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through the applied Data API hardening migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(entry => entry.version)).toEqual(["20261010200000"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261004223358",
       name: "data_api_default_privileges_hardening_v1",

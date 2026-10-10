@@ -239,10 +239,10 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "The repository, profilerelaunch-dev and the production Strategy A project all end at 20261004223358 data_api_default_privileges_hardening_v1 with pendingMigrations() is empty.",
+      "profilerelaunch-dev and the production Strategy A project remain at applied head 20261004223358 data_api_default_privileges_hardening_v1. The repository head is the unapplied customer-action OTP limit migration. pendingMigrations() contains that migration only, and this change does not apply it.",
     status: "READY",
     evidence:
-      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. The canonical chain still starts at 20260915120000 core_data_foundation_v1. Repository, DEV and PROD now share the same head and pendingMigrations() is empty.",
+      "On 2026-10-05 production received the reviewed 20261004223358 data_api_default_privileges_hardening_v1 migration. Its Supabase-generated history row was aligned to the canonical repository version without replaying schema. Verification confirmed future public tables, functions and sequences inherit no automatic anon, authenticated or service_role Data API grants; browser table grants remain zero; all public tables retain RLS; and the bound Admin identity remains healthy. The canonical chain still starts at 20260915120000 core_data_foundation_v1. SEC-02 adds supabase/migrations/20261010200000_customer_action_otp_limits_v1.sql with appliedToDev false. DEV and PROD stay on 20261004223358. pendingMigrations() lists that file alone.",
     codeAction: null,
     externalAction:
       "No migration action remains for the current production schema head. Future migrations remain forward-only and require review before production application.",
@@ -251,7 +251,7 @@ export const readinessModel: readonly ReadinessItem[] = [
     verification:
       "Read the migration head of the production database and compare it with appliedMigrationHead in the manifest. Record pendingMigrations() separately. Write both into the release record.",
     stopCondition:
-      "If the heads differ, stop. Do not replay a migration to close the gap and do not edit an applied migration. Establish which chain the database actually carries first.",
+      "If the heads differ, stop. Compare production and profilerelaunch-dev with appliedMigrationHead, not with the unapplied OTP limit migration. Do not replay a migration to close the gap and do not edit an applied migration.",
   },
   {
     id: "supabase.migration-ledger-discrepancy",

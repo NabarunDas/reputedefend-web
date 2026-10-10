@@ -76,6 +76,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_admin_prepared_packs_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_admin_customer_actions_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_customer_case_pack_access_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_customer_action_otp_limits_v1.sql"))!,
   ]) await db.exec(read(name))
 }, 30000)
 afterAll(async () => { await db.close() })

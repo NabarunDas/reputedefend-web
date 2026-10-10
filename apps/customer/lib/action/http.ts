@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
-import { cookieOptions, customerConfig, pendingCookie, sessionCookie } from "@/lib/config"
+import { cookieOptions, customerConfig, pendingCookie, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "./identity"
 import { isUuid } from "../uuid"
 
@@ -24,8 +24,7 @@ async function readJson(request: NextRequest, limit: number) {
 }
 
 function originOk(request: NextRequest) {
-  const config = customerConfig()
-  return !!config && request.headers.get("origin") === config.origin && request.nextUrl.origin === config.origin
+  return customerRequestOriginAllowed(request.headers.get("origin"), request.nextUrl.origin)
 }
 
 function jsonRequest(request: NextRequest) {

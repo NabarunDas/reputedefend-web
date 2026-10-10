@@ -19,13 +19,15 @@ const bodyText = "This is the owner-approved service wording for this exact case
 const scopeText = "Restore the listed Google Business Profile for this case only."
 const expires = () => new Date(Date.now() + 48 * 3600 * 1000).toISOString()
 
-type RpcResult = { status?: string; email?: string; actionId?: string; kind?: string; maskedEmail?: string }
+type RpcResult = { status?: string; id?: string; email?: string; actionId?: string; kind?: string; maskedEmail?: string }
 type Challenge = {
   attempts: number
   sends: number
   pending_hash: string
   last_attempt_at: string | null
   sent_at: string | null
+  pending_expired: boolean
+  challenge_expired: boolean
 }
 
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -89,10 +91,17 @@ beforeEach(async () => {
 
 async function challenge(actionId: string): Promise<Challenge | undefined> {
   return (await db.query<Challenge>(
-    `select attempts, cardinality(otp_send_attempts)::int as sends, pending_hash, last_attempt_at, sent_at
+    `select attempts, cardinality(otp_send_attempts)::int as sends, pending_hash, last_attempt_at, sent_at,
+            pending_expires_at <= now() as pending_expired,
+            challenge_expires_at is not null and challenge_expires_at <= now() as challenge_expired
      from admin_private.customer_action_challenges where action_id = $1`,
     [actionId],
   )).rows[0]
+}
+
+function actionId(created: RpcResult | null): string {
+  if (typeof created?.id !== "string") throw new Error("customer action id missing")
+  return created.id
 }
 
 async function ageCooldown(actionId: string) {
@@ -110,8 +119,9 @@ async function openAction() {
     kind: "SERVICE_AGREEMENT", title, bodyText, scopeText, expiresAt: expires(), secretHash: hash,
   }])
   expect(created?.status).toBe("success")
-  expect(await rpc("customer_action_exchange_v1", [created?.id, hash, pending])).toMatchObject({ status: "ok", maskedEmail: "a***@example.com" })
-  return { id: created!.id as string, hash, pending, raw }
+  const id = actionId(created)
+  expect(await rpc("customer_action_exchange_v1", [id, hash, pending])).toMatchObject({ status: "ok", maskedEmail: "a***@example.com" })
+  return { id, hash, pending, raw }
 }
 
 async function sendAndConfirm(pending: string) {
@@ -251,7 +261,10 @@ describe("customer action OTP limits", () => {
     expect(await rpc("customer_action_session_v1", [session])).toMatchObject({
       actionId: action.id, maskedEmail: "a***@example.com",
     })
-    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.customer_action_challenges where action_id = $1", [action.id])).rows[0].n).toBe(0)
+    const kept = await challenge(action.id)
+    expect(kept).toMatchObject({ attempts: 1, sends: 1, sent_at: null, pending_expired: true, challenge_expired: true })
+    expect(kept?.pending_hash).not.toBe(action.pending)
+    expect(await rpc("customer_action_finish_otp_v1", [action.pending, secretHash(secret()), customerAuth, "alex@example.com"])).toEqual({ status: "unavailable" })
     const events = await db.query<{ event: string }>(
       "select event from public.customer_action_events where action_id = $1 and event in ('ACTION_EXCHANGED','OTP_REQUESTED','OTP_SENT') order by id",
       [action.id],
@@ -259,6 +272,112 @@ describe("customer action OTP limits", () => {
     expect(events.rows.map(row => row.event)).toEqual(["ACTION_EXCHANGED", "OTP_REQUESTED", "OTP_SENT"])
     expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toMatchObject({ status: "success" })
     expect(await rpc("customer_action_exchange_v1", [action.id, action.hash, secretHash(secret())])).toEqual({ status: "unavailable" })
+    expect((await challenge(action.id))?.attempts).toBe(1)
+  })
+
+  it("keeps the OTP budget after successful verification and still accepts or declines", async () => {
+    const action = await openAction()
+    await sendAndConfirm(action.pending)
+    expect((await rpc("customer_action_attempt_otp_v1", [action.pending]))?.status).toBe("ok")
+    expect((await rpc("customer_action_attempt_otp_v1", [action.pending]))?.status).toBe("ok")
+    const before = await challenge(action.id)
+    expect(before).toMatchObject({ attempts: 2, sends: 1, pending_hash: action.pending })
+    expect(before?.sent_at).not.toBeNull()
+
+    const session = secretHash(secret())
+    expect(await rpc("customer_action_finish_otp_v1", [action.pending, session, customerAuth, "alex@example.com"])).toMatchObject({
+      status: "ok", actionId: action.id, kind: "AGREEMENT_ACCEPTANCE",
+    })
+    const kept = await challenge(action.id)
+    expect(kept).toMatchObject({ attempts: 2, sends: 1, sent_at: null, pending_expired: true, challenge_expired: true })
+    expect(kept?.pending_hash).not.toBe(action.pending)
+    expect(new Date(kept!.last_attempt_at!).toISOString()).toBe(new Date(before!.last_attempt_at!).toISOString())
+
+    const replay = secretHash(secret())
+    expect(await rpc("customer_action_begin_otp_v1", [action.pending])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [action.pending])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_attempt_otp_v1", [action.pending])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_finish_otp_v1", [action.pending, replay, customerAuth, "alex@example.com"])).toEqual({ status: "unavailable" })
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from admin_private.customer_action_sessions where action_id = $1",
+      [action.id],
+    )).rows[0].n).toBe(1)
+
+    const rotated = secretHash(secret())
+    expect(await rpc("customer_action_exchange_v1", [action.id, action.hash, rotated])).toMatchObject({ status: "ok" })
+    const exchanged = await challenge(action.id)
+    expect(exchanged).toMatchObject({ attempts: 2, sends: 1, pending_hash: rotated, sent_at: null })
+    expect(new Date(exchanged!.last_attempt_at!).toISOString()).toBe(new Date(before!.last_attempt_at!).toISOString())
+    expect(await rpc("customer_action_attempt_otp_v1", [rotated])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_finish_otp_v1", [rotated, secretHash(secret()), customerAuth, "alex@example.com"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_begin_otp_v1", [rotated])).toEqual({ status: "rate_limited" })
+    expect((await challenge(action.id))?.sends).toBe(1)
+    expect((await challenge(action.id))?.attempts).toBe(2)
+
+    await ageCooldown(action.id)
+    expect(await rpc("customer_action_begin_otp_v1", [rotated])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [rotated])).toEqual({ status: "ok" })
+    expect((await rpc("customer_action_attempt_otp_v1", [rotated]))?.status).toBe("ok")
+    expect((await challenge(action.id))?.attempts).toBe(3)
+    expect((await challenge(action.id))?.sends).toBe(2)
+    const second = secretHash(secret())
+    expect(await rpc("customer_action_finish_otp_v1", [rotated, second, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_begin_otp_v1", [rotated])).toEqual({ status: "unavailable" })
+    expect((await challenge(action.id))?.attempts).toBe(3)
+    expect((await challenge(action.id))?.sends).toBe(2)
+    expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toMatchObject({
+      status: "success", actionStatus: "COMPLETED",
+    })
+    expect(await rpc("customer_action_exchange_v1", [action.id, action.hash, secretHash(secret())])).toEqual({ status: "unavailable" })
+    expect((await challenge(action.id))?.attempts).toBe(3)
+
+    const declined = await openAction()
+    await sendAndConfirm(declined.pending)
+    for (let i = 0; i < 4; i++) expect((await rpc("customer_action_attempt_otp_v1", [declined.pending]))?.status).toBe("ok")
+    const declineSession = secretHash(secret())
+    expect(await rpc("customer_action_finish_otp_v1", [declined.pending, declineSession, customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
+    expect((await challenge(declined.id))?.attempts).toBe(4)
+    const declinedPending = secretHash(secret())
+    expect(await rpc("customer_action_exchange_v1", [declined.id, declined.hash, declinedPending])).toMatchObject({ status: "ok" })
+    expect((await challenge(declined.id))?.attempts).toBe(4)
+    expect((await challenge(declined.id))?.sends).toBe(1)
+    await ageCooldown(declined.id)
+    expect(await rpc("customer_action_begin_otp_v1", [declinedPending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [declinedPending])).toEqual({ status: "ok" })
+    expect((await rpc("customer_action_attempt_otp_v1", [declinedPending]))?.status).toBe("ok")
+    expect(await rpc("customer_action_attempt_otp_v1", [declinedPending])).toEqual({ status: "unavailable" })
+    await ageCooldown(declined.id)
+    expect(await rpc("customer_action_begin_otp_v1", [declinedPending])).toEqual({ status: "unavailable" })
+    expect((await challenge(declined.id))?.attempts).toBe(5)
+    expect((await challenge(declined.id))?.sends).toBe(2)
+    expect(await rpc("customer_action_command_v1", [declineSession, key(), "decline", {}])).toMatchObject({
+      status: "success", actionStatus: "DECLINED",
+    })
+    expect(await rpc("customer_action_exchange_v1", [declined.id, declined.hash, secretHash(secret())])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_action_begin_otp_v1", [declined.pending])).toEqual({ status: "unavailable" })
+    expect((await challenge(declined.id))?.attempts).toBe(5)
+
+    const capped = await openAction()
+    for (let i = 0; i < 4; i++) {
+      if (i > 0) await ageCooldown(capped.id)
+      expect(await rpc("customer_action_begin_otp_v1", [capped.pending])).toMatchObject({ status: "ok" })
+    }
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [capped.pending])).toEqual({ status: "ok" })
+    expect((await rpc("customer_action_attempt_otp_v1", [capped.pending]))?.status).toBe("ok")
+    expect(await rpc("customer_action_finish_otp_v1", [capped.pending, secretHash(secret()), customerAuth, "alex@example.com"])).toMatchObject({ status: "ok" })
+    expect((await challenge(capped.id))?.sends).toBe(4)
+    const cappedPending = secretHash(secret())
+    expect(await rpc("customer_action_exchange_v1", [capped.id, capped.hash, cappedPending])).toMatchObject({ status: "ok" })
+    await ageCooldown(capped.id)
+    expect(await rpc("customer_action_begin_otp_v1", [cappedPending])).toMatchObject({ status: "ok" })
+    await ageCooldown(capped.id)
+    expect(await rpc("customer_action_begin_otp_v1", [cappedPending])).toEqual({ status: "rate_limited" })
+    const cappedAgain = secretHash(secret())
+    expect(await rpc("customer_action_exchange_v1", [capped.id, capped.hash, cappedAgain])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_begin_otp_v1", [cappedAgain])).toEqual({ status: "rate_limited" })
+    expect(await rpc("customer_action_begin_otp_v1", [capped.pending])).toEqual({ status: "unavailable" })
+    expect((await challenge(capped.id))?.sends).toBe(5)
+    expect((await challenge(capped.id))?.attempts).toBe(1)
   })
 
   it("preserves signatures, execution grants, row security, and an empty search_path", async () => {
@@ -336,6 +455,12 @@ describe("customer action OTP limits", () => {
         expect(row.src.indexOf("FROM public.customer_actions")).toBeLessThan(row.src.indexOf("INSERT INTO admin_private.customer_action_challenges"))
         expect(row.src).not.toMatch(/attempts\s*=/)
         expect(row.src).not.toMatch(/last_attempt_at\s*=/)
+      } else if (row.name === "customer_action_finish_otp_v1") {
+        expect(row.src).not.toMatch(/DELETE FROM admin_private\.customer_action_challenges/)
+        expect(row.src).not.toMatch(/\battempts\s*=/)
+        expect(row.src).not.toMatch(/last_attempt_at\s*=/)
+        expect(row.src).not.toMatch(/otp_send_attempts\s*=/)
+        expect(row.src).toContain("customer_action_lock_pending_v1")
       } else {
         expect(row.src).not.toMatch(/for update/i)
         expect(row.src).toContain("customer_action_lock_pending_v1")

@@ -19,6 +19,12 @@ BEGIN;
 --   * Once attempts has reached 5, further begins return unavailable.
 --   * An action that is not eligible (expired, completed, revoked, or
 --     otherwise closed) returns unavailable and does not gain a new row.
+--   * Finish issues the 15-minute action session and keeps the challenge
+--     row. It replaces pending_hash with an unusable value, expires the
+--     pending and challenge windows, and clears sent_at. attempts,
+--     last_attempt_at, and otp_send_attempts stay on the action, so the
+--     verified OTP cannot be reused and a later exchange still has to pass
+--     the retained send, cooldown, and verification limits.
 
 ALTER TABLE admin_private.customer_action_challenges
   ADD COLUMN otp_send_attempts timestamptz[] NOT NULL DEFAULT '{}';
@@ -187,9 +193,21 @@ BEGIN
     AND email_confirmed_at IS NOT NULL AND deleted_at IS NULL AND banned_until IS NULL;
   IF uid IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   IF public.admin_identity_id_v1() IS NOT DISTINCT FROM uid THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  -- Retire the verified challenge before the session exists. A waiting
+  -- transaction can have an earlier now(), so expiry is far in the past and
+  -- the pending hash is replaced. The old token then fails the lock recheck
+  -- and cannot finish again. The budget columns are left unchanged.
+  UPDATE admin_private.customer_action_challenges
+    SET pending_hash = pg_catalog.md5(pg_catalog.gen_random_uuid()::text || a.id::text)
+          || pg_catalog.md5(pg_catalog.gen_random_uuid()::text || p_session_hash),
+        pending_expires_at = now() - interval '100 years',
+        challenge_expires_at = now() - interval '100 years',
+        sent_at = NULL
+    WHERE action_id = a.id
+      AND pending_hash = p_pending_hash;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   INSERT INTO admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
   VALUES (p_session_hash, a.id, uid, now() + interval '15 minutes');
-  DELETE FROM admin_private.customer_action_challenges WHERE action_id = a.id;
   RETURN jsonb_build_object('status', 'ok', 'actionId', a.id, 'kind', a.kind);
 END; $$;
 

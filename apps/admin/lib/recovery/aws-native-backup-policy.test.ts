@@ -54,7 +54,7 @@ describe("AWS-native production database backup policy", () => {
   })
 
   it("uses a duplicate guard so scheduler retries do not create duplicate full dumps", () => {
-    expect(runner).toContain("DUPLICATE_GUARD_SECONDS=7200")
+    expect(runner).toContain("DUPLICATE_GUARD_SECONDS=1800")
     expect(runner).toContain("No full backup is required for this invocation.")
   })
 

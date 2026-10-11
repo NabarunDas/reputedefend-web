@@ -545,6 +545,35 @@ describe("production backup runner behaviour", () => {
     rmSync(released.root, { recursive: true, force: true })
   })
 
+  it("keeps 30-minute retry protection without causing a manual/scheduled RPO gap", () => {
+    // A manual backup shortly before a scheduled run must not suppress the
+    // following scheduled backup unless it is within the brief retry window.
+    const recentlyBackedUp = fixture()
+    writeFileSync(path.join(recentlyBackedUp.awsRoot, "list-result.txt"), `${isoSecondsAgo(29 * 60)}\n`)
+    const skip = runRunner(recentlyBackedUp, {}, { extraCliLine: "" })
+    expect(skip.status).toBe(0)
+    expect(skip.output).toContain("duplicate guard is 1800s")
+    expect(skip.output).toContain("No full backup is required")
+    expect(uploadedFiles(recentlyBackedUp.root)).toEqual([])
+
+    const eligible = fixture()
+    writeFileSync(path.join(eligible.awsRoot, "list-result.txt"), `${isoSecondsAgo(31 * 60)}\n`)
+    const run = runRunner(eligible, {}, { extraCliLine: "" })
+    expect(run.status).toBe(0)
+    const completed = uploadedFiles(eligible.root).find(file => file.includes("/completed/"))
+    expect(completed).toBeTruthy()
+    const manifest = JSON.parse(readFileSync(completed!, "utf8"))
+    expect(manifest.migration_aligned).toBe(true)
+    expect(manifest.previous_backup_gap_over_rpo).toBe(false)
+    expect(manifest.previous_backup_age_seconds).toBeGreaterThanOrEqual(30 * 60)
+
+    // At the edge of a skip (<30m after a manual backup), the following
+    // on-time 3-hour tick is still <4h after that backup.
+    expect(3 * 3600 + 30 * 60).toBeLessThan(4 * 3600)
+    rmSync(recentlyBackedUp.root, { recursive: true, force: true })
+    rmSync(eligible.root, { recursive: true, force: true })
+  })
+
   it("keeps the duplicate guard and the four-hour RPO alarm", () => {
     const recent = fixture()
     writeFileSync(path.join(recent.awsRoot, "list-result.txt"), `${isoSecondsAgo(60)}\n`)
@@ -592,7 +621,7 @@ describe("production backup runner behaviour", () => {
     const awsDoc = readFileSync(awsDocPath, "utf8")
     expect(awsDoc).toContain("ApprovedMigrationHead")
     expect(awsDoc).toContain("ApprovedRunnerCommit")
-    expect(awsDoc).toContain("at least 2 hours old")
+    expect(awsDoc).toContain("at least 30 minutes old")
     expect(awsDoc).toContain("Do not delete the stack")
     expect(runner.includes(Buffer.from("set -x"))).toBe(false)
     expect(runner.includes(Buffer.from('backup_format: "profilerelaunch-logical-v1"'))).toBe(true)

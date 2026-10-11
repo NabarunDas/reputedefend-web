@@ -168,7 +168,9 @@ echo "Configuration shape validated."
 echo "Checking previous verified backup marker..."
 
 RPO_SECONDS=14400
-DUPLICATE_GUARD_SECONDS=7200
+# Keep retries idempotent without postponing the next 3h scheduled backup
+# beyond the 4h RPO when a manual backup ran shortly beforehand.
+DUPLICATE_GUARD_SECONDS=1800
 CLI_VERSION=2.119.0
 
 previous_last_modified="$(

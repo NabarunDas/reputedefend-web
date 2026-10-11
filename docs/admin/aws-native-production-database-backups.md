@@ -283,9 +283,12 @@ stack back to the previous template. Do not start a second stack while that is i
 
 ### 4. Manual CodeBuild acceptance test
 
-Start the build only when the newest `completed/` object is **at least 2 hours old**. A
+Start the build only when the newest `completed/` object is **at least 30 minutes old**. A
 newer marker makes the duplicate guard exit 0 without dumping, which does not prove the
-new runner. If the marker is already older than 4 hours, the build can still upload a
+new runner. With a 3-hour schedule, the 30-minute retry window prevents a recent
+manual backup from suppressing a later scheduled run long enough to exceed the
+4-hour RPO under on-time scheduling. If the marker is already older than 4 hours,
+the build can still upload a
 valid backup and then exit 1 because of that gap.
 
 ```bash
@@ -320,7 +323,7 @@ parameters just deployed. Extra manifest keys are ignored by the existing restor
 ### 7. Failed-run response
 
 - Exit 0 and the log says no full backup is required: the duplicate guard ran. Wait until
-  the marker is at least 2 hours old and start one more acceptance build.
+  the marker is at least 30 minutes old and start one more acceptance build.
 - Exit 0 with a new backup id and `Migration head aligned: true`: acceptance passed.
   Leave the schedule enabled.
 - Exit 1 after the log says the backup was uploaded and verified: the artifact and
@@ -351,7 +354,7 @@ aws cloudformation update-stack \
 If `update-stack` rejects the saved parameter file because it is a JSON array, pass each
 saved key with `ParameterKey=...,ParameterValue=...` from that file. Do not omit
 `ScheduleState`. After rollback, start one manual build only if the newest completed
-marker is at least 2 hours old, and require a succeeded build or a understood policy exit.
+marker is at least 30 minutes old, and require a succeeded build or a understood policy exit.
 
 ## Acceptance
 

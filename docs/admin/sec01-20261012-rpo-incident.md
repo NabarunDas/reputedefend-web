@@ -84,3 +84,59 @@ Post-release acceptance:
 This is a hardening measure, not proof the root connectivity fault can never
 recur or proof of continued RPO compliance. The four-hour RPO remains a
 monitored operational objective.
+
+## Post-fix AWS deployment acceptance — 13 October 2026
+
+The operator executed an exact-reviewed CloudFormation change set for the
+existing AWS-native backup stack. The execution script reported:
+
+- CloudFormation status: **UPDATE_COMPLETE** at
+  **2026-10-13 15:09:30.663 UTC**.
+- Approved runner commit pinned: `4d2dcade3555794ff11b1d2be9a8b4a7245acd1d`.
+- Runner SHA-256 pinned:
+  `26ed6174e2e75de61c3136dd3ae9f100754609abc20007539b90e58b96b90d72`.
+- Existing CLI lock SHA-256 remained pinned.
+- CodeBuild project ARN remained unchanged; scheduler state/rate, target ARN,
+  IAM role ARN and target retry settings remained unchanged.
+- The EventBridge schedule remained **ENABLED**, `rate(3 hours)`.
+
+The subsequent operator-run **read-only** verification script reported the
+first scheduled backup under the new runner:
+
+| Property | Verified reported result |
+| --- | --- |
+| CodeBuild start | `2026-10-13T15:38:17Z` |
+| CodeBuild status | **SUCCEEDED** |
+| Build ID | `ProfileRelaunchProdDbBackupAwsNative:c1d6d24f-b951-4cb8-b98e-34a5ef7e88f0` |
+| Initiator | `ProfileRelaunchProdDbBackupScheduler/4df59b9944eb36d38ff68bfb18f953ce` |
+| Completed backup ID | `20261013T153912Z` |
+| Backup created UTC | `2026-10-13T15:39:12Z` |
+| Approved source project and runner/CLI pins | **PASS** |
+| Migration alignment | **PASS** |
+| Previous gap over 4h for this backup | **false** |
+| Backup freshness | **PASS** |
+| S3 manifest vs completed marker | **PASS** |
+| Archive bytes vs published SHA-256 | **PASS** |
+| Six expected regular files and embedded manifest | **PASS** |
+
+**Acceptance decision:** The targeted database connectivity retry is
+**deployed**, and the **first unattended post-deployment backup plus
+artifact integrity test passed**. This evidence comes from the operator's
+read-only AWS verification output, not an independently connected AWS account
+inspection by ChatGPT.
+
+**Still open before all of SEC-01 can be signed off:**
+
+1. The actual historical **12 October six-hour RPO breach** remains documented.
+   No retroactive claim of uninterrupted RPO compliance.
+2. Configure and validate alerting for missed/stale completed backups and
+   unsuccessful CodeBuild jobs; a 3-hour scheduler alone is not an alert.
+3. Reconcile Storage/evidence **object bytes** and required external
+   configurations in the recovery procedure.
+4. Measure a realistic end-to-end **<=4-hour RTO**, not just the 61-second
+   database restore execution.
+5. Securely clean up the temporary restored Production-data project after
+   completing evidence collection, via a separately approved operation.
+
+**No production schema migrations, service secrets, DEV configuration,
+or feature gates were changed by this acceptance record.**

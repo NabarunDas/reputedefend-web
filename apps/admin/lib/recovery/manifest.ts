@@ -455,8 +455,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Applied and verified on profilerelaunch-dev on 2026-10-10.
-    // Production remains on 20261004223358 pending a separate SEC-02 release
-    // and coordinated AWS backup ApprovedMigrationHead update.
+    // Also applied to Production on 2026-10-13, with verified OTP function grants.
     version: "20261010200000",
     filename: "20261010200000_customer_action_otp_limits_v1.sql",
     step: "SEC-02 customer-action OTP limits",
@@ -468,8 +467,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Applied and live-verified on profilerelaunch-dev on 2026-10-13.
-    // Production is still on 20261004223358 and requires SEC-02 + SEC-03
-    // and a coordinated AWS ApprovedMigrationHead update before code rollout.
+    // Also applied to Production on 2026-10-13. Operator-reported AWS
+    // ApprovedMigrationHead cutover succeeded; scheduled-backup acceptance pending.
     version: "20261013153000",
     filename: "20261013153000_public_request_rate_limit_v1.sql",
     step: "SEC-03 shared public request rate limit",

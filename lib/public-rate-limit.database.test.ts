@@ -31,6 +31,14 @@ beforeAll(async () => {
 afterAll(async () => { await db.close() })
 
 describe("shared public rate limit", () => {
+  it("indexes the 24-hour retention range and sort key", async () => {
+    const indexes = await db.query<{ indexdef: string }>(
+      "select indexdef from pg_indexes where schemaname = 'admin_private' and tablename = 'public_rate_limit_buckets' and indexname = 'public_rate_limit_buckets_updated_at_idx'",
+    )
+    expect(indexes.rows).toHaveLength(1)
+    expect(indexes.rows[0].indexdef).toMatch(/\\(updated_at\\)/)
+  })
+
   it("allows eight requests and rejects the ninth for the same client hash", async () => {
     for (let index = 0; index < 8; index += 1) expect(await rpc(clientA)).toEqual({ status: "ok" })
     expect(await rpc(clientA)).toEqual({ status: "limited" })

@@ -42,7 +42,7 @@ afterEach(() => {
 function post(body: unknown) {
   return new Request("http://localhost/api/monitoring", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
     body: JSON.stringify(body),
   })
 }

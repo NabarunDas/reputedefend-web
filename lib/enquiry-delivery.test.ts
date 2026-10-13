@@ -309,7 +309,7 @@ describe("honeypot isolation", () => {
 
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify({ ...validCase, companyFax: "https://spam.example" }),
     }))
     expect(response.status).toBe(400)
@@ -321,7 +321,7 @@ describe("POST /api/enquiry", () => {
   it("returns unavailable in the test runtime without simulating success", async () => {
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify(validCase),
     }))
     const json = await response.json() as { ok?: boolean; simulated?: boolean; message?: string }
@@ -339,7 +339,7 @@ describe("POST /api/enquiry", () => {
 
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify(validCase),
     }))
     const json = await response.json() as { ok?: boolean; simulated?: boolean; message?: string }

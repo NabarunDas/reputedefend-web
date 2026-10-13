@@ -99,4 +99,56 @@ describe("shared public rate limit", () => {
     await expect(db.query("select public.consume_public_rate_limit_v1($1)", [clientA])).rejects.toThrow(/permission denied/i)
     await db.exec("reset role")
   })
+
+  it("deletes clients idle for more than 24 hours and keeps active buckets", async () => {
+    const stale = hash("retention-stale")
+    const staleHits = hash("retention-stale-hits")
+    const recent = hash("retention-recent")
+    const recentHit = hash("retention-recent-hit")
+    const caller = hash("retention-caller")
+    await db.query(
+      `insert into admin_private.public_rate_limit_buckets (client_hash, hits, updated_at) values
+        ($1, '{}', now() - interval '25 hours'),
+        ($2, array[now() - interval '30 hours'], now() - interval '30 hours'),
+        ($3, '{}', now() - interval '23 hours'),
+        ($4, array[now() - interval '1 hour'], now() - interval '48 hours'),
+        ($5, array[now() - interval '48 hours'], now() - interval '48 hours')`,
+      [stale, staleHits, recent, recentHit, caller],
+    )
+    expect(await rpc(caller)).toEqual({ status: "ok" })
+    const remaining = new Set((await db.query<{ client_hash: string }>(
+      "select client_hash from admin_private.public_rate_limit_buckets where client_hash = any($1::text[])",
+      [[stale, staleHits, recent, recentHit, caller]],
+    )).rows.map(row => row.client_hash))
+    expect(remaining.has(stale)).toBe(false)
+    expect(remaining.has(staleHits)).toBe(false)
+    expect(remaining.has(recent)).toBe(true)
+    expect(remaining.has(recentHit)).toBe(true)
+    expect(remaining.has(caller)).toBe(true)
+    expect(await hits(caller)).toBe(1)
+    expect(await rpc(caller)).toEqual({ status: "ok" })
+    expect(await hits(recent)).toBe(0)
+    expect(await hits(recentHit)).toBe(1)
+  })
+
+  it("removes idle clients in a bounded batch and leaves the caller in place", async () => {
+    const idle = Array.from({ length: 40 }, (_, index) => hash(`retention-idle-${index}`))
+    for (const clientHash of idle) {
+      await db.query(
+        "insert into admin_private.public_rate_limit_buckets (client_hash, hits, updated_at) values ($1, '{}', now() - interval '26 hours')",
+        [clientHash],
+      )
+    }
+    const keeper = hash("retention-keeper")
+    expect(await rpc(keeper)).toEqual({ status: "ok" })
+    const countIdle = async () => (await db.query<{ n: number }>(
+      "select count(*)::int as n from admin_private.public_rate_limit_buckets where client_hash = any($1::text[])",
+      [idle],
+    )).rows[0].n
+    expect(await countIdle()).toBe(8)
+    expect(await hits(keeper)).toBe(1)
+    expect(await rpc(keeper)).toEqual({ status: "ok" })
+    expect(await countIdle()).toBe(0)
+    expect(await hits(keeper)).toBe(2)
+  })
 })

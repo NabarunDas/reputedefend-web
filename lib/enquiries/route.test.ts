@@ -7,7 +7,7 @@ import { POST } from "@/app/api/enquiry/route"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
 const key="22222222-2222-4222-8222-222222222222"
 const payload={fullName:"Alex",email:"alex@example.com",source:"contact",subject:"general-question",details:"Please explain the service.",submissionKey:key}
-function req(body:unknown){return new Request("https://profilerelaunch.com/api/enquiry",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})}
+function req(body:unknown){return new Request("https://profilerelaunch.com/api/enquiry",{method:"POST",headers:{"content-type":"application/json","x-vercel-forwarded-for":"198.51.100.24"},body:JSON.stringify(body)})}
 beforeEach(()=>{vi.resetAllMocks();resetEnquiryRateLimit();mocks.general.mockResolvedValue({ok:true,persisted:true,message:"Your enquiry has been received."});mocks.formal.mockResolvedValue({ok:true,caseRef:"PR-26-ABCDEF"})})
 afterEach(()=>vi.unstubAllEnvs())
 describe("public durable enquiry route",()=>{

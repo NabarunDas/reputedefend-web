@@ -69,21 +69,25 @@ describe("public endpoint guards", () => {
       const response = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry), {
         "x-forwarded-for": `203.0.113.${index}, 198.51.100.1`,
         "x-real-ip": "203.0.113.9",
+        "x-vercel-forwarded-for": "203.0.113.50, 198.51.100.10",
       }))
       expect(response.status).toBe(200)
     }
     for (let index = 0; index < 4; index += 1) {
       const response = await postMonitoring(post("https://profilerelaunch.com/api/monitoring", JSON.stringify(monitoring), {
         "x-forwarded-for": `192.0.2.${index}`,
+        "x-vercel-forwarded-for": "192.0.2.40, 198.51.100.10",
       }))
       expect(response.status).toBe(200)
     }
     const rejectedEnquiry = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry), {
       "x-forwarded-for": "198.51.100.77",
+      "x-vercel-forwarded-for": "198.51.100.10",
     }))
     const rejectedMonitoring = await postMonitoring(post("https://profilerelaunch.com/api/monitoring", JSON.stringify(monitoring), {
       "x-forwarded-for": "198.51.100.88",
       "x-real-ip": "198.51.100.89",
+      "x-vercel-forwarded-for": "203.0.113.10, 198.51.100.10",
     }))
     expect(rejectedEnquiry.status).toBe(429)
     expect(rejectedMonitoring.status).toBe(429)
@@ -92,6 +96,14 @@ describe("public endpoint guards", () => {
     expect(mocks.general).toHaveBeenCalledTimes(4)
     expect(mocks.monitoring).toHaveBeenCalledTimes(4)
     expect(mocks.legacy).not.toHaveBeenCalled()
+
+    const unidentified = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry), {
+      "x-forwarded-for": "203.0.113.10, 198.51.100.24",
+      "x-real-ip": "198.51.100.24",
+      "x-vercel-forwarded-for": "198.51.100.24, not-an-address",
+    }))
+    expect(unidentified.status).toBe(503)
+    expect(mocks.general).toHaveBeenCalledTimes(4)
 
     const separateClient = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry), {
       "x-forwarded-for": "203.0.113.10",
@@ -169,8 +181,9 @@ describe("public endpoint guards", () => {
     const { POST: postEnquiry } = await import("@/app/api/enquiry/route")
     const { POST: postMonitoring } = await import("@/app/api/monitoring/route")
     vi.stubEnv("MONITORING_PERSISTENCE_ENABLED", "true")
-    const enquiryResponse = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry)))
-    const monitoringResponse = await postMonitoring(post("https://profilerelaunch.com/api/monitoring", JSON.stringify(monitoring)))
+    const headers = { "x-vercel-forwarded-for": "198.51.100.24" }
+    const enquiryResponse = await postEnquiry(post("https://profilerelaunch.com/api/enquiry", JSON.stringify(enquiry), headers))
+    const monitoringResponse = await postMonitoring(post("https://profilerelaunch.com/api/monitoring", JSON.stringify(monitoring), headers))
     expect(enquiryResponse.status).toBe(503)
     expect(monitoringResponse.status).toBe(503)
     expect(await enquiryResponse.json()).toMatchObject({ ok: false, message: ENQUIRY_UNAVAILABLE })

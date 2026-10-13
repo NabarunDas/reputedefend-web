@@ -51,7 +51,7 @@ describe("POST /api/enquiry persistence branch", () => {
     const { POST } = await import("@/app/api/enquiry/route")
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify({ ...validCase, submissionKey: SUBMISSION_KEY }),
     }))
     const json = await response.json() as { ok?: boolean; persisted?: boolean; caseRef?: string }
@@ -83,7 +83,7 @@ describe("POST /api/enquiry persistence branch", () => {
       persistGetHelpCase.mockClear()
       const response = await POST(new Request("http://localhost/api/enquiry", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
         body: JSON.stringify({ ...payload, submissionKey: SUBMISSION_KEY }),
       }))
       const json = await response.json() as { persisted?: boolean; caseRef?: string }
@@ -99,7 +99,7 @@ describe("POST /api/enquiry persistence branch", () => {
     const { POST } = await import("@/app/api/enquiry/route")
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify({ ...validCase, submissionKey: "not-a-uuid" }),
     }))
     const json = await response.json() as { ok?: boolean; caseRef?: string }
@@ -122,7 +122,7 @@ describe("POST /api/enquiry persistence branch", () => {
     const { POST } = await import("@/app/api/enquiry/route")
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify({ ...validCase, submissionKey: SUBMISSION_KEY }),
     }))
     const json = await response.json() as {
@@ -149,7 +149,7 @@ describe("POST /api/enquiry persistence branch", () => {
     const { POST } = await import("@/app/api/enquiry/route")
     const response = await POST(new Request("http://localhost/api/enquiry", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
       body: JSON.stringify(validCase),
     }))
     const json = await response.json() as { ok?: boolean; caseRef?: string; persisted?: boolean; message?: string }

@@ -64,4 +64,32 @@ describe.skipIf(!pgBin)("public rate limit under concurrent PostgreSQL sessions"
       `select cardinality(hits) from admin_private.public_rate_limit_buckets where client_hash = '${clientHash}'`,
     )).trim()).toBe("8")
   })
+
+  it("keeps concurrent callers and an active bucket while deleting idle rows", async () => {
+    const callers = Array.from({ length: 8 }, (_, index) => createHash("sha256").update(`concurrent-caller-${index}`).digest("hex"))
+    const stale = Array.from({ length: 5 }, (_, index) => createHash("sha256").update(`concurrent-stale-${index}`).digest("hex"))
+    const warm = createHash("sha256").update("concurrent-warm").digest("hex")
+    const values = [
+      ...stale.map(hash => `('${hash}', '{}', clock_timestamp() - interval '25 hours')`),
+      `('${warm}', '{}', clock_timestamp() - interval '1 hour')`,
+    ].join(", ")
+    await psql(`insert into admin_private.public_rate_limit_buckets (client_hash, hits, updated_at) values ${values}`)
+    const statuses = (await Promise.all(callers.map(hash => psql(
+      `select public.consume_public_rate_limit_v1('${hash}')->>'status'`,
+    )))).map(value => value.trim())
+    expect(statuses).toEqual(Array.from({ length: 8 }, () => "ok"))
+    for (const hash of callers) {
+      expect((await psql(
+        `select count(*) from admin_private.public_rate_limit_buckets where client_hash = '${hash}'`,
+      )).trim()).toBe("1")
+    }
+    for (const hash of stale) {
+      expect((await psql(
+        `select count(*) from admin_private.public_rate_limit_buckets where client_hash = '${hash}'`,
+      )).trim()).toBe("0")
+    }
+    expect((await psql(
+      `select count(*) from admin_private.public_rate_limit_buckets where client_hash = '${warm}'`,
+    )).trim()).toBe("1")
+  })
 })

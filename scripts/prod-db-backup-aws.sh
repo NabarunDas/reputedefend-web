@@ -204,16 +204,31 @@ echo "Checking production database connectivity and migration head..."
 
 # shellcheck disable=SC1091
 source "$cred/pg.env"
-if ! remote_head="$(
-  run_redacted docker run --rm \
-    -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE \
-    postgres:17-alpine \
-    psql -v ON_ERROR_STOP=1 -Atqc "select version || '|' || name from supabase_migrations.schema_migrations order by version desc limit 1"
-)"; then
-  echo "ERROR: Could not connect to the production Supabase database using the configured Session Pooler secret."
-  echo "Check the Secrets Manager value, percent-encoding of the password, and that the URL uses port 5432."
-  exit 2
-fi
+# Retry only the read-only connectivity/migration-head probe; never retry a
+# completed backup whose nonzero exit is an RPO or migration policy alarm.
+# This bounded retry covers transient pooler/network/Docker startup failures
+# without re-running the full CodeBuild job or uploading duplicate artifacts.
+DB_CONNECT_MAX_ATTEMPTS=3
+db_connect_attempt=1
+while :; do
+  if remote_head="$(
+    run_redacted docker run --rm \
+      -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE \
+      postgres:17-alpine \
+      psql -v ON_ERROR_STOP=1 -Atqc "select version || '|' || name from supabase_migrations.schema_migrations order by version desc limit 1"
+  )"; then
+    break
+  fi
+  if (( db_connect_attempt >= DB_CONNECT_MAX_ATTEMPTS )); then
+    echo "ERROR: Could not connect to the production Supabase database after ${DB_CONNECT_MAX_ATTEMPTS} attempts."
+    echo "Check the Secrets Manager value, percent-encoding of the password, and that the URL uses port 5432."
+    exit 2
+  fi
+  delay=$((db_connect_attempt * 15))
+  echo "WARN: Production database connectivity precheck failed (attempt ${db_connect_attempt}/${DB_CONNECT_MAX_ATTEMPTS}); retrying in ${delay}s."
+  sleep "$delay"
+  db_connect_attempt=$((db_connect_attempt + 1))
+done
 unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 
 # Ignore Docker image-pull/status chatter on a fresh CodeBuild host.

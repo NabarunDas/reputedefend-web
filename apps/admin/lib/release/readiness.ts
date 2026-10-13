@@ -239,19 +239,19 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "DEV remains at applied head 20261010200000 customer_action_otp_limits_v1. Repository head 20261013153000 public_request_rate_limit_v1 is unapplied. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting its own coordinated release. pendingMigrations() contains that rate-limit migration only.",
+      "DEV and repository migration heads are 20261013153000 public_request_rate_limit_v1, applied and live-verified. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting a coordinated SEC-02 + SEC-03 + AWS backup pin release. pendingMigrations() is empty.",
     status: "READY",
     evidence:
-      "On 2026-10-10 SEC-02 was applied from merged commit 2be435047769e5e7ff0108f657f7f55c34c7e682 to profilerelaunch-dev, and the Supabase-generated migration history version was aligned to canonical 20261010200000 customer_action_otp_limits_v1. Live verification confirmed five SECURITY DEFINER functions, empty search_path, service_role-only EXECUTE, private RLS, no direct customer or service_role challenge-column access, and generic rejection of invalid tokens. Five existing customer actions remained and no OTP challenge was active. The canonical chain starts at 20260915120000. appliedToDev true for that migration. 20261013153000_public_request_rate_limit_v1.sql is source only. PROD remains at 20261004223358.",
+      "On 2026-10-10 SEC-02 was applied from merged commit 2be435047769e5e7ff0108f657f7f55c34c7e682 to profilerelaunch-dev, and the Supabase-generated migration history version was aligned to canonical 20261010200000 customer_action_otp_limits_v1. Live verification confirmed five SECURITY DEFINER functions, empty search_path, service_role-only EXECUTE, private RLS, no direct customer or service_role challenge-column access, and generic rejection of invalid tokens. Five existing customer actions remained and no OTP challenge was active. The canonical chain starts at 20260915120000. appliedToDev true for that migration. On 2026-10-13 DEV applied 20261013153000 public_request_rate_limit_v1 from the reviewed PR #176 SQL; the auto-generated ledger version was aligned to canonical. Live checks confirmed the 8/10-minute rate limit, 8 allowed + 8 limited in 16 parallel calls, service_role execution, RLS with no direct grants, and 24-hour / 32-row retention with no active client deletion. Auth-user, case and action counts were unchanged. PROD remains at 20261004223358.",
     codeAction: null,
     externalAction:
-      "Do not apply 20261013153000 to DEV or Production from this review. Production SEC-02 migration remains unapplied until its coordinated AWS backup-head update. Keep feature gates disabled.",
+      "Do not replay DEV SEC-03. PROD SEC-02 and SEC-03 must be staged and applied in order with coordinated AWS ApprovedMigrationHead update before merging SEC-03 website routes. Keep feature gates disabled.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:
-      "Compare the DEV migration history with appliedMigrationHead (20261010200000); check PROD separately against 20261004223358 until its release. Verify schema permissions, then record both heads.",
+      "Compare DEV history with appliedMigrationHead (20261013153000) and PROD separately with 20261004223358 until its approved release. Verify RLS, service_role-only RPC and retention index.",
     stopCondition:
-      "If the DEV ledger differs from appliedMigrationHead, stop. PROD is intentionally one reviewed migration behind DEV; never replay an applied migration or update its AWS backup head prematurely.",
+      "If the DEV ledger differs from appliedMigrationHead, stop. PROD is intentionally two reviewed migrations behind DEV (SEC-02 and SEC-03); never replay an applied migration or update its AWS backup head prematurely.",
   },
   {
     id: "supabase.migration-ledger-discrepancy",

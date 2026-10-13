@@ -467,14 +467,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "customer action OTP limits", probe: "public.customer_action_begin_otp_v1" },
   },
   {
-    // Source only. Do not apply to DEV or Production from this review.
-    // A Production deploy of the enquiry routes before this migration fails
-    // closed, so the application change waits for a verified DEV apply.
+    // Applied and live-verified on profilerelaunch-dev on 2026-10-13.
+    // Production is still on 20261004223358 and requires SEC-02 + SEC-03
+    // and a coordinated AWS ApprovedMigrationHead update before code rollout.
     version: "20261013153000",
     filename: "20261013153000_public_request_rate_limit_v1.sql",
     step: "SEC-03 shared public request rate limit",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "public request rate limit", probe: "public.consume_public_rate_limit_v1" },

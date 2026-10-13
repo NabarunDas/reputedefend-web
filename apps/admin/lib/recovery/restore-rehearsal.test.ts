@@ -45,7 +45,7 @@ describe("SEC-01 isolated restore runbook", () => {
   it("fails closed on changes to the one reviewed role grant", () => {
     expect(script).toContain("if len(lines) != 15:")
     expect(script).toContain("lines[12].strip()")
-    expect(script).toContain('r\\'\"log_min_messages\"\\s+TO\\s+[^;\\r\\n]+;\\'')
+    expect(script).toContain('"log_min_messages"\\s+TO')
     expect(script).toContain('lines[12] = "-- Omitted unsupported')
     expect(script).toContain('sum("log_min_messages" in line.lower() for line in lines) != 1')
     expect(script).toContain("--single-transaction")

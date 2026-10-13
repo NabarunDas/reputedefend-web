@@ -177,6 +177,12 @@ if [[ "\${FAKE_DOCKER_FAIL:-}" == "1" ]]; then
   echo "connection refused" >&2
   exit 1
 fi
+if [[ "\${FAKE_DOCKER_FAIL_ONCE:-}" == "1" && ! -f "$FAKE_AWS_ROOT/db-connect-failed-once" ]]; then
+  touch "$FAKE_AWS_ROOT/db-connect-failed-once"
+  echo "password=\${PGPASSWORD:-}" >&2
+  echo "connection timed out" >&2
+  exit 1
+fi
 printf '%s\\n' "\${FAKE_REMOTE_HEAD}"
 `,
   )
@@ -223,13 +229,14 @@ EOF
 chmod +x "$bindir/supabase"
 `,
   )
+  writeExecutable(path.join(bin, "sleep"), "#!/usr/bin/env bash\nset -euo pipefail\necho \"$1\" >> \"$FAKE_SLEEP_LOG\"\n")
   return { root, repo, sha, bin, awsRoot }
 }
 
 function runRunner(
   fixture: ReturnType<typeof createRunnerFixture>,
   overrides: Record<string, string | undefined> = {},
-  options?: { remoteHead?: string; npmVersion?: string; skipBinary?: boolean; dockerFail?: boolean; extraCliLine?: string },
+  options?: { remoteHead?: string; npmVersion?: string; skipBinary?: boolean; dockerFail?: boolean; dockerFailOnce?: boolean; extraCliLine?: string },
 ): RunnerResult {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -251,6 +258,8 @@ function runRunner(
     FAKE_NPM_VERSION: options?.npmVersion ?? "2.119.0",
     FAKE_NPM_SKIP_BIN: options?.skipBinary ? "1" : "",
     FAKE_DOCKER_FAIL: options?.dockerFail ? "1" : "",
+    FAKE_DOCKER_FAIL_ONCE: options?.dockerFailOnce ? "1" : "",
+    FAKE_SLEEP_LOG: path.join(fixture.root, "sleep.log"),
     FAKE_SUPABASE_EXTRA: options?.extraCliLine ?? FIXTURE_SECRET,
   }
   for (const [key, value] of Object.entries(overrides)) {
@@ -512,6 +521,31 @@ describe("production backup runner behaviour", () => {
     for (const created of [missing, invalid, productionShaped, escaped, refused]) {
       rmSync(created.root, { recursive: true, force: true })
     }
+  })
+
+  it("retries only a failed connectivity precheck and then produces one backup", () => {
+    const created = fixture()
+    const result = runRunner(created, {}, { dockerFailOnce: true, extraCliLine: "" })
+    expect(result.status).toBe(0)
+    expect(result.output).toContain("connectivity precheck failed (attempt 1/3)")
+    expect(result.output).toContain("Production database connection succeeded")
+    expect(readFileSync(path.join(created.root, "docker.log"), "utf8").trim().split("\n")).toHaveLength(2)
+    expect(readFileSync(path.join(created.root, "sleep.log"), "utf8").trim()).toBe("15")
+    expect(uploadedFiles(created.root).filter((file) => file.includes("/completed/"))).toHaveLength(1)
+    assertNoSecret(result.output)
+    rmSync(created.root, { recursive: true, force: true })
+  })
+
+  it("stops after three failed connectivity probes and uploads nothing", () => {
+    const created = fixture()
+    const result = runRunner(created, {}, { dockerFail: true, extraCliLine: "" })
+    expect(result.status).toBe(2)
+    expect(result.output).toContain("after 3 attempts")
+    expect(readFileSync(path.join(created.root, "docker.log"), "utf8").trim().split("\n")).toHaveLength(3)
+    expect(readFileSync(path.join(created.root, "sleep.log"), "utf8").trim().split("\n")).toEqual(["15", "30"])
+    expect(uploadedFiles(created.root)).toEqual([])
+    assertNoSecret(result.output)
+    rmSync(created.root, { recursive: true, force: true })
   })
 
   it("follows an explicit migration-head parameter and still uploads on drift", () => {

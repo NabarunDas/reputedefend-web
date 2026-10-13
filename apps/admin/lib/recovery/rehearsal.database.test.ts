@@ -48,9 +48,9 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(39)
-    // DEV and a clean rebuild now both end at the reviewed SEC-02 migration.
-    expect(migrationHead.version).toBe("20261010200000")
+    expect(migrationChain).toHaveLength(40)
+    // A clean rebuild includes the unapplied SEC-03 limiter. DEV remains on SEC-02.
+    expect(migrationHead.version).toBe("20261013153000")
     expect(appliedMigrationHead.version).toBe("20261010200000")
   })
 

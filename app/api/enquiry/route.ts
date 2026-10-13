@@ -5,24 +5,22 @@ import { isCasePersistenceEnabled } from "@/lib/cases/persistence-config"
 import { readSubmissionKey } from "@/lib/cases/submission-key"
 import { validateEnquiry } from "@/lib/enquiry"
 import { ENQUIRY_UNAVAILABLE, deliverEnquiry } from "@/lib/enquiry-delivery"
-import { checkEnquiryRateLimit, enquiryClientKey } from "@/lib/enquiry-rate-limit"
+import { consumePublicRateLimit } from "@/lib/enquiry-rate-limit"
+import { readBoundedJson } from "@/lib/public-body"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
 
 export async function POST(request: Request) {
+  const body = await readBoundedJson(request)
+  if (!body.ok) {
+    const message = body.status === 413
+      ? "Please keep your message within the form limits."
+      : "Unable to process this enquiry right now."
+    return NextResponse.json({ ok: false, message }, { status: body.status })
+  }
   try {
-    let rawText = "", size = 0
-    const reader = request.body?.getReader(), decoder = new TextDecoder()
-    if (reader) for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > 65536) { await reader.cancel(); return NextResponse.json({ ok: false, message: "Please keep your message within the form limits." }, { status: 413 }) }
-      rawText += decoder.decode(value, { stream: true })
-    }
-    rawText += decoder.decode()
-    const raw: unknown = JSON.parse(rawText)
+    const raw = body.value
     const checked = validateEnquiry(raw)
     if (!checked.valid) {
       return NextResponse.json(
@@ -31,8 +29,9 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!checkEnquiryRateLimit(enquiryClientKey(request)).ok) {
-      return NextResponse.json({ ok: false, message: ENQUIRY_UNAVAILABLE }, { status: 429 })
+    const limit = await consumePublicRateLimit(request)
+    if (!limit.ok) {
+      return NextResponse.json({ ok: false, message: ENQUIRY_UNAVAILABLE }, { status: limit.status })
     }
 
     if (checked.data.source === "get-help" && isCasePersistenceEnabled()) {

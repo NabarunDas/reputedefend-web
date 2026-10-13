@@ -320,6 +320,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      consume_public_rate_limit_v1: { Args: { p_client_hash: string }; Returns: Json }
       create_general_enquiry_v1: { Args: { p_key: string; p_data: Json; p_ack: boolean }; Returns: Json }
       finish_general_enquiry_notification_v1: { Args: { p_id: string; p_attempt: string; p_internal: string; p_ack: string }; Returns: boolean }
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { validateEnquiry, type EnquiryInput } from "@/lib/enquiry"
 import { readEnquiryEmailConfig } from "@/lib/enquiry-config"
 import {
@@ -50,6 +50,10 @@ function mockProvider(send: EnquiryProvider["send"]): EnquiryProvider {
 function firstSend(send: { mock: { calls: unknown[][] } }) {
   return send.mock.calls[0]?.[0] as EnquiryEmailMessage | undefined
 }
+
+beforeEach(() => {
+  resetEnquiryRateLimit()
+})
 
 afterEach(() => {
   vi.unstubAllEnvs()

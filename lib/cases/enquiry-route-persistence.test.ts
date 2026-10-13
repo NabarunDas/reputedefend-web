@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { EnquiryInput } from "@/lib/enquiry"
 import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
@@ -35,6 +35,10 @@ const validCase = {
 } satisfies EnquiryInput
 
 const SUBMISSION_KEY = "11111111-2222-4333-8444-555555555555"
+
+beforeEach(() => {
+  resetEnquiryRateLimit()
+})
 
 afterEach(() => {
   persistGetHelpCase.mockReset()

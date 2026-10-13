@@ -239,13 +239,13 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "supabase.applied-head",
     area: "Supabase",
     requirement:
-      "DEV and repository migration head are 20261010200000 customer_action_otp_limits_v1, applied and verified. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting coordinated migration and AWS backup-head update. pendingMigrations() is empty for DEV.",
+      "DEV remains at applied head 20261010200000 customer_action_otp_limits_v1. Repository head 20261013153000 public_request_rate_limit_v1 is unapplied. Production remains on 20261004223358 data_api_default_privileges_hardening_v1 awaiting its own coordinated release. pendingMigrations() contains that rate-limit migration only.",
     status: "READY",
     evidence:
-      "On 2026-10-10 SEC-02 was applied from merged commit 2be435047769e5e7ff0108f657f7f55c34c7e682 to profilerelaunch-dev, and the Supabase-generated migration history version was aligned to canonical 20261010200000 customer_action_otp_limits_v1. Live verification confirmed five SECURITY DEFINER functions, empty search_path, service_role-only EXECUTE, private RLS, no direct customer or service_role challenge-column access, and generic rejection of invalid tokens. Five existing customer actions remained and no OTP challenge was active. The canonical chain starts at 20260915120000. appliedToDev true; pendingMigrations() empty. PROD remains at 20261004223358.",
+      "On 2026-10-10 SEC-02 was applied from merged commit 2be435047769e5e7ff0108f657f7f55c34c7e682 to profilerelaunch-dev, and the Supabase-generated migration history version was aligned to canonical 20261010200000 customer_action_otp_limits_v1. Live verification confirmed five SECURITY DEFINER functions, empty search_path, service_role-only EXECUTE, private RLS, no direct customer or service_role challenge-column access, and generic rejection of invalid tokens. Five existing customer actions remained and no OTP challenge was active. The canonical chain starts at 20260915120000. appliedToDev true for that migration. 20261013153000_public_request_rate_limit_v1.sql is source only. PROD remains at 20261004223358.",
     codeAction: null,
     externalAction:
-      "Production SEC-02 migration remains unapplied. Verify SEC-01 live AWS backups before Production cutover, then apply the reviewed forward-only migration with a coordinated AWS ApprovedMigrationHead update. Keep feature gates disabled.",
+      "Do not apply 20261013153000 to DEV or Production from this review. Production SEC-02 migration remains unapplied until its coordinated AWS backup-head update. Keep feature gates disabled.",
     requiredBeforeAdminProductionAccess: true,
     requiredBeforeActivationOf: [],
     verification:

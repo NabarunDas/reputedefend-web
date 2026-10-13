@@ -158,7 +158,7 @@ describe("database-backed public rate limit", () => {
   it("does not call the database for a missing or malicious forwarding header", async () => {
     const { POST: postEnquiry } = await import("@/app/api/enquiry/route")
     const { POST: postMonitoring } = await import("@/app/api/monitoring/route")
-    const cases = [
+    const cases: Array<Record<string, string>> = [
       {},
       { "x-forwarded-for": "203.0.113.10, 198.51.100.20", "x-real-ip": "203.0.113.10", "x-vercel-forwarded-for": "" },
       { "x-vercel-forwarded-for": "198.51.100.24, not-an-address" },

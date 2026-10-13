@@ -24,6 +24,11 @@ CREATE TABLE admin_private.public_rate_limit_buckets (
 
 ALTER TABLE admin_private.public_rate_limit_buckets ENABLE ROW LEVEL SECURITY;
 
+-- The bounded 24-hour retention query uses updated_at as its range/sort key.
+-- Keep the cleanup index in the same unapplied SEC-03 migration.
+CREATE INDEX public_rate_limit_buckets_updated_at_idx
+  ON admin_private.public_rate_limit_buckets (updated_at);
+
 REVOKE ALL ON admin_private.public_rate_limit_buckets FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.consume_public_rate_limit_v1(p_client_hash text)

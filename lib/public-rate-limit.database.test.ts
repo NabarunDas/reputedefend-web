@@ -36,7 +36,7 @@ describe("shared public rate limit", () => {
       "select indexdef from pg_indexes where schemaname = 'admin_private' and tablename = 'public_rate_limit_buckets' and indexname = 'public_rate_limit_buckets_updated_at_idx'",
     )
     expect(indexes.rows).toHaveLength(1)
-    expect(indexes.rows[0].indexdef).toMatch(/\\(updated_at\\)/)
+    expect(indexes.rows[0].indexdef).toMatch(/\(updated_at\)/)
   })
 
   it("allows eight requests and rejects the ninth for the same client hash", async () => {

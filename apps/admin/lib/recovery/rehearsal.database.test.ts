@@ -49,9 +49,9 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(40)
-    // A clean rebuild includes the unapplied SEC-03 limiter. DEV remains on SEC-02.
+    // DEV and a clean rebuild both end at the reviewed SEC-03 rate-limit migration.
     expect(migrationHead.version).toBe("20261013153000")
-    expect(appliedMigrationHead.version).toBe("20261010200000")
+    expect(appliedMigrationHead.version).toBe("20261013153000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

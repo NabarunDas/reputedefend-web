@@ -22,6 +22,15 @@ ledger row was guardedly updated to the repository's canonical version
 `20261013153000`, without re-executing SQL. The ledger then showed SEC-03
 followed by SEC-02.
 
+**Existing DEV baseline-ledger discrepancy:** a read-only count found 37 remote
+history entries, starting at `20260917080553`, while the repository manifest
+contains 40 files starting at `20260915120000`. The three earliest
+foundation migration IDs were absent from the DEV ledger **before SEC-03**;
+the DEV schema contains their required objects. SEC-03 did not replay, backfill
+or otherwise alter that legacy history. The new canonical **head** matches;
+do not describe the entire historical ledger as matching the repository.
+Production follows the clean canonical migration chain.
+
 ## Verified live results
 
 | Test | Result |

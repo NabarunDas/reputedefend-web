@@ -93,6 +93,8 @@ export async function startLogin(request: NextRequest) {
     const started = await backend().rpc<LoginStart>("customer_portal_begin_login_v1", {
       p_email: email, p_pending_hash: tokenHash(pending),
     })
+    // Awaited so the provider accepts the OTP before this invocation ends.
+    // GitHub issue #183 tracks the remaining timing difference.
     if (started.status === "ok" && started.email) await sendTrustedOtp(started.email, tokenHash(pending))
   } catch { /* The generic response is already enumeration-safe. */ }
   return response
@@ -107,6 +109,7 @@ export async function resendLogin(request: NextRequest) {
   if (!validToken(pending)) return loginAccepted()
   try {
     const started = await backend().rpc<LoginStart>("customer_portal_begin_resend_v1", { p_pending_hash: tokenHash(pending) })
+    // Resend uses the same awaited handoff. Issue #183 tracks the timing difference.
     if (started.status === "ok" && started.email) await sendTrustedOtp(started.email, tokenHash(pending))
   } catch { /* Same browser response either way. */ }
   return loginAccepted()

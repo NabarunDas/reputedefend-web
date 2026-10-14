@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV applied migration head is 20261014170000 evidence_content_sha256_v1. Production applied head and AWS ApprovedMigrationHead remain 20261013153000 public_request_rate_limit_v1. Production has applied SEC-02 and SEC-03 at that head. AWS CodeBuild cutover reported UPDATE_COMPLETE; first scheduled new-head backup acceptance is pending. SEC-08 is applied to DEV only and must not be applied to Production or used to move the backup head. |
+| `supabase.applied-head` | Supabase | READY | DEV and Production applied migration heads are 20261014170000 evidence_content_sha256_v1. AWS ApprovedMigrationHead is 20261014170000 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -210,23 +210,22 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-The DEV applied migration head is
-`20261014170000 evidence_content_sha256_v1`. The reviewer applied that canonical
-migration to `profilerelaunch-dev` (`rmzozuiamjcclvtgutgd`) on 14 October 2026.
-The apply mutated no data rows. DEV still has 4 uploaded evidence versions, 2
-customer-visible, and 0 trusted hashes, so existing DEV evidence is not
-byte-proven. `pendingMigrations()` is empty. Production
-(`cxwwekdzkkjjbiyofrov`) applied SEC-02 and SEC-03 in that order on 13 October
-2026 and remains at `20261013153000 public_request_rate_limit_v1`. SEC-08 is
-absent from the Production ledger. Operator-reported AWS CloudFormation
-UPDATE_COMPLETE confirms the earlier backup-head configuration update with the
-original three-hour schedule retained. Applied migrations stay immutable. AWS
-ApprovedMigrationHead stays at `20261013153000` until Production migration
-coordination. Do not apply SEC-08 to Production or move that backup head from
-this change. Prior scheduled backups had `DB_CONNECTIVITY_RETRIES_EXHAUSTED`.
-A genuine scheduled backup with the approved head must succeed before Production
-migration. SEC-03 marketing code remains unmerged until the first genuine
-scheduled backup passes new-head, manifest and archive checksum verification.
+DEV and Production both have canonical applied migration head
+`20261014170000 evidence_content_sha256_v1` as of 14 October 2026, without
+modifying existing evidence rows. DEV (`rmzozuiamjcclvtgutgd`) has 4 uploaded
+evidence versions, 2 customer-visible and 0 trusted hashes, so historic DEV
+evidence remains unverified. Production (`cxwwekdzkkjjbiyofrov`) has 0 evidence
+versions. `pendingMigrations()` is empty; applied SQL is immutable.
+
+Scheduled backup `20261014T153911Z` passed the prior SEC-03 head, completed-marker,
+manifest, RPO-gap and streamed archive checksum checks. The reviewed AWS
+CloudFormation change set updated `ApprovedMigrationHead` to
+`20261014170000_evidence_content_sha256_v1` without replacing the CodeBuild
+project, Scheduler role or ENABLED three-hour schedule. Genuine scheduled backup
+`20261014T213909Z` then passed the new SEC-08 head, S3 completed-marker,
+manifest and independently streamed archive SHA-256 checks. No further AWS
+parameter or database migration is required for this phase. Live new-evidence
+hash acceptance and historical DEV backfill remain separate operational checks.
 
 On 2026-10-04 the production project was built from empty. Its ledger then
 matched the manifest from `20260915120000 core_data_foundation_v1` through

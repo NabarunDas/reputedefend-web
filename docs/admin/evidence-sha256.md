@@ -1,6 +1,6 @@
 # Evidence SHA-256 integrity
 
-SEC-08 lets a trusted server compare evidence bytes in private S3 with SHA-256 metadata in `public.case_document_versions`. Phase 1 `20261014170000_evidence_content_sha256_v1` is applied to DEV (`profilerelaunch-dev`, project `rmzozuiamjcclvtgutgd`) only. Production (`cxwwekdzkkjjbiyofrov`) remains at `20261013153000`. AWS `ApprovedMigrationHead` remains `20261013153000` until Production migration coordination. The SQL file header still says the migration is source-only because an applied migration file is not edited.
+SEC-08 lets a trusted server compare evidence bytes in private S3 with SHA-256 metadata in `public.case_document_versions`. Phase 1 `20261014170000_evidence_content_sha256_v1` is applied to DEV (`rmzozuiamjcclvtgutgd`) and Production (`cxwwekdzkkjjbiyofrov`). AWS `ApprovedMigrationHead` is updated to the same head. Genuine scheduled new-head backup `20261014T213909Z` passed migration-alignment, S3 manifest, completed marker and archive SHA-256 validation. The SQL file header still says the migration is source-only because an applied migration file is not edited.
 
 ## What is trusted
 
@@ -12,11 +12,11 @@ A refresh that is no longer clean, valid and accepted clears `customer_visible` 
 
 ## Two-phase rollout
 
-This pull request is phase 1 only. Phase 1 is applied to DEV. It is not applied to Production. Do not move `ApprovedMigrationHead`.
+This pull request is phase 1 only. Phase 1 is applied canonically to DEV and Production; AWS `ApprovedMigrationHead` was updated after verifying a prior-head scheduled backup. A genuine scheduled new-head backup has also passed, permitting the reviewed Admin application release.
 
 Phase 1 adds the digest columns, the record and page functions, the immutable-digest trigger, and the visibility withdrawal inside `admin_evidence_refresh_scan_v1`. It does not reject `VALID` when `content_sha256` is null. The Admin build that was already on DEV can still refresh a clean uploaded file to `VALID` without writing a digest. An accepted visible file stays visible across that refresh. A failed scan or an `INVALID` or `ERROR` result still clears customer visibility in the same update.
 
-The new Admin application computes SHA-256 from the scanned bytes and records it before it asks for `VALID`. Deploy it only to a database that already has this migration. DEV has the migration. Production does not, so do not deploy the new Admin to Production first: it calls `evidence_content_sha256_v1`, which the Production head does not have. A mismatch is `INVALID` and does not replace the stored digest. A legacy `VALID` row with a null digest stays valid, so packs and downloads do not become stale only because the hash is missing.
+The new Admin application computes SHA-256 from the scanned bytes and records it before it asks for `VALID`. Deploy it only to a database that already has this migration. Both DEV and Production have the migration before the new Admin deploys; the database RPC is now present in both. A mismatch is `INVALID` and does not replace the stored digest. A legacy `VALID` row with a null digest stays valid, so packs and downloads do not become stale only because the hash is missing.
 
 The DEV apply did not mutate evidence rows. DEV still has 4 uploaded versions, 2 of them customer-visible, and 0 trusted hashes. Fingerprint `0667159d6c6f80af4cc00d36ca306389` was unchanged. Do not treat those existing files as byte-proven, and do not rewrite them to create a hash.
 
@@ -24,7 +24,7 @@ Phase 2 is a later reviewed migration. It may reject a new `VALID` refresh when 
 
 The three digest columns are all null or all present. A digest with a null byte length is rejected. The byte length must equal `declared_size_bytes`. The migration adds nullable columns and does not update existing rows. Rollback of an applied phase 1 is a later reviewed migration. Do not edit the applied SQL file.
 
-Production apply waits for a genuine scheduled AWS backup whose completed manifest and checksum match `ApprovedMigrationHead` `20261013153000`. Prior scheduled backups had `DB_CONNECTIVITY_RETRIES_EXHAUSTED`. Coordinate the AWS head change only with that Production migration. Do not apply Production from this pull request.
+Production SEC-08 migration followed accepted prior-head backup `20261014T153911Z`. CloudFormation subsequently aligned `ApprovedMigrationHead` to `20261014170000_evidence_content_sha256_v1` without replacing backup resources, preserving the ENABLED three-hour scheduler. Genuine scheduled new-head backup `20261014T213909Z` was accepted after manifest, source/migration alignment, completed marker and archive SHA-256 verification. Phase 2 mandatory digest enforcement is not included.
 
 ## Backfill
 

@@ -80,6 +80,7 @@ try {
     assert.match(csp, /base-uri 'self'/)
     assert.match(csp, /object-src 'none'/)
     assert.match(csp, /form-action 'self'/)
+    assert.match(csp, /script-src-attr 'none'/)
     assert.match(csp, /font-src 'self'/)
     assert.doesNotMatch(csp, /googletagmanager|google-analytics|fonts\.googleapis|fonts\.gstatic|unsafe-eval/)
     if (path === "/robots.txt") {

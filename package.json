@@ -20,6 +20,7 @@
     "release:admin-check": "node scripts/release-admin-check.mjs",
     "release:customer-check": "node scripts/release-customer-check.mjs",
     "smoke:admin": "node scripts/smoke-admin.mjs",
+    "smoke:marketing": "node scripts/smoke-marketing.mjs",
     "dev:customer": "npm run dev --workspace=@profilerelaunch/customer",
     "build:customer": "npm run build --workspace=@profilerelaunch/customer",
     "start:customer": "npm run start --workspace=@profilerelaunch/customer",

@@ -54,6 +54,10 @@ describe("Admin response headers", () => {
     expect(directives["frame-ancestors"]).toBe("frame-ancestors 'none'")
     expect(directives["object-src"]).toBe("object-src 'none'")
     expect(directives["form-action"]).toBe("form-action 'self'")
+    expect(directives["script-src"]).toBe("script-src 'self' 'unsafe-inline'")
+    expect(directives["script-src-attr"]).toBe("script-src-attr 'none'")
+    expect(admin["Content-Security-Policy"]).not.toContain("unsafe-eval")
+    expect(admin["Content-Security-Policy"]).not.toMatch(/google|stripe|unsafe-eval/)
   })
 
   it("does not advertise the framework version", async () => {

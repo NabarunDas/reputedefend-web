@@ -182,7 +182,7 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: false,
     scope: "PLATFORM_PROVIDED",
     atAdminCutover: "PRESENT",
-    controls: "Cookie naming and the secure flag: \"production\" selects __Host- prefixed cookies and Secure. Production also refuses the in-memory public rate-limit double and limits Stripe Checkout and hosted-invoice URLs to the live Stripe hostnames.",
+    controls: "Cookie naming and the secure flag: \"production\" selects __Host- prefixed cookies and Secure. Production also refuses the in-memory public rate-limit double and limits Stripe Checkout and hosted-invoice URLs to the live Stripe hostnames. The content-security policy allows script eval only when this value is development.",
     whenAbsent: "Next.js sets it. A non-production value would select the development cookie names, which is why the production smoke test checks the cookie name.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: false,
@@ -197,6 +197,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "lib/enquiry-rate-limit.ts",
       "lib/monitoring/intake.ts",
       "lib/payments/stripe-url.ts",
+      "lib/security/content-security-policy.mjs",
     ],
   },
   {

@@ -37,7 +37,7 @@ export const cutoverSequence: readonly CutoverPhase[] = [
       "Resolve everything that is a decision or an external account fact, while nothing is live and nothing can be broken.",
     prerequisites: [
       "Step 23 is complete and merged.",
-      "DEV has applied 20261010200000 customer_action_otp_limits_v1 with no pending migrations. PROD remains at 20261004223358 until SEC-02 and AWS ApprovedMigrationHead are updated together. Applied migrations are not replayed.",
+      "DEV and PROD have applied SEC-02 20261010200000 and SEC-03 20261013153000. Operator-reported AWS ApprovedMigrationHead cutover succeeded; first new-head scheduled backup acceptance is still pending. Applied migrations are not replayed.",
     ],
     steps: [
       "Record an answer to each Owner decision, or record explicitly that it is deferred and what that defers.",

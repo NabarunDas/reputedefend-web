@@ -16,10 +16,10 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("records SEC-02 as the applied DEV migration head", () => {
-    expect(appliedMigrationHead.filename).toBe("20261010200000_customer_action_otp_limits_v1.sql")
+  it("records SEC-03 as the verified applied DEV migration head", () => {
+    expect(appliedMigrationHead.filename).toBe("20261013153000_public_request_rate_limit_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261010200000_customer_action_otp_limits_v1.sql")
+    expect(migrationHead.filename).toBe("20261013153000_public_request_rate_limit_v1.sql")
     expect(migrationHead.appliedToDev).toBe(true)
   })
 
@@ -27,8 +27,8 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("leaves no migrations pending against DEV after SEC-02", () => {
-    expect(pendingMigrations()).toEqual([])
+  it("has no DEV migration pending after verified SEC-03 application", () => {
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

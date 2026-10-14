@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MONITORING_UNAVAILABLE } from "@/lib/monitoring/persistence-config"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
 
@@ -29,6 +29,10 @@ const valid = {
 
 const SUBMISSION_KEY = "11111111-2222-4333-8444-555555555555"
 
+beforeEach(() => {
+  resetEnquiryRateLimit()
+})
+
 afterEach(() => {
   persistMonitoringRequest.mockReset()
   vi.unstubAllEnvs()
@@ -38,7 +42,7 @@ afterEach(() => {
 function post(body: unknown) {
   return new Request("http://localhost/api/monitoring", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-vercel-forwarded-for": "198.51.100.24" },
     body: JSON.stringify(body),
   })
 }

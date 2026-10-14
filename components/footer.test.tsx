@@ -39,4 +39,13 @@ describe("Footer explore navigation", () => {
     expect(email).toHaveAttribute("href", "mailto:contact@profilerelaunch.com")
     expect(screen.queryByText("contact@reputedefend.com")).not.toBeInTheDocument()
   })
+
+  it("shows the company number, place of registration and registered office", () => {
+    render(<Footer />)
+    expect(screen.getByText(/ProfileRelaunch is a trading name of ProfileRelaunch Ltd/)).toBeInTheDocument()
+    expect(screen.getByText(/Company number 17520826/)).toBeInTheDocument()
+    expect(screen.getByText(/Registered in England and Wales/)).toBeInTheDocument()
+    expect(screen.getByText(/Registered office: 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom/)).toBeInTheDocument()
+    expect(screen.queryByText(/VAT/)).not.toBeInTheDocument()
+  })
 })

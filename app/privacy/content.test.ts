@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { legalIdentity } from "@/lib/legal"
 import {
@@ -60,16 +61,17 @@ describe("Privacy notice copy", () => {
     ])
     expect(privacyUses).toContain("review a monitoring setup request and arrange the next setup steps")
     expect(privacyUses).toContain("keep a record of the request and related service communications")
-    expect(privacyUpdated).toBe("16 September 2026")
-    expect(privacyUpdated).not.toBe(legalIdentity.noticeUpdated)
+    expect(privacyUpdated).toBe("14 October 2026")
+    expect(readFileSync(new URL("./page.tsx", import.meta.url), "utf8")).toContain("updated={privacyUpdated}")
   })
 
   it("keeps operator identity and international positioning", () => {
-    expect(legalIdentity.legalName).toBe("Saswati Das")
+    expect(legalIdentity.legalName).toBe("ProfileRelaunch Ltd")
     expect(legalIdentity.tradingName).toBe("ProfileRelaunch")
-    expect(legalIdentity.businessStructure).toBe("sole-trader")
+    expect(legalIdentity.businessStructure).toBe("private-limited-company")
+    expect(legalIdentity.registrationNumber).toBe("17520826")
     expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
-    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
+    expect(legalIdentity.noticeUpdated).toBe("14 October 2026")
     expect(copy).not.toMatch(/for uk businesses|uk-only|uk customers only/)
   })
 })

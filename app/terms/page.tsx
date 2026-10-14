@@ -23,7 +23,7 @@ const sections: LegalSection[] = [
     title: "About these terms",
     content: (
       <>
-        <p>These terms apply to your use of the {legalIdentity.tradingName} website and to information you send through its enquiry forms. They do not replace a separate written agreement for paid support, if one is later offered and accepted.</p>
+        <p>These terms apply to your use of the {legalIdentity.tradingName} website and to information you send through its enquiry forms. They are the website terms. They are not a paid-service agreement, and publishing them here does not make a paid-service agreement operative. A paid-service agreement applies only if a stated version of it is later offered and accepted for a specific quotation.</p>
         <p>This website is operated by {tradingAsLine()}.</p>
         <p>If you do not agree with these terms, please do not use the website or send a submission.</p>
       </>

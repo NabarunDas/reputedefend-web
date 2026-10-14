@@ -10,13 +10,13 @@ describe("organization schema", () => {
     expect(schema.name).toBe(brandName)
     expect(schema.url).toBe(brandSiteUrl)
     expect(schema.logo).toBe(`${brandSiteUrl}/icon.png`)
-    expect(schema.legalName).toBe("Saswati Das")
+    expect(schema.legalName).toBe("ProfileRelaunch Ltd")
     expect(schema.email).toBe("contact@profilerelaunch.com")
     expect(schema.address).toEqual({
       "@type": "PostalAddress",
-      streetAddress: "6 Bradford Road, Old Town",
-      addressLocality: "Swindon",
-      postalCode: "SN1 4FE",
+      streetAddress: "71–75 Shelton Street, Covent Garden",
+      addressLocality: "London",
+      postalCode: "WC2H 9JQ",
       addressCountry: "GB",
     })
     expect(JSON.stringify(schema)).not.toMatch(/aggregateRating|ratingValue|vatID|taxID|foundingDate|numberOfEmployees|Google Partner/)

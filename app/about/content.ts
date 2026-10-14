@@ -1,5 +1,5 @@
 import { brandName, brandTagline } from "@/lib/brand"
-import { isSoleTrader, legalIdentity, tradingAsLine } from "@/lib/legal"
+import { legalIdentity, publicLegalDisclosure } from "@/lib/legal"
 
 export const aboutHelpHref = "/get-help"
 export const aboutHowHref = "/how-it-works"
@@ -31,7 +31,7 @@ export const aboutHero = {
 
 export const aboutIdentityPlate = {
   name: brandName,
-  operatedBy: `Operated by ${legalIdentity.legalName ?? brandName}`,
+  operatedBy: `Operated by ${publicLegalDisclosure().operator}`,
   lines: ["UK-based", "Global service", "Independent specialist support"] as const,
 } as const
 
@@ -64,11 +64,10 @@ export const aboutBrandLine = {
 } as const
 
 export function aboutOperator() {
-  const structure = isSoleTrader() ? "as a UK sole trader" : "as an independent business"
   return {
     eyebrow: "Accountability",
     title: "A real operator behind the service.",
-    lead: `${brandName} is operated by ${tradingAsLine()}, ${structure}.`,
+    lead: `${brandName} is the trading name of ${legalIdentity.legalName}, company number ${legalIdentity.registrationNumber}, registered in ${legalIdentity.placeOfRegistration}.`,
     positioning: `${brandName} is UK-based and designed to support businesses internationally, subject to the relevant Google process being available and supportable.`,
     purpose: "The operator, the business identity and the contact route are stated openly so you know who you are dealing with.",
     links: [

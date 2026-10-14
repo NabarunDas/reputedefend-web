@@ -53,11 +53,12 @@ describe("/privacy page", () => {
     const dates = screen.getAllByText(/^Last updated /)
     expect(dates).toHaveLength(1)
     expect(dates[0]).toHaveTextContent(`Last updated ${privacyUpdated}`)
-    expect(screen.queryByText(`Last updated ${legalIdentity.noticeUpdated}`)).not.toBeInTheDocument()
     expect(screen.queryByText(`Privacy notice updated: ${privacyUpdated}`)).not.toBeInTheDocument()
-    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
-    expect(privacyUpdated).toBe("16 September 2026")
-    expect(privacyUpdated).not.toBe(legalIdentity.noticeUpdated)
+    expect(legalIdentity.noticeUpdated).toBe("14 October 2026")
+    expect(privacyUpdated).toBe("14 October 2026")
+    expect(screen.getAllByText("Company number 17520826.").length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Registered in England and Wales/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/71–75 Shelton Street/)).toBeInTheDocument()
     expect(
       screen.getByText(
         "We keep enquiry, case-submission and monitoring-setup information, including related activity and communication records, only for as long as needed to handle your request, provide agreed support and meet applicable legal obligations. The period depends on the type of record and why we need it.",

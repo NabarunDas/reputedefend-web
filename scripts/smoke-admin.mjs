@@ -35,6 +35,8 @@ try {
     assert.match(policy, /default-src 'self'/)
     assert.match(policy, /connect-src 'self' https:\/\/\*\.amazonaws\.com/)
     assert.match(policy, /frame-ancestors 'none'/)
+    assert.match(policy, /script-src-attr 'none'/)
+    assert.doesNotMatch(policy, /unsafe-eval/)
     if (path === "/login") {
       const html = await response.text()
       assert.equal(response.status, 200)

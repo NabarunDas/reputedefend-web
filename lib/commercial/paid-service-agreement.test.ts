@@ -1,6 +1,16 @@
 import { readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
+import { guardFaqs, guardIncluded, guardIntervention } from "@/app/relaunch-guard/content"
+import {
+  checksPerDay,
+  deliveryMethod,
+  guardOffer,
+  includedRecoveryDays,
+  managedDiscountPercent,
+  timezone,
+} from "@/lib/guard-offer"
+import { legalIdentity, registeredOfficeInline } from "@/lib/legal"
 import { paymentsEnabled, resolvePaymentProviderMode } from "@/lib/payments/config"
 import { SUCCESS_FEE_CONSENT_TEXT, SUCCESS_FEE_CONSENT_VERSION } from "@/lib/payments/model"
 import { pricingGroups } from "@/lib/pricing"
@@ -17,6 +27,7 @@ import {
   profileRecoveryVerdict,
   quoteAcceptanceBlockedByTax,
   reviewRemovalVerdict,
+  solicitorReviewOpen,
   successFeeObligation,
   verificationWindowSatisfied,
   type ProfileRecoveryInput,
@@ -58,9 +69,9 @@ const reviewBase: ReviewRemovalInput = {
 }
 
 describe("paid-service agreement draft", () => {
-  it("keeps version PS-2026-10-14.1 under solicitor review and off the customer path", () => {
-    expect(paidServiceAgreement.version).toBe("PS-2026-10-14.1")
-    expect(PAID_SERVICE_AGREEMENT_VERSION).toBe("PS-2026-10-14.1")
+  it("keeps version PS-2026-10-14.2 under solicitor review and off the customer path", () => {
+    expect(paidServiceAgreement.version).toBe("PS-2026-10-14.2")
+    expect(PAID_SERVICE_AGREEMENT_VERSION).toBe("PS-2026-10-14.2")
     expect(paidServiceAgreement.status).toBe("SOLICITOR_REVIEW")
     expect(paidServiceAgreement.operative).toBe(false)
     expect(paidServiceAgreement.customerVisible).toBe(false)
@@ -69,20 +80,79 @@ describe("paid-service agreement draft", () => {
     expect(paidServiceAgreement.retainedTaxBehaviour).toBe("UNCONFIRMED")
     expect(paidServiceAgreement.vatRegistered).toBe(false)
     expect(paidServiceAgreement.vatNumber).toBeNull()
+    expect(paidServiceAgreement.liabilityCap.solicitorApproval).toBe(false)
+    expect(paidServiceAgreement.governingLaw.solicitorApproval).toBe(false)
+    expect(paidServiceAgreement.governingLaw.proposed).toBe("England and Wales")
+    expect(solicitorReviewOpen).toEqual([
+      "the whole of this version",
+      "whether the liability cap is reasonable",
+      "consumer misclassification",
+      "international customers and jurisdiction",
+      "professional indemnity",
+      "privacy and data-processing terms",
+    ])
     expect(draft).toContain(paidServiceAgreementBody)
     expect(draft).toContain("SOLICITOR REVIEW REQUIRED")
     expect(draft).toContain("Operative: false")
-    expect(paidServiceAgreementBody).toContain("SOLICITOR REVIEW REQUIRED")
+    expect(draft).toContain("PS-2026-10-14.1")
+    expect(draft).toContain("UNCONFIRMED")
+    expect(draft).toContain("NOT_APPLICABLE")
     expect(paidServiceAgreementBody).toContain("greater of £1,000 or twice the fee")
     expect(paidServiceAgreementBody).toContain("not a statement that a supply is zero-rated or exempt")
     expect(paidServiceAgreementBody).not.toMatch(/GB\d{9}|VAT number/)
+    expect(paidServiceAgreementBody).not.toMatch(/SOLICITOR_REVIEW|SOLICITOR REVIEW|UNCONFIRMED|NOT_APPLICABLE|SHA-256|content hash|does not authorise|Stripe Checkout|agreement_versions|professional indemnity/)
+    expect(paidServiceAgreementBody).toContain("## 1. Formation")
+    expect(paidServiceAgreementBody).toContain("## 2. Authority")
+    expect(paidServiceAgreementBody).toContain("## 8. Your obligations")
+    expect(paidServiceAgreementBody).toContain("## 9. Our obligations")
+    expect(paidServiceAgreementBody).toContain("## 10. Evidence, duplicate fees and disputes")
+    expect(paidServiceAgreementBody).toContain("## 14. Confidentiality and personal information")
+    expect(paidServiceAgreementBody).toContain("## 15. Intellectual property")
+    expect(paidServiceAgreementBody).toContain("## 16. Liability")
+    expect(paidServiceAgreementBody).toContain("## 18. Termination")
+    expect(paidServiceAgreementBody).toContain("## 19. Governing law and disputes")
+    expect(paidServiceAgreementBody).toContain("law of England and Wales")
+    expect(paidServiceAgreementBody).toContain("Where Stripe supports presenting the charge in another currency")
   })
 
   it("pins the canonical SHA-256 so a wording change cannot reuse this version", () => {
     const recomputed = createHash("sha256").update(paidServiceAgreementBody, "utf8").digest("hex")
     expect(recomputed).toBe(paidServiceAgreementContentHash)
-    expect(paidServiceAgreementContentHash).toBe("bb1c1ae87d3884e92e02dc0db963a7d9dd71a2b828e9936de3c14996fcbe23b5")
+    expect(paidServiceAgreementContentHash).toBe("0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4")
     expect(draft).toContain(paidServiceAgreementContentHash)
+    const canonicalAt = draft.indexOf("## Canonical body")
+    expect(canonicalAt).toBeGreaterThan(0)
+    expect(draft.slice(0, canonicalAt)).toContain("SOLICITOR REVIEW REQUIRED")
+    expect(draft.slice(canonicalAt)).not.toMatch(/SOLICITOR_REVIEW|SOLICITOR REVIEW|UNCONFIRMED|NOT_APPLICABLE|SHA-256/)
+  })
+
+  it("freezes this version independently of the marketing modules it must still match", () => {
+    const source = readFileSync(new URL("./paid-service-agreement.ts", import.meta.url), "utf8")
+    expect(source).not.toMatch(/from "@\/(?:lib\/pricing|lib\/legal|lib\/guard-offer|app\/relaunch-guard\/content)"/)
+    expect(pricingGroups.flatMap(group => group.items.map(item => item.price))).toEqual([
+      catalogueAmounts.guidedRelaunch.price,
+      catalogueAmounts.managedProfileRecovery.price,
+      catalogueAmounts.guidedReview.price,
+      catalogueAmounts.managedReviewProtection.price,
+      catalogueAmounts.relaunchGuard.price,
+    ])
+    expect(paidServiceAgreementBody).toContain(`${legalIdentity.legalName} (company number ${legalIdentity.registrationNumber})`)
+    expect(paidServiceAgreementBody).toContain(`registered in ${legalIdentity.placeOfRegistration}`)
+    expect(paidServiceAgreementBody).toContain(`incorporated on ${legalIdentity.incorporatedOn}`)
+    expect(paidServiceAgreementBody).toContain(registeredOfficeInline())
+    expect(paidServiceAgreementBody).toContain(legalIdentity.contactEmail!)
+    const cancel = guardFaqs.find(item => item.q === "How do I cancel?")
+    expect(cancel).toBeTruthy()
+    expect(paidServiceAgreementBody).toContain(cancel!.a.join(" "))
+    expect(paidServiceAgreementBody).toContain([guardIncluded.body, guardIncluded.followUp, guardIncluded.supporting].join(" "))
+    expect(checksPerDay).toBe(2)
+    expect(paidServiceAgreementBody).toContain("twice each day")
+    expect(deliveryMethod).toBe("manual")
+    expect(paidServiceAgreementBody).toContain(`using a ${timezone} schedule`)
+    expect(paidServiceAgreementBody).toContain(`${includedRecoveryDays} days of Guard`)
+    expect(guardOffer.includedRecoveryDays).toBe(includedRecoveryDays)
+    expect(paidServiceAgreementBody).toContain(`${managedDiscountPercent}% off our standard Managed Profile Recovery and Managed Review Protection fees`)
+    expect(guardIntervention.benefitBody).toContain(`${managedDiscountPercent}% off our standard Managed Profile Recovery and Managed Review Protection fees`)
   })
 
   it("uses the published GBP catalogue and does not invent a price", () => {

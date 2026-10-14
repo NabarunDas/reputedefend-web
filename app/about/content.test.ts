@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { brandName, brandTagline } from "@/lib/brand"
-import { isSoleTrader, legalIdentity } from "@/lib/legal"
+import { legalIdentity } from "@/lib/legal"
 import {
   aboutBrandLine,
   aboutClose,
@@ -58,7 +58,7 @@ describe("About page copy", () => {
   it("uses the ProfileRelaunch Ltd identity", () => {
     expect(legalIdentity.legalName).toBe("ProfileRelaunch Ltd")
     expect(legalIdentity.registrationNumber).toBe("17520826")
-    expect(isSoleTrader()).toBe(false)
+    expect(legalIdentity.businessStructure).toBe("private-limited-company")
     expect(operator.lead).toContain("ProfileRelaunch Ltd")
     expect(operator.lead).toContain("17520826")
     expect(operator.lead).toContain("England and Wales")

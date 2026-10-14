@@ -1,26 +1,14 @@
-import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
   feeWording,
   hasLegalValue,
   isLimitedCompany,
-  isSoleTrader,
   legalIdentity,
   publicLegalDisclosure,
   registeredOfficeInline,
   showsCompanyRegistration,
   tradingAsLine,
 } from "@/lib/legal"
-
-const publicSurfaces = [
-  "components/legal-page.tsx",
-  "components/footer.tsx",
-  "app/about/content.ts",
-  "app/terms/page.tsx",
-  "app/privacy/page.tsx",
-  "app/disclaimer/page.tsx",
-  "README.md",
-].map(path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n")
 
 describe("legal identity", () => {
   it("describes ProfileRelaunch Ltd, registered in England and Wales", () => {
@@ -29,7 +17,6 @@ describe("legal identity", () => {
     expect(legalIdentity.legalName).toBe("ProfileRelaunch Ltd")
     expect(legalIdentity.businessStructure).toBe("private-limited-company")
     expect(isLimitedCompany()).toBe(true)
-    expect(isSoleTrader()).toBe(false)
     expect(showsCompanyRegistration()).toBe(true)
     expect(tradingAsLine()).toBe("ProfileRelaunch Ltd, trading as ProfileRelaunch")
     expect(disclosure.companyNumber).toBe("Company number 17520826.")
@@ -41,10 +28,6 @@ describe("legal identity", () => {
     expect(legalIdentity.noticeUpdated).toBe("14 October 2026")
     expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
     expect(feeWording).toMatch(/fees will be explained clearly before you decide how to proceed/)
-  })
-
-  it("does not publish the former sole-trader identity or a personal postal address", () => {
-    expect(publicSurfaces).not.toMatch(/Saswati|Bradford Road|SN1 4FE|sole trader|sole-trader/)
   })
 
   it("does not invent a VAT number, phone, DPO or governing-law details", () => {

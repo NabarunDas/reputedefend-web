@@ -11,7 +11,7 @@
  */
 import { brandName, brandSiteUrl } from "@/lib/brand"
 
-export type BusinessStructure = "sole-trader" | "private-limited-company"
+export type BusinessStructure = "private-limited-company"
 
 export type LegalIdentity = {
   tradingName: string
@@ -54,10 +54,6 @@ export const legalIdentity: LegalIdentity = {
 
 export function hasLegalValue(value: string | undefined): value is string {
   return Boolean(value?.trim())
-}
-
-export function isSoleTrader(identity: LegalIdentity = legalIdentity) {
-  return identity.businessStructure === "sole-trader"
 }
 
 export function isLimitedCompany(identity: LegalIdentity = legalIdentity) {

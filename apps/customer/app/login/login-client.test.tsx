@@ -140,7 +140,8 @@ describe("portal login OTP slots", () => {
     expect(code).not.toHaveAttribute("maxlength")
     expect(code.tabIndex).toBe(0)
     expect(slots().every(slot => slot.closest("[aria-hidden='true']"))).toBe(true)
-    expect(code).toHaveFocus()
+    // Focus is applied in an effect after the code screen renders.
+    await waitFor(() => expect(code).toHaveFocus())
     expect(slots()[0]).toHaveAttribute("data-current", "true")
   })
 

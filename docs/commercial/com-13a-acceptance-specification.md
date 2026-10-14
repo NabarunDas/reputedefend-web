@@ -2,7 +2,7 @@
 
 Status: specification only. COM-12A does not implement this. No migration is added or applied. Stripe, the Customer Portal, Guard activation and mail automation stay behind their existing gates.
 
-The paid-service text to be accepted, once a solicitor approves it, is version `PS-2026-10-14.1` in `lib/commercial/paid-service-agreement.ts`. Until that approval, `operative` is false and the text must not be offered to a customer.
+The paid-service text to be accepted, once a solicitor approves it, is version `PS-2026-10-14.2` in `lib/commercial/paid-service-agreement.ts`. `PS-2026-10-14.1` was an earlier internal draft and was not accepted by any customer. Until solicitor approval of `PS-2026-10-14.2`, `operative` is false and the text must not be offered to a customer. The canonical body is the customer contract only. Approval status, the database tax gate and the content hash stay outside that body.
 
 ## What already exists
 
@@ -10,7 +10,7 @@ Quote acceptance is a `QUOTE_ACCEPTANCE` customer action pinned to `quote_versio
 
 A service agreement is an immutable `agreement_versions` row. `admin_private.agreement_content_hash_v1` hashes the JSON array of kind, title, body and scope with SHA-256. Acceptance is an `authorization_records` row created through the existing OTP customer action. The current customer control is one statement: “I have read and agree to this service agreement and scope.” Case-management permission is a separate kind, `CASE_MANAGEMENT_PERMISSION`.
 
-`SUCCESS_FEE_CONSENT_V1` is a different text. It says a payment method may be used off-session for the success fee. The COM-12A draft forbids an automatic Managed card charge and forbids collecting the success fee in advance. COM-13A must not treat `SUCCESS_FEE_CONSENT_V1` as acceptance of `PS-2026-10-14.1`.
+`SUCCESS_FEE_CONSENT_V1` is a different text. It says a payment method may be used off-session for the success fee. The COM-12A draft forbids an automatic Managed card charge and forbids collecting the success fee in advance. COM-13A must not treat `SUCCESS_FEE_CONSENT_V1` as acceptance of `PS-2026-10-14.2`.
 
 Relaunch Guard already has `GUARD_RECURRING_CONSENT_V1` and `GUARD_CANCELLATION_TERMS_V1`. The draft preserves the published cancellation, unused-period refund and free-period no-auto-conversion promises. It does not activate Guard.
 

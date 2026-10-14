@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openCustomerCheckout, settleRecoveryCancel } from "@/lib/action/payment"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
+import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { isUuid } from "@/lib/uuid"
@@ -88,9 +89,10 @@ async function presentCheckout(response: NextResponse) {
   if (response.status === 503 && payload?.status === "disabled") {
     return NextResponse.json({ status: "disabled", message: DISABLED }, { status: 503, headers: privateResponseHeaders })
   }
-  if (payload?.status === "ok" && typeof payload.checkoutUrl === "string" && payload.checkoutUrl.startsWith("https://")) {
+  const trusted = payload?.status === "ok" ? trustedStripeUrl(payload.checkoutUrl, "checkout") : null
+  if (trusted) {
     return NextResponse.json(
-      { status: "ok", checkoutUrl: payload.checkoutUrl, confirming: true },
+      { status: "ok", checkoutUrl: trusted, confirming: true },
       { headers: privateResponseHeaders },
     )
   }

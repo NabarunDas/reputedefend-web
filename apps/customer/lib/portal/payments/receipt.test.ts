@@ -101,4 +101,31 @@ describe("portal receipt download", () => {
     expect(missing.status).toBe(404)
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
+
+  it("does not redirect a hosted invoice to an untrusted address", async () => {
+    const rejected = [
+      "https://invoice.stripe.com.evil.example/i/x",
+      "https://invoice.stripe.com@evil.example/i/x",
+      "https://evil.example/invoice.stripe.com",
+      "javascript:alert(1)",
+      "//evil.example",
+      "https://invoice.stripe.com:444/i/x",
+      "https://user:pass@invoice.stripe.com/i/x",
+      "https://invoice.stripe.com/i/%00secret",
+      "https://invoice.stripe.com/i/%ZZ",
+    ]
+    for (const hostedInvoiceUrl of rejected) {
+      mocks.rpc.mockResolvedValue({ status: "redirect", hostedInvoiceUrl })
+      const response = await portalInvoiceOpen(new NextRequest(
+        `${origin}/api/portal/payments/invoice?reference=PR-26-ABCDEF&selector=${actionSelector}`,
+        { headers: { cookie: `${portalSessionCookieName()}=${token}` } },
+      ))
+      expect(response.status, hostedInvoiceUrl).not.toBe(307)
+      expect(response.headers.get("location")).toBeNull()
+      const text = await response.text()
+      expect(text).not.toContain("evil.example")
+      expect(text).not.toContain("javascript:")
+      expect(text).not.toContain(hostedInvoiceUrl)
+    }
+  })
 })

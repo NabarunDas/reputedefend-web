@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ACTION_UNAVAILABLE } from "@/lib/access"
 import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
+import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
@@ -202,8 +203,9 @@ export function ActionClient({ actionId }: { actionId: string }) {
     const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
     if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
     if (!response.ok) { setPhase("unavailable"); return }
+    if (assignTrustedStripeCheckout(result.checkoutUrl)) return
     if (result.checkoutUrl) {
-      window.location.assign(result.checkoutUrl)
+      setMessage("Secure Stripe Checkout is not available yet.")
       return
     }
     setMessage(result.message || "This subscription request is recorded.")
@@ -217,8 +219,9 @@ export function ActionClient({ actionId }: { actionId: string }) {
     const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
     if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
     if (!response.ok) { setPhase("unavailable"); return }
+    if (assignTrustedStripeCheckout(result.checkoutUrl)) return
     if (result.checkoutUrl) {
-      window.location.assign(result.checkoutUrl)
+      setMessage("Secure Stripe Checkout is not available yet.")
       return
     }
     setMessage(result.message || "Consent recorded. No fee is due today.")
@@ -280,13 +283,14 @@ export function ActionClient({ actionId }: { actionId: string }) {
     </section>
   }
   if (session?.kind === "INVOICE_PAYMENT" && paymentDetails) {
+    const invoiceUrl = trustedStripeUrl(paymentDetails.hostedInvoiceUrl, "invoice")
     return <section>
       <h1>Pay this earned amount by invoice</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
       <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
       <p>This is a TEST-MODE hosted invoice fallback for an already-earned unpaid obligation. Returning from the invoice page does not mark this paid.</p>
-      {paymentDetails.hostedInvoiceUrl
-        ? <p><a href={paymentDetails.hostedInvoiceUrl}>Open the secure Stripe hosted invoice</a></p>
+      {invoiceUrl
+        ? <p><a href={invoiceUrl}>Open the secure Stripe hosted invoice</a></p>
         : <p>The hosted invoice link is not available yet.</p>}
       <p role="status">{message}</p>
     </section>

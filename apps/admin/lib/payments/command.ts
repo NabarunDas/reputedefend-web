@@ -6,6 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { paymentProvider } from "../../../../lib/payments"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
+import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
 import { isPaymentOperation, paymentArgs } from "./validation"
 
@@ -108,6 +109,9 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
       }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId })
       if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
       if (prepared.status !== "success") return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      if (prepared.replay && prepared.hostedInvoiceUrl && !trustedStripeUrl(prepared.hostedInvoiceUrl, "invoice")) {
+        return reply("TEST-MODE FOUNDATION: a hosted invoice cannot be issued until Stripe test payments and seller/tax configuration are enabled.", 503)
+      }
       if (!prepared.replay || !prepared.hostedInvoiceUrl) {
         try {
           const stripeCustomer = await ensureStripeCustomer(prepared.customerId || "")
@@ -125,11 +129,13 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
               orderRef: prepared.orderRef,
             },
           })
+          const hostedInvoiceUrl = trustedStripeUrl(invoice.hostedInvoiceUrl, "invoice")
+          if (!hostedInvoiceUrl) throw new PaymentsDisabledError("Hosted invoice URL was rejected.")
           const recorded = invoice.dueAt
             ? await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
               p_operation: prepared.providerOperationId,
               p_provider_invoice_id: invoice.id,
-              p_hosted_url: invoice.hostedInvoiceUrl,
+              p_hosted_url: hostedInvoiceUrl,
               p_amount_due: invoice.amountDueMinor,
               p_currency: invoice.currency,
               p_due_at: invoice.dueAt,
@@ -137,7 +143,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
             : await backend().rpc<{ status?: string }>("payment_record_invoice_v1", {
               p_operation: prepared.providerOperationId,
               p_provider_invoice_id: invoice.id,
-              p_hosted_url: invoice.hostedInvoiceUrl,
+              p_hosted_url: hostedInvoiceUrl,
               p_amount_due: invoice.amountDueMinor,
               p_currency: invoice.currency,
             })

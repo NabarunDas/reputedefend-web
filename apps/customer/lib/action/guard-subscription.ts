@@ -6,6 +6,7 @@ import { isUuid } from "../uuid"
 import { paymentProvider } from "../../../../lib/payments"
 import { isStripeTrialEndAllowed } from "../../../../lib/payments/model"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
+import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import { guardSubscriptionsEnabled } from "../../../../lib/guard-billing/config"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
@@ -208,9 +209,11 @@ export async function openGuardSubscriptionCheckout(origin: string, result: {
   await backend().rpc("guard_record_provider_refs_v1", {
     p_operation: result.providerOperationId, p_object_id: checkout.id, p_object_type: "checkout.session",
   })
+  const trusted = trustedStripeUrl(checkout.url, "checkout")
+  if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
   return NextResponse.json({
     status: "ok",
-    checkoutUrl: checkout.url,
+    checkoutUrl: trusted,
     mode: checkout.mode,
     confirming: true,
     delayedUntil: result.trialEnd || result.includedEndAt || null,

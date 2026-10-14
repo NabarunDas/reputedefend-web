@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { guardMoney, guardTaxNote, guardWhen } from "@/lib/portal/guard/model"
 import type { GuardAction, GuardLocation, GuardSubscriptionAction } from "@/lib/portal/guard/parse"
+import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
 function slotKey(keys: { current: Record<string, string> }, slot: string) {
   keys.current[slot] ||= crypto.randomUUID()
@@ -39,8 +40,9 @@ export function GuardView({ locations, focused }: { locations: GuardLocation[]; 
     })
     const body = await response.json().catch(() => null) as { message?: string; checkoutUrl?: string; status?: string } | null
     setBusy(null)
-    if (body?.checkoutUrl && body.checkoutUrl.startsWith("https://")) {
-      window.location.assign(body.checkoutUrl)
+    if (assignTrustedStripeCheckout(body?.checkoutUrl)) return
+    if (body?.checkoutUrl) {
+      setNotice("Secure Stripe Checkout is not available yet.")
       return
     }
     if (response.ok) {

@@ -5,6 +5,7 @@ import { customerConfig, sessionCookie, customerRequestOriginAllowed } from "@/l
 import { isUuid } from "../uuid"
 import { paymentProvider } from "../../../../lib/payments"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
+import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
   NextResponse.json({ message: ACTION_UNAVAILABLE, ...extra }, { status: http, headers: privateResponseHeaders })
@@ -104,7 +105,9 @@ export async function openCustomerCheckout(origin: string, result: {
   if (result.checkoutSessionId) {
     const existing = await provider.retrieveCheckout(result.checkoutSessionId)
     if (existing?.url && existing.status === "open") {
-      return NextResponse.json({ status: "ok", checkoutUrl: existing.url, mode: existing.mode, confirming: true }, { headers: privateResponseHeaders })
+      const trusted = trustedStripeUrl(existing.url, "checkout")
+      if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
+      return NextResponse.json({ status: "ok", checkoutUrl: trusted, mode: existing.mode, confirming: true }, { headers: privateResponseHeaders })
     }
     if (existing && existing.status !== "open") {
       const replaced = await backend().rpc<{
@@ -154,7 +157,9 @@ export async function openCustomerCheckout(origin: string, result: {
   await backend().rpc("payment_record_provider_refs_v1", {
     p_operation: result.providerOperationId, p_object_id: checkout.id, p_object_type: "checkout.session",
   })
-  return NextResponse.json({ status: "ok", checkoutUrl: checkout.url, mode: checkout.mode, confirming: true }, { headers: privateResponseHeaders })
+  const trusted = trustedStripeUrl(checkout.url, "checkout")
+  if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
+  return NextResponse.json({ status: "ok", checkoutUrl: trusted, mode: checkout.mode, confirming: true }, { headers: privateResponseHeaders })
 }
 
 async function ensureCustomer(customerId: string): Promise<string> {

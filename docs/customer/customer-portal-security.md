@@ -67,6 +67,8 @@ The resend countdown in the browser is a hint. The database is authoritative.
 
 A syntactically acceptable email always receives the same status and the same sentence: "If this email is linked to a ProfileRelaunch account, we've sent a six-digit code." Unknown, unverified, admin and rate-limited addresses are not distinguished in the HTTP response. The server still sets an opaque pending cookie when there is no database challenge behind it, so the presence of the cookie is not an existence oracle. The server does not sleep to imitate work, and it does not send OTP to an address the database did not return.
 
+Response time is separate. An eligible login or resend waits for identity provisioning and the OTP provider; the other branches do not. That open risk is recorded in `docs/customer/sec-07-login-timing.md` and tracked by GitHub issue #183. The evidence change does not remediate it.
+
 Internal statuses such as `ineligible` and `rate_limited` stay on the server.
 
 ## OTP email bombing and brute force

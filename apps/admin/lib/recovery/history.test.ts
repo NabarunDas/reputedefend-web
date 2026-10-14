@@ -5,7 +5,8 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // Remote history contains only what the dev project actually received.
-// The healthy remote ends at the verified applied SEC-03 migration.
+// The healthy remote ends at the verified applied SEC-08 migration.
+// Production remains at SEC-03 and is not this ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -24,17 +25,39 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps remote history aligned through the applied SEC-03 migration", () => {
+  it("keeps remote history aligned through the applied SEC-08 migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual([])
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261013153000",
-      name: "public_request_rate_limit_v1",
+      version: "20261014170000",
+      name: "evidence_content_sha256_v1",
     })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
     expect(mayApplyMigrations(result)).toBe(true)
+  })
+
+  it("treats a ledger that stops at SEC-03 as missing the applied DEV SEC-08 migration", () => {
+    const stopped = healthyRemote.filter(row => row.version !== "20261014170000")
+    expect(stopped.at(-1)).toEqual({
+      version: "20261013153000",
+      name: "public_request_rate_limit_v1",
+    })
+    const result = validateMigrationHistory({ repoFilenames, remote: stopped })
+    expect(codes(result)).toContain("applied_not_in_remote")
+    expect(result.status).toBe("diverged")
+    expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("refuses to replay SEC-08 now that DEV has received it", () => {
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261014170000_evidence_content_sha256_v1.sql"],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("refuses to replay the UX-10H Guard migration now that dev has received it", () => {

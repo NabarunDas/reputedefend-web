@@ -8,6 +8,7 @@ import { sessionCookie } from "@/lib/auth/config"
 import { declaredUpload, evidenceArgs } from "./validation"
 import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, isOpaqueEvidenceKey, mayRetrieveBytes, READ_EXPIRES_SECONDS } from "./model"
 import { contentDisposition, presignedPostInput, signedUrlExpiresSeconds } from "./storage"
+import { evidenceObjectTooLarge, sha256Hex } from "./integrity"
 import type { EvidenceStorage, ObjectProbe, PresignedUpload } from "./storage"
 import type { EvidenceVersion } from "./model"
 
@@ -282,13 +283,70 @@ describe("evidence commands without proxy", () => {
     expect(payload.scanStatus).toBe(scan)
     expect(mayRetrieveBytes(scan, "PENDING")).toBe(false)
   })
-  it("maps NO_THREATS_FOUND and validates bytes only after a clean scan", async () => {
-    mocks.rpc.mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" }).mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID" })
-    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
+  it("maps NO_THREATS_FOUND and records a server digest only after a clean scan", async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])
+    const digest = sha256Hex(bytes)
+    mocks.rpc
+      .mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED", sizeBytes: bytes.byteLength })
+      .mockResolvedValueOnce({ status: "recorded", versionId })
+      .mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      readScannedObject: vi.fn(async () => bytes),
+    })
     const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
     expect(store.readScannedObject).toHaveBeenCalledWith(storageKey)
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_scan: "NO_THREATS_FOUND", p_validation: "VALID", p_validation_error: null })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1", "evidence_content_sha256_v1", "admin_evidence_refresh_scan_v1"])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_version: versionId, p_sha256: digest, p_byte_length: bytes.byteLength, p_write: true })
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_scan: "NO_THREATS_FOUND", p_validation: "VALID", p_validation_error: null })
     expect(payload).toMatchObject({ scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID" })
+    expect(JSON.stringify(payload)).not.toContain(digest)
+  })
+  it("rejects a browser-supplied digest before any storage call", async () => {
+    const store = storage()
+    const response = await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId, sha256: "a".repeat(64) }), store)
+    expect(response.status).toBe(400)
+    expect(store.probeObject).not.toHaveBeenCalled()
+    expect(store.readScannedObject).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("does not record a digest when the object size or signature disagrees", async () => {
+    mocks.rpc.mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED", sizeBytes: 1024 }).mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID" })
+    const store = storage({ probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })) })
+    await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1", "admin_evidence_refresh_scan_v1"])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_validation: "INVALID", p_validation_error: "The uploaded file size does not match the declared size." })
+  })
+  it("marks a digest mismatch invalid and does not return the digest", async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])
+    mocks.rpc
+      .mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED", sizeBytes: bytes.byteLength })
+      .mockResolvedValueOnce({ status: "mismatch", versionId })
+      .mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      readScannedObject: vi.fn(async () => bytes),
+    })
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_validation: "INVALID", p_validation_error: "The stored file does not match its recorded digest." })
+    expect(JSON.stringify(payload)).not.toContain(sha256Hex(bytes))
+  })
+  it("marks an oversized object invalid and does not hash it", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" })
+      .mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      readScannedObject: vi.fn(async () => { throw evidenceObjectTooLarge() }),
+    })
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1", "admin_evidence_refresh_scan_v1"])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
+      p_scan: "NO_THREATS_FOUND",
+      p_validation: "INVALID",
+      p_validation_error: "The stored file is larger than the allowed size.",
+    })
+    expect(payload).toMatchObject({ validationStatus: "INVALID" })
   })
   it("does not retrieve bytes for later download helpers unless the file is clean, valid and in the configured bucket", async () => {
     const store = storage()

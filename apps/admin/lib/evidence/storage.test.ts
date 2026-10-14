@@ -39,6 +39,7 @@ describe("evidence storage policy", () => {
       ["content-length-range", 1, MAX_EVIDENCE_BYTES],
     ])
     expect(MAX_EVIDENCE_BYTES).toBe(10_485_760)
+    expect(JSON.stringify(policy.Conditions)).not.toMatch(/checksum|sha256|If-None-Match|deny/i)
   })
 
   it("fails closed without OIDC role configuration or when static keys are present", () => {

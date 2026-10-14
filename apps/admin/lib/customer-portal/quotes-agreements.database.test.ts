@@ -13,6 +13,7 @@ const upgradedFiles = [
   "20261004223358_data_api_default_privileges_hardening_v1.sql",
   "20261010200000_customer_action_otp_limits_v1.sql",
   "20261013153000_public_request_rate_limit_v1.sql",
+  "20261014170000_evidence_content_sha256_v1.sql",
 ].join(",")
 const db = new PGlite()
 

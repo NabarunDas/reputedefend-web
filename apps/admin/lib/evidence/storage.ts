@@ -4,6 +4,7 @@ import { createPresignedPost } from "@aws-sdk/s3-presigned-post"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider"
 import { evidenceAwsConfig } from "./config"
+import { evidenceObjectTooLarge, readBoundedObjectBody } from "./integrity"
 import { GUARDDUTY_TAG, MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES_SECONDS, mapGuardDutyStatus, type ScanStatus } from "./model"
 
 export type PresignedUpload = { url: string; fields: Record<string, string>; expiresSeconds: number; conditions: unknown[] }
@@ -38,6 +39,12 @@ export function probeFromTaggingError(error: unknown): ObjectProbe {
   throw error
 }
 
+/**
+ * These conditions do not deny overwrite and do not bind a checksum.
+ * An unexpired presigned POST can replace the object. After it expires, any
+ * principal with s3:PutObject on the key can still replace the latest version.
+ * A later SHA-256 comparison can detect that replacement. It does not prevent it.
+ */
 export function presignedPostInput(key: string, contentType: string) {
   return {
     Key: key,
@@ -110,8 +117,13 @@ export function createEvidenceStorage(): EvidenceStorage | null {
     },
     async readScannedObject(key) {
       const object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }))
-      const bytes = await object.Body?.transformToByteArray()
-      return bytes ? Uint8Array.from(bytes) : null
+      const bounded = await readBoundedObjectBody(
+        object.Body as (AsyncIterable<Uint8Array> & { destroy?: () => void }) | undefined,
+        object.ContentLength,
+      )
+      if (bounded.kind === "oversize") throw evidenceObjectTooLarge()
+      if (bounded.kind === "unreadable") return null
+      return bounded.bytes
     },
     async createReadUrl({ key, contentType, filename, disposition }) {
       const command = new GetObjectCommand({

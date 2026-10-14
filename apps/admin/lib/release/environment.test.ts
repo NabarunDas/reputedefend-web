@@ -122,10 +122,12 @@ describe("production environment contract", () => {
   })
 
   it("treats a variable only test code reads as TEST_ONLY", () => {
-    const testOnly = [...allReads.keys()].filter(name => !productionReads.has(name))
-    expect(testOnly).toEqual(["VITEST"])
-    expect(variable("VITEST")?.classification).toBe("TEST_ONLY")
-    expect(variable("VITEST")?.atAdminCutover).toBe("ABSENT")
+    const testOnly = [...allReads.keys()].filter(name => !productionReads.has(name)).sort()
+    expect(testOnly).toEqual(["AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE", "VITEST"])
+    for (const name of testOnly) {
+      expect(variable(name)?.classification).toBe("TEST_ONLY")
+      expect(variable(name)?.atAdminCutover).toBe("ABSENT")
+    }
   })
 
   it("marks the variables a signed-in Admin cannot work without", () => {

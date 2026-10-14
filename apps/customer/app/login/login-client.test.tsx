@@ -171,8 +171,11 @@ describe("portal login OTP slots", () => {
 
   it("focuses the single input from a slot and clears the current marker on blur", async () => {
     const code = await openCodeScreen()
+    // The code screen focuses the input in an effect. Blur before that effect
+    // runs is undone when the effect catches up, so wait for focus first.
+    await waitFor(() => expect(code).toHaveFocus())
     await act(async () => { code.blur() })
-    expect(code).not.toHaveFocus()
+    await waitFor(() => expect(code).not.toHaveFocus())
     expect(slots().every(slot => slot.getAttribute("data-current") === "false")).toBe(true)
     fireEvent.mouseDown(slots()[2])
     expect(code).toHaveFocus()

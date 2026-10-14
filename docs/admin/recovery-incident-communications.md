@@ -82,10 +82,10 @@ Classification: `OTHER`, escalating to `SECURITY` if loss was not accidental.
 > Affected cases: [n] ([case references]).
 > Prepared packs currently non-recoverable: [n].
 >
-> Byte-level integrity cannot be proved: the schema stores no content hash, so a match on
-> size and content type is structural only. No object has been deleted, overwritten or
-> rebound as part of this recovery, and no prepared pack item has been repointed at a
-> different version.
+> Byte-level integrity is proved only where a recorded SHA-256 matches a fresh hash of
+> the recovered object. A match on size and content type with no recorded digest is
+> structural only. No object has been deleted, overwritten or rebound as part of this
+> recovery, and no prepared pack item has been repointed at a different version.
 >
 > Next step: [object restore from versioning / escalate to Owner / manual review].
 

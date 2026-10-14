@@ -62,7 +62,7 @@ This PR does not create or modify AWS infrastructure or Vercel project settings.
 cases/{case_uuid}/documents/{document_uuid}/versions/{version_uuid}
 ```
 
-IDs are server-generated UUIDs. Replacement uploads insert a new version row and a new key. Previous objects are never overwritten.
+IDs are server-generated UUIDs. Replacement uploads insert a new version row and a new key. The application does not mint a second upload for a version after it leaves `PENDING_UPLOAD`. That does not make the existing key immutable: an unexpired presigned POST, or any principal with `s3:PutObject` on `cases/*`, can replace the latest object. Production versioning may retain older versions, but the application does not store an S3 VersionId and reads the latest object. SHA-256 verification can detect a replacement after a trusted digest exists. It does not prevent the replacement.
 
 ## Upload sequence
 
@@ -152,6 +152,10 @@ IAM `s3:PutObject` alone is not sufficient for live customer upload. Before 9B2 
 - Allowed headers: enough for the presigned POST fields (for example `*` if that matches the existing Admin CORS policy)
 
 Preserve the existing Admin origin/CORS behaviour. Do not change AWS from this PR; CORS will be inspected/updated manually after merge.
+
+## SEC-08 content integrity
+
+Phase 1 `20261014170000_evidence_content_sha256_v1` is applied to DEV (`profilerelaunch-dev`, project `rmzozuiamjcclvtgutgd`). Production (`cxwwekdzkkjjbiyofrov`) remains at `20261013153000`. AWS `ApprovedMigrationHead` remains `20261013153000`. The DEV apply mutated no evidence rows: 4 uploaded versions remain, 2 are customer-visible, and 0 have a trusted hash, so existing DEV evidence is not byte-proven. After phase 1, the new Admin refresh path reads a clean object and stores SHA-256 of those bytes before it reports `VALID`. The phase 1 database still accepts a `VALID` refresh when the digest is null, which is what the previously deployed Admin does. Mandatory database enforcement is a later migration. Do not deploy the new Admin to Production before that database has phase 1. The read stops at 10,485,760 bytes. A larger object is `INVALID` and loses customer visibility in the same update; an approved pack that includes it becomes stale and unpublished. Customer upload does not hash the file. A browser-supplied digest is rejected. An S3 entity tag is not used as a digest. Existing `VALID` rows may have a null digest until backfill or the next successful refresh. View and Download do not proxy the object through Vercel to re-hash it. The operator procedure, including backfill, restore verification, a separate recovery bucket, rollback and cost, is `docs/admin/evidence-sha256.md`.
 
 ## Future work
 

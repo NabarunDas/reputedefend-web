@@ -16,6 +16,11 @@ export type CustomerEvidenceStorage = {
   createReadUrl(input: { key: string; contentType: string; filename: string; disposition: ReadDisposition }): Promise<string>
 }
 
+/**
+ * These conditions do not deny overwrite and do not bind a checksum.
+ * An unexpired presigned POST can replace the object. After it expires, any
+ * principal with s3:PutObject on the key can still replace the latest version.
+ */
 export function presignedPostInput(key: string, contentType: string) {
   return {
     Key: key,

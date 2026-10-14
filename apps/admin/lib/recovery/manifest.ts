@@ -468,7 +468,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // Applied and live-verified on profilerelaunch-dev on 2026-10-13.
     // Also applied to Production on 2026-10-13. Operator-reported AWS
-    // ApprovedMigrationHead cutover succeeded; scheduled-backup acceptance pending.
+    // SEC-03 scheduled backup 20261014T153911Z passed archive and manifest checks.
     version: "20261013153000",
     filename: "20261013153000_public_request_rate_limit_v1.sql",
     step: "SEC-03 shared public request rate limit",
@@ -477,6 +477,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "public request rate limit", probe: "public.consume_public_rate_limit_v1" },
+  },
+  {
+    // Applied to profilerelaunch-dev (rmzozuiamjcclvtgutgd) on 2026-10-14 as
+    // canonical 20261014170000_evidence_content_sha256_v1. No data rows were
+    // mutated. Production (cxwwekdzkkjjbiyofrov) applied the canonical
+    // migration on 2026-10-14 with 0 evidence rows. AWS ApprovedMigrationHead
+    // now matches 20261014170000; scheduled backup 20261014T213909Z passed.
+    version: "20261014170000",
+    filename: "20261014170000_evidence_content_sha256_v1.sql",
+    step: "SEC-08 evidence content SHA-256",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "evidence content SHA-256", probe: "public.evidence_content_sha256_v1" },
   },
 ]
 

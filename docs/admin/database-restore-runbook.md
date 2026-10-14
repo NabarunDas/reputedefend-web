@@ -31,8 +31,12 @@ Keep these apart when reading any recovery evidence report, and when writing one
   `VERIFIED`, `PARTIALLY_VERIFIED`, `BLOCKED` or `NOT_APPLICABLE`. A rehearsal can execute
   perfectly and report `BLOCKED`; that is a correct result, not a contradiction.
 - **Structural object match** means bucket, key, size and content type agree. It is not
-  byte-level verification. The schema stores no content hash, so today every real restore
-  tops out at a structural match and cannot reach `VERIFIED` where byte integrity matters.
+  byte-level verification. A row with no recorded SHA-256 is still structural only.
+  Where `content_sha256` is present, compare it with the SHA-256 of the recovered
+  object. Phase 1 does not make a null digest invalid. Phase 1 is applied to DEV
+  only; Production remains at `20261013153000` and AWS `ApprovedMigrationHead`
+  stays there. Existing DEV evidence still has no trusted digest. See
+  `docs/admin/evidence-sha256.md`.
 
 An unresolved recovery blocker — a blocking object outcome, an inventory that could not be
 collected, a non-recoverable prepared pack, a queue awaiting provider reconciliation — is
@@ -61,8 +65,8 @@ The first stops the recovery; the second does not.
   personal data into a recovery report or an incident ticket.
 - Never delete S3 objects during recovery. No role used for recovery should carry
   `DeleteObject`.
-- Never treat a size-and-content-type match as proof the bytes are intact. The schema
-  stores no content hash.
+- Never treat a size-and-content-type match as proof the bytes are intact. That proof
+  requires the recorded SHA-256 and a fresh hash of the recovered object.
 - Never treat an inventory you could not collect as a clean result. Not knowing whether
   the objects are there is a blocker, not a pass.
 - Never let an upload that never finished count towards a recovered total, and never

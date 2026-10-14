@@ -48,10 +48,12 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(40)
-    // DEV and a clean rebuild both end at the reviewed SEC-03 rate-limit migration.
-    expect(migrationHead.version).toBe("20261013153000")
-    expect(appliedMigrationHead.version).toBe("20261013153000")
+    expect(migrationChain).toHaveLength(41)
+    // A clean rebuild includes SEC-08. DEV has received it.
+    // Production and AWS ApprovedMigrationHead stay at SEC-03.
+    expect(migrationHead.version).toBe("20261014170000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261014170000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {
@@ -402,10 +404,11 @@ describe("storage, pack and job reconciliation driven by restored rows", () => {
     return (await rows<{
       version_id: string; document_id: string; case_id: string; storage_bucket: string; storage_key: string
       declared_size_bytes: string; declared_content_type: string; upload_status: EvidenceRecord["uploadStatus"]
-      scan_status: string; validation_status: string
+      scan_status: string; validation_status: string; content_sha256: string | null
     }>(
       `select v.id as version_id, v.document_id, d.case_id, v.storage_bucket, v.storage_key,
-              v.declared_size_bytes, v.declared_content_type, v.upload_status, v.scan_status, v.validation_status
+              v.declared_size_bytes, v.declared_content_type, v.upload_status, v.scan_status, v.validation_status,
+              v.content_sha256
        from public.case_document_versions v join public.case_documents d on d.id = v.document_id order by v.id`,
     )).map(row => ({
       versionId: row.version_id,
@@ -418,7 +421,7 @@ describe("storage, pack and job reconciliation driven by restored rows", () => {
       uploadStatus: row.upload_status,
       scanStatus: row.scan_status,
       validationStatus: row.validation_status,
-      checksum: null,
+      checksum: row.content_sha256,
     }))
   }
 
@@ -435,7 +438,7 @@ describe("storage, pack and job reconciliation driven by restored rows", () => {
     expect(report.counts.NOT_CHECKED).toBe(1)
     expect(report.incompleteUploads).toBe(1)
     expect(storageRecoveryBlocked(report)).toBe(false)
-    // Structural only: the schema stores no hash, so the bytes are not proven.
+    // Structural only: this rehearsal seed has no recorded SHA-256, so the bytes are not proven.
     expect(report.structurallyMatched).toBe(true)
     expect(report.byteIntegrityProven).toBe(false)
     expect(report.fullyVerified).toBe(false)
@@ -606,7 +609,7 @@ describe("the recovery evidence report produced by this rehearsal", () => {
         { severity: "LIMITATION", detail: "no live AWS S3 operation has been performed" },
         {
           severity: "LIMITATION",
-          detail: "the schema stores no evidence content hash, so byte-level integrity cannot be proved from the database alone",
+          detail: "the rehearsal seed has no recorded evidence SHA-256, so byte-level integrity cannot be proved from this database alone",
         },
       ],
       rpoRtoObservations: [`a clean rebuild of the full chain took ${rebuildMs} ms against in-process PostgreSQL`],

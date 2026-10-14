@@ -155,7 +155,7 @@ Preserve the existing Admin origin/CORS behaviour. Do not change AWS from this P
 
 ## SEC-08 content integrity
 
-The Admin refresh path reads a clean object and stores SHA-256 of those bytes before a new `VALID` transition. Customer upload does not hash the file. A browser-supplied digest is rejected. An S3 entity tag is not used as a digest. Existing `VALID` rows may have a null digest until backfill or the next successful refresh. View and Download do not proxy the object through Vercel to re-hash it. The operator procedure, including backfill, restore verification, rollback and cost, is `docs/admin/evidence-sha256.md`.
+The Admin refresh path reads a clean object and stores SHA-256 of those bytes before a new `VALID` transition. The read stops at 10,485,760 bytes. A larger object is `INVALID` and loses customer visibility in the same update; an approved pack that includes it becomes stale and unpublished. Customer upload does not hash the file. A browser-supplied digest is rejected. An S3 entity tag is not used as a digest. Existing `VALID` rows may have a null digest until backfill or the next successful refresh. View and Download do not proxy the object through Vercel to re-hash it. The operator procedure, including backfill, restore verification, a separate recovery bucket, rollback and cost, is `docs/admin/evidence-sha256.md`.
 
 ## Future work
 

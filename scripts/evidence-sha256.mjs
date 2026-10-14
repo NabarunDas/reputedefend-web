@@ -11,22 +11,38 @@
  * are not printed.
  *
  * Usage:
- *   node --experimental-strip-types scripts/evidence-sha256.mjs [--mode check|apply|restore] [--after uuid] [--limit n]
+ *   node --experimental-strip-types scripts/evidence-sha256.mjs [--mode check|apply|restore] [--after uuid] [--limit n] [--recovery-bucket name]
  *
- * Each clean uploaded object costs one GetObjectTagging and one GetObject of
- * at most 10 MB. apply reads only rows that have no digest. There is no
- * background worker. The Admin evidence role already used for validation must
- * allow s3:GetObject and s3:GetObjectTagging. This process never writes an object.
+ * check and restore enumerate every uploaded version. A stored scan that is
+ * not clean is not_clean and is not fetched. A clean row is fetched only after
+ * the live GuardDuty tag is NO_THREATS_FOUND. apply reads only clean rows that
+ * have no digest. Reads stop at 10 MB. There is no background worker.
+ *
+ * Credentials are Vercel OIDC, or a web-identity token file whose role ARN is
+ * exactly AWS_EVIDENCE_ROLE_ARN. Static AWS keys are refused. This process
+ * never writes an object.
+ *
+ * A recovery bucket is optional and only for check or restore. Metadata must
+ * name the canonical DEV or Production bucket. The recovery name must be a
+ * separate bucket for that same environment. The Admin role cannot read it
+ * until s3:GetObject and s3:GetObjectTagging are granted on that bucket's
+ * cases/* prefix. This script does not change IAM.
  */
 
+import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { GetObjectCommand, GetObjectTaggingCommand, S3Client } from "@aws-sdk/client-s3"
+import { fromWebToken } from "@aws-sdk/credential-provider-web-identity"
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider"
 import { createClient } from "@supabase/supabase-js"
 import {
   assertApplyAllowed,
+  assertCredentialMode,
+  assertRecoveryMapping,
   byteIntegrityProven,
   integrityExitCode,
+  readBoundedObjectBody,
+  resolveReadBucket,
   runIntegrityPass,
 } from "../apps/admin/lib/evidence/integrity.ts"
 
@@ -34,7 +50,7 @@ const GUARDDUTY_TAG = "GuardDutyMalwareScanStatus"
 const missingCodes = new Set(["NoSuchKey", "NotFound"])
 
 function usage() {
-  console.log("usage: node --experimental-strip-types scripts/evidence-sha256.mjs [--mode check|apply|restore] [--after uuid] [--limit n]")
+  console.log("usage: node --experimental-strip-types scripts/evidence-sha256.mjs [--mode check|apply|restore] [--after uuid] [--limit n] [--recovery-bucket name]")
 }
 
 function argument(argv, name) {
@@ -57,17 +73,47 @@ function isMissing(error) {
   return !!code && missingCodes.has(code)
 }
 
+function countField(value, name) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value
+  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value)
+  throw new Error(`evidence page ${name} is invalid`)
+}
+
 export function parseArgs(argv) {
   const mode = argument(argv, "--mode") ?? "check"
   const after = argument(argv, "--after") ?? null
   const limitText = argument(argv, "--limit")
   const limit = limitText === undefined ? undefined : Number(limitText)
+  const recoveryBucket = argument(argv, "--recovery-bucket") ?? null
   if (!["check", "apply", "restore"].includes(mode)) throw new Error("mode must be check, apply or restore")
   if (after !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(after)) {
     throw new Error("after must be a version id")
   }
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 5000)) throw new Error("limit must be 1..5000")
-  return { mode, after, limit }
+  if (recoveryBucket !== null && (!recoveryBucket || recoveryBucket.startsWith("--"))) throw new Error("recovery bucket is required")
+  return { mode, after, limit, recoveryBucket }
+}
+
+function credentialsFor(env, region, roleArn) {
+  const credentialMode = assertCredentialMode({
+    AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN: env.AWS_SESSION_TOKEN,
+    AWS_WEB_IDENTITY_TOKEN_FILE: env.AWS_WEB_IDENTITY_TOKEN_FILE,
+    AWS_ROLE_ARN: env.AWS_ROLE_ARN,
+    AWS_EVIDENCE_ROLE_ARN: roleArn,
+  })
+  if (credentialMode === "vercel-oidc") {
+    return awsCredentialsProvider({ roleArn, clientConfig: { region } })
+  }
+  let token = ""
+  try {
+    token = readFileSync(env.AWS_WEB_IDENTITY_TOKEN_FILE, "utf8").trim()
+  } catch {
+    throw new Error("web identity token could not be read")
+  }
+  if (!token) throw new Error("web identity token could not be read")
+  return fromWebToken({ roleArn, webIdentityToken: token, clientConfig: { region } })
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
@@ -83,17 +129,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const roleArn = env.AWS_EVIDENCE_ROLE_ARN ?? ""
   if (!supabaseUrl || !secret || !region || !bucket || !roleArn) throw new Error("evidence integrity environment is incomplete")
   assertApplyAllowed({ mode: args.mode, bucket, vercelEnv: env.VERCEL_ENV, supabaseUrl })
-  if (env.AWS_ACCESS_KEY_ID || env.AWS_SECRET_ACCESS_KEY || env.AWS_SESSION_TOKEN) {
-    throw new Error("static AWS keys are refused")
-  }
+  assertRecoveryMapping({ mode: args.mode, metadataBucket: bucket, recoveryBucket: args.recoveryBucket })
+  const readBucket = resolveReadBucket(bucket, args.recoveryBucket)
   const supabase = createClient(supabaseUrl, secret, { auth: { persistSession: false, autoRefreshToken: false } })
   const client = new S3Client({
     region,
-    credentials: awsCredentialsProvider({ roleArn, clientConfig: { region } }),
+    credentials: credentialsFor(env, region, roleArn),
   })
   const result = await runIntegrityPass({
     mode: args.mode,
     bucket,
+    recoveryBucket: args.recoveryBucket,
     after: args.after,
     maxVersions: args.limit,
     async page(after) {
@@ -105,11 +151,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       if (error || !data || data.status !== "success" || !Array.isArray(data.versions)) {
         throw new Error("evidence page failed")
       }
-      return data.versions
+      return {
+        versions: data.versions,
+        uploadedCount: countField(data.uploadedCount, "uploadedCount"),
+        excludedPendingUploadCount: countField(data.excludedPendingUploadCount, "excludedPendingUploadCount"),
+        excludedFailedCount: countField(data.excludedFailedCount, "excludedFailedCount"),
+      }
     },
     async readObject(version) {
+      if (version.scanStatus !== "NO_THREATS_FOUND") return { kind: "not_clean" }
       try {
-        const tagging = await client.send(new GetObjectTaggingCommand({ Bucket: bucket, Key: version.storageKey }))
+        const tagging = await client.send(new GetObjectTaggingCommand({ Bucket: readBucket, Key: version.storageKey }))
         const tag = tagging.TagSet?.find(item => item.Key === GUARDDUTY_TAG)?.Value
         if (tag !== "NO_THREATS_FOUND") return { kind: "not_clean" }
       } catch (error) {
@@ -117,10 +169,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
         return { kind: "unreadable" }
       }
       try {
-        const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: version.storageKey }))
-        const bytes = await object.Body?.transformToByteArray()
-        if (!bytes) return { kind: "unreadable" }
-        return { kind: "bytes", bytes: Uint8Array.from(bytes) }
+        const object = await client.send(new GetObjectCommand({ Bucket: readBucket, Key: version.storageKey }))
+        return await readBoundedObjectBody(object.Body, object.ContentLength)
       } catch (error) {
         if (isMissing(error)) return { kind: "missing" }
         return { kind: "unreadable" }
@@ -153,8 +203,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     cursor: result.cursor,
     stoppedEarly: result.stoppedEarly,
     byteIntegrityProven: byteIntegrityProven(result.findings),
+    expectedUploaded: result.expectedUploaded,
+    covered: result.covered,
+    coverageComplete: result.coverageComplete,
+    resumed: result.resumed,
+    excludedPendingUploadCount: result.excludedPendingUploadCount,
+    excludedFailedCount: result.excludedFailedCount,
   }))
-  return integrityExitCode(result)
+  return integrityExitCode(args.mode, result)
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href

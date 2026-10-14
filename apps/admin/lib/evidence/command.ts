@@ -14,7 +14,7 @@ import {
   type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus,
 } from "./model"
 import { validateEvidenceBytes } from "./content"
-import { sha256Hex } from "./integrity"
+import { isEvidenceObjectTooLarge, sha256Hex } from "./integrity"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -215,9 +215,14 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
             }
           }
         }
-      } catch {
-        validation = "ERROR"
-        validationError = "The scanned file could not be read for validation."
+      } catch (error) {
+        if (isEvidenceObjectTooLarge(error)) {
+          validation = "INVALID"
+          validationError = "The stored file is larger than the allowed size."
+        } else {
+          validation = "ERROR"
+          validationError = "The scanned file could not be read for validation."
+        }
       }
     }
     const result = await backend().rpc<{ status: string; scanStatus?: string; validationStatus?: string }>("admin_evidence_refresh_scan_v1", {

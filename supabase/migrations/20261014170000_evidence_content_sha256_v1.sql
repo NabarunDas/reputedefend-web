@@ -19,7 +19,9 @@ ALTER TABLE public.case_document_versions
       AND content_sha256_verified_at IS NULL
     )
     OR (
-      content_sha256 ~ '^[a-f0-9]{64}$'
+      content_sha256 IS NOT NULL
+      AND content_sha256 ~ '^[a-f0-9]{64}$'
+      AND content_sha256_bytes IS NOT NULL
       AND content_sha256_bytes = declared_size_bytes
       AND content_sha256_bytes BETWEEN 1 AND 10485760
       AND content_sha256_verified_at IS NOT NULL
@@ -95,37 +97,57 @@ BEGIN
   RETURN jsonb_build_object('status', 'mismatch', 'versionId', v.id);
 END; $$;
 
--- Clean uploaded versions only. storage_key is returned to service_role so an
--- operator tool can read the object. Callers must not print it.
+-- check and restore list every UPLOADED version, whatever the stored scan is.
+-- apply lists only clean uploaded versions that still have no digest.
+-- PENDING_UPLOAD and FAILED have no accepted object: they are counted and omitted.
+-- storage_key is returned to service_role so an operator tool can read the object.
+-- Callers must not print it, and this function does not return the digest.
 CREATE FUNCTION public.evidence_content_sha256_page_v1(
   p_after uuid,
   p_limit integer,
   p_unverified_only boolean
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE lim integer; rows jsonb;
+DECLARE
+  lim integer; rows jsonb;
+  uploaded_count integer; pending_count integer; failed_count integer;
 BEGIN
   IF p_unverified_only IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   lim := least(greatest(coalesce(p_limit, 50), 1), 50);
+  SELECT
+    count(*) FILTER (WHERE upload_status = 'UPLOADED'),
+    count(*) FILTER (WHERE upload_status = 'PENDING_UPLOAD'),
+    count(*) FILTER (WHERE upload_status = 'FAILED')
+  INTO uploaded_count, pending_count, failed_count
+  FROM public.case_document_versions;
   SELECT coalesce(jsonb_agg(jsonb_build_object(
     'versionId', v.id,
     'declaredSizeBytes', v.declared_size_bytes,
     'storageBucket', v.storage_bucket,
     'storageKey', v.storage_key,
+    'scanStatus', v.scan_status,
     'hasDigest', v.content_sha256 IS NOT NULL
   ) ORDER BY v.id), '[]'::jsonb)
   INTO rows
   FROM (
-    SELECT id, declared_size_bytes, storage_bucket, storage_key, content_sha256
+    SELECT id, declared_size_bytes, storage_bucket, storage_key, scan_status, content_sha256
     FROM public.case_document_versions
     WHERE upload_status = 'UPLOADED'
-      AND scan_status = 'NO_THREATS_FOUND'
       AND (p_after IS NULL OR id > p_after)
-      AND (NOT p_unverified_only OR content_sha256 IS NULL)
+      AND (
+        NOT p_unverified_only
+        OR (scan_status = 'NO_THREATS_FOUND' AND content_sha256 IS NULL)
+      )
     ORDER BY id
     LIMIT lim
   ) v;
-  RETURN jsonb_build_object('status', 'success', 'versions', rows);
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'versions', rows,
+    'uploadedCount', uploaded_count,
+    'excludedPendingUploadCount', pending_count,
+    'excludedFailedCount', failed_count
+  );
 END; $$;
 
 REVOKE ALL ON FUNCTION
@@ -139,11 +161,13 @@ GRANT EXECUTE ON FUNCTION
 
 -- A new transition to VALID requires a digest already stored for that version.
 -- Existing VALID rows with a null digest are left unchanged.
+-- Visibility is withdrawn in the same UPDATE as a failed scan or invalidation,
+-- so the customer-visibility CHECK cannot abort the invalidation.
 CREATE OR REPLACE FUNCTION public.admin_evidence_refresh_scan_v1(
   p_token text, p_request uuid, p_case uuid, p_version uuid, p_scan text, p_validation text, p_validation_error text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE s jsonb; c public.cases; d public.case_documents; v public.case_document_versions;
-  actor uuid; fp text; cached jsonb; result jsonb; new_validated_at timestamptz;
+  actor uuid; fp text; cached jsonb; result jsonb; new_validated_at timestamptz; visible boolean;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -170,12 +194,17 @@ BEGIN
   UPDATE public.case_document_versions
     SET scan_status = p_scan, scan_checked_at = now(), validation_status = p_validation,
         validation_error = CASE WHEN p_validation IN ('INVALID','ERROR') THEN btrim(p_validation_error) ELSE NULL END,
-        validated_at = coalesce(new_validated_at, case_document_versions.validated_at)
-    WHERE id = v.id;
+        validated_at = coalesce(new_validated_at, case_document_versions.validated_at),
+        customer_visible = CASE
+          WHEN p_scan = 'NO_THREATS_FOUND' AND p_validation = 'VALID' AND review_status = 'ACCEPTED' THEN customer_visible
+          ELSE false
+        END
+    WHERE id = v.id
+    RETURNING customer_visible INTO visible;
   INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
-  VALUES (c.id, d.id, v.id, actor, 'SCAN_REFRESHED', jsonb_build_object('scanStatus', p_scan, 'validationStatus', p_validation));
-  PERFORM admin_private.write_record_audit_v1(actor, 'EVIDENCE_CHANGED', 'success', c.id, p_request, 'case', 'Evidence scan refreshed', jsonb_build_object('documentId', d.id, 'versionId', v.id, 'operation', 'refresh_scan', 'scanStatus', p_scan, 'validationStatus', p_validation));
-  result := jsonb_build_object('status', 'success', 'documentId', d.id, 'versionId', v.id, 'uploadStatus', 'UPLOADED', 'scanStatus', p_scan, 'validationStatus', p_validation);
+  VALUES (c.id, d.id, v.id, actor, 'SCAN_REFRESHED', jsonb_build_object('scanStatus', p_scan, 'validationStatus', p_validation, 'customerVisible', visible));
+  PERFORM admin_private.write_record_audit_v1(actor, 'EVIDENCE_CHANGED', 'success', c.id, p_request, 'case', 'Evidence scan refreshed', jsonb_build_object('documentId', d.id, 'versionId', v.id, 'operation', 'refresh_scan', 'scanStatus', p_scan, 'validationStatus', p_validation, 'customerVisible', visible));
+  result := jsonb_build_object('status', 'success', 'documentId', d.id, 'versionId', v.id, 'uploadStatus', 'UPLOADED', 'scanStatus', p_scan, 'validationStatus', p_validation, 'customerVisible', visible);
   INSERT INTO admin_private.evidence_command_receipts VALUES (p_request, actor, fp, result, now());
   RETURN result;
 END; $$;

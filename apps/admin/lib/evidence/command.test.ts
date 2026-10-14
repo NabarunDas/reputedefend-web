@@ -8,7 +8,7 @@ import { sessionCookie } from "@/lib/auth/config"
 import { declaredUpload, evidenceArgs } from "./validation"
 import { MAX_EVIDENCE_BYTES, UPLOAD_EXPIRES_SECONDS, isOpaqueEvidenceKey, mayRetrieveBytes, READ_EXPIRES_SECONDS } from "./model"
 import { contentDisposition, presignedPostInput, signedUrlExpiresSeconds } from "./storage"
-import { sha256Hex } from "./integrity"
+import { evidenceObjectTooLarge, sha256Hex } from "./integrity"
 import type { EvidenceStorage, ObjectProbe, PresignedUpload } from "./storage"
 import type { EvidenceVersion } from "./model"
 
@@ -330,6 +330,23 @@ describe("evidence commands without proxy", () => {
     const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
     expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_validation: "INVALID", p_validation_error: "The stored file does not match its recorded digest." })
     expect(JSON.stringify(payload)).not.toContain(sha256Hex(bytes))
+  })
+  it("marks an oversized object invalid and does not hash it", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ ...version, uploadStatus: "UPLOADED" })
+      .mockResolvedValueOnce({ status: "success", scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID" })
+    const store = storage({
+      probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
+      readScannedObject: vi.fn(async () => { throw evidenceObjectTooLarge() }),
+    })
+    const payload = await (await runEvidenceCommand(req({ operation: "refresh_scan", caseId, versionId }), store)).json()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_evidence_version_v1", "admin_evidence_refresh_scan_v1"])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
+      p_scan: "NO_THREATS_FOUND",
+      p_validation: "INVALID",
+      p_validation_error: "The stored file is larger than the allowed size.",
+    })
+    expect(payload).toMatchObject({ validationStatus: "INVALID" })
   })
   it("does not retrieve bytes for later download helpers unless the file is clean, valid and in the configured bucket", async () => {
     const store = storage()

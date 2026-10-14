@@ -162,7 +162,7 @@ One immutable storage object per version.
 
 Checks: `VALID` only if `NO_THREATS_FOUND`; `customer_visible` only if clean + valid + `ACCEPTED`. Partial unique index: one visible version per `document_id`. At most one active `CUSTOMER` version per evidence request (`PENDING_UPLOAD` or `UPLOADED`). Historical `FAILED` customer attempts do not occupy that slot. Customer provenance columns are server-controlled and never accepted from the browser.
 
-`content_sha256`, `content_sha256_bytes` and `content_sha256_verified_at` are nullable. A legacy or not-yet-backfilled row has no recorded digest, so a reconciliation match on size and content type is structural only. A recorded digest is SHA-256 of the object bytes, computed by the Admin server, and it is not replaced once stored. See `docs/admin/evidence-sha256.md` and database-restore-runbook.md.
+`content_sha256`, `content_sha256_bytes` and `content_sha256_verified_at` are nullable together. A legacy or not-yet-backfilled row has all three null, so a reconciliation match on size and content type is structural only. A recorded digest is present only when all three are set: lowercase SHA-256, a byte length equal to `declared_size_bytes`, and a verification time. A partial tuple is rejected. The digest is computed by the Admin server from the object bytes, and it is not replaced once stored. See `docs/admin/evidence-sha256.md` and database-restore-runbook.md.
 
 ## public.case_document_events
 

@@ -119,6 +119,39 @@ describe("evidence content SHA-256 SQL", () => {
     expect((await rpc("admin_evidence_refresh_scan_v1", [token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null])).status).toBe("success")
   })
 
+  it("rejects every partial digest tuple, including a null byte length", async () => {
+    const created = await begin()
+    const insert = (sha: string | null, bytes: number | null, verified: boolean) => db.query(
+      `insert into public.case_document_versions(
+        id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,
+        storage_bucket,storage_key,upload_status,scan_status,validation_status,created_by,
+        content_sha256,content_sha256_bytes,content_sha256_verified_at)
+       values($1,$2,2,'other.pdf','application/pdf',1024,'profilerelaunch-evidence-dev-01',$3,'UPLOADED','NO_THREATS_FOUND','PENDING',$4,$5,$6,case when $7 then now() else null end)`,
+      [crypto.randomUUID(), created.documentId, `cases/${caseId}/documents/${created.documentId}/versions/${crypto.randomUUID()}`, uid, sha, bytes, verified],
+    )
+    await expect(insert(digest, null, false)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(null, 1024, false)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(null, null, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(digest, 1024, false)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(digest, null, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(null, 1024, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(digest.toUpperCase(), 1024, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert("ab", 1024, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(digest, 5, true)).rejects.toThrow(/content_sha256|check/i)
+    await expect(insert(digest, 1024, true)).resolves.toBeTruthy()
+
+    const uploadedRow = await uploaded()
+    await expect(db.query(
+      "update public.case_document_versions set content_sha256=$1, content_sha256_verified_at=now() where id=$2",
+      [digest, uploadedRow.versionId],
+    )).rejects.toThrow(/content_sha256|check/i)
+    const legacy = await db.query<{ content_sha256: string | null; content_sha256_bytes: string | null; verified: string | null }>(
+      "select content_sha256, content_sha256_bytes::text, content_sha256_verified_at::text as verified from public.case_document_versions where id=$1",
+      [uploadedRow.versionId],
+    )
+    expect(legacy.rows[0]).toEqual({ content_sha256: null, content_sha256_bytes: null, verified: null })
+  })
+
   it("rejects a digest whose byte length disagrees with the declared size", async () => {
     const created = await begin()
     await expect(db.query(
@@ -148,5 +181,36 @@ describe("evidence content SHA-256 SQL", () => {
     expect(resumed.versions.map((row: { versionId: string }) => row.versionId)).toEqual(ordered.slice(1))
     const unverified = await rpc("evidence_content_sha256_page_v1", [null, 50, true])
     expect(unverified.versions.map((row: { versionId: string; hasDigest: boolean }) => [row.versionId, row.hasDigest])).toEqual([[second.versionId, false]])
+    expect(page.versions.every((row: { scanStatus: string }) => row.scanStatus === "NO_THREATS_FOUND")).toBe(true)
+    expect(page.uploadedCount).toBe(2)
+    expect(page.excludedPendingUploadCount).toBe(0)
+    expect(page.excludedFailedCount).toBe(0)
+  })
+
+  it("pages every uploaded version and omits pending and failed uploads", async () => {
+    const clean = await uploaded()
+    const threat = await uploaded()
+    const pending = await begin()
+    const failed = await uploaded()
+    await db.query("update public.case_document_versions set scan_status='NO_THREATS_FOUND' where id=$1", [clean.versionId])
+    await db.query("update public.case_document_versions set scan_status='THREATS_FOUND' where id=$1", [threat.versionId])
+    await db.query("update public.case_document_versions set upload_status='FAILED' where id=$1", [failed.versionId])
+    const page = await rpc("evidence_content_sha256_page_v1", [null, 50, false])
+    expect(page.uploadedCount).toBe(2)
+    expect(page.excludedPendingUploadCount).toBe(1)
+    expect(page.excludedFailedCount).toBe(1)
+    expect(page.versions.map((row: { versionId: string; scanStatus: string }) => [row.versionId, row.scanStatus]).sort()).toEqual([
+      [clean.versionId, "NO_THREATS_FOUND"],
+      [threat.versionId, "THREATS_FOUND"],
+    ].sort())
+    const text = JSON.stringify(page)
+    expect(text).not.toContain("invoice.pdf")
+    expect(text).not.toContain(digest)
+    expect(text).not.toContain("alex@example.com")
+    expect(text).not.toContain(pending.versionId)
+    expect(text).not.toContain(failed.versionId)
+    const applyPage = await rpc("evidence_content_sha256_page_v1", [null, 50, true])
+    expect(applyPage.versions.map((row: { versionId: string }) => row.versionId)).toEqual([clean.versionId])
+    expect(applyPage.uploadedCount).toBe(2)
   })
 })

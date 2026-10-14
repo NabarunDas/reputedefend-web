@@ -117,6 +117,8 @@ capability gate is expected to be missing.
 | `AWS_REGION` | admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Evidence and inbound storage config are null, so no upload can be presigned and no attachment fetched. |
 | `AWS_EVIDENCE_BUCKET` | admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Evidence storage config is null and the Admin evidence surface cannot presign an upload. |
 | `AWS_EVIDENCE_ROLE_ARN` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Evidence storage config is null. |
+| `AWS_ROLE_ARN` | admin | TEST_ONLY | non-secret | ABSENT | The operator script assumes the evidence role with Vercel OIDC instead of a token file. |
+| `AWS_WEB_IDENTITY_TOKEN_FILE` | admin | TEST_ONLY | non-secret | ABSENT | The operator script uses Vercel OIDC. Production trust stays environment:production. |
 | `AWS_CUSTOMER_EVIDENCE_ROLE_ARN` | customer | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | Customer evidence upload config is null; Admin-side evidence is unaffected. |
 | `AWS_INBOUND_MAIL_BUCKET` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | Inbound storage config is null, so an inbound attachment cannot be fetched. |
 | `AWS_INBOUND_MAIL_ROLE_ARN` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | Inbound storage config is null. |

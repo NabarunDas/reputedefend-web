@@ -74,6 +74,15 @@ describe("validateMonitoringRequest", () => {
     if (!result.valid) expect(result.errors?.businessProfileUrl).toMatch(/valid/i)
   })
 
+  it("accepts a private website URL and a Google Business Profile URL for storage", () => {
+    const result = validateMonitoringRequest({
+      ...valid,
+      websiteUrl: "https://192.168.1.20/menu",
+      businessProfileUrl: "https://maps.google.com/?cid=123",
+    })
+    expect(result.valid).toBe(true)
+  })
+
   it("accepts a Google Maps share-link variant", () => {
     const result = validateMonitoringRequest({
       ...valid,

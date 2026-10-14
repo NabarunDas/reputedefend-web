@@ -81,7 +81,7 @@ describe("inbound attachment helpers", () => {
     }
     const provider = createResendInboundAttachmentProvider("re_test", {
       emails: { receiving: { attachments: { get } } },
-    }, fetchImpl)
+    }, fetchImpl, async () => ["8.8.8.8"])
     await expect(provider.getReceivedAttachment("email_1", "att_1")).resolves.toEqual({
       id: "att_1",
       filename: "id-scan.pdf",
@@ -106,11 +106,11 @@ describe("inbound attachment helpers", () => {
     await expect(network.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({ code: "retryable" })
     const download429 = createResendInboundAttachmentProvider("re_test", {
       emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
-    }, async () => new Response("", { status: 429 }))
+    }, async () => new Response("", { status: 429 }), async () => ["8.8.8.8"])
     await expect(download429.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({ code: "retryable" })
     const download500 = createResendInboundAttachmentProvider("re_test", {
       emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
-    }, async () => new Response("", { status: 503 }))
+    }, async () => new Response("", { status: 503 }), async () => ["8.8.8.8"])
     await expect(download500.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({ code: "retryable" })
   })
 
@@ -131,6 +131,129 @@ describe("inbound attachment helpers", () => {
       emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att", size: 20_971_520 }, error: null }) } } },
     })
     await expect(oversized.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({ code: "oversized" })
+  })
+
+  it("does not fetch a blocked download target or leak the address", async () => {
+    const fetched: string[] = []
+    const fetchImpl: typeof fetch = async input => {
+      fetched.push(String(input))
+      return new Response(new Uint8Array([1]), { status: 200 })
+    }
+    const blocked = [
+      "https://127.0.0.1/latest",
+      "https://127.1/",
+      "https://2130706433/",
+      "https://0x7f000001/",
+      "https://0177.0.0.1/",
+      "https://10.0.0.5/",
+      "https://192.168.1.20/",
+      "https://172.16.5.5/",
+      "https://169.254.169.254/latest/meta-data/",
+      "https://[::1]/",
+      "https://[::ffff:127.0.0.1]/",
+      "https://[::ffff:169.254.169.254]/",
+      "https://[fd00:ec2::254]/",
+      "https://[2002:7f00:1::]/",
+      "https://metadata.google.internal/computeMetadata/v1/",
+      "https://localhost/admin",
+      "https://user:pass@example.test/att",
+    ]
+    for (const downloadUrl of blocked) {
+      const provider = createResendInboundAttachmentProvider("re_test", {
+        emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: downloadUrl }, error: null }) } } },
+      }, fetchImpl, async () => ["8.8.8.8"])
+      await expect(provider.getReceivedAttachment("email_1", "att_1"), downloadUrl).rejects.toMatchObject({
+        code: "malformed",
+        message: "malformed",
+      })
+    }
+    expect(fetched).toEqual([])
+  })
+
+  it("does not follow a redirect onto a private or metadata address", async () => {
+    const fetched: string[] = []
+    const fetchImpl: typeof fetch = async input => {
+      fetched.push(String(input))
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://169.254.169.254/latest/meta-data/" },
+      })
+    }
+    const provider = createResendInboundAttachmentProvider("re_test", {
+      emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
+    }, fetchImpl, async () => ["8.8.8.8"])
+    await expect(provider.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({
+      code: "malformed",
+      message: "malformed",
+    })
+    expect(fetched).toEqual(["https://example.test/att"])
+  })
+
+  it("stops after three redirects and does not fetch a rebinding address", async () => {
+    const fetched: string[] = []
+    const redirecting: typeof fetch = async input => {
+      fetched.push(String(input))
+      const next = fetched.length
+      return new Response(null, { status: 302, headers: { location: `https://example.test/hop-${next}` } })
+    }
+    const tooMany = createResendInboundAttachmentProvider("re_test", {
+      emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
+    }, redirecting, async () => ["8.8.8.8"])
+    await expect(tooMany.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({ code: "malformed" })
+    expect(fetched).toEqual([
+      "https://example.test/att",
+      "https://example.test/hop-1",
+      "https://example.test/hop-2",
+      "https://example.test/hop-3",
+    ])
+
+    const reboundFetched: string[] = []
+    const rebound = createResendInboundAttachmentProvider("re_test", {
+      emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
+    }, async input => {
+      reboundFetched.push(String(input))
+      return new Response(new Uint8Array([1]), { status: 200 })
+    }, async () => ["8.8.8.8", "127.0.0.1"])
+    await expect(rebound.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({
+      code: "malformed",
+      message: "malformed",
+    })
+    expect(reboundFetched).toEqual([])
+  })
+
+  it("retries a resolver failure without returning the resolver error", async () => {
+    let fetched = 0
+    const provider = createResendInboundAttachmentProvider("re_test", {
+      emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
+    }, async () => {
+      fetched += 1
+      return new Response(new Uint8Array([1]), { status: 200 })
+    }, async () => {
+      throw new Error("getaddrinfo EAI_AGAIN 169.254.169.254")
+    })
+    await expect(provider.getReceivedAttachment("email_1", "att_1")).rejects.toMatchObject({
+      code: "retryable",
+      message: "retryable",
+    })
+    expect(fetched).toBe(0)
+  })
+
+  it("follows a same-host redirect to a public address and returns the bytes", async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46])
+    const fetched: string[] = []
+    const fetchImpl: typeof fetch = async input => {
+      const url = String(input)
+      fetched.push(url)
+      if (url.endsWith("/att")) {
+        return new Response(null, { status: 302, headers: { location: "/file" } })
+      }
+      return new Response(bytes, { status: 200 })
+    }
+    const provider = createResendInboundAttachmentProvider("re_test", {
+      emails: { receiving: { attachments: { get: async () => ({ data: { id: "att_1", download_url: "https://example.test/att" }, error: null }) } } },
+    }, fetchImpl, async () => ["8.8.8.8"])
+    await expect(provider.getReceivedAttachment("email_1", "att_1")).resolves.toMatchObject({ bytes })
+    expect(fetched).toEqual(["https://example.test/att", "https://example.test/file"])
   })
 
   it("rejects an oversized Content-Length before reading the body", async () => {

@@ -6,6 +6,14 @@ import { declaredUpload } from "../evidence/validation"
 import { isMissingS3Object } from "../evidence/storage"
 import type { EnvMap } from "../jobs/config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
+import {
+  OUTBOUND_MAX_REDIRECTS,
+  OUTBOUND_TIMEOUT_MS,
+  approveOutboundDestination,
+  defaultAddressLookup,
+  fetchGuardedHttps,
+  type AddressLookup,
+} from "../../../../lib/outbound/destination"
 import { communicationsInboundEnabled, inboundStorageConfig } from "./gate"
 
 export const MAX_INBOUND_ATTACHMENT_BYTES = MAX_EVIDENCE_BYTES
@@ -167,10 +175,44 @@ type ResendAttachmentClient = {
   }
 }
 
+async function downloadApprovedAttachment(
+  start: string,
+  fetchImpl: typeof fetch,
+  lookup: AddressLookup,
+): Promise<Response> {
+  let current = start
+  for (let hop = 0; hop <= OUTBOUND_MAX_REDIRECTS; hop += 1) {
+    const decision = await approveOutboundDestination(current, lookup)
+    if (decision.state === "unresolved") throw new InboundAttachmentError("retryable")
+    if (decision.state !== "approved") throw new InboundAttachmentError("malformed")
+    let response: Response
+    try {
+      response = await fetchImpl(decision.href, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(OUTBOUND_TIMEOUT_MS),
+      })
+    } catch (error) {
+      if (error instanceof InboundAttachmentError) throw error
+      throw new InboundAttachmentError("retryable")
+    }
+    if (response.status < 300 || response.status >= 400) return response
+    const location = response.headers.get("location")
+    await response.body?.cancel().catch(() => undefined)
+    if (!location || hop === OUTBOUND_MAX_REDIRECTS) throw new InboundAttachmentError("malformed")
+    try {
+      current = new URL(location, decision.href).href
+    } catch {
+      throw new InboundAttachmentError("malformed")
+    }
+  }
+  throw new InboundAttachmentError("malformed")
+}
+
 export function createResendInboundAttachmentProvider(
   apiKey: string,
   client?: ResendAttachmentClient,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = fetchGuardedHttps,
+  lookup: AddressLookup = defaultAddressLookup,
 ): InboundAttachmentProvider {
   return {
     async getReceivedAttachment(emailId, attachmentId) {
@@ -189,12 +231,7 @@ export function createResendInboundAttachmentProvider(
       if (typeof data.size === "number" && data.size > MAX_INBOUND_ATTACHMENT_BYTES) {
         throw new InboundAttachmentError("oversized")
       }
-      let response: Response
-      try {
-        response = await fetchImpl(url)
-      } catch {
-        throw new InboundAttachmentError("retryable")
-      }
+      const response = await downloadApprovedAttachment(url, fetchImpl, lookup)
       const downloadFailure = classifyDownloadStatus(response.status)
       if (downloadFailure) throw new InboundAttachmentError(downloadFailure)
       const raw = await readBoundedAttachmentBytes(response)

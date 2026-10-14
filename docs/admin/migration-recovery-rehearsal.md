@@ -221,8 +221,10 @@ declared successful. `structurallyMatched` means bucket, key, size and content t
 concrete is wrong — or that nothing was checked at all, because an absent inventory is a
 blocker rather than a clean result.
 
-**A recorded SHA-256 is optional on existing rows.** `case_document_versions` can store
-`content_sha256` after SEC-08, but a legacy or not-yet-backfilled row still has none.
+**A recorded SHA-256 is optional on existing rows.** Phase 1 is applied to DEV only.
+Production remains at `20261013153000`, and AWS `ApprovedMigrationHead` stays there.
+`case_document_versions` can store `content_sha256`, but a legacy or not-yet-backfilled
+row still has none. The four existing DEV uploaded versions have no trusted digest.
 A `MATCHED` row with no digest means size and content type agree, not that the bytes
 agree. Those rows carry a `checksum_unavailable` reason, `byteIntegrityProven` and
 `fullyVerified` stay false, and both the human and machine forms of the report say

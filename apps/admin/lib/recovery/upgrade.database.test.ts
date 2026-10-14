@@ -59,7 +59,7 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the unapplied SEC-08 evidence digest migration.
+    // The tail is SEC-08, applied to DEV and still pending on Production.
     expect(pending.at(-1)?.version).toBe("20261014170000")
     expect(pending.some(entry => entry.version === "20261004223358")).toBe(true)
     expect(pending.some(entry => entry.version === "20261004000625")).toBe(true)

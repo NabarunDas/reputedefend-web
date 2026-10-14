@@ -49,9 +49,11 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(41)
-    // A clean rebuild includes source-only SEC-08. DEV and Production stay at SEC-03.
+    // A clean rebuild includes SEC-08. DEV has received it.
+    // Production and AWS ApprovedMigrationHead stay at SEC-03.
     expect(migrationHead.version).toBe("20261014170000")
-    expect(appliedMigrationHead.version).toBe("20261013153000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261014170000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

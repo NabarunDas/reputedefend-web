@@ -479,12 +479,15 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "public request rate limit", probe: "public.consume_public_rate_limit_v1" },
   },
   {
-    // Source only. Not applied to DEV or Production. Do not move ApprovedMigrationHead.
+    // Applied to profilerelaunch-dev (rmzozuiamjcclvtgutgd) on 2026-10-14 as
+    // canonical 20261014170000_evidence_content_sha256_v1. No data rows were
+    // mutated. Production (cxwwekdzkkjjbiyofrov) remains 20261013153000.
+    // AWS ApprovedMigrationHead remains 20261013153000.
     version: "20261014170000",
     filename: "20261014170000_evidence_content_sha256_v1.sql",
     step: "SEC-08 evidence content SHA-256",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "evidence content SHA-256", probe: "public.evidence_content_sha256_v1" },

@@ -33,7 +33,10 @@ Keep these apart when reading any recovery evidence report, and when writing one
 - **Structural object match** means bucket, key, size and content type agree. It is not
   byte-level verification. A row with no recorded SHA-256 is still structural only.
   Where `content_sha256` is present, compare it with the SHA-256 of the recovered
-  object. Phase 1 does not make a null digest invalid. See `docs/admin/evidence-sha256.md`.
+  object. Phase 1 does not make a null digest invalid. Phase 1 is applied to DEV
+  only; Production remains at `20261013153000` and AWS `ApprovedMigrationHead`
+  stays there. Existing DEV evidence still has no trusted digest. See
+  `docs/admin/evidence-sha256.md`.
 
 An unresolved recovery blocker — a blocking object outcome, an inventory that could not be
 collected, a non-recoverable prepared pack, a queue awaiting provider reconciliation — is

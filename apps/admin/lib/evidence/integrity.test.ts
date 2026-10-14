@@ -1,0 +1,160 @@
+import { readFileSync } from "node:fs"
+import { describe, expect, it } from "vitest"
+import { DEV_EVIDENCE_BUCKET, PROD_EVIDENCE_BUCKET } from "./config"
+import {
+  DEV_EVIDENCE_BUCKET as integrityDevBucket,
+  PROD_EVIDENCE_BUCKET as integrityProdBucket,
+  PROD_SUPABASE_HOST_FRAGMENT,
+  assertApplyAllowed,
+  byteIntegrityProven,
+  integrityExitCode,
+  runIntegrityPass,
+  sha256Hex,
+  type IntegrityVersion,
+  type ObjectRead,
+} from "./integrity"
+
+const versionId = "77777777-7777-4777-8777-777777777777"
+const secondId = "88888888-8888-4888-8888-888888888888"
+const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])
+const digest = sha256Hex(pdf)
+
+function version(overrides: Partial<IntegrityVersion> = {}): IntegrityVersion {
+  return {
+    versionId,
+    declaredSizeBytes: pdf.byteLength,
+    storageBucket: DEV_EVIDENCE_BUCKET,
+    storageKey: "cases/55555555-5555-4555-8555-555555555555/documents/66666666-6666-4666-8666-666666666666/versions/77777777-7777-4777-8777-777777777777",
+    hasDigest: false,
+    ...overrides,
+  }
+}
+
+describe("evidence SHA-256 integrity", () => {
+  it("uses the same DEV and Production buckets as the Admin evidence config", () => {
+    expect(integrityDevBucket).toBe(DEV_EVIDENCE_BUCKET)
+    expect(integrityProdBucket).toBe(PROD_EVIDENCE_BUCKET)
+    expect(PROD_SUPABASE_HOST_FRAGMENT).toBe("cxwwekdzkkjjbiyofrov")
+  })
+
+  it("refuses apply against Production and allows read-only check and restore", () => {
+    const production = {
+      bucket: PROD_EVIDENCE_BUCKET,
+      vercelEnv: "production",
+      supabaseUrl: `https://${PROD_SUPABASE_HOST_FRAGMENT}.supabase.co`,
+    }
+    expect(() => assertApplyAllowed({ mode: "apply", ...production })).toThrow(/refused for Production/)
+    expect(() => assertApplyAllowed({ mode: "apply", bucket: PROD_EVIDENCE_BUCKET, supabaseUrl: "https://example.supabase.co" })).toThrow(/refused for Production/)
+    expect(() => assertApplyAllowed({ mode: "apply", bucket: DEV_EVIDENCE_BUCKET, vercelEnv: "production", supabaseUrl: "https://example.supabase.co" })).toThrow(/refused for Production/)
+    expect(() => assertApplyAllowed({ mode: "apply", bucket: DEV_EVIDENCE_BUCKET, supabaseUrl: production.supabaseUrl })).toThrow(/refused for Production/)
+    expect(() => assertApplyAllowed({ mode: "apply", bucket: "other-bucket", supabaseUrl: "https://example.supabase.co" })).toThrow(/DEV evidence bucket/)
+    expect(() => assertApplyAllowed({ mode: "check", ...production })).not.toThrow()
+    expect(() => assertApplyAllowed({ mode: "restore", ...production })).not.toThrow()
+    expect(() => assertApplyAllowed({ mode: "apply", bucket: DEV_EVIDENCE_BUCKET, vercelEnv: "preview", supabaseUrl: "https://example.supabase.co" })).not.toThrow()
+  })
+
+  it("records good bytes once and does not write again on a repeated backfill", async () => {
+    const writes: boolean[] = []
+    const stored = { digest: null as string | null, verifiedAt: "2026-10-14T00:00:00.000Z" }
+    const pass = (mode: "check" | "apply" | "restore", hasDigest: boolean) => runIntegrityPass({
+      mode,
+      bucket: DEV_EVIDENCE_BUCKET,
+      page: async () => [version({ hasDigest })],
+      readObject: async () => ({ kind: "bytes", bytes: pdf }),
+      record: async (_version, next, _size, write) => {
+        writes.push(write)
+        if (!write) return { status: stored.digest === next ? "already_trusted" : "mismatch" }
+        if (stored.digest && stored.digest !== next) return { status: "mismatch" }
+        stored.digest = next
+        return { status: "recorded" }
+      },
+    })
+    const preview = await pass("check", false)
+    expect(preview.findings[0].outcome).toBe("would_record")
+    expect(writes).toEqual([])
+    const first = await pass("apply", false)
+    expect(first.findings[0].outcome).toBe("recorded")
+    expect(stored.digest).toBe(digest)
+    const verifiedAt = stored.verifiedAt
+    const second = await pass("apply", true)
+    expect(second.findings[0].outcome).toBe("already_trusted")
+    expect(stored.verifiedAt).toBe(verifiedAt)
+    expect(writes).toEqual([true, false])
+    expect(JSON.stringify(second.findings)).not.toContain(digest)
+    expect(JSON.stringify(second.findings)).not.toContain("storageKey")
+  })
+
+  it("reports modified bytes, a missing object, a size mismatch and an unreadable object", async () => {
+    const rows = [
+      version(),
+      version({ versionId: secondId, hasDigest: true }),
+      version({ versionId: "99999999-9999-4999-8999-999999999999", hasDigest: true, declaredSizeBytes: 99 }),
+      version({ versionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hasDigest: true }),
+    ]
+    const reads: ObjectRead[] = [
+      { kind: "missing" },
+      { kind: "bytes", bytes: new Uint8Array([1, 2, 3, 4, 5]) },
+      { kind: "bytes", bytes: pdf },
+      { kind: "unreadable" },
+    ]
+    const result = await runIntegrityPass({
+      mode: "restore",
+      bucket: DEV_EVIDENCE_BUCKET,
+      page: async after => rows.filter(row => !after || row.versionId > after),
+      readObject: async () => reads.shift()!,
+      record: async () => ({ status: "mismatch" }),
+    })
+    expect(result.findings.map(finding => finding.outcome)).toEqual(["missing", "mismatch", "size_mismatch", "unreadable"])
+    expect(integrityExitCode(result)).toBe(1)
+    expect(byteIntegrityProven(result.findings)).toBe(false)
+  })
+
+  it("does not read an object in another bucket or an object that is no longer clean", async () => {
+    const read: string[] = []
+    const result = await runIntegrityPass({
+      mode: "check",
+      bucket: DEV_EVIDENCE_BUCKET,
+      page: async () => [
+        version({ storageBucket: PROD_EVIDENCE_BUCKET }),
+        version({ versionId: secondId }),
+      ],
+      readObject: async row => {
+        read.push(row.versionId)
+        return { kind: "not_clean" }
+      },
+      record: async () => { throw new Error("must not record") },
+    })
+    expect(read).toEqual([secondId])
+    expect(result.findings.map(finding => finding.outcome)).toEqual(["bucket_mismatch", "not_clean"])
+  })
+
+  it("resumes a restore from the last completed version", async () => {
+    const rows = [version(), version({ versionId: secondId, hasDigest: true })]
+    const page = async (after: string | null) => rows.filter(row => !after || row.versionId > after)
+    const readObject = async (): Promise<ObjectRead> => ({ kind: "bytes", bytes: pdf })
+    const record = async () => ({ status: "already_trusted" as const })
+    const first = await runIntegrityPass({
+      mode: "restore", bucket: DEV_EVIDENCE_BUCKET, maxVersions: 1, page, readObject, record,
+    })
+    expect(first.findings.map(finding => finding.outcome)).toEqual(["unverified"])
+    expect(first.cursor).toBe(versionId)
+    expect(first.stoppedEarly).toBe(true)
+    expect(integrityExitCode(first)).toBe(3)
+    const second = await runIntegrityPass({
+      mode: "restore", bucket: DEV_EVIDENCE_BUCKET, after: first.cursor, page, readObject, record,
+    })
+    expect(second.findings).toEqual([expect.objectContaining({ versionId: secondId, outcome: "match" })])
+    expect(second.stoppedEarly).toBe(false)
+    expect(byteIntegrityProven(second.findings)).toBe(true)
+  })
+
+  it("keeps the operator script read-only by default and free of printed object keys", () => {
+    const source = readFileSync(new URL("../../../../scripts/evidence-sha256.mjs", import.meta.url), "utf8")
+    expect(source).toContain('argument(argv, "--mode") ?? "check"')
+    expect(source).toContain("assertApplyAllowed")
+    expect(source).toContain("static AWS keys are refused")
+    expect(source).not.toMatch(/PutObject|ETag/)
+    expect(source).toContain("never writes an object")
+    expect(source).not.toMatch(/console\.log\([^)]*storageKey/)
+  })
+})

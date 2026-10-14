@@ -62,7 +62,7 @@ This PR does not create or modify AWS infrastructure or Vercel project settings.
 cases/{case_uuid}/documents/{document_uuid}/versions/{version_uuid}
 ```
 
-IDs are server-generated UUIDs. Replacement uploads insert a new version row and a new key. Previous objects are never overwritten.
+IDs are server-generated UUIDs. Replacement uploads insert a new version row and a new key. The application does not mint a second upload for a version after it leaves `PENDING_UPLOAD`. That does not make the existing key immutable: an unexpired presigned POST, or any principal with `s3:PutObject` on `cases/*`, can replace the latest object. Production versioning may retain older versions, but the application does not store an S3 VersionId and reads the latest object. SHA-256 verification can detect a replacement after a trusted digest exists. It does not prevent the replacement.
 
 ## Upload sequence
 
@@ -152,6 +152,10 @@ IAM `s3:PutObject` alone is not sufficient for live customer upload. Before 9B2 
 - Allowed headers: enough for the presigned POST fields (for example `*` if that matches the existing Admin CORS policy)
 
 Preserve the existing Admin origin/CORS behaviour. Do not change AWS from this PR; CORS will be inspected/updated manually after merge.
+
+## SEC-08 content integrity
+
+The Admin refresh path reads a clean object and stores SHA-256 of those bytes before a new `VALID` transition. Customer upload does not hash the file. A browser-supplied digest is rejected. An S3 entity tag is not used as a digest. Existing `VALID` rows may have a null digest until backfill or the next successful refresh. View and Download do not proxy the object through Vercel to re-hash it. The operator procedure, including backfill, restore verification, rollback and cost, is `docs/admin/evidence-sha256.md`.
 
 ## Future work
 

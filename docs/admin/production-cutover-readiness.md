@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV and repository migration heads are 20261013153000 public_request_rate_limit_v1, applied and live-verified. Production has applied SEC-02 and SEC-03 at head 20261013153000 public_request_rate_limit_v1. AWS CodeBuild cutover reported UPDATE_COMPLETE; first scheduled new-head backup acceptance is pending. pendingMigrations() is empty. |
+| `supabase.applied-head` | Supabase | READY | The approved DEV and Production migration head, and the AWS ApprovedMigrationHead, remain 20261013153000 public_request_rate_limit_v1. Production has applied SEC-02 and SEC-03 at that head. AWS CodeBuild cutover reported UPDATE_COMPLETE; first scheduled new-head backup acceptance is pending. SEC-08 evidence content SHA-256 is source-only and must not be applied or used to move the backup head. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -208,15 +208,19 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-profilerelaunch-dev and the repository migration head are now aligned at
+The approved DEV and Production migration head remains
 `20261013153000 public_request_rate_limit_v1` (SEC-03 applied and live-tested
-on 13 October 2026). `pendingMigrations()` is empty. Production applied SEC-02
-and SEC-03 in that order on 13 October 2026 and reconciled canonical migration
-head `20261013153000 public_request_rate_limit_v1`. Operator-reported AWS
+on 13 October 2026). SEC-08 `20261014170000 evidence_content_sha256_v1` is
+source-only (`appliedToDev: false`) and is the only pending migration. It has
+not been applied. Production applied SEC-02 and SEC-03 in that order on 13
+October 2026 and reconciled canonical migration head
+`20261013153000 public_request_rate_limit_v1`. Operator-reported AWS
 CloudFormation UPDATE_COMPLETE confirms the backup-head configuration update
-with original three-hour schedule retained. Applied migrations stay immutable;
-SEC-03 marketing code remains unmerged until the first genuine scheduled
-backup passes new-head, manifest and archive checksum verification.
+with original three-hour schedule retained. Applied migrations stay immutable.
+AWS ApprovedMigrationHead stays at `20261013153000`. Do not apply SEC-08 or
+move that backup head from this change. SEC-03 marketing code remains unmerged
+until the first genuine scheduled backup passes new-head, manifest and archive
+checksum verification.
 
 On 2026-10-04 the production project was built from empty. Its ledger then
 matched the manifest from `20260915120000 core_data_foundation_v1` through

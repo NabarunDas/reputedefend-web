@@ -221,12 +221,13 @@ declared successful. `structurallyMatched` means bucket, key, size and content t
 concrete is wrong — or that nothing was checked at all, because an absent inventory is a
 blocker rather than a clean result.
 
-**There is no content hash in the schema.** `case_document_versions` stores declared size
-and content type but no checksum, so a `MATCHED` row means size and content type agree,
-not that the bytes agree. Those rows carry a `checksum_unavailable` reason,
-`byteIntegrityProven` and `fullyVerified` stay false, and both the human and machine
-forms of the report say byte-level integrity is unproven. This is a real limitation
-recorded as a Step 22B gap rather than smoothed over.
+**A recorded SHA-256 is optional on existing rows.** `case_document_versions` can store
+`content_sha256` after SEC-08, but a legacy or not-yet-backfilled row still has none.
+A `MATCHED` row with no digest means size and content type agree, not that the bytes
+agree. Those rows carry a `checksum_unavailable` reason, `byteIntegrityProven` and
+`fullyVerified` stay false, and both the human and machine forms of the report say
+byte-level integrity is unproven. The operator procedure is `docs/admin/evidence-sha256.md`.
+The live cloud rehearsal remains a Step 22B gap.
 
 A version whose upload never finished is a fourth thing again. The database never claimed
 an object existed, so inventing a missing-object failure for it would be wrong. It stays

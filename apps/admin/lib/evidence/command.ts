@@ -14,6 +14,7 @@ import {
   type EvidenceOperation, type EvidenceVersion, type ScanStatus, type ValidationStatus,
 } from "./model"
 import { validateEvidenceBytes } from "./content"
+import { sha256Hex } from "./integrity"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -189,10 +190,30 @@ export async function runEvidenceCommand(request: NextRequest, storage: Evidence
         if (!bytes || !isAllowedMime(version.contentType)) {
           validation = "ERROR"
           validationError = "The scanned file could not be read for validation."
+        } else if (bytes.byteLength !== version.sizeBytes) {
+          validation = "INVALID"
+          validationError = "The uploaded file size does not match the declared size."
         } else {
           const error = validateEvidenceBytes(bytes, version.contentType)
-          if (error) { validation = "INVALID"; validationError = error }
-          else validation = "VALID"
+          if (error) {
+            validation = "INVALID"
+            validationError = error
+          } else {
+            const recorded = await backend().rpc<{ status: string }>("evidence_content_sha256_v1", {
+              p_version: version.versionId,
+              p_sha256: sha256Hex(bytes),
+              p_byte_length: bytes.byteLength,
+              p_write: true,
+            })
+            if (recorded.status === "recorded" || recorded.status === "already_trusted") validation = "VALID"
+            else if (recorded.status === "mismatch") {
+              validation = "INVALID"
+              validationError = "The stored file does not match its recorded digest."
+            } else {
+              validation = "ERROR"
+              validationError = "The file digest could not be recorded."
+            }
+          }
         }
       } catch {
         validation = "ERROR"

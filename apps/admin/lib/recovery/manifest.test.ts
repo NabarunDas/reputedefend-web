@@ -19,16 +19,16 @@ describe("the migration chain manifest", () => {
   it("records SEC-03 as the verified applied DEV migration head", () => {
     expect(appliedMigrationHead.filename).toBe("20261013153000_public_request_rate_limit_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261013153000_public_request_rate_limit_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261014170000_evidence_content_sha256_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
   })
 
   it("never marks any migration as safe to replay", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no DEV migration pending after verified SEC-03 application", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+  it("keeps SEC-08 source-only after the verified SEC-03 application", () => {
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261014170000_evidence_content_sha256_v1.sql"])
   })
 
   it("keeps every applied migration ahead of every pending one", () => {

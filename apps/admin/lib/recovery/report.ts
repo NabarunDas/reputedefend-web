@@ -190,7 +190,7 @@ export function deriveRecoveryVerification(input: RecoveryStatusInput): Recovery
       blockers.push(`evidence storage reconciliation is blocked by ${outcomes.join(", ")}`)
     } else if (!storage.byteIntegrityProven) {
       const detail =
-        "evidence objects matched on bucket, key, size and content type only; the schema stores no content hash, so byte-level integrity is unproven"
+        "evidence objects matched on bucket, key, size and content type only; no recorded content hash is stored for these versions, so byte-level integrity is unproven"
       if (input.scope.requiresByteIntegrity) blockers.push(`${detail}, and this scenario requires it`)
       else limitations.push(detail)
     }

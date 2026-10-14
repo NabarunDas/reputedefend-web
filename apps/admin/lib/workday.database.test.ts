@@ -156,6 +156,7 @@ describe("a synthetic Admin working day", () => {
     ])
     expect(upload.status).toBe("success")
     expect((await rpc("admin_evidence_finalize_v1", [token, key(), caseId, upload.versionId])).status).toBe("success")
+    expect((await rpc("evidence_content_sha256_v1", [upload.versionId, "c".repeat(64), 2048, true])).status).toBe("recorded")
     expect((await rpc("admin_evidence_refresh_scan_v1", [
       token, key(), caseId, upload.versionId, "NO_THREATS_FOUND", "VALID", null,
     ])).status).toBe("success")

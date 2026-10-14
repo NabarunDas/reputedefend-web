@@ -26,7 +26,7 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through the applied SEC-03 migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual([])
+    expect(pending.map(entry => entry.version)).toEqual(["20261014170000"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261013153000",
       name: "public_request_rate_limit_v1",

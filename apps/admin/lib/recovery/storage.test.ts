@@ -142,7 +142,7 @@ describe("evidence object reconciliation against a synthetic inventory", () => {
     expect(report.structurallyMatched).toBe(true)
     expect(report.byteIntegrityProven).toBe(false)
     expect(report.fullyVerified).toBe(false)
-    expect(report.unverified.join(" ")).toMatch(/no content hash/)
+    expect(report.unverified.join(" ")).toMatch(/no recorded content hash/)
   })
 
   it("confirms byte-level integrity once both sides carry the same hash", () => {

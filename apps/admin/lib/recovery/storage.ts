@@ -18,9 +18,9 @@
  * Three states are kept apart on purpose, because collapsing them is how an
  * unproven recovery gets declared successful:
  *
- * - *structurally matched* means bucket, key, size and content type agree. The
- *   schema stores no content hash, so that is as far as the database can take
- *   us and it is not a statement about the bytes.
+ * - *structurally matched* means bucket, key, size and content type agree. A
+ *   recorded SHA-256 is absent on a legacy or not-yet-backfilled row, so that
+ *   match is not a statement about the bytes.
  * - *byte integrity proven* additionally requires a hash on both sides that
  *   agrees. Today it is only reachable when an operator supplies one.
  * - *blocked* means something concrete is wrong, or nothing was checked at all.
@@ -48,8 +48,9 @@ export type EvidenceRecord = {
   scanStatus: string
   validationStatus: string
   /**
-   * The schema stores no content hash for evidence today, so this is null for
-   * every restored row. An operator may supply one from an independent record.
+   * Recorded SHA-256 of the evidence bytes, when one has been stored. Legacy
+   * and not-yet-backfilled rows leave this null. An operator may also supply
+   * one from an independent record of the object.
    */
   checksum?: string | null
 }
@@ -223,7 +224,7 @@ export function reconcileEvidenceStorage(
     }
 
     // Size and content type agreeing is not the same as the bytes agreeing.
-    // Without a stored hash the match is structural only, and the report says so.
+    // Without a recorded hash the match is structural only, and the report says so.
     rows.push({
       outcome: "MATCHED",
       versionId: record.versionId,
@@ -248,7 +249,7 @@ export function reconcileEvidenceStorage(
   const unchecked = rows.filter(row => row.reasons.includes("checksum_unavailable"))
   if (unchecked.length > 0) {
     unverified.push(
-      `${unchecked.length} object(s) matched on size and content type only; the schema stores no content hash, so byte-level integrity was not proved`,
+      `${unchecked.length} object(s) matched on size and content type only; no recorded content hash is stored for these versions, so byte-level integrity was not proved`,
     )
   }
 

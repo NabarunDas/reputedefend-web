@@ -478,6 +478,17 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "public request rate limit", probe: "public.consume_public_rate_limit_v1" },
   },
+  {
+    // Source only. Not applied to DEV or Production. Do not move ApprovedMigrationHead.
+    version: "20261014170000",
+    filename: "20261014170000_evidence_content_sha256_v1.sql",
+    step: "SEC-08 evidence content SHA-256",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "evidence content SHA-256", probe: "public.evidence_content_sha256_v1" },
+  },
 ]
 
 /**

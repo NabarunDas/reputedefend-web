@@ -53,14 +53,14 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(25)
+    expect(chainAfter(checkpoint)).toHaveLength(26)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the unapplied SEC-03 public rate-limit migration.
-    expect(pending.at(-1)?.version).toBe("20261013153000")
+    // The tail is the unapplied SEC-08 evidence digest migration.
+    expect(pending.at(-1)?.version).toBe("20261014170000")
     expect(pending.some(entry => entry.version === "20261004223358")).toBe(true)
     expect(pending.some(entry => entry.version === "20261004000625")).toBe(true)
     expect(pending.some(entry => entry.version === "20261003194353")).toBe(true)

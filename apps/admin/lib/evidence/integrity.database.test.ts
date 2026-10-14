@@ -77,18 +77,38 @@ describe("evidence content SHA-256 SQL", () => {
     expect(trigger.rows[0].ok).toBe(false)
   })
 
-  it("keeps a legacy VALID row usable and rejects a new VALID transition without a digest", async () => {
+  it("keeps the previous Admin VALID refresh working when no digest is stored", async () => {
     const created = await uploaded()
-    await db.query(
-      "update public.case_document_versions set scan_status='NO_THREATS_FOUND', validation_status='VALID', validated_at=now() where id=$1",
+    const refreshed = await rpc("admin_evidence_refresh_scan_v1", [
+      token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null,
+    ])
+    expect(refreshed).toMatchObject({ status: "success", validationStatus: "VALID", customerVisible: false })
+    const row = await db.query<{ validation_status: string; content_sha256: string | null; content_sha256_bytes: string | null; verified: string | null; customer_visible: boolean }>(
+      `select validation_status, content_sha256, content_sha256_bytes::text, content_sha256_verified_at::text as verified, customer_visible
+       from public.case_document_versions where id=$1`,
       [created.versionId],
     )
-    const legacy = await db.query<{ validation_status: string; content_sha256: string | null }>(
-      "select validation_status, content_sha256 from public.case_document_versions where id=$1",
+    expect(row.rows[0]).toEqual({
+      validation_status: "VALID", content_sha256: null, content_sha256_bytes: null, verified: null, customer_visible: false,
+    })
+    const meta = await rpc("admin_evidence_version_v1", [token, caseId, created.versionId])
+    const accepted = await rpc("admin_evidence_review_v1", [
+      token, key(), caseId, created.versionId, meta.recordVersion, "accept", "Accepted after a clean scan.", null,
+    ])
+    expect(accepted.status).toBe("success")
+    const shown = await rpc("admin_evidence_review_v1", [
+      token, key(), caseId, created.versionId, accepted.recordVersion, "set_visibility", "Customer may see this accepted file.", true,
+    ])
+    expect(shown).toMatchObject({ status: "success", customerVisible: true })
+    const again = await rpc("admin_evidence_refresh_scan_v1", [
+      token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null,
+    ])
+    expect(again).toMatchObject({ status: "success", validationStatus: "VALID", customerVisible: true })
+    const kept = await db.query<{ validation_status: string; content_sha256: string | null; customer_visible: boolean }>(
+      "select validation_status, content_sha256, customer_visible from public.case_document_versions where id=$1",
       [created.versionId],
     )
-    expect(legacy.rows[0]).toEqual({ validation_status: "VALID", content_sha256: null })
-    expect((await rpc("admin_evidence_refresh_scan_v1", [token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null])).status).toBe("invalid")
+    expect(kept.rows[0]).toEqual({ validation_status: "VALID", content_sha256: null, customer_visible: true })
   })
 
   it("records one digest, repeats it, and refuses a different digest", async () => {

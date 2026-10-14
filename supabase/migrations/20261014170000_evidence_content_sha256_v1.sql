@@ -1,8 +1,11 @@
--- SEC-08 evidence content SHA-256.
+-- SEC-08 evidence content SHA-256, phase 1.
 -- Forward-only and source-only. Do not apply this file to DEV or Production
 -- from the change that adds it. It does not move the approved backup head.
--- Existing rows keep a null digest, so a historical VALID version remains
--- valid until a trusted digest is recorded. No existing digest is rewritten.
+-- Existing rows keep a null digest. This file does not reject VALID when the
+-- digest is null, so the Admin build deployed today can still refresh a clean
+-- file. The new Admin records a digest before it reports VALID. A later
+-- reviewed migration may require the digest, and only after that Admin is
+-- deployed and the backfill has been reviewed. No existing digest is rewritten.
 
 BEGIN;
 
@@ -159,10 +162,12 @@ GRANT EXECUTE ON FUNCTION
   public.evidence_content_sha256_page_v1(uuid, integer, boolean)
   TO service_role;
 
--- A new transition to VALID requires a digest already stored for that version.
--- Existing VALID rows with a null digest are left unchanged.
+-- Phase 1 does not reject VALID when content_sha256 is null. The deployed
+-- Admin refresh does not write a digest, and this function must keep accepting
+-- that call. The new Admin records the digest before it asks for VALID.
 -- Visibility is withdrawn in the same UPDATE as a failed scan or invalidation,
--- so the customer-visibility CHECK cannot abort the invalidation.
+-- so the customer-visibility CHECK cannot abort the invalidation. A clean
+-- VALID refresh of an accepted file keeps the visibility it already has.
 CREATE OR REPLACE FUNCTION public.admin_evidence_refresh_scan_v1(
   p_token text, p_request uuid, p_case uuid, p_version uuid, p_scan text, p_validation text, p_validation_error text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -189,7 +194,6 @@ BEGIN
   IF d.id IS NULL OR d.case_id <> p_case THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
   SELECT * INTO c FROM public.cases WHERE id = d.case_id;
   IF v.upload_status <> 'UPLOADED' THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-  IF p_validation = 'VALID' AND v.content_sha256 IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   new_validated_at := CASE WHEN p_validation IN ('VALID','INVALID','ERROR') THEN now() ELSE NULL END;
   UPDATE public.case_document_versions
     SET scan_status = p_scan, scan_checked_at = now(), validation_status = p_validation,

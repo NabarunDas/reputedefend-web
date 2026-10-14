@@ -266,9 +266,23 @@ export function fetchGuardedHttps(input: RequestInfo | URL, init?: RequestInit):
         resolve(new Response(null, { status, headers }))
         return
       }
+      // No-body statuses cannot have a ReadableStream in a Fetch Response.
+      if (status === 204 || status === 205) {
+        incoming.resume()
+        resolve(new Response(null, { status, headers }))
+        return
+      }
       resolve(new Response(Readable.toWeb(incoming) as ReadableStream<Uint8Array>, { status, headers }))
     })
-    const stop = () => fail(req)
+    // A fulfilled Response may still be downloading its body.
+    // Keep the abort and timeout able to terminate an idle response stream.
+    const stop = () => {
+      if (settled) {
+        req.destroy(new Error("unavailable"))
+        return
+      }
+      fail(req)
+    }
     req.on("timeout", stop)
     req.on("error", () => {
       if (!settled) stop()

@@ -76,6 +76,13 @@ describe("validateEnquiry", () => {
 
     const valid = validateEnquiry({ ...validCase, websiteUrl: "https://example.com/about" })
     expect(valid.valid).toBe(true)
+
+    const storedOnly = validateEnquiry({
+      ...validCase,
+      websiteUrl: "https://192.168.1.20/",
+      businessProfileUrl: "https://maps.google.com/?cid=123",
+    })
+    expect(storedOnly.valid).toBe(true)
   })
 
   it("rejects unexpected service values", () => {

@@ -2,7 +2,7 @@
 
 A Next.js App Router marketing site for Google Business Profile recovery, review protection and reputation monitoring.
 
-The public trading brand is **ProfileRelaunch**. Legal operator remains Saswati Das, a UK sole trader. Canonical site: `https://profilerelaunch.com`.
+The public trading brand is **ProfileRelaunch**. The legal operator is ProfileRelaunch Ltd, company number 17520826, registered in England and Wales. Canonical site: `https://profilerelaunch.com`. The company details live in `lib/legal.ts`.
 
 Launch status, environment variables and **owner / external setup** are in [`docs/launch-readiness.md`](docs/launch-readiness.md).
 

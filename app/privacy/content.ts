@@ -6,7 +6,7 @@ export const privacySeo = {
     "How ProfileRelaunch handles information from enquiries, case submissions and Relaunch Guard setup requests, including storage, email delivery and optional analytics.",
 } as const
 
-export const privacyUpdated = "16 September 2026"
+export const privacyUpdated = "14 October 2026"
 
 export const privacyHero = {
   eyebrow: "Privacy",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { brandName, brandTagline } from "@/lib/brand"
-import { isSoleTrader, legalIdentity, tradingAsLine } from "@/lib/legal"
+import { legalIdentity } from "@/lib/legal"
 import {
   aboutBrandLine,
   aboutClose,
@@ -55,14 +55,17 @@ describe("About page copy", () => {
     ])
   })
 
-  it("uses verified operator and sole-trader identity", () => {
-    expect(legalIdentity.legalName).toBe("Saswati Das")
-    expect(isSoleTrader()).toBe(true)
-    expect(operator.lead).toContain(tradingAsLine())
-    expect(operator.lead.toLowerCase()).toContain("uk sole trader")
+  it("uses the ProfileRelaunch Ltd identity", () => {
+    expect(legalIdentity.legalName).toBe("ProfileRelaunch Ltd")
+    expect(legalIdentity.registrationNumber).toBe("17520826")
+    expect(legalIdentity.businessStructure).toBe("private-limited-company")
+    expect(operator.lead).toContain("ProfileRelaunch Ltd")
+    expect(operator.lead).toContain("17520826")
+    expect(operator.lead).toContain("England and Wales")
     expect(aboutIdentityPlate.name).toBe(brandName)
-    expect(aboutIdentityPlate.operatedBy).toContain("Saswati Das")
-    expect(copy).not.toMatch(/ltd|limited company|companies house|vat number|company registration/)
+    expect(aboutIdentityPlate.operatedBy).toContain("ProfileRelaunch Ltd")
+    expect(copy.toLowerCase()).not.toMatch(/sole trader|bradford road|sn1 4fe/)
+    expect(copy).not.toMatch(/vat number|companies house/)
   })
 
   it("positions the operator as UK-based and the service as international", () => {

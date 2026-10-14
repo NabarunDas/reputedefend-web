@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { pageTitle } from "@/lib/brand"
 import { LegalCallout, LegalPage, type LegalSection } from "@/components/legal-page"
-import { feeWording, hasLegalValue, legalIdentity, showsCompanyRegistration, tradingAsLine } from "@/lib/legal"
+import { feeWording, hasLegalValue, legalIdentity, publicLegalDisclosure, tradingAsLine } from "@/lib/legal"
 import { socialOpenGraph, socialTwitter } from "@/lib/social-metadata"
 import {
   privacyAnalytics,
@@ -197,14 +197,8 @@ const sections: LegalSection[] = [
           </p>
         ) : null}
         <p>This website is operated by {tradingAsLine()}.</p>
-        {hasLegalValue(legalIdentity.postalAddress) ? (
-          <p>Correspondence may be sent to the business address shown below.</p>
-        ) : null}
-        {showsCompanyRegistration() ? (
-          <p>Company number {legalIdentity.registrationNumber}.</p>
-        ) : null}
-        {hasLegalValue(legalIdentity.vatNumber) ? <p>VAT number {legalIdentity.vatNumber}.</p> : null}
-        {hasLegalValue(legalIdentity.phone) ? <p>Telephone: {legalIdentity.phone}.</p> : null}
+        <p>{publicLegalDisclosure().companyNumber} {publicLegalDisclosure().placeOfRegistration}</p>
+        <p>The registered office is shown in the business details below. There is no separate public correspondence address.</p>
         <p>If data protection law gives you a right to complain to a supervisory authority, you may do so in the country where you live, work, or where you believe a problem occurred.</p>
       </>
     ),

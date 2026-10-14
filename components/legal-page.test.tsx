@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { legalIdentity } from "@/lib/legal"
+import { legalIdentity, publicLegalDisclosure } from "@/lib/legal"
 import { LegalPage } from "./legal-page"
 
 vi.mock("next/link", () => ({
@@ -32,6 +32,14 @@ describe("LegalPage", () => {
       />,
     )
     expect(screen.getByText(`Last updated ${legalIdentity.noticeUpdated}`)).toBeInTheDocument()
-    expect(legalIdentity.noticeUpdated).toBe("13 September 2026")
+    expect(legalIdentity.noticeUpdated).toBe("14 October 2026")
+    const disclosure = publicLegalDisclosure()
+    expect(screen.getByText(disclosure.operator)).toBeInTheDocument()
+    expect(screen.getByText(disclosure.companyNumber)).toBeInTheDocument()
+    expect(screen.getByText(disclosure.placeOfRegistration)).toBeInTheDocument()
+    expect(screen.getByText(disclosure.registeredOfficeLabel)).toBeInTheDocument()
+    expect(screen.getByText((_content, element) => element?.tagName === "ADDRESS" && element.textContent === disclosure.registeredOffice)).toBeInTheDocument()
+    expect(screen.queryByText(/VAT number/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/sole trader/i)).not.toBeInTheDocument()
   })
 })

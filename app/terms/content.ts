@@ -31,7 +31,7 @@ export const termsPricing = {
     `Relaunch Guard: ${guardPrice} per month, per location for profile and review monitoring. Monitoring requires your agreement and confirmed activation. After successful Managed Profile Recovery, you can choose ${guardOffer.includedRecoveryDays} days of monitoring for the restored location at no extra charge. That period starts at activation and does not automatically convert to a paid subscription.`,
   ],
   contract:
-    "Submitting an assessment or enquiry does not create a paid contract. Paid support begins only when the scope and commercial terms are agreed. Guided work has an upfront fee when that option is chosen. Managed work uses the stated success-fee model. The exact definition of a successful Managed outcome is provided in the applicable service terms before you authorise that work. These website terms do not invent that definition.",
+    "Submitting an assessment or enquiry does not create a paid contract. Paid support begins only when the scope and commercial terms are agreed. Guided work has an upfront fee when that option is chosen. Managed work uses the stated success-fee model. The exact definition of a successful Managed outcome is provided in the applicable service terms before you authorise that work. These website terms do not invent that definition, and they are not that paid-service agreement.",
   google:
     "Google controls the platform outcome, including reinstatement, review removal and timing. Website terms do not promise a Google decision.",
   noCheckout:

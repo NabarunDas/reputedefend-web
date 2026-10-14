@@ -3,8 +3,7 @@ import type { ReactNode } from "react"
 import {
   hasLegalValue,
   legalIdentity,
-  showsCompanyRegistration,
-  tradingAsLine,
+  publicLegalDisclosure,
 } from "@/lib/legal"
 import styles from "./legal-page.module.css"
 
@@ -26,21 +25,22 @@ export function LegalCallout({ children }: { children: ReactNode }) {
 }
 
 export function LegalOperatorIdentity() {
+  const disclosure = publicLegalDisclosure()
   return (
     <section className={styles.operator} aria-labelledby="legal-business-details">
       <h2 id="legal-business-details">Business details</h2>
-      <p>{tradingAsLine()}</p>
-      {hasLegalValue(legalIdentity.postalAddress) ? (
-        <address>{legalIdentity.postalAddress}</address>
-      ) : null}
+      <p>{disclosure.operator}</p>
+      <p>{disclosure.tradingStatement}</p>
+      <p>{disclosure.companyNumber}</p>
+      <p>{disclosure.placeOfRegistration}</p>
+      <p>{disclosure.incorporated}</p>
+      <p>{disclosure.registeredOfficeLabel}</p>
+      <address>{disclosure.registeredOffice}</address>
       {hasLegalValue(legalIdentity.contactEmail) ? (
         <p>
           <a href={`mailto:${legalIdentity.contactEmail}`}>{legalIdentity.contactEmail}</a>
         </p>
       ) : null}
-      {hasLegalValue(legalIdentity.phone) ? <p>{legalIdentity.phone}</p> : null}
-      {hasLegalValue(legalIdentity.vatNumber) ? <p>VAT number {legalIdentity.vatNumber}</p> : null}
-      {showsCompanyRegistration() ? <p>Company number {legalIdentity.registrationNumber}</p> : null}
     </section>
   )
 }

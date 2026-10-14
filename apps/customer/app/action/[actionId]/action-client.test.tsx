@@ -6,7 +6,20 @@ import "@testing-library/jest-dom/vitest"
 import { ActionClient } from "./action-client"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
+const navigation = vi.hoisted(() => ({ urls: [] as string[] }))
 vi.mock("next/navigation", () => ({ useRouter: () => router }))
+vi.mock("../../../../../lib/payments/stripe-url", async () => {
+  const actual = await vi.importActual<typeof import("../../../../../lib/payments/stripe-url")>("../../../../../lib/payments/stripe-url")
+  return {
+    ...actual,
+    assignTrustedStripeCheckout(value: unknown) {
+      const trusted = actual.trustedStripeUrl(value, "checkout")
+      if (!trusted) return false
+      navigation.urls.push(trusted)
+      return true
+    },
+  }
+})
 
 const fetchMock = vi.fn()
 const actionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -254,6 +267,100 @@ describe("customer action page", () => {
     expect(screen.getByRole("link", { name: "Open the secure Stripe hosted invoice" })).toHaveAttribute("href", "https://invoice.stripe.test/in_test")
     expect(document.body.textContent).toMatch(/does not mark this paid/)
     expect(screen.queryByRole("button", { name: /mark paid/i })).toBeNull()
+  })
+
+  it("does not render or follow an untrusted hosted invoice or Checkout URL", async () => {
+    navigation.urls.length = 0
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "INVOICE_PAYMENT",
+          agreement: null,
+          payment: {
+            orderId: actionId,
+            orderRef: "SO-26-ABCDE2",
+            serviceCode: "GUIDED_RELAUNCH",
+            amountMinor: 9900,
+            currency: "GBP",
+            taxBehaviour: "NOT_APPLICABLE",
+            taxAmountMinor: 0,
+            paymentModel: "UPFRONT",
+            successDefinition: "Restore the listed profile.",
+            obligationId: actionId,
+            obligationState: "DUE",
+            consentText: "No service fee is charged today.",
+            consentVersion: "SUCCESS_FEE_CONSENT_V1",
+            invoiceId: actionId,
+            invoiceStatus: "ISSUED",
+            hostedInvoiceUrl: "https://invoice.stripe.com.evil.example/i/x",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByText("The hosted invoice link is not available yet.")).toBeTruthy())
+    expect(screen.queryByRole("link", { name: "Open the secure Stripe hosted invoice" })).toBeNull()
+    expect(document.body.innerHTML).not.toContain("evil.example")
+    expect(navigation.urls).toEqual([])
+  })
+
+  it("does not navigate when Checkout returns an untrusted URL", async () => {
+    navigation.urls.length = 0
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "GUIDED_PAYMENT",
+          agreement: null,
+          payment: {
+            orderId: actionId,
+            orderRef: "SO-26-ABCDE2",
+            serviceCode: "GUIDED_RELAUNCH",
+            amountMinor: 9900,
+            currency: "GBP",
+            taxBehaviour: "NOT_APPLICABLE",
+            taxAmountMinor: 0,
+            paymentModel: "UPFRONT",
+            successDefinition: "Restore the listed profile.",
+            obligationId: actionId,
+            obligationState: "DUE",
+            consentText: "No service fee is charged today.",
+            consentVersion: "SUCCESS_FEE_CONSENT_V1",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pay securely with Stripe" })).toBeTruthy())
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com@evil.example/pay" }),
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Pay securely with Stripe" }))
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Secure Stripe Checkout is not available yet."))
+    expect(navigation.urls).toEqual([])
+    expect(document.body.innerHTML).not.toContain("evil.example")
+    expect(screen.queryByText(/payment successful/i)).toBeNull()
+    navigation.urls.length = 0
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay_test" }),
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Pay securely with Stripe" }))
+    await waitFor(() => expect(navigation.urls).toEqual(["https://checkout.stripe.com/c/pay_test"]))
   })
 
   it("requires a positive Guard permission choice after OTP", async () => {

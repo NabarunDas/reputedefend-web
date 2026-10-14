@@ -128,4 +128,57 @@ describe("customer payment command", () => {
       p_operation: replacementOp, p_object_id: "cs_new",
     }))
   })
+
+  it("does not return, redirect, or replace an open Checkout session whose URL is untrusted", async () => {
+    mocks.provider.mode = "fake"
+    mocks.provider.retrieveCheckout.mockResolvedValue({
+      id: "cs_evil",
+      mode: "payment",
+      status: "open",
+      paymentStatus: "unpaid",
+      paymentIntentId: null,
+      setupIntentId: null,
+      customerId: "cus_test",
+      url: "https://checkout.stripe.com.evil.example/pay",
+      metadata: {},
+      livemode: false,
+    })
+    mocks.rpc.mockResolvedValue({
+      status: "success", mode: "payment", amountMinor: 9900, customerId: key, serviceOrderId: key,
+      obligationId: key, idempotencyKey: key, providerOperationId: key, checkoutSessionId: "cs_evil",
+    })
+    const response = await paymentCommand(req({ operation: "start_checkout" }))
+    expect(response.status).toBe(503)
+    expect(response.headers.get("location")).toBeNull()
+    const body = await response.text()
+    expect(body).not.toContain("evil.example")
+    expect(body).not.toContain("checkoutUrl")
+    expect(body).not.toMatch(/paid|successful/i)
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalledWith("payment_replace_expired_checkout_v1", expect.anything())
+  })
+
+  it("does not return a newly created Checkout URL that fails the host check", async () => {
+    mocks.provider.mode = "fake"
+    mocks.provider.createPaymentCheckout.mockResolvedValue({
+      id: "cs_js", url: "javascript:alert(1)", mode: "payment", amountMinor: 9900, livemode: false,
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 9900, customerId: key, serviceOrderId: key,
+          obligationId: key, idempotencyKey: key, providerOperationId: key,
+        }
+      }
+      if (name === "payment_prepare_customer_v1") return { status: "success", stripeCustomerId: "cus_test" }
+      return { status: "success" }
+    })
+    const response = await paymentCommand(req({ operation: "start_checkout" }))
+    expect(response.status).toBe(503)
+    expect(response.headers.get("location")).toBeNull()
+    const body = await response.text()
+    expect(body).not.toContain("javascript:")
+    expect(body).not.toContain("checkoutUrl")
+    expect(JSON.parse(body)).toMatchObject({ status: "disabled" })
+  })
 })

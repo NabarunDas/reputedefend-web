@@ -14,6 +14,7 @@ import {
   trackLabel,
 } from "@/lib/portal/payments/model"
 import type { PaymentAction, PaymentCase, PaymentObligation, PaymentOrder } from "@/lib/portal/payments/parse"
+import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
 type Operation = "confirm_consent" | "start_checkout"
 
@@ -61,8 +62,9 @@ export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused
         }),
       })
       const payload = await response.json().catch(() => null) as { message?: string; status?: string; checkoutUrl?: string } | null
+      if (assignTrustedStripeCheckout(payload?.checkoutUrl)) return
       if (payload?.checkoutUrl) {
-        window.location.assign(payload.checkoutUrl)
+        setNotice("Secure Stripe Checkout is not available yet.")
         return
       }
       if (response.ok && payload?.status === "ok") {

@@ -1,6 +1,7 @@
 import "server-only"
 import { createClient } from "@supabase/supabase-js"
 import { createHash, randomBytes } from "node:crypto"
+import { stripUntrustedHostedInvoice } from "../../../lib/payments/stripe-url"
 import { customerBackendConfig, customerConfig } from "./config"
 
 export const newToken = () => randomBytes(32).toString("hex")
@@ -28,6 +29,9 @@ export function backend() {
 }
 export async function actionSessionFromToken(token: string | undefined) {
   if (!customerConfig() || !validToken(token)) return null
-  try { return await backend().rpc<Record<string, unknown> | null>("customer_action_session_v1", { p_token_hash: tokenHash(token) }) }
+  try {
+    const session = await backend().rpc<Record<string, unknown> | null>("customer_action_session_v1", { p_token_hash: tokenHash(token) })
+    return session ? stripUntrustedHostedInvoice(session) : session
+  }
   catch { return null }
 }

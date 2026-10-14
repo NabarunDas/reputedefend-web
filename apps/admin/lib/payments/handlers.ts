@@ -1,5 +1,6 @@
 import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
+import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
 function applyResult(result: { status?: string }): JobHandlerResult {
@@ -379,7 +380,7 @@ export function processStripeEventHandler(env: Record<string, string | undefined
               amountPaidMinor: invoice.amountPaidMinor,
               amountMinor: invoice.amountDueMinor,
               currency: invoice.currency,
-              hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+              hostedInvoiceUrl: trustedStripeUrl(invoice.hostedInvoiceUrl, "invoice"),
               customerId: invoice.metadata.customerId,
               serviceOrderId: invoice.metadata.serviceOrderId,
               obligationId: invoice.metadata.obligationId,

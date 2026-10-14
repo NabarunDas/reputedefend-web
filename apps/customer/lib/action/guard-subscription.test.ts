@@ -131,6 +131,45 @@ describe("customer Guard subscription HTTP", () => {
     expect(mocks.provider.createSubscriptionCheckout).not.toHaveBeenCalled()
   })
 
+  it("does not return an untrusted Guard Checkout or recovery URL", async () => {
+    vi.stubEnv("GUARD_SUBSCRIPTIONS_ENABLED", "true")
+    mocks.provider.createSubscriptionCheckout.mockResolvedValue({
+      id: "cs_evil", url: "https://checkout.stripe.com@evil.example/pay", mode: "subscription", amountMinor: 0, livemode: false,
+    })
+    mocks.provider.createGuardRecoveryCheckout.mockResolvedValue({
+      id: "cs_evil_recovery", url: "https://evil.example/checkout.stripe.com", mode: "setup", amountMinor: 0, livemode: false,
+    })
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      mode: "subscription",
+      providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+      stripeCustomerId: "cus_ok",
+      stripePriceId: "price_test",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    })
+    const checkout = await guardPost(req({ operation: "start_checkout" }))
+    expect(checkout.status).toBe(503)
+    expect(checkout.headers.get("location")).toBeNull()
+    expect(await checkout.text()).not.toContain("evil.example")
+    mocks.rpc.mockResolvedValue({
+      status: "success",
+      mode: "setup",
+      providerOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+      stripeCustomerId: "cus_ok",
+      customerId: "22222222-2222-4222-8222-222222222222",
+      serviceOrderId: "55555555-5555-4555-8555-555555555555",
+      guardSubscriptionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    })
+    const recovery = await guardPost(req({ operation: "start_recovery" }))
+    expect(recovery.status).toBe(503)
+    expect(recovery.headers.get("location")).toBeNull()
+    expect(await recovery.text()).not.toContain("evil.example")
+  })
+
   it("sends the exact included trial_end when 72 hours remain", async () => {
     vi.stubEnv("GUARD_SUBSCRIPTIONS_ENABLED", "true")
     const trialEnd = new Date(Date.now() + 72 * 3600 * 1000).toISOString()

@@ -93,4 +93,28 @@ describe("admin payment commands", () => {
     expect(denied.status).toBe(403)
     expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
   })
+
+  it("does not store or reissue an untrusted hosted invoice URL", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_prepare_invoice_v1") {
+        return {
+          status: "success",
+          replay: true,
+          hostedInvoiceUrl: "https://invoice.stripe.com.evil.example/i/x",
+          providerOperationId: orderId,
+          idempotencyKey: key,
+        }
+      }
+      return { status: "success", id: orderId, expiresAt }
+    })
+    const response = await paymentCommand(req({
+      operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, obligationId: orderId, expiresAt,
+    }))
+    expect(response.status).toBe(503)
+    const text = await response.text()
+    expect(text).not.toContain("evil.example")
+    expect(text).not.toContain("hostedInvoiceUrl")
+    expect(mocks.rpc).not.toHaveBeenCalledWith("payment_record_invoice_v1", expect.anything())
+    expect(mocks.rpc).not.toHaveBeenCalledWith("admin_payment_command_v1", expect.anything())
+  })
 })

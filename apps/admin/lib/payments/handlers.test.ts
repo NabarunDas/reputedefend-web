@@ -196,6 +196,59 @@ describe("payment job handlers", () => {
     expect(rpc.rpc).not.toHaveBeenCalledWith("payment_apply_provider_event_v1", expect.anything())
   })
 
+  it("applies an invoice payment without storing an untrusted hosted URL", async () => {
+    fake.objects.set("in_evil", {
+      id: "in_evil",
+      status: "paid",
+      customerId: "cus_test",
+      amountDueMinor: 9900,
+      amountPaidMinor: 9900,
+      currency: "gbp",
+      hostedInvoiceUrl: "https://invoice.stripe.com.evil.example/i/x",
+      metadata: { customerId, serviceOrderId: orderId, obligationId, providerOperationId: operationId },
+    })
+    const rpc = rpcMock()
+    const result = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_evil_invoice", eventType: "invoice.paid", objectId: "in_evil" },
+      rpc: rpc.asJob,
+    })
+    expect(result).toEqual({ ok: true })
+    const apply = rpc.rpc.mock.calls.find(call => call[0] === "payment_apply_provider_event_v1")
+    expect(apply?.[1]).toMatchObject({
+      p_type: "invoice.paid",
+      p_payload: expect.objectContaining({ hostedInvoiceUrl: null, amountPaidMinor: 9900 }),
+    })
+    expect(JSON.stringify(apply?.[1])).not.toContain("evil.example")
+  })
+
+  it("does not treat a Checkout URL as payment success", async () => {
+    fake.objects.set("cs_evil_url", {
+      id: "cs_evil_url",
+      mode: "payment",
+      status: "complete",
+      paymentStatus: "unpaid",
+      paymentIntentId: null,
+      setupIntentId: null,
+      customerId: "cus_test",
+      url: "https://checkout.stripe.com.evil.example/pay",
+      metadata: { customerId, serviceOrderId: orderId, obligationId, providerOperationId: operationId },
+    })
+    const rpc = rpcMock()
+    const result = await processStripeEventHandler().execute({
+      idempotencyKey: key,
+      payload: { eventId: "evt_evil_checkout", eventType: "checkout.session.completed", objectId: "cs_evil_url" },
+      rpc: rpc.asJob,
+    })
+    expect(result).toEqual({ ok: true })
+    const apply = rpc.rpc.mock.calls.find(call => call[0] === "payment_apply_provider_event_v1")
+    expect(apply?.[1]).toMatchObject({
+      p_payload: expect.objectContaining({ paymentStatus: "unpaid" }),
+    })
+    expect(JSON.stringify(apply?.[1])).not.toContain("evil.example")
+    expect(JSON.stringify(apply?.[1])).not.toContain("checkoutUrl")
+  })
+
   it("routes Guard recovery SetupIntent away from Managed setup and requires the exact customer", async () => {
     fake.objects.set("seti_guard_ok", {
       id: "seti_guard_ok",

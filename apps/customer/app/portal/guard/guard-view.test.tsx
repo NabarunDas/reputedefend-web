@@ -9,10 +9,23 @@ import type { GuardLocation } from "@/lib/portal/guard/parse"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/guard" }))
 const refresh = vi.hoisted(() => vi.fn())
+const navigation = vi.hoisted(() => ({ urls: [] as string[] }))
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
   useRouter: () => ({ push: vi.fn(), refresh }),
 }))
+vi.mock("../../../../../lib/payments/stripe-url", async () => {
+  const actual = await vi.importActual<typeof import("../../../../../lib/payments/stripe-url")>("../../../../../lib/payments/stripe-url")
+  return {
+    ...actual,
+    assignTrustedStripeCheckout(value: unknown) {
+      const trusted = actual.trustedStripeUrl(value, "checkout")
+      if (!trusted) return false
+      navigation.urls.push(trusted)
+      return true
+    },
+  }
+})
 
 const fetchMock = vi.fn()
 const selector = `gd-${"ab".repeat(32)}`
@@ -139,6 +152,44 @@ describe("guard screens", () => {
     expect(screen.queryByRole("button", { name: "Continue to secure Stripe Checkout" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Update the payment method securely" })).toBeNull()
     expect(screen.getByRole("button", { name: "Cancel at period end" })).toBeTruthy()
+  })
+
+  it("does not navigate when Guard Checkout returns an untrusted URL", async () => {
+    navigation.urls.length = 0
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "javascript:alert(1)" }),
+    })
+    render(<GuardView locations={[location({
+      actions: [{
+        selector: action,
+        kind: "subscription" as const,
+        amountMinor: 4900,
+        currency: "GBP",
+        taxBehaviour: "NOT_APPLICABLE" as const,
+        consentVersion: "GUARD_RECURRING_CONSENT_V1" as const,
+        consentText: "I authorise monthly billing for this location.",
+        consentRecorded: true,
+        cancellationTerms: "Normal cancellation takes effect at the end of the already-paid period.",
+        checkout: true,
+        recovery: false,
+        periodEndCancellation: false,
+        undoPeriodEndCancellation: false,
+        immediateCancellationReview: false,
+      }],
+    })]} focused />)
+    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure Stripe Checkout" }).closest("form")!)
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Secure Stripe Checkout is not available yet."))
+    expect(navigation.urls).toEqual([])
+    expect(document.body.innerHTML).not.toContain("javascript:")
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay_guard" }),
+    })
+    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure Stripe Checkout" }).closest("form")!)
+    await waitFor(() => expect(navigation.urls).toEqual(["https://checkout.stripe.com/c/pay_guard"]))
   })
 
   it("offers price acceptance and decline as separate responses", () => {

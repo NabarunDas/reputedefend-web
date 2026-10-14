@@ -199,6 +199,34 @@ describe("customer action HTTP", () => {
       "customer_action_session_v1",
     ])
   })
+
+  it("strips an untrusted hosted invoice from the verified session without marking it paid", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+      .mockResolvedValueOnce({ status: "ok" })
+      .mockResolvedValueOnce({
+        actionId,
+        kind: "INVOICE_PAYMENT",
+        payment: {
+          obligationState: "DUE",
+          hostedInvoiceUrl: "https://invoice.stripe.com.evil.example/i/x",
+        },
+      })
+    mocks.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak", refresh_token: "refresh-must-not-leak" },
+        user: { id: "66666666-6666-4666-8666-666666666666", email: "alex@example.com", email_confirmed_at: "2026-09-18T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json() as { session?: { payment?: { obligationState?: string; hostedInvoiceUrl?: string | null } } }
+    expect(response.status).toBe(200)
+    expect(payload.session?.payment?.hostedInvoiceUrl).toBeNull()
+    expect(payload.session?.payment?.obligationState).toBe("DUE")
+    expect(JSON.stringify(payload)).not.toContain("evil.example")
+  })
+
   it.each([
     ["an error", { error: { message: "revoke failed jwt-must-not-leak alex@example.com" } }],
     ["a null result", null],

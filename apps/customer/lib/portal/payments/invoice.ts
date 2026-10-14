@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
+import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 
 const UNAVAILABLE = "The hosted invoice link is not available yet."
 const MISSING = "This invoice is no longer available."
@@ -42,8 +43,8 @@ export async function portalInvoiceOpen(request: NextRequest) {
     if (!isRecord(resolved) || typeof resolved.status !== "string") return textReply(RETRY, 503)
     if (resolved.status === "unavailable") return textReply(UNAVAILABLE, 404)
     if (resolved.status !== "redirect" || typeof resolved.hostedInvoiceUrl !== "string") return textReply(MISSING, 404)
-    const target = resolved.hostedInvoiceUrl
-    if (!target.startsWith("https://") || /\s/.test(target) || target.length > 2000) return textReply(UNAVAILABLE, 404)
+    const target = trustedStripeUrl(resolved.hostedInvoiceUrl, "invoice")
+    if (!target) return textReply(UNAVAILABLE, 404)
     return NextResponse.redirect(target, { headers: privateResponseHeaders })
   } catch {
     return textReply(RETRY, 503)

@@ -3,6 +3,7 @@ import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
 import { cookieOptions, customerConfig, pendingCookie, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { validCustomerOtp } from "@/lib/otp"
+import { stripUntrustedHostedInvoice } from "../../../../lib/payments/stripe-url"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "./identity"
 import { isUuid } from "../uuid"
 
@@ -103,7 +104,7 @@ export async function verifyOtp(request: NextRequest) {
       failed.cookies.set(pendingCookie, "", { ...cookieOptions, maxAge: 0 })
       return failed
     }
-    const response = NextResponse.json({ status: "ok", session }, { headers: privateResponseHeaders })
+    const response = NextResponse.json({ status: "ok", session: stripUntrustedHostedInvoice(session) }, { headers: privateResponseHeaders })
     response.cookies.set(sessionCookie, token, { ...cookieOptions, maxAge: 900 })
     response.cookies.set(pendingCookie, "", { ...cookieOptions, maxAge: 0 })
     return response

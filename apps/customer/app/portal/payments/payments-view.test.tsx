@@ -9,10 +9,23 @@ import type { PaymentCase, PaymentOrder } from "@/lib/portal/payments/parse"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/payments" }))
 const refresh = vi.hoisted(() => vi.fn())
+const navigation = vi.hoisted(() => ({ urls: [] as string[] }))
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
   useRouter: () => ({ push: vi.fn(), refresh }),
 }))
+vi.mock("../../../../../lib/payments/stripe-url", async () => {
+  const actual = await vi.importActual<typeof import("../../../../../lib/payments/stripe-url")>("../../../../../lib/payments/stripe-url")
+  return {
+    ...actual,
+    assignTrustedStripeCheckout(value: unknown) {
+      const trusted = actual.trustedStripeUrl(value, "checkout")
+      if (!trusted) return false
+      navigation.urls.push(trusted)
+      return true
+    },
+  }
+})
 
 const fetchMock = vi.fn()
 const selector = `ca-${"ab".repeat(32)}`
@@ -149,6 +162,28 @@ describe("payments screens", () => {
     fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(fetchMock.mock.calls[1][1].headers["idempotency-key"]).toBe(firstKey)
+  })
+
+  it("does not navigate when Checkout returns an untrusted URL", async () => {
+    navigation.urls.length = 0
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://evil.example/checkout.stripe.com" }),
+    })
+    render(<PaymentsView focused cases={[item()]} />)
+    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Secure Stripe Checkout is not available yet."))
+    expect(navigation.urls).toEqual([])
+    expect(document.body.innerHTML).not.toContain("evil.example")
+    expect(screen.queryByText(/payment successful/i)).toBeNull()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay_test" }),
+    })
+    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
+    await waitFor(() => expect(navigation.urls).toEqual(["https://checkout.stripe.com/c/pay_test"]))
   })
 
   it("links a receipt download without a storage path", () => {

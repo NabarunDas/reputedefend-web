@@ -3,6 +3,24 @@ import Stripe from "stripe"
 import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, type PaymentEnv } from "./config"
 import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
+import { trustedStripeUrl } from "./stripe-url"
+
+function requireCheckoutUrl(url: string | null | undefined): string {
+  const trusted = trustedStripeUrl(url, "checkout")
+  if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
+  return trusted
+}
+
+function acceptedInvoiceUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  return trustedStripeUrl(url, "invoice")
+}
+
+function requireInvoiceUrl(url: string | null | undefined): string {
+  const trusted = trustedStripeUrl(url, "invoice")
+  if (!trusted) throw new PaymentsDisabledError("Hosted invoice URL was rejected.")
+  return trusted
+}
 
 function rawSecret(env: PaymentEnv): string | null {
   return env.STRIPE_SECRET_KEY ?? null
@@ -116,7 +134,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: session.url || "", mode: "payment", amountMinor: input.amountMinor, livemode: false }
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "payment", amountMinor: input.amountMinor, livemode: false }
     },
     async createSetupCheckout(input) {
       const meta = paymentMetadata(input.metadata)
@@ -131,7 +149,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         setup_intent_data: { metadata: meta },
       }, { idempotencyKey: input.idempotencyKey })
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: session.url || "", mode: "setup", amountMinor: 0, livemode: false }
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: false }
     },
     async createOffSessionPayment(input) {
       const meta = paymentMetadata(input.metadata)
@@ -255,7 +273,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         amountDueMinor: invoice.amount_due,
         amountPaidMinor: invoice.amount_paid,
         currency: (invoice.currency || "gbp").toLowerCase(),
-        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+        hostedInvoiceUrl: acceptedInvoiceUrl(invoice.hosted_invoice_url),
         metadata: metadataOf(invoice),
         livemode: false as const,
       }
@@ -293,7 +311,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       }
       return {
         id: finalized.id,
-        hostedInvoiceUrl: finalized.hosted_invoice_url,
+        hostedInvoiceUrl: requireInvoiceUrl(finalized.hosted_invoice_url),
         amountDueMinor: finalized.amount_due,
         currency: (finalized.currency || "gbp").toLowerCase(),
         status: finalized.status || "open",
@@ -343,7 +361,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: session.url || "", mode: "subscription", amountMinor: 0, livemode: false }
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "subscription", amountMinor: 0, livemode: false }
     },
     async createGuardRecoveryCheckout(input) {
       const meta = guardMetadata(input.metadata)
@@ -358,7 +376,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         setup_intent_data: { metadata: meta },
       }, { idempotencyKey: input.idempotencyKey })
       if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: session.url || "", mode: "setup", amountMinor: 0, livemode: false }
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: false }
     },
     async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
       const updated = await client(env).subscriptions.update(id, {
@@ -419,7 +437,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         amountDueMinor: invoice.amount_due,
         amountPaidMinor: invoice.amount_paid,
         currency: invoice.currency ? invoice.currency.toLowerCase() : "",
-        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+        hostedInvoiceUrl: acceptedInvoiceUrl(invoice.hosted_invoice_url),
         metadata: { ...subscriptionMeta, ...metadataOf(invoice) },
         livemode: false as const,
         subscriptionId: asId(parent.subscription_details?.subscription),

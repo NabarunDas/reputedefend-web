@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
     provider: {
       mode: "disabled" as string,
       createCustomer: vi.fn(async () => { throw new Disabled() }),
-      createPaymentCheckout: vi.fn(async () => { throw new Disabled() }),
+      createPaymentCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "payment"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async () => { throw new Disabled() }),
       retrieveCheckout: vi.fn(async () => null),
       cancelPaymentIntent: vi.fn(async () => ({ cancelled: false, alreadySucceeded: false, status: "open" })),
@@ -105,6 +105,39 @@ describe("portal payment command", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "ok", message: "Consent recorded. No fee is due today." })
     expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
+  })
+
+  it("does not return an untrusted portal Checkout URL or mark the payment successful", async () => {
+    mocks.provider.createPaymentCheckout.mockResolvedValue({
+      id: "cs_evil",
+      url: "https://checkout.stripe.com.evil.example/pay",
+      mode: "payment",
+      amountMinor: 9900,
+      livemode: false,
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_payment_command_v1") {
+        return {
+          status: "success",
+          mode: "payment",
+          amountMinor: 9900,
+          customerId: key,
+          providerOperationId: key,
+          idempotencyKey: key,
+          serviceOrderId: key,
+          obligationId: key,
+        }
+      }
+      if (name === "payment_prepare_customer_v1") return { stripeCustomerId: "cus_test" }
+      return { status: "success" }
+    })
+    const response = await portalPaymentCommand(req(checkout))
+    expect(response.status).toBe(503)
+    expect(response.headers.get("location")).toBeNull()
+    const text = await response.text()
+    expect(text).not.toContain("evil.example")
+    expect(text).not.toContain("checkoutUrl")
+    expect(text).not.toMatch(/paid|successful/i)
   })
 
   it("rejects mark_paid, a stale replay and a signed-out session", async () => {

@@ -1,6 +1,6 @@
 # COM-14A commercial eligibility
 
-Status: source-only. `supabase/migrations/20261015140000_commercial_eligibility_gate_v1.sql` is additive and has not been applied to DEV or Production. AWS ApprovedMigrationHead stays at `20261014170000`. The paid-service catalogue stays `SOLICITOR_REVIEW` and inoperative. Stripe live mode, the Customer Portal, Guard and mail automation stay off.
+Status: applied to DEV on 2026-10-15 only. `supabase/migrations/20261015140000_commercial_eligibility_gate_v1.sql` is additive and has not been applied to Production. AWS ApprovedMigrationHead stays at `20261014170000`. The paid-service catalogue stays `SOLICITOR_REVIEW` and inoperative. Stripe live mode, the Customer Portal, Guard and mail automation stay off.
 
 The only seeded commercial fact is that ProfileRelaunch Ltd is not VAT registered. That is not a zero-rating and it does not authorise overseas sales. No country catalogue is seeded. A missing overseas decision is not a hidden approval.
 
@@ -61,5 +61,5 @@ The seller's VAT position is recorded as not registered on 14 October 2026. A la
 ## Still for the owner
 
 - The solicitor approval of PS-2026-10-14.2 still needs an authenticated Admin record with a real external evidence reference. Owner-reported confirmation does not make the catalogue operative.
-- DEV application of this migration, then Production, only after the usual backup and `ApprovedMigrationHead` review.
+- DEV application is complete and independently verified; Production application remains separate and requires the usual backup and `ApprovedMigrationHead` review.
 - Live Stripe, Customer Portal, Guard and email remain separate activation decisions.

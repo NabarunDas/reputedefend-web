@@ -10,44 +10,44 @@ permissions:
   contents: read
 
 jobs:
-  webhook-http:
+  webhook-protection:
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Diagnose public DEV webhook HTTP response and route restrictions
+      - name: Verify unauthenticated DEV Admin custom hostname remains protected
         shell: bash
         run: |
           set -euo pipefail
           host='https://dev-hooks.profilerelaunch.com'
-          echo 'Resolving DNS'
           getent ahostsv4 dev-hooks.profilerelaunch.com | awk '{print $1}' | sort -u | head -4
-          failures=0
           check() {
-            local expected="$1" method="$2" path="$3" actual
+            local method="$1" path="$2" code target
             local headers
             headers="$(mktemp)"
-            actual="$(curl --silent --show-error --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 --dump-header "$headers" --output /dev/null --write-out '%{http_code}' --request "$method" "$host$path")" || actual="transport-error"
-            echo "$method $path: HTTP $actual (expected $expected)"
-            # Log only redirect host/path, never query strings, cookies or raw headers.
-            if [[ "$actual" = "302" || "$actual" = "303" || "$actual" = "307" || "$actual" = "308" ]]; then
-              python3 - "$headers" <<'PY'
+            code="$(curl --silent --show-error --connect-timeout 10 --max-time 20 --dump-header "$headers" --output /dev/null --write-out '%{http_code}' --request "$method" "$host$path")"
+            target="$(python3 - "$headers" <<'PY'
           import sys
           from urllib.parse import urlsplit
           for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
               if line.lower().startswith('location:'):
-                  u = urlsplit(line.split(':', 1)[1].strip())
-                  print('Redirect scheme/host/path:', u.scheme, u.netloc, u.path)
+                  value = urlsplit(line.split(':',1)[1].strip())
+                  print(value.hostname or '', value.path)
+                  break
           PY
-            fi
+          )"
             rm -f "$headers"
-            if [[ "$actual" != "$expected" ]]; then failures=$((failures+1)); fi
+            echo "$method $path -> HTTP $code; redirect target host/path: $target"
+            test "$code" = "302"
+            test "$target" = "vercel.com /sso-api"
           }
-          check 404 GET /
-          check 404 GET /login
-          check 404 GET /brand/profile-relaunch-logo.png
-          check 404 POST /auth/send
-          check 404 POST /api/webhooks/resend
-          check 401 POST /api/webhooks/stripe
-          echo "Mismatched response count: $failures"
-          test "$failures" -eq 0
+          # Without the separate Vercel automation-bypass query token in the
+          # Stripe sandbox endpoint configuration, SSO must intercept every route.
+          # This DOES NOT test the bypass-protected Stripe delivery; signed
+          # Stripe event IDs are separately verified in DEV receipt records.
+          check GET /
+          check GET /login
+          check GET /brand/profile-relaunch-logo.png
+          check POST /auth/send
+          check POST /api/webhooks/resend
+          check POST /api/webhooks/stripe

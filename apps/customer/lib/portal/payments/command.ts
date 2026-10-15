@@ -3,6 +3,7 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openCustomerCheckout, settleRecoveryCancel } from "@/lib/action/payment"
+import { declaredLivemodeField, guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
@@ -133,10 +134,13 @@ export async function portalPaymentCommand(request: NextRequest) {
     p_reference: body.reference,
     p_selector: body.selector,
     p_operation: operation,
-    p_data: confirmation,
+    p_data: operation === "start_checkout" ? { ...confirmation, ...declaredLivemodeField() } : confirmation,
   })
 
   try {
+    if (operation === "start_checkout") {
+      await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+    }
     const result = await call(key)
     if (result == null) return reply(SIGN_IN)
     if (!isRecord(result) || typeof result.status !== "string") return reply(RETRY, 503)

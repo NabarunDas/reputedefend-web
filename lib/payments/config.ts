@@ -62,18 +62,20 @@ function hostname(value: string | undefined): string | null {
   }
 }
 
-/** A present Supabase URL or evidence bucket must belong to this lane. Absence is not a mismatch. */
+/**
+ * Local tests may omit resource pins. Preview and Production must name the
+ * Supabase project and evidence bucket for that lane. A missing or foreign
+ * pin disables payments.
+ */
 export function paymentDataLaneMatches(env: PaymentEnv = process.env): boolean {
   const lane = paymentLane(env)
   if (lane === "local") return true
   if (lane === "unrecognised") return false
   const production = lane === "production"
-  const host = env.SUPABASE_URL ? hostname(env.SUPABASE_URL) : null
-  if (env.SUPABASE_URL && host !== `${production ? PROD_SUPABASE_PROJECT_REF : DEV_SUPABASE_PROJECT_REF}.supabase.co`) {
-    return false
-  }
+  const host = hostname(env.SUPABASE_URL)
+  if (host !== `${production ? PROD_SUPABASE_PROJECT_REF : DEV_SUPABASE_PROJECT_REF}.supabase.co`) return false
   const bucket = env.AWS_EVIDENCE_BUCKET
-  if (bucket && bucket !== (production ? PROD_EVIDENCE_BUCKET : DEV_EVIDENCE_BUCKET)) return false
+  if (bucket !== (production ? PROD_EVIDENCE_BUCKET : DEV_EVIDENCE_BUCKET)) return false
   return true
 }
 
@@ -111,7 +113,11 @@ export function paymentsEnabled(env: PaymentEnv = process.env): boolean {
   if (!paymentDataLaneMatches(env)) return false
   const mode = resolvePaymentProviderMode(env)
   if (mode !== "stripe_test" && mode !== "stripe_live") return false
-  return stripeSecret(env) !== null
+  if (stripeSecret(env) === null) return false
+  // Local unit tests use a fake provider and do not need a webhook secret.
+  // Deployed Preview and Production cannot take payment without signed reconciliation.
+  if (paymentLane(env) !== "local" && stripeWebhookSecret(env) === null) return false
+  return true
 }
 
 export { PAYMENT_PROVIDER_MODES }

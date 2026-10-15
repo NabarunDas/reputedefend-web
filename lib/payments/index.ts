@@ -1,5 +1,6 @@
 import { paymentsEnabled, type PaymentEnv } from "./config"
 import { createFakePaymentProvider } from "./fake"
+import { databaseLaneAgrees, type DatabasePaymentLane } from "./lane-agreement"
 import { disabledPaymentProvider, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { createStripePaymentProvider } from "./stripe"
 
@@ -18,13 +19,23 @@ export {
   paymentDataLaneMatches, expectedLivemode, STRIPE_LIVE_ACTIVATION_VALUE,
 } from "./config"
 
-export function paymentProvider(env: PaymentEnv = process.env, options?: { fake?: boolean }): PaymentProvider {
+export function paymentProvider(
+  env: PaymentEnv = process.env,
+  options?: { fake?: boolean; databaseLane?: DatabasePaymentLane | null },
+): PaymentProvider {
   if (options?.fake) return createFakePaymentProvider()
   if (!paymentsEnabled(env)) return disabledPaymentProvider()
+  if (!databaseLaneAgrees(env, options?.databaseLane ?? null)) return disabledPaymentProvider()
   try {
-    return createStripePaymentProvider(env)
+    return createStripePaymentProvider(env, options?.databaseLane)
   } catch (error) {
     if (error instanceof PaymentsDisabledError) return disabledPaymentProvider()
     throw error
   }
+}
+
+/** Uses the process environment. Callers that hold a different env pass it to paymentProvider. */
+export function paymentProviderWithLane(lane: DatabasePaymentLane): PaymentProvider {
+  const env = process.env
+  return paymentProvider(env, { databaseLane: lane })
 }

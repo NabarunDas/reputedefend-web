@@ -119,6 +119,70 @@ describe("payment lane isolation", () => {
     })
   })
 
+  it("refuses off-session collection and a Stripe effect on the wrong database lane", async () => {
+    await db.exec(`
+      delete from admin_private.job_outbox;
+      delete from admin_private.stripe_event_receipts;
+      delete from public.provider_operations;
+      delete from public.payment_invoices;
+      delete from admin_private.payment_provider_lane;
+    `)
+    expect(await rpc("payment_provider_lane_status_v1")).toEqual({
+      configured: false,
+      mode: "stripe_test",
+      expectedLivemode: false,
+    })
+    const beforeOps = await count("select count(*)::int as n from public.provider_operations")
+    const beforeInvoices = await count("select count(*)::int as n from public.payment_invoices")
+    expect(await rpc("payment_collect_prepare_v1", ["55555555-5555-4555-8555-555555555555"])).toMatchObject({
+      status: "denied",
+      reason: "off_session_retired",
+    })
+    expect(await rpc("payment_prepare_customer_v1", ["22222222-2222-4222-8222-222222222222", true])).toMatchObject({
+      status: "denied",
+      reason: "lane_mismatch",
+    })
+    expect(await rpc("payment_prepare_invoice_v1", ["a".repeat(64), "55555555-5555-4555-8555-555555555555", true])).toMatchObject({
+      status: "denied",
+      reason: "lane_mismatch",
+    })
+    expect(await count("select count(*)::int as n from public.provider_operations")).toBe(beforeOps)
+    expect(await count("select count(*)::int as n from public.payment_invoices")).toBe(beforeInvoices)
+    expect(await rpc("admin_set_payment_provider_lane_v1", ["stripe_test"])).toMatchObject({ status: "success" })
+    expect(await rpc("payment_prepare_invoice_v1", ["a".repeat(64), "55555555-5555-4555-8555-555555555555", true])).toMatchObject({
+      status: "denied",
+      reason: "lane_mismatch",
+    })
+    await db.exec("delete from admin_private.payment_provider_lane")
+    expect(await rpc("admin_set_payment_provider_lane_v1", ["stripe_live"])).toMatchObject({ status: "success" })
+    expect(await rpc("payment_prepare_invoice_v1", ["a".repeat(64), "55555555-5555-4555-8555-555555555555", false])).toMatchObject({
+      status: "denied",
+      reason: "lane_mismatch",
+    })
+    expect(await rpc("payment_prepare_invoice_v1", ["a".repeat(64), "55555555-5555-4555-8555-555555555555", true])).toMatchObject({
+      status: "unauthorized",
+    })
+    expect(await count("select count(*)::int as n from public.payment_invoices")).toBe(beforeInvoices)
+    const core = await rows<{ body: string }>(`
+      select p.prosrc as body from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'admin_private' and p.proname = 'admin_payment_command_core_v1'
+    `)
+    expect(core[0].body).not.toContain("COLLECT_PAYMENT")
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_live_replay", "invoice.paid", "in_live_replay", false])).toMatchObject({
+      status: "denied",
+      reason: "livemode",
+    })
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_live_replay", "invoice.paid", "in_live_replay", true])).toMatchObject({
+      status: "success",
+      duplicate: false,
+    })
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_live_replay", "invoice.paid", "in_live_replay", true])).toMatchObject({
+      status: "success",
+      duplicate: true,
+    })
+  })
+
   it("lets only the service role set the lane", async () => {
     await db.exec("set role anon")
     await expect(db.query("select public.admin_set_payment_provider_lane_v1('stripe_test')")).rejects.toThrow(/permission denied/i)

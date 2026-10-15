@@ -167,8 +167,13 @@ describe("release safety: each capability needs its own deliberate action", () =
       AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
       PAYMENTS_PROVIDER_MODE: "stripe_test",
       STRIPE_SECRET_KEY: "sk_test_placeholdernotarealkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test_secret_value",
     }
     expect(liveCapabilityIds(preview)).toEqual(["stripe_payments"])
+    expect(liveCapabilityIds({ ...preview, STRIPE_WEBHOOK_SECRET: undefined })).toEqual([])
+    expect(liveCapabilityIds({ ...preview, STRIPE_WEBHOOK_SECRET: "placeholder-stripe-webhook" })).toEqual([])
+    expect(liveCapabilityIds({ ...preview, SUPABASE_URL: undefined })).toEqual([])
+    expect(liveCapabilityIds({ ...preview, AWS_EVIDENCE_BUCKET: undefined })).toEqual([])
     expect(liveCapabilityIds({
       ...preview,
       PAYMENTS_PROVIDER_MODE: "stripe_live",
@@ -184,8 +189,12 @@ describe("release safety: each capability needs its own deliberate action", () =
       PAYMENTS_PROVIDER_MODE: "stripe_live",
       STRIPE_LIVE_ACTIVATION: "enabled",
       STRIPE_SECRET_KEY: "sk_live_placeholdernotarealkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test_secret_value",
     }
     expect(liveCapabilityIds(production)).toEqual(["stripe_payments"])
+    expect(liveCapabilityIds({ ...production, STRIPE_WEBHOOK_SECRET: undefined })).toEqual([])
+    expect(liveCapabilityIds({ ...production, SUPABASE_URL: undefined })).toEqual([])
+    expect(liveCapabilityIds({ ...production, AWS_EVIDENCE_BUCKET: undefined })).toEqual([])
     expect(liveCapabilityIds({ ...production, STRIPE_LIVE_ACTIVATION: undefined })).toEqual([])
     expect(liveCapabilityIds({ ...production, PAYMENTS_PROVIDER_MODE: "stripe_test", STRIPE_SECRET_KEY: "sk_test_placeholdernotarealkey" })).toEqual([])
     expect(liveCapabilityIds({ ...production, SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co" })).toEqual([])

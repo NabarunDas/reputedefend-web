@@ -19,7 +19,7 @@ No Stripe secret belongs in Git, a `NEXT_PUBLIC_` variable, a log line or a data
 
 There is no fallback from a rejected Production configuration into test mode, and no fallback from a rejected Preview configuration into live mode. A live key on Preview never constructs a Stripe client.
 
-On Preview and Production, a present `SUPABASE_URL` and a present `AWS_EVIDENCE_BUCKET` must belong to that lane. A mismatch disables Stripe.
+On Preview and Production, `SUPABASE_URL`, `AWS_EVIDENCE_BUCKET` and `STRIPE_WEBHOOK_SECRET` must all be present and belong to that lane. A missing pin, a foreign pin, or a webhook secret that does not begin with `whsec_` disables Stripe. Local tests may omit those pins.
 
 | Lane | Supabase project | Evidence bucket |
 | --- | --- | --- |
@@ -28,7 +28,9 @@ On Preview and Production, a present `SUPABASE_URL` and a present `AWS_EVIDENCE_
 
 Local development does not apply those pins. Webhook signing secrets are separate per endpoint and must begin with `whsec_`. Checkout and hosted-invoice URLs stay on `checkout.stripe.com` and `invoice.stripe.com` in both lanes. A URL on those hosts is not proof of account or mode; the server still checks the retrieved object, customer, order, `livemode` and metadata.
 
-Commercial behaviour is unchanged: Guided payment is upfront; a Managed success fee is a 14-day hosted invoice after verified success, with no automatic off-session charge; Guard recurring consent and the existing opt-in protections stay as they are. Legal acceptance, tax and commercial eligibility gates stay in force. The paid-service catalogue stays inoperative.
+Commercial behaviour stays as agreed. Guided payment is upfront. A Managed success fee is a hosted invoice due 14 days after Stripe finalises it, and only after verified success. Approving that fee does not queue `COLLECT_PAYMENT`. An old queued `COLLECT_PAYMENT` job fails closed and does not create a PaymentIntent, even when a saved card exists. Guard recurring consent and authorised subscription billing stay in place. Legal acceptance, tax, disputed-payment and commercial eligibility gates stay in force. The paid-service catalogue stays inoperative.
+
+Stripe is not called unless the database lane agrees with the process. Production `stripe_live` requires an explicit `stripe_live` row from `admin_set_payment_provider_lane_v1`. No row, or a `stripe_test` row, blocks every Production Stripe call and does not create a provider operation or invoice. Preview accepts no row or an explicit `stripe_test` row, and refuses a `stripe_live` row. A webhook whose `livemode` does not match that lane is denied before a receipt is stored, and a repeat of the same event and the same `livemode` stays a duplicate.
 
 Idempotency keys are unique inside one database and are sent to one Stripe account. DEV and Production use different Supabase projects and different Stripe accounts, so a customer id or provider row from one lane is never reused in the other.
 
@@ -36,7 +38,7 @@ Idempotency keys are unique inside one database and are sent to one Stripe accou
 
 Do not apply this migration from the pull request. After independent review, a later change window can apply `20261015153000_payment_lane_isolation_v1.sql` to the target project. It is additive. It does not seed a lane and it does not call the setter.
 
-Until a lane row exists, expected `livemode` stays false, which matches current DEV and Production data. Inserts and updates that carry the other `livemode` fail with `livemode_mismatch`. Webhook functions deny a mismatched event without inserting a receipt and without marking it processed, so the same event can be delivered again after the lane is corrected. A repeat of the same event id and the same `livemode` stays a duplicate.
+Until a lane row exists, expected `livemode` stays false. That matches DEV. It is not enough for Production: `stripe_live` stays unable to call Stripe until `admin_set_payment_provider_lane_v1` has recorded `stripe_live` on that database. Inserts and updates that carry the other `livemode` fail with `livemode_mismatch`. Webhook functions deny a mismatched event without inserting a receipt and without marking it processed, so the same event can be delivered again after the lane is corrected. A repeat of the same event id and the same `livemode` stays a duplicate. Checkout, invoice, customer and Guard commands that would create a provider object refuse with `lane_mismatch` when the declared livemode does not match the row. `payment_collect_prepare_v1` always returns `off_session_retired` and does not change the obligation.
 
 `public.admin_set_payment_provider_lane_v1` is granted only to `service_role`. It accepts `stripe_test` or `stripe_live`. It refuses when any provider, customer-map, Guard or webhook-receipt row already has the other `livemode`. An empty payment ledger can be set either way. The migration does not call it.
 

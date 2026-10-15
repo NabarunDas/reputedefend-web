@@ -648,7 +648,7 @@ export const environmentContract: readonly EnvVariable[] = [
     scope: "PRODUCTION_AND_PREVIEW",
     atAdminCutover: "ABSENT",
     controls: "Verifies Stripe webhook signatures for this lane. It must begin whsec_ and be at least 16 characters. Sandbox and live endpoints use different secrets.",
-    whenAbsent: "The Stripe webhook rejects every request.",
+    whenAbsent: "The Stripe webhook rejects every request, and deployed Preview and Production keep payments disabled.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
     readBy: ["lib/payments/config.ts"],

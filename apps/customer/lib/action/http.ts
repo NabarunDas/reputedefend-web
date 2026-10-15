@@ -180,10 +180,12 @@ export async function command(request: NextRequest) {
       const { guardSubscriptionsEnabled } = await import("../../../../lib/guard-billing/config")
       if (guardSubscriptionsEnabled() && result.subscriptionItemId && result.oldStripePriceId && result.periodEnd
         && result.providerOperationStatus !== "SUCCEEDED") {
-        const { paymentProvider } = await import("../../../../lib/payments")
+        const { paymentProvider, paymentProviderWithLane } = await import("../../../../lib/payments")
+        const { guardExternalPayment } = await import("../../../../lib/payments/lane-agreement")
         const periodEnd = Math.floor(Date.parse(result.periodEnd) / 1000)
         if (Number.isFinite(periodEnd)) {
-          const provider = paymentProvider()
+          const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+          const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
           const current = await provider.retrieveSubscription(result.stripeSubscriptionId)
           if (current?.scheduleId) {
             await backend().rpc("guard_record_price_schedule_v1", {

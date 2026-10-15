@@ -1,5 +1,7 @@
 import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
+import { guardExternalPayment } from "../../../../lib/payments/lane-agreement"
+import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
 const PAGE = 25
@@ -44,7 +46,16 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
       if (!rpc) return { ok: false, retryable: false, error: "Reconciliation requires RPC." }
       const runId = typeof payload.runId === "string" ? payload.runId : ""
       if (!runId) return { ok: false, retryable: false, error: "Reconciliation payload is invalid." }
-      const provider = paymentProvider(env)
+      let lane = null
+      try {
+        lane = await guardExternalPayment(async (name, args) => rpc.rpc(name, args ?? {}), env)
+      } catch (error) {
+        if (error instanceof PaymentsDisabledError) {
+          return { ok: false, retryable: false, error: "Payment database lane does not match this environment." }
+        }
+        throw error
+      }
+      const provider = paymentProvider(env, lane ? { databaseLane: lane } : undefined)
       const laneLivemode = provider.mode === "stripe_live"
       let after: string | null = null
       for (;;) {

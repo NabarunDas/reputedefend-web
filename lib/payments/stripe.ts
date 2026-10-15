@@ -1,7 +1,8 @@
 import "server-only"
 import Stripe from "stripe"
 import { isStripeLiveSecret, isStripeTestSecret, paymentLane, resolvePaymentProviderMode, type PaymentEnv } from "./config"
-import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
+import { databaseLaneAgrees, type DatabasePaymentLane } from "./lane-agreement"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { trustedStripeUrl } from "./stripe-url"
 
@@ -49,70 +50,16 @@ function metadataOf(value: { metadata?: Stripe.Metadata | null } | null | undefi
   return Object.fromEntries(Object.entries(meta).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
-function classifyStripeError(error: unknown, amountMinor: number, livemode: boolean): ProviderPaymentIntent {
-  const stripeError = error as {
-    type?: string
-    code?: string
-    statusCode?: number
-    payment_intent?: { id?: string; status?: string }
-    rawType?: string
-  }
-  const intent = stripeError.payment_intent
-  if (intent && (intent as { livemode?: boolean }).livemode !== undefined && (intent as { livemode?: boolean }).livemode !== livemode) {
-    throw new PaymentsDisabledError("PaymentIntent does not belong to this payment lane.")
-  }
-  if (intent?.status === "requires_action" || stripeError.code === "authentication_required") {
-    return {
-      id: intent?.id,
-      status: "requires_action",
-      amountMinor,
-      requiresAction: true,
-      livemode,
-      classification: "requires_action",
-      retryable: false,
-      failureCode: stripeError.code ?? "authentication_required",
-      failureCategory: "AUTHENTICATION_REQUIRED",
-    }
-  }
-  const retryable = stripeError.type === "StripeConnectionError"
-    || stripeError.type === "StripeAPIConnectionError"
-    || stripeError.type === "StripeRateLimitError"
-    || stripeError.rawType === "api_connection_error"
-    || stripeError.rawType === "rate_limit_error"
-    || (typeof stripeError.statusCode === "number" && stripeError.statusCode >= 500)
-  if (retryable) {
-    return {
-      id: intent?.id,
-      status: "retryable",
-      amountMinor,
-      requiresAction: false,
-      livemode,
-      classification: "retryable",
-      retryable: true,
-      failureCode: stripeError.code ?? stripeError.type ?? "provider_unavailable",
-      failureCategory: "INFRASTRUCTURE",
-    }
-  }
-  return {
-    id: intent?.id,
-    status: "failed",
-    amountMinor,
-    requiresAction: false,
-    livemode,
-    classification: "declined",
-    retryable: false,
-    failureCode: stripeError.code ?? "card_declined",
-    failureCategory: "DECLINED",
-  }
-}
-
-export function createStripePaymentProvider(env: PaymentEnv = process.env): PaymentProvider {
+export function createStripePaymentProvider(env: PaymentEnv = process.env, databaseLane?: DatabasePaymentLane | null): PaymentProvider {
   const mode = resolvePaymentProviderMode(env)
   if (mode !== "stripe_test" && mode !== "stripe_live") throw new PaymentsDisabledError()
   const raw = rawSecret(env) ?? ""
   if (isStripeLiveSecret(raw) && paymentLane(env) !== "production") throw new LiveStripeKeyError()
   if (mode === "stripe_live" && !isStripeLiveSecret(raw)) throw new PaymentsDisabledError()
   if (mode === "stripe_test" && !isStripeTestSecret(raw)) throw new PaymentsDisabledError()
+  if (!databaseLaneAgrees(env, databaseLane ?? null)) {
+    throw new PaymentsDisabledError("Payment database lane does not match this environment.")
+  }
   const expectedLivemode = mode === "stripe_live"
   function lane<T extends { livemode?: boolean }>(value: T, label: string): T {
     if (value.livemode !== expectedLivemode) {
@@ -169,58 +116,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
       lane(session, "Stripe object")
       return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: expectedLivemode }
     },
-    async createOffSessionPayment(input) {
-      const meta = paymentMetadata(input.metadata)
-      assertSafeMetadata(meta)
-      try {
-        const intent = await client(env).paymentIntents.create({
-          amount: input.amountMinor,
-          currency: input.currency.toLowerCase(),
-          customer: input.stripeCustomerId,
-          payment_method: input.paymentMethodId,
-          off_session: true,
-          confirm: true,
-          payment_method_types: ["card"],
-          metadata: meta,
-        }, { idempotencyKey: input.idempotencyKey })
-        lane(intent, "Stripe object")
-        if (intent.status === "requires_action") {
-          return {
-            id: intent.id,
-            status: intent.status,
-            amountMinor: intent.amount,
-            requiresAction: true,
-            livemode: expectedLivemode,
-            classification: "requires_action",
-            retryable: false,
-          }
-        }
-        if (intent.status === "succeeded") {
-          return {
-            id: intent.id,
-            status: intent.status,
-            amountMinor: intent.amount,
-            requiresAction: false,
-            livemode: expectedLivemode,
-            classification: "succeeded",
-            retryable: false,
-          }
-        }
-        return {
-          id: intent.id,
-          status: intent.status,
-          amountMinor: intent.amount,
-          requiresAction: false,
-          livemode: expectedLivemode,
-          classification: "declined",
-          retryable: false,
-          failureCode: intent.last_payment_error?.code ?? intent.status,
-          failureCategory: "DECLINED",
-        }
-      } catch (error) {
-        if (error instanceof PaymentsDisabledError) throw error
-        return classifyStripeError(error, input.amountMinor, expectedLivemode)
-      }
+    async createOffSessionPayment() {
+      throw new PaymentsDisabledError("Off-session Managed collection is retired.")
     },
     async retrieveCheckout(id) {
       const session = await client(env).checkout.sessions.retrieve(id)
@@ -304,7 +201,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         customer: input.stripeCustomerId,
         currency: input.currency.toLowerCase(),
         collection_method: "send_invoice",
-        days_until_due: 30,
+        days_until_due: HOSTED_INVOICE_DAYS_UNTIL_DUE,
         auto_advance: false,
         pending_invoice_items_behavior: "exclude",
         metadata: meta,

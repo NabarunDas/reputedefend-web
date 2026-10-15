@@ -3,7 +3,8 @@ import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerConfig, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { isUuid } from "../uuid"
-import { paymentProvider } from "../../../../lib/payments"
+import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { declaredLivemodeArgument, declaredLivemodeField, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { isStripeTrialEndAllowed } from "../../../../lib/payments/model"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
@@ -49,8 +50,10 @@ export async function guardSubscriptionCommand(request: NextRequest) {
       message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
     }, { status: 403, headers: privateResponseHeaders })
   }
-  const data = { idempotencyKey: isUuid(body.idempotencyKey) ? body.idempotencyKey : key }
+  const stripeBound = operation !== "request_immediate_cancellation"
+  const data = { idempotencyKey: isUuid(body.idempotencyKey) ? body.idempotencyKey : key, ...(stripeBound ? declaredLivemodeField() : {}) }
   try {
+    if (stripeBound) await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
     const result = await backend().rpc<{
       status?: string
       providerOperationId?: string
@@ -121,7 +124,8 @@ export async function settleGuardCancellation(result: {
       message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
     }, { status: 403, headers: privateResponseHeaders })
   }
-  const provider = paymentProvider()
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   const updated = await provider.setCancelAtPeriodEnd({
     id: result.stripeSubscriptionId,
     idempotencyKey: result.idempotencyKey,
@@ -163,7 +167,8 @@ export async function openGuardSubscriptionCheckout(origin: string, result: {
       message: ACTION_UNAVAILABLE, reason: "subscriptions_disabled",
     }, { status: 403, headers: privateResponseHeaders })
   }
-  const provider = paymentProvider()
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   const stripeCustomer = result.stripeCustomerId || await ensureCustomer(result.customerId || "")
   const successUrl = `${origin}/pay/return`
   const cancelUrl = `${origin}/pay/return`
@@ -235,14 +240,15 @@ function unixTrialEnd(value?: string) {
 }
 
 async function ensureCustomer(customerId: string): Promise<string> {
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
   const prepared = await backend().rpc<{
     status?: string
     stripeCustomerId?: string
     providerOperationId?: string
     idempotencyKey?: string
-  }>("payment_prepare_customer_v1", { p_customer: customerId })
+  }>("payment_prepare_customer_v1", { p_customer: customerId, ...declaredLivemodeArgument() })
   if (prepared.stripeCustomerId) return prepared.stripeCustomerId
-  const created = await paymentProvider().createCustomer({
+  const created = await (lane ? paymentProviderWithLane(lane) : paymentProvider()).createCustomer({
     idempotencyKey: prepared.idempotencyKey || "",
     customerId,
   })

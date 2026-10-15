@@ -1,6 +1,8 @@
 import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
 import { expectedLivemode } from "../../../../lib/payments/config"
+import { guardExternalPayment } from "../../../../lib/payments/lane-agreement"
+import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
@@ -13,97 +15,10 @@ function applyResult(result: { status?: string }): JobHandlerResult {
 export function collectPaymentHandler(env: Record<string, string | undefined> = process.env): JobHandler {
   return {
     jobType: "COLLECT_PAYMENT",
-    async execute({ payload, rpc }: JobHandlerInput): Promise<JobHandlerResult> {
-      const provider = paymentProvider(env)
-      if (provider.mode === "disabled") return { ok: false, retryable: false, error: "Payments are disabled." }
-      const obligationId = typeof payload.obligationId === "string" ? payload.obligationId : ""
-      if (!obligationId || !rpc) return { ok: false, retryable: false, error: "Collect payload is invalid." }
-      const prepared = await rpc.rpc<{
-        status?: string
-        idempotencyKey?: string
-        providerOperationId?: string
-        attemptId?: string
-        amountMinor?: number
-        currency?: string
-        stripeCustomerId?: string
-        paymentMethodId?: string
-        serviceOrderId?: string
-        customerId?: string
-      }>("payment_collect_prepare_v1", { p_obligation: obligationId })
-      if (prepared.status !== "success" || !prepared.idempotencyKey || !prepared.stripeCustomerId || !prepared.paymentMethodId) {
-        return { ok: false, retryable: false, error: "Obligation is not collectable." }
-      }
-      const intent = await provider.createOffSessionPayment({
-        idempotencyKey: prepared.idempotencyKey,
-        stripeCustomerId: prepared.stripeCustomerId,
-        paymentMethodId: prepared.paymentMethodId,
-        amountMinor: prepared.amountMinor || 0,
-        currency: "GBP",
-        metadata: {
-          customerId: prepared.customerId || "",
-          serviceOrderId: prepared.serviceOrderId || "",
-          obligationId,
-          attemptId: prepared.attemptId,
-          providerOperationId: prepared.providerOperationId,
-        },
-      })
-      if (intent.classification === "retryable") {
-        return { ok: false, retryable: true, error: intent.failureCode || "Provider unavailable." }
-      }
-      if (intent.id) {
-        await rpc.rpc("payment_record_provider_refs_v1", {
-          p_operation: prepared.providerOperationId, p_object_id: intent.id, p_object_type: "payment_intent",
-        })
-      }
-      if (intent.classification === "requires_action") {
-        await rpc.rpc("payment_apply_provider_event_v1", {
-          p_event_id: `collect:${prepared.idempotencyKey}:${intent.id}:action`,
-          p_type: "payment_intent.requires_action",
-          p_object_id: intent.id,
-          p_payload: {
-            status: intent.status,
-            paymentIntentStatus: intent.status,
-            amountMinor: intent.amountMinor,
-            currency: "gbp",
-            providerOperationId: prepared.providerOperationId,
-            customerId: prepared.customerId,
-            serviceOrderId: prepared.serviceOrderId,
-            obligationId,
-          },
-        })
-        return { ok: true }
-      }
-      if (intent.classification === "declined") {
-        await rpc.rpc("payment_apply_provider_event_v1", {
-          p_event_id: `collect:${prepared.idempotencyKey}:${intent.id || "declined"}:failed`,
-          p_type: "payment_intent.payment_failed",
-          p_object_id: intent.id || prepared.providerOperationId,
-          p_payload: {
-            status: intent.status,
-            failureCategory: intent.failureCategory,
-            failureCode: intent.failureCode,
-            providerOperationId: prepared.providerOperationId,
-          },
-        })
-        return { ok: false, retryable: false, error: intent.failureCode || "Payment declined." }
-      }
-      await rpc.rpc("payment_apply_provider_event_v1", {
-        p_event_id: `collect:${prepared.idempotencyKey}:${intent.id}`,
-        p_type: "payment_intent.succeeded",
-        p_object_id: intent.id,
-        p_payload: {
-          status: intent.status,
-          paymentIntentStatus: "succeeded",
-          amountMinor: intent.amountMinor,
-          currency: "gbp",
-          stripeCustomerId: prepared.stripeCustomerId,
-          providerOperationId: prepared.providerOperationId,
-          customerId: prepared.customerId,
-          serviceOrderId: prepared.serviceOrderId,
-          obligationId,
-        },
-      })
-      return { ok: true }
+    async execute(): Promise<JobHandlerResult> {
+      // Retired on every lane, including one that would otherwise be allowed to bill.
+      void expectedLivemode(env)
+      return { ok: false, retryable: false, error: "Off-session Managed collection is retired." }
     },
   }
 }
@@ -121,7 +36,16 @@ export function processStripeEventHandler(env: Record<string, string | undefined
       if (liveEvent !== expectedLivemode(env)) {
         return { ok: false, retryable: false, error: "Event livemode does not match the payment lane." }
       }
-      const provider = paymentProvider(env)
+      let lane = null
+      try {
+        lane = await guardExternalPayment(async (name, args) => rpc.rpc(name, args ?? {}), env)
+      } catch (error) {
+        if (error instanceof PaymentsDisabledError) {
+          return { ok: false, retryable: false, error: "Payment database lane does not match this environment." }
+        }
+        throw error
+      }
+      const provider = paymentProvider(env, lane ? { databaseLane: lane } : undefined)
       if (provider.mode === "disabled") return { ok: false, retryable: false, error: "Payments are disabled." }
       try {
         const applyPayload: Record<string, unknown> = { livemode: liveEvent }

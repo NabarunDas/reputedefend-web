@@ -4,7 +4,8 @@ import { backend, newToken, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { paymentProvider } from "../../../../lib/payments"
+import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { guardExternalPayment, type DatabasePaymentLane } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { guardActivationEnabled, guardRefundsEnabled, guardSubscriptionsEnabled } from "./gate"
 import { isGuardOperation, guardArgs } from "./validation"
@@ -89,6 +90,11 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
     const payload: Record<string, unknown> = { ...args }
     delete payload.version
     if (issuesLink) payload.secretHash = tokenHash(secret)
+    const providerBound = [
+      "schedule_period_end_cancellation", "undo_scheduled_cancellation", "approve_immediate_cancellation",
+      "map_provider_price", "approve_refund",
+    ].includes(operation)
+    const lane = providerBound ? await guardExternalPayment((name, args) => backend().rpc(name, args ?? {})) : null
     const result = await backend().rpc<{
       status?: string; id?: string; version?: number; expiresAt?: string; replay?: boolean
       exceptionId?: string; reason?: string; activatedAt?: string; offerId?: string
@@ -104,7 +110,7 @@ export async function guardCommand(request: NextRequest): Promise<NextResponse> 
     })
     if (shouldContinueProviderOperation(result.providerOperationStatus, result.providerOperationId, result.idempotencyKey)) {
       try {
-        await executeProviderFollowThrough(operation, result)
+        await executeProviderFollowThrough(operation, result, lane)
       } catch (error) {
         if (error instanceof PaymentsDisabledError) {
           return reply("The request is recorded. Stripe remains disabled, so no provider object was created.", 200, {
@@ -149,9 +155,9 @@ async function executeProviderFollowThrough(operation: string, result: {
   guardSubscriptionId?: string
   guardRefundId?: string
   id?: string
-}) {
+}, lane: DatabasePaymentLane | null) {
   if (!result.providerOperationId || !result.idempotencyKey) return
-  const provider = paymentProvider()
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   if (operation === "schedule_period_end_cancellation" || operation === "undo_scheduled_cancellation") {
     if (!result.stripeSubscriptionId) return
     const updated = await provider.setCancelAtPeriodEnd({
@@ -169,7 +175,7 @@ async function executeProviderFollowThrough(operation: string, result: {
   }
   if (operation === "approve_immediate_cancellation") {
     if (!result.stripeSubscriptionId) return
-    const cancelled = await paymentProvider().cancelSubscriptionImmediate({
+    const cancelled = await provider.cancelSubscriptionImmediate({
       id: result.stripeSubscriptionId,
       idempotencyKey: result.idempotencyKey,
     })

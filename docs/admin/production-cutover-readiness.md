@@ -63,7 +63,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `email.inbound-disabled` | Email — inbound | READY_DISABLED | Inbound mail ingestion is off at cutover, and the existing Google Workspace mailbox on profilerelaunch.com is untouched. |
 | `email.inbound-activation` | Email — inbound | DEFERRED | Inbound activation uses a dedicated subdomain and never changes the MX records of the root domain. |
 | `stripe.code-readiness` | Stripe | READY_DISABLED | The payment code is complete and correct, independently of whether Stripe is ever switched on. |
-| `stripe.live-key-structurally-refused` | Stripe | READY_DISABLED | A live Stripe key cannot move money unless Production, stripe_live and the separate activation flag all agree, and Preview can never initialise that key. |
+| `stripe.live-key-structurally-refused` | Stripe | READY_DISABLED | A live Stripe key cannot move money unless Production, stripe_live, the activation flag, an explicit Production database lane, the Production Supabase project, the Production evidence bucket and a webhook secret all agree, and Preview can never initialise that key. |
 | `stripe.account-and-webhook` | Stripe | ACTION_REQUIRED | A Stripe account exists with the webhook registered against the production Admin domain, before any provider mode is set. |
 | `stripe.commercial-decisions` | Stripe | BLOCKED | Tax treatment, VAT registration and the legal terms shown at the point of payment are decided before any money moves. |
 | `guard.manual-operation-ready` | Guard | READY | Manual Guard can be operated at launch: an operator records an observation by hand, and that needs no provider, no automation flag and no Google API access. |

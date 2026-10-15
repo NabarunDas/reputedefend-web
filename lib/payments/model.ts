@@ -278,6 +278,9 @@ export type CreateHostedInvoiceInput = {
   metadata: PaymentMetadata
 }
 
+/** Managed hosted invoices are due this many days after Stripe finalises them. */
+export const HOSTED_INVOICE_DAYS_UNTIL_DUE = 14
+
 export type ProviderInvoice = {
   id: string
   hostedInvoiceUrl: string

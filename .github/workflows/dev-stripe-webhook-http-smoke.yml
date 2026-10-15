@@ -1,0 +1,39 @@
+name: DEV Stripe webhook HTTP smoke
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - .github/workflows/dev-stripe-webhook-http-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  webhook-http:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public DEV webhook-only host and signed handler boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='https://dev-hooks.profilerelaunch.com'
+          echo 'Checking Cloudflare public DNS resolution from GitHub-hosted runner.'
+          getent ahostsv4 dev-hooks.profilerelaunch.com | awk '{print $1}' | sort -u | head -4
+          check() {
+            local expected="$1" method="$2" path="$3"
+            local actual
+            actual="$(curl --silent --show-error --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' --request "$method" "$host$path")"
+            echo "$method $path: $actual (expected $expected)"
+            test "$actual" = "$expected"
+          }
+          check 404 GET /
+          check 404 GET /login
+          check 404 GET /brand/profile-relaunch-logo.png
+          check 404 POST /auth/send
+          check 404 POST /api/webhooks/resend
+          # With DEV stripe_test configured, unsigned Stripe events must be refused.
+          # 503 means runtime payments are not fully configured; 302/403 suggests protection interception.
+          check 401 POST /api/webhooks/stripe

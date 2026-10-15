@@ -15,25 +15,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify public DEV webhook-only host and signed handler boundary
+      - name: Diagnose public DEV webhook HTTP response and route restrictions
         shell: bash
         run: |
           set -euo pipefail
           host='https://dev-hooks.profilerelaunch.com'
-          echo 'Checking Cloudflare public DNS resolution from GitHub-hosted runner.'
+          echo 'Resolving DNS'
           getent ahostsv4 dev-hooks.profilerelaunch.com | awk '{print $1}' | sort -u | head -4
+          failures=0
           check() {
-            local expected="$1" method="$2" path="$3"
-            local actual
-            actual="$(curl --silent --show-error --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' --request "$method" "$host$path")"
-            echo "$method $path: $actual (expected $expected)"
-            test "$actual" = "$expected"
+            local expected="$1" method="$2" path="$3" actual
+            local headers
+            headers="$(mktemp)"
+            actual="$(curl --silent --show-error --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 --dump-header "$headers" --output /dev/null --write-out '%{http_code}' --request "$method" "$host$path")" || actual="transport-error"
+            echo "$method $path: HTTP $actual (expected $expected)"
+            # Log only redirect host/path, never query strings, cookies or raw headers.
+            if [[ "$actual" = "302" || "$actual" = "303" || "$actual" = "307" || "$actual" = "308" ]]; then
+              python3 - "$headers" <<'PY'
+          import sys
+          from urllib.parse import urlsplit
+          for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
+              if line.lower().startswith('location:'):
+                  u = urlsplit(line.split(':', 1)[1].strip())
+                  print('Redirect scheme/host/path:', u.scheme, u.netloc, u.path)
+          PY
+            fi
+            rm -f "$headers"
+            if [[ "$actual" != "$expected" ]]; then failures=$((failures+1)); fi
           }
           check 404 GET /
           check 404 GET /login
           check 404 GET /brand/profile-relaunch-logo.png
           check 404 POST /auth/send
           check 404 POST /api/webhooks/resend
-          # With DEV stripe_test configured, unsigned Stripe events must be refused.
-          # 503 means runtime payments are not fully configured; 302/403 suggests protection interception.
           check 401 POST /api/webhooks/stripe
+          echo "Mismatched response count: $failures"
+          test "$failures" -eq 0

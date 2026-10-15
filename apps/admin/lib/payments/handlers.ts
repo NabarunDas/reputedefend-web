@@ -318,6 +318,7 @@ export function processStripeEventHandler(env: Record<string, string | undefined
         })
         return applyResult(ignored)
       } catch (error) {
+        if ((error as { name?: string }).name === "DevStripeIsolationError") throw error
         if ((error as { name?: string }).name === "PaymentsDisabledError") {
           return { ok: false, retryable: false, error: "Payments are disabled." }
         }

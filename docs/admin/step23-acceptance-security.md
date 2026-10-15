@@ -86,6 +86,8 @@ test asserts that too. The five `DEFERRED_EXTERNAL` rows are the four live gates
 deliberately off and the Step 22B rehearsal; each carries a note saying why, and the test
 asserts that list so none of them can be quietly promoted.
 
+The Jobs row includes `POST /api/operations/dev-stripe-reconcile`. That route is a manually triggered DEV Preview `develop` action for one selected test-mode `PROCESS_STRIPE_EVENT`. The Jobs page renders that control only when the same server gate is open. Its negative tests cover a closed gate, a wrong origin, a mixed queue, an already processed receipt, Guard isolation and a handler that throws. Two overlapping PostgreSQL sessions are covered when server binaries are present; PGlite cannot show that overlap. It does not enable the Production worker, and the flag that arms it is absent in this repository.
+
 ## Simulated Admin workday
 
 `apps/admin/lib/workday.database.test.ts` is one test that walks a single synthetic

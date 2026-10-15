@@ -182,12 +182,12 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "paymentsEnabled",
-    files: ["apps/admin/lib/payments/webhook.ts", "apps/admin/lib/release/gates.ts", "lib/payments/index.ts", "lib/payments/lane-agreement.ts"],
+    files: ["apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/webhook.ts", "apps/admin/lib/release/gates.ts", "lib/payments/index.ts", "lib/payments/lane-agreement.ts"],
     reason: "The Stripe capability gate. gates.test.ts drives it with synthetic configurations to prove defaults cannot enable it.",
   },
   {
     helper: "paymentProvider",
-    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts", "lib/payments/index.ts"],
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/handlers.ts", "lib/payments/index.ts"],
     reason: "Constructs the payment provider from the resolved mode and the key, which are read together or not at all.",
   },
   {
@@ -207,8 +207,8 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "guardExternalPayment",
-    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts"],
-    reason: "Reads the database lane with the worker environment before a queued payment job calls Stripe.",
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/handlers.ts"],
+    reason: "Reads the database lane with the worker environment before a queued payment job or the DEV one-shot preflight calls Stripe.",
   },
   {
     helper: "stripeSecret",

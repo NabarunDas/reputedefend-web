@@ -42,57 +42,74 @@ beforeEach(() => {
 })
 
 describe("payment job handlers", () => {
-  it("retries the same collect operation after a rate-limit shaped Stripe error", async () => {
-    fake.nextOffSessionError = { type: "StripeRateLimitError", statusCode: 429, rawType: "rate_limit_error", code: "rate_limit" }
-    const rpc = rpcMock()
-    const result = await collectPaymentHandler().execute({
-      idempotencyKey: key,
-      payload: { obligationId },
-      rpc: rpc.asJob,
-    })
-    expect(result).toEqual({ ok: false, retryable: true, error: "rate_limit" })
-    expect(rpc.rpc.mock.calls.map(call => call[0])).toEqual(["payment_collect_prepare_v1"])
+  it("does not charge a saved card when an old COLLECT_PAYMENT job is still queued", async () => {
+    const charge = vi.spyOn(fake, "createOffSessionPayment")
+    const preview = {
+      NODE_ENV: "production",
+      VERCEL_ENV: "preview",
+      PAYMENTS_PROVIDER_MODE: "stripe_test",
+      STRIPE_SECRET_KEY: "sk_test_placeholdernotarealkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test_secret_value",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+    }
+    const production = {
+      NODE_ENV: "production",
+      VERCEL_ENV: "production",
+      PAYMENTS_PROVIDER_MODE: "stripe_live",
+      STRIPE_LIVE_ACTIVATION: "enabled",
+      STRIPE_SECRET_KEY: "sk_live_placeholdernotarealkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test_secret_value",
+      SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-prod-euw2-337909767363",
+    }
+    for (const env of [preview, production]) {
+      const rpc = rpcMock()
+      const result = await collectPaymentHandler(env).execute({
+        idempotencyKey: key,
+        payload: { obligationId },
+        rpc: rpc.asJob,
+      })
+      expect(result).toEqual({ ok: false, retryable: false, error: "Off-session Managed collection is retired." })
+      expect(rpc.rpc).not.toHaveBeenCalled()
+    }
+    expect(charge).not.toHaveBeenCalled()
   })
 
-  it("does not job-retry a card decline", async () => {
-    fake.nextOffSessionError = { type: "StripeCardError", code: "card_declined", payment_intent: { id: "pi_declined", status: "requires_payment_method" } }
+  it("does not replay a webhook against a database lane that disagrees with the worker", async () => {
     const rpc = rpcMock()
-    const result = await collectPaymentHandler().execute({
+    rpc.rpc.mockImplementation((async (name: string) => {
+      if (name === "payment_provider_lane_status_v1") {
+        return { configured: true, mode: "stripe_live", expectedLivemode: true }
+      }
+      return { status: "success" }
+    }) as typeof rpc.rpc)
+    const result = await processStripeEventHandler({
+      NODE_ENV: "production",
+      VERCEL_ENV: "preview",
+      PAYMENTS_PROVIDER_MODE: "stripe_test",
+      STRIPE_SECRET_KEY: "sk_test_placeholdernotarealkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test_secret_value",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+    }).execute({
       idempotencyKey: key,
-      payload: { obligationId },
+      payload: { eventId: "evt_preview", eventType: "payment_intent.succeeded", objectId: "pi_preview", livemode: false },
       rpc: rpc.asJob,
     })
-    expect(result).toEqual({ ok: false, retryable: false, error: "card_declined" })
-    expect(rpc.rpc.mock.calls.map(call => call[0])).toEqual([
-      "payment_collect_prepare_v1",
-      "payment_record_provider_refs_v1",
-      "payment_apply_provider_event_v1",
-    ])
+    expect(result).toEqual({ ok: false, retryable: false, error: "Payment database lane does not match this environment." })
+    expect(rpc.rpc.mock.calls.map(call => call[0])).toEqual(["payment_provider_lane_status_v1"])
   })
 
-  it("marks authentication required without paying", async () => {
-    fake.nextOffSessionError = { type: "StripeCardError", code: "authentication_required", payment_intent: { id: "pi_sca", status: "requires_action" } }
-    const rpc = rpcMock()
-    const result = await collectPaymentHandler().execute({
-      idempotencyKey: key,
-      payload: { obligationId },
-      rpc: rpc.asJob,
-    })
-    expect(result).toEqual({ ok: true })
-    expect(rpc.rpc.mock.calls[2][1]).toMatchObject({ p_type: "payment_intent.requires_action" })
-  })
-
-  it("ignores a live-mode PROCESS_STRIPE_EVENT without retrieving provider objects", async () => {
+  it("rejects a live-mode PROCESS_STRIPE_EVENT before any database write when the lane is not live", async () => {
     const rpc = rpcMock()
     const result = await processStripeEventHandler().execute({
       idempotencyKey: key,
       payload: { eventId: "evt_live", eventType: "payment_intent.succeeded", objectId: "pi_live", livemode: true },
       rpc: rpc.asJob,
     })
-    expect(result).toEqual({ ok: true })
-    expect(rpc.rpc).toHaveBeenCalledWith("payment_apply_provider_event_v1", expect.objectContaining({
-      p_payload: { livemode: true },
-    }))
+    expect(result).toEqual({ ok: false, retryable: false, error: "Event livemode does not match the payment lane." })
+    expect(rpc.rpc).not.toHaveBeenCalled()
   })
 
   it("treats Checkout as correlation-only and retries unmatched PaymentIntents", async () => {

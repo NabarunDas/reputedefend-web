@@ -539,6 +539,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "commercial eligibility gate", probe: "public.admin_record_eligibility_decision_v1" },
   },
+  {
+    // Source only. NOT applied to DEV or Production. AWS ApprovedMigrationHead
+    // remains 20261014170000. No lane row is seeded and payments stay off.
+    version: "20261015153000",
+    filename: "20261015153000_payment_lane_isolation_v1.sql",
+    step: "PAY-ENV-01 payment lane isolation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "payment lane isolation", probe: "admin_private.payment_expected_livemode_v1" },
+  },
 ]
 
 /**

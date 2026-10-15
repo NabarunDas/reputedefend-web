@@ -251,12 +251,12 @@ export const activationPlans: readonly ActivationPlan[] = [
     prerequisite: [
       "The tax, VAT and terms decision recorded.",
       "Prices reviewed against that decision.",
-      "A Stripe account with the webhook registered against the production Admin domain.",
-      "A reviewed code change, because the current code accepts only test-mode keys.",
+      "Separate sandbox and live Stripe accounts, each with its own webhook.",
+      "DEV stays on test-mode keys. Production live mode also requires the merchant account, the backup head and STRIPE_LIVE_ACTIVATION.",
     ],
-    test: "Complete one payment end to end in test mode against a quote created for the purpose, and confirm the webhook applies exactly once when replayed.",
+    test: "Complete one payment end to end in the lane under test against a quote created for the purpose, and confirm the webhook applies exactly once when replayed.",
     enableAction:
-      "Set PAYMENTS_PROVIDER_MODE, the Stripe key and the webhook secret, and redeploy. Live keys additionally require the reviewed code change.",
+      "On Preview set PAYMENTS_PROVIDER_MODE to stripe_test with STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, then redeploy. Production additionally sets PAYMENTS_PROVIDER_MODE to stripe_live and STRIPE_LIVE_ACTIVATION to enabled. A secret alone does nothing.",
     verification:
       "The payment reconciles to the obligation, invoice.paid is what grants paid entitlement, and a replayed webhook returns the first outcome.",
     rollback:

@@ -3,7 +3,8 @@ import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerConfig, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { isUuid } from "../uuid"
-import { paymentProvider } from "../../../../lib/payments"
+import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { declaredLivemodeArgument, declaredLivemodeField, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
@@ -40,11 +41,14 @@ export async function paymentCommand(request: NextRequest) {
   const operation = body.operation
   const data = operation === "confirm_consent"
     ? { accepted: body.accepted === true }
-    : { idempotencyKey: isUuid(body.idempotencyKey) ? body.idempotencyKey : key }
+    : { idempotencyKey: isUuid(body.idempotencyKey) ? body.idempotencyKey : key, ...declaredLivemodeField() }
   if (operation === "confirm_consent" && data.accepted !== true) {
     return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
   }
   try {
+    if (operation === "start_checkout") {
+      await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+    }
     const result = await backend().rpc<{
       status?: string
       consentId?: string
@@ -105,7 +109,8 @@ export async function openCustomerCheckout(origin: string, result: {
   checkoutSessionId?: string
 }) {
   if (result.status !== "success") return reply()
-  const provider = paymentProvider()
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   if (result.checkoutSessionId) {
     const existing = await provider.retrieveCheckout(result.checkoutSessionId)
     if (existing?.url && existing.status === "open") {
@@ -119,7 +124,7 @@ export async function openCustomerCheckout(origin: string, result: {
         providerOperationId?: string
         idempotencyKey?: string
         attemptId?: string
-      }>("payment_replace_expired_checkout_v1", { p_operation: result.providerOperationId })
+      }>("payment_replace_expired_checkout_v1", { p_operation: result.providerOperationId, ...declaredLivemodeArgument() })
       if (replaced.status !== "success" || !replaced.providerOperationId || !replaced.idempotencyKey) return reply()
       result = {
         ...result,
@@ -167,15 +172,16 @@ export async function openCustomerCheckout(origin: string, result: {
 }
 
 async function ensureCustomer(customerId: string): Promise<string> {
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
   const prepared = await backend().rpc<{
     status?: string
     stripeCustomerId?: string
     needsCreate?: boolean
     providerOperationId?: string
     idempotencyKey?: string
-  }>("payment_prepare_customer_v1", { p_customer: customerId })
+  }>("payment_prepare_customer_v1", { p_customer: customerId, ...declaredLivemodeArgument() })
   if (prepared.stripeCustomerId) return prepared.stripeCustomerId
-  const provider = paymentProvider()
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   const created = await provider.createCustomer({
     idempotencyKey: prepared.idempotencyKey || "",
     customerId,
@@ -193,7 +199,8 @@ export async function settleRecoveryCancel(result: {
   idempotencyKey?: string
 }): Promise<boolean | "paid"> {
   if (!result.paymentIntentId || !result.providerOperationId || !result.idempotencyKey) return false
-  const provider = paymentProvider()
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
   const cancelled = await provider.cancelPaymentIntent({
     id: result.paymentIntentId,
     idempotencyKey: result.idempotencyKey,

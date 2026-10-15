@@ -162,7 +162,7 @@ Job type `RECONCILE_GUARD_BILLING` reuses the existing Step 10 daily worker. Cro
 
 ## Provider and webhooks
 
-The existing `/api/webhooks/stripe` raw-signature endpoint and `PROCESS_STRIPE_EVENT` job are reused. No second webhook endpoint. Stripe SDK remains `22.6.2` / `2026-08-26.dahlia`. `sk_live_*` and `rk_live_*` remain impossible in `stripe_test`. Deployed environments stay `PAYMENTS_PROVIDER_MODE=disabled`.
+The existing `/api/webhooks/stripe` raw-signature endpoint and `PROCESS_STRIPE_EVENT` job are reused. No second webhook endpoint. Stripe SDK remains `22.6.2` / `2026-08-26.dahlia`. `sk_live_` and `rk_live_` keys remain impossible while the resolved lane is `stripe_test`. Production `stripe_live` is a separate gate and is not activated by this repository. Deployed environments stay `PAYMENTS_PROVIDER_MODE` unset.
 
 ## Security
 

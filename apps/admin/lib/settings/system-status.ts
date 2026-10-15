@@ -40,7 +40,7 @@ export function systemConfigurationStatus(env: Record<string, string | undefined
     refunds: onOff(guardRefundsEnabled(env)),
     outgoingCommunications: onOff(communicationsSendEnabled(env)),
     inboundMail: communicationsInboundEnabled(env) ? "Configured" : "Not configured",
-    paymentProvider: paymentMode === "stripe_test" ? "Test configuration" : "Disabled",
+    paymentProvider: paymentMode === "stripe_live" ? "Enabled" : paymentMode === "stripe_test" ? "Test configuration" : "Disabled",
     google: configuredStatusLabel(env),
     privacyDeletion: onOff(privacyDeletionEnabled(env)),
   } satisfies Record<string, SystemStatusLabel>

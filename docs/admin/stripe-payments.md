@@ -71,10 +71,10 @@ Managed flow:
 6. Qualifying evidenced outcome (`RESTORED` or `REMOVED` only) with an accepted same-case `outcome_evidence_version_id`
 7. Fresh-auth Admin billing approval
 8. Exactly one `SUCCESS_FEE` obligation from the immutable accepted order amount
-9. One idempotent off-session PaymentIntent through the Step 10 `COLLECT_PAYMENT` job
-10. If authentication is required, leave unpaid and recover on-session through `PAYMENT_RECOVERY`
+9. A hosted invoice due 14 days after Stripe finalises it. The stored due date is the due date Stripe returns. Verified success is still required, and a disputed or already-paid obligation is not invoiced.
+10. No automatic off-session card charge. `COLLECT_PAYMENT` stays a known job type so an old queued row can be claimed, then it fails closed. It does not create a PaymentIntent.
 
-A saved payment method alone is not authority to charge.
+A saved payment method alone is not authority to charge. `SUCCESS_FEE_CONSENT_V1` remains the legacy off-session text and is not acceptance of the invoice-after-success model.
 
 ## Guided design
 

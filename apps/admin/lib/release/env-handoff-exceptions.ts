@@ -165,30 +165,55 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     files: [
       "apps/admin/lib/settings/system-status.ts",
       "lib/payments/config.ts",
-      "lib/payments/index.ts",
+      "lib/payments/lane-agreement.ts",
       "lib/payments/stripe.ts",
     ],
-    reason: "Resolves PAYMENTS_PROVIDER_MODE against the production guard, the same two-value decision as the job provider mode.",
+    reason: "Resolves PAYMENTS_PROVIDER_MODE against the Vercel lane. Preview accepts only stripe_test and Production accepts only an explicitly activated stripe_live.",
+  },
+  {
+    helper: "paymentLane",
+    files: ["lib/payments/config.ts", "lib/payments/stripe.ts"],
+    reason: "Confirms the Vercel lane before a Stripe client can be constructed.",
+  },
+  {
+    helper: "expectedLivemode",
+    files: ["apps/admin/lib/payments/handlers.ts", "apps/admin/lib/payments/webhook.ts", "lib/payments/lane-agreement.ts"],
+    reason: "Compares an event livemode with the resolved lane before a database write.",
   },
   {
     helper: "paymentsEnabled",
-    files: ["apps/admin/lib/release/gates.ts", "lib/payments/index.ts"],
+    files: ["apps/admin/lib/payments/webhook.ts", "apps/admin/lib/release/gates.ts", "lib/payments/index.ts", "lib/payments/lane-agreement.ts"],
     reason: "The Stripe capability gate. gates.test.ts drives it with synthetic configurations to prove defaults cannot enable it.",
   },
   {
     helper: "paymentProvider",
-    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts"],
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts", "lib/payments/index.ts"],
     reason: "Constructs the payment provider from the resolved mode and the key, which are read together or not at all.",
   },
   {
     helper: "createStripePaymentProvider",
     files: ["lib/payments/index.ts"],
-    reason: "Builds the Stripe client from the mode and the test-key rule, which is the code-level block on a live key.",
+    reason: "Builds the Stripe client only after the lane, mode and key prefix agree. A live key on Preview throws before the client is constructed.",
+  },
+  {
+    helper: "paymentDataLaneMatches",
+    files: ["lib/payments/config.ts"],
+    reason: "Refuses Stripe when the Supabase project or evidence bucket belongs to the other lane.",
+  },
+  {
+    helper: "databaseLaneAgrees",
+    files: ["lib/payments/index.ts", "lib/payments/lane-agreement.ts", "lib/payments/stripe.ts"],
+    reason: "Compares the resolved Stripe lane with the database lane before a client can be constructed.",
+  },
+  {
+    helper: "guardExternalPayment",
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts"],
+    reason: "Reads the database lane with the worker environment before a queued payment job calls Stripe.",
   },
   {
     helper: "stripeSecret",
-    files: ["lib/payments/index.ts"],
-    reason: "Reads STRIPE_SECRET_KEY and enforces the sk_test_/rk_test_ prefix rule that rejects a live key in code.",
+    files: ["lib/payments/config.ts"],
+    reason: "Reads STRIPE_SECRET_KEY and returns it only when the prefix matches the resolved lane.",
   },
   {
     helper: "rawSecret",
@@ -202,7 +227,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "stripeWebhookSecret",
-    files: ["apps/admin/lib/payments/webhook.ts"],
+    files: ["apps/admin/lib/payments/webhook.ts", "lib/payments/config.ts"],
     reason: "Reads STRIPE_WEBHOOK_SECRET in a handler whose environment is injected so the signature path can be tested.",
   },
 

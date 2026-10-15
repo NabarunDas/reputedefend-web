@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createFakePaymentProvider } from "../../../../lib/payments/fake"
 import { disabledPaymentProvider, PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { isStripeTestSecret, liveSecretRejected, paymentsEnabled, resolvePaymentProviderMode } from "../../../../lib/payments/config"
-import { assertSafeGuardMetadata, assertSafeMetadata, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
+import { assertSafeGuardMetadata, assertSafeMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
 
 describe("payment provider contract", () => {
   it("pins the official Stripe SDK version and fail-closes by default", async () => {
@@ -292,5 +292,28 @@ describe("payment provider contract", () => {
       nextPriceId: "price_newguard1",
       periodEnd,
     })).rejects.toBeInstanceOf(PaymentsDisabledError)
+  })
+
+  it("reuses one hosted invoice and stores a 14-day due date", async () => {
+    const provider = createFakePaymentProvider()
+    const input = {
+      idempotencyKey: "16161616-1616-4161-8161-161616161616",
+      stripeCustomerId: "cus_invoice",
+      amountMinor: 29900,
+      currency: "GBP" as const,
+      metadata: {
+        customerId: "22222222-2222-4222-8222-222222222222",
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        obligationId: "55555555-5555-4555-8555-555555555555",
+        providerOperationId: "66666666-6666-4666-8666-666666666666",
+      },
+    }
+    const first = await provider.createHostedInvoice(input)
+    const second = await provider.createHostedInvoice(input)
+    expect(first.id).toBe(second.id)
+    expect(first.dueAt).toBe(second.dueAt)
+    const due = Date.parse(first.dueAt || "")
+    expect(due).toBeGreaterThan(Date.now() + (HOSTED_INVOICE_DAYS_UNTIL_DUE - 1) * 86400000)
+    expect(due).toBeLessThan(Date.now() + (HOSTED_INVOICE_DAYS_UNTIL_DUE + 1) * 86400000)
   })
 })

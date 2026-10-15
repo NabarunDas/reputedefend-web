@@ -4,7 +4,8 @@ import { backend, newToken, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
-import { paymentProvider } from "../../../../lib/payments"
+import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { declaredLivemodeArgument, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
@@ -49,15 +50,16 @@ function commandMessage(status: string | undefined): string {
 }
 
 async function ensureStripeCustomer(customerId: string): Promise<string> {
+  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
   const prepared = await backend().rpc<{
     status?: string
     stripeCustomerId?: string
     needsCreate?: boolean
     providerOperationId?: string
     idempotencyKey?: string
-  }>("payment_prepare_customer_v1", { p_customer: customerId })
+  }>("payment_prepare_customer_v1", { p_customer: customerId, ...declaredLivemodeArgument() })
   if (prepared.stripeCustomerId) return prepared.stripeCustomerId
-  const created = await paymentProvider().createCustomer({
+  const created = await (lane ? paymentProviderWithLane(lane) : paymentProvider()).createCustomer({
     idempotencyKey: prepared.idempotencyKey || "",
     customerId,
   })
@@ -92,6 +94,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
     delete payload.version
     if (issuesLink) payload.secretHash = tokenHash(secret)
     if (operation === "issue_invoice_fallback") {
+      const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
       const prepared = await backend().rpc<{
         status?: string
         reason?: string
@@ -106,7 +109,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         serviceOrderId?: string
         obligationId?: string
         orderRef?: string
-      }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId })
+      }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId, ...declaredLivemodeArgument() })
       if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
       if (prepared.status !== "success") return reply(commandMessage(prepared.status), mapStatus(prepared.status))
       if (prepared.replay && prepared.hostedInvoiceUrl && !trustedStripeUrl(prepared.hostedInvoiceUrl, "invoice")) {
@@ -115,7 +118,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
       if (!prepared.replay || !prepared.hostedInvoiceUrl) {
         try {
           const stripeCustomer = await ensureStripeCustomer(prepared.customerId || "")
-          const invoice = await paymentProvider().createHostedInvoice({
+          const invoice = await (lane ? paymentProviderWithLane(lane) : paymentProvider()).createHostedInvoice({
             idempotencyKey: prepared.idempotencyKey || "",
             stripeCustomerId: stripeCustomer,
             amountMinor: prepared.amountMinor || 0,
@@ -166,7 +169,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         ? `TEST-MODE hosted invoice fallback is ready. Returning from the invoice page does not mark this paid. ${LOST_PAYMENT_LINK_NOTE}`
         : `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`)
         : issuesLink ? "This payment action was already created. The secret cannot be shown again."
-        : operation === "approve_success_fee" ? "The success fee is approved. Collection, if ready, is queued. This did not charge a card from this page."
+        : operation === "approve_success_fee" ? "The success fee is approved. It is collected by a hosted invoice after verified success. This did not charge a saved card."
         : "The payment record has been updated.",
       200,
       issued ? { id: result.id, actionUrl: `${config.customerOrigin}/action/${result.id}#t=${secret}`, expiresAt: result.expiresAt, obligationId: result.obligationId }

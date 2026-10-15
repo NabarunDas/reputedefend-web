@@ -3,9 +3,10 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openGuardSubscriptionCheckout, settleGuardCancellation } from "@/lib/action/guard-subscription"
+import { declaredLivemodeField, guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
 import { guardSubscriptionsEnabled } from "../../../../../lib/guard-billing/config"
-import { paymentProvider } from "../../../../../lib/payments"
+import { paymentProvider, paymentProviderWithLane } from "../../../../../lib/payments"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isGuardSelector } from "./parse"
 import { eligibilityEnquiryMessage } from "../../../../../lib/commercial/eligibility-message"
@@ -139,11 +140,20 @@ export async function portalGuardCommand(request: NextRequest) {
   const operation = body.operation as Operation
   const confirmation = confirmationFor(operation, body.confirmation)
   if (!confirmation) return reply(CONFIRM, 400)
-  const data = operation === "accept_permission" || operation === "accept_consent" || operation === "accept_price"
-    || operation === "decline_permission" || operation === "decline_price"
+  const recordsOnly = operation === "accept_permission" || operation === "accept_consent"
+    || operation === "decline_permission" || operation === "decline_price" || operation === "request_immediate_cancellation"
+  const data = operation === "accept_permission" || operation === "accept_consent" || operation === "decline_permission" || operation === "decline_price"
     ? confirmation
-    : { idempotencyKey: key }
+    : operation === "accept_price"
+      ? { ...confirmation, ...declaredLivemodeField() }
+      : { idempotencyKey: key, ...(operation === "request_immediate_cancellation" ? {} : declaredLivemodeField()) }
   try {
+    if (!recordsOnly && operation !== "accept_price") {
+      await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+    }
+    if (operation === "accept_price") {
+      await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+    }
     const result = await backend().rpc<GuardResult | null>("customer_portal_guard_command_v1", {
       p_token_hash: tokenHash(token),
       p_request: key,
@@ -191,7 +201,8 @@ async function presentPrice(result: GuardResult) {
     return NextResponse.json({ status: "ok", message: PRICE_RECORDED }, { headers: privateResponseHeaders })
   }
   try {
-    const provider = paymentProvider()
+    const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
+    const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
     const periodEnd = Math.floor(Date.parse(result.periodEnd) / 1000)
     if (!Number.isFinite(periodEnd)) return NextResponse.json({ status: "ok", message: PRICE_RECORDED }, { headers: privateResponseHeaders })
     const current = await provider.retrieveSubscription(result.stripeSubscriptionId)

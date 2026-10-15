@@ -1,5 +1,7 @@
 import "server-only"
 import { paymentProvider } from "../../../../lib/payments"
+import { guardExternalPayment } from "../../../../lib/payments/lane-agreement"
+import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
 const PAGE = 25
@@ -44,7 +46,17 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
       if (!rpc) return { ok: false, retryable: false, error: "Reconciliation requires RPC." }
       const runId = typeof payload.runId === "string" ? payload.runId : ""
       if (!runId) return { ok: false, retryable: false, error: "Reconciliation payload is invalid." }
-      const provider = paymentProvider(env)
+      let lane = null
+      try {
+        lane = await guardExternalPayment(async (name, args) => rpc.rpc(name, args ?? {}), env)
+      } catch (error) {
+        if (error instanceof PaymentsDisabledError) {
+          return { ok: false, retryable: false, error: "Payment database lane does not match this environment." }
+        }
+        throw error
+      }
+      const provider = paymentProvider(env, lane ? { databaseLane: lane } : undefined)
+      const laneLivemode = provider.mode === "stripe_live"
       let after: string | null = null
       for (;;) {
         const page: { status?: string; targets?: ReconciliationTarget[] } = await rpc.rpc(
@@ -56,17 +68,17 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
         for (const target of targets) {
           try {
             if (!target.expectedStripeSubscriptionId) {
-              const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target)
+              const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target, laneLivemode)
               await rpc.rpc("guard_apply_reconciliation_target_v1", {
                 p_target: target.id,
-                p_payload: { outcome: "SUCCEEDED", localOnly: true, livemode: false, followUpErrors },
+                p_payload: { outcome: "SUCCEEDED", localOnly: true, livemode: laneLivemode, followUpErrors },
               })
               continue
             }
             if (provider.mode === "disabled") {
               await rpc.rpc("guard_apply_reconciliation_target_v1", {
                 p_target: target.id,
-                p_payload: { outcome: "PROVIDER_DISABLED", lastError: "provider_disabled", livemode: false },
+                p_payload: { outcome: "PROVIDER_DISABLED", lastError: "provider_disabled", livemode: laneLivemode },
               })
               continue
             }
@@ -78,7 +90,7 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
               })
               continue
             }
-            const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target)
+            const followUpErrors = await reconcileFollowUps(provider, rpc, runId, target, laneLivemode)
             await rpc.rpc("guard_apply_reconciliation_target_v1", {
               p_target: target.id,
               p_payload: {
@@ -96,7 +108,7 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
                 defaultPaymentMethodId: subscription.defaultPaymentMethodId,
                 paymentMethodUpdated: Boolean(subscription.defaultPaymentMethodId),
                 guardSubscriptionId: target.subscriptionId,
-                livemode: false,
+                livemode: laneLivemode,
                 followUpErrors,
               },
             })
@@ -119,7 +131,7 @@ export function reconcileGuardBillingHandler(env: Record<string, string | undefi
       }
       const result = await rpc.rpc<{ status?: string; runStatus?: string }>("guard_reconcile_billing_v1", {
         p_run: runId,
-        p_payload: { livemode: false },
+        p_payload: { livemode: laneLivemode },
       })
       if (result.status === "success") return { ok: true }
       if (result.status === "pending") return { ok: false, retryable: true, error: "Guard billing targets remain unresolved." }
@@ -133,6 +145,7 @@ async function reconcileFollowUps(
   rpc: NonNullable<JobHandlerInput["rpc"]>,
   runId: string,
   target: ReconciliationTarget,
+  laneLivemode: boolean,
 ) {
   const errors: Array<Record<string, unknown>> = []
   for (const refund of target.pendingRefunds ?? []) {
@@ -156,7 +169,7 @@ async function reconcileFollowUps(
           failureCode: retrieved.failureReason,
           guardRefundId: refund.id,
           providerOperationId: refund.providerOperationId,
-          livemode: false,
+          livemode: laneLivemode,
         },
       })
       if (applied.status !== "success") {
@@ -184,7 +197,7 @@ async function reconcileFollowUps(
           ...(retrieved.currency ? { currency: retrieved.currency } : {}),
           chargeId: retrieved.chargeId,
           outcome: retrieved.reason,
-          livemode: false,
+          livemode: laneLivemode,
         },
       })
       if (applied.status !== "success") {

@@ -1,7 +1,8 @@
 import "server-only"
 import Stripe from "stripe"
-import { isStripeTestSecret, liveSecretRejected, resolvePaymentProviderMode, type PaymentEnv } from "./config"
-import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type ProviderPaymentIntent } from "./model"
+import { isStripeLiveSecret, isStripeTestSecret, paymentLane, resolvePaymentProviderMode, type PaymentEnv } from "./config"
+import { databaseLaneAgrees, type DatabasePaymentLane } from "./lane-agreement"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { trustedStripeUrl } from "./stripe-url"
 
@@ -28,11 +29,13 @@ function rawSecret(env: PaymentEnv): string | null {
 
 function client(env: PaymentEnv): Stripe {
   const mode = resolvePaymentProviderMode(env)
-  const raw = rawSecret(env)
-  if (mode !== "stripe_test" || liveSecretRejected(mode, raw) || !isStripeTestSecret(raw)) {
-    throw new LiveStripeKeyError()
-  }
-  return new Stripe(raw)
+  const raw = rawSecret(env) ?? ""
+  const liveKey = isStripeLiveSecret(raw)
+  if (liveKey && paymentLane(env) !== "production") throw new LiveStripeKeyError()
+  if (mode === "stripe_test" && isStripeTestSecret(raw) && !liveKey) return new Stripe(raw)
+  if (mode === "stripe_live" && liveKey && env.STRIPE_LIVE_ACTIVATION === "enabled") return new Stripe(raw)
+  if (liveKey) throw new LiveStripeKeyError()
+  throw new PaymentsDisabledError("Stripe client is not available for this lane.")
 }
 
 function asId(value: unknown): string | null {
@@ -47,70 +50,32 @@ function metadataOf(value: { metadata?: Stripe.Metadata | null } | null | undefi
   return Object.fromEntries(Object.entries(meta).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
-function classifyStripeError(error: unknown, amountMinor: number): ProviderPaymentIntent {
-  const stripeError = error as {
-    type?: string
-    code?: string
-    statusCode?: number
-    payment_intent?: { id?: string; status?: string }
-    rawType?: string
+export function createStripePaymentProvider(env: PaymentEnv = process.env, databaseLane?: DatabasePaymentLane | null): PaymentProvider {
+  const mode = resolvePaymentProviderMode(env)
+  if (mode !== "stripe_test" && mode !== "stripe_live") throw new PaymentsDisabledError()
+  const raw = rawSecret(env) ?? ""
+  if (isStripeLiveSecret(raw) && paymentLane(env) !== "production") throw new LiveStripeKeyError()
+  if (mode === "stripe_live" && !isStripeLiveSecret(raw)) throw new PaymentsDisabledError()
+  if (mode === "stripe_test" && !isStripeTestSecret(raw)) throw new PaymentsDisabledError()
+  if (!databaseLaneAgrees(env, databaseLane ?? null)) {
+    throw new PaymentsDisabledError("Payment database lane does not match this environment.")
   }
-  const intent = stripeError.payment_intent
-  if (intent?.status === "requires_action" || stripeError.code === "authentication_required") {
-    return {
-      id: intent?.id,
-      status: "requires_action",
-      amountMinor,
-      requiresAction: true,
-      livemode: false,
-      classification: "requires_action",
-      retryable: false,
-      failureCode: stripeError.code ?? "authentication_required",
-      failureCategory: "AUTHENTICATION_REQUIRED",
+  const expectedLivemode = mode === "stripe_live"
+  function lane<T extends { livemode?: boolean }>(value: T, label: string): T {
+    if (value.livemode !== expectedLivemode) {
+      throw new PaymentsDisabledError(`${label} does not belong to this payment lane.`)
     }
-  }
-  const retryable = stripeError.type === "StripeConnectionError"
-    || stripeError.type === "StripeAPIConnectionError"
-    || stripeError.type === "StripeRateLimitError"
-    || stripeError.rawType === "api_connection_error"
-    || stripeError.rawType === "rate_limit_error"
-    || (typeof stripeError.statusCode === "number" && stripeError.statusCode >= 500)
-  if (retryable) {
-    return {
-      id: intent?.id,
-      status: "retryable",
-      amountMinor,
-      requiresAction: false,
-      livemode: false,
-      classification: "retryable",
-      retryable: true,
-      failureCode: stripeError.code ?? stripeError.type ?? "provider_unavailable",
-      failureCategory: "INFRASTRUCTURE",
-    }
+    return value
   }
   return {
-    id: intent?.id,
-    status: "failed",
-    amountMinor,
-    requiresAction: false,
-    livemode: false,
-    classification: "declined",
-    retryable: false,
-    failureCode: stripeError.code ?? "card_declined",
-    failureCategory: "DECLINED",
-  }
-}
-
-export function createStripePaymentProvider(env: PaymentEnv = process.env): PaymentProvider {
-  return {
-    mode: "stripe_test",
+    mode,
     async createCustomer(input) {
       const created = await client(env).customers.create(
         { metadata: { customerId: input.customerId } },
         { idempotencyKey: input.idempotencyKey },
       )
-      if (created.livemode) throw new PaymentsDisabledError("Live Stripe customers are forbidden.")
-      return { id: created.id, livemode: false }
+      lane(created, "Stripe object")
+      return { id: created.id, livemode: expectedLivemode }
     },
     async createPaymentCheckout(input) {
       const meta = paymentMetadata(input.metadata)
@@ -133,8 +98,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         }],
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
-      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "payment", amountMinor: input.amountMinor, livemode: false }
+      lane(session, "Stripe object")
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "payment", amountMinor: input.amountMinor, livemode: expectedLivemode }
     },
     async createSetupCheckout(input) {
       const meta = paymentMetadata(input.metadata)
@@ -148,65 +113,15 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         metadata: meta,
         setup_intent_data: { metadata: meta },
       }, { idempotencyKey: input.idempotencyKey })
-      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: false }
+      lane(session, "Stripe object")
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: expectedLivemode }
     },
-    async createOffSessionPayment(input) {
-      const meta = paymentMetadata(input.metadata)
-      assertSafeMetadata(meta)
-      try {
-        const intent = await client(env).paymentIntents.create({
-          amount: input.amountMinor,
-          currency: input.currency.toLowerCase(),
-          customer: input.stripeCustomerId,
-          payment_method: input.paymentMethodId,
-          off_session: true,
-          confirm: true,
-          payment_method_types: ["card"],
-          metadata: meta,
-        }, { idempotencyKey: input.idempotencyKey })
-        if (intent.livemode) throw new PaymentsDisabledError("Live Stripe PaymentIntents are forbidden.")
-        if (intent.status === "requires_action") {
-          return {
-            id: intent.id,
-            status: intent.status,
-            amountMinor: intent.amount,
-            requiresAction: true,
-            livemode: false,
-            classification: "requires_action",
-            retryable: false,
-          }
-        }
-        if (intent.status === "succeeded") {
-          return {
-            id: intent.id,
-            status: intent.status,
-            amountMinor: intent.amount,
-            requiresAction: false,
-            livemode: false,
-            classification: "succeeded",
-            retryable: false,
-          }
-        }
-        return {
-          id: intent.id,
-          status: intent.status,
-          amountMinor: intent.amount,
-          requiresAction: false,
-          livemode: false,
-          classification: "declined",
-          retryable: false,
-          failureCode: intent.last_payment_error?.code ?? intent.status,
-          failureCategory: "DECLINED",
-        }
-      } catch (error) {
-        if (error instanceof PaymentsDisabledError) throw error
-        return classifyStripeError(error, input.amountMinor)
-      }
+    async createOffSessionPayment() {
+      throw new PaymentsDisabledError("Off-session Managed collection is retired.")
     },
     async retrieveCheckout(id) {
       const session = await client(env).checkout.sessions.retrieve(id)
-      if (session.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(session, "Stripe object")
       return {
         id: session.id,
         mode: session.mode === "setup" ? "setup" : session.mode === "subscription" ? "subscription" : "payment",
@@ -217,12 +132,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         customerId: asId(session.customer),
         url: session.url,
         metadata: metadataOf(session),
-        livemode: false,
+        livemode: expectedLivemode,
       }
     },
     async retrievePaymentIntent(id) {
       const intent = await client(env).paymentIntents.retrieve(id)
-      if (intent.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(intent, "Stripe object")
       const charge = intent.latest_charge
       return {
         id: intent.id,
@@ -234,12 +149,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         receiptUrl: charge && typeof charge === "object" && "receipt_url" in charge && typeof charge.receipt_url === "string" ? charge.receipt_url : null,
         lastErrorCode: intent.last_payment_error?.code ?? null,
         metadata: metadataOf(intent),
-        livemode: false,
+        livemode: expectedLivemode,
       }
     },
     async retrieveSetupIntent(id) {
       const setup = await client(env).setupIntents.retrieve(id)
-      if (setup.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(setup, "Stripe object")
       return {
         id: setup.id,
         status: setup.status,
@@ -247,13 +162,13 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         customerId: asId(setup.customer),
         paymentMethodId: asId(setup.payment_method),
         metadata: metadataOf(setup),
-        livemode: false,
+        livemode: expectedLivemode,
       }
     },
     async retrievePaymentMethod(id) {
       if (!id.startsWith("pm_")) return null
       const method = await client(env).paymentMethods.retrieve(id)
-      if (method.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(method, "Stripe object")
       return {
         id: method.id,
         brand: method.card?.brand ?? null,
@@ -265,7 +180,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     },
     async retrieveInvoice(id) {
       const invoice = await client(env).invoices.retrieve(id)
-      if (invoice.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(invoice, "Stripe object")
       return {
         id: invoice.id,
         status: invoice.status || "unknown",
@@ -275,7 +190,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         currency: (invoice.currency || "gbp").toLowerCase(),
         hostedInvoiceUrl: acceptedInvoiceUrl(invoice.hosted_invoice_url),
         metadata: metadataOf(invoice),
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async createHostedInvoice(input) {
@@ -286,13 +201,13 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         customer: input.stripeCustomerId,
         currency: input.currency.toLowerCase(),
         collection_method: "send_invoice",
-        days_until_due: 30,
+        days_until_due: HOSTED_INVOICE_DAYS_UNTIL_DUE,
         auto_advance: false,
         pending_invoice_items_behavior: "exclude",
         metadata: meta,
         payment_settings: { payment_method_types: ["card"] },
       }, { idempotencyKey: input.idempotencyKey })
-      if (created.livemode) throw new PaymentsDisabledError("Live Stripe invoices are forbidden.")
+      lane(created, "Stripe object")
       await stripe.invoices.addLines(created.id, {
         lines: [{
           description: "ProfileRelaunch service",
@@ -305,7 +220,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         }],
       }, { idempotencyKey: `${input.idempotencyKey}:lines` })
       const finalized = await stripe.invoices.finalizeInvoice(created.id, { auto_advance: false }, { idempotencyKey: `${input.idempotencyKey}:finalize` })
-      if (finalized.livemode) throw new PaymentsDisabledError("Live Stripe invoices are forbidden.")
+      lane(finalized, "Stripe object")
       if (finalized.amount_due !== input.amountMinor || (finalized.currency || "").toLowerCase() !== "gbp" || !finalized.hosted_invoice_url) {
         throw new PaymentsDisabledError("Hosted invoice amount or currency did not match the obligation.")
       }
@@ -315,7 +230,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         amountDueMinor: finalized.amount_due,
         currency: (finalized.currency || "gbp").toLowerCase(),
         status: finalized.status || "open",
-        livemode: false as const,
+        livemode: expectedLivemode,
         dueAt: finalized.due_date ? new Date(finalized.due_date * 1000).toISOString() : null,
       }
     },
@@ -327,7 +242,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         name: "Relaunch Guard",
         metadata: meta,
       }, { idempotencyKey: `${input.idempotencyKey}:product` })
-      if (product.livemode) throw new PaymentsDisabledError("Live Stripe products are forbidden.")
+      lane(product, "Stripe object")
       const price = await stripe.prices.create({
         currency: input.currency.toLowerCase(),
         unit_amount: input.amountMinor,
@@ -335,11 +250,11 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         product: product.id,
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
-      if (price.livemode) throw new PaymentsDisabledError("Live Stripe prices are forbidden.")
+      lane(price, "Stripe object")
       if (price.unit_amount !== input.amountMinor || (price.currency || "").toLowerCase() !== "gbp" || price.type !== "recurring") {
         throw new PaymentsDisabledError("Stripe Price does not match the approved Guard amount.")
       }
-      return { productId: product.id, priceId: price.id, amountMinor: input.amountMinor, livemode: false as const }
+      return { productId: product.id, priceId: price.id, amountMinor: input.amountMinor, livemode: expectedLivemode }
     },
     async createSubscriptionCheckout(input) {
       const meta = guardMetadata(input.metadata)
@@ -360,8 +275,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         },
         metadata: meta,
       }, { idempotencyKey: input.idempotencyKey })
-      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "subscription", amountMinor: 0, livemode: false }
+      lane(session, "Stripe object")
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "subscription", amountMinor: 0, livemode: expectedLivemode }
     },
     async createGuardRecoveryCheckout(input) {
       const meta = guardMetadata(input.metadata)
@@ -375,25 +290,25 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         metadata: meta,
         setup_intent_data: { metadata: meta },
       }, { idempotencyKey: input.idempotencyKey })
-      if (session.livemode) throw new PaymentsDisabledError("Live Stripe Checkout is forbidden.")
-      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: false }
+      lane(session, "Stripe object")
+      return { id: session.id, url: requireCheckoutUrl(session.url), mode: "setup", amountMinor: 0, livemode: expectedLivemode }
     },
     async updateSubscriptionPaymentMethod({ id, idempotencyKey, paymentMethodId }) {
       const updated = await client(env).subscriptions.update(id, {
         default_payment_method: paymentMethodId,
       }, { idempotencyKey })
-      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(updated, "Stripe object")
       return {
         id: updated.id,
         status: updated.status,
         cancelAtPeriodEnd: updated.cancel_at_period_end === true,
         canceled: updated.status === "canceled",
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async retrieveSubscription(id) {
       const subscription = await client(env).subscriptions.retrieve(id, { expand: ["items.data.price"] })
-      if (subscription.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(subscription, "Stripe object")
       const item = subscription.items.data[0]
       return {
         id: subscription.id,
@@ -412,12 +327,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         scheduleId: asId(subscription.schedule),
         defaultPaymentMethodId: asId(subscription.default_payment_method),
         metadata: metadataOf(subscription),
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async retrieveRecurringInvoice(id) {
       const invoice = await client(env).invoices.retrieve(id, { expand: ["payments.data.payment.payment_intent"] })
-      if (invoice.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(invoice, "Stripe object")
       const parent = invoice.parent && typeof invoice.parent === "object" ? invoice.parent as {
         subscription_details?: {
           subscription?: string | { id?: string; metadata?: Stripe.Metadata | null }
@@ -439,7 +354,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         currency: invoice.currency ? invoice.currency.toLowerCase() : "",
         hostedInvoiceUrl: acceptedInvoiceUrl(invoice.hosted_invoice_url),
         metadata: { ...subscriptionMeta, ...metadataOf(invoice) },
-        livemode: false as const,
+        livemode: expectedLivemode,
         subscriptionId: asId(parent.subscription_details?.subscription),
         subscriptionItemId: line?.parent?.subscription_item_details?.subscription_item ?? null,
         priceId: pricing?.price_details?.price ?? asId(line?.pricing) ?? null,
@@ -453,24 +368,24 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
     },
     async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {
       const updated = await client(env).subscriptions.update(id, { cancel_at_period_end: cancel }, { idempotencyKey })
-      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(updated, "Stripe object")
       return {
         id: updated.id,
         status: updated.status,
         cancelAtPeriodEnd: updated.cancel_at_period_end === true,
         canceled: updated.status === "canceled",
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async cancelSubscriptionImmediate({ id, idempotencyKey }) {
       const cancelled = await client(env).subscriptions.cancel(id, undefined, { idempotencyKey })
-      if (cancelled.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(cancelled, "Stripe object")
       return {
         id: cancelled.id,
         status: cancelled.status,
         cancelAtPeriodEnd: false,
         canceled: cancelled.status === "canceled",
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async createSubscriptionSchedule(input) {
@@ -482,12 +397,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         throw new PaymentsDisabledError((error as Error).message)
       }
       if (current.scheduleId) {
-        return { id: current.scheduleId, subscriptionId: current.id, livemode: false as const }
+        return { id: current.scheduleId, subscriptionId: current.id, livemode: expectedLivemode }
       }
       const created = await stripe.subscriptionSchedules.create({
         from_subscription: input.subscriptionId,
       }, { idempotencyKey: input.idempotencyKey })
-      if (created.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(created, "Stripe object")
       const updated = await stripe.subscriptionSchedules.update(created.id, {
         end_behavior: "release",
         proration_behavior: "none",
@@ -504,8 +419,8 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
           },
         ],
       }, { idempotencyKey: `${input.idempotencyKey}:phases` })
-      if (updated.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
-      return { id: updated.id, subscriptionId: asId(updated.subscription) || input.subscriptionId, livemode: false as const }
+      lane(updated, "Stripe object")
+      return { id: updated.id, subscriptionId: asId(updated.subscription) || input.subscriptionId, livemode: expectedLivemode }
     },
     async createRefund(input) {
       const meta = input.metadata ? guardMetadata(input.metadata) : undefined
@@ -515,7 +430,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         amount: input.amountMinor,
         ...(meta ? { metadata: meta } : {}),
       }, { idempotencyKey: input.idempotencyKey })
-      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe refunds are forbidden.")
+      lane(refund as { livemode?: boolean }, "Stripe refund")
       return {
         id: refund.id,
         status: refund.status || "pending",
@@ -525,12 +440,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         chargeId: asId(refund.charge),
         failureReason: refund.failure_reason ?? null,
         metadata: metadataOf(refund),
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async retrieveRefund(id) {
       const refund = await client(env).refunds.retrieve(id)
-      if ((refund as { livemode?: boolean }).livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(refund as { livemode?: boolean }, "Stripe refund")
       return {
         id: refund.id,
         status: refund.status || "pending",
@@ -540,12 +455,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         chargeId: asId(refund.charge),
         failureReason: refund.failure_reason ?? null,
         metadata: metadataOf(refund),
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async retrieveDispute(id) {
       const dispute = await client(env).disputes.retrieve(id)
-      if (dispute.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(dispute, "Stripe object")
       return {
         id: dispute.id,
         status: dispute.status,
@@ -553,12 +468,12 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         currency: dispute.currency ? dispute.currency.toLowerCase() : "",
         chargeId: asId(dispute.charge),
         reason: dispute.reason ?? null,
-        livemode: false as const,
+        livemode: expectedLivemode,
       }
     },
     async cancelPaymentIntent({ id, idempotencyKey }) {
       const current = await client(env).paymentIntents.retrieve(id)
-      if (current.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(current, "Stripe object")
       if (current.status === "succeeded") {
         return { ok: false, id: current.id, status: current.status, alreadySucceeded: true, cancelled: false }
       }
@@ -566,7 +481,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env): Paym
         return { ok: true, id: current.id, status: current.status, alreadySucceeded: false, cancelled: true }
       }
       const cancelled = await client(env).paymentIntents.cancel(id, undefined, { idempotencyKey })
-      if (cancelled.livemode) throw new PaymentsDisabledError("Live Stripe objects are forbidden.")
+      lane(cancelled, "Stripe object")
       return {
         ok: cancelled.status === "canceled",
         id: cancelled.id,

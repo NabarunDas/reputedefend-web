@@ -528,12 +528,11 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "stripe.live-key-structurally-refused",
     area: "Stripe",
     requirement:
-      "A live Stripe key cannot be used by this build even if one is configured.",
+      "A live Stripe key cannot move money unless Production, stripe_live, the activation flag, an explicit Production database lane, the Production Supabase project, the Production evidence bucket and a webhook secret all agree, and Preview can never initialise that key.",
     status: "READY_DISABLED",
     evidence:
-      "stripeSecret() accepts only a key beginning sk_test_ or rk_test_, and resolvePaymentProviderMode() has no value that selects live Stripe. A live key configured by mistake disables payments rather than moving money.",
-    codeAction:
-      "Activating live Stripe is a reviewed code change to the accepted key prefixes and the provider mode, not a setting. That is deliberate.",
+      "paymentLane() uses VERCEL_ENV, not NODE_ENV. Preview and local development accept only stripe_test with sk_test_ or rk_test_. Production accepts only stripe_live, and only when STRIPE_LIVE_ACTIVATION is enabled, the key is sk_live_ or rk_live_, and the Supabase project and evidence bucket match Production. A live key on Preview does not construct a Stripe client.",
+    codeAction: null,
     externalAction: null,
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: ["stripe_payments"],

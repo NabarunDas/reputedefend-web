@@ -1,4 +1,4 @@
-import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
+import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
 import { PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 type StoredCheckout = {
@@ -42,7 +42,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   const customers = new Map<string, string>()
   const sessions = new Map<string, StoredCheckout>()
   const intents = new Map<string, StoredIntent>()
-  const invoices = new Map<string, { id: string; status: string; amountDueMinor: number; amountPaidMinor: number; currency: string; customerId: string; hostedInvoiceUrl: string; metadata: Record<string, string> }>()
+  const invoices = new Map<string, { id: string; status: string; amountDueMinor: number; amountPaidMinor: number; currency: string; customerId: string; hostedInvoiceUrl: string; metadata: Record<string, string>; dueAt: string }>()
   const setups = new Map<string, { id: string; status: string; usage: string; customerId: string; paymentMethodId: string | null; metadata: Record<string, string> }>()
   const methods = new Map<string, { id: string; brand: string; last4: string; expMonth: number; expYear: number; fingerprint: string }>()
   const objects = new Map<string, Record<string, unknown>>()
@@ -291,8 +291,10 @@ export function createFakePaymentProvider(): PaymentProvider & {
           currency: existing.currency,
           status: existing.status,
           livemode: false as const,
+          dueAt: existing.dueAt,
         }
       }
+      const dueAt = new Date(Date.now() + HOSTED_INVOICE_DAYS_UNTIL_DUE * 86400000).toISOString()
       const created = {
         id: `in_test_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`,
         status: "open",
@@ -302,6 +304,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: input.stripeCustomerId,
         hostedInvoiceUrl: `https://invoice.stripe.test/${input.idempotencyKey}`,
         metadata: meta,
+        dueAt,
       }
       invoices.set(input.idempotencyKey, created)
       objects.set(created.id, created)
@@ -314,6 +317,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         currency: created.currency,
         status: created.status,
         livemode: false as const,
+        dueAt: created.dueAt,
       }
     },
     async retrievePaymentMethod(id) {

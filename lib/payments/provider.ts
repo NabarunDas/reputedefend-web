@@ -35,13 +35,13 @@ export class PaymentsDisabledError extends Error {
 
 export class LiveStripeKeyError extends PaymentsDisabledError {
   constructor() {
-    super("Live Stripe secrets are forbidden in stripe_test mode.")
+    super("A live Stripe secret cannot initialise the client on this lane.")
     this.name = "LiveStripeKeyError"
   }
 }
 
 export interface PaymentProvider {
-  readonly mode: "disabled" | "stripe_test" | "fake"
+  readonly mode: "disabled" | "stripe_test" | "stripe_live" | "fake"
   createCustomer(input: { idempotencyKey: string; customerId: string }): Promise<ProviderCustomer>
   createPaymentCheckout(input: CreateCheckoutInput): Promise<ProviderCheckout>
   createSetupCheckout(input: CreateSetupInput): Promise<ProviderCheckout>

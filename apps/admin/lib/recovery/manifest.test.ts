@@ -19,8 +19,8 @@ describe("the migration chain manifest", () => {
   it("records COM-14A as the verified DEV head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261015140000_commercial_eligibility_gate_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261015140000_commercial_eligibility_gate_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261015153000_payment_lane_isolation_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
   })
 
@@ -29,7 +29,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13 and COM-14A as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261015153000_payment_lane_isolation_v1.sql"])
+    expect(findMigration("20261015153000_payment_lane_isolation_v1.sql")?.appliedToDev).toBe(false)
+    expect(findMigration("20261015153000_payment_lane_isolation_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261015140000_commercial_eligibility_gate_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015140000_commercial_eligibility_gate_v1.sql")?.containsDataChange).toBe(true)
     expect(findMigration("20261014234000_paid_service_acceptance_v1.sql")?.appliedToDev).toBe(true)

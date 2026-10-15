@@ -1,4 +1,4 @@
-export const PAYMENT_PROVIDER_MODES = ["disabled", "stripe_test"] as const
+export const PAYMENT_PROVIDER_MODES = ["disabled", "stripe_test", "stripe_live"] as const
 export type PaymentProviderMode = (typeof PAYMENT_PROVIDER_MODES)[number]
 
 export const STRIPE_SDK_VERSION = "22.6.2"
@@ -57,7 +57,7 @@ export type ProviderCheckout = {
   url: string
   mode: CheckoutMode
   amountMinor: number
-  livemode: false
+  livemode: boolean
 }
 
 export type ProviderPaymentIntent = {
@@ -65,7 +65,7 @@ export type ProviderPaymentIntent = {
   status: string
   amountMinor: number
   requiresAction: boolean
-  livemode: false
+  livemode: boolean
   classification: "succeeded" | "requires_action" | "declined" | "retryable"
   retryable: boolean
   failureCode?: string | null
@@ -82,7 +82,7 @@ export type RetrievedCheckout = {
   customerId: string | null
   url: string | null
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
 }
 
 export type RetrievedPaymentIntent = {
@@ -95,7 +95,7 @@ export type RetrievedPaymentIntent = {
   receiptUrl: string | null
   lastErrorCode: string | null
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
 }
 
 export type RetrievedInvoice = {
@@ -107,7 +107,7 @@ export type RetrievedInvoice = {
   currency: string
   hostedInvoiceUrl: string | null
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
   subscriptionId?: string | null
   subscriptionItemId?: string | null
   priceId?: string | null
@@ -171,7 +171,7 @@ export type ProviderRecurringPrice = {
   productId: string
   priceId: string
   amountMinor: number
-  livemode: false
+  livemode: boolean
 }
 
 export type RetrievedSubscription = {
@@ -187,7 +187,7 @@ export type RetrievedSubscription = {
   scheduleId: string | null
   defaultPaymentMethodId: string | null
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
 }
 
 export type RetrievedRefund = {
@@ -199,7 +199,7 @@ export type RetrievedRefund = {
   chargeId: string | null
   failureReason: string | null
   metadata?: Record<string, string>
-  livemode: false
+  livemode: boolean
 }
 
 export type RetrievedDispute = {
@@ -209,7 +209,7 @@ export type RetrievedDispute = {
   currency: string
   chargeId: string | null
   reason: string | null
-  livemode: false
+  livemode: boolean
 }
 
 export type CancelSubscriptionResult = {
@@ -217,13 +217,13 @@ export type CancelSubscriptionResult = {
   status: string
   cancelAtPeriodEnd: boolean
   canceled: boolean
-  livemode: false
+  livemode: boolean
 }
 
 export type ProviderSchedule = {
   id: string
   subscriptionId: string
-  livemode: false
+  livemode: boolean
 }
 
 export type CreateSubscriptionScheduleInput = {
@@ -284,7 +284,7 @@ export type ProviderInvoice = {
   amountDueMinor: number
   currency: string
   status: string
-  livemode: false
+  livemode: boolean
   dueAt?: string | null
 }
 
@@ -295,7 +295,7 @@ export type RetrievedSetupIntent = {
   customerId: string | null
   paymentMethodId: string | null
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
 }
 
 export type CancelPaymentResult = {
@@ -308,7 +308,7 @@ export type CancelPaymentResult = {
 
 export type ProviderCustomer = {
   id: string
-  livemode: false
+  livemode: boolean
 }
 
 export type SafePaymentMethod = {

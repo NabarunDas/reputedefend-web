@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { assignTrustedStripeCheckout, stripUntrustedHostedInvoice, trustedStripeUrl } from "./stripe-url"
 
-const open = { NODE_ENV: "test", VERCEL_ENV: "preview" }
+const open = { NODE_ENV: "test" }
+const preview = { NODE_ENV: "production", VERCEL_ENV: "preview" }
 const locked = { NODE_ENV: "production", VERCEL_ENV: "production" }
 
 const rejected = [
@@ -46,6 +47,9 @@ describe("trusted Stripe URLs", () => {
     expect(trustedStripeUrl("https://invoice.stripe.test/in_test", "invoice", open)).toBe("https://invoice.stripe.test/in_test")
     expect(trustedStripeUrl("https://checkout.stripe.test/new", "checkout", locked)).toBeNull()
     expect(trustedStripeUrl("https://invoice.stripe.test/in_test", "invoice", locked)).toBeNull()
+    expect(trustedStripeUrl("https://checkout.stripe.com/c/pay_test", "checkout", preview)).toBe("https://checkout.stripe.com/c/pay_test")
+    expect(trustedStripeUrl("https://invoice.stripe.com/i/secret", "invoice", preview)).toBe("https://invoice.stripe.com/i/secret")
+    expect(trustedStripeUrl("https://checkout.stripe.test/new", "checkout", preview)).toBeNull()
     expect(trustedStripeUrl("https://checkout.stripe.test/new", "checkout", { VERCEL_ENV: "production" })).toBeNull()
     expect(trustedStripeUrl("https://invoice.stripe.test/in_test", "invoice", { NODE_ENV: "production" })).toBeNull()
     expect(trustedStripeUrl("https://checkout.stripe.com/c/pay_test", "checkout", locked)).toBe("https://checkout.stripe.com/c/pay_test")

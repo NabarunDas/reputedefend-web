@@ -1,6 +1,6 @@
-import { liveSecretRejected, paymentsEnabled, resolvePaymentProviderMode, stripeSecret, type PaymentEnv } from "./config"
+import { paymentsEnabled, type PaymentEnv } from "./config"
 import { createFakePaymentProvider } from "./fake"
-import { disabledPaymentProvider, type PaymentProvider } from "./provider"
+import { disabledPaymentProvider, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { createStripePaymentProvider } from "./stripe"
 
 export {
@@ -9,17 +9,22 @@ export {
   GUARD_PRICE_CHANGE_NOTICE_VERSION,
 } from "./model"
 export { createFakePaymentProvider as mapWithFake } from "./fake"
-export { PaymentsDisabledError, type PaymentProvider } from "./provider"
+export { PaymentsDisabledError, LiveStripeKeyError, type PaymentProvider } from "./provider"
 export { createFakePaymentProvider } from "./fake"
 export { createStripePaymentProvider } from "./stripe"
-export { resolvePaymentProviderMode, paymentsEnabled, stripeSecret, stripeWebhookSecret, customerOrigin, isStripeTestSecret, liveSecretRejected } from "./config"
+export {
+  resolvePaymentProviderMode, paymentsEnabled, stripeSecret, stripeWebhookSecret, customerOrigin,
+  isStripeTestSecret, isStripeLiveSecret, isStripeWebhookSecret, liveSecretRejected, paymentLane,
+  paymentDataLaneMatches, expectedLivemode, STRIPE_LIVE_ACTIVATION_VALUE,
+} from "./config"
 
 export function paymentProvider(env: PaymentEnv = process.env, options?: { fake?: boolean }): PaymentProvider {
   if (options?.fake) return createFakePaymentProvider()
-  const mode = resolvePaymentProviderMode(env)
-  const secret = stripeSecret(env)
-  if (mode !== "stripe_test" || !paymentsEnabled(env) || liveSecretRejected(mode, secret)) {
-    return disabledPaymentProvider()
+  if (!paymentsEnabled(env)) return disabledPaymentProvider()
+  try {
+    return createStripePaymentProvider(env)
+  } catch (error) {
+    if (error instanceof PaymentsDisabledError) return disabledPaymentProvider()
+    throw error
   }
-  return createStripePaymentProvider(env)
 }

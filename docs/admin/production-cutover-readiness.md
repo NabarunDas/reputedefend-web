@@ -63,7 +63,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `email.inbound-disabled` | Email — inbound | READY_DISABLED | Inbound mail ingestion is off at cutover, and the existing Google Workspace mailbox on profilerelaunch.com is untouched. |
 | `email.inbound-activation` | Email — inbound | DEFERRED | Inbound activation uses a dedicated subdomain and never changes the MX records of the root domain. |
 | `stripe.code-readiness` | Stripe | READY_DISABLED | The payment code is complete and correct, independently of whether Stripe is ever switched on. |
-| `stripe.live-key-structurally-refused` | Stripe | READY_DISABLED | A live Stripe key cannot be used by this build even if one is configured. |
+| `stripe.live-key-structurally-refused` | Stripe | READY_DISABLED | A live Stripe key cannot move money unless Production, stripe_live and the separate activation flag all agree, and Preview can never initialise that key. |
 | `stripe.account-and-webhook` | Stripe | ACTION_REQUIRED | A Stripe account exists with the webhook registered against the production Admin domain, before any provider mode is set. |
 | `stripe.commercial-decisions` | Stripe | BLOCKED | Tax treatment, VAT registration and the legal terms shown at the point of payment are decided before any money moves. |
 | `guard.manual-operation-ready` | Guard | READY | Manual Guard can be operated at launch: an operator records an observation by hand, and that needs no provider, no automation flag and no Google API access. |
@@ -135,9 +135,10 @@ capability gate is expected to be missing.
 | `RESEND_INBOUND_WEBHOOK_SECRET` | admin | PROVIDER_SECRET | secret | ABSENT | The inbound webhook rejects every request. |
 | `INBOUND_MAIL_DOMAIN` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The inbound gate reads false. |
 | `INBOUND_OWNED_ADDRESSES` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The owned-address list is empty; the inbound gate is already false without it. |
-| `PAYMENTS_PROVIDER_MODE` | marketing, admin | FEATURE_GATE | non-secret | ABSENT | Payment provider mode is "disabled" and no Stripe object can be created. |
-| `STRIPE_SECRET_KEY` | marketing, admin | PROVIDER_SECRET | secret | ABSENT | No Stripe client is constructed. |
-| `STRIPE_WEBHOOK_SECRET` | marketing, admin | PROVIDER_SECRET | secret | ABSENT | The Stripe webhook rejects every request. |
+| `PAYMENTS_PROVIDER_MODE` | admin, customer | FEATURE_GATE | non-secret | ABSENT | Payment provider mode is "disabled" and no Stripe object can be created. |
+| `STRIPE_LIVE_ACTIVATION` | admin, customer | FEATURE_GATE | non-secret | ABSENT | Production stays disabled even if a live key and stripe_live are present. |
+| `STRIPE_SECRET_KEY` | admin, customer | PROVIDER_SECRET | secret | ABSENT | No Stripe client is constructed. |
+| `STRIPE_WEBHOOK_SECRET` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The Stripe webhook rejects every request. |
 | `GUARD_ACTIVATION_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | Activation stays manual and direct billing stays PENDING. |
 | `GUARD_SUBSCRIPTIONS_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | No subscription is created or reconciled. |
 | `GUARD_REFUNDS_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | No refund can be issued. |
@@ -184,7 +185,7 @@ the runtime itself calls, over synthetic configurations only.
 | Capability | How it is held off | Code-level block that no setting can clear |
 | --- | --- | --- |
 | Google Business Profile API | `GOOGLE_BUSINESS_PROFILE_API_ENABLED` unset and the provider mode defaults to manual | `googleLiveStack` is `null`, so a fully configured deployment still reports `connection_not_implemented` |
-| Stripe payments | `PAYMENTS_PROVIDER_MODE` unset, so the mode resolves to disabled | `stripeSecret()` accepts only `sk_test_` and `rk_test_` prefixes; there is no mode value that selects live Stripe |
+| Stripe payments | `PAYMENTS_PROVIDER_MODE` unset, so the mode resolves to disabled. Production live mode also requires `STRIPE_LIVE_ACTIVATION=enabled` | Preview accepts only `stripe_test` with `sk_test_` or `rk_test_`. Production accepts only `stripe_live` with `sk_live_` or `rk_live_`, and only when `STRIPE_LIVE_ACTIVATION` is `enabled`. A secret alone does not select a lane |
 | Outgoing transactional mail | Six conditions, all required | The 300-second cadence ceiling means the unchanged daily schedule cannot carry live mail |
 | Inbound mail ingestion | Its own flag, independent of outgoing mail | `inboundMailDomain()` refuses the apex `profilerelaunch.com`, so inbound MX cannot be pointed at the mailbox domain |
 | Guard automation | Three independent flags, all unset | `guard_check_observations.capture_method` accepts only `MANUAL` |
@@ -219,12 +220,14 @@ remains SEC-08. None of these three commercial migrations has been applied to Pr
 The COM-13 agreement remains SOLICITOR_REVIEW/inoperative, no approved terms,
 no paid acceptances and tax UNCONFIRMED. DEV COM-14A has no approved countries
 and no verified purchasing establishments; its seller VAT status is NOT_VAT_REGISTERED. Neither payment nor Customer Portal,
-Guard or mail activation has occurred.
+Guard or mail activation has occurred. `20261015153000_payment_lane_isolation_v1.sql`
+is source-only and is the only pending migration. It has not been applied to DEV
+or Production, and it does not seed a payment lane.
 
 The SEC-08 migration did not mutate existing evidence rows. DEV has 4 uploaded
 evidence versions, 2 customer-visible and 0 trusted hashes, so historical
 DEV evidence remains unverified. Production had 0 evidence versions when SEC-08
-was applied. `pendingMigrations()` is now empty for DEV; applied SQL is immutable.
+was applied. `pendingMigrations()` contains only the unapplied PAY-ENV-01 lane migration. Applied SQL is immutable.
 The separate historic three-foundation-entry DEV ledger discrepancy remains
 tracked in GitHub issue #190; this DEV ledger is not asserted fully equivalent
 to the repository chain until the provenance review is complete.
@@ -486,15 +489,15 @@ and that is not an argument for switching it on.
 **Prerequisites.** The tax, VAT and terms decision recorded — this is an Owner
 decision with accounting advice, and nothing in the repository should decide
 it. Prices reviewed against that decision; the seeded catalogue prices are
-explicitly tax-unconfirmed and imply no VAT registration. A Stripe account with
-the webhook registered against the production Admin domain. And a reviewed code
-change, because the current code accepts only test-mode keys.
+explicitly tax-unconfirmed and imply no VAT registration. Separate sandbox and
+live Stripe accounts, each with its own webhook. DEV stays on test-mode keys.
+Production live mode also requires the merchant account, the backup head and
+`STRIPE_LIVE_ACTIVATION`.
 
-**Test.** Complete one payment end to end in test mode against a quote created
+**Test.** Complete one payment end to end in the lane under test against a quote created
 for the purpose, and confirm the webhook applies exactly once when replayed.
 
-**Enable.** Set `PAYMENTS_PROVIDER_MODE`, the Stripe key and the webhook
-secret, and redeploy. Live keys additionally require the code change.
+**Enable.** On Preview set `PAYMENTS_PROVIDER_MODE` to `stripe_test` with `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, then redeploy. Production additionally sets `PAYMENTS_PROVIDER_MODE` to `stripe_live` and `STRIPE_LIVE_ACTIVATION` to `enabled`. A secret alone does nothing.
 
 **Verify.** The payment reconciles to the obligation, `invoice.paid` is what
 grants paid entitlement, and a replayed webhook returns the first outcome.

@@ -80,11 +80,10 @@ export const liveCapabilities: readonly LiveCapability[] = [
     id: "stripe_payments",
     name: "Stripe payments",
     live: env => paymentsEnabled(env),
-    enableFlags: ["PAYMENTS_PROVIDER_MODE"],
+    enableFlags: ["PAYMENTS_PROVIDER_MODE", "STRIPE_LIVE_ACTIVATION"],
     credentials: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
-    codeLevelBlock:
-      "stripeSecret() accepts only a key beginning sk_test_ or rk_test_, so a live Stripe key is rejected by the code rather than by configuration. There is no mode value that selects live Stripe.",
-    whyOff: "PAYMENTS_PROVIDER_MODE is unset, so the provider mode resolves to disabled.",
+    codeLevelBlock: null,
+    whyOff: "PAYMENTS_PROVIDER_MODE is unset, so the provider mode resolves to disabled. Production live mode also requires STRIPE_LIVE_ACTIVATION=enabled, a live key and the Production Supabase and evidence lane.",
   },
   {
     id: "outgoing_mail",

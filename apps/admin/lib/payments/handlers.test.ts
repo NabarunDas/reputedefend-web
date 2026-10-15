@@ -82,17 +82,15 @@ describe("payment job handlers", () => {
     expect(rpc.rpc.mock.calls[2][1]).toMatchObject({ p_type: "payment_intent.requires_action" })
   })
 
-  it("ignores a live-mode PROCESS_STRIPE_EVENT without retrieving provider objects", async () => {
+  it("rejects a live-mode PROCESS_STRIPE_EVENT before any database write when the lane is not live", async () => {
     const rpc = rpcMock()
     const result = await processStripeEventHandler().execute({
       idempotencyKey: key,
       payload: { eventId: "evt_live", eventType: "payment_intent.succeeded", objectId: "pi_live", livemode: true },
       rpc: rpc.asJob,
     })
-    expect(result).toEqual({ ok: true })
-    expect(rpc.rpc).toHaveBeenCalledWith("payment_apply_provider_event_v1", expect.objectContaining({
-      p_payload: { livemode: true },
-    }))
+    expect(result).toEqual({ ok: false, retryable: false, error: "Event livemode does not match the payment lane." })
+    expect(rpc.rpc).not.toHaveBeenCalled()
   })
 
   it("treats Checkout as correlation-only and retries unmatched PaymentIntents", async () => {

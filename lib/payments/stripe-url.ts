@@ -2,8 +2,10 @@
  * Exact-host allowlist for Stripe Checkout and hosted invoices.
  *
  * Hosts match in full. A suffix, lookalike, credential, port, or non-HTTPS
- * scheme never qualifies. Production accepts only the live Stripe hosts.
- * Local and test runs also accept the fixed fake-provider hosts.
+ * scheme never qualifies. Sandbox and live Checkout both use the real Stripe
+ * hosts. The fixed fake-provider hosts are only for local tests, never for a
+ * Vercel Preview or Production bundle. NODE_ENV=production on Preview does
+ * not admit those fake hosts and does not reject a real sandbox URL.
  */
 
 export type StripeUrlKind = "checkout" | "invoice"
@@ -47,10 +49,12 @@ export function trustedStripeUrl(
   if (parsed.username !== "" || parsed.password !== "") return null
   if (parsed.port !== "") return null
   // The direct NODE_ENV read is what a production browser bundle inlines.
-  const locked = env.VERCEL_ENV === "production"
-    || env.NODE_ENV === "production"
-    || process.env.NODE_ENV === "production"
-  const hosts: readonly string[] = locked ? [LIVE_HOST[kind]] : [LIVE_HOST[kind], TEST_HOST[kind]]
+  // Any VERCEL_ENV, including preview, is a deployed lane and rejects fake hosts.
+  const deployed = !!env.VERCEL_ENV
+  const productionNode = env.NODE_ENV === "production" || process.env.NODE_ENV === "production"
+  const hosts: readonly string[] = deployed || productionNode
+    ? [LIVE_HOST[kind]]
+    : [LIVE_HOST[kind], TEST_HOST[kind]]
   if (!hosts.includes(parsed.hostname)) return null
   return parsed.href
 }

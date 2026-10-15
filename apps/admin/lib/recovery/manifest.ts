@@ -523,14 +523,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "paid service acceptance gate", probe: "public.admin_confirm_paid_service_agreement_v1" },
   },
   {
-    // Source only. Not applied to DEV or Production. AWS ApprovedMigrationHead
-    // stays at 20261014170000. The data change is the seller's not-VAT-registered
-    // position. No country is seeded or approved.
+    // Applied to DEV only on 2026-10-15 from COM-14A source merged at
+    // 8824549c013eb8c5c147befddaa49eb6a914f7c4. Supabase initially
+    // assigned version 20261015113540; after schema/RLS/negative checks
+    // its single migration-history row was aligned to canonical 20261015140000
+    // without replaying SQL. NOT applied to Production; AWS ApprovedMigrationHead
+    // remains 20261014170000. Only seller's NOT_VAT_REGISTERED fact was seeded.
+    // Zero country decisions or business establishments were approved.
     version: "20261015140000",
     filename: "20261015140000_commercial_eligibility_gate_v1.sql",
     step: "COM-14A commercial eligibility gate",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "commercial eligibility gate", probe: "public.admin_record_eligibility_decision_v1" },

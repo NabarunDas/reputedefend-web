@@ -450,9 +450,9 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     expected:
       "Health is derived from the heartbeat, and a replay happens only with a reason, an explicit confirmation and a recent sign-in. The DEV one-shot claims only the selected test-mode PROCESS_STRIPE_EVENT after the same confirmation and a fresh sign-in.",
     authorization: staffAndSession + " Replay and the DEV Stripe one-shot additionally require a sign-in from the last five minutes.",
-    persistence: "Attempts are append-only and the replay count is kept on the job. The one-shot writes its own command receipt and does not mark a Stripe receipt processed by itself.",
+    persistence: "Attempts are append-only and the replay count is kept on the job. The one-shot writes its own command receipt and does not mark a Stripe receipt processed by itself. A receipt already processed by payment apply is left unpromoted.",
     negative:
-      "Opening the page claims and runs nothing, a never-run worker reads as NEVER_RUN rather than healthy, and the cron entry point rejects a request without its secret. The DEV one-shot refuses a closed flag, the wrong branch, project, bucket or origin, and it does not promote email, Guard or collection jobs that sit ahead of the selected event.",
+      "Opening the page claims and runs nothing, a never-run worker reads as NEVER_RUN rather than healthy, and the cron entry point rejects a request without its secret. The DEV one-shot form is absent unless its gate is open. The route refuses a closed flag, the wrong branch, project, bucket or origin, a receipt already processed by payment apply, and it does not promote email, Guard or collection jobs that sit ahead of the selected event.",
     evidence: [
       "lib/jobs/database.test.ts",
       "lib/jobs/command.test.ts",
@@ -461,6 +461,8 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "lib/jobs/config.test.ts",
       "lib/jobs/dev-stripe-one-shot.test.ts",
       "lib/jobs/dev-stripe-one-shot.database.test.ts",
+      "lib/jobs/dev-stripe-one-shot.provider.test.ts",
+      "lib/jobs/dev-stripe-one-shot.concurrency.database.test.ts",
       "app/operations/jobs/page.test.tsx",
       "lib/workday.database.test.ts",
     ],

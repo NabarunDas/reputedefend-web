@@ -187,7 +187,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "paymentProvider",
-    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts", "lib/payments/index.ts"],
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/handlers.ts", "lib/payments/index.ts"],
     reason: "Constructs the payment provider from the resolved mode and the key, which are read together or not at all.",
   },
   {
@@ -207,8 +207,8 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "guardExternalPayment",
-    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/payments/handlers.ts"],
-    reason: "Reads the database lane with the worker environment before a queued payment job calls Stripe.",
+    files: ["apps/admin/lib/guard/reconcile.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/handlers.ts"],
+    reason: "Reads the database lane with the worker environment before a queued payment job or the DEV one-shot preflight calls Stripe.",
   },
   {
     helper: "stripeSecret",

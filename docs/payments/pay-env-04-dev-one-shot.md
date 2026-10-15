@@ -10,7 +10,7 @@ The normal job worker runs only when `VERCEL_ENV=production`. Signed sandbox web
 
 It reuses `processStripeEventHandler`, `job_complete_v1` and `job_fail_v1`. It does not call `job_promote_outbox_v1` or `job_claim_batch_v1`, because those functions take every job type. A new SQL function claims only the selected `PROCESS_STRIPE_EVENT` with `livemode=false`.
 
-Guard, subscription, refund and dispute events are refused before promotion, so they stay queued. A recurring invoice is refused as well, including one whose job type is still `PROCESS_STRIPE_EVENT`. If the handler nevertheless tries a Guard call, that call is not made and the selected job is dead-lettered.
+Guard, subscription, refund and dispute events are refused before promotion, so they stay queued. A recurring invoice is refused as well, including one whose job type is still `PROCESS_STRIPE_EVENT`. Checkout, setup and invoice classification reads Stripe only after `payment_provider_lane_status_v1` agrees with this Preview. A provider built without that database lane is disabled and is not called. A receipt already marked processed by `payment_apply_provider_event_v1` is refused before promotion. If the handler tries a Guard call, or throws, that call is not completed: the selected job is failed through `job_fail_v1` and is not marked paid.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ The flag defaults to off. Do not set it in Production. Do not set it while the m
 ## Operator flow
 
 1. Sign in to the DEV Admin Preview. The action requires a sign-in from the last five minutes.
-2. Open `/operations/jobs`.
+2. Open `/operations/jobs`. The one-shot form is rendered only when the gate above is open. Production and every other Preview hide it.
 3. Enter the exact Stripe event id (`evt_…`) and confirm the checkbox.
 4. Submit once. The browser sends a new idempotency UUID.
 5. Read the jobs page again. One `PROCESS_STRIPE_EVENT` row should move. Email, collection and Guard rows ahead of it must be unchanged.
@@ -45,8 +45,12 @@ The endpoint is `POST /api/operations/dev-stripe-reconcile`. It accepts only `ev
 - If the claim succeeded but the request stopped before completion, submit that same key again within the 120-second lease. The handler is safe to repeat: Stripe application is idempotent.
 - After the lease expires, use a **new** idempotency key. The expired lease cannot complete the job.
 - A retryable provider failure schedules the existing backoff. Wait until that time, then use a new idempotency key.
+- If processing throws, the same lease is failed as retryable. The event is not marked complete. Wait for the backoff, then use a new idempotency key. If that failure record itself cannot be written, the lease stays until it expires and the event is still not marked paid.
 - A dead-lettered event is not claimed again. Use the existing dead-letter replay on the jobs page, which still requires its own reason and fresh sign-in, and then a new one-shot key.
+- Two operators claiming the same event overlap on the outbox row. One claim wins and holds that row until its transaction commits. The other uses `FOR UPDATE SKIP LOCKED`, returns a conflict without waiting for that transaction, and does not take a second lease.
 - Do not mark a receipt processed, and do not mark an order paid, by hand.
+
+PGlite has one connection, so it cannot show two sessions. The two-session proof runs against a private PostgreSQL cluster when the server binaries are installed. A runner without those binaries skips that file rather than treating the skip as a pass of the race.
 
 ## Rollback
 

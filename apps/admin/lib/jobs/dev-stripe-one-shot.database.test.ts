@@ -337,6 +337,26 @@ describe("DEV Stripe one-shot SQL", () => {
     expect(await count("select count(*)::int as n from admin_private.stripe_event_receipts where provider_event_id = 'evt_apply_once' and processed")).toBe(1)
   })
 
+  it("refuses a receipt the real apply function has already processed, before promotion", async () => {
+    await enqueueUnrelated()
+    const before = await unrelatedSnapshot()
+    expect(await receive("evt_already_paid", "payment_intent.succeeded", "pi_already_paid")).toMatchObject({ status: "success" })
+    expect(await rpc("payment_apply_provider_event_v1", [
+      "evt_already_paid", "payment_intent.succeeded", "pi_already_paid", { livemode: false },
+    ])).toMatchObject({ status: "success", ignored: true, reason: "unrelated" })
+    const payments = await count("select count(*)::int as n from public.payment_receipts")
+    const obligations = await count("select count(*)::int as n from public.payment_obligations")
+    const ledger = await count("select count(*)::int as n from public.payment_ledger")
+    expect(await claim("evt_already_paid")).toMatchObject({ status: "denied", reason: "already_processed" })
+    expect(await count("select count(*)::int as n from admin_private.job_outbox where event_key = 'process-stripe-event:evt_already_paid' and promoted_at is null")).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.jobs")).toBe(0)
+    expect(await count("select count(*)::int as n from admin_private.stripe_event_receipts where provider_event_id = 'evt_already_paid' and processed")).toBe(1)
+    expect(await count("select count(*)::int as n from public.payment_receipts")).toBe(payments)
+    expect(await count("select count(*)::int as n from public.payment_obligations")).toBe(obligations)
+    expect(await count("select count(*)::int as n from public.payment_ledger")).toBe(ledger)
+    expect(await unrelatedSnapshot()).toBe(before)
+  })
+
   it("requires a fresh Admin session and does not grant the claim to browser roles", async () => {
     expect(await receive("evt_reauth_pi", "payment_intent.succeeded", "pi_reauth")).toMatchObject({ status: "success" })
     await db.query("update public.admin_sessions set created_at = now() - interval '6 minutes' where token_hash = $1", [token])

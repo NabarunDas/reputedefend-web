@@ -144,6 +144,18 @@ BEGIN
     RETURN result;
   END IF;
 
+  -- An earlier apply already settled this receipt. Do not promote or lease it.
+  IF rec.processed IS TRUE THEN
+    PERFORM admin_private.write_record_audit_v1(
+      actor, 'OPERATIONS_CHANGED', 'denied', outbox.id, p_request, 'job',
+      'DEV Stripe one-shot left an already processed event unchanged',
+      jsonb_build_object('operation', 'dev_stripe_one_shot', 'eventId', p_event_id, 'reason', 'already_processed')
+    );
+    result := jsonb_build_object('status', 'denied', 'reason', 'already_processed', 'eventId', p_event_id);
+    INSERT INTO admin_private.job_command_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+
   family := admin_private.dev_stripe_event_family_v1(event_type);
   IF family = 'guard' OR (
     event_type LIKE 'invoice.%' AND EXISTS (

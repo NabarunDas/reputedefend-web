@@ -2,7 +2,8 @@ import "server-only"
 import { NextRequest, NextResponse } from "next/server"
 import { paymentProvider } from "../../../../lib/payments"
 import { isStripeLiveSecret, isStripeTestSecret, paymentsEnabled, type PaymentEnv } from "../../../../lib/payments/config"
-import type { PaymentProvider } from "../../../../lib/payments/provider"
+import { guardExternalPayment } from "../../../../lib/payments/lane-agreement"
+import { PaymentsDisabledError, type PaymentProvider } from "../../../../lib/payments/provider"
 import { processStripeEventHandler } from "../payments/handlers"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
@@ -44,6 +45,20 @@ export class DevStripeIsolationError extends Error {
 }
 
 const allowedRpc = new Set(["payment_apply_provider_event_v1", "payment_provider_lane_status_v1"])
+
+/**
+ * The provider used to classify one Checkout, SetupIntent or invoice.
+ * A bare paymentProvider() is disabled on Preview because the database lane
+ * is required. This reads that lane and refuses before any Stripe call when
+ * it is missing, live, or does not agree with this environment.
+ */
+export async function devStripeClassificationProvider(rpc: JobRpc, env: PaymentEnv = process.env): Promise<PaymentProvider> {
+  const lane = await guardExternalPayment(async (name, args) => rpc.rpc(name, args ?? {}), env)
+  if (!lane) throw new PaymentsDisabledError("Payment database lane does not match this environment.")
+  const provider = paymentProvider(env, { databaseLane: lane })
+  if (provider.mode !== "stripe_test") throw new PaymentsDisabledError("Payment database lane does not match this environment.")
+  return provider
+}
 
 export function fenceDevStripeRpc(rpc: JobRpc): JobRpc {
   return {
@@ -98,7 +113,7 @@ type ClaimResult = {
   jobStatus?: string
 }
 
-export type SettleOutcome = "succeeded" | "retry" | "dead_letter" | "lease_lost" | "isolated"
+export type SettleOutcome = "succeeded" | "retry" | "dead_letter" | "lease_lost" | "isolated" | "handler_error"
 
 export async function settleClaimedStripeEvent(input: {
   rpc: JobRpc
@@ -119,17 +134,27 @@ export async function settleClaimedStripeEvent(input: {
       rpc: fenced,
     })
   } catch (error) {
-    if (error instanceof DevStripeIsolationError || (error as { name?: string }).name === "DevStripeIsolationError") {
+    const isolated = error instanceof DevStripeIsolationError || (error as { name?: string }).name === "DevStripeIsolationError"
+    try {
       const failed = await input.rpc.rpc<{ status?: string; jobStatus?: string }>("job_fail_v1", {
         p_job: claim.jobId,
         p_lease: claim.leaseToken,
-        p_error: "Guard-linked Stripe event is not processed on the DEV one-shot path.",
-        p_retryable: false,
+        p_error: isolated
+          ? "Guard-linked Stripe event is not processed on the DEV one-shot path."
+          : "Stripe event processing failed unexpectedly.",
+        p_retryable: !isolated,
       })
-      if (failed.status !== "success") return { outcome: "lease_lost", detail: "The lease was no longer held, so the event was left unchanged." }
-      return { outcome: "isolated", detail: "That event would have called Guard and was dead-lettered without running it." }
+      if (failed.status !== "success") {
+        return { outcome: "lease_lost", detail: "The event was not settled. The lease was no longer held, so it was left unchanged." }
+      }
+      if (isolated) return { outcome: "isolated", detail: "That event would have called Guard and was dead-lettered without running it." }
+      if (failed.jobStatus === "RETRY") {
+        return { outcome: "handler_error", detail: "The event was not settled because processing failed. A later one-shot attempt can claim it after the retry delay." }
+      }
+      return { outcome: "dead_letter", detail: "The event was dead-lettered after a processing failure. It was not marked paid by this request." }
+    } catch {
+      return { outcome: "lease_lost", detail: "The event was not settled. The lease remains until it expires, and it was not marked paid." }
     }
-    throw error
   }
   if (result.ok) {
     const completed = await input.rpc.rpc<{ status?: string; jobStatus?: string }>("job_complete_v1", {
@@ -150,6 +175,13 @@ export async function settleClaimedStripeEvent(input: {
   if (failed.status !== "success") return { outcome: "lease_lost", detail: "The lease was no longer held. Reload the jobs page before trying again." }
   if (failed.jobStatus === "RETRY") return { outcome: "retry", detail: "The event was not settled. A later one-shot attempt can claim it after the retry delay." }
   return { outcome: "dead_letter", detail: "The event was dead-lettered. It was not marked paid by this request." }
+}
+
+function settleStatus(outcome: SettleOutcome): number {
+  if (outcome === "succeeded") return 200
+  if (outcome === "lease_lost") return 409
+  if (outcome === "handler_error") return 503
+  return 200
 }
 
 function claimMessage(result: ClaimResult): { message: string; status: number } {
@@ -226,7 +258,11 @@ export async function devStripeOneShotCommand(request: NextRequest): Promise<Nex
     if (claimed.status === "preflight_required") {
       let linked = true
       try {
-        linked = await stripeEventIsGuardLinked(paymentProvider(), claimed.eventType || "", claimed.objectId || null)
+        linked = await stripeEventIsGuardLinked(
+          await devStripeClassificationProvider(rpc),
+          claimed.eventType || "",
+          claimed.objectId || null,
+        )
       } catch {
         return reply("That event could not be classified and was left queued.", 503)
       }
@@ -235,7 +271,7 @@ export async function devStripeOneShotCommand(request: NextRequest): Promise<Nex
     }
     if (claimed.replay && claimed.currentJobStatus === "RUNNING" && claimed.status === "success") {
       const settled = await settleClaimedStripeEvent({ rpc, claim: claimed })
-      return reply(settled.detail, settled.outcome === "lease_lost" ? 409 : 200)
+      return reply(settled.detail, settleStatus(settled.outcome))
     }
     if (claimed.replay) {
       if (claimed.currentJobStatus === "SUCCEEDED" || claimed.reason === "already_processed") {
@@ -253,8 +289,7 @@ export async function devStripeOneShotCommand(request: NextRequest): Promise<Nex
       return reply(mapped.message, mapped.status)
     }
     const settled = await settleClaimedStripeEvent({ rpc, claim: claimed })
-    const status = settled.outcome === "succeeded" ? 200 : settled.outcome === "lease_lost" ? 409 : 200
-    return reply(settled.detail, status)
+    return reply(settled.detail, settleStatus(settled.outcome))
   } catch {
     return reply("The event could not be processed. Reload the page before trying again.", 503)
   }

@@ -187,11 +187,32 @@ describe("DEV Stripe one-shot request boundary", () => {
     const replay = await devStripeOneShotCommand(req({ eventId, confirmed: true }))
     expect(replay.status).toBe(200)
     expect(mocks.execute).not.toHaveBeenCalled()
+
+    mocks.rpc.mockClear()
+    mocks.execute.mockClear()
+    mocks.execute.mockRejectedValue(new Error("provider exploded"))
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_dev_stripe_one_shot_claim_v1") return claim()
+      if (name === "job_fail_v1") return { status: "success", jobStatus: "RETRY" }
+      throw new Error(name)
+    })
+    const failed = await devStripeOneShotCommand(req({ eventId, confirmed: true }, { "idempotency-key": "44444444-4444-4444-8444-444444444444" }))
+    expect(failed.status).toBe(503)
+    expect(mocks.rpc).toHaveBeenCalledWith("job_fail_v1", expect.objectContaining({
+      p_job: jobId, p_lease: lease, p_retryable: true,
+    }))
+    expect(mocks.rpc).not.toHaveBeenCalledWith("job_complete_v1", expect.anything())
   })
 
   it("leaves a Guard invoice queued and blocks a Guard RPC from the Stripe handler", async () => {
-    mocks.rpc.mockResolvedValue({
-      status: "preflight_required", eventId, eventType: "invoice.paid", objectId: "in_guard_invoice",
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_provider_lane_status_v1") {
+        return { configured: false, mode: "stripe_test", expectedLivemode: false }
+      }
+      if (name === "admin_dev_stripe_one_shot_claim_v1") {
+        return { status: "preflight_required", eventId, eventType: "invoice.paid", objectId: "in_guard_invoice" }
+      }
+      throw new Error(name)
     })
     mocks.retrieveRecurringInvoice.mockResolvedValue({
       id: "in_guard_invoice", status: "paid", customerId: null, amountDueMinor: 0, amountPaidMinor: 0,
@@ -199,7 +220,9 @@ describe("DEV Stripe one-shot request boundary", () => {
     })
     const refused = await devStripeOneShotCommand(req({ eventId, confirmed: true }))
     expect(refused.status).toBe(403)
-    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith("payment_provider_lane_status_v1", {})
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_dev_stripe_one_shot_claim_v1", expect.objectContaining({ p_preflight_clear: false }))
+    expect(mocks.rpc).not.toHaveBeenCalledWith("admin_dev_stripe_one_shot_claim_v1", expect.objectContaining({ p_preflight_clear: true }))
     expect(await refused.json()).toMatchObject({ message: expect.stringMatching(/left queued/) })
 
     const calls: string[] = []
@@ -265,6 +288,29 @@ describe("DEV Stripe one-shot settlement", () => {
       handler: { jobType: "PROCESS_STRIPE_EVENT", async execute() { return { ok: true, retryable: false } } },
     })
     expect(lost.outcome).toBe("lease_lost")
+
+    const calls: string[] = []
+    const thrown = await settleClaimedStripeEvent({
+      rpc: {
+        async rpc<T>(name: string): Promise<T> {
+          calls.push(name)
+          if (name === "job_fail_v1") return { status: "success", jobStatus: "RETRY" } as T
+          throw new Error(name)
+        },
+      },
+      claim: claim(),
+      handler: { jobType: "PROCESS_STRIPE_EVENT", async execute() { throw new Error("provider exploded") } },
+    })
+    expect(thrown.outcome).toBe("handler_error")
+    expect(calls).toEqual(["job_fail_v1"])
+
+    const stuck = await settleClaimedStripeEvent({
+      rpc: { async rpc<T>(): Promise<T> { return Promise.reject<T>(new Error("database unavailable")) } },
+      claim: claim(),
+      handler: { jobType: "PROCESS_STRIPE_EVENT", async execute() { throw new Error("provider exploded") } },
+    })
+    expect(stuck.outcome).toBe("lease_lost")
+    expect(stuck.detail).toMatch(/not marked paid/)
   })
 
   it("does not forward Guard, mail or generic job calls", async () => {

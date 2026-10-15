@@ -524,7 +524,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Source only. Not applied to DEV or Production. AWS ApprovedMigrationHead
-    // stays at 20261014170000. The seed is a PENDING_REVIEW backlog, not an approval.
+    // stays at 20261014170000. The data change is the seller's not-VAT-registered
+    // position. No country is seeded or approved.
     version: "20261015140000",
     filename: "20261015140000_commercial_eligibility_gate_v1.sql",
     step: "COM-14A commercial eligibility gate",

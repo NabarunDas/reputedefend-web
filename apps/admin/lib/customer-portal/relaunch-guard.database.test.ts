@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, migrationSql, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
-import { syntheticGbEligibilitySql } from "../commercial/eligibility.fixture"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const migration = "20261004000625_customer_portal_relaunch_guard_v1.sql"
@@ -166,8 +165,6 @@ beforeAll(async () => {
   `)
   await verify(alex, "alex@example.com", alexBusiness)
   await verify(sam, "sam@example.com", samBusiness)
-  await db.exec(syntheticGbEligibilitySql(alexBusiness, admin))
-  await db.exec(syntheticGbEligibilitySql(samBusiness, admin))
   const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)

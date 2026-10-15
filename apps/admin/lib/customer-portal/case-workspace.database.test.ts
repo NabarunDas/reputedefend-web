@@ -1,7 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
-import { syntheticGbEligibilitySql } from "../commercial/eligibility.fixture"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
 
 const appliedHead = "20261003154314"
@@ -354,8 +353,6 @@ beforeAll(async () => {
             ($4,$2,'verified', now(), $3, 'Companies House match discussed on a live call.')`,
     [alex, business, verifier, sam],
   )
-  await db.exec(syntheticGbEligibilitySql(business, verifier))
-  await db.exec(syntheticGbEligibilitySql(otherBusiness, verifier))
   const pendingAlex = hash(token())
   if ((await rpc<{ status: string }>("customer_portal_begin_login_v1", ["alex@example.com", pendingAlex])).status !== "ok") throw new Error("alex login")
   if ((await rpc<{ status: string }>("customer_portal_confirm_otp_sent_v1", [pendingAlex])).status !== "ok") throw new Error("alex otp")

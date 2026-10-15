@@ -15,7 +15,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
-import { syntheticGbEligibilitySql } from "./commercial/eligibility.fixture"
 import { applyChain, preparePlatform } from "./recovery/harness"
 
 const db = new PGlite()
@@ -216,7 +215,6 @@ describe("a synthetic Admin working day", () => {
     expect((await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", {
       quoteId: quote.id, taxBehaviour: "NOT_APPLICABLE",
     }, quote.version])).status).toBe("success")
-    await db.exec(syntheticGbEligibilitySql(businessRecord.id, uid))
     expect((await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: quote.id }, quote.version + 1])).status).toBe("success")
     const offered = await rpc("admin_quote_list_v1", [token, "OFFERED", null])
     expect(offered.quotes.map((row: Json) => row.id)).toEqual([quote.id])

@@ -2,8 +2,14 @@
 -- Additive and source-only. Do not apply this file to DEV or Production.
 -- It does not move AWS ApprovedMigrationHead, enable Stripe live mode,
 -- the Customer Portal, Guard, or mail, and it does not mark PS-2026-10-14.2 operative.
--- Every seeded country is PENDING_REVIEW. Absence of a row is also pending.
+-- No country catalogue is seeded. UK B2B sales use the documented
+-- not-VAT-registered treatment. Overseas binding acceptance and payment
+-- wait for a reusable decision. Enquiries and draft estimates stay open.
 -- Non-VAT-registration is not worldwide zero-rated VAT. UNCONFIRMED tax stays blocked.
+-- Accepted UK GBP turnover is summed over the rolling 12 months. The prospective
+-- next-30-days test is a manual review; this file does not invent a forecast.
+-- A new not-applicable UK sale stops once that total reaches £90,000 while the
+-- seller remains not VAT registered. An approaching total is recorded and still allowed.
 
 BEGIN;
 
@@ -136,33 +142,68 @@ REVOKE ALL ON TABLE public.business_establishments FROM PUBLIC, anon, authentica
 REVOKE ALL ON TABLE public.commercial_eligibility_decisions FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON TABLE public.commercial_eligibility_events FROM PUBLIC, anon, authenticated, service_role;
 
--- Review backlog only. These rows are not approvals and do not authorise a sale.
-INSERT INTO public.commercial_eligibility_decisions(
-  request_id, country_code, service_class, payment_flow, b2b_requirement,
-  destination_requirements, seller_registration_status, stripe_flow_ready, presentment_mode,
-  status, effective_from, review_due_at, evidence_reference, decision_version, payload_fingerprint
-)
-SELECT gen_random_uuid(), c.country_code, f.service_class, f.payment_flow, 'B2B_VERIFIED',
-  'Pending accountant review. No approval is recorded for this country, service and payment flow.',
-  'UNKNOWN', false, 'GBP_ONLY', 'PENDING_REVIEW',
-  timestamptz '2026-10-15 00:00:00+00', timestamptz '2027-10-15 00:00:00+00',
-  'COM-14A review backlog. No tax approval has been recorded for this country, service and payment flow.',
-  1, 'seed-pending'
-FROM (VALUES
-  ('AT'),('BE'),('BG'),('HR'),('CY'),('CZ'),('DK'),('EE'),('FI'),('FR'),('DE'),('GR'),('HU'),('IE'),
-  ('IT'),('LV'),('LT'),('LU'),('MT'),('NL'),('PL'),('PT'),('RO'),('SK'),('SI'),('ES'),('SE'),
-  ('GB'),('US'),('CA'),('AU'),('NZ'),('SG'),('AE'),('IN')
-) AS c(country_code)
-CROSS JOIN (VALUES
-  ('GUIDED', 'CHECKOUT_UPFRONT'),
-  ('MANAGED', 'HOSTED_INVOICE_SUCCESS_FEE'),
-  ('GUARD', 'GUARD_RECURRING')
-) AS f(service_class, payment_flow);
+-- The company's recorded VAT position. This is not a country approval and not a zero-rating.
+CREATE TABLE public.seller_vat_position (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  status text NOT NULL CHECK (status IN ('NOT_VAT_REGISTERED', 'REGISTERED')),
+  effective_from timestamptz NOT NULL,
+  evidence_reference text NOT NULL CHECK (char_length(btrim(evidence_reference)) BETWEEN 20 AND 500),
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
 
-INSERT INTO public.commercial_eligibility_events(decision_id, event, details)
-SELECT id, 'SEEDED_PENDING', jsonb_build_object('countryCode', country_code, 'serviceClass', service_class, 'paymentFlow', payment_flow)
-FROM public.commercial_eligibility_decisions
-WHERE payload_fingerprint = 'seed-pending';
+INSERT INTO public.seller_vat_position(status, effective_from, evidence_reference)
+VALUES (
+  'NOT_VAT_REGISTERED',
+  timestamptz '2026-10-14 00:00:00+00',
+  'ProfileRelaunch Ltd is not VAT registered. This records that fact. It is not a zero-rating and it does not authorise overseas sales.'
+);
+
+-- A sanctions row cannot be overridden by a later eligibility approval.
+CREATE TABLE public.commercial_sanctions_restrictions (
+  country_code text PRIMARY KEY CHECK (country_code ~ '^[A-Z]{2}$' AND country_code NOT IN ('UK', 'EU', 'XX')),
+  reason text NOT NULL CHECK (char_length(btrim(reason)) BETWEEN 20 AND 500),
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.commercial_tax_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event text NOT NULL CHECK (event IN ('ACCEPTED', 'PAYMENT_ATTEMPT')),
+  business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE RESTRICT,
+  location_id uuid REFERENCES public.locations(id) ON DELETE RESTRICT,
+  country_code text NOT NULL,
+  service_code text,
+  service_class text,
+  payment_flow text,
+  tax_behaviour text,
+  tax_determination text,
+  seller_vat_status text NOT NULL,
+  contract_amount_minor integer NOT NULL CHECK (contract_amount_minor >= 0),
+  currency text NOT NULL CHECK (currency = 'GBP'),
+  turnover_minor_after integer,
+  alert text CHECK (alert IS NULL OR alert IN ('APPROACHING', 'THRESHOLD')),
+  source_id uuid,
+  details jsonb NOT NULL CHECK (jsonb_typeof(details) = 'object'),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.seller_vat_position ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commercial_sanctions_restrictions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commercial_tax_log ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.seller_vat_position FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.commercial_sanctions_restrictions FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.commercial_tax_log FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER seller_vat_position_immutable
+BEFORE UPDATE OR DELETE ON public.seller_vat_position
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_commercial_eligibility_v1();
+
+CREATE TRIGGER commercial_sanctions_restrictions_immutable
+BEFORE UPDATE OR DELETE ON public.commercial_sanctions_restrictions
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_commercial_eligibility_v1();
+
+CREATE TRIGGER commercial_tax_log_immutable
+BEFORE UPDATE OR DELETE ON public.commercial_tax_log
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_commercial_eligibility_v1();
 
 ALTER TABLE public.quote_versions
   ADD COLUMN eligibility_snapshot jsonb,
@@ -177,9 +218,9 @@ ALTER TABLE public.paid_service_acceptances
   );
 
 CREATE FUNCTION admin_private.commercial_eligibility_message_v1() RETURNS text
-LANGUAGE sql IMMUTABLE SET search_path='' AS $$
-  SELECT 'You can still send an enquiry. We need to confirm that this business, service and payment route are eligible before we can take this order.'::text;
-$$;
+LANGUAGE sql IMMUTABLE SET search_path='' AS $message$
+  SELECT $msg$Thanks — we'll confirm your quote and payment details shortly.$msg$;
+$message$;
 
 CREATE FUNCTION admin_private.commercial_service_class_v1(p_code text) RETURNS text
 LANGUAGE sql IMMUTABLE SET search_path='' AS $$
@@ -218,22 +259,105 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   END;
 $$;
 
+-- A verified establishment wins over the listing country. Otherwise UK/GB and the
+-- written country names used by existing records map to GB. EU and XX are never countries.
+CREATE FUNCTION admin_private.commercial_country_v1(p_business uuid, p_location uuid)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+  est public.business_establishments;
+  est_count integer;
+  raw text;
+  code text;
+BEGIN
+  SELECT count(*) INTO est_count FROM public.business_establishments
+    WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
+  IF est_count > 1 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'conflicting_establishment');
+  END IF;
+  IF est_count = 1 THEN
+    SELECT * INTO est FROM public.business_establishments
+      WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
+    RETURN jsonb_build_object(
+      'ok', true, 'countryCode', est.country_code, 'subdivisionCode', est.subdivision_code, 'source', 'establishment'
+    );
+  END IF;
+  IF p_location IS NOT NULL THEN
+    SELECT upper(btrim(country)) INTO raw FROM public.locations WHERE id = p_location;
+  END IF;
+  IF raw IN ('UK', 'GB', 'UNITED KINGDOM', 'GREAT BRITAIN') THEN
+    code := 'GB';
+  ELSIF raw ~ '^[A-Z]{2}$' AND raw NOT IN ('EU', 'XX') THEN
+    code := raw;
+  ELSE
+    RETURN jsonb_build_object('ok', false, 'reason', 'unresolved_country');
+  END IF;
+  RETURN jsonb_build_object('ok', true, 'countryCode', code, 'subdivisionCode', NULL, 'source', 'location');
+END; $$;
+
+CREATE FUNCTION admin_private.seller_vat_status_v1() RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+  SELECT status FROM public.seller_vat_position
+  WHERE effective_from <= now()
+  ORDER BY effective_from DESC, recorded_at DESC
+  LIMIT 1;
+$$;
+
+CREATE FUNCTION admin_private.uk_vat_turnover_minor_v1() RETURNS bigint
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path='' AS $$
+  SELECT coalesce(sum(contract_amount_minor), 0)
+  FROM public.commercial_tax_log
+  WHERE event = 'ACCEPTED' AND country_code = 'GB' AND currency = 'GBP'
+    AND created_at > now() - interval '12 months';
+$$;
+
+CREATE FUNCTION admin_private.commercial_tax_log_v1(
+  p_event text, p_business uuid, p_location uuid, p_country text, p_service text, p_class text, p_flow text,
+  p_tax text, p_determination text, p_seller text, p_amount integer, p_turnover integer, p_alert text,
+  p_source uuid, p_details jsonb
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+  INSERT INTO public.commercial_tax_log(
+    event, business_id, location_id, country_code, service_code, service_class, payment_flow,
+    tax_behaviour, tax_determination, seller_vat_status, contract_amount_minor, currency,
+    turnover_minor_after, alert, source_id, details
+  ) VALUES (
+    p_event, p_business, p_location, p_country, p_service, p_class, p_flow,
+    p_tax, p_determination, p_seller, coalesce(p_amount, 0), 'GBP',
+    p_turnover, p_alert, p_source, coalesce(p_details, '{}'::jsonb)
+  );
+END; $$;
+
 CREATE FUNCTION admin_private.evaluate_commercial_eligibility_v1(
   p_business uuid,
   p_service text,
   p_tax text,
   p_currency text DEFAULT 'GBP',
-  p_amount integer DEFAULT NULL
+  p_amount integer DEFAULT NULL,
+  p_location uuid DEFAULT NULL,
+  p_count_amount boolean DEFAULT true
 ) RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $$
 DECLARE
-  est public.business_establishments;
-  est_count integer;
   class text;
   flow text;
+  place jsonb;
+  country text;
+  subdivision text;
+  seller text;
   decision public.commercial_eligibility_decisions;
   reason text;
+  mode text := 'none';
+  prior bigint := 0;
+  projected bigint := 0;
+  turnover_after bigint;
+  alert text;
   presentment_amount integer;
+  presentment_currency text;
+  determination text;
+  seller_status text;
+  decision_id uuid;
 BEGIN
   class := admin_private.commercial_service_class_v1(p_service);
   flow := admin_private.commercial_payment_flow_v1(p_service);
@@ -241,74 +365,171 @@ BEGIN
     reason := 'unknown_service';
   ELSIF p_currency IS DISTINCT FROM 'GBP' THEN
     reason := 'currency_not_contract';
-  ELSIF p_tax = 'UNCONFIRMED' THEN
+  ELSIF p_tax IS NULL OR p_tax = 'UNCONFIRMED' THEN
     reason := 'tax_unconfirmed';
   ELSE
-    SELECT count(*) INTO est_count FROM public.business_establishments
-      WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
-    IF est_count > 1 THEN
-      reason := 'conflicting_establishment';
-    ELSIF est_count = 0 THEN
-      reason := 'establishment_unverified';
+    place := admin_private.commercial_country_v1(p_business, p_location);
+    IF coalesce(place->>'ok', 'false') IS DISTINCT FROM 'true' THEN
+      reason := coalesce(place->>'reason', 'unresolved_country');
     ELSE
-      SELECT * INTO est FROM public.business_establishments
-        WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
-      IF est.country_code IN ('US', 'CA') AND est.subdivision_code IS NULL THEN
+      country := place->>'countryCode';
+      subdivision := nullif(place->>'subdivisionCode', '');
+      IF EXISTS (SELECT 1 FROM public.commercial_sanctions_restrictions WHERE country_code = country) THEN
+        reason := 'sanctions_blocked';
+      ELSIF country IN ('US', 'CA') AND subdivision IS NULL THEN
         reason := 'subdivision_required';
       ELSE
+        seller := admin_private.seller_vat_status_v1();
         SELECT * INTO decision FROM public.commercial_eligibility_decisions
-          WHERE country_code = est.country_code
-            AND subdivision_code IS NOT DISTINCT FROM est.subdivision_code
+          WHERE country_code = country
+            AND subdivision_code IS NOT DISTINCT FROM subdivision
             AND service_class = class
             AND payment_flow = flow
             AND effective_from <= now()
           ORDER BY decision_version DESC
           LIMIT 1;
-        IF decision.id IS NULL THEN
-          reason := 'pending_review';
-        ELSIF decision.status = 'BLOCKED' THEN
-          reason := 'blocked';
-        ELSIF decision.effective_until IS NOT NULL AND decision.effective_until <= now() THEN
-          reason := 'expired';
-        ELSIF decision.status = 'PENDING_REVIEW' THEN
-          reason := 'pending_review';
-        ELSIF decision.review_due_at <= now() THEN
-          reason := 'review_due';
-        ELSIF decision.status IS DISTINCT FROM 'APPROVED' OR NOT decision.stripe_flow_ready THEN
-          reason := 'stripe_not_ready';
-        ELSIF NOT admin_private.commercial_tax_matches_v1(est.country_code, decision.tax_determination, p_tax) THEN
-          reason := 'tax_determination_mismatch';
+        IF decision.id IS NOT NULL AND decision.status = 'BLOCKED'
+          AND (decision.effective_until IS NULL OR decision.effective_until > now())
+        THEN
+          mode := 'blocked';
+        ELSIF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+          AND (decision.effective_until IS NULL OR decision.effective_until > now())
+          AND decision.review_due_at > now()
+          AND decision.stripe_flow_ready
+          AND admin_private.commercial_tax_matches_v1(country, decision.tax_determination, p_tax)
+        THEN
+          mode := 'decision';
+        ELSIF country = 'GB' AND p_tax = 'NOT_APPLICABLE' AND seller = 'NOT_VAT_REGISTERED' THEN
+          IF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+            AND (decision.effective_until IS NULL OR decision.effective_until > now())
+            AND decision.review_due_at > now()
+            AND decision.stripe_flow_ready
+          THEN
+            mode := 'tax_mismatch';
+          ELSE
+            mode := 'uk_default';
+          END IF;
+        ELSIF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+          AND decision.effective_until IS NOT NULL AND decision.effective_until <= now()
+        THEN
+          mode := 'expired';
+        ELSIF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+          AND (decision.effective_until IS NULL OR decision.effective_until > now())
+          AND decision.review_due_at <= now()
+        THEN
+          mode := 'review_due';
+        ELSIF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+          AND (decision.effective_until IS NULL OR decision.effective_until > now())
+          AND NOT decision.stripe_flow_ready
+        THEN
+          mode := 'stripe_not_ready';
+        ELSIF decision.id IS NOT NULL AND decision.status = 'APPROVED'
+          AND (decision.effective_until IS NULL OR decision.effective_until > now())
+        THEN
+          mode := 'tax_mismatch';
+        ELSIF country = 'GB' THEN
+          mode := 'tax_mismatch';
         ELSE
-          presentment_amount := CASE
-            WHEN decision.presentment_mode = 'GBP_ONLY' THEN p_amount
-            ELSE NULL
-          END;
-          RETURN jsonb_build_object(
-            'ok', true,
-            'reason', 'approved',
-            'snapshot', jsonb_build_object(
-              'decisionId', decision.id,
-              'countryCode', decision.country_code,
-              'subdivisionCode', decision.subdivision_code,
-              'serviceClass', decision.service_class,
-              'paymentFlow', decision.payment_flow,
-              'taxDetermination', decision.tax_determination,
-              'sellerRegistrationStatus', decision.seller_registration_status,
-              'contractCurrency', 'GBP',
-              'contractAmountMinor', p_amount,
-              'presentmentMode', decision.presentment_mode,
-              'presentmentCurrency', coalesce(decision.presentment_currency, 'GBP'),
-              'presentmentAmountMinor', presentment_amount,
-              'fxRate', NULL,
-              'decisionVersion', decision.decision_version,
-              'effectiveFrom', decision.effective_from,
-              'effectiveUntil', decision.effective_until,
-              'reviewDueAt', decision.review_due_at
-            )
-          );
+          mode := 'awaiting';
         END IF;
       END IF;
     END IF;
+  END IF;
+
+  IF reason IS NULL AND mode IN ('uk_default', 'decision')
+    AND country = 'GB' AND p_tax = 'NOT_APPLICABLE' AND seller = 'NOT_VAT_REGISTERED'
+  THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('com14a-uk-vat-turnover', 14));
+    prior := admin_private.uk_vat_turnover_minor_v1();
+    projected := prior;
+    IF p_count_amount THEN
+      projected := prior + coalesce(p_amount, 0);
+    END IF;
+    turnover_after := projected;
+    IF projected >= 9000000 THEN
+      reason := 'vat_threshold';
+    ELSIF projected >= 7200000 THEN
+      alert := 'APPROACHING';
+    END IF;
+  END IF;
+
+  IF reason IS NULL AND mode = 'uk_default' THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'reason', 'approved',
+      'snapshot', jsonb_build_object(
+        'decisionId', NULL,
+        'countryCode', 'GB',
+        'subdivisionCode', subdivision,
+        'serviceClass', class,
+        'paymentFlow', flow,
+        'taxDetermination', 'UK_DOMESTIC_NOT_VAT_REGISTERED',
+        'sellerRegistrationStatus', 'NOT_VAT_REGISTERED',
+        'contractCurrency', 'GBP',
+        'contractAmountMinor', p_amount,
+        'presentmentMode', 'GBP_ONLY',
+        'presentmentCurrency', 'GBP',
+        'presentmentAmountMinor', p_amount,
+        'fxRate', NULL,
+        'stripeFlowReady', false,
+        'source', 'uk_not_vat_registered',
+        'turnoverMinorAfter', turnover_after,
+        'alert', alert
+      )
+    );
+  END IF;
+
+  IF reason IS NULL AND mode = 'decision' THEN
+    presentment_amount := p_amount;
+    presentment_currency := coalesce(decision.presentment_currency, 'GBP');
+    IF decision.presentment_mode IS DISTINCT FROM 'GBP_ONLY' THEN
+      presentment_amount := NULL;
+      presentment_currency := decision.presentment_currency;
+    END IF;
+    determination := decision.tax_determination;
+    seller_status := decision.seller_registration_status;
+    decision_id := decision.id;
+    RETURN jsonb_build_object(
+      'ok', true,
+      'reason', 'approved',
+      'snapshot', jsonb_build_object(
+        'decisionId', decision_id,
+        'countryCode', decision.country_code,
+        'subdivisionCode', decision.subdivision_code,
+        'serviceClass', decision.service_class,
+        'paymentFlow', decision.payment_flow,
+        'taxDetermination', determination,
+        'sellerRegistrationStatus', seller_status,
+        'contractCurrency', 'GBP',
+        'contractAmountMinor', p_amount,
+        'presentmentMode', decision.presentment_mode,
+        'presentmentCurrency', presentment_currency,
+        'presentmentAmountMinor', presentment_amount,
+        'fxRate', NULL,
+        'stripeFlowReady', decision.stripe_flow_ready,
+        'source', 'decision',
+        'decisionVersion', decision.decision_version,
+        'effectiveFrom', decision.effective_from,
+        'effectiveUntil', decision.effective_until,
+        'reviewDueAt', decision.review_due_at,
+        'turnoverMinorAfter', turnover_after,
+        'alert', alert
+      )
+    );
+  END IF;
+
+  IF reason IS NULL AND mode = 'blocked' THEN
+    reason := 'blocked';
+  ELSIF reason IS NULL AND mode = 'expired' THEN
+    reason := 'expired';
+  ELSIF reason IS NULL AND mode = 'review_due' THEN
+    reason := 'review_due';
+  ELSIF reason IS NULL AND mode = 'stripe_not_ready' THEN
+    reason := 'stripe_not_ready';
+  ELSIF reason IS NULL AND mode = 'tax_mismatch' THEN
+    reason := 'tax_determination_mismatch';
+  ELSIF reason IS NULL THEN
+    reason := 'awaiting_confirmation';
   END IF;
   RETURN jsonb_build_object(
     'ok', false,
@@ -326,10 +547,10 @@ BEGIN
     AND admin_private.commercial_service_class_v1(NEW.service_code) IS NOT NULL
   THEN
     elig := admin_private.evaluate_commercial_eligibility_v1(
-      NEW.business_id, NEW.service_code, NEW.tax_behaviour, NEW.currency, NEW.total_amount_minor
+      NEW.business_id, NEW.service_code, NEW.tax_behaviour, NEW.currency, NEW.total_amount_minor, NEW.location_id, true
     );
     IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
-      RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'pending_review') USING ERRCODE = 'P0001';
+      RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'awaiting_confirmation') USING ERRCODE = 'P0001';
     END IF;
     NEW.eligibility_snapshot := elig->'snapshot';
   END IF;
@@ -340,68 +561,15 @@ CREATE TRIGGER quote_versions_commercial_eligibility
 BEFORE UPDATE ON public.quote_versions
 FOR EACH ROW EXECUTE FUNCTION admin_private.quote_offer_eligibility_v1();
 
-CREATE FUNCTION admin_private.paid_action_eligibility_v1() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE
-  qv public.quote_versions;
-  ord public.service_orders;
-  service text;
-  tax text;
-  currency text;
-  amount integer;
-  business uuid;
-  elig jsonb;
-BEGIN
-  IF NEW.kind = 'QUOTE_ACCEPTANCE' THEN
-    SELECT * INTO qv FROM public.quote_versions WHERE id = NEW.quote_version_id;
-    IF qv.id IS NULL THEN
-      RAISE EXCEPTION 'commercial_eligibility:stale_quotation' USING ERRCODE = 'P0001';
-    END IF;
-    IF qv.tax_behaviour = 'UNCONFIRMED' THEN
-      RETURN NEW;
-    END IF;
-    IF admin_private.commercial_service_class_v1(qv.service_code) IS NULL THEN
-      RETURN NEW;
-    END IF;
-    business := qv.business_id;
-    service := qv.service_code;
-    tax := qv.tax_behaviour;
-    currency := qv.currency;
-    amount := qv.total_amount_minor;
-  ELSIF NEW.kind IN ('GUIDED_PAYMENT', 'MANAGED_PAYMENT_SETUP', 'PAYMENT_RECOVERY', 'INVOICE_PAYMENT', 'GUARD_SUBSCRIPTION_START') THEN
-    SELECT * INTO ord FROM public.service_orders WHERE id = NEW.service_order_id;
-    IF ord.id IS NULL THEN
-      RAISE EXCEPTION 'commercial_eligibility:pending_review' USING ERRCODE = 'P0001';
-    END IF;
-    business := ord.business_id;
-    service := ord.service_code;
-    tax := ord.tax_behaviour;
-    currency := ord.currency;
-    amount := ord.amount_minor;
-  ELSE
-    RETURN NEW;
-  END IF;
-  elig := admin_private.evaluate_commercial_eligibility_v1(business, service, tax, currency, amount);
-  IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
-    RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'pending_review') USING ERRCODE = 'P0001';
-  END IF;
-  RETURN NEW;
-END; $$;
-
-CREATE TRIGGER customer_actions_commercial_eligibility
-BEFORE INSERT ON public.customer_actions
-FOR EACH ROW EXECUTE FUNCTION admin_private.paid_action_eligibility_v1();
+-- Issuing a customer action is not a binding sale. Acceptance and payment stay gated.
 
 CREATE FUNCTION admin_private.provider_operation_eligibility_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   ord public.service_orders;
   sub public.guard_subscriptions;
-  business uuid;
+  place uuid;
   service text;
-  tax text;
-  currency text;
-  amount integer;
   elig jsonb;
 BEGIN
   IF NEW.kind NOT IN (
@@ -422,15 +590,28 @@ BEGIN
   IF ord.id IS NULL THEN
     RAISE EXCEPTION 'commercial_eligibility:pending_review' USING ERRCODE = 'P0001';
   END IF;
-  business := ord.business_id;
-  service := CASE WHEN NEW.kind IN ('CREATE_SUBSCRIPTION_CHECKOUT', 'CREATE_RECOVERY_CHECKOUT') THEN 'RELAUNCH_GUARD' ELSE ord.service_code END;
-  tax := ord.tax_behaviour;
-  currency := ord.currency;
-  amount := ord.amount_minor;
-  elig := admin_private.evaluate_commercial_eligibility_v1(business, service, tax, currency, amount);
-  IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
-    RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'pending_review') USING ERRCODE = 'P0001';
+  IF NEW.kind IN ('CREATE_SUBSCRIPTION_CHECKOUT', 'CREATE_RECOVERY_CHECKOUT') THEN
+    service := 'RELAUNCH_GUARD';
+  ELSE
+    service := ord.service_code;
   END IF;
+  place := ord.location_id;
+  IF place IS NULL AND sub.id IS NOT NULL THEN
+    place := sub.location_id;
+  END IF;
+  elig := admin_private.evaluate_commercial_eligibility_v1(
+    ord.business_id, service, ord.tax_behaviour, ord.currency, ord.amount_minor, place, false
+  );
+  IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'awaiting_confirmation') USING ERRCODE = 'P0001';
+  END IF;
+  PERFORM admin_private.commercial_tax_log_v1(
+    'PAYMENT_ATTEMPT', ord.business_id, place, elig->'snapshot'->>'countryCode', service,
+    elig->'snapshot'->>'serviceClass', elig->'snapshot'->>'paymentFlow', ord.tax_behaviour,
+    elig->'snapshot'->>'taxDetermination', elig->'snapshot'->>'sellerRegistrationStatus',
+    ord.amount_minor, nullif(elig->'snapshot'->>'turnoverMinorAfter', '')::integer,
+    nullif(elig->'snapshot'->>'alert', ''), NEW.id, jsonb_build_object('providerKind', NEW.kind)
+  );
   RETURN NEW;
 END; $$;
 
@@ -443,16 +624,30 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   qv public.quote_versions;
   elig jsonb;
+  place uuid;
+  service text;
+  tax text;
+  amount integer;
 BEGIN
   SELECT * INTO qv FROM public.quote_versions WHERE id = NEW.quote_version_id;
+  place := coalesce(qv.location_id, NEW.location_id);
+  service := coalesce(qv.service_code, NEW.service_code);
+  tax := coalesce(qv.tax_behaviour, 'UNCONFIRMED');
+  amount := coalesce(qv.total_amount_minor, NEW.amount_minor);
   elig := admin_private.evaluate_commercial_eligibility_v1(
-    NEW.business_id, coalesce(qv.service_code, NEW.service_code), coalesce(qv.tax_behaviour, 'UNCONFIRMED'),
-    coalesce(qv.currency, NEW.currency), coalesce(qv.total_amount_minor, NEW.amount_minor)
+    NEW.business_id, service, tax, coalesce(qv.currency, NEW.currency), amount, place, true
   );
   IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
-    RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'pending_review') USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'commercial_eligibility:%', coalesce(elig->>'reason', 'awaiting_confirmation') USING ERRCODE = 'P0001';
   END IF;
   NEW.eligibility_snapshot := elig->'snapshot';
+  PERFORM admin_private.commercial_tax_log_v1(
+    'ACCEPTED', NEW.business_id, place, elig->'snapshot'->>'countryCode', service,
+    elig->'snapshot'->>'serviceClass', elig->'snapshot'->>'paymentFlow', tax,
+    elig->'snapshot'->>'taxDetermination', elig->'snapshot'->>'sellerRegistrationStatus',
+    amount, nullif(elig->'snapshot'->>'turnoverMinorAfter', '')::integer,
+    nullif(elig->'snapshot'->>'alert', ''), NEW.id, jsonb_build_object('source', 'paid_service_acceptance')
+  );
   RETURN NEW;
 END; $$;
 
@@ -769,6 +964,11 @@ BEGIN
   IF admin_private.eligibility_evidence_rejected_v1(evidence, country, class, flow) THEN
     RETURN jsonb_build_object('status', 'invalid', 'reason', 'evidence_rejected');
   END IF;
+  IF status = 'APPROVED' AND EXISTS (
+    SELECT 1 FROM public.commercial_sanctions_restrictions WHERE country_code = country
+  ) THEN
+    RETURN jsonb_build_object('status', 'invalid', 'reason', 'sanctions_blocked');
+  END IF;
   IF status = 'APPROVED' THEN
     IF determination IS NULL OR seller = 'UNKNOWN' OR NOT stripe_ready OR review_due <= now() THEN
       RETURN jsonb_build_object('status', 'invalid');
@@ -889,7 +1089,7 @@ BEGIN
   SELECT * INTO qv FROM public.quote_versions WHERE id = ord.quote_version_id;
 
   IF p_operation = 'start_checkout' THEN
-    elig := admin_private.evaluate_commercial_eligibility_v1(ord.business_id, ord.service_code, ord.tax_behaviour, ord.currency, ord.amount_minor);
+    elig := admin_private.evaluate_commercial_eligibility_v1(ord.business_id, ord.service_code, ord.tax_behaviour, ord.currency, ord.amount_minor, ord.location_id, false);
     IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
       RETURN jsonb_build_object('status', 'eligibility_blocked', 'reason', coalesce(elig->>'reason', 'pending_review'), 'message', admin_private.commercial_eligibility_message_v1());
     END IF;
@@ -1075,7 +1275,7 @@ BEGIN
     RETURN jsonb_build_object('status', 'denied');
   END IF;
   IF p_operation IN ('start_checkout', 'start_recovery') THEN
-    elig := admin_private.evaluate_commercial_eligibility_v1(sub.business_id, 'RELAUNCH_GUARD', sub.tax_behaviour, sub.currency, sub.amount_minor);
+    elig := admin_private.evaluate_commercial_eligibility_v1(sub.business_id, 'RELAUNCH_GUARD', sub.tax_behaviour, sub.currency, sub.amount_minor, sub.location_id, false);
     IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
       RETURN jsonb_build_object('status', 'eligibility_blocked', 'reason', coalesce(elig->>'reason', 'pending_review'), 'message', admin_private.commercial_eligibility_message_v1());
     END IF;
@@ -1213,6 +1413,7 @@ DECLARE
   tax text;
   currency text;
   amount integer;
+  place uuid;
   elig jsonb;
   order_id text;
   subscription_id text;
@@ -1235,6 +1436,7 @@ BEGIN
     tax := sub.tax_behaviour;
     currency := sub.currency;
     amount := sub.amount_minor;
+    place := sub.location_id;
   ELSIF order_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
     SELECT * INTO ord FROM public.service_orders WHERE id = order_id::uuid;
     IF ord.id IS NULL THEN
@@ -1245,10 +1447,11 @@ BEGIN
     tax := ord.tax_behaviour;
     currency := ord.currency;
     amount := ord.amount_minor;
+    place := ord.location_id;
   ELSE
     RETURN cached;
   END IF;
-  elig := admin_private.evaluate_commercial_eligibility_v1(business, service, tax, currency, amount);
+  elig := admin_private.evaluate_commercial_eligibility_v1(business, service, tax, currency, amount, place, false);
   IF coalesce(elig->>'ok', 'false') IS DISTINCT FROM 'true' THEN
     RETURN jsonb_build_object(
       'status', 'eligibility_blocked',
@@ -1264,9 +1467,12 @@ REVOKE ALL ON FUNCTION admin_private.commercial_eligibility_message_v1() FROM PU
 REVOKE ALL ON FUNCTION admin_private.commercial_service_class_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_payment_flow_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_tax_matches_v1(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin_private.evaluate_commercial_eligibility_v1(uuid, text, text, text, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.commercial_country_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.seller_vat_status_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.uk_vat_turnover_minor_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.commercial_tax_log_v1(text, uuid, uuid, text, text, text, text, text, text, text, integer, integer, text, uuid, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.evaluate_commercial_eligibility_v1(uuid, text, text, text, integer, uuid, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.quote_offer_eligibility_v1() FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin_private.paid_action_eligibility_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.provider_operation_eligibility_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.paid_acceptance_eligibility_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.eligibility_evidence_rejected_v1(text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;

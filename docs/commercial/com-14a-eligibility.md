@@ -2,24 +2,58 @@
 
 Status: source-only. `supabase/migrations/20261015140000_commercial_eligibility_gate_v1.sql` is additive and has not been applied to DEV or Production. AWS ApprovedMigrationHead stays at `20261014170000`. The paid-service catalogue stays `SOLICITOR_REVIEW` and inoperative. Stripe live mode, the Customer Portal, Guard and mail automation stay off.
 
-The seed is a review backlog. Every listed country is `PENDING_REVIEW`. There is no `APPROVED` row. An EU, rest-of-world or global approval is not a valid key. A missing row is also pending. `UK` is not a country code; the receiving establishment uses `GB`.
+The only seeded commercial fact is that ProfileRelaunch Ltd is not VAT registered. That is not a zero-rating and it does not authorise overseas sales. No country catalogue is seeded. A missing overseas decision is not a hidden approval.
 
-Non-VAT-registration is not worldwide zero-rated VAT. `UK_DOMESTIC_NOT_VAT_REGISTERED` can be approved only for `GB`. `UNCONFIRMED` tax still blocks an offer and an acceptance. A country, service or payment-flow approval does not transfer to another country, service or flow.
+`UNCONFIRMED` tax still blocks an offer and an acceptance. Contract prices stay in GBP. No foreign-exchange rate is invented. A stored Checkout or Guard receipt is checked again before it is replayed.
 
-Contract prices stay in GBP. Local-currency presentment is recorded only after an approval names a Stripe-supported currency, and no foreign-exchange rate is invented. A stored Checkout or Guard receipt is checked again before it is replayed. If the decision is no longer approved, the customer receives the enquiry message and the previous provider operation is not returned.
+## Before and after
 
-## Still for the accountant
+```text
+Before
+  Enquiry, draft, or estimate
+    -> country had to exist in a seeded review matrix
+    -> binding offer blocked for every country, including the UK
+    -> a paid action could not even be issued
 
-No country below is authorised for a paid sale. Each needs its own decision, evidence of the customer's receiving establishment, and a matching service and payment flow.
+After
+  Enquiry, case assessment, draft, nonbinding estimate
+    -> open worldwide
+    -> collect legal name, contact, establishment country, purpose, profile link, service interest
+    -> no VAT number and no company number required at first contact
 
-- United Kingdom (`GB`), domestic supply while ProfileRelaunch Ltd is not VAT registered.
-- Each EU member separately, starting with IE, DE, FR, NL, ES and IT. Not a single EU code.
-- United States, one decision per state that will actually be sold to.
-- Canada, one decision per province that will actually be sold to.
-- AU, NZ, SG, AE and IN.
-- Every other country remains pending until a decision is recorded.
+  Binding offer, acceptance, or payment
+    -> sanctions restriction: stop
+    -> UK, tax not applicable, seller not VAT registered: documented treatment, GBP, then the turnover check
+    -> overseas with a current reusable decision for that country, service and payment flow: allow
+    -> otherwise: do not offer or charge; customer sees
+       "Thanks — we'll confirm your quote and payment details shortly."
+```
 
-The seller's VAT position, whether a reverse charge is supportable, and whether the supplier must register before invoicing are accountant decisions. Stripe Tax is not a registration.
+A draft quote is the nonbinding estimate. It is not marked offered until the binding check passes. There is no second acceptance engine.
+
+## United Kingdom
+
+A UK listing (`UK`, `GB`, `United Kingdom` or `Great Britain`) with tax `NOT_APPLICABLE` uses `UK_DOMESTIC_NOT_VAT_REGISTERED` while the seller position is `NOT_VAT_REGISTERED`. No per-quote accountant approval is required. Checkout, invoicing and Guard still depend on the existing operative-agreement and payment-activation controls. Live Stripe stays off in this change.
+
+A current `BLOCKED` decision for that service and payment flow wins over the UK treatment. An explicit current approval whose tax treatment does not match the quote also wins, and the sale stops. A verified establishment country wins over the listing country, the request body, card country and checkout currency.
+
+Accepted UK GBP amounts are written to `commercial_tax_log` and summed for the rolling 12 months. At 80 percent of £90,000 the sale is still allowed and an `APPROACHING` alert is stored. At £90,000, while the seller is not VAT registered, a new not-applicable UK sale stops. Payment attempts are logged and are not added to that total. The prospective next-30-days test is a manual review; the database does not invent a forecast.
+
+## Overseas
+
+When a real business customer is ready for a binding paid agreement, record one decision for the receiving country, the service class and the payment flow. The same current decision is reused for a later customer in the same position. It is not reused for a different country, service or flow.
+
+The United States and Canada need a state or province when the sale is approved. There is no EU-wide, UK-as-a-code, or worldwide row. `UK_DOMESTIC_NOT_VAT_REGISTERED` cannot be stored for a non-GB country. Evidence that says the supply is worldwide zero-rated is rejected.
+
+## Sanctions
+
+`commercial_sanctions_restrictions` is empty, immutable, and cannot be overridden by a later approval. The evaluator checks it before any country treatment. An approval for a restricted country is refused.
+
+## Still for the accountant or adviser
+
+No overseas country is pre-cleared. The first real customer in a country needs a short recorded check before anyone is charged: where the customer belongs, the service, whether local tax or a reverse charge applies, and whether the payment route can take that sale. Uncertain or high-risk first sales go to an adviser before the charge. HMRC VAT Notice 741A is the place-of-supply starting point for B2B services. Not being VAT registered is not a worldwide exemption.
+
+The seller's VAT position is recorded as not registered on 14 October 2026. A later registration is a new row, not an edit. Stripe Tax is not a registration.
 
 ## Still for the owner
 

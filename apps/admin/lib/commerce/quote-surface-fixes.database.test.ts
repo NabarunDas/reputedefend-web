@@ -28,6 +28,8 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const db = new PGlite()
 const uid = "11111111-1111-4111-8111-111111111111"
@@ -121,7 +123,12 @@ async function completeOtp(actionId: string, hash: string) {
 async function qualifyingCoverage(): Promise<{ coverageId: string; activatedAt: string }> {
   const guard = await offeredQuoteWithAction({ serviceCode: "RELAUNCH_GUARD", caseId: null })
   const session = await completeOtp(guard.action.id!, guard.hash)
-  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", paidQuoteCommand({
+    quoteVersionId: String(guard.quote.quoteVersionId),
+    serviceCode: "RELAUNCH_GUARD",
+    locationId: location,
+    amountMinor: 999,
+  })])
   expect(accepted).toMatchObject({ orderState: "ACCEPTED_RECURRING" })
   const orderId = String(accepted!.orderId)
 
@@ -163,6 +170,8 @@ beforeAll(async () => {
       values('${customer}','email','alex@example.com','${uid}','Verified from a live call with the customer.');
     insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence)
       values('${customer}','${business}','verified',now(),'${uid}','Companies House match discussed on a live call.');`)
+  const approved = await rpc("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
+  if (approved?.status !== "confirmed") throw new Error(approved?.status ?? "approval missing")
 }, 180000)
 
 afterAll(async () => { await db.close() })

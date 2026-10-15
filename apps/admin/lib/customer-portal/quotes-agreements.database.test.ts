@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const appliedHead = "20261003194353"
 const migration = "20261003204538_customer_portal_quotes_agreements_permissions_v1.sql"
@@ -15,6 +17,7 @@ const upgradedFiles = [
   "20261013153000_public_request_rate_limit_v1.sql",
   "20261014170000_evidence_content_sha256_v1.sql",
   "20261014234000_paid_service_acceptance_v1.sql",
+  "20261015013000_paid_service_acceptance_gate_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -23,6 +26,7 @@ const sam = "c10f0000-0000-4000-8000-0000000000b2"
 const alexAuth = "c10f0000-0000-4000-8000-0000000000d4"
 const samAuth = "c10f0000-0000-4000-8000-0000000000e5"
 const verifier = "c10f0000-0000-4000-8000-0000000000a7"
+const adminToken = "b".repeat(64)
 const business = "c10f0000-0000-4000-8000-000000000022"
 const location = "c10f0000-0000-4000-8000-000000000023"
 
@@ -208,7 +212,7 @@ async function selector(actionId: string) {
   return (await rows<{ value: string }>("select admin_private.customer_portal_action_selector_v1($1) as value", [actionId]))[0].value
 }
 
-async function command(session: string, reference: string, actionId: string, operation: string, data: Record<string, boolean>, request = requestId()) {
+async function command(session: string, reference: string, actionId: string, operation: string, data: Record<string, unknown>, request = requestId()) {
   return rpc<{ status: string; orderRef?: string; authorizationStatus?: string }>("customer_portal_service_command_v1", [
     session, request, reference, await selector(actionId), operation, data,
   ])
@@ -239,7 +243,12 @@ beforeAll(async () => {
     insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
       ('${alex}', '${business}', 'verified', now(), '${verifier}', 'Companies House match discussed on a live call.'),
       ('${sam}', '${business}', 'verified', now(), '${verifier}', 'Companies House match discussed on a live call.');
+    insert into auth.users(id, email, email_confirmed_at) values ('${verifier}', 'admin@profilerelaunch.com', now());
+    update public.admin_identity set auth_user_id = '${verifier}', enabled = true where singleton;
+    insert into public.admin_sessions(token_hash, auth_user_id, created_at) values ('${adminToken}', '${verifier}', now());
   `)
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
+  if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)
   samSession = await portalSession("sam@example.com", samAuth)
 }, 180000)
@@ -322,11 +331,13 @@ describe("portal commercial commands", () => {
     const offered = await quote({ caseId, quoteRef: "QT-26-SVCACC" })
     const created = await action({ caseId, kind: "QUOTE_ACCEPTANCE", quoteVersionId: offered.version })
     const key = requestId()
-    const first = await command(alexSession, "PR-26-SVCACC", created.id, "accept_quote", { accepted: true }, key)
+    const confirmation = paidQuoteCommand({ quoteVersionId: offered.version, serviceCode: "GUIDED_RELAUNCH" })
+    const first = await command(alexSession, "PR-26-SVCACC", created.id, "accept_quote", confirmation, key)
     expect(first.status).toBe("success")
     expect(await count("select count(*)::int as n from public.quote_acceptances where quote_version_id = $1", [offered.version])).toBe(1)
     expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [offered.version])).toBe(1)
-    expect(await command(alexSession, "PR-26-SVCACC", created.id, "accept_quote", { accepted: true }, key)).toMatchObject({ status: "success" })
+    expect(await count("select count(*)::int as n from public.paid_service_acceptances where quote_version_id = $1", [offered.version])).toBe(1)
+    expect(await command(alexSession, "PR-26-SVCACC", created.id, "accept_quote", confirmation, key)).toMatchObject({ status: "success" })
     expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [offered.version])).toBe(1)
     expect(await command(alexSession, "PR-26-SVCACC", created.id, "decline_quote", { confirmed: true }, key)).toEqual({ status: "conflict" })
     const after = await rpc<ServiceView>("customer_portal_case_service_v1", [alexSession, "PR-26-SVCACC"])
@@ -340,7 +351,7 @@ describe("portal commercial commands", () => {
     const portalFirst = await insertCase("PR-26-SVCPRT")
     const portalQuote = await quote({ caseId: portalFirst, quoteRef: "QT-26-SVCPRT" })
     const portalAction = await action({ caseId: portalFirst, kind: "QUOTE_ACCEPTANCE", quoteVersionId: portalQuote.version })
-    expect((await command(alexSession, "PR-26-SVCPRT", portalAction.id, "accept_quote", { accepted: true })).status).toBe("success")
+    expect((await command(alexSession, "PR-26-SVCPRT", portalAction.id, "accept_quote", paidQuoteCommand({ quoteVersionId: portalQuote.version, serviceCode: "GUIDED_RELAUNCH" }))).status).toBe("success")
     const linkHash = hash(token())
     await db.query(
       "insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at) values ($1,$2,$3, now() + interval '1 hour')",
@@ -362,7 +373,7 @@ describe("portal commercial commands", () => {
     expect(legacy.kind).toBe("QUOTE_ACCEPTANCE")
     expect(legacy.quote.serviceName).toBe("Guided profile help")
     expect(legacy.quote.totalAmountMinor).toBe(29900)
-    expect((await rpc<{ status: string }>("customer_action_command_v1", [firstHash, requestId(), "accept", { accepted: true }])).status).toBe("success")
+    expect((await rpc<{ status: string }>("customer_action_command_v1", [firstHash, requestId(), "accept", paidQuoteCommand({ quoteVersionId: linkQuote.version, serviceCode: "GUIDED_RELAUNCH" })])).status).toBe("success")
     expect((await command(alexSession, "PR-26-SVCLNK", linkAction.id, "accept_quote", { accepted: true })).status).toBe("unavailable")
     expect(await count("select count(*)::int as n from public.service_orders where case_id = $1", [linkFirst])).toBe(1)
     const session = await rpc<{ kind: string; quote: { serviceName: string } }>("customer_action_session_v1", [hash("absent")])

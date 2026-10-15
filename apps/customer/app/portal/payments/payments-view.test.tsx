@@ -127,21 +127,24 @@ describe("payments screens", () => {
     expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
   })
 
-  it("shows managed consent and a saved-method state without card data", () => {
+  it("does not offer Managed off-session card setup", () => {
     render(<PaymentsView focused cases={[item({
       serviceTrack: "MANAGED",
       orders: [order({
         paymentModel: "SUCCESS_FEE",
         paymentMethodSaved: true,
         consent: { recorded: true, text: consent },
+        consentOfferText: "A saved card may be charged off-session after success.",
         obligations: [],
       })],
-      actions: [],
+      actions: [{ selector, kind: "managed_setup", orderRef: "SO-26-ABCDEF" }],
     })]} />)
     expect(screen.getByRole("heading", { name: "Managed service payment" })).toBeTruthy()
-    expect(screen.getByText("A payment method is saved for this managed service.")).toBeTruthy()
-    expect(screen.getByText("Consent is recorded.")).toBeTruthy()
-    expect(screen.getByText(consent)).toBeTruthy()
+    expect(screen.getByText(/invoiced only after documented success/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Save payment method|Record consent/ })).toBeNull()
+    expect(screen.queryByText(consent)).toBeNull()
+    expect(screen.getByText(/off-session charge is not available/)).toBeTruthy()
+    expect(screen.queryByText(/charged off-session/)).toBeNull()
     expect(document.body.textContent).not.toMatch(/last4|4242|pm_|brand/i)
   })
 

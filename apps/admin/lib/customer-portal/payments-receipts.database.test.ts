@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, migrationSql, preparePlatform } from "../recovery/harness"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const migration = "20261003224746_customer_portal_payments_receipts_v1.sql"
 const db = new PGlite()
@@ -85,7 +87,7 @@ async function acceptQuote(caseId: string, serviceCode = "GUIDED_RELAUNCH") {
     serviceCode,
   }, null])
   await rpc("admin_quote_command_v1", [adminToken, key(), "set_draft_tax", { quoteId: draft.id, taxBehaviour: "NOT_APPLICABLE" }, draft.version])
-  await rpc("admin_quote_command_v1", [adminToken, key(), "offer", { quoteId: draft.id }, (draft.version as number) + 1])
+  const offered = await rpc<Json>("admin_quote_command_v1", [adminToken, key(), "offer", { quoteId: draft.id }, (draft.version as number) + 1])
   const secretHash = hash(token())
   const issued = await rpc<Json>("admin_quote_command_v1", [adminToken, key(), "create_quote_acceptance_action", {
     quoteId: draft.id, expiresAt: actionExpiry(), secretHash,
@@ -96,7 +98,12 @@ async function acceptQuote(caseId: string, serviceCode = "GUIDED_RELAUNCH") {
   await rpc("customer_action_begin_otp_v1", [pending])
   await rpc("customer_action_confirm_otp_sent_v1", [pending])
   await rpc("customer_action_finish_otp_v1", [pending, session, alexAuth, "alex@example.com"])
-  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", paidQuoteCommand({
+    quoteVersionId: String(offered.quoteVersionId),
+    serviceCode,
+    locationId: location,
+    amountMinor: serviceCode === "RELAUNCH_GUARD" ? 999 : undefined,
+  })])
   return { accepted, session, quoteId: draft.id as string }
 }
 
@@ -163,6 +170,8 @@ beforeAll(async () => {
   `)
   await verify()
   await verify(sam, "sam@example.com")
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
+  if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)
   samSession = await portalSession("sam@example.com", samAuth)
 }, 180000)

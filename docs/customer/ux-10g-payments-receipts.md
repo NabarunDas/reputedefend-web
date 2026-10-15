@@ -47,7 +47,7 @@ Obligation states already stored on `payment_obligations` are shown as:
 
 There is no separate refunded state. A voided obligation is the stored void state. The portal does not invent invoice numbers, due dates, tax treatment, legal wording, or payment terms. Tax wording follows the stored behaviour: included, shown separately, or does not apply.
 
-Managed-service orders show whether a usable saved payment method exists and whether success-fee consent is recorded. The consent text is the stored canonical text. Recording consent does not create a charge, an attempt, or a receipt. Saving a payment method uses the existing setup checkout.
+Managed-service orders do not offer the legacy off-session card setup. The success fee is invoiced after documented success, and no card is charged automatically. `MANAGED_PAYMENT_SETUP` and `SUCCESS_FEE_CONSENT_V1` stay incompatible with that model. Live Stripe stays disabled.
 
 An issued invoice with a stored hosted URL offers “Open invoice”. Opening it does not mark the invoice paid. A draft invoice is omitted. An issued invoice without a URL says the hosted invoice link is not available yet.
 

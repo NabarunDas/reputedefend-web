@@ -175,6 +175,161 @@ describe("customer action page", () => {
     expect(document.body.textContent).not.toMatch(/charge a card today|monitoring has started|Stripe/i)
   })
 
+  it("shows the bound agreement before the quote acknowledgements and can save it", async () => {
+    const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    const body = "ProfileRelaunch Ltd — Paid-service agreement\n\nThe quotation states the scope, exclusions and the 48-hour success definition."
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:agreement")
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "QUOTE_ACCEPTANCE",
+          agreement: null,
+          quote: {
+            versionId: actionId,
+            versionNumber: 1,
+            serviceCode: "GUIDED_RELAUNCH",
+            serviceName: "Guided Relaunch",
+            paymentModel: "UPFRONT",
+            scope: "Guided help for this location only.",
+            exclusions: "Work outside this quotation is excluded.",
+            successDefinition: "The fee follows the 48-hour success definition in the agreement.",
+            standardAmountMinor: 9900,
+            discountPolicyId: "NONE",
+            discountBps: 0,
+            discountAmountMinor: 0,
+            quotedSubtotalMinor: 9900,
+            taxBehaviour: "NOT_APPLICABLE",
+            taxRateBps: null,
+            taxAmountMinor: 0,
+            taxCode: null,
+            taxJurisdiction: null,
+            totalAmountMinor: 9900,
+            currency: "GBP",
+            validUntil: "2026-10-10T12:00:00.000Z",
+            paymentTiming: "The Guided fee is payable upfront after acceptance.",
+            termsReference: "Agreement PS-2026-10-14.2.",
+            commercialAgreementVersion: "PS-2026-10-14.2",
+            commercialAgreementHash: hash,
+            commercialAgreementBody: body,
+            commercialAgreementReady: true,
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    const agreement = await screen.findByRole("article", { name: "Paid-service agreement" })
+    expect(agreement).toHaveTextContent("48-hour success definition")
+    expect(screen.getByText("Guided help for this location only.")).toBeTruthy()
+    expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/payable upfront after acceptance/)).toBeTruthy()
+    const boxes = screen.getAllByRole("checkbox")
+    expect(boxes).toHaveLength(2)
+    for (const box of boxes) expect(box).not.toBeChecked()
+    expect(document.body.innerHTML).not.toContain('href="/terms"')
+    fireEvent.click(screen.getByRole("button", { name: "Download the paid-service agreement" }))
+    expect(await (createObjectURL.mock.calls[0][0] as Blob).text()).toBe(body)
+    expect(revokeObjectURL).toHaveBeenCalled()
+    createObjectURL.mockRestore()
+    revokeObjectURL.mockRestore()
+  })
+
+  it("fails closed when the bound agreement is not ready", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "QUOTE_ACCEPTANCE",
+          agreement: null,
+          quote: {
+            versionId: actionId,
+            versionNumber: 1,
+            serviceCode: "GUIDED_RELAUNCH",
+            serviceName: "Guided Relaunch",
+            paymentModel: "UPFRONT",
+            scope: "Guided help for this location only.",
+            exclusions: "Work outside this quotation is excluded.",
+            successDefinition: "The fee follows the agreement.",
+            standardAmountMinor: 9900,
+            discountPolicyId: "NONE",
+            discountBps: 0,
+            discountAmountMinor: 0,
+            quotedSubtotalMinor: 9900,
+            taxBehaviour: "NOT_APPLICABLE",
+            taxRateBps: null,
+            taxAmountMinor: 0,
+            taxCode: null,
+            taxJurisdiction: null,
+            totalAmountMinor: 9900,
+            currency: "GBP",
+            validUntil: "2026-10-10T12:00:00.000Z",
+            paymentTiming: "The Guided fee is payable upfront after acceptance.",
+            termsReference: "Agreement PS-2026-10-14.2.",
+            commercialAgreementVersion: "PS-2026-10-14.2",
+            commercialAgreementHash: "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4",
+            commercialAgreementBody: null,
+            commercialAgreementReady: false,
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByText(/commercial agreement bound to it is not available/)).toBeTruthy())
+    expect(screen.queryByRole("button", { name: "Accept quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download the paid-service agreement" })).toBeNull()
+    expect(document.body.innerHTML).not.toContain('href="/terms"')
+  })
+
+  it("does not offer the legacy Managed off-session card setup", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          ...session,
+          kind: "MANAGED_PAYMENT_SETUP",
+          agreement: null,
+          payment: {
+            orderId: actionId,
+            orderRef: "SO-26-ABCDE2",
+            serviceCode: "MANAGED_RELAUNCH",
+            amountMinor: 29900,
+            currency: "GBP",
+            taxBehaviour: "NOT_APPLICABLE",
+            taxAmountMinor: 0,
+            paymentModel: "SUCCESS_FEE",
+            successDefinition: "Success is the documented restoration.",
+            obligationId: actionId,
+            obligationState: "NOT_DUE",
+            consentText: "A saved card may be charged off-session after success.",
+            consentVersion: "SUCCESS_FEE_CONSENT_V1",
+          },
+        },
+      }),
+    })
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Managed payment" })).toBeTruthy())
+    expect(screen.getByText(/invoiced only after documented success/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Save payment method|Record later-charge consent/ })).toBeNull()
+    expect(screen.getByText(/off-session charge is not available/)).toBeTruthy()
+    expect(screen.queryByText(/charged off-session after success/)).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   it("redirects CASE_ACCESS verification to the case documents page", async () => {
     await renderAfterExchange()
     await sendCodeSuccessfully()

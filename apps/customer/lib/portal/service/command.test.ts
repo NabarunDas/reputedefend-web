@@ -109,6 +109,42 @@ describe("portal service command", () => {
     expect(JSON.stringify(body)).not.toMatch(/customer_actions|SQL|supabase|uuid/i)
   })
 
+  it("forwards separate quote acknowledgements and rejects a caller-supplied quote id", async () => {
+    const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    mocks.rpc.mockResolvedValueOnce({ status: "success" })
+    const rich = await portalServiceCommand(req({
+      ...accept,
+      confirmation: {
+        accepted: true,
+        businessPurpose: { accepted: true },
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: null,
+      },
+    }))
+    expect(rich.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("customer_portal_service_command_v1", expect.objectContaining({
+      p_data: {
+        accepted: true,
+        businessPurpose: { accepted: true },
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: null,
+      },
+    }))
+    mocks.rpc.mockClear()
+    const injected = await portalServiceCommand(req({
+      ...accept,
+      confirmation: {
+        accepted: true,
+        quoteVersionId: "11111111-1111-4111-8111-111111111111",
+        businessPurpose: { accepted: true },
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: null,
+      },
+    }))
+    expect(injected.status).toBe(400)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("refuses a foreign origin and an agreement confirmation on a quote accept", async () => {
     const foreign = await portalServiceCommand(req(accept, { origin: "https://evil.example" }))
     expect(foreign.status).toBe(401)

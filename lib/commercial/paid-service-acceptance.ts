@@ -1,10 +1,12 @@
 /**
  * COM-13A acceptance rules for the frozen paid-service agreement.
  *
- * The catalogue copy in the database starts unapproved. Recording the exact
- * solicitor statement for this version and hash is what marks it operative.
- * A report that an earlier draft was reviewed does not do that. These rules
- * describe the server decision; the migration enforces them.
+ * The catalogue copy in the database starts unapproved. A caller-supplied
+ * actor and the predictable solicitor statement are not approval. The
+ * privileged database procedure records an authenticated operator and an
+ * external evidence reference, and this module does not mark the agreement
+ * operative. A report that an earlier draft was reviewed does not do that.
+ * These rules describe the server decision; the migration enforces them.
  */
 import { createHash } from "node:crypto"
 import {

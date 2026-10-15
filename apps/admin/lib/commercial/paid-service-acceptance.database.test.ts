@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementBody, paidServiceAgreementContentHash } from "../../../../lib/commercial/paid-service-agreement"
 import { applyChain, preparePlatform } from "../recovery/harness"
+import { SYNTHETIC_APPROVAL_EVIDENCE } from "./paid-service-approval.fixture"
 
 const confirmation = `Solicitor reviewed paid-service agreement ${PAID_SERVICE_AGREEMENT_VERSION} with SHA-256 ${paidServiceAgreementContentHash}.`
 
@@ -16,11 +17,26 @@ const business = "c13a0000-0000-4000-8000-000000000022"
 const location = "c13a0000-0000-4000-8000-000000000023"
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const token = () => randomBytes(32).toString("hex")
+const adminToken = "b".repeat(64)
 
 type AcceptResult = {
   status: string
   acceptanceId?: string
-  snapshot?: { agreementBody?: string; paymentDistinction?: { refundBeforeSubstantiveWork: string; automaticCardCharge: boolean; invoicesAfterSuccess: boolean; recurringConsent: boolean; collectsUpfront: boolean } }
+  orderId?: string
+  snapshot?: {
+    agreementBody?: string
+    quotationSnapshot?: {
+      scope?: string
+      exclusions?: string
+      successDefinition?: string
+      businessName?: string
+      locationName?: string
+      caseReference?: string | null
+      agreementVersion?: string
+      agreementHash?: string
+    }
+    paymentDistinction?: { refundBeforeSubstantiveWork: string; automaticCardCharge: boolean; invoicesAfterSuccess: boolean; recurringConsent: boolean; collectsUpfront: boolean }
+  }
 }
 
 async function rows<T>(sql: string, params: unknown[] = []) {
@@ -174,28 +190,95 @@ describe("paid-service acceptance foundation", () => {
     const refused = await rpc<AcceptResult>("accept_paid_service_terms_v1", [offered.session, randomUUID(), payload(offered.version)])
     expect(refused.status).toBe("not_operative")
     expect(await count("select count(*)::int as n from public.paid_service_acceptances")).toBe(0)
+    const hidden = await rpc<{ quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; scope: string } | null }>(
+      "customer_action_session_v1", [offered.session],
+    )
+    expect(hidden?.quote?.commercialAgreementReady).toBe(false)
+    expect(hidden?.quote?.commercialAgreementBody).toBeNull()
+    expect(hidden?.quote?.scope).toBe("We prepare the service for this location.")
+    const portal = await rpc<{ found: boolean; quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; canAccept: boolean } | null }>(
+      "customer_portal_case_service_v1", [alexPortal, "PR-26-CMAAAA"],
+    )
+    expect(portal.found).toBe(true)
+    expect(portal.quote?.commercialAgreementReady).toBe(false)
+    expect(portal.quote?.commercialAgreementBody).toBeNull()
+    expect(portal.quote?.canAccept).toBe(false)
+    const other = await rpc<{ found: boolean }>("customer_portal_case_service_v1", [samPortal, "PR-26-CMAAAA"])
+    expect(other.found).toBe(false)
+    expect(JSON.stringify(other)).not.toContain("ProfileRelaunch Ltd — Paid-service agreement")
+    expect(await count(
+      "select count(*)::int as n from admin_private.paid_service_quote_disclosure_v1($1, $2)",
+      [PAID_SERVICE_AGREEMENT_VERSION, "ab".repeat(32)],
+    )).toBe(0)
+    expect(await count(
+      "select count(*)::int as n from admin_private.paid_service_quote_disclosure_v1($1, $2)",
+      [PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementContentHash],
+    )).toBe(0)
   })
 
-  it("confirms only this version and hash, and does so once", async () => {
+  it("does not treat a caller-supplied actor and the predictable statement as approval", async () => {
+    const spoofed = await rpc<{ status: string }>("confirm_paid_service_agreement_v1", [
+      verifier, PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementContentHash, confirmation,
+    ])
+    expect(spoofed.status).toBe("unauthorised")
     const earlier = await rpc<{ status: string }>("confirm_paid_service_agreement_v1", [
-      verifier, "PS-2026-10-14.1", paidServiceAgreementContentHash, confirmation.replace("PS-2026-10-14.2", "PS-2026-10-14.1"),
+      verifier, "PS-2026-10-14.1", paidServiceAgreementContentHash, confirmation,
     ])
-    expect(earlier.status).toBe("unknown_version")
-    const wrongHash = "b".repeat(64)
-    const mismatched = await rpc<{ status: string }>("confirm_paid_service_agreement_v1", [
-      verifier, "PS-2026-10-14.2", wrongHash, confirmation.replace(paidServiceAgreementContentHash, wrongHash),
-    ])
-    expect(mismatched.status).toBe("confirmation_mismatch")
-    const confirmed = await rpc<{ status: string; operative: boolean; hash: string }>("confirm_paid_service_agreement_v1", [
-      verifier, "PS-2026-10-14.2", paidServiceAgreementContentHash, confirmation,
+    expect(earlier.status).toBe("unauthorised")
+    const catalogue = await rows<{ status: string; operative: boolean }>(
+      "select status, operative from public.paid_service_agreement_catalogue",
+    )
+    expect(catalogue).toEqual([{ status: "SOLICITOR_REVIEW", operative: false }])
+    expect(await count("select count(*)::int as n from public.paid_service_agreement_approvals")).toBe(0)
+  })
+
+  it("records privileged approval once from an authenticated operator and external evidence", async () => {
+    await db.query(
+      `insert into auth.users(id, email, email_confirmed_at) values ($1, 'admin@profilerelaunch.com', now())
+       on conflict (id) do nothing`,
+      [verifier],
+    )
+    await db.query("update public.admin_identity set auth_user_id = $1, enabled = true where singleton", [verifier])
+    await db.query(
+      "insert into public.admin_sessions(token_hash, auth_user_id, created_at) values ($1, $2, now())",
+      [adminToken, verifier],
+    )
+    const request = randomUUID()
+    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [hash("missing"), request, SYNTHETIC_APPROVAL_EVIDENCE])).status).toBe("unauthorised")
+    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, confirmation])).status).toBe("invalid")
+    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, paidServiceAgreementContentHash])).status).toBe("invalid")
+    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, PAID_SERVICE_AGREEMENT_VERSION])).status).toBe("invalid")
+    const confirmed = await rpc<{ status: string; operative: boolean; hash: string }>("admin_confirm_paid_service_agreement_v1", [
+      adminToken, request, SYNTHETIC_APPROVAL_EVIDENCE,
     ])
     expect(confirmed).toMatchObject({ status: "confirmed", operative: true, hash: paidServiceAgreementContentHash })
-    const again = await rpc<{ status: string }>("confirm_paid_service_agreement_v1", [
-      verifier, "PS-2026-10-14.2", paidServiceAgreementContentHash, confirmation,
+    const replay = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, SYNTHETIC_APPROVAL_EVIDENCE])
+    expect(replay.status).toBe("replay")
+    const conflict = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [
+      adminToken, request, `${SYNTHETIC_APPROVAL_EVIDENCE} second file`,
+    ])
+    expect(conflict.status).toBe("conflict")
+    const again = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [
+      adminToken, randomUUID(), SYNTHETIC_APPROVAL_EVIDENCE,
     ])
     expect(again.status).toBe("already_confirmed")
-    const body = await rows<{ body_text: string }>("select body_text from public.paid_service_agreement_catalogue")
+    expect(await count("select count(*)::int as n from public.paid_service_agreement_approvals")).toBe(1)
+    const approval = await rows<{ approved_by: string; evidence_reference: string; version_id: string; content_hash: string }>(
+      "select approved_by, evidence_reference, version_id, content_hash from public.paid_service_agreement_approvals",
+    )
+    expect(approval).toEqual([{
+      approved_by: verifier,
+      evidence_reference: SYNTHETIC_APPROVAL_EVIDENCE,
+      version_id: PAID_SERVICE_AGREEMENT_VERSION,
+      content_hash: paidServiceAgreementContentHash,
+    }])
+    const body = await rows<{ body_text: string; operative: boolean }>("select body_text, operative from public.paid_service_agreement_catalogue")
     expect(body[0].body_text).toBe(paidServiceAgreementBody)
+    expect(body[0].operative).toBe(true)
+    await expect(db.query(
+      "update public.paid_service_agreement_approvals set evidence_reference = 'rewritten evidence reference text' where request_id = $1",
+      [request],
+    )).rejects.toThrow(/immutable/i)
   })
 
   it("refuses a bad session, a lapsed membership, another customer's quotation and a replaced quotation", async () => {
@@ -270,10 +353,39 @@ describe("paid-service acceptance foundation", () => {
     const agreementsBefore = await count("select count(*)::int as n from public.agreement_versions")
     const authorisationsBefore = await count("select count(*)::int as n from public.authorization_records")
     const guided = await offer({ quoteRef: "QT-26-CNAAAA", caseRef: "PR-26-CNAAAA" })
+    const shown = await rpc<{ quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; scope: string; successDefinition: string; totalAmountMinor: number; paymentTiming: string } }>(
+      "customer_action_session_v1", [guided.session],
+    )
+    expect(shown.quote.commercialAgreementReady).toBe(true)
+    expect(shown.quote.commercialAgreementBody).toBe(paidServiceAgreementBody)
+    expect(shown.quote.scope).toBe("We prepare the service for this location.")
+    expect(shown.quote.successDefinition).toContain("fee is earned")
+    expect(shown.quote.totalAmountMinor).toBe(9900)
+    expect(shown.quote.paymentTiming).toContain("accepted service terms")
+    const portalQuote = await rpc<{ found: boolean; quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; canAccept: boolean } }>(
+      "customer_portal_case_service_v1", [alexPortal, "PR-26-CNAAAA"],
+    )
+    expect(portalQuote.found).toBe(true)
+    expect(portalQuote.quote.commercialAgreementReady).toBe(true)
+    expect(portalQuote.quote.commercialAgreementBody).toBe(paidServiceAgreementBody)
+    expect(portalQuote.quote.canAccept).toBe(true)
+    const otherCustomer = await rpc<{ found: boolean }>("customer_portal_case_service_v1", [samPortal, "PR-26-CNAAAA"])
+    expect(otherCustomer.found).toBe(false)
+    expect(JSON.stringify(otherCustomer)).not.toContain(paidServiceAgreementBody.slice(0, 40))
     const request = randomUUID()
     const accepted = await rpc<AcceptResult>("accept_paid_service_terms_v1", [guided.session, request, payload(guided.version)])
     expect(accepted.status).toBe("success")
     expect(accepted.snapshot?.agreementBody).toBe(paidServiceAgreementBody)
+    expect(accepted.snapshot?.quotationSnapshot).toMatchObject({
+      scope: "We prepare the service for this location.",
+      exclusions: "Work outside this quotation is excluded.",
+      successDefinition: "The service terms define when a fee is earned.",
+      businessName: "Harbour Bakery",
+      locationName: "High Street",
+      caseReference: "PR-26-CNAAAA",
+      agreementVersion: PAID_SERVICE_AGREEMENT_VERSION,
+      agreementHash: paidServiceAgreementContentHash,
+    })
     expect(accepted.snapshot?.paymentDistinction).toEqual({
       collectsUpfront: true, invoicesAfterSuccess: false, automaticCardCharge: false, recurringConsent: false, refundBeforeSubstantiveWork: "full",
     })
@@ -317,11 +429,97 @@ describe("paid-service acceptance foundation", () => {
     expect(hidden.status).toBe("unauthorised")
     expect(hidden.agreementBody).toBeUndefined()
     expect(JSON.stringify(hidden)).not.toContain("ProfileRelaunch Ltd — Paid-service agreement")
+    expect(JSON.stringify(hidden)).not.toContain("We prepare the service for this location.")
 
     await expect(db.query("update public.paid_service_acceptances set agreement_body = 'changed' where id = $1", [accepted.acceptanceId])).rejects.toThrow(/immutable/i)
     expect(await count("select count(*)::int as n from public.agreement_versions")).toBe(agreementsBefore)
     expect(await count("select count(*)::int as n from public.authorization_records")).toBe(authorisationsBefore)
     const changed = await rpc<AcceptResult>("accept_paid_service_terms_v1", [guided.session, request, payload(guided.version, { accepted: true, kind: "MANAGED_CONTINGENT_SUCCESS_FEE_V1" })])
     expect(changed.status).toBe("conflict")
+  })
+
+  it("refuses one-checkbox, direct and cross-customer acceptance after the agreement is operative", async () => {
+    const beforeOrders = await count("select count(*)::int as n from public.service_orders")
+    const beforePaid = await count("select count(*)::int as n from public.paid_service_acceptances")
+    const checkbox = await offer({ quoteRef: "QT-26-CNGAAA", caseRef: "PR-26-CNGAAA" })
+    expect((await rpc<AcceptResult>("accept_paid_service_terms_v1", [checkbox.session, randomUUID(), { accepted: true }])).status).toBe("missing_business_purpose")
+    expect((await rpc<AcceptResult>("customer_action_command_v1", [checkbox.session, randomUUID(), "accept", { accepted: true }])).status).toBe("invalid")
+    const selector = (await rows<{ value: string }>("select admin_private.customer_portal_action_selector_v1($1) as value", [checkbox.actionId]))[0].value
+    expect((await rpc<AcceptResult>("customer_portal_service_command_v1", [
+      alexPortal, randomUUID(), "PR-26-CNGAAA", selector, "accept_quote", { accepted: true },
+    ])).status).toBe("invalid")
+    const direct = await rows<{ value: AcceptResult }>(
+      "select admin_private.accept_quote_version_v1(a, $2, $3) as value from public.customer_actions a where a.id = $1",
+      [checkbox.actionId, alexAuth, randomUUID()],
+    )
+    expect(direct[0].value.status).toBe("consent_required")
+    const wrongCustomer = await offer({ quoteRef: "QT-26-CNHAAA", caseRef: "PR-26-CNHAAA", customer: sam, email: "sam@example.com" })
+    expect((await rpc<AcceptResult>("accept_paid_service_terms_v1", [checkbox.session, randomUUID(), payload(wrongCustomer.version)])).status).toBe("cross_customer")
+    expect((await rpc<AcceptResult>("customer_portal_service_command_v1", [
+      samPortal, randomUUID(), "PR-26-CNGAAA", selector, "accept_quote", { accepted: true, ...payload(checkbox.version) },
+    ])).status).toBe("not_found")
+    expect(await count("select count(*)::int as n from public.service_orders")).toBe(beforeOrders)
+    expect(await count("select count(*)::int as n from public.paid_service_acceptances")).toBe(beforePaid)
+    expect(await rows<{ complete: boolean; record: boolean }>(
+      `select
+         has_function_privilege('service_role', 'admin_private.complete_quote_acceptance_v1(public.customer_actions, uuid, uuid)', 'execute') as complete,
+         has_function_privilege('service_role', 'admin_private.record_paid_service_acceptance_v1(public.customer_actions, uuid, uuid, jsonb)', 'execute') as record`,
+    )).toEqual([{ complete: false, record: false }])
+  })
+
+  it("keeps the bound quotation immutable and replays a historical order without a new obligation", async () => {
+    const bound = await offer({ quoteRef: "QT-26-CNJAAA", caseRef: "PR-26-CNJAAA" })
+    const binding = await rows<{ commercial_agreement_version: string; commercial_agreement_hash: string }>(
+      "select commercial_agreement_version, commercial_agreement_hash from public.quote_versions where id = $1",
+      [bound.version],
+    )
+    expect(binding[0]).toEqual({
+      commercial_agreement_version: PAID_SERVICE_AGREEMENT_VERSION,
+      commercial_agreement_hash: paidServiceAgreementContentHash,
+    })
+    await expect(db.query("update public.quote_versions set scope_text = 'A different scope after the quotation was offered.' where id = $1", [bound.version])).rejects.toThrow(/immutable/i)
+    await expect(db.query("update public.quote_versions set commercial_agreement_hash = null, commercial_agreement_version = null where id = $1", [bound.version])).rejects.toThrow(/immutable/i)
+
+    const historical = await offer({ quoteRef: "QT-26-CNKAAA", caseRef: "PR-26-CNKAAA" })
+    const acceptance = randomUUID()
+    const order = randomUUID()
+    await db.query(
+      `insert into public.quote_acceptances(
+        id, quote_id, quote_version_id, customer_action_id, accepted_by_auth_user_id, accepted_email_snapshot,
+        total_amount_minor, currency, tax_behaviour, tax_amount_minor
+      ) values ($1,$2,$3,$4,$5,'alex@example.com',9900,'GBP','NOT_APPLICABLE',0)`,
+      [acceptance, historical.quoteId, historical.version, historical.actionId, alexAuth],
+    )
+    await db.query("update public.quote_versions set status = 'ACCEPTED' where id = $1", [historical.version])
+    await db.query("update public.quotes set status = 'ACCEPTED' where id = $1", [historical.quoteId])
+    await db.query(
+      `insert into public.service_orders(
+        id, public_ref, quote_id, quote_version_id, quote_acceptance_id, customer_id, business_id, location_id, case_id,
+        service_code, amount_minor, currency, payment_model, tax_behaviour, tax_amount_minor, state, accepted_at
+      ) values ($1,'SO-26-HSTAAA',$2,$3,$4,$5,$6,$7,$8,'GUIDED_RELAUNCH',9900,'GBP','UPFRONT','NOT_APPLICABLE',0,'ACCEPTED_AWAITING_PAYMENT', now())`,
+      [order, historical.quoteId, historical.version, acceptance, alex, business, location, historical.caseId],
+    )
+    const replay = await rpc<AcceptResult>("customer_action_command_v1", [historical.session, randomUUID(), "accept", { accepted: true }])
+    expect(replay.status).toBe("success")
+    expect(replay.orderId).toBe(order)
+    expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [historical.version])).toBe(1)
+    expect(await count("select count(*)::int as n from public.paid_service_acceptances where quote_version_id = $1", [historical.version])).toBe(0)
+    const second = await rpc<AcceptResult>("accept_paid_service_terms_v1", [historical.session, randomUUID(), payload(historical.version)])
+    expect(second.status).toBe("success")
+    expect(await count("select count(*)::int as n from public.paid_service_acceptances where quote_version_id = $1", [historical.version])).toBe(0)
+    expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [historical.version])).toBe(1)
+  })
+
+  it("returns the same acceptance when the same quotation is submitted twice", async () => {
+    const duplicate = await offer({ quoteRef: "QT-26-CNLAAA", caseRef: "PR-26-CNLAAA" })
+    const firstKey = randomUUID()
+    const secondKey = randomUUID()
+    const first = await rpc<AcceptResult>("accept_paid_service_terms_v1", [duplicate.session, firstKey, payload(duplicate.version)])
+    const second = await rpc<AcceptResult>("accept_paid_service_terms_v1", [duplicate.session, secondKey, payload(duplicate.version)])
+    expect(first.status).toBe("success")
+    expect(second.status).toBe("already_accepted")
+    expect(second.acceptanceId).toBe(first.acceptanceId)
+    expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [duplicate.version])).toBe(1)
+    expect(await count("select count(*)::int as n from public.payment_obligations where service_order_id = $1", [first.orderId])).toBe(1)
   })
 })

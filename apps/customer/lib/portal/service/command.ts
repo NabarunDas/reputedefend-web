@@ -48,15 +48,34 @@ function onlyKeys(body: Record<string, unknown>, allowed: string[]) {
   return Object.keys(body).length === allowed.length && allowed.every(key => Object.hasOwn(body, key))
 }
 
-function confirmationFor(operation: Operation, value: unknown): Record<string, boolean> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+function confirmationFor(operation: Operation, value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null
   const keys = Object.keys(value)
-  if (operation === "accept_quote" || operation === "accept_agreement") {
-    if (keys.length !== 1 || keys[0] !== "accepted" || (value as { accepted?: unknown }).accepted !== true) return null
+  if (operation === "accept_agreement") {
+    if (keys.length !== 1 || keys[0] !== "accepted" || value.accepted !== true) return null
     return { accepted: true }
   }
-  if (keys.length !== 1 || keys[0] !== "confirmed" || (value as { confirmed?: unknown }).confirmed !== true) return null
+  if (operation === "accept_quote") return quoteConfirmation(value)
+  if (keys.length !== 1 || keys[0] !== "confirmed" || value.confirmed !== true) return null
   return { confirmed: true }
+}
+
+function quoteConfirmation(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (value.accepted !== true) return null
+  const keys = Object.keys(value)
+  if (keys.length === 1) return { accepted: true }
+  const allowed = ["accepted", "businessPurpose", "terms", "feeBasis"]
+  if (!allowed.every(key => Object.hasOwn(value, key)) || keys.some(key => !allowed.includes(key))) return null
+  if (!isRecord(value.businessPurpose) || value.businessPurpose.accepted !== true || Object.keys(value.businessPurpose).length !== 1) return null
+  if (!isRecord(value.terms) || value.terms.accepted !== true || typeof value.terms.version !== "string" || typeof value.terms.hash !== "string") return null
+  if (Object.keys(value.terms).some(key => !["accepted", "version", "hash"].includes(key))) return null
+  if (value.feeBasis !== null && !isRecord(value.feeBasis)) return null
+  return {
+    accepted: true,
+    businessPurpose: { accepted: true },
+    terms: { accepted: true, version: value.terms.version, hash: value.terms.hash },
+    feeBasis: value.feeBasis,
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import {
   checkoutControl,
   invoiceSentence,
-  methodSentence,
   moneyLabel,
   obligationDetail,
   obligationHeadline,
@@ -37,7 +36,6 @@ export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [agreed, setAgreed] = useState<string | null>(null)
   const keys = useRef<Record<string, string>>({})
 
   async function submit(reference: string, selector: string, operation: Operation) {
@@ -69,7 +67,6 @@ export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused
       }
       if (response.ok && payload?.status === "ok") {
         delete keys.current[slot]
-        setAgreed(null)
         setNotice(typeof payload.message === "string" ? payload.message : "We're confirming your payment.")
         router.refresh()
         return
@@ -105,8 +102,6 @@ export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused
           item={item}
           focused={focused}
           busy={busy}
-          agreed={agreed}
-          setAgreed={setAgreed}
           onSubmit={submit}
         />
       ))}
@@ -118,15 +113,11 @@ function PaymentCaseSection({
   item,
   focused,
   busy,
-  agreed,
-  setAgreed,
   onSubmit,
 }: {
   item: PaymentCase
   focused: boolean
   busy: string | null
-  agreed: string | null
-  setAgreed: (value: string | null) => void
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
   const track = trackLabel(item.serviceTrack)
@@ -147,8 +138,6 @@ function PaymentCaseSection({
           item={item}
           order={order}
           busy={busy}
-          agreed={agreed}
-          setAgreed={setAgreed}
           onSubmit={onSubmit}
         />
       ))}
@@ -160,20 +149,14 @@ function OrderSection({
   item,
   order,
   busy,
-  agreed,
-  setAgreed,
   onSubmit,
 }: {
   item: PaymentCase
   order: PaymentOrder
   busy: string | null
-  agreed: string | null
-  setAgreed: (value: string | null) => void
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
-  const setup = actionFor(item.actions, "managed_setup", order.orderRef)
   const invoiceAction = actionFor(item.actions, "invoice", order.orderRef)
-  const consentSlot = setup ? `confirm_consent:${setup.selector}` : ""
   return (
     <article className="payments-order">
       <h3>{order.serviceName}</h3>
@@ -195,49 +178,7 @@ function OrderSection({
       {order.paymentModel === "SUCCESS_FEE" ? (
         <div className="payments-authority">
           <h4>Managed service payment</h4>
-          <p>{methodSentence(order.paymentMethodSaved)}</p>
-          {order.consent?.recorded && order.consent.text ? (
-            <>
-              <p>Consent is recorded.</p>
-              <p className="service-prose">{order.consent.text}</p>
-            </>
-          ) : null}
-          {order.consent && !order.consent.recorded ? <p>Consent has not been recorded.</p> : null}
-          {setup && order.consentOfferText ? (
-            <form
-              className="service-confirm"
-              onSubmit={event => {
-                event.preventDefault()
-                if (agreed === setup.selector) onSubmit(item.reference, setup.selector, "confirm_consent")
-              }}
-            >
-              <label className="service-check">
-                <input
-                  type="checkbox"
-                  checked={agreed === setup.selector}
-                  onChange={event => setAgreed(event.target.checked ? setup.selector : null)}
-                />
-                <span>{order.consentOfferText}</span>
-              </label>
-              <button type="submit" disabled={busy !== null || agreed !== setup.selector} aria-busy={busy === consentSlot}>
-                {busy === consentSlot ? "Recording consent" : "Record consent"}
-              </button>
-            </form>
-          ) : null}
-          {setup && order.consent?.recorded ? (
-            <form
-              className="service-confirm"
-              onSubmit={event => {
-                event.preventDefault()
-                onSubmit(item.reference, setup.selector, "start_checkout")
-              }}
-            >
-              <p>No service fee is charged today.</p>
-              <button type="submit" disabled={busy !== null} aria-busy={busy === `start_checkout:${setup.selector}`}>
-                {busy === `start_checkout:${setup.selector}` ? "Opening secure checkout" : "Save payment method"}
-              </button>
-            </form>
-          ) : null}
+          <p>The Managed success fee is invoiced only after documented success. Saving a card for an off-session charge is not available, and no card is charged automatically.</p>
         </div>
       ) : null}
       {order.obligations.map((obligation, index) => (

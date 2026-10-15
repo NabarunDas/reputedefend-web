@@ -23,6 +23,8 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const db = new PGlite()
 
@@ -181,7 +183,19 @@ async function acceptQuote(actionId: string, secret: string): Promise<string> {
   expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
   expect(await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"]))
     .toMatchObject({ status: "ok" })
-  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  const pinned = (await db.query<{ quote_version_id: string; service_code: string; location_id: string; total_amount_minor: number }>(
+    `select a.quote_version_id, v.service_code, v.location_id, v.total_amount_minor
+     from public.customer_actions a
+     join public.quote_versions v on v.id = a.quote_version_id
+     where a.id = $1`,
+    [actionId],
+  )).rows[0]
+  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", paidQuoteCommand({
+    quoteVersionId: pinned.quote_version_id,
+    serviceCode: pinned.service_code,
+    locationId: pinned.location_id,
+    amountMinor: pinned.total_amount_minor,
+  })])
   expect(accepted).toMatchObject({ orderState: "ACCEPTED_AWAITING_PAYMENT" })
   return String(accepted!.orderId)
 }
@@ -217,6 +231,8 @@ beforeAll(async () => {
     insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence)
       values('${customer}','email','alex@example.com','${uid}','Verified from a live call with the customer.');
   `)
+  const approved = await rpc("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
+  if (approved?.status !== "confirmed") throw new Error(approved?.status ?? "approval missing")
 
   await populate(subject, "subject")
   await populate(other, "other")

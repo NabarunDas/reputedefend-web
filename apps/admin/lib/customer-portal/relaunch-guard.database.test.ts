@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, migrationSql, preparePlatform } from "../recovery/harness"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const migration = "20261004000625_customer_portal_relaunch_guard_v1.sql"
 const db = new PGlite()
@@ -89,7 +91,12 @@ async function acceptGuardOrder(customerId: string, business: string, location: 
   const secretHash = hash(token())
   const issued = await rpc<Json>("admin_quote_command_v1", [adminToken, key(), "create_quote_acceptance_action", { quoteId: draft.id, expiresAt: actionExpiry(), secretHash }, null])
   const session = await completeOtp(String(issued.id), secretHash, customerId === alex ? alexAuth : samAuth, customerId === alex ? "alex@example.com" : "sam@example.com")
-  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", paidQuoteCommand({
+    quoteVersionId: String(draft.quoteVersionId),
+    serviceCode: "RELAUNCH_GUARD",
+    locationId: location,
+    amountMinor: 999,
+  })])
   expect(accepted.status).toBe("success")
   return String(accepted.orderId)
 }
@@ -158,6 +165,8 @@ beforeAll(async () => {
   `)
   await verify(alex, "alex@example.com", alexBusiness)
   await verify(sam, "sam@example.com", samBusiness)
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
+  if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)
   samSession = await portalSession("sam@example.com", samAuth)
   alexCoverage = await createCoverage(alex, alexBusiness, alexLocation)

@@ -274,6 +274,18 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     status: "PASS",
   },
   {
+    area: "Solicitor agreement confirmation",
+    routes: ["/commercial/solicitor-approval"],
+    surfaces: ["/api/operations/solicitor-approval"],
+    action: "Record actual solicitor approval of the exact unchanged paid-service contract.",
+    expected: "The authenticated Admin submits an external evidence reference and exact version and hash; the existing SQL function records a named actor and preserves an immutable evidence audit.",
+    authorization: staffAndSession + " Explicit operator confirmation of the original solicitor email and unchanged agreement hash.",
+    persistence: "paid_service_agreement_approvals and paid_service_agreement_events persist the approved version, hash, evidence reference and actor, without activating Stripe.",
+    negative: "Cross-origin requests, missing Admin token, malformed idempotency key, false checkbox and altered agreement hash are refused without calling the approval RPC.",
+    evidence: ["lib/commercial/solicitor-approval-command.test.ts"],
+    status: "PASS",
+  },
+  {
     area: "Commercial catalogue, quotes and orders",
     routes: ["/commercial", "/cases/[id]/commercial"],
     surfaces: ["/api/operations/catalogue", "/api/operations/quotes"],

@@ -45,12 +45,13 @@ describe("authenticated solicitor approval command", () => {
     mocks.rpc.mockResolvedValue({ status: "confirmed", version: PAID_SERVICE_AGREEMENT_VERSION, hash: paidServiceAgreementContentHash, operative: true })
     const response = await solicitorApprovalCommand(req(validBody))
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ operative: true, version: PAID_SERVICE_AGREEMENT_VERSION })
+    const payload = await response.json()
+    expect(payload).toMatchObject({ operative: true, version: PAID_SERVICE_AGREEMENT_VERSION })
     expect(mocks.rpc).toHaveBeenCalledWith("admin_confirm_paid_service_agreement_v1", {
       p_token: "hash:" + "a".repeat(64), p_request: key, p_evidence: evidence,
     })
     expect(response.headers.get("cache-control")).toContain("no-store")
-    expect(JSON.stringify(await response.clone().json())).not.toContain(evidence)
+    expect(JSON.stringify(payload)).not.toContain(evidence)
   })
   it.each([
     [{ ...validBody, version: "PS-2026-10-14.1" }, "wrong version"],

@@ -27,13 +27,15 @@ describe("DEV public webhook-only hostname", () => {
     ["OPTIONS", "/api/webhooks/stripe"], ["POST", "/api/webhooks/resend"],
     ["POST", "/api/internal/jobs/run"], ["GET", "/_next/static/chunks/app.js"],
     ["GET", "/robots.txt"], ["POST", "/api/webhooks/stripe/"],
-    ["POST", "/api/webhooks/stripe?next=/login"],
   ])("rejects %s %s without reaching other DEV routes", (method, route) => withPreview(async () => {
     const response = await proxy(new NextRequest(`${host}${route}`, { method }))
-    // Query parameters do not change the exact pathname. The signed handler
-    // can ignore arbitrary query strings; neither is an auth bypass.
-    if (route.includes("?")) expect(response.headers.get("x-middleware-next")).toBe("1")
-    else expect(response.status).toBe(404)
+    expect(response.status).toBe(404)
+    expect(response.headers.get("cache-control")).toContain("no-store")
+  }))
+
+  it("ignores query text but still only forwards the exact signed Stripe route", () => withPreview(async () => {
+    const response = await proxy(new NextRequest(`${host}/api/webhooks/stripe?next=/login`, { method: "POST" }))
+    expect(response.headers.get("x-middleware-next")).toBe("1")
     expect(response.headers.get("cache-control")).toContain("no-store")
   }))
 

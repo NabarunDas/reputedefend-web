@@ -54,6 +54,8 @@ describe("operations jobs page", () => {
     expect(screen.getByText(/daily Hobby-compatible execution/)).toBeTruthy()
     expect(screen.getByText("Queue health probe")).toBeTruthy()
     expect(screen.getByText("Replay job")).toBeTruthy()
+    expect(screen.getByText("Process one DEV Stripe event")).toBeTruthy()
+    expect(screen.getByText(/only when its gate is on/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/CRON_SECRET|SUPABASE_SECRET|payload|secretHash|otp/i)
   })
 })

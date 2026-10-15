@@ -48,11 +48,11 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(45)
-    // A clean rebuild includes PAY-ENV-01, now applied to DEV only.
-    // Production and AWS backup-approved head remain at SEC-08.
-    expect(migrationHead.version).toBe("20261015153000")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationChain).toHaveLength(46)
+    // A clean rebuild includes PAY-ENV-04, which is not applied to DEV.
+    // DEV applied head remains PAY-ENV-01. Production and AWS remain at SEC-08.
+    expect(migrationHead.version).toBe("20261015230000")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261015153000")
   })
 

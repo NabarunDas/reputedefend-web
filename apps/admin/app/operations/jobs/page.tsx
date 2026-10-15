@@ -2,7 +2,7 @@ import { ukDate } from "@/lib/admin/activity"
 import { heartbeatLabel, isDailyHobbyCadence, jobStatusLabel, workerCadenceLabel } from "@/lib/jobs/model"
 import { loadJobHealth } from "@/lib/jobs/queries"
 import { Badge, EmptyState, PageHeader } from "../../ui"
-import { EnqueueProbeForm, ReplayJobForm } from "./forms"
+import { DevStripeOneShotForm, EnqueueProbeForm, ReplayJobForm } from "./forms"
 
 export const metadata = { title: "Jobs" }
 
@@ -23,7 +23,7 @@ export default async function JobsPage() {
   const health = await loadJobHealth()
   const heartbeat = health.heartbeat
   return <section className="page">
-    <PageHeader title="Operational health" description="Durable job queue, worker heartbeat and dead-letter replay. This page does not send customer email or call payment or Google providers." />
+    <PageHeader title="Operational health" description="Durable job queue, worker heartbeat and dead-letter replay. This page does not send customer email or call Google. The DEV control processes one selected test-mode Stripe event only when its gate is on." />
     <section className="panel">
       <h2>Worker</h2>
       <p>
@@ -41,6 +41,7 @@ export default async function JobsPage() {
       {heartbeat.lastError && <p>Last worker error: {heartbeat.lastError}</p>}
       <p>Pending {health.counts.pending} · Running {health.counts.running} · Retry {health.counts.retry} · Dead letter {health.counts.deadLetter}</p>
       <EnqueueProbeForm />
+      <DevStripeOneShotForm />
     </section>
     <section className="panel">
       <h2>Recent jobs</h2>

@@ -182,7 +182,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "paymentsEnabled",
-    files: ["apps/admin/lib/payments/webhook.ts", "apps/admin/lib/release/gates.ts", "lib/payments/index.ts", "lib/payments/lane-agreement.ts"],
+    files: ["apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/lib/payments/webhook.ts", "apps/admin/lib/release/gates.ts", "lib/payments/index.ts", "lib/payments/lane-agreement.ts"],
     reason: "The Stripe capability gate. gates.test.ts drives it with synthetic configurations to prove defaults cannot enable it.",
   },
   {

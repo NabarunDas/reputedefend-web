@@ -493,6 +493,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "evidence content SHA-256", probe: "public.evidence_content_sha256_v1" },
   },
+  {
+    // Source only. Not applied to profilerelaunch-dev or Production.
+    // AWS ApprovedMigrationHead stays at 20261014170000.
+    version: "20261014234000",
+    filename: "20261014234000_paid_service_acceptance_v1.sql",
+    step: "COM-13A paid-service acceptance",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "paid service acceptance", probe: "public.accept_paid_service_terms_v1" },
+  },
 ]
 
 /**

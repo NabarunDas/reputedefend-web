@@ -1,6 +1,6 @@
 # COM-13A acceptance specification
 
-Status: specification only. COM-12A does not implement this. No migration is added or applied. Stripe, the Customer Portal, Guard activation and mail automation stay behind their existing gates.
+Status: acceptance foundation is in source. `supabase/migrations/20261014234000_paid_service_acceptance_v1.sql` is additive and is not applied to DEV or Production. The catalogue row for `PS-2026-10-14.2` is inserted with status `SOLICITOR_REVIEW` and `operative` false. It becomes operative only when `confirm_paid_service_agreement_v1` records the exact statement for that version and SHA-256 `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`. A positive report about an earlier draft is not that confirmation. Stripe, the Customer Portal, Guard activation and mail automation stay behind their existing gates.
 
 The paid-service text to be accepted, once a solicitor approves it, is version `PS-2026-10-14.2` in `lib/commercial/paid-service-agreement.ts`. `PS-2026-10-14.1` was an earlier internal draft and was not accepted by any customer. Until solicitor approval of `PS-2026-10-14.2`, `operative` is false and the text must not be offered to a customer. The canonical body is the customer contract only. Approval status, the database tax gate and the content hash stay outside that body.
 
@@ -36,11 +36,11 @@ The stored acceptance records the agreement version, the content hash, the accep
 
 Do not update historical `agreement_versions`, `authorization_records` or `quote_acceptances` to point at the new text. Do not mark an old acceptance as acceptance of `PS-2026-10-14.1`. Do not enable Stripe live mode, Checkout, invoice issuance, refunds or charges. Do not enable the Customer Portal or a Guard or mail feature gate. Do not change published prices.
 
-## Additive database change, not part of COM-12A
+## Additive database change
 
-A later reviewed migration is required before any customer can accept this version. It should add, and not rewrite:
+COM-12A did not add this migration. COM-13A adds it for review and does not apply it. It adds, and does not rewrite:
 
-- a catalogue row for the approved agreement version, its status and its SHA-256, inserted only after solicitor approval;
+- a catalogue row for `PS-2026-10-14.2` and its SHA-256, inserted as `SOLICITOR_REVIEW` with `operative` false until the exact confirmation is recorded;
 - an acceptance row linking customer, case, quote version, agreement version and content hash, with the three confirmation timestamps;
 - a check that `UNCONFIRMED` tax still cannot be accepted.
 

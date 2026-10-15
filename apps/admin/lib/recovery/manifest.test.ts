@@ -19,8 +19,8 @@ describe("the migration chain manifest", () => {
   it("records SEC-08 as the verified applied DEV migration head", () => {
     expect(appliedMigrationHead.filename).toBe("20261014170000_evidence_content_sha256_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261014170000_evidence_content_sha256_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261014234000_paid_service_acceptance_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
   })
 
@@ -28,8 +28,9 @@ describe("the migration chain manifest", () => {
     for (const entry of migrationChain) expect(entry.safeToReplay).toBe(false)
   })
 
-  it("has no pending migration after the verified SEC-08 DEV application", () => {
-    expect(pendingMigrations()).toEqual([])
+  it("keeps COM-13A pending after the verified SEC-08 DEV application", () => {
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261014234000_paid_service_acceptance_v1.sql"])
+    expect(findMigration("20261014234000_paid_service_acceptance_v1.sql")?.appliedToDev).toBe(false)
   })
 
   it("keeps every applied migration ahead of every pending one", () => {
@@ -58,6 +59,7 @@ describe("the migration chain manifest", () => {
       "20260930164529",
       "20260930180050",
       "20260930222821",
+      "20261014234000",
     ])
   })
 

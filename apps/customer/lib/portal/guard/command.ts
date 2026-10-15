@@ -8,6 +8,7 @@ import { guardSubscriptionsEnabled } from "../../../../../lib/guard-billing/conf
 import { paymentProvider } from "../../../../../lib/payments"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isGuardSelector } from "./parse"
+import { eligibilityEnquiryMessage } from "../../../../../lib/commercial/eligibility-message"
 import { isUuid } from "@/lib/uuid"
 
 const SIGN_IN = "Sign in again to continue."
@@ -164,6 +165,7 @@ export async function portalGuardCommand(request: NextRequest) {
     if (result.status === "conflict") return reply(STALE, 409)
     if (result.status === "invalid") return reply(CONFIRM, 400)
     if (result.status === "not_found") return reply(MISSING, 404)
+    if (result.status === "eligibility_blocked") return reply(eligibilityEnquiryMessage, 403)
     if (result.status !== "success") return reply(UNAVAILABLE, 403)
     const config = customerBackendConfig()
     if (!config) return reply(RETRY, 503)

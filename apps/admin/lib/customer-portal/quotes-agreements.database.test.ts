@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
+import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
@@ -18,6 +19,7 @@ const upgradedFiles = [
   "20261014170000_evidence_content_sha256_v1.sql",
   "20261014234000_paid_service_acceptance_v1.sql",
   "20261015013000_paid_service_acceptance_gate_v1.sql",
+  "20261015140000_commercial_eligibility_gate_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -247,6 +249,7 @@ beforeAll(async () => {
     update public.admin_identity set auth_user_id = '${verifier}', enabled = true where singleton;
     insert into public.admin_sessions(token_hash, auth_user_id, created_at) values ('${adminToken}', '${verifier}', now());
   `)
+  await db.exec(syntheticPurchasingEstablishmentSql(business, verifier))
   const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)

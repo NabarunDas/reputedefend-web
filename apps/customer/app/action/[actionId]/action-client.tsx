@@ -231,6 +231,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       body: JSON.stringify({ operation, ...extra }),
     })
     const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
+    if (response.status === 403 && result.message) { setMessage(result.message); return }
     if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
     if (!response.ok) { setPhase("unavailable"); return }
     if (assignTrustedStripeCheckout(result.checkoutUrl)) return
@@ -247,6 +248,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       body: JSON.stringify({ operation, ...extra }),
     })
     const result = await response.json() as { status?: string; message?: string; checkoutUrl?: string }
+    if (response.status === 403 && result.message) { setMessage(result.message); return }
     if (response.status === 503) { setMessage(result.message || "Secure Stripe Checkout is not available yet."); return }
     if (!response.ok) { setPhase("unavailable"); return }
     if (assignTrustedStripeCheckout(result.checkoutUrl)) return

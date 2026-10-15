@@ -7,6 +7,7 @@ import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
+import { eligibilityEnquiryMessage } from "../../../../../lib/commercial/eligibility-message"
 import { isUuid } from "@/lib/uuid"
 
 const SIGN_IN = "Sign in again to continue."
@@ -103,6 +104,7 @@ function mapStatus(status: string, httpStatus: number) {
   if (status === "not_found") return reply(MISSING, 404)
   if (status === "invalid") return reply(CONFIRM, 400)
   if (status === "conflict") return reply(STALE, 409)
+  if (status === "eligibility_blocked") return reply(eligibilityEnquiryMessage, 403)
   if (status === "denied" || status === "unavailable") return reply(UNAVAILABLE)
   return reply(RETRY, httpStatus)
 }

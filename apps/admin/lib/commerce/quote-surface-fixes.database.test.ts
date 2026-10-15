@@ -27,6 +27,7 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
+import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
@@ -170,6 +171,7 @@ beforeAll(async () => {
       values('${customer}','email','alex@example.com','${uid}','Verified from a live call with the customer.');
     insert into public.business_memberships(customer_id,business_id,status,verified_at,verified_by,evidence)
       values('${customer}','${business}','verified',now(),'${uid}','Companies House match discussed on a live call.');`)
+  await db.exec(syntheticPurchasingEstablishmentSql(business, uid))
   const approved = await rpc("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved?.status !== "confirmed") throw new Error(approved?.status ?? "approval missing")
 }, 180000)

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
+import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, migrationSql, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
@@ -170,6 +171,7 @@ beforeAll(async () => {
   `)
   await verify()
   await verify(sam, "sam@example.com")
+  await db.exec(syntheticPurchasingEstablishmentSql(business, admin))
   const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)

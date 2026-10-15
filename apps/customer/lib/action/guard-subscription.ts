@@ -7,6 +7,7 @@ import { paymentProvider } from "../../../../lib/payments"
 import { isStripeTrialEndAllowed } from "../../../../lib/payments/model"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
+import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
 import { guardSubscriptionsEnabled } from "../../../../lib/guard-billing/config"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
@@ -73,6 +74,9 @@ export async function guardSubscriptionCommand(request: NextRequest) {
     }>("customer_guard_subscription_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
+    if (result.status === "eligibility_blocked") {
+      return NextResponse.json({ status: "denied", message: eligibilityEnquiryMessage }, { status: 403, headers: privateResponseHeaders })
+    }
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
     if (result.status === "denied") return NextResponse.json({ message: ACTION_UNAVAILABLE, reason: result.reason || result.status }, { status: 403, headers: privateResponseHeaders })
     if (result.status !== "success") return reply()

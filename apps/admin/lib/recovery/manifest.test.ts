@@ -19,8 +19,8 @@ describe("the migration chain manifest", () => {
   it("records COM-13B as the verified DEV head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261015013000_paid_service_acceptance_gate_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261015013000_paid_service_acceptance_gate_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261015140000_commercial_eligibility_gate_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
   })
 
@@ -29,7 +29,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records both COM-13 migrations as applied in DEV without authorising Production", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261015140000"])
+    expect(findMigration("20261015140000_commercial_eligibility_gate_v1.sql")?.appliedToDev).toBe(false)
+    expect(findMigration("20261015140000_commercial_eligibility_gate_v1.sql")?.containsDataChange).toBe(true)
     expect(findMigration("20261014234000_paid_service_acceptance_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015013000_paid_service_acceptance_gate_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015013000_paid_service_acceptance_gate_v1.sql")?.containsDataChange).toBe(false)
@@ -62,6 +64,7 @@ describe("the migration chain manifest", () => {
       "20260930180050",
       "20260930222821",
       "20261014234000",
+      "20261015140000",
     ])
   })
 

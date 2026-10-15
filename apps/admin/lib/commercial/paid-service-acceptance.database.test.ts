@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementBody, paidServiceAgreementContentHash } from "../../../../lib/commercial/paid-service-agreement"
 import { applyChain, preparePlatform } from "../recovery/harness"
+import { syntheticPurchasingEstablishmentSql } from "./purchasing-establishment.fixture"
 import { SYNTHETIC_APPROVAL_EVIDENCE } from "./paid-service-approval.fixture"
 
 const confirmation = `Solicitor reviewed paid-service agreement ${PAID_SERVICE_AGREEMENT_VERSION} with SHA-256 ${paidServiceAgreementContentHash}.`
@@ -169,6 +170,7 @@ beforeAll(async () => {
       ('${alex}', '${business}', 'verified', now(), '${verifier}', 'Companies House match discussed on a live call.'),
       ('${sam}', '${business}', 'verified', now(), '${verifier}', 'Companies House match discussed on a live call.');
   `)
+  await db.exec(syntheticPurchasingEstablishmentSql(business, verifier))
   alexPortal = await portalSession("alex@example.com", alexAuth)
   samPortal = await portalSession("sam@example.com", samAuth)
 }, 180000)

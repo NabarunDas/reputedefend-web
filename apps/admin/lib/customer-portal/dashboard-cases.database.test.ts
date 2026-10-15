@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
+import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
 
 const appliedHead = "20261003125151"
@@ -19,6 +20,7 @@ const upgradedFiles = [
   "20261014170000_evidence_content_sha256_v1.sql",
   "20261014234000_paid_service_acceptance_v1.sql",
   "20261015013000_paid_service_acceptance_gate_v1.sql",
+  "20261015140000_commercial_eligibility_gate_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -321,6 +323,7 @@ beforeAll(async () => {
       ('${location}', '${business}', 'UK', 'High Street'),
       ('${otherLocation}', '${otherBusiness}', 'UK', 'Side Street');
   `)
+  await db.exec(syntheticPurchasingEstablishmentSql(business, verifier))
   await verify(alex, "alex@example.com")
   await verify(sam, "sam@example.com")
   await verify(piper, "piper@example.com")

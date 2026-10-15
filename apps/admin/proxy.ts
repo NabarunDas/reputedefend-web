@@ -3,8 +3,19 @@ import { isPublicRead, privateResponseHeaders } from "./lib/access"
 import { sessionFromToken } from "./lib/auth/backend"
 import { isProductionAdminEnvironment, PROD_ADMIN_ORIGIN, sessionCookie } from "./lib/auth/config"
 
+// This stable DEV hostname is intentionally a webhook-only public surface.
+// Vercel Authentication excludes custom domains on this existing project; the
+// host guard must run before normal public-path and session handling.
+const DEV_STRIPE_WEBHOOK_HOST = "dev-hooks.profilerelaunch.com"
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  if (request.nextUrl.hostname === DEV_STRIPE_WEBHOOK_HOST &&
+      (process.env.VERCEL_ENV !== "preview" || request.method !== "POST" || pathname !== "/api/webhooks/stripe")) {
+    const denied = NextResponse.json({ error: "Not found." }, { status: 404 })
+    for (const [key, value] of Object.entries(privateResponseHeaders)) denied.headers.set(key, value)
+    return denied
+  }
   const productionBrowserRead = isProductionAdminEnvironment()
     && (request.method === "GET" || request.method === "HEAD")
     && pathname !== "/api"

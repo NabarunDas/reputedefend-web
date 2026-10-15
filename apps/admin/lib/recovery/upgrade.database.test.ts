@@ -59,7 +59,7 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is COM-14A, which DEV has received. Production remains SEC-08.
+    // The tail is PAY-ENV-01, which DEV has received. Production remains SEC-08.
     expect(pending.at(-1)?.version).toBe("20261015153000")
     expect(pending.some(entry => entry.version === "20261015013000")).toBe(true)
     expect(pending.some(entry => entry.version === "20261014234000")).toBe(true)

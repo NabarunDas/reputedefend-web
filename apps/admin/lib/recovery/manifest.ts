@@ -540,13 +540,17 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "commercial eligibility gate", probe: "public.admin_record_eligibility_decision_v1" },
   },
   {
-    // Source only. NOT applied to DEV or Production. AWS ApprovedMigrationHead
-    // remains 20261014170000. No lane row is seeded and payments stay off.
+    // Applied to DEV only on 2026-10-15 from PAY-ENV-01 merged source
+    // c7629dcd15ddce64afa846a77614f7fbf755dc93. Supabase initially assigned
+    // 20261015135047; after verifying SQL/RLS/grants and rolled-back lane tests,
+    // reconciled only migration ledger metadata to canonical 20261015153000.
+    // NOT applied to Production; AWS ApprovedMigrationHead stays 20261014170000.
+    // No persistent payment lane row; all payment activation gates remain off.
     version: "20261015153000",
     filename: "20261015153000_payment_lane_isolation_v1.sql",
     step: "PAY-ENV-01 payment lane isolation",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "payment lane isolation", probe: "admin_private.payment_expected_livemode_v1" },

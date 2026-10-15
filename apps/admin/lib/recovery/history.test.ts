@@ -6,7 +6,7 @@ const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not literal
 // live DEV migration history, which has a separately tracked baseline discrepancy.
-// The synthetic chain ends at applied DEV COM-14A.
+// The synthetic chain ends at applied DEV PAY-ENV-01.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 // Separately, the live DEV history predates three initial foundation entries;
 // that pre-existing baseline discrepancy is tracked, not modified here.
@@ -28,12 +28,12 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps synthetic remote history aligned through applied DEV COM-14A", () => {
+  it("keeps synthetic remote history aligned through applied DEV PAY-ENV-01", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual(["20261015153000_payment_lane_isolation_v1.sql"])
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261015140000",
-      name: "commercial_eligibility_gate_v1",
+      version: "20261015153000",
+      name: "payment_lane_isolation_v1",
     })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")

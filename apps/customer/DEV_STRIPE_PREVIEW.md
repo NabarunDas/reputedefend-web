@@ -1,13 +1,5 @@
-# Customer — Stripe sandbox Preview configuration
+# Customer — DEV Stripe sandbox Preview configuration
 
-DEV-only Preview deployment checkpoint, 15 October 2026.
+15 October 2026 checkpoint. Stripe sandbox API key and webhook signing secret are stored as protected Vercel Preview variables, now restricted to the `develop` Git branch. `PAYMENTS_PROVIDER_MODE=stripe_test` applies to that branch only. The Customer runtime requires both variables even though the Stripe webhook endpoint runs in Admin. This documentation-only checkpoint forces a fresh Customer Preview build after Vercel secret-scope changes.
 
-The environment variable PAYMENTS_PROVIDER_MODE is configured to stripe_test on the develop Preview branch only. The Stripe sandbox API key must be stored as a Sensitive Preview variable and must never appear in source control. Supabase and evidence storage remain strictly DEV. Production payments remain disabled, and there is no customer-facing payment rollout from this checkpoint.
-
-This documentation-only change forces a fresh Vercel Preview build after updating Preview environment variables. Do not copy this setting to Vercel Production or enable STRIPE_LIVE_ACTIVATION.
-
-The Customer Portal remains feature-gated until a separately approved synthetic DEV acceptance/payment test. This file does not enable the portal.
-
-## Sandbox webhook dependency — 15 October 2026
-
-The Customer Preview application requires its own protected STRIPE_WEBHOOK_SECRET configuration even though only the Admin webhook receives Stripe events. The value is managed in Vercel and must match the DEV Stripe endpoint signing secret. Adding the protected secret after a previous READY deployment requires a fresh Preview build; this documentation-only checkpoint does not change runtime code or Production configuration.
+Customer Portal feature activation remains separately gated; no Production Stripe configuration or live activation was changed. Do not put secret values in Git or app logs.

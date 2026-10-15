@@ -27,7 +27,7 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through the applied SEC-08 migration", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual(["20261014234000"])
+    expect(pending.map(entry => entry.version)).toEqual(["20261014234000", "20261015013000"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261014170000",
       name: "evidence_content_sha256_v1",

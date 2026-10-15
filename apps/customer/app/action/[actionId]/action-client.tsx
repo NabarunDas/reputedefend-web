@@ -7,6 +7,30 @@ import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../li
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
+const BUSINESS_PURPOSE = "I confirm that I am acting for the business named on this quotation and that I am authorised to bind it for the location on this quotation."
+const MANAGED_FEE = "I acknowledge that the Managed success fee is payable only after documented success, within 14 calendar days of the invoice. No card is charged automatically and the fee is not collected before that documented success."
+const GUARD_FEE = "I authorise monthly billing for Relaunch Guard for this exact location at the accepted monthly amount until cancelled under the agreed cancellation terms. This consent covers only this location and this accepted price. Opening a link or verifying a one-time code is not acceptance."
+
+function quoteFeeLabel(quote: Quote) {
+  if (quote.paymentModel === "SUCCESS_FEE") return MANAGED_FEE
+  if (quote.paymentModel === "RECURRING_MONTHLY") return GUARD_FEE
+  return null
+}
+
+function paidQuoteDecision(quote: Quote, form: FormData) {
+  const fee = quote.paymentModel === "SUCCESS_FEE"
+    ? { accepted: true, kind: "MANAGED_CONTINGENT_SUCCESS_FEE_V1" }
+    : quote.paymentModel === "RECURRING_MONTHLY"
+      ? { accepted: true, kind: "GUARD_RECURRING_CONSENT_V1", locationId: quote.locationId, amountMinor: quote.totalAmountMinor }
+      : null
+  return {
+    accepted: form.get("purpose") === "true" && form.get("terms") === "true" && (fee === null || form.get("fee") === "true"),
+    quoteVersionId: quote.versionId,
+    businessPurpose: { accepted: form.get("purpose") === "true" },
+    terms: { accepted: form.get("terms") === "true", version: quote.commercialAgreementVersion, hash: quote.commercialAgreementHash },
+    feeBasis: fee,
+  }
+}
 
 type Quote = {
   versionId: string
@@ -33,6 +57,9 @@ type Quote = {
   validUntil: string
   paymentTiming: string
   termsReference: string
+  locationId?: string
+  commercialAgreementVersion?: string | null
+  commercialAgreementHash?: string | null
 }
 
 type Session = {
@@ -408,10 +435,19 @@ export function ActionClient({ actionId }: { actionId: string }) {
       {quote.serviceCode === "RELAUNCH_GUARD" && <p>Accepting this quote does not start monitoring.</p>}
       {quote.paymentModel === "SUCCESS_FEE" && <p>Accepting this quote does not create an invoice or outstanding debt.</p>}
       <div className="button-row">
-        {canAccept ? <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true" }) }}>
-          <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact quote version. This is not payment authorisation and does not charge a card.</label>
-          <button type="submit">Accept quote</button>
-        </form> : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
+        {canAccept ? quote.commercialAgreementVersion && quote.commercialAgreementHash ? (
+          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", paidQuoteDecision(quote, form)) }}>
+            <label className="checkbox"><input type="checkbox" name="purpose" value="true" required />{BUSINESS_PURPOSE}</label>
+            <label className="checkbox"><input type="checkbox" name="terms" value="true" required />I accept this quotation under agreement {quote.commercialAgreementVersion} with SHA-256 {quote.commercialAgreementHash}.</label>
+            {quoteFeeLabel(quote) ? <label className="checkbox"><input type="checkbox" name="fee" value="true" required />{quoteFeeLabel(quote)}</label> : null}
+            <button type="submit">Accept quote</button>
+          </form>
+        ) : (
+          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true" }) }}>
+            <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact quote version. This is not payment authorisation and does not charge a card.</label>
+            <button type="submit">Accept quote</button>
+          </form>
+        ) : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
         <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>

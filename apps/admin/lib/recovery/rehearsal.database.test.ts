@@ -48,10 +48,10 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(42)
-    // A clean rebuild includes the unapplied COM-13A migration.
+    expect(migrationChain).toHaveLength(43)
+    // A clean rebuild includes the unapplied COM-13A and COM-13B migrations.
     // DEV, Production and AWS ApprovedMigrationHead stay at SEC-08.
-    expect(migrationHead.version).toBe("20261014234000")
+    expect(migrationHead.version).toBe("20261015013000")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261014170000")
   })

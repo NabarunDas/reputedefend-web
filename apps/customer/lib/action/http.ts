@@ -33,6 +33,10 @@ function jsonRequest(request: NextRequest) {
   return request.headers.get("content-type")?.split(";")[0] === "application/json"
 }
 
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
 function exactKeys(body: Record<string, unknown>, allowed: string[]) {
   const keys = Object.keys(body)
   return keys.length === allowed.length && allowed.every(key => keys.includes(key))
@@ -118,10 +122,22 @@ export async function command(request: NextRequest) {
   const body = await readJson(request, 2048)
   if (!validToken(token) || !isUuid(key) || !body || typeof body.operation !== "string" || !["accept", "decline", "revoke"].includes(body.operation)) return reply()
   const operation = body.operation
-  const acceptKeys = ["operation", "accepted", "permissionVersion", "consentVersion"]
+  const acceptKeys = ["operation", "accepted", "permissionVersion", "consentVersion", "quoteVersionId", "businessPurpose", "terms", "feeBasis"]
   if (operation === "accept") {
     const keys = Object.keys(body)
     if (body.accepted !== true || !keys.includes("operation") || !keys.includes("accepted") || keys.some(key => !acceptKeys.includes(key))) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
+    if (body.quoteVersionId !== undefined && (typeof body.quoteVersionId !== "string" || !isUuid(body.quoteVersionId))) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
+    if (body.businessPurpose !== undefined && !plainObject(body.businessPurpose)) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
+    if (body.terms !== undefined && !plainObject(body.terms)) {
+      return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
+    }
+    if (body.feeBasis !== undefined && body.feeBasis !== null && !plainObject(body.feeBasis)) {
       return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
     }
   }
@@ -134,6 +150,10 @@ export async function command(request: NextRequest) {
       accepted: true,
       ...(typeof body.permissionVersion === "string" ? { permissionVersion: body.permissionVersion } : {}),
       ...(typeof body.consentVersion === "string" ? { consentVersion: body.consentVersion } : {}),
+      ...(typeof body.quoteVersionId === "string" ? { quoteVersionId: body.quoteVersionId } : {}),
+      ...(plainObject(body.businessPurpose) ? { businessPurpose: body.businessPurpose } : {}),
+      ...(plainObject(body.terms) ? { terms: body.terms } : {}),
+      ...(Object.hasOwn(body, "feeBasis") ? { feeBasis: body.feeBasis } : {}),
     }
     : operation === "revoke" ? { confirmed: true } : {}
   try {

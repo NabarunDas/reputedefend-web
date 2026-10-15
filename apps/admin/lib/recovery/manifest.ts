@@ -505,6 +505,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "paid service acceptance", probe: "public.accept_paid_service_terms_v1" },
   },
+  {
+    // Source only. Not applied to profilerelaunch-dev or Production.
+    // AWS ApprovedMigrationHead stays at 20261014170000.
+    // This file does not approve the catalogue and does not call the approval RPC.
+    version: "20261015013000",
+    filename: "20261015013000_paid_service_acceptance_gate_v1.sql",
+    step: "COM-13B paid-service acceptance gate",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "paid service acceptance gate", probe: "public.admin_confirm_paid_service_agreement_v1" },
+  },
 ]
 
 /**

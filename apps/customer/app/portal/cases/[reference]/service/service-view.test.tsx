@@ -36,6 +36,10 @@ function quote(overrides: Partial<ServiceQuote> = {}): ServiceQuote {
     paymentTiming: "You pay the quoted amount before work starts.",
     validUntil,
     termsReference: "The service terms sent with this quote apply.",
+    serviceCode: "GUIDED_RELAUNCH",
+    paymentModel: "UPFRONT",
+    commercialAgreementVersion: null,
+    commercialAgreementHash: null,
     status: "offered",
     orderReference: null,
     acceptedAt: null,
@@ -275,6 +279,42 @@ describe("service and permissions", () => {
     expect(first["idempotency-key"]).toBe(second["idempotency-key"])
     expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't complete that step. Please try again shortly.")
     expect(screen.queryByText("You declined this quote.")).toBeNull()
+  })
+
+  it("starts the paid-service acknowledgements unchecked", async () => {
+    const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "success" }) })
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [action("quote", selector)],
+      quote: quote({
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+      }),
+    })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Accept this quote" }))
+    const purpose = screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ })
+    const terms = screen.getByRole("checkbox", { name: /PS-2026-10-14.2/ })
+    const confirm = screen.getByRole("button", { name: "Confirm acceptance" })
+    expect(purpose).not.toBeChecked()
+    expect(terms).not.toBeChecked()
+    expect(confirm).toBeDisabled()
+    fireEvent.click(purpose)
+    expect(confirm).toBeDisabled()
+    fireEvent.click(terms)
+    expect(confirm).toBeEnabled()
+    fireEvent.click(confirm)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toMatchObject({
+      operation: "accept_quote",
+      confirmation: {
+        accepted: true,
+        businessPurpose: { accepted: true },
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: null,
+      },
+    })
   })
 
   it("uses a calm unavailable state", () => {

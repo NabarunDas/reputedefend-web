@@ -16,6 +16,10 @@ const CONFIRMATION: Record<Operation, Record<string, boolean>> = {
   revoke_authorization: { confirmed: true },
 }
 
+const BUSINESS_PURPOSE = "I confirm that I am acting for the business named on this quotation and that I am authorised to bind it for the location on this quotation."
+const MANAGED_FEE = "I acknowledge that the Managed success fee is payable only after documented success, within 14 calendar days of the invoice. No card is charged automatically and the fee is not collected before that documented success."
+const GUARD_FEE = "I authorise monthly billing for Relaunch Guard for this exact location at the accepted monthly amount until cancelled under the agreed cancellation terms. This consent covers only this location and this accepted price. Opening a link or verifying a one-time code is not acceptance."
+
 function actionFor(actions: ServiceAction[], kind: ServiceAction["kind"], target?: ServiceAction["target"]) {
   return actions.find(item => item.kind === kind && (kind !== "revocation" || item.target === target)) ?? null
 }
@@ -40,9 +44,12 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
   const [open, setOpen] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
   const [permissionAgreed, setPermissionAgreed] = useState(false)
+  const [purposeAgreed, setPurposeAgreed] = useState(false)
+  const [termsAgreed, setTermsAgreed] = useState(false)
+  const [feeAgreed, setFeeAgreed] = useState(false)
   const keys = useRef<Record<string, string>>({})
 
-  async function submit(operation: Operation, selector: string) {
+  async function submit(operation: Operation, selector: string, confirmation?: Record<string, unknown>) {
     if (busy) return
     setBusy(operation)
     setNotice(null)
@@ -60,7 +67,7 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
           reference: item.reference,
           selector,
           operation,
-          confirmation: CONFIRMATION[operation],
+          confirmation: confirmation ?? CONFIRMATION[operation],
         }),
       })
       const payload = await response.json().catch(() => null) as { message?: string; status?: string } | null
@@ -69,6 +76,9 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
         setOpen(null)
         setAgreed(false)
         setPermissionAgreed(false)
+        setPurposeAgreed(false)
+        setTermsAgreed(false)
+        setFeeAgreed(false)
         router.refresh()
         return
       }
@@ -110,6 +120,12 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
         busy={busy}
         open={open}
         setOpen={setOpen}
+        purposeAgreed={purposeAgreed}
+        termsAgreed={termsAgreed}
+        feeAgreed={feeAgreed}
+        setPurposeAgreed={setPurposeAgreed}
+        setTermsAgreed={setTermsAgreed}
+        setFeeAgreed={setFeeAgreed}
         onSubmit={submit}
       />
       <AgreementSection
@@ -155,7 +171,8 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
 }
 
 function QuoteSection({
-  reference, quote, action, busy, open, setOpen, onSubmit,
+  reference, quote, action, busy, open, setOpen, purposeAgreed, termsAgreed, feeAgreed,
+  setPurposeAgreed, setTermsAgreed, setFeeAgreed, onSubmit,
 }: {
   reference: string
   quote: ServiceQuote | null
@@ -163,7 +180,13 @@ function QuoteSection({
   busy: Operation | null
   open: string | null
   setOpen: (value: string | null) => void
-  onSubmit: (operation: Operation, selector: string) => void
+  purposeAgreed: boolean
+  termsAgreed: boolean
+  feeAgreed: boolean
+  setPurposeAgreed: (value: boolean) => void
+  setTermsAgreed: (value: boolean) => void
+  setFeeAgreed: (value: boolean) => void
+  onSubmit: (operation: Operation, selector: string, confirmation?: Record<string, unknown>) => void
 }) {
   return (
     <section className="service-section" aria-labelledby="quote-heading">
@@ -204,15 +227,35 @@ function QuoteSection({
           {quote.canAccept && action ? (
             <div className="service-confirm">
               {open === "accept-quote" ? (
-                <>
-                  <p>Accepting this quote confirms the service and amount shown above.</p>
-                  <div className="button-row">
-                    <button type="button" disabled={busy !== null} onClick={() => onSubmit("accept_quote", action.selector)}>
-                      {busy === "accept_quote" ? "Accepting quote" : "Confirm acceptance"}
-                    </button>
-                    <button type="button" className="secondary" disabled={busy !== null} onClick={() => setOpen(null)}>Back</button>
-                  </div>
-                </>
+                quote.commercialAgreementVersion && quote.commercialAgreementHash ? (
+                  <BoundQuoteAcceptance
+                    quote={quote}
+                    busy={busy !== null}
+                    purposeAgreed={purposeAgreed}
+                    termsAgreed={termsAgreed}
+                    feeAgreed={feeAgreed}
+                    onPurpose={setPurposeAgreed}
+                    onTerms={setTermsAgreed}
+                    onFee={setFeeAgreed}
+                    onBack={() => setOpen(null)}
+                    onAccept={() => onSubmit("accept_quote", action.selector, {
+                      accepted: true,
+                      businessPurpose: { accepted: true },
+                      terms: { accepted: true, version: quote.commercialAgreementVersion, hash: quote.commercialAgreementHash },
+                      feeBasis: feeBasisFor(quote),
+                    })}
+                  />
+                ) : (
+                  <>
+                    <p>Accepting this quote confirms the service and amount shown above.</p>
+                    <div className="button-row">
+                      <button type="button" disabled={busy !== null} onClick={() => onSubmit("accept_quote", action.selector)}>
+                        {busy === "accept_quote" ? "Accepting quote" : "Confirm acceptance"}
+                      </button>
+                      <button type="button" className="secondary" disabled={busy !== null} onClick={() => setOpen(null)}>Back</button>
+                    </div>
+                  </>
+                )
               ) : (
                 <button type="button" disabled={busy !== null} onClick={() => setOpen("accept-quote")}>Accept this quote</button>
               )}
@@ -334,5 +377,54 @@ function AgreementSection({
         </>
       )}
     </section>
+  )
+}
+
+function feeBasisFor(quote: ServiceQuote) {
+  if (quote.paymentModel === "SUCCESS_FEE") return { accepted: true, kind: "MANAGED_CONTINGENT_SUCCESS_FEE_V1" }
+  if (quote.paymentModel === "RECURRING_MONTHLY") {
+    return { accepted: true, kind: "GUARD_RECURRING_CONSENT_V1", amountMinor: quote.totalAmountMinor }
+  }
+  return null
+}
+
+function BoundQuoteAcceptance({
+  quote, busy, purposeAgreed, termsAgreed, feeAgreed, onPurpose, onTerms, onFee, onBack, onAccept,
+}: {
+  quote: ServiceQuote
+  busy: boolean
+  purposeAgreed: boolean
+  termsAgreed: boolean
+  feeAgreed: boolean
+  onPurpose: (value: boolean) => void
+  onTerms: (value: boolean) => void
+  onFee: (value: boolean) => void
+  onBack: () => void
+  onAccept: () => void
+}) {
+  const feeLabel = quote.paymentModel === "SUCCESS_FEE" ? MANAGED_FEE : quote.paymentModel === "RECURRING_MONTHLY" ? GUARD_FEE : null
+  const ready = purposeAgreed && termsAgreed && (feeLabel === null || feeAgreed)
+  return (
+    <>
+      <p>Each acknowledgement starts unchecked. Accepting records this quotation together with agreement {quote.commercialAgreementVersion}.</p>
+      <label className="checkbox">
+        <input type="checkbox" checked={purposeAgreed} onChange={event => onPurpose(event.target.checked)} />
+        {BUSINESS_PURPOSE}
+      </label>
+      <label className="checkbox">
+        <input type="checkbox" checked={termsAgreed} onChange={event => onTerms(event.target.checked)} />
+        I accept this quotation under agreement {quote.commercialAgreementVersion} with SHA-256 {quote.commercialAgreementHash}.
+      </label>
+      {feeLabel ? (
+        <label className="checkbox">
+          <input type="checkbox" checked={feeAgreed} onChange={event => onFee(event.target.checked)} />
+          {feeLabel}
+        </label>
+      ) : null}
+      <div className="button-row">
+        <button type="button" disabled={busy || !ready} onClick={onAccept}>Confirm acceptance</button>
+        <button type="button" className="secondary" disabled={busy} onClick={onBack}>Back</button>
+      </div>
+    </>
   )
 }

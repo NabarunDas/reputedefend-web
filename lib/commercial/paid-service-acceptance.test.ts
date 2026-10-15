@@ -249,6 +249,14 @@ describe("paid-service acceptance rules", () => {
     expect(sql).toContain(GUARD_RECURRING_CONSENT_TEXT)
     expect(sql).toContain("tax_behaviour = 'UNCONFIRMED'")
     expect(sql).toContain("Do not apply this file to DEV or Production")
+    const gate = readFileSync(new URL("../../supabase/migrations/20261015013000_paid_service_acceptance_gate_v1.sql", import.meta.url), "utf8")
+    expect(gate).toContain("Do not apply this file to DEV or Production")
+    expect(gate).toContain("consent_required")
+    expect(gate).toContain("admin_confirm_paid_service_agreement_v1")
+    expect(gate).toContain("RETURN jsonb_build_object('status', 'unauthorised');")
+    expect(gate).toContain("quotation_snapshot")
+    expect(gate).not.toMatch(/^update\s+public\.(quote_acceptances|authorization_records|agreement_versions)\b/im)
+    expect(gate).not.toContain("stripe_live")
     expect(com13aLiveEffects).toEqual({
       stripeLiveMode: false,
       checkout: false,

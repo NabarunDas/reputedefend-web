@@ -152,9 +152,9 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261014234000"])
+    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261014234000", "20261015013000"])
     expect(appliedMigrationHead.version).toBe("20261014170000")
-    expect(migrationHead.version).toBe("20261014234000")
+    expect(migrationHead.version).toBe("20261015013000")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")

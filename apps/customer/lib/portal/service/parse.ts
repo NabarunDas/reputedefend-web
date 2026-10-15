@@ -13,6 +13,10 @@ const CURRENCY = /^[A-Z]{3}$/
 const QUOTE_STATUSES = ["offered", "accepted", "declined", "expired", "unavailable"] as const
 const TAX = ["UNCONFIRMED", "INCLUSIVE", "EXCLUSIVE", "NOT_APPLICABLE"] as const
 const PAYMENT_NEXT = ["payment", "setup"] as const
+const PAYMENT_MODELS = ["UPFRONT", "SUCCESS_FEE", "RECURRING_MONTHLY"] as const
+const SERVICE_CODES = ["GUIDED_RELAUNCH", "GUIDED_REVIEW", "MANAGED_RELAUNCH", "MANAGED_REVIEW", "RELAUNCH_GUARD"] as const
+const AGREEMENT_VERSION = /^PS-[A-Za-z0-9.-]{1,40}$/
+const AGREEMENT_HASH = /^[a-f0-9]{64}$/
 const AGREEMENT_STATUSES = ["review", "accepted", "declined", "revoked", "review_required", "unavailable"] as const
 const ACTION_KINDS = ["quote", "service_agreement", "case_permission", "revocation"] as const
 const REVOCATION_TARGETS = ["service_agreement", "case_permission"] as const
@@ -47,6 +51,10 @@ export type ServiceQuote = {
   paymentTiming: string
   validUntil: string
   termsReference: string
+  serviceCode: (typeof SERVICE_CODES)[number]
+  paymentModel: (typeof PAYMENT_MODELS)[number]
+  commercialAgreementVersion: string | null
+  commercialAgreementHash: string | null
   status: QuoteStatus
   orderReference: string | null
   acceptedAt: string | null
@@ -139,7 +147,8 @@ function parseQuote(value: unknown): ServiceQuote | null | undefined {
   if (!row || !sameKeys(row, [
     "reference", "serviceName", "scope", "exclusions", "successDefinition",
     "standardAmountMinor", "discountAmountMinor", "quotedAmountMinor", "taxAmountMinor", "totalAmountMinor",
-    "currency", "taxBehaviour", "paymentTiming", "validUntil", "termsReference", "status",
+    "currency", "taxBehaviour", "paymentTiming", "validUntil", "termsReference",
+    "serviceCode", "paymentModel", "commercialAgreementVersion", "commercialAgreementHash", "status",
     "orderReference", "acceptedAt", "paymentNext", "canAccept",
   ])) return undefined
   const reference = text(row.reference, 16)
@@ -157,6 +166,10 @@ function parseQuote(value: unknown): ServiceQuote | null | undefined {
   const paymentTiming = prose(row.paymentTiming, 2000)
   const validUntil = timestamp(row.validUntil)
   const termsReference = prose(row.termsReference, 1000)
+  const serviceCode = oneOf(row.serviceCode, SERVICE_CODES)
+  const paymentModel = oneOf(row.paymentModel, PAYMENT_MODELS)
+  const commercialAgreementVersion = row.commercialAgreementVersion === null ? null : text(row.commercialAgreementVersion, 40)
+  const commercialAgreementHash = row.commercialAgreementHash === null ? null : text(row.commercialAgreementHash, 64)
   const status = oneOf(row.status, QUOTE_STATUSES)
   const orderReference = row.orderReference === null ? null : text(row.orderReference, 16)
   const acceptedAt = optionalTimestamp(row.acceptedAt)
@@ -165,12 +178,17 @@ function parseQuote(value: unknown): ServiceQuote | null | undefined {
   if (!reference || !QUOTE_REF.test(reference) || !serviceName || !scope || !exclusions || !successDefinition) return undefined
   if (standardAmountMinor === null || discountAmountMinor === null || quotedAmountMinor === null || taxAmountMinor === null || totalAmountMinor === null) return undefined
   if (!currency || !CURRENCY.test(currency) || !taxBehaviour || !paymentTiming || !validUntil || !termsReference || !status) return undefined
+  if (!serviceCode || !paymentModel || commercialAgreementVersion === undefined || commercialAgreementHash === undefined) return undefined
+  if (commercialAgreementVersion !== null && !AGREEMENT_VERSION.test(commercialAgreementVersion)) return undefined
+  if (commercialAgreementHash !== null && !AGREEMENT_HASH.test(commercialAgreementHash)) return undefined
+  if ((commercialAgreementVersion === null) !== (commercialAgreementHash === null)) return undefined
   if (orderReference === undefined || (orderReference !== null && !ORDER_REF.test(orderReference))) return undefined
   if (acceptedAt === undefined || paymentNext === undefined || canAccept === null) return undefined
   return {
     reference, serviceName, scope, exclusions, successDefinition,
     standardAmountMinor, discountAmountMinor, quotedAmountMinor, taxAmountMinor, totalAmountMinor,
-    currency, taxBehaviour, paymentTiming, validUntil, termsReference, status,
+    currency, taxBehaviour, paymentTiming, validUntil, termsReference,
+    serviceCode, paymentModel, commercialAgreementVersion, commercialAgreementHash, status,
     orderReference, acceptedAt, paymentNext, canAccept,
   }
 }

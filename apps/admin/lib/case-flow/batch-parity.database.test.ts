@@ -23,6 +23,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
+import { PAID_SERVICE_APPROVAL_EVIDENCE, PAID_SERVICE_APPROVAL_REQUEST, paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { narrowCaseFlowFacts, requiredCase } from "./projection"
 import { resolveCaseFlow } from "./resolve"
 import type {
@@ -288,7 +289,19 @@ async function acceptedOrder(caseId: string, serviceCode: string): Promise<Json>
   await rpc("customer_action_begin_otp_v1", [pending])
   await rpc("customer_action_confirm_otp_sent_v1", [pending])
   await rpc("customer_action_finish_otp_v1", [pending, session, customerAuth, "alex@example.com"])
-  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  const pinned = (await db.query<{ quote_version_id: string; service_code: string; location_id: string; total_amount_minor: number }>(
+    `select a.quote_version_id, v.service_code, v.location_id, v.total_amount_minor
+     from public.customer_actions a
+     join public.quote_versions v on v.id = a.quote_version_id
+     where a.id = $1`,
+    [action.id],
+  )).rows[0]
+  const accepted = await rpc<Json>("customer_action_command_v1", [session, key(), "accept", paidQuoteCommand({
+    quoteVersionId: pinned.quote_version_id,
+    serviceCode: pinned.service_code,
+    locationId: pinned.location_id,
+    amountMinor: pinned.total_amount_minor,
+  })])
   expect(accepted).toMatchObject({ status: "success" })
   return accepted
 }
@@ -373,6 +386,8 @@ beforeAll(async () => {
       values('${waiting}','${customer}','${business}','EVIDENCE_REQUEST','EVIDENCE_REQUEST',1,'DRAFT','NONE',
         'alex@example.com','Evidence for your case','We need one more document to continue.','${uid}');
   `)
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [token, PAID_SERVICE_APPROVAL_REQUEST, PAID_SERVICE_APPROVAL_EVIDENCE])
+  if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
 
   const document = (await db.query<{ id: string }>(
     "insert into public.case_documents(case_id,title,created_by) values($1,'Utility bill',$2) returning id",

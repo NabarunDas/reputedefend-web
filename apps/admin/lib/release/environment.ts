@@ -218,6 +218,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/admin/lib/conversations/gate.ts",
       "apps/admin/lib/evidence/config.ts",
       "apps/admin/lib/jobs/config.ts",
+      "apps/admin/proxy.ts",
       "apps/customer/lib/case/config.ts",
       "apps/customer/lib/config.ts",
       "lib/payments/config.ts",

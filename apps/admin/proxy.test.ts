@@ -25,7 +25,7 @@ describe("DEV public webhook-only hostname", () => {
     ["GET", "/"], ["GET", "/login"], ["POST", "/auth/send"],
     ["GET", "/api/webhooks/stripe"], ["HEAD", "/api/webhooks/stripe"],
     ["OPTIONS", "/api/webhooks/stripe"], ["POST", "/api/webhooks/resend"],
-    ["POST", "/api/internal/jobs/run"], ["GET", "/_next/static/chunks/app.js"],
+    ["POST", "/api/internal/jobs/run"], ["POST", "/api/operations/dev-stripe-reconcile"], ["GET", "/_next/static/chunks/app.js"],
     ["GET", "/robots.txt"], ["POST", "/api/webhooks/stripe/"],
   ])("rejects %s %s without reaching other DEV routes", (method, route) => withPreview(async () => {
     const response = await proxy(new NextRequest(`${host}${route}`, { method }))

@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV applied head is 20261015153000 payment_lane_isolation_v1 following controlled COM-13A, COM-13B, COM-14A and PAY-ENV-01 DEV-only applications on 2026-10-15. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. |
+| `supabase.applied-head` | Supabase | READY | DEV applied head is 20261015153000 payment_lane_isolation_v1 following controlled COM-13A, COM-13B, COM-14A and PAY-ENV-01 DEV-only applications on 2026-10-15. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. PAY-ENV-04 20261015230000 dev_stripe_one_shot_v1 is in the repository and is not applied to DEV or Production. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -110,6 +110,7 @@ capability gate is expected to be missing.
 | `NODE_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Next.js sets it. A non-production value would select the development cookie names, which is why the production smoke test checks the cookie name. |
 | `VERCEL_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Every one of those capabilities stays off, which is the safe direction. |
 | `VERCEL_DEPLOYMENT_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The heartbeat records null. Nothing else changes. |
+| `VERCEL_GIT_COMMIT_REF` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The DEV Stripe one-shot refuses the request. No other Admin behaviour reads it. |
 | `CRON_SECRET` | admin | PROVIDER_SECRET | secret | PRESENT | jobWorkerConfig() reports disabled and the cron entry point answers 503 rather than running work. |
 | `JOB_WORKER_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | The worker is disabled, no job is claimed, and both mail gates read false whatever else is set. |
 | `JOB_PROVIDER_MODE` | admin | FEATURE_GATE | non-secret | ABSENT | Provider mode is "disabled" and no handler performs an external effect. |
@@ -137,6 +138,7 @@ capability gate is expected to be missing.
 | `INBOUND_OWNED_ADDRESSES` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The owned-address list is empty; the inbound gate is already false without it. |
 | `PAYMENTS_PROVIDER_MODE` | admin, customer | FEATURE_GATE | non-secret | ABSENT | Payment provider mode is "disabled" and no Stripe object can be created. |
 | `STRIPE_LIVE_ACTIVATION` | admin, customer | FEATURE_GATE | non-secret | ABSENT | Production stays disabled even if a live key and stripe_live are present. |
+| `DEV_STRIPE_ONE_SHOT_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | The DEV Stripe one-shot endpoint refuses every request. The production worker stays unchanged. |
 | `STRIPE_SECRET_KEY` | admin, customer | PROVIDER_SECRET | secret | ABSENT | No Stripe client is constructed. |
 | `STRIPE_WEBHOOK_SECRET` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The Stripe webhook rejects every request. |
 | `GUARD_ACTIVATION_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | Activation stays manual and direct billing stays PENDING. |
@@ -228,7 +230,7 @@ The deployment has no Stripe sandbox credentials and no live payments.
 The SEC-08 migration did not mutate existing evidence rows. DEV has 4 uploaded
 evidence versions, 2 customer-visible and 0 trusted hashes, so historical
 DEV evidence remains unverified. Production had 0 evidence versions when SEC-08
-was applied. `pendingMigrations()` is empty for DEV; applied SQL is immutable.
+was applied. `pendingMigrations()` contains only unapplied PAY-ENV-04 `20261015230000`; applied SQL is immutable.
 The separate historic three-foundation-entry DEV ledger discrepancy remains
 tracked in GitHub issue #190; this DEV ledger is not asserted fully equivalent
 to the repository chain until the provenance review is complete.

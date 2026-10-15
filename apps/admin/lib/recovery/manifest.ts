@@ -555,6 +555,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "payment lane isolation", probe: "admin_private.payment_expected_livemode_v1" },
   },
+  {
+    // In the repository only. Not applied to DEV or Production. The DEV
+    // applied head stays 20261015153000 until an independent review applies it.
+    version: "20261015230000",
+    filename: "20261015230000_dev_stripe_one_shot_v1.sql",
+    step: "PAY-ENV-04 DEV Stripe one-shot",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "DEV Stripe one-shot", probe: "public.admin_dev_stripe_one_shot_claim_v1" },
+  },
 ]
 
 /**

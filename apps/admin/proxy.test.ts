@@ -3,6 +3,65 @@ import { NextRequest } from "next/server"
 import { proxy } from "./proxy"
 import { GET, POST } from "./app/api/[[...path]]/route"
 
+describe("DEV public webhook-only hostname", () => {
+  const host = "https://dev-hooks.profilerelaunch.com"
+  async function withPreview<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = "preview"
+    try { return await fn() } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previous
+    }
+  }
+
+  it("allows only the signed Stripe route to reach its handler on DEV Preview", () => withPreview(async () => {
+    const request = new NextRequest(`${host}/api/webhooks/stripe`, { method: "POST" })
+    const response = await proxy(request)
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+    expect(response.headers.get("cache-control")).toContain("no-store")
+  }))
+
+  it.each([
+    ["GET", "/"], ["GET", "/login"], ["POST", "/auth/send"],
+    ["GET", "/api/webhooks/stripe"], ["HEAD", "/api/webhooks/stripe"],
+    ["OPTIONS", "/api/webhooks/stripe"], ["POST", "/api/webhooks/resend"],
+    ["POST", "/api/internal/jobs/run"], ["GET", "/_next/static/chunks/app.js"],
+    ["GET", "/robots.txt"], ["POST", "/api/webhooks/stripe/"],
+    ["POST", "/api/webhooks/stripe?next=/login"],
+  ])("rejects %s %s without reaching other DEV routes", (method, route) => withPreview(async () => {
+    const response = await proxy(new NextRequest(`${host}${route}`, { method }))
+    // Query parameters do not change the exact pathname. The signed handler
+    // can ignore arbitrary query strings; neither is an auth bypass.
+    if (route.includes("?")) expect(response.headers.get("x-middleware-next")).toBe("1")
+    else expect(response.status).toBe(404)
+    expect(response.headers.get("cache-control")).toContain("no-store")
+  }))
+
+  it("denies the Stripe path on that hostname outside Preview, even in Production", async () => {
+    const previous = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = "production"
+    try {
+      const response = await proxy(new NextRequest(`${host}/api/webhooks/stripe`, { method: "POST" }))
+      expect(response.status).toBe(404)
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previous
+    }
+  })
+
+  it("does not affect the existing Production Stripe webhook", async () => {
+    const previous = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = "production"
+    try {
+      const response = await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/stripe", { method: "POST" }))
+      expect(response.headers.get("x-middleware-next")).toBe("1")
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previous
+    }
+  })
+})
+
 describe("admin access boundary", () => {
   it("redirects Production browser traffic from Vercel aliases to the canonical Admin domain", async () => {
     const previous = process.env.VERCEL_ENV

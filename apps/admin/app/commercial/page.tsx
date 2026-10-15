@@ -27,6 +27,8 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
       <Link href="/commercial?tab=quotes" aria-current={tab === "quotes" ? "page" : undefined}>Quotes</Link>
       {" · "}
       <Link href="/commercial?tab=orders" aria-current={tab === "orders" ? "page" : undefined}>Orders</Link>
+      {" · "}
+      <Link href="/commercial/solicitor-approval">Solicitor approval</Link>
     </p>
     {tab === "catalogue" && <>
       <section className="panel">

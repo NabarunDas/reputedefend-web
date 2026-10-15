@@ -5,8 +5,10 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // Remote history contains only what the dev project actually received.
-// The healthy remote ends at the verified applied SEC-08 migration.
-// Production remains at SEC-03 and is not this ledger.
+// A synthetic full-chain remote for validator tests now ends at applied DEV COM-13B.
+// Production remains at SEC-08 and is NOT represented by this synthetic ledger.
+// Separately, the live DEV history predates three initial foundation entries;
+// that pre-existing baseline discrepancy is tracked, not modified here.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -25,12 +27,12 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps remote history aligned through the applied SEC-08 migration", () => {
+  it("keeps remote history aligned through applied DEV COM-13B", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual(["20261014234000", "20261015013000"])
+    expect(pending.map(entry => entry.version)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261014170000",
-      name: "evidence_content_sha256_v1",
+      version: "20261015013000",
+      name: "paid_service_acceptance_gate_v1",
     })
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
@@ -39,7 +41,7 @@ describe("the migration history validator", () => {
   })
 
   it("treats a ledger that stops at SEC-03 as missing the applied DEV SEC-08 migration", () => {
-    const stopped = healthyRemote.filter(row => row.version !== "20261014170000")
+    const stopped = healthyRemote.filter(row => row.version <= "20261013153000")
     expect(stopped.at(-1)).toEqual({
       version: "20261013153000",
       name: "public_request_rate_limit_v1",

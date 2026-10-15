@@ -4,8 +4,9 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
-// Remote history contains only what the dev project actually received.
-// A synthetic full-chain remote for validator tests now ends at applied DEV COM-13B.
+// This validator fixture models the complete applied manifest, not literal
+// live DEV migration history, which has a separately tracked baseline discrepancy.
+// The synthetic chain ends at applied DEV COM-13B.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 // Separately, the live DEV history predates three initial foundation entries;
 // that pre-existing baseline discrepancy is tracked, not modified here.

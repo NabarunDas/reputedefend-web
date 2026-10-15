@@ -36,7 +36,7 @@ const unauthenticatedPosts: Record<string, string> = {
   "/api/[[...path]]": "catch-all that only refuses",
 }
 
-const originCheck = /request\.headers\.get\("origin"\) !== config\.origin/
+const originCheck = /request\.headers\.get\("origin"\) !== (?:config\.origin|requestOrigin)/
 
 /** The command module a route delegates to, resolved from its imports. */
 function delegateSources(file: string): string[] {

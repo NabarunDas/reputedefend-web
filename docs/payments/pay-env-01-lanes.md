@@ -1,8 +1,8 @@
 # PAY-ENV-01 — Stripe DEV and Production lanes
 
-Status: source only. `supabase/migrations/20261015153000_payment_lane_isolation_v1.sql` has not been applied to DEV or Production. This document does not activate payments, the Customer Portal, Guard or email, and it does not change Vercel, AWS or Stripe.
+Status: applied to DEV only on 2026-10-15. `supabase/migrations/20261015153000_payment_lane_isolation_v1.sql` has not been applied to Production. This document does not activate payments, the Customer Portal, Guard or email, and it does not change Vercel, AWS or Stripe.
 
-AWS ApprovedMigrationHead stays `20261014170000`. DEV applied head stays `20261015140000`. Production applied head stays `20261014170000`.
+AWS ApprovedMigrationHead stays `20261014170000`. DEV applied head is `20261015153000`. Production applied head remains `20261014170000` (last independently verified; Production connector reads are currently permission-denied).
 
 No Stripe secret belongs in Git, a `NEXT_PUBLIC_` variable, a log line or a database row. The values below are names and prefixes only.
 
@@ -36,7 +36,7 @@ Idempotency keys are unique inside one database and are sent to one Stripe accou
 
 ## Database migration, when an operator later applies it
 
-Do not apply this migration from the pull request. After independent review, a later change window can apply `20261015153000_payment_lane_isolation_v1.sql` to the target project. It is additive. It does not seed a lane and it does not call the setter.
+DEV application is complete and independently verified; never replay it. Production application needs a separate owner-approved change window, migration/backup-head coordination and its own validation. The migration is additive and does not seed a lane or call the setter.
 
 Until a lane row exists, expected `livemode` stays false. That matches DEV. It is not enough for Production: `stripe_live` stays unable to call Stripe until `admin_set_payment_provider_lane_v1` has recorded `stripe_live` on that database. Inserts and updates that carry the other `livemode` fail with `livemode_mismatch`. Webhook functions deny a mismatched event without inserting a receipt and without marking it processed, so the same event can be delivered again after the lane is corrected. A repeat of the same event id and the same `livemode` stays a duplicate. Checkout, invoice, customer and Guard commands that would create a provider object refuse with `lane_mismatch` when the declared livemode does not match the row. `payment_collect_prepare_v1` always returns `off_session_retired` and does not change the obligation.
 
@@ -47,7 +47,7 @@ Until a lane row exists, expected `livemode` stays false. That matches DEV. It i
 Do this only in the Vercel Preview environment of the Admin and Customer apps. Do not put these variables on Marketing.
 
 1. Confirm the Preview project uses Supabase DEV `rmzozuiamjcclvtgutgd` and evidence bucket `profilerelaunch-evidence-dev-01`.
-2. Apply the lane migration to DEV only after the review that authorises it. Leave the lane unset, or set `stripe_test` through `admin_set_payment_provider_lane_v1` while every existing payment row is still test mode. Do not call it with `stripe_live` on DEV.
+2. The lane migration is already applied to DEV. Leave the lane unset (currently the case), or explicitly record `stripe_test` through `admin_set_payment_provider_lane_v1` if operational policy requires it. Do not call `stripe_live` on DEV.
 3. In the Stripe sandbox, register one webhook endpoint on the Preview Admin origin. Subscribe the event types the existing handlers already consume. Copy that endpoint's signing secret into Preview `STRIPE_WEBHOOK_SECRET`.
 4. Put the sandbox secret key in Preview `STRIPE_SECRET_KEY`. It must use the `sk_test_` or `rk_test_` prefix.
 5. Set Preview `PAYMENTS_PROVIDER_MODE` to `stripe_test`.

@@ -13,8 +13,12 @@ const reply = (message: string, status: number, extra: Record<string, unknown> =
 export async function solicitorApprovalCommand(request: NextRequest): Promise<NextResponse> {
   const config = authConfig()
   if (!config) return reply("Admin authentication is unavailable.", 503)
-  // Do not accept an unauthenticated call, cross-origin POST or arbitrary Preview custom origin.
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) {
+  // A Vercel Preview may have both a stable branch alias and a deployment URL.
+  // Require a genuine same-origin browser request AND an explicitly permitted
+  // Admin origin. Production's list contains only its canonical Admin domain.
+  // In particular this never allows the DEV webhook-only custom hostname.
+  const requestOrigin = request.nextUrl.origin
+  if (request.headers.get("origin") !== requestOrigin || !config.allowedOrigins.includes(requestOrigin)) {
     return reply("Reload this Admin page and try again.", 403)
   }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") {

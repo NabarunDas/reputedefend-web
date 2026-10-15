@@ -16,8 +16,8 @@ const key = "33333333-3333-4333-8333-333333333333"
 const evidence = "Solicitor approval email dated 15 October 2026, subject: PS-2026-10-14.2 - Approval"
 const validBody = { version: PAID_SERVICE_AGREEMENT_VERSION, contentHash: paidServiceAgreementContentHash, evidence, confirmed: true }
 
-function req(body: unknown, options: { origin?: string; token?: string; idempotency?: string; contentType?: string } = {}) {
-  return new NextRequest(`${origin}/api/operations/solicitor-approval`, {
+function req(body: unknown, options: { origin?: string; requestOrigin?: string; token?: string; idempotency?: string; contentType?: string } = {}) {
+  return new NextRequest(`${options.requestOrigin ?? origin}/api/operations/solicitor-approval`, {
     method: "POST",
     headers: {
       origin: options.origin ?? origin,
@@ -66,6 +66,59 @@ describe("authenticated solicitor approval command", () => {
   })
   it("rejects a cross-origin POST before attempting a database command", async () => {
     expect((await solicitorApprovalCommand(req(validBody, { origin: "https://evil.example" }))).status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("accepts exact deployment and stable branch Preview hostnames with same-origin requests", async () => {
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    mocks.rpc.mockResolvedValue({
+      status: "confirmed", version: PAID_SERVICE_AGREEMENT_VERSION,
+      hash: paidServiceAgreementContentHash, operative: true,
+    })
+    for (const permittedOrigin of [deployment, branch]) {
+      const response = await solicitorApprovalCommand(req(validBody, {
+        origin: permittedOrigin, requestOrigin: permittedOrigin,
+      }))
+      expect(response.status).toBe(200)
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+  it("rejects a cross-host Preview POST even when both hostnames are in the allowlist", async () => {
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    expect((await solicitorApprovalCommand(req(validBody, {
+      origin: branch, requestOrigin: deployment,
+    }))).status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("refuses the webhook-only custom host and any unlisted Preview alias", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    for (const forbidden of [
+      "https://dev-hooks.profilerelaunch.com",
+      "https://not-a-real-preview.vercel.app",
+    ]) {
+      expect((await solicitorApprovalCommand(req(validBody, {
+        origin: forbidden, requestOrigin: forbidden,
+      }))).status).toBe(403)
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("allows only the canonical Admin hostname in Production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app")
+    for (const badOrigin of ["https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app", "https://dev-hooks.profilerelaunch.com"]) {
+      expect((await solicitorApprovalCommand(req(validBody, {
+        origin: badOrigin, requestOrigin: badOrigin,
+      }))).status).toBe(403)
+    }
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it("rejects an invalid Admin cookie and invalid idempotency key", async () => {

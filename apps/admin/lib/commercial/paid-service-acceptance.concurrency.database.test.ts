@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { paidServiceAgreementContentHash } from "../../../../lib/commercial/paid-service-agreement"
 import { migrationChain } from "../recovery/manifest"
-import { PAID_SERVICE_APPROVAL_EVIDENCE } from "./paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE } from "./paid-service-approval.fixture"
 
 const execFile = promisify(execFileCb)
 const pgBin = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/17/bin"].find(dir => existsSync(join(dir, "initdb")))
@@ -71,7 +71,7 @@ describe.skipIf(!pgBin)("paid-service acceptance under two PostgreSQL sessions",
       update public.admin_identity set auth_user_id = '${verifier}', enabled = true where singleton;
       insert into public.admin_sessions(token_hash, auth_user_id) values ('${adminToken}', '${verifier}');
     `)
-    const approved = await psql(`select public.admin_confirm_paid_service_agreement_v1('${adminToken}', '${randomUUID()}', '${PAID_SERVICE_APPROVAL_EVIDENCE}')->>'status'`)
+    const approved = await psql(`select public.admin_confirm_paid_service_agreement_v1('${adminToken}', '${randomUUID()}', '${SYNTHETIC_APPROVAL_EVIDENCE}')->>'status'`)
     if (approved !== "confirmed") throw new Error(approved)
   }, 180000)
 

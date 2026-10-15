@@ -3,6 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatPortalDate } from "@/lib/portal/cases/model"
+import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
 import { agreementStatusText, moneyLabel, paymentFollowUp, quoteStatusText, taxExplanation, trackLabel } from "@/lib/portal/service/model"
 import type { CustomerCaseService, ServiceAction, ServiceAgreement, ServiceQuote } from "@/lib/portal/service/parse"
 
@@ -218,16 +219,23 @@ function QuoteSection({
           <p className="service-prose">{quote.paymentTiming}</p>
           <h3>Terms</h3>
           <p className="service-prose">{quote.termsReference}</p>
+          {agreementReady(quote) ? (
+            <PaidServiceAgreementDocument
+              version={quote.commercialAgreementVersion}
+              hash={quote.commercialAgreementHash}
+              body={quote.commercialAgreementBody}
+              heading="h3"
+            />
+          ) : null}
           {quote.paymentNext ? (
             <p>
               {paymentFollowUp(quote.paymentNext)}{" "}
               <a href={`/portal/cases/${reference}/payments`}>Open payments for {reference}</a>
             </p>
           ) : null}
-          {quote.canAccept && action ? (
+          {quote.canAccept && action && agreementReady(quote) ? (
             <div className="service-confirm">
-              {open === "accept-quote" ? (
-                quote.commercialAgreementVersion && quote.commercialAgreementHash ? (
+              {open === "accept-quote" && agreementReady(quote) ? (
                   <BoundQuoteAcceptance
                     quote={quote}
                     busy={busy !== null}
@@ -245,17 +253,24 @@ function QuoteSection({
                       feeBasis: feeBasisFor(quote),
                     })}
                   />
-                ) : (
-                  <>
-                    <p>Accepting this quote confirms the service and amount shown above.</p>
-                    <div className="button-row">
-                      <button type="button" disabled={busy !== null} onClick={() => onSubmit("accept_quote", action.selector)}>
-                        {busy === "accept_quote" ? "Accepting quote" : "Confirm acceptance"}
-                      </button>
-                      <button type="button" className="secondary" disabled={busy !== null} onClick={() => setOpen(null)}>Back</button>
-                    </div>
-                  </>
-                )
+              ) : (
+                <button type="button" disabled={busy !== null} onClick={() => setOpen("accept-quote")}>Accept this quote</button>
+              )}
+            </div>
+          ) : quote.commercialAgreementVersion && quote.commercialAgreementHash && !agreementReady(quote) ? (
+            <AgreementAcceptanceClosed />
+          ) : quote.canAccept && action ? (
+            <div className="service-confirm">
+              {open === "accept-quote" ? (
+                <>
+                  <p>Accepting this quote confirms the service and amount shown above.</p>
+                  <div className="button-row">
+                    <button type="button" disabled={busy !== null} onClick={() => onSubmit("accept_quote", action.selector)}>
+                      {busy === "accept_quote" ? "Accepting quote" : "Confirm acceptance"}
+                    </button>
+                    <button type="button" className="secondary" disabled={busy !== null} onClick={() => setOpen(null)}>Back</button>
+                  </div>
+                </>
               ) : (
                 <button type="button" disabled={busy !== null} onClick={() => setOpen("accept-quote")}>Accept this quote</button>
               )}
@@ -378,6 +393,17 @@ function AgreementSection({
       )}
     </section>
   )
+}
+
+function agreementReady(quote: ServiceQuote): quote is ServiceQuote & {
+  commercialAgreementVersion: string
+  commercialAgreementHash: string
+  commercialAgreementBody: string
+} {
+  return quote.commercialAgreementReady
+    && quote.commercialAgreementVersion !== null
+    && quote.commercialAgreementHash !== null
+    && quote.commercialAgreementBody !== null
 }
 
 function feeBasisFor(quote: ServiceQuote) {

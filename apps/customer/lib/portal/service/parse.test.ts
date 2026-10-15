@@ -33,6 +33,8 @@ function payload(overrides: Record<string, unknown> = {}) {
       paymentModel: "UPFRONT",
       commercialAgreementVersion: null,
       commercialAgreementHash: null,
+      commercialAgreementBody: null,
+      commercialAgreementReady: false,
       status: "offered",
       orderReference: null,
       acceptedAt: null,
@@ -69,6 +71,39 @@ describe("case service parser", () => {
     }))).toBeNull()
     expect(parseCaseService(payload({
       actions: [{ selector: "11111111-1111-4111-8111-111111111111", kind: "quote", target: null }],
+    }))).toBeNull()
+  })
+
+  it("accepts a ready agreement body and rejects a body that is not marked ready", () => {
+    const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    const body = "ProfileRelaunch Ltd — Paid-service agreement\n\nThe quotation states the scope."
+    const ready = parseCaseService(payload({
+      quote: {
+        ...(payload().quote as object),
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+        commercialAgreementBody: body,
+        commercialAgreementReady: true,
+      },
+    }))
+    expect(ready).toMatchObject({ found: true, quote: { commercialAgreementBody: body, commercialAgreementReady: true } })
+    expect(parseCaseService(payload({
+      quote: {
+        ...(payload().quote as object),
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+        commercialAgreementBody: body,
+        commercialAgreementReady: false,
+      },
+    }))).toBeNull()
+    expect(parseCaseService(payload({
+      quote: {
+        ...(payload().quote as object),
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+        commercialAgreementBody: null,
+        commercialAgreementReady: true,
+      },
     }))).toBeNull()
   })
 

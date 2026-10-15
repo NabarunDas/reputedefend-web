@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementBody, paidServiceAgreementContentHash } from "../../../../lib/commercial/paid-service-agreement"
 import { applyChain, preparePlatform } from "../recovery/harness"
-import { PAID_SERVICE_APPROVAL_EVIDENCE } from "./paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE } from "./paid-service-approval.fixture"
 
 const confirmation = `Solicitor reviewed paid-service agreement ${PAID_SERVICE_AGREEMENT_VERSION} with SHA-256 ${paidServiceAgreementContentHash}.`
 
@@ -190,6 +190,30 @@ describe("paid-service acceptance foundation", () => {
     const refused = await rpc<AcceptResult>("accept_paid_service_terms_v1", [offered.session, randomUUID(), payload(offered.version)])
     expect(refused.status).toBe("not_operative")
     expect(await count("select count(*)::int as n from public.paid_service_acceptances")).toBe(0)
+    const hidden = await rpc<{ quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; scope: string } | null }>(
+      "customer_action_session_v1", [offered.session],
+    )
+    expect(hidden?.quote?.commercialAgreementReady).toBe(false)
+    expect(hidden?.quote?.commercialAgreementBody).toBeNull()
+    expect(hidden?.quote?.scope).toBe("We prepare the service for this location.")
+    const portal = await rpc<{ found: boolean; quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; canAccept: boolean } | null }>(
+      "customer_portal_case_service_v1", [alexPortal, "PR-26-CMAAAA"],
+    )
+    expect(portal.found).toBe(true)
+    expect(portal.quote?.commercialAgreementReady).toBe(false)
+    expect(portal.quote?.commercialAgreementBody).toBeNull()
+    expect(portal.quote?.canAccept).toBe(false)
+    const other = await rpc<{ found: boolean }>("customer_portal_case_service_v1", [samPortal, "PR-26-CMAAAA"])
+    expect(other.found).toBe(false)
+    expect(JSON.stringify(other)).not.toContain("ProfileRelaunch Ltd — Paid-service agreement")
+    expect(await count(
+      "select count(*)::int as n from admin_private.paid_service_quote_disclosure_v1($1, $2)",
+      [PAID_SERVICE_AGREEMENT_VERSION, "ab".repeat(32)],
+    )).toBe(0)
+    expect(await count(
+      "select count(*)::int as n from admin_private.paid_service_quote_disclosure_v1($1, $2)",
+      [PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementContentHash],
+    )).toBe(0)
   })
 
   it("does not treat a caller-supplied actor and the predictable statement as approval", async () => {
@@ -220,22 +244,22 @@ describe("paid-service acceptance foundation", () => {
       [adminToken, verifier],
     )
     const request = randomUUID()
-    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [hash("missing"), request, PAID_SERVICE_APPROVAL_EVIDENCE])).status).toBe("unauthorised")
+    expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [hash("missing"), request, SYNTHETIC_APPROVAL_EVIDENCE])).status).toBe("unauthorised")
     expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, confirmation])).status).toBe("invalid")
     expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, paidServiceAgreementContentHash])).status).toBe("invalid")
     expect((await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, PAID_SERVICE_AGREEMENT_VERSION])).status).toBe("invalid")
     const confirmed = await rpc<{ status: string; operative: boolean; hash: string }>("admin_confirm_paid_service_agreement_v1", [
-      adminToken, request, PAID_SERVICE_APPROVAL_EVIDENCE,
+      adminToken, request, SYNTHETIC_APPROVAL_EVIDENCE,
     ])
     expect(confirmed).toMatchObject({ status: "confirmed", operative: true, hash: paidServiceAgreementContentHash })
-    const replay = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, PAID_SERVICE_APPROVAL_EVIDENCE])
+    const replay = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, request, SYNTHETIC_APPROVAL_EVIDENCE])
     expect(replay.status).toBe("replay")
     const conflict = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [
-      adminToken, request, `${PAID_SERVICE_APPROVAL_EVIDENCE} second file`,
+      adminToken, request, `${SYNTHETIC_APPROVAL_EVIDENCE} second file`,
     ])
     expect(conflict.status).toBe("conflict")
     const again = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [
-      adminToken, randomUUID(), PAID_SERVICE_APPROVAL_EVIDENCE,
+      adminToken, randomUUID(), SYNTHETIC_APPROVAL_EVIDENCE,
     ])
     expect(again.status).toBe("already_confirmed")
     expect(await count("select count(*)::int as n from public.paid_service_agreement_approvals")).toBe(1)
@@ -244,7 +268,7 @@ describe("paid-service acceptance foundation", () => {
     )
     expect(approval).toEqual([{
       approved_by: verifier,
-      evidence_reference: PAID_SERVICE_APPROVAL_EVIDENCE,
+      evidence_reference: SYNTHETIC_APPROVAL_EVIDENCE,
       version_id: PAID_SERVICE_AGREEMENT_VERSION,
       content_hash: paidServiceAgreementContentHash,
     }])
@@ -329,6 +353,25 @@ describe("paid-service acceptance foundation", () => {
     const agreementsBefore = await count("select count(*)::int as n from public.agreement_versions")
     const authorisationsBefore = await count("select count(*)::int as n from public.authorization_records")
     const guided = await offer({ quoteRef: "QT-26-CNAAAA", caseRef: "PR-26-CNAAAA" })
+    const shown = await rpc<{ quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; scope: string; successDefinition: string; totalAmountMinor: number; paymentTiming: string } }>(
+      "customer_action_session_v1", [guided.session],
+    )
+    expect(shown.quote.commercialAgreementReady).toBe(true)
+    expect(shown.quote.commercialAgreementBody).toBe(paidServiceAgreementBody)
+    expect(shown.quote.scope).toBe("We prepare the service for this location.")
+    expect(shown.quote.successDefinition).toContain("fee is earned")
+    expect(shown.quote.totalAmountMinor).toBe(9900)
+    expect(shown.quote.paymentTiming).toContain("accepted service terms")
+    const portalQuote = await rpc<{ found: boolean; quote: { commercialAgreementBody: string | null; commercialAgreementReady: boolean; canAccept: boolean } }>(
+      "customer_portal_case_service_v1", [alexPortal, "PR-26-CNAAAA"],
+    )
+    expect(portalQuote.found).toBe(true)
+    expect(portalQuote.quote.commercialAgreementReady).toBe(true)
+    expect(portalQuote.quote.commercialAgreementBody).toBe(paidServiceAgreementBody)
+    expect(portalQuote.quote.canAccept).toBe(true)
+    const otherCustomer = await rpc<{ found: boolean }>("customer_portal_case_service_v1", [samPortal, "PR-26-CNAAAA"])
+    expect(otherCustomer.found).toBe(false)
+    expect(JSON.stringify(otherCustomer)).not.toContain(paidServiceAgreementBody.slice(0, 40))
     const request = randomUUID()
     const accepted = await rpc<AcceptResult>("accept_paid_service_terms_v1", [guided.session, request, payload(guided.version)])
     expect(accepted.status).toBe("success")

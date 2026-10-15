@@ -20,6 +20,7 @@ import {
   collectionOfDisputedAmount,
   com12aLiveEffects,
   guidedRefund,
+  ownerReportedSolicitorConfirmation,
   paidServiceAgreement,
   paidServiceAgreementBody,
   paidServiceAgreementContentHash,
@@ -77,6 +78,17 @@ describe("paid-service agreement draft", () => {
     expect(paidServiceAgreement.customerVisible).toBe(false)
     expect(paidServiceAgreement.acceptanceActionable).toBe(false)
     expect(paidServiceAgreement.solicitorReviewComplete).toBe(false)
+    expect(ownerReportedSolicitorConfirmation).toMatchObject({
+      reportedOn: "2026-10-15",
+      source: "business_owner",
+      version: "PS-2026-10-14.2",
+      contentHash: paidServiceAgreementContentHash,
+      evidenceReference: null,
+      activatesCatalogue: false,
+    })
+    expect(spec).toContain("owner-reported confirmation")
+    expect(spec).toContain("MANAGED_PAYMENT_SETUP")
+    expect(spec).not.toContain("Solicitor file")
     expect(paidServiceAgreement.retainedTaxBehaviour).toBe("UNCONFIRMED")
     expect(paidServiceAgreement.vatRegistered).toBe(false)
     expect(paidServiceAgreement.vatNumber).toBeNull()

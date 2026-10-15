@@ -23,7 +23,8 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
-import { PAID_SERVICE_APPROVAL_EVIDENCE, PAID_SERVICE_APPROVAL_REQUEST, paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 import { narrowCaseFlowFacts, requiredCase } from "./projection"
 import { resolveCaseFlow } from "./resolve"
 import type {
@@ -386,7 +387,7 @@ beforeAll(async () => {
       values('${waiting}','${customer}','${business}','EVIDENCE_REQUEST','EVIDENCE_REQUEST',1,'DRAFT','NONE',
         'alex@example.com','Evidence for your case','We need one more document to continue.','${uid}');
   `)
-  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [token, PAID_SERVICE_APPROVAL_REQUEST, PAID_SERVICE_APPROVAL_EVIDENCE])
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
 
   const document = (await db.query<{ id: string }>(

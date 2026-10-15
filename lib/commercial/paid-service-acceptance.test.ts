@@ -255,6 +255,8 @@ describe("paid-service acceptance rules", () => {
     expect(gate).toContain("admin_confirm_paid_service_agreement_v1")
     expect(gate).toContain("RETURN jsonb_build_object('status', 'unauthorised');")
     expect(gate).toContain("quotation_snapshot")
+    expect(gate).toContain("paid_service_quote_disclosure_v1")
+    expect(gate).toContain("commercialAgreementBody")
     expect(gate).not.toMatch(/^update\s+public\.(quote_acceptances|authorization_records|agreement_versions)\b/im)
     expect(gate).not.toContain("stripe_live")
     expect(com13aLiveEffects).toEqual({

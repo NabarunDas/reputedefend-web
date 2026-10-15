@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ACTION_UNAVAILABLE } from "@/lib/access"
 import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
+import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
@@ -60,6 +61,8 @@ type Quote = {
   locationId?: string
   commercialAgreementVersion?: string | null
   commercialAgreementHash?: string | null
+  commercialAgreementBody?: string | null
+  commercialAgreementReady?: boolean
 }
 
 type Session = {
@@ -290,22 +293,12 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <p role="status">{message}</p>
     </section>
   }
-  if (session?.kind === "MANAGED_PAYMENT_SETUP" && paymentDetails) {
+  if (session?.kind === "MANAGED_PAYMENT_SETUP") {
     return <section>
-      <h1>Save a payment method</h1>
-      <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
-      <p>Agreed success fee {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
-      <h2>Success definition</h2>
-      <p className="preserve-lines">{paymentDetails.successDefinition}</p>
-      <p>No service fee is charged today.</p>
-      <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void payment("confirm_consent", { accepted: form.get("accepted") === "true" }) }}>
-        <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />{paymentDetails.consentText}</label>
-        <button type="submit">Record later-charge consent</button>
-      </form>
-      <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
-        <button type="submit">Save payment method securely</button>
-      </form>
-      <p>A saved payment method is not authority to charge until this consent and a later billing approval exist.</p>
+      <h1>Managed payment</h1>
+      <p>{paymentDetails?.orderRef ? `${paymentDetails.orderRef} · ` : ""}{session.caseReference} · {session.businessName}</p>
+      {paymentDetails ? <p>Agreed success fee {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p> : null}
+      <p>The Managed success fee is invoiced only after documented success. Saving a card for an off-session charge is not available, and no card is charged automatically.</p>
       <p role="status">{message}</p>
     </section>
   }
@@ -409,7 +402,13 @@ export function ActionClient({ actionId }: { actionId: string }) {
     </section>
   }
   if (session?.kind === "QUOTE_ACCEPTANCE" && quote) {
-    const canAccept = quote.taxBehaviour !== "UNCONFIRMED"
+    const taxOpen = quote.taxBehaviour !== "UNCONFIRMED"
+    const agreementReady = taxOpen && quote.commercialAgreementReady === true
+      && typeof quote.commercialAgreementVersion === "string"
+      && typeof quote.commercialAgreementHash === "string"
+      && typeof quote.commercialAgreementBody === "string"
+      && quote.commercialAgreementBody.trim().length > 0
+    const bound = Boolean(quote.commercialAgreementVersion && quote.commercialAgreementHash)
     return <section>
       <h1>Review this quote</h1>
       <p>{session.caseReference} · {session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
@@ -432,22 +431,29 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <h2>Payment timing</h2>
       <p>{quote.paymentTiming}</p>
       <p>{quote.termsReference}</p>
+      {agreementReady ? (
+        <PaidServiceAgreementDocument
+          version={quote.commercialAgreementVersion!}
+          hash={quote.commercialAgreementHash!}
+          body={quote.commercialAgreementBody!}
+        />
+      ) : null}
       {quote.serviceCode === "RELAUNCH_GUARD" && <p>Accepting this quote does not start monitoring.</p>}
       {quote.paymentModel === "SUCCESS_FEE" && <p>Accepting this quote does not create an invoice or outstanding debt.</p>}
       <div className="button-row">
-        {canAccept ? quote.commercialAgreementVersion && quote.commercialAgreementHash ? (
+        {agreementReady ? (
           <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", paidQuoteDecision(quote, form)) }}>
             <label className="checkbox"><input type="checkbox" name="purpose" value="true" required />{BUSINESS_PURPOSE}</label>
             <label className="checkbox"><input type="checkbox" name="terms" value="true" required />I accept this quotation under agreement {quote.commercialAgreementVersion} with SHA-256 {quote.commercialAgreementHash}.</label>
             {quoteFeeLabel(quote) ? <label className="checkbox"><input type="checkbox" name="fee" value="true" required />{quoteFeeLabel(quote)}</label> : null}
             <button type="submit">Accept quote</button>
           </form>
-        ) : (
+        ) : taxOpen && !bound ? (
           <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", { accepted: form.get("accepted") === "true" }) }}>
             <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact quote version. This is not payment authorisation and does not charge a card.</label>
             <button type="submit">Accept quote</button>
           </form>
-        ) : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
+        ) : taxOpen ? <AgreementAcceptanceClosed /> : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
         <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>

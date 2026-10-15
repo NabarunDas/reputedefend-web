@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
-import { PAID_SERVICE_APPROVAL_EVIDENCE, PAID_SERVICE_APPROVAL_REQUEST, paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const appliedHead = "20261003194353"
 const migration = "20261003204538_customer_portal_quotes_agreements_permissions_v1.sql"
@@ -246,7 +247,7 @@ beforeAll(async () => {
     update public.admin_identity set auth_user_id = '${verifier}', enabled = true where singleton;
     insert into public.admin_sessions(token_hash, auth_user_id, created_at) values ('${adminToken}', '${verifier}', now());
   `)
-  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, PAID_SERVICE_APPROVAL_REQUEST, PAID_SERVICE_APPROVAL_EVIDENCE])
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)
   samSession = await portalSession("sam@example.com", samAuth)

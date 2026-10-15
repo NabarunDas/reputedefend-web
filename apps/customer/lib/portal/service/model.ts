@@ -23,7 +23,7 @@ export function quoteStatusText(quote: ServiceQuote): string {
 
 export function paymentFollowUp(next: PaymentNext): string {
   if (next === "payment") return "Payment is the next step. Continue in Payments in the customer portal."
-  return "Saving a payment method is the next step. Continue in Payments in the customer portal."
+  return "The Managed success fee is invoiced after documented success. Saving a card for an off-session charge is not available."
 }
 
 export function agreementStatusText(kind: "agreement" | "permission", item: ServiceAgreement): string {

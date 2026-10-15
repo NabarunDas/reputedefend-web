@@ -736,6 +736,24 @@ BEGIN
 END;
 $apply$;
 
+-- Body is returned only when the quote is bound to the approved catalogue row.
+-- A missing, mismatched or unapproved agreement returns no row.
+CREATE FUNCTION admin_private.paid_service_quote_disclosure_v1(p_version text, p_hash text)
+RETURNS TABLE(ready boolean, body text)
+LANGUAGE sql STABLE SET search_path='' AS $$
+  SELECT true, c.body_text
+  FROM public.paid_service_agreement_catalogue c
+  WHERE p_version = 'PS-2026-10-14.2'
+    AND p_hash = '0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4'
+    AND c.version_id = p_version
+    AND c.content_hash = p_hash
+    AND c.status = 'APPROVED'
+    AND c.operative IS TRUE
+    AND char_length(btrim(c.body_text)) > 0;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.paid_service_quote_disclosure_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION admin_private.customer_portal_quote_view_v1(
   p_case uuid, p_customer uuid, p_email text
 ) RETURNS jsonb
@@ -752,6 +770,8 @@ DECLARE
   status text := 'unavailable';
   can_accept boolean := false;
   payment_next text := NULL;
+  disclosure_ready boolean := false;
+  disclosure_body text := NULL;
 BEGIN
   SELECT ver.* INTO qv
   FROM public.customer_actions a
@@ -798,6 +818,15 @@ BEGIN
   ELSE
     status := 'unavailable';
   END IF;
+  IF qv.commercial_agreement_version IS NOT NULL OR qv.commercial_agreement_hash IS NOT NULL THEN
+    SELECT disclosed.ready, disclosed.body INTO disclosure_ready, disclosure_body
+    FROM admin_private.paid_service_quote_disclosure_v1(qv.commercial_agreement_version, qv.commercial_agreement_hash) disclosed;
+    IF disclosure_ready IS NOT TRUE OR disclosure_body IS NULL THEN
+      disclosure_ready := false;
+      disclosure_body := NULL;
+    END IF;
+    IF NOT disclosure_ready THEN can_accept := false; END IF;
+  END IF;
   RETURN jsonb_build_object(
     'reference', qu.public_ref,
     'serviceName', qv.service_name,
@@ -818,6 +847,8 @@ BEGIN
     'paymentModel', qv.payment_model,
     'commercialAgreementVersion', qv.commercial_agreement_version,
     'commercialAgreementHash', qv.commercial_agreement_hash,
+    'commercialAgreementBody', disclosure_body,
+    'commercialAgreementReady', disclosure_ready,
     'status', status,
     'orderReference', CASE WHEN status = 'accepted' THEN ord.public_ref ELSE NULL END,
     'acceptedAt', CASE WHEN status = 'accepted' THEN acc.accepted_at ELSE NULL END,
@@ -996,7 +1027,17 @@ BEGIN
       'taxJurisdiction', qv.tax_jurisdiction, 'totalAmountMinor', qv.total_amount_minor, 'currency', qv.currency,
       'validUntil', qv.valid_until, 'paymentTiming', qv.payment_timing_text, 'termsReference', qv.terms_reference,
       'locationId', qv.location_id, 'commercialAgreementVersion', qv.commercial_agreement_version,
-      'commercialAgreementHash', qv.commercial_agreement_hash
+      'commercialAgreementHash', qv.commercial_agreement_hash,
+      'commercialAgreementBody', (
+        SELECT disclosed.body FROM admin_private.paid_service_quote_disclosure_v1(
+          qv.commercial_agreement_version, qv.commercial_agreement_hash
+        ) disclosed
+      ),
+      'commercialAgreementReady', COALESCE((
+        SELECT disclosed.ready FROM admin_private.paid_service_quote_disclosure_v1(
+          qv.commercial_agreement_version, qv.commercial_agreement_hash
+        ) disclosed
+      ), false)
     ) END,
     'payment', CASE WHEN ord.id IS NULL THEN NULL ELSE jsonb_build_object(
       'orderId', ord.id, 'orderRef', ord.public_ref, 'serviceCode', ord.service_code, 'amountMinor', ord.amount_minor,

@@ -37,7 +37,7 @@ const ATTENTION_LABELS: Record<AttentionCode, string> = {
   SERVICE_AGREEMENT: "Accept your service agreement",
   CASE_PERMISSION: "Confirm case-management permission",
   GUIDED_PAYMENT: "Complete your payment",
-  MANAGED_PAYMENT_SETUP: "Save your payment method",
+  MANAGED_PAYMENT_SETUP: "Managed fee follows documented success",
   PAYMENT_RECOVERY: "Complete payment authentication",
   INVOICE_PAYMENT: "Pay your invoice",
 }
@@ -87,7 +87,7 @@ const PORTAL_SERVICE_SUPPORT = {
 
 const PORTAL_PAYMENT_SUPPORT = {
   GUIDED_PAYMENT: "Complete your payment in the customer portal.",
-  MANAGED_PAYMENT_SETUP: "Save your payment method in the customer portal.",
+  MANAGED_PAYMENT_SETUP: "The Managed success fee is invoiced after documented success. Saving a card is not available.",
   PAYMENT_RECOVERY: "Complete payment authentication in the customer portal.",
   INVOICE_PAYMENT: "Open your invoice from the customer portal.",
 } as const

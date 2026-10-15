@@ -23,7 +23,8 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
-import { PAID_SERVICE_APPROVAL_EVIDENCE, PAID_SERVICE_APPROVAL_REQUEST, paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const db = new PGlite()
 
@@ -230,7 +231,7 @@ beforeAll(async () => {
     insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence)
       values('${customer}','email','alex@example.com','${uid}','Verified from a live call with the customer.');
   `)
-  const approved = await rpc("admin_confirm_paid_service_agreement_v1", [token, PAID_SERVICE_APPROVAL_REQUEST, PAID_SERVICE_APPROVAL_EVIDENCE])
+  const approved = await rpc("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved?.status !== "confirmed") throw new Error(approved?.status ?? "approval missing")
 
   await populate(subject, "subject")

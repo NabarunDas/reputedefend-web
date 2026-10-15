@@ -74,13 +74,13 @@ describe("customer case presentation", () => {
     }
     const paymentActions = [
       ["GUIDED_PAYMENT", "Complete your payment"],
-      ["MANAGED_PAYMENT_SETUP", "Save your payment method"],
+      ["MANAGED_PAYMENT_SETUP", "Managed fee follows documented success"],
       ["PAYMENT_RECOVERY", "Complete payment authentication"],
       ["INVOICE_PAYMENT", "Pay your invoice"],
     ] as const
     const paymentSupport = {
       GUIDED_PAYMENT: "Complete your payment in the customer portal.",
-      MANAGED_PAYMENT_SETUP: "Save your payment method in the customer portal.",
+      MANAGED_PAYMENT_SETUP: "The Managed success fee is invoiced after documented success. Saving a card is not available.",
       PAYMENT_RECOVERY: "Complete payment authentication in the customer portal.",
       INVOICE_PAYMENT: "Open your invoice from the customer portal.",
     } as const

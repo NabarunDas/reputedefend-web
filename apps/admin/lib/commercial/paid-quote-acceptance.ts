@@ -1,11 +1,5 @@
 import { PAID_SERVICE_AGREEMENT_VERSION, paidServiceAgreementContentHash } from "../../../../lib/commercial/paid-service-agreement"
 
-/** External evidence reference. It is not the predictable solicitor statement. */
-export const PAID_SERVICE_APPROVAL_EVIDENCE =
-  "Solicitor file COM-13B-REVIEW-2026-10-15 exact hash confirmation."
-
-export const PAID_SERVICE_APPROVAL_REQUEST = "c13b0000-0000-4000-8000-00000000c013"
-
 /**
  * The three acknowledgements the acceptance core requires.
  * Guided quotations send no fee acknowledgement. Managed and Guard send only their own.

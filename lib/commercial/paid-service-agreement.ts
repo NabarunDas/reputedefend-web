@@ -190,6 +190,20 @@ export const paidServiceAgreementBody = [
 
 export const paidServiceAgreementContentHash = createHash("sha256").update(paidServiceAgreementBody, "utf8").digest("hex")
 
+/**
+ * Owner-reported confirmation on 2026-10-15 that a solicitor reviewed and
+ * approved the wording of PS-2026-10-14.2. This is not a solicitor document,
+ * signature, or evidence reference, and it does not make the catalogue operative.
+ */
+export const ownerReportedSolicitorConfirmation = {
+  reportedOn: "2026-10-15",
+  source: "business_owner",
+  version: PAID_SERVICE_AGREEMENT_VERSION,
+  contentHash: paidServiceAgreementContentHash,
+  evidenceReference: null,
+  activatesCatalogue: false,
+} as const
+
 export function verificationWindowSatisfied(firstCheckedAt: string, secondCheckedAt: string) {
   const first = Date.parse(firstCheckedAt)
   const second = Date.parse(secondCheckedAt)

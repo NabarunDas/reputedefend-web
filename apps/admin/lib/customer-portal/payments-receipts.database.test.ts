@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, migrationSql, preparePlatform } from "../recovery/harness"
-import { PAID_SERVICE_APPROVAL_EVIDENCE, PAID_SERVICE_APPROVAL_REQUEST, paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
 const migration = "20261003224746_customer_portal_payments_receipts_v1.sql"
 const db = new PGlite()
@@ -169,7 +170,7 @@ beforeAll(async () => {
   `)
   await verify()
   await verify(sam, "sam@example.com")
-  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, PAID_SERVICE_APPROVAL_REQUEST, PAID_SERVICE_APPROVAL_EVIDENCE])
+  const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [adminToken, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
   alexSession = await portalSession("alex@example.com", alexAuth)
   samSession = await portalSession("sam@example.com", samAuth)

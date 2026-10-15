@@ -40,6 +40,8 @@ function quote(overrides: Partial<ServiceQuote> = {}): ServiceQuote {
     paymentModel: "UPFRONT",
     commercialAgreementVersion: null,
     commercialAgreementHash: null,
+    commercialAgreementBody: null,
+    commercialAgreementReady: false,
     status: "offered",
     orderReference: null,
     acceptedAt: null,
@@ -281,8 +283,11 @@ describe("service and permissions", () => {
     expect(screen.queryByText("You declined this quote.")).toBeNull()
   })
 
-  it("starts the paid-service acknowledgements unchecked", async () => {
+  it("shows the bound agreement before the acknowledgements and can save it", async () => {
     const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    const body = "ProfileRelaunch Ltd — Paid-service agreement\n\nThe quotation states the scope, exclusions and the 48-hour success definition."
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:agreement")
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "success" }) })
     render(<ServiceView service={view({
       serviceAgreement: null,
@@ -291,8 +296,23 @@ describe("service and permissions", () => {
       quote: quote({
         commercialAgreementVersion: "PS-2026-10-14.2",
         commercialAgreementHash: hash,
+        commercialAgreementBody: body,
+        commercialAgreementReady: true,
       }),
     })} />)
+    expect(screen.getByRole("article", { name: "Paid-service agreement" })).toHaveTextContent("48-hour success definition")
+    expect(screen.getByText(/What is included/)).toBeTruthy()
+    expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: /terms/i })).toBeNull()
+    expect(document.body.innerHTML).not.toContain('href="/terms"')
+    const purposeBefore = screen.queryByRole("checkbox", { name: /acting for the business named on this quotation/ })
+    expect(purposeBefore).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Download the paid-service agreement" }))
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(await (createObjectURL.mock.calls[0][0] as Blob).text()).toBe(body)
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:agreement")
+    createObjectURL.mockRestore()
+    revokeObjectURL.mockRestore()
     fireEvent.click(screen.getByRole("button", { name: "Accept this quote" }))
     const purpose = screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ })
     const terms = screen.getByRole("checkbox", { name: /PS-2026-10-14.2/ })
@@ -315,6 +335,25 @@ describe("service and permissions", () => {
         feeBasis: null,
       },
     })
+  })
+
+  it("fails closed when the bound agreement is not available", () => {
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [action("quote", selector)],
+      quote: quote({
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4",
+        commercialAgreementBody: null,
+        commercialAgreementReady: false,
+        canAccept: false,
+      }),
+    })} />)
+    expect(screen.getByText(/commercial agreement bound to it is not available/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Accept this quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download the paid-service agreement" })).toBeNull()
+    expect(document.body.innerHTML).not.toContain('href="/terms"')
   })
 
   it("uses a calm unavailable state", () => {

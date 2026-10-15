@@ -49,11 +49,11 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(46)
-    // A clean rebuild includes PAY-ENV-04, which is not applied to DEV.
-    // DEV applied head remains PAY-ENV-01. Production and AWS remain at SEC-08.
+    // A clean rebuild includes PAY-ENV-04, verified applied to DEV only.
+    // Production and AWS approved backup heads remain at SEC-08.
     expect(migrationHead.version).toBe("20261015230000")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261015153000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261015230000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

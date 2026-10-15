@@ -49,6 +49,17 @@ describe("stripe webhook", () => {
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/sk_live|whsec_|client_secret/)
   })
 
+  it("rejects a tampered signature before any database write", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "stripe_test")
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_placeholdernotarealkey")
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret_value")
+    mocks.construct.mockImplementation(() => { throw new Error("signature mismatch") })
+    const response = await handleStripeWebhook(req("{\"id\":\"evt_tampered\"}", "t=1,v1=tampered"))
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ status: "unauthorized" })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("rejects a live event on the test lane before any database write", async () => {
     mocks.construct.mockReturnValue({ id: "evt_live", type: "payment_intent.succeeded", livemode: true, data: { object: { id: "pi_live" } } })
     const response = await handleStripeWebhook(req("{\"id\":\"evt_live\"}"), {

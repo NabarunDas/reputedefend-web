@@ -5,6 +5,7 @@ import { customerConfig, sessionCookie, customerRequestOriginAllowed } from "@/l
 import { isUuid } from "../uuid"
 import { paymentProvider } from "../../../../lib/payments"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
+import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
@@ -62,6 +63,9 @@ export async function paymentCommand(request: NextRequest) {
     }>("customer_payment_command_v1", {
       p_token_hash: tokenHash(token), p_request: key, p_operation: operation, p_data: data,
     })
+    if (result.status === "eligibility_blocked") {
+      return NextResponse.json({ status: "denied", message: eligibilityEnquiryMessage }, { status: 403, headers: privateResponseHeaders })
+    }
     if (result.status === "invalid") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 400, headers: privateResponseHeaders })
     if (result.status === "needs_cancel") {
       const cancelled = await settleRecoveryCancel(result)

@@ -30,7 +30,7 @@ describe("the migration history validator", () => {
 
   it("keeps remote history aligned through applied DEV COM-13B", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual([])
+    expect(pending.map(entry => entry.version)).toEqual(["20261015140000"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261015013000",
       name: "paid_service_acceptance_gate_v1",

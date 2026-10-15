@@ -24,6 +24,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { createHash, randomBytes } from "node:crypto"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { syntheticGbEligibilitySql } from "../commercial/eligibility.fixture"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 import { narrowCaseFlowFacts, requiredCase } from "./projection"
 import { resolveCaseFlow } from "./resolve"
@@ -387,6 +388,7 @@ beforeAll(async () => {
       values('${waiting}','${customer}','${business}','EVIDENCE_REQUEST','EVIDENCE_REQUEST',1,'DRAFT','NONE',
         'alex@example.com','Evidence for your case','We need one more document to continue.','${uid}');
   `)
+  await db.exec(syntheticGbEligibilitySql(business, uid))
   const approved = await rpc<{ status: string }>("admin_confirm_paid_service_agreement_v1", [token, SYNTHETIC_APPROVAL_REQUEST, SYNTHETIC_APPROVAL_EVIDENCE])
   if (approved.status !== "confirmed") throw new Error(approved.status ?? "approval missing")
 

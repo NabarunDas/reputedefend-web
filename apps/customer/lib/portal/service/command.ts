@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
+import { eligibilityEnquiryMessage } from "../../../../../lib/commercial/eligibility-message"
 import { isUuid } from "@/lib/uuid"
 
 const SIGN_IN = "Sign in again to continue."
@@ -113,6 +114,7 @@ export async function portalServiceCommand(request: NextRequest) {
     if (result.status === "success") return NextResponse.json({ status: "success" }, { headers: privateResponseHeaders })
     if (result.status === "not_found") return reply(MISSING, 404)
     if (result.status === "invalid") return reply(CONFIRM, 400)
+    if (result.status === "eligibility_blocked") return reply(eligibilityEnquiryMessage, 403)
     if (result.status === "conflict") return reply(STALE, 409)
     if (result.status === "denied" && operation === "accept_quote") return reply(QUOTE_UNAVAILABLE)
     if (result.status === "unavailable" || result.status === "denied") return reply(UNAVAILABLE)

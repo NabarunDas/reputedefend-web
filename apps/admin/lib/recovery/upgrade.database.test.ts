@@ -53,14 +53,15 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(28)
+    expect(chainAfter(checkpoint)).toHaveLength(29)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is COM-13B, now applied to DEV; Production remains at SEC-08.
-    expect(pending.at(-1)?.version).toBe("20261015013000")
+    // The tail is source-only COM-14A. DEV applied head remains COM-13B.
+    expect(pending.at(-1)?.version).toBe("20261015140000")
+    expect(pending.some(entry => entry.version === "20261015013000")).toBe(true)
     expect(pending.some(entry => entry.version === "20261014234000")).toBe(true)
     expect(pending.some(entry => entry.version === "20261014170000")).toBe(true)
     expect(pending.some(entry => entry.version === "20261004223358")).toBe(true)

@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV applied head is 20261015013000 paid_service_acceptance_gate_v1 following controlled COM-13A and COM-13B DEV-only applications on 2026-10-15. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. |
+| `supabase.applied-head` | Supabase | READY | DEV applied head is 20261015140000 commercial_eligibility_gate_v1 following controlled COM-13A, COM-13B and COM-14A DEV-only applications on 2026-10-15. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -211,13 +211,14 @@ None of this depends on a production secret, so it runs in CI unchanged.
 ## Migration state
 
 DEV (`rmzozuiamjcclvtgutgd`) has canonical applied migration head
-`20261015013000 paid_service_acceptance_gate_v1` after COM-13A
-(`20261014234000`) and COM-13B (`20261015013000`) were applied **DEV-only**
-on 15 October 2026. Production (`cxwwekdzkkjjbiyofrov`) remains at canonical
+`20261015140000 commercial_eligibility_gate_v1` after COM-13A
+(`20261014234000`), COM-13B (`20261015013000`) and COM-14A
+(`20261015140000`) were applied **DEV-only** on 15 October 2026. Production (`cxwwekdzkkjjbiyofrov`) remains at canonical
 `20261014170000 evidence_content_sha256_v1`; the AWS backup-approved head
-remains SEC-08. Neither commercial migration has been applied to Production.
+remains SEC-08. None of these three commercial migrations has been applied to Production.
 The COM-13 agreement remains SOLICITOR_REVIEW/inoperative, no approved terms,
-no paid acceptances and tax UNCONFIRMED. Neither payment nor Customer Portal,
+no paid acceptances and tax UNCONFIRMED. DEV COM-14A has no approved countries
+and no verified purchasing establishments; its seller VAT status is NOT_VAT_REGISTERED. Neither payment nor Customer Portal,
 Guard or mail activation has occurred.
 
 The SEC-08 migration did not mutate existing evidence rows. DEV has 4 uploaded

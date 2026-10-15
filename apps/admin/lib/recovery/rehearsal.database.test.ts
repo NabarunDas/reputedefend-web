@@ -49,11 +49,11 @@ describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(44)
-    // A clean rebuild includes COM-14A, which is still source-only.
-    // DEV applied head remains COM-13B. Production and AWS remain at SEC-08.
+    // A clean rebuild includes COM-14A, now applied to DEV only.
+    // Production and AWS backup-approved head remain at SEC-08.
     expect(migrationHead.version).toBe("20261015140000")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261015013000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261015140000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

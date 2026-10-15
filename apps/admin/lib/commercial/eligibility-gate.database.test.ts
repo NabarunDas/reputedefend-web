@@ -258,35 +258,29 @@ describe("COM-14A commercial eligibility gate", () => {
     }
   })
 
-  it("offers a UK not-applicable quote without a decision and keeps unconfirmed tax blocked", async () => {
-    const { draft, taxed } = await draftAndTax()
-    const offered = await offer(draft.id!, taxed.version!, { country: "DE", countryCode: "US", currency: "EUR" })
-    expect(offered).toMatchObject({ status: "success" })
-    const snapshot = await db.query<{ eligibility_snapshot: Record<string, unknown> }>(
-      "select eligibility_snapshot from public.quote_versions where id = $1",
-      [draft.quoteVersionId],
-    )
-    expect(snapshot.rows[0].eligibility_snapshot).toMatchObject({
-      countryCode: "GB",
-      taxDetermination: "UK_DOMESTIC_NOT_VAT_REGISTERED",
-      sellerRegistrationStatus: "NOT_VAT_REGISTERED",
-      contractCurrency: "GBP",
-      presentmentCurrency: "GBP",
-      presentmentMode: "GBP_ONLY",
-      fxRate: null,
-      stripeFlowReady: false,
-      source: "uk_not_vat_registered",
-      decisionId: null,
-    })
-    expect(await count("select count(*)::int as n from public.commercial_eligibility_decisions where country_code = 'GB'")).toBe(0)
-    expect(await count("select count(*)::int as n from public.commercial_tax_log where event = 'ACCEPTED'")).toBe(0)
+  it("keeps an enquiry and a draft open when the Google listing is not a confirmed purchasing business", async () => {
+    const enquiry = await rpc("create_general_enquiry_v1", [key(), {
+      fullName: "Alex Morgan", email: "alex@example.com", phone: "07123456789", businessName: "Example Bakery",
+      country: "IN", service: "general", subject: "general-question",
+      details: "Our Google listing was suspended last week and we cannot get it back.",
+      websiteUrl: "", businessProfileUrl: "", reviewUrl: "", informationAccurate: false, privacyAccepted: false, source: "contact",
+    }, false])
+    expect(enquiry.status).toBe("created")
+    expect(await count("select count(*)::int as n from public.service_orders")).toBe(0)
+    expect(await count("select count(*)::int as n from public.commercial_eligibility_decisions")).toBe(0)
 
-    const exclusive = await createDraft()
-    const exclusiveTax = await setTax(exclusive!.id!, exclusive!.version!, "EXCLUSIVE", { taxRateBps: 2000 })
-    expect(exclusiveTax?.status).toBe("success")
-    expect(await offer(exclusive!.id!, exclusiveTax!.version!)).toMatchObject({
-      status: "denied", reason: "tax_determination_mismatch", message: eligibilityEnquiryMessage,
+    const { draft, taxed } = await draftAndTax()
+    expect(await count("select count(*)::int as n from public.quote_versions where id = $1 and status = 'DRAFT'", [draft.quoteVersionId])).toBe(1)
+    const offered = await offer(draft.id!, taxed.version!, { country: "GB", countryCode: "GB", currency: "GBP" })
+    expect(offered).toMatchObject({
+      status: "denied", reason: "unresolved_establishment", message: eligibilityEnquiryMessage,
     })
+    expect(await count("select count(*)::int as n from public.quote_versions where id = $1 and status = 'DRAFT'", [draft.quoteVersionId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.quote_versions where id = $1 and status = 'OFFERED'", [draft.quoteVersionId])).toBe(0)
+    expect(await evaluate(business, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 9900, location)).toMatchObject({
+      ok: false, reason: "unresolved_establishment", message: eligibilityEnquiryMessage,
+    })
+    expect((await db.query<{ country: string }>("select country from public.locations where id = $1", [location])).rows[0].country).toBe("UK")
 
     const unconfirmed = await draftAndTax("GUIDED_RELAUNCH", "UNCONFIRMED")
     expect((await offer(unconfirmed.draft.id!, unconfirmed.taxed.version!))?.status).toBe("denied")
@@ -343,11 +337,70 @@ describe("COM-14A commercial eligibility gate", () => {
       feeBasis: null,
     }])).toMatchObject({ status: "tax_unconfirmed" })
     expect(await count("select count(*)::int as n from public.service_orders")).toBe(0)
+
+    const listedVersion = key()
+    const listedQuote = key()
+    const listedSnapshot = key()
+    const listedAcceptance = key()
+    const listedAction = key()
+    const listedOrder = key()
+    await db.query(
+      `insert into public.quote_discount_snapshots(
+        id, location_id, coverage_basis, coverage_status, coverage_type, paid_vs_included, service_code,
+        policy_id, discount_bps, qualification_result, reason_code, standard_amount_minor, discount_amount_minor,
+        discounted_subtotal_minor, recorded_by, source
+      ) values ($1,$2,'NONE','UNKNOWN','NONE','UNPROVEN','GUIDED_RELAUNCH','NONE',0,'NOT_QUALIFIED','SYNTHETIC',9900,0,9900,$3,'ADMIN_RECORDED')`,
+      [listedSnapshot, location, admin],
+    )
+    await db.query(
+      "insert into public.quotes(id, public_ref, customer_id, business_id, location_id, case_id, status, created_by) values ($1,'QT-26-CMAAAC',$2,$3,$4,$5,'OFFERED',$6)",
+      [listedQuote, customer, business, location, relaunchCase, admin],
+    )
+    await db.query(
+      `insert into public.quote_versions(
+        id, quote_id, version_number, status, customer_id, business_id, location_id, case_id, service_code, price_version_id,
+        service_name, payment_model, scope_text, exclusions_text, success_definition, standard_amount_minor, discount_policy_id,
+        discount_bps, discount_amount_minor, quoted_subtotal_minor, tax_behaviour, tax_amount_minor, total_amount_minor,
+        currency, discount_snapshot_id, valid_until, payment_timing_text, terms_reference, created_by, offered_at, offered_by
+      ) values (
+        $1,$2,1,'OFFERED',$3,$4,$5,$6,'GUIDED_RELAUNCH',$7,'GUIDED_RELAUNCH','UPFRONT',
+        'We prepare the service for this location.','Work outside this quotation is excluded.','The service terms define the fee.',
+        9900,'NONE',0,0,9900,'NOT_APPLICABLE',0,9900,'GBP',$8, now() + interval '30 days',
+        'Payment follows the accepted service terms.','The paid-service agreement named on this quotation applies.',$9, now(), $9
+      )`,
+      [listedVersion, listedQuote, customer, business, location, relaunchCase, price, listedSnapshot, admin],
+    )
+    await db.query(
+      `insert into public.customer_actions(
+        id, customer_id, business_id, location_id, case_id, kind, quote_version_id, secret_hash, expected_email_snapshot, expires_at, created_by
+      ) values ($1,$2,$3,$4,$5,'QUOTE_ACCEPTANCE',$6,$7,'alex@example.com', now() + interval '2 days', $8)`,
+      [listedAction, customer, business, location, relaunchCase, listedVersion, hash(key()), admin],
+    )
+    await db.query(
+      `insert into public.quote_acceptances(
+        id, quote_id, quote_version_id, customer_action_id, accepted_by_auth_user_id, accepted_email_snapshot,
+        total_amount_minor, currency, tax_behaviour, tax_amount_minor
+      ) values ($1,$2,$3,$4,$5,'alex@example.com',9900,'GBP','NOT_APPLICABLE',0)`,
+      [listedAcceptance, listedQuote, listedVersion, listedAction, customerAuth],
+    )
+    await db.query(
+      `insert into public.service_orders(
+        id, public_ref, quote_id, quote_version_id, quote_acceptance_id, customer_id, business_id, location_id, case_id,
+        service_code, amount_minor, currency, payment_model, tax_behaviour, tax_amount_minor, state, accepted_at
+      ) values ($1,'SO-26-CMAAAC',$2,$3,$4,$5,$6,$7,$8,'GUIDED_RELAUNCH',9900,'GBP','UPFRONT','NOT_APPLICABLE',0,'ACCEPTED_AWAITING_PAYMENT', now())`,
+      [listedOrder, listedQuote, listedVersion, listedAcceptance, customer, business, location, relaunchCase],
+    )
     await expect(db.query(
-      `insert into public.provider_operations(idempotency_key, kind, purpose, customer_id, status)
-       values ($1,'CREATE_CHECKOUT_SESSION','UPFRONT',$2,'PENDING')`,
-      [key(), customer],
-    )).rejects.toThrow(/commercial_eligibility:pending_review/)
+      `insert into public.provider_operations(idempotency_key, kind, purpose, customer_id, service_order_id, status)
+       values ($1,'CREATE_CHECKOUT_SESSION','UPFRONT',$2,$3,'PENDING')`,
+      [key(), customer, listedOrder],
+    )).rejects.toThrow(/commercial_eligibility:unresolved_establishment/)
+    await expect(db.query(
+      `insert into public.provider_operations(idempotency_key, kind, purpose, customer_id, service_order_id, status)
+       values ($1,'CREATE_INVOICE','INVOICE',$2,$3,'PENDING')`,
+      [key(), customer, listedOrder],
+    )).rejects.toThrow(/commercial_eligibility:unresolved_establishment/)
+    expect(await count("select count(*)::int as n from public.provider_operations where service_order_id = $1", [listedOrder])).toBe(0)
   })
 
   it("rejects a missing session, a spoofed actor, bad evidence, a worldwide zero shortcut and a mismatched flow", async () => {
@@ -429,16 +482,24 @@ describe("COM-14A commercial eligibility gate", () => {
         'NOT_VAT_REGISTERED', true, 'GBP_ONLY', 'APPROVED', now(), now() + interval '30 days', $3, $4, 1, 'sanction-bypass')`,
       [key(), destination, admin, evidence],
     )
-    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, locationKp)).toMatchObject({
+    expect(await recordEstablishment({
+      businessId: business2, countryCode: "KP", legalName: "Synthetic Restricted Bakery Ltd", registrationId: "SYNTHETIC-KP",
+    })).toMatchObject({ status: "success", countryCode: "KP" })
+    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, location)).toMatchObject({
       ok: false, reason: "sanctions_blocked", message: eligibilityEnquiryMessage,
     })
     expect(await evaluate(business, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, location)).toMatchObject({
-      ok: true, reason: "approved",
+      ok: false, reason: "unresolved_establishment",
     })
   })
 
   it("reuses one Ireland decision and does not transfer it to Germany, Guard or an expired approval", async () => {
     expect(await recordEstablishment()).toMatchObject({ status: "success", countryCode: "IE" })
+    expect((await db.query<{ country: string }>("select country from public.locations where id = $1", [location])).rows[0].country).toBe("UK")
+    const beforeDecision = await draftAndTax()
+    expect(await offer(beforeDecision.draft.id!, beforeDecision.taxed.version!)).toMatchObject({
+      status: "denied", reason: "awaiting_confirmation", message: eligibilityEnquiryMessage,
+    })
     const ie = await recordDecision({
       countryCode: "IE",
       presentmentMode: "LOCAL_AFTER_ELIGIBILITY",
@@ -462,15 +523,18 @@ describe("COM-14A commercial eligibility gate", () => {
       fxRate: null,
       source: "decision",
     })
-    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, locationIe)).toMatchObject({
+    expect(await recordEstablishment({
+      businessId: business2, countryCode: "IE", registrationId: "SYNTHETIC-IE-2", supersede: "true",
+    })).toMatchObject({ status: "success", countryCode: "IE" })
+    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, location)).toMatchObject({
       ok: true,
       snapshot: { countryCode: "IE", source: "decision", decisionId: ie.result.id },
     })
-    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, locationDe)).toMatchObject({
-      ok: false, reason: "awaiting_confirmation",
-    })
-    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, locationUs)).toMatchObject({
-      ok: false, reason: "subdivision_required",
+    expect(await recordEstablishment({
+      businessId: business2, countryCode: "DE", registrationId: "SYNTHETIC-DE-2", supersede: "true",
+    })).toMatchObject({ status: "success", countryCode: "DE" })
+    expect(await evaluate(business2, "GUIDED_RELAUNCH", "NOT_APPLICABLE", 5000, location)).toMatchObject({
+      ok: false, reason: "awaiting_confirmation", message: eligibilityEnquiryMessage,
     })
 
     const guard = await draftAndTax("RELAUNCH_GUARD")
@@ -521,8 +585,19 @@ describe("COM-14A commercial eligibility gate", () => {
 
   it("accepts one UK sale, logs it, and refuses the cached checkout once the flow is blocked", async () => {
     expect(await recordEstablishment({
-      countryCode: "GB", registrationId: "SYNTHETIC-GB", supersede: "true",
+      countryCode: "GB", registrationId: "", taxId: "", evidenceType: "OTHER", supersede: "true",
     })).toMatchObject({ status: "success", countryCode: "GB" })
+    expect((await db.query<{ tax_id: string | null; registration_id: string | null }>(
+      "select tax_id, registration_id from public.business_establishments where business_id = $1 and superseded_at is null",
+      [business],
+    )).rows[0]).toEqual({ tax_id: null, registration_id: null })
+    expect(await count("select count(*)::int as n from public.commercial_eligibility_decisions where country_code = 'GB' and status = 'APPROVED'")).toBe(0)
+    const exclusive = await createDraft()
+    const exclusiveTax = await setTax(exclusive!.id!, exclusive!.version!, "EXCLUSIVE", { taxRateBps: 2000 })
+    expect(exclusiveTax?.status).toBe("success")
+    expect(await offer(exclusive!.id!, exclusiveTax!.version!)).toMatchObject({
+      status: "denied", reason: "tax_determination_mismatch", message: eligibilityEnquiryMessage,
+    })
     const confirmed = await rpc("admin_confirm_paid_service_agreement_v1", [adminToken, key(), SYNTHETIC_APPROVAL_EVIDENCE])
     expect(["confirmed", "already_confirmed"]).toContain(confirmed.status)
 

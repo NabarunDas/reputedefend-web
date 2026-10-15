@@ -22,8 +22,9 @@ After
     -> no VAT number and no company number required at first contact
 
   Binding offer, acceptance, or payment
-    -> sanctions restriction: stop
-    -> UK, tax not applicable, seller not VAT registered: documented treatment, GBP, then the turnover check
+    -> purchasing-business country not yet recorded: stop
+    -> recorded sanctions restriction: stop
+    -> confirmed UK business, tax not applicable, seller not VAT registered: documented treatment, GBP, then the turnover check
     -> overseas with a current reusable decision for that country, service and payment flow: allow
     -> otherwise: do not offer or charge; customer sees
        "Thanks — we'll confirm your quote and payment details shortly."
@@ -31,11 +32,13 @@ After
 
 A draft quote is the nonbinding estimate. It is not marked offered until the binding check passes. There is no second acceptance engine.
 
+The Google Business Profile country on `locations.country` is never the purchasing business's country. A UK listing owned by an overseas business follows the overseas route.
+
 ## United Kingdom
 
-A UK listing (`UK`, `GB`, `United Kingdom` or `Great Britain`) with tax `NOT_APPLICABLE` uses `UK_DOMESTIC_NOT_VAT_REGISTERED` while the seller position is `NOT_VAT_REGISTERED`. No per-quote accountant approval is required. Checkout, invoicing and Guard still depend on the existing operative-agreement and payment-activation controls. Live Stripe stays off in this change.
+Before a binding quote, record where the purchasing business belongs through the authenticated establishment record. A typical UK firm does not need a VAT number or a company number for that record, and does not need a separate accountant approval for each quote. Tax `NOT_APPLICABLE` then uses `UK_DOMESTIC_NOT_VAT_REGISTERED` while the seller position is `NOT_VAT_REGISTERED`. Checkout, invoicing and Guard still depend on the existing operative-agreement and payment-activation controls. Live Stripe stays off in this change.
 
-A current `BLOCKED` decision for that service and payment flow wins over the UK treatment. An explicit current approval whose tax treatment does not match the quote also wins, and the sale stops. A verified establishment country wins over the listing country, the request body, card country and checkout currency.
+A current `BLOCKED` decision for that service and payment flow wins over the UK treatment. An explicit current approval whose tax treatment does not match the quote also wins, and the sale stops. The verified establishment country wins over the listing country, the request body, card country and checkout currency.
 
 Accepted UK GBP amounts are written to `commercial_tax_log` and summed for the rolling 12 months. At 80 percent of £90,000 the sale is still allowed and an `APPROACHING` alert is stored. At £90,000, while the seller is not VAT registered, a new not-applicable UK sale stops. Payment attempts are logged and are not added to that total. The prospective next-30-days test is a manual review; the database does not invent a forecast.
 
@@ -47,7 +50,7 @@ The United States and Canada need a state or province when the sale is approved.
 
 ## Sanctions
 
-`commercial_sanctions_restrictions` is empty, immutable, and cannot be overridden by a later approval. The evaluator checks it before any country treatment. An approval for a restricted country is refused.
+`commercial_sanctions_restrictions` starts empty. It is a place to record a restriction that must fail closed. It is not an automated sanctions screening system. It does not screen people, entities or payment routes, and the empty table is not a claim that screening is complete. Staff and the payment provider still screen before a payment. No country ban is invented here. A row, once recorded, cannot be overridden by a later approval.
 
 ## Still for the accountant or adviser
 

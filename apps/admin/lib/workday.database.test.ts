@@ -215,6 +215,14 @@ describe("a synthetic Admin working day", () => {
     expect((await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", {
       quoteId: quote.id, taxBehaviour: "NOT_APPLICABLE",
     }, quote.version])).status).toBe("success")
+    expect((await rpc("admin_record_business_establishment_v1", [token, key(), {
+      businessId: businessRecord.id,
+      countryCode: "GB",
+      legalName: "Example Bakery",
+      evidenceType: "OTHER",
+      evidenceReference: "The owner confirmed on the call that the purchasing business is established in the United Kingdom.",
+      verificationStatus: "VERIFIED",
+    }])).status).toBe("success")
     expect((await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: quote.id }, quote.version + 1])).status).toBe("success")
     const offered = await rpc("admin_quote_list_v1", [token, "OFFERED", null])
     expect(offered.quotes.map((row: Json) => row.id)).toEqual([quote.id])

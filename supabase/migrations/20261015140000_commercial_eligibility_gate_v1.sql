@@ -158,7 +158,11 @@ VALUES (
   'ProfileRelaunch Ltd is not VAT registered. This records that fact. It is not a zero-rating and it does not authorise overseas sales.'
 );
 
--- A sanctions row cannot be overridden by a later eligibility approval.
+-- A recorded restriction cannot be overridden by a later eligibility approval.
+-- This table is not an automated sanctions screening system. It starts empty.
+-- It does not screen people, entities or payment routes, and an empty table
+-- is not a claim that screening is complete. Staff and the payment provider
+-- still screen before a payment. Do not invent country bans here.
 CREATE TABLE public.commercial_sanctions_restrictions (
   country_code text PRIMARY KEY CHECK (country_code ~ '^[A-Z]{2}$' AND country_code NOT IN ('UK', 'EU', 'XX')),
   reason text NOT NULL CHECK (char_length(btrim(reason)) BETWEEN 20 AND 500),
@@ -259,40 +263,28 @@ LANGUAGE sql IMMUTABLE SET search_path='' AS $$
   END;
 $$;
 
--- A verified establishment wins over the listing country. Otherwise UK/GB and the
--- written country names used by existing records map to GB. EU and XX are never countries.
-CREATE FUNCTION admin_private.commercial_country_v1(p_business uuid, p_location uuid)
+-- The purchasing business country comes only from a verified establishment.
+-- public.locations.country is the Google listing and is never that country.
+CREATE FUNCTION admin_private.commercial_country_v1(p_business uuid)
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   est public.business_establishments;
   est_count integer;
-  raw text;
-  code text;
 BEGIN
   SELECT count(*) INTO est_count FROM public.business_establishments
     WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
   IF est_count > 1 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'conflicting_establishment');
   END IF;
-  IF est_count = 1 THEN
-    SELECT * INTO est FROM public.business_establishments
-      WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
-    RETURN jsonb_build_object(
-      'ok', true, 'countryCode', est.country_code, 'subdivisionCode', est.subdivision_code, 'source', 'establishment'
-    );
+  IF est_count = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'unresolved_establishment');
   END IF;
-  IF p_location IS NOT NULL THEN
-    SELECT upper(btrim(country)) INTO raw FROM public.locations WHERE id = p_location;
-  END IF;
-  IF raw IN ('UK', 'GB', 'UNITED KINGDOM', 'GREAT BRITAIN') THEN
-    code := 'GB';
-  ELSIF raw ~ '^[A-Z]{2}$' AND raw NOT IN ('EU', 'XX') THEN
-    code := raw;
-  ELSE
-    RETURN jsonb_build_object('ok', false, 'reason', 'unresolved_country');
-  END IF;
-  RETURN jsonb_build_object('ok', true, 'countryCode', code, 'subdivisionCode', NULL, 'source', 'location');
+  SELECT * INTO est FROM public.business_establishments
+    WHERE business_id = p_business AND superseded_at IS NULL AND verification_status = 'VERIFIED';
+  RETURN jsonb_build_object(
+    'ok', true, 'countryCode', est.country_code, 'subdivisionCode', est.subdivision_code, 'source', 'establishment'
+  );
 END; $$;
 
 CREATE FUNCTION admin_private.seller_vat_status_v1() RETURNS text
@@ -329,6 +321,7 @@ BEGIN
   );
 END; $$;
 
+-- p_location is the Google listing recorded on the tax log. It does not choose the country.
 CREATE FUNCTION admin_private.evaluate_commercial_eligibility_v1(
   p_business uuid,
   p_service text,
@@ -368,9 +361,9 @@ BEGIN
   ELSIF p_tax IS NULL OR p_tax = 'UNCONFIRMED' THEN
     reason := 'tax_unconfirmed';
   ELSE
-    place := admin_private.commercial_country_v1(p_business, p_location);
+    place := admin_private.commercial_country_v1(p_business);
     IF coalesce(place->>'ok', 'false') IS DISTINCT FROM 'true' THEN
-      reason := coalesce(place->>'reason', 'unresolved_country');
+      reason := coalesce(place->>'reason', 'unresolved_establishment');
     ELSE
       country := place->>'countryCode';
       subdivision := nullif(place->>'subdivisionCode', '');
@@ -1467,7 +1460,7 @@ REVOKE ALL ON FUNCTION admin_private.commercial_eligibility_message_v1() FROM PU
 REVOKE ALL ON FUNCTION admin_private.commercial_service_class_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_payment_flow_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_tax_matches_v1(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin_private.commercial_country_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.commercial_country_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.seller_vat_status_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.uk_vat_turnover_minor_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_tax_log_v1(text, uuid, uuid, text, text, text, text, text, text, text, integer, integer, text, uuid, jsonb) FROM PUBLIC, anon, authenticated, service_role;

@@ -1,8 +1,8 @@
 # PAY-ENV-04 — DEV-only Stripe one-shot
 
-Status: **source and tests only**. Migration `supabase/migrations/20261015230000_dev_stripe_one_shot_v1.sql` is not applied to DEV or Production. `DEV_STRIPE_ONE_SHOT_ENABLED` is not set in Vercel. No queued DEV event has been processed by this change. Production worker, Production data, Stripe credentials and webhook configuration are unchanged.
+Status: **DEV migration applied; manual execution disabled**. Migration `supabase/migrations/20261015230000_dev_stripe_one_shot_v1.sql` was applied to DEV only on 16 October 2026 after reviewed PR #203, with generated ledger version 20261015231210 reconciled to canonical 20261015230000. It is NOT applied to Production. `DEV_STRIPE_ONE_SHOT_ENABLED` is not set in Vercel. No queued DEV event has been processed by this change. Production worker, Production data, Stripe credentials and webhook configuration are unchanged.
 
-DEV applied head stays `20261015153000`. Production applied head and AWS ApprovedMigrationHead stay `20261014170000`.
+DEV applied head is `20261015230000`. Production applied head and AWS ApprovedMigrationHead stay `20261014170000`.
 
 ## What this is
 
@@ -14,7 +14,7 @@ Guard, subscription, refund and dispute events are refused before promotion, so 
 
 ## Prerequisites
 
-Do not start until an independent review has applied the migration to DEV and has explicitly enabled the flag. Until then the endpoint refuses every request.
+Migration and permission verification in DEV are complete. Do not execute events until independent operator acceptance and explicit enabling of the one-shot feature flag. Until then the endpoint refuses every request.
 
 Required together, and only on Admin Preview for branch `develop`:
 
@@ -27,7 +27,7 @@ Required together, and only on Admin Preview for branch `develop`:
 - `STRIPE_LIVE_ACTIVATION` unset
 - `DEV_STRIPE_ONE_SHOT_ENABLED=true`
 
-The flag defaults to off. Do not set it in Production. Do not set it while the migration is unapplied. A missing or mismatched value does not fall through to the production worker.
+The flag defaults to off. Do not set it in Production. Do not set it before a separate approved DEV-only operator acceptance test. A missing or mismatched value does not fall through to the production worker.
 
 ## Operator flow
 
@@ -51,6 +51,10 @@ The endpoint is `POST /api/operations/dev-stripe-reconcile`. It accepts only `ev
 - Do not mark a receipt processed, and do not mark an order paid, by hand.
 
 PGlite has one connection, so it cannot show two sessions. The two-session proof runs against a private PostgreSQL cluster when the server binaries are installed. A runner without those binaries skips that file rather than treating the skip as a pass of the race.
+
+## Verified DEV installation — 16 October 2026
+
+The additive migration created `public.admin_dev_stripe_one_shot_claim_v1` and the private event-family helper without modifying existing payment receipts or jobs. Live SQL checks confirmed `anon` and `authenticated` have no EXECUTE on the claim, `service_role` does, and the function is SECURITY DEFINER with an empty `search_path`. An invalid Admin token returned `unauthorized`. DEV still holds four unprocessed test-mode Stripe webhook receipts and four unpromoted Stripe outbox rows; zero payment obligations, payment receipts and ledger entries. The Preview gate `DEV_STRIPE_ONE_SHOT_ENABLED` remains absent. Production head and payments remain unchanged. This records schema installation **only**, not a successful end-to-end worker run.
 
 ## Rollback
 

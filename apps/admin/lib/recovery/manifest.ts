@@ -556,13 +556,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "payment lane isolation", probe: "admin_private.payment_expected_livemode_v1" },
   },
   {
-    // In the repository only. Not applied to DEV or Production. The DEV
-    // applied head stays 20261015153000 until an independent review applies it.
+    // Applied DEV-only on 2026-10-16 after reviewed PR #203, with its Supabase
+    // generated ledger 20261015231210 aligned to canonical 20261015230000.
+    // NOT applied to Production; AWS ApprovedMigrationHead remains SEC-08.
     version: "20261015230000",
     filename: "20261015230000_dev_stripe_one_shot_v1.sql",
     step: "PAY-ENV-04 DEV Stripe one-shot",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "DEV Stripe one-shot", probe: "public.admin_dev_stripe_one_shot_claim_v1" },

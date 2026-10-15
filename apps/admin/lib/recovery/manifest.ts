@@ -494,26 +494,30 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "evidence content SHA-256", probe: "public.evidence_content_sha256_v1" },
   },
   {
-    // Source only. Not applied to profilerelaunch-dev or Production.
-    // AWS ApprovedMigrationHead stays at 20261014170000.
+    // Applied to DEV only on 2026-10-15. Supabase initially assigned version
+    // 20261015085350; verified SQL objects and reconciled the migration-ledger
+    // metadata to the canonical repository version, without replaying the SQL.
+    // NOT applied to Production. AWS ApprovedMigrationHead stays at 20261014170000.
     version: "20261014234000",
     filename: "20261014234000_paid_service_acceptance_v1.sql",
     step: "COM-13A paid-service acceptance",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "paid service acceptance", probe: "public.accept_paid_service_terms_v1" },
   },
   {
-    // Source only. Not applied to profilerelaunch-dev or Production.
-    // AWS ApprovedMigrationHead stays at 20261014170000.
-    // This file does not approve the catalogue and does not call the approval RPC.
+    // Applied to DEV only on 2026-10-15. Supabase initially assigned version
+    // 20261015085508; verified RPCs and reconciled the migration-ledger
+    // metadata to the canonical repository version, without replaying the SQL.
+    // NOT applied to Production. AWS ApprovedMigrationHead stays at 20261014170000.
+    // The catalogue remains SOLICITOR_REVIEW/inoperative; approval RPC not called.
     version: "20261015013000",
     filename: "20261015013000_paid_service_acceptance_gate_v1.sql",
     step: "COM-13B paid-service acceptance gate",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "paid service acceptance gate", probe: "public.admin_confirm_paid_service_agreement_v1" },

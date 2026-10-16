@@ -6,6 +6,8 @@ import { recordDetail } from "@/lib/records/queries"
 import { ukDate } from "@/lib/admin/activity"
 import { MembershipForm, RecordForm, VerifyContactForm } from "../../forms"
 import { PageHeader } from "../../../ui"
+import { devEstablishmentEditorEnabled } from "@/lib/commercial/dev-establishment-gate"
+import { DevEstablishmentForm } from "./establishment-form"
 
 export default async function RecordPage({ params, searchParams }: { params: Promise<{ entity: string; id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireStaff()
@@ -29,6 +31,7 @@ export default async function RecordPage({ params, searchParams }: { params: Pro
     </section>
     <details className="panel"><summary>Edit details</summary><RecordForm key={r.version} entity={entity} record={r} /></details>
     {entity === "client" && <details className="panel"><summary>Record a contact verification</summary><VerifyContactForm key={r.version} record={r} /></details>}
+    {entity === "business" && devEstablishmentEditorEnabled() && <details className="panel"><summary>DEV-only: Record verified UK purchasing establishment</summary><DevEstablishmentForm businessId={r.id} businessName={r.name} /></details>}
     {entity === "business" && <section className="panel"><h2>Locations</h2><p><Link href={`/records/location?business=${r.id}`}>View all locations</Link> · <Link href={`${recordPath("location", "new")}?business=${r.id}`}>Add a location</Link></p><p><Link href={`/records/client?business=${r.id}`}>View linked clients</Link></p></section>}
     {entity !== "location" && <section className="panel"><h2>{entity === "client" ? "Business relationships" : "Client relationships"}</h2><p className="muted">Authority is checked separately from submitted forms. Pending and withdrawn relationships do not grant access. Showing up to 100 relationships.</p>
       {entity === "client" && <p><Link href={`/records/client/${r.id}/link`}>Link a business</Link></p>}

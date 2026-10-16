@@ -1,3 +1,4 @@
+/* PAY-ENV-05B DEV Preview branch config refresh: case intake stays no-email unless its exact gate is set. */
 import "server-only"
 
 function trimEnv(value: string | undefined) {

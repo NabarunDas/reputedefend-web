@@ -1,3 +1,5 @@
+import { canonicalBusinessCountry } from "@/lib/countries"
+
 export const ENQUIRY_SOURCES = ["homepage", "contact", "get-help"] as const
 export type EnquirySource = (typeof ENQUIRY_SOURCES)[number]
 
@@ -101,6 +103,8 @@ export type EnquiryResult = {
   caseRef?: string
   caseType?: string
   receiptEmailSent?: boolean
+  /** sent: delivered. suppressed: DEV gate intentionally did not send. unavailable: a real send did not succeed. */
+  receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
 }
 
 const PROCESS_ERROR = "Unable to process this enquiry."
@@ -258,8 +262,11 @@ export function collectEnquiryErrors(data: EnquiryInput): EnquiryFieldErrors {
     errors.businessName = `Please keep the business name within ${enquiryLimits.businessName} characters.`
   }
 
-  if (isCase && !data.country) errors.country = "Please enter the country your business is based in."
-  else if (data.country.length > enquiryLimits.country) {
+  if (isCase) {
+    const countryCode = canonicalBusinessCountry(data.country)
+    if (!countryCode) errors.country = "Please choose the country where your business is located."
+    else data.country = countryCode
+  } else if (data.country.length > enquiryLimits.country) {
     errors.country = `Please keep the country within ${enquiryLimits.country} characters.`
   }
 

@@ -27,7 +27,12 @@ export async function recordDevBusinessEstablishment(request: NextRequest) {
   if (!devEstablishmentEditorEnabled()) return reply("Unavailable.",404)
   const config=authConfig()
   if (!config) return reply("Workspace unavailable.",503)
-  if (request.headers.get("origin")!==config.origin || request.nextUrl.origin!==config.origin)
+  // Same rule as the other Admin commands: the browser Origin must be this
+  // request's own origin, and that origin must be on the audited allowlist.
+  // Preview has both the deployment URL and the stable branch URL. Production
+  // lists only the canonical Admin domain, never a webhook-only hostname.
+  const requestOrigin = request.nextUrl.origin
+  if (request.headers.get("origin") !== requestOrigin || !config.allowedOrigins.includes(requestOrigin))
     return reply("Reload the page and try again.",403)
   if (request.headers.get("content-type")?.split(";")[0]!=="application/json") return reply("Expected JSON.",415)
   const token=request.cookies.get(sessionCookie)?.value

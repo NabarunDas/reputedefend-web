@@ -315,4 +315,114 @@ describe("the case journey route", () => {
     expect(system).toHaveTextContent("Review the new case")
     expect(screen.queryByRole("heading", { name: "What the case-flow model already recommends" })).toBeNull()
   })
+
+  it("keeps active blockers visible and leaves the technical recommendation collapsed", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue({ ...facts(), technicalStage: "SERVICE_SELECTION" })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({}),
+    }))
+    const blockers = screen.getByRole("heading", { name: "Blockers" }).closest("section")
+    expect(blockers).toHaveTextContent("No service track chosen")
+    expect(blockers).toHaveTextContent("Nothing commercial can be raised until the case is Guided or Managed")
+    expect(screen.getAllByText("No service track chosen")).toHaveLength(1)
+    const system = screen.getByText("System details").closest("details")
+    expect(system).not.toHaveAttribute("open")
+    expect(system).toHaveTextContent("Choose the service track")
+    expect(system).toHaveTextContent("Technical stage")
+    expect(system).not.toHaveTextContent("No service track chosen")
+    expect(system).not.toHaveTextContent("Nothing commercial can be raised")
+  })
+
+  it("lets an operator amend a completed intake review from a collapsed action", async () => {
+    allowPreview()
+    records()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: null,
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CASE_RECEIVED" }),
+    }))
+    const workspace = screen.getByRole("article")
+    expect(workspace).toHaveTextContent("Complete")
+    expect(workspace).toHaveTextContent("This intake review is recorded.")
+    expect(workspace).toHaveTextContent("The business profile was suspended without warning.")
+    const amend = screen.getByText("Amend recorded decision").closest("details")
+    expect(amend).not.toHaveAttribute("open")
+    const button = screen.getByRole("button", { name: "Record the intake review" })
+    expect(button.closest("details")).toBe(amend)
+    expect(screen.getAllByRole("button", { name: "Record the intake review" })).toHaveLength(1)
+  })
+
+  it("lets an operator amend a completed screening decision from a collapsed action", async () => {
+    allowPreview()
+    records()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: null,
+      events: [
+        { event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } },
+        {
+          event: "BUSINESS_VERIFICATION",
+          createdAt: "2026-01-17T00:00:00.000Z",
+          details: {
+            outcome: "PRELIMINARY_COMPLETE",
+            source: "The enquiry",
+            listing: "NOT_SUPPLIED",
+            website: "NONE",
+            discrepancy: false,
+            reason: "The name and country agree with the records.",
+          },
+        },
+      ],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    const workspace = screen.getByRole("article")
+    expect(workspace).toHaveTextContent("Complete")
+    expect(workspace).toHaveTextContent("Preliminary screening is recorded.")
+    expect(workspace).toHaveTextContent("Mercer Bakery")
+    const amend = screen.getByText("Amend recorded decision").closest("details")
+    expect(amend).not.toHaveAttribute("open")
+    const button = screen.getByRole("button", { name: "Record the screening decision" })
+    expect(button.closest("details")).toBe(amend)
+    expect(screen.getAllByRole("button", { name: "Record the screening decision" })).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
+  })
+
+  it("does not offer an amendment on a locked step", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "ASSESSMENT" }),
+    }))
+    expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByText("Amend recorded decision")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+
+    cleanup()
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(document.querySelector("[data-step='VERIFICATION']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByText("Amend recorded decision")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+  })
 })

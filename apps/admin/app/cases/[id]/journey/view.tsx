@@ -93,6 +93,10 @@ export function CaseJourneyView({
         <p>{item.explanation}</p>
       </li>)}</ul>
     </section>}
+    {journey.blockers.length > 0 && <section className="panel guided-warning" aria-labelledby="journey-blockers-heading">
+      <h2 id="journey-blockers-heading">Blockers</h2>
+      <ul className="notice-list">{journey.blockers.map(item => <Blocker key={item.code} blocker={item} />)}</ul>
+    </section>}
 
     <div className="guided-workflow-layout">
       <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} />
@@ -142,6 +146,7 @@ function StepWorkspace({
   const canRecord = step.state !== "LOCKED" && step.state !== "COMPLETED" && step.state !== "NOT_APPLICABLE"
   const showIntakeForm = step.decision === "intake" && canRecord
   const showVerificationForm = step.decision === "verification" && canRecord && intakeReviewed
+  const showAmend = step.state === "COMPLETED" && (step.decision === "intake" || (step.decision === "verification" && intakeReviewed))
   const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
@@ -157,6 +162,11 @@ function StepWorkspace({
     {step.decision === "verification" && <VerificationSummary brief={brief} />}
     {showIntakeForm && <IntakeReviewForm caseId={caseId} version={version} />}
     {showVerificationForm && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
+    {showAmend && <details className="guided-details">
+      <summary>Amend recorded decision</summary>
+      {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
+      {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
+    </details>}
     {!step.decision && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
@@ -211,10 +221,6 @@ function SystemDetails({ journey, caseId }: { journey: CaseJourneyPresentation; 
         ? <Recommended action={journey.nextAction} caseId={caseId} />
         : <p>{journey.closed ? "The case is closed, so the case-flow model has no next action." : "The case-flow model has no next action for this projection."}</p>}
     {journey.incompatibilities.filter(item => item !== journey.suppressedAction?.reason).map(item => <p key={item}>{item}</p>)}
-    {journey.blockers.length > 0 && <>
-      <h3>Blockers already recorded</h3>
-      <ul className="notice-list">{journey.blockers.map(item => <Blocker key={item.code} blocker={item} />)}</ul>
-    </>}
   </details>
 }
 

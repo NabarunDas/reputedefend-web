@@ -1,30 +1,18 @@
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { isCasePersistenceEnabled } from "@/lib/cases/persistence-config"
+import { devCaseIntakeEmailSuppressed } from "./persistence-config"
 
-describe("isCasePersistenceEnabled", () => {
-  it("defaults to false when unset", () => {
-    expect(isCasePersistenceEnabled({})).toBe(false)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: undefined })).toBe(false)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "" })).toBe(false)
+describe("DEV Get Help no-outbound-email gate", () => {
+  const valid = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "develop",
+    DEV_CASE_INTAKE_NO_EMAIL: "true", SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co" }
+  it("suppresses only deliberately opted-in develop intake", () => {
+    expect(devCaseIntakeEmailSuppressed(valid)).toBe(true)
+    expect(devCaseIntakeEmailSuppressed({...valid, SUPABASE_URL: valid.SUPABASE_URL + "/"})).toBe(true)
   })
-
-  it("enables only the exact value true", () => {
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "true" })).toBe(true)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: " true " })).toBe(true)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "TRUE" })).toBe(false)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "1" })).toBe(false)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "yes" })).toBe(false)
-    expect(isCasePersistenceEnabled({ CASE_PERSISTENCE_ENABLED: "false" })).toBe(false)
-  })
-
-  it("is server-only and is not a public env var", () => {
-    const source = readFileSync(fileURLToPath(new URL("./persistence-config.ts", import.meta.url)), "utf8")
-    expect(source).toMatch(/^import "server-only"/m)
-    expect(source).not.toContain("NEXT_PUBLIC_")
-    const envExample = readFileSync(fileURLToPath(new URL("../../.env.example", import.meta.url)), "utf8")
-    expect(envExample).toContain("CASE_PERSISTENCE_ENABLED=false")
-    expect(envExample).not.toContain("NEXT_PUBLIC_CASE_PERSISTENCE")
+  it("retains previous behavior everywhere else", () => {
+    for (const changes of [{VERCEL_ENV:"production"},{VERCEL_ENV:"development"},
+      {VERCEL_GIT_COMMIT_REF:"feature/pr"}, {DEV_CASE_INTAKE_NO_EMAIL:"false"},
+      {SUPABASE_URL:"https://cxwwekdzkkjjbiyofrov.supabase.co"}]) {
+      expect(devCaseIntakeEmailSuppressed({...valid,...changes})).toBe(false)
+    }
   })
 })

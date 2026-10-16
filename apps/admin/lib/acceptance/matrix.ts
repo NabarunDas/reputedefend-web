@@ -317,15 +317,17 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     authorization: staffAndSession + " The provider webhook authenticates by signature instead, with no session at all.",
     persistence: "Payment events are append-only; a replayed webhook returns the first outcome rather than applying twice.",
     negative:
-      "An unsigned or replayed Stripe webhook is rejected, and no collection can be started while the live payment gate is off. A mismatched, live-mode, failed or Guard checkout does not create a guided receipt.",
+      "An unsigned or replayed Stripe webhook is rejected, and no collection can be started while the live payment gate is off. A mismatched, live-mode, failed or Guard checkout does not create a guided receipt. A DEV one-shot request is refused while its flag is off, and an unsupported event stays queued.",
     evidence: [
       "lib/payments/database.test.ts",
       "lib/payments/command.test.ts",
       "lib/payments/webhook.test.ts",
+      "lib/payments/webhook-signature.test.ts",
       "lib/payments/provider.test.ts",
       "lib/payments/handlers.test.ts",
       "lib/payments/synthetic-checkout.database.test.ts",
       "lib/payments/synthetic-checkout.concurrency.database.test.ts",
+      "../customer/lib/action/checkout-creation.database.test.ts",
       "app/money/page.test.tsx",
     ],
     status: "DEFERRED_EXTERNAL",

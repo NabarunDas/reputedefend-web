@@ -4,6 +4,16 @@ Status: **code, tests and runbook only**. No migration is added. Nothing in this
 
 This is the rehearsal for a later human-operated DEV test. It is not that test. Local tests mock the Stripe SDK and use a disposable database. They do not prove a connected sandbox payment.
 
+## What is proven, and what is only simulated
+
+Checkout creation is proven offline. The customer payment command calls the real `openCustomerCheckout` and `ensureCustomer` path. `createPaymentCheckout` runs against a mocked Stripe SDK `customers.create` and `checkout.sessions.create`. The amount, currency, customer, `client_reference_id`, session metadata, PaymentIntent metadata, return URLs and idempotency key come from the accepted service order. A thrown create leaves the obligation unpaid and writes no provider reference. A later request reuses the open Checkout and does not create a second customer or session.
+
+Signature verification is proven offline in one Admin test. That test uses the Stripe SDK to generate a header and the real `constructStripeEvent` implementation. A matching body is accepted. A changed body and a live-mode body are rejected before the receipt RPC. The settlement suite does not sign its payloads; those events are assumed verified after `payment_receive_stripe_event_v1`. Connected signed delivery remains the separate PAY-ENV-03 sandbox proof.
+
+The one-shot path is proven on disposable PGlite for the new order-linked `payment_intent.succeeded` event. The test ingests the receipt, claims it with `admin_dev_stripe_one_shot_claim_v1`, and settles that lease with `settleClaimedStripeEvent`. The job type is `PROCESS_STRIPE_EVENT`. The selected receipt becomes processed and the order gains one receipt. A second claim does not add a receipt. An unsupported event stays unpromoted. Queued email and Guard outbox rows stay unpromoted. With the one-shot flag unset, the request boundary returns before any claim. This is not a connected DEV execution, and GitHub Actions skips the separate two-session PostgreSQL race because it does not install PostgreSQL server binaries.
+
+A handler result of success is not payment evidence. The database can return `denied` and the handler still completes the job. The obligation and receipt are the proof.
+
 ## What the local rehearsal proves
 
 An eligible synthetic UK business can move through the existing commands only:
@@ -19,7 +29,9 @@ Settlement is one `payment_receipts` row per obligation and two ledger events fr
 Stop if any item is missing. Do not bypass it.
 
 - Independent review of this draft has accepted the code, and a named operator is authorised to run PAY-ENV-05B.
-- DEV Supabase remains `rmzozuiamjcclvtgutgd`. Production data is not used.
+- **05B mail is blocked** until that operator can show one isolated synthetic inbox already receives the existing Supabase Auth one-time code for that address alone. `COMMUNICATIONS_SEND_ENABLED`, `JOB_PROVIDER_MODE` and global Resend stay off. If that inbox does not already receive Auth mail, stop. Do not turn those gates on to unblock the test. The separate mechanism for a later review is a customer-auth send hook that allows `signInWithOtp` only for one configured synthetic address and refuses every other address. That hook is not part of this change, and it does not start the communications worker or Guard.
+- `CUSTOMER_AUTH_ENABLED=true` and `CUSTOMER_PORTAL_ENABLED=true` currently open customer authentication and the portal on all Customer Preview branches. Stripe mode, the restricted test key and the webhook secret are scoped to the `develop` Preview. Before 05B, review narrowing the customer gates to that DEV branch. This change does not edit Vercel.
+- DEV Supabase remains `rmzozuiamjcclvtgutgd`. It still has zero service orders, payment obligations and payment receipts. The local fixture is not authorisation to insert verification, eligibility, tax or approval rows into that database. Production data is not used.
 - The genuine solicitor approval for agreement `PS-2026-10-14.2` and its recorded hash is still the current approval. Do not create a synthetic solicitor signature.
 - The purchasing business has one verified GB establishment. The Google listing country is not that decision.
 - Seller VAT position remains the current `NOT_VAT_REGISTERED` row. Do not flip a tax switch, register for VAT, or approve a new country in this test.
@@ -28,8 +40,8 @@ Stop if any item is missing. Do not bypass it.
 - The customer is synthetic. The inbox can receive the existing OTP without enabling global outgoing mail. If delivery would require turning on Resend for everyone, stop and wait for a separate gate. Do not add a test checkout API or skip OTP.
 - Admin and Customer Preview for branch `develop` stay on `PAYMENTS_PROVIDER_MODE=stripe_test` with the existing restricted test key and webhook secret. Do not print those values or the Vercel bypass URL.
 - Stripe sandbox `acct_1UGQgBBq7gpSHBmB` only. `livemode=false`. No live key and no `STRIPE_LIVE_ACTIVATION`.
-- Before opening Checkout, inspect the restricted key in the Stripe dashboard. This test needs `Customers.create` and Checkout `Sessions.create` only. Do not add invoice, subscription, refund or live permissions in advance. Write access was still unverified when this runbook was written; a dashboard permission check is not permission to create objects until 05B is authorised.
-- The sandbox webhook remains `https://dev-hooks.profilerelaunch.com/api/webhooks/stripe`. Do not add an endpoint.
+- Before opening Checkout, inspect the restricted key in the Stripe dashboard. This test needs `Customers.create` and Checkout `Sessions.create` only. Do not add invoice, subscription, refund or live permissions in advance. Write access is still unverified. A dashboard permission check is not permission to create objects until 05B is authorised, and this pull request does not call the connected Stripe account.
+- Sandbox webhook endpoint `we_1UQqYeBq7gpSHBmBrkw0PLXq` is enabled for `checkout.session.completed` and `payment_intent.succeeded` in test mode only. Do not print the secret-bearing endpoint URL. Do not add an endpoint. The public hostname remains `https://dev-hooks.profilerelaunch.com/api/webhooks/stripe`.
 - `DEV_STRIPE_ONE_SHOT_ENABLED` is off until the operator is ready to process the specific new events, and it is turned off again afterwards.
 - Do not select the existing stand-alone sandbox invoice events. They are not this order.
 

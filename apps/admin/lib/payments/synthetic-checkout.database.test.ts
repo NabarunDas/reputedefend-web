@@ -1,16 +1,21 @@
 /**
- * PAY-ENV-05A rehearsal. Synthetic identities go in through fixtures.
- * Quote acceptance, checkout preparation and settlement go through the
- * existing RPCs and the real Stripe event handler. The Stripe SDK is mocked,
- * so this file never calls Stripe or a connected database.
+ * PAY-ENV-05A settlement rehearsal. Synthetic identities go in through fixtures.
+ * Quote acceptance and settlement go through the existing RPCs and the real
+ * Stripe event handler. Event payloads here are assumed verified: this file
+ * does not compute a Stripe signature. Checkout creation is covered by the
+ * customer checkout-creation test. The Stripe SDK is mocked, so this file
+ * never calls Stripe or a connected database.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { NextRequest } from "next/server"
 import { PGlite } from "@electric-sql/pglite"
+import { sessionCookie } from "@/lib/auth/config"
 import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
+import { devStripeOneShotBlock, devStripeOneShotCommand, settleClaimedStripeEvent } from "../jobs/dev-stripe-one-shot"
 import type { JobHandlerResult, JobRpc } from "../jobs/model"
 
 const stripeState = vi.hoisted(() => ({
@@ -248,6 +253,8 @@ function jobRpc(calls: string[]): JobRpc {
       if (name === "payment_apply_provider_event_v1" || name === "guard_apply_subscription_event_v1") {
         return rpc<T>(name, [args.p_event_id, args.p_type, args.p_object_id, args.p_payload])
       }
+      if (name === "job_complete_v1") return rpc<T>(name, [args.p_job, args.p_lease])
+      if (name === "job_fail_v1") return rpc<T>(name, [args.p_job, args.p_lease, args.p_error, args.p_retryable])
       throw new Error(name)
     },
   }
@@ -341,7 +348,7 @@ async function ledgerEvents(obligationId: string) {
 }
 
 describe("synthetic order-linked Stripe Checkout", () => {
-  it("settles one guided checkout from the signed events and shows one owned receipt", async () => {
+  it("settles one guided checkout from assumed-verified event payloads and shows one owned receipt", async () => {
     const opened = await openGuided("PR-26-SYNCH2", "cus_synthalex")
     const checkoutId = "cs_synthpay02"
     const paymentIntentId = "pi_synthpay02"
@@ -536,5 +543,105 @@ describe("synthetic order-linked Stripe Checkout", () => {
     expect(paid.result).toEqual({ ok: true })
     expect(await obligationState(opened.obligationId)).toBe("PAID")
     expect(await receiptCount(opened.orderId)).toBe(1)
+  })
+
+  it("claims the linked PaymentIntent through the one-shot lease and leaves other jobs queued", async () => {
+    expect(devStripeOneShotBlock()).toBe("wrong_environment")
+    const previewOrigin = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("SUPABASE_SECRET_KEY", "test-secret")
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test-publishable")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("ADMIN_AUTH_ENABLED", "true")
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret_value")
+    expect(devStripeOneShotBlock()).toBe("disabled")
+    const jobsBeforeGate = await count("select count(*)::int as n from admin_private.jobs")
+    const closed = await devStripeOneShotCommand(new NextRequest(`${previewOrigin}/api/operations/dev-stripe-reconcile`, {
+      method: "POST",
+      headers: {
+        origin: previewOrigin,
+        "content-type": "application/json",
+        "idempotency-key": key(),
+        cookie: `${sessionCookie}=${"d".repeat(64)}`,
+      },
+      body: JSON.stringify({ eventId: "evt_gate_closed", confirmed: true }),
+    }))
+    expect(closed.status).toBe(403)
+    expect(await count("select count(*)::int as n from admin_private.jobs")).toBe(jobsBeforeGate)
+
+    const opened = await openGuided("PR-26-SYNCH7", "cus_synthalex")
+    expect(await rpc("payment_record_provider_refs_v1", [opened.providerOperationId, "cs_oneshot07", "checkout.session"])).toMatchObject({ status: "success" })
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [adminToken])
+    const unrelated = [
+      ["email-oneshot-0001", "SEND_EMAIL"],
+      ["guard-oneshot-0001", "RECONCILE_GUARD_BILLING"],
+    ] as const
+    for (const [eventKey, topic] of unrelated) {
+      await db.query(
+        `select admin_private.enqueue_outbox_v1($1, $2, 'operator', null, '{}'::jsonb, now() - interval '1 hour')`,
+        [eventKey, topic],
+      )
+    }
+    const untouched = async () => JSON.stringify(await rows(
+      `select event_key, topic, promoted_at is not null as promoted
+       from admin_private.job_outbox where event_key = any($1::text[]) order by event_key`,
+      [unrelated.map(([eventKey]) => eventKey)],
+    ))
+    const before = await untouched()
+
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_oneshot_other", "customer.created", "cus_oneshotother", false])).toMatchObject({ status: "success" })
+    expect(await rpc<Json>("admin_dev_stripe_one_shot_claim_v1", [adminToken, key(), "evt_oneshot_other", true, false])).toMatchObject({
+      status: "denied", reason: "unsupported",
+    })
+    expect(await count("select count(*)::int as n from admin_private.job_outbox where event_key = 'process-stripe-event:evt_oneshot_other' and promoted_at is null")).toBe(1)
+
+    const badIntent = "pi_oneshotbad"
+    pinIntent(opened, badIntent, { amount: opened.amountMinor + 1 })
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_oneshot_bad", "payment_intent.succeeded", badIntent, false])).toMatchObject({ status: "success" })
+    const badClaim = await rpc<Json>("admin_dev_stripe_one_shot_claim_v1", [adminToken, key(), "evt_oneshot_bad", true, false])
+    expect(badClaim).toMatchObject({ status: "success", jobType: "PROCESS_STRIPE_EVENT", replay: false })
+    const badSettle = await settleClaimedStripeEvent({ rpc: jobRpc([]), claim: badClaim })
+    expect(badSettle.outcome).toBe("succeeded")
+    expect(await obligationState(opened.obligationId)).toBe("DUE")
+    expect(await receiptCount(opened.orderId)).toBe(0)
+    expect(await count("select count(*)::int as n from admin_private.stripe_event_receipts where provider_event_id = 'evt_oneshot_bad' and processed")).toBe(1)
+
+    const paymentIntentId = "pi_oneshotpay"
+    pinIntent(opened, paymentIntentId)
+    expect(await rpc("payment_receive_stripe_event_v1", ["evt_oneshot_paid", "payment_intent.succeeded", paymentIntentId, false])).toMatchObject({ status: "success" })
+    const claimRequest = key()
+    const claimed = await rpc<Json>("admin_dev_stripe_one_shot_claim_v1", [adminToken, claimRequest, "evt_oneshot_paid", true, false])
+    expect(claimed).toMatchObject({
+      status: "success",
+      replay: false,
+      jobType: "PROCESS_STRIPE_EVENT",
+      eventId: "evt_oneshot_paid",
+      idempotencyKey: "process-stripe-event:evt_oneshot_paid",
+    })
+    const calls: string[] = []
+    const settled = await settleClaimedStripeEvent({ rpc: jobRpc(calls), claim: claimed })
+    expect(settled).toEqual({ outcome: "succeeded", detail: "The selected test-mode Stripe event was processed." })
+    expect(calls).toEqual(["payment_provider_lane_status_v1", "payment_apply_provider_event_v1", "job_complete_v1"])
+    expect(await obligationState(opened.obligationId)).toBe("PAID")
+    expect(await receiptCount(opened.orderId)).toBe(1)
+    expect((await ledgerEvents(opened.obligationId)).map(row => row.event)).toEqual([
+      "OBLIGATION_CREATED",
+      "PROVIDER_PAYMENT_SUCCEEDED",
+      "RECEIPT_RECORDED",
+    ])
+    expect(await count("select count(*)::int as n from admin_private.stripe_event_receipts where provider_event_id = 'evt_oneshot_paid' and processed")).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.jobs where job_type <> 'PROCESS_STRIPE_EVENT'")).toBe(0)
+    expect(await untouched()).toBe(before)
+
+    const replay = await rpc<Json>("admin_dev_stripe_one_shot_claim_v1", [adminToken, claimRequest, "evt_oneshot_paid", true, false])
+    expect(replay.replay).toBe(true)
+    expect(replay.currentJobStatus).toBe("SUCCEEDED")
+    const again = await rpc<Json>("admin_dev_stripe_one_shot_claim_v1", [adminToken, key(), "evt_oneshot_paid", true, false])
+    expect(again).toMatchObject({ status: "denied", reason: "already_processed" })
+    expect(await receiptCount(opened.orderId)).toBe(1)
+    expect((await ledgerEvents(opened.obligationId)).filter(row => row.event === "RECEIPT_RECORDED")).toHaveLength(1)
   })
 })

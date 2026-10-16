@@ -25,7 +25,7 @@ export function DevEstablishmentForm({businessId,businessName}:{businessId:strin
     finally{setBusy(false)}
   }
   return <form className="record-form" onSubmit={submit}>
-    <p>This DEV-only operator action verifies the <strong>purchasing business establishment</strong>, not the Google listing's location.
+    <p>This DEV-only operator action verifies the <strong>purchasing business establishment</strong>, not the Google listing&apos;s location.
       Only record genuine evidence of an authorised GB purchasing business. An enquiry or email alone is not proof.
       Sign in with a fresh Admin email code within the last five minutes.</p>
     <fieldset disabled={busy||done||uncertain}>

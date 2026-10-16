@@ -3,12 +3,14 @@ import type { CaseDestination } from "@/lib/case-flow/destinations"
 import type { CaseBlocker, CaseNextAction } from "@/lib/case-flow/model"
 import { actionStatePresentation, actionTarget, caseStatusLabel, ownerSentence, serviceTrackLabels } from "../../presentation"
 import { Badge, Notice } from "../../../ui"
+import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import {
   journeyStatePresentation,
   type CaseJourneyPresentation,
   type JourneyStepState,
   type JourneyStepView,
 } from "@/lib/case-journey/present"
+import { IntakeBrief, IntakeReviewForm, VerificationForm } from "./forms"
 
 const partyLabels = {
   ADMIN: "ProfileRelaunch",
@@ -28,9 +30,8 @@ const stateClass: Record<JourneyStepState, string> = {
 }
 
 /**
- * The eleven-step preview. It renders a presentation model and links to
- * places that already exist. It has no command and no control that marks a
- * step done.
+ * The eleven-step preview. Steps 1 and 2 can record a staff decision.
+ * Every other step still only links to a place that already exists.
  */
 export function CaseJourneyView({
   reference,
@@ -39,6 +40,8 @@ export function CaseJourneyView({
   caseId,
   journey,
   selectedId,
+  brief,
+  version,
 }: {
   reference: string
   customer: string
@@ -46,13 +49,15 @@ export function CaseJourneyView({
   caseId: string
   journey: CaseJourneyPresentation
   selectedId: string
+  brief: JourneyIntakeBrief
+  version: number
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
   return <section className="page guided-workflow">
     <Link className="back-link" href={`/cases/${caseId}`}>Back to the case cockpit</Link>
     <Notice tone="warning">
-      Development preview on the develop branch. This page does not replace the case cockpit, change the case, send email, take a payment, or mark a step complete.
+      Development preview on the develop branch. This page does not replace the case cockpit. A step is complete only when its own record says so. The forms do not send email or take a payment.
     </Notice>
     <header className="page-header cockpit-header">
       <div>
@@ -100,13 +105,13 @@ export function CaseJourneyView({
           })}
         </ol>
       </nav>
-      <StepWorkspace step={selected} />
+      <StepWorkspace step={selected} brief={brief} caseId={caseId} version={version} />
     </div>
     <NextAction journey={journey} caseId={caseId} />
   </section>
 }
 
-function StepWorkspace({ step }: { step: JourneyStepView }) {
+function StepWorkspace({ step, brief, caseId, version }: { step: JourneyStepView; brief: JourneyIntakeBrief; caseId: string; version: number }) {
   const party = partyLabels[step.responsibleParty]
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
@@ -121,13 +126,18 @@ function StepWorkspace({ step }: { step: JourneyStepView }) {
     <h3>Who must act</h3>
     <p>{step.whoMustAct}</p>
     <p className="muted">The catalogue names {party} as the responsible party for this step.</p>
+    {step.decision && <IntakeBrief brief={brief} />}
+    {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
+    {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} />}
     <h3>Existing destination</h3>
     <Destination destination={step.destination} />
     <h3>What unlocks the next step</h3>
     <p>{step.unlock}</p>
-    <h3>Not available in this preview</h3>
+    <h3>{step.decision ? "What this form does not do" : "Not available in this preview"}</h3>
     <p>{step.unsupported}</p>
-    <p className="muted">The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>
+    {step.decision
+      ? <p className="muted">This form records the staff decision for {step.laterWork}. It does not send email, take a payment, or change the technical stage.</p>
+      : <p className="muted">The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
   </article>
 }
 
@@ -153,7 +163,7 @@ function NextAction({ journey, caseId }: { journey: CaseJourneyPresentation; cas
     {journey.blockers.length === 0
       ? <p>No blocker is recorded.</p>
       : <ul className="notice-list">{journey.blockers.map(item => <Blocker key={item.code} blocker={item} />)}</ul>}
-    <p className="muted">Where a step still has no operation of its own, this preview says so above. It does not add a working button.</p>
+    <p className="muted">Steps that still have no operation of their own say so in the step panel. They do not gain a button that marks them done.</p>
   </section>
 }
 

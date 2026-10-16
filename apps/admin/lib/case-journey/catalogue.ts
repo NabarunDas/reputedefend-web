@@ -42,8 +42,10 @@ export type JourneyStepDefinition = {
   applicability: JourneyApplicability
   /** What this build cannot yet do for the step. */
   unsupported: string
-  /** Which later slice owns the operation. This preview does not perform it. */
+  /** Which slice owns the operation. */
   laterWork: string
+  /** Present only for the two steps this preview can record. */
+  decision?: "intake" | "verification"
   unlocksNext: string
 }
 
@@ -54,10 +56,11 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     title: "Case Received",
     purpose: "Confirm a new case has arrived and that somebody still has to read it.",
     responsibleParty: "ADMIN",
-    dataDependencies: ["cases.reference", "cases.status", "cases.work_stage"],
-    completionEvidence: "No intake-review record is projected. A case row and a confirmation email do not complete this step.",
+    dataDependencies: ["cases.reference", "cases.status", "cases.work_stage", "INTAKE_REVIEW work event"],
+    completionEvidence: "The latest INTAKE_REVIEW work event has outcome REVIEWED and is not behind a reopen. A case row, a submitted form and a confirmation email do not complete this step. Outcome INCOMPLETE keeps it open.",
     applicability: "UNIVERSAL",
-    unsupported: "There is no stored operator review of the intake, so this step cannot be marked complete.",
+    unsupported: "Recording the review does not send email and does not change the technical stage. A confirmation email is still not a review.",
+    decision: "intake",
     laterWork: "ADMIN-JOURNEY-02",
     unlocksNext: "A recorded intake review would unlock business, profile and contact verification. Moving the technical stage does not.",
   },
@@ -76,9 +79,10 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "country and tax eligibility",
     ],
     completionEvidence:
-      "Basic business screening, verified customer email, business authority and Google listing state are separate from the legal purchasing establishment. A delivered or opened email is not verified identity. This projection does not carry screening, listing state or the establishment, so the step cannot be completed from what is here.",
+      "The latest BUSINESS_VERIFICATION work event has outcome PRELIMINARY_COMPLETE, no material discrepancy, and is not behind a reopen or a revoked membership. Email control, business authority, a website, an accessible Google listing and the purchasing establishment are separate and are not created by this outcome.",
     applicability: "UNIVERSAL",
-    unsupported: "Basic business screening, Google listing verification and the legal purchasing establishment are not in the case-flow projection. This preview does not invent them.",
+    unsupported: "This record does not verify email, grant business authority, or decide the purchasing establishment or tax eligibility. A saved Google URL is not a verified listing.",
+    decision: "verification",
     laterWork: "ADMIN-JOURNEY-02",
     unlocksNext:
       "An evidence request does not wait for the legal purchasing establishment, and it does not wait for Google listing verification when that verification is unavailable because the listing is suspended or missing. The purchasing establishment and the country and tax eligibility checks stay required before a binding paid quote is issued. Verified email alone does not finish this step.",

@@ -10,8 +10,14 @@ const notFoundError = new Error("NEXT_NOT_FOUND")
 const requireStaff = vi.fn()
 const getCase = vi.fn()
 const loadCaseFlowFacts = vi.fn()
+const recordDetail = vi.fn()
+const getMembership = vi.fn()
+const loadJourneyExtension = vi.fn()
 
-vi.mock("next/navigation", () => ({ notFound: () => { throw notFoundError } }))
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw notFoundError },
+  useRouter: () => ({ refresh: () => undefined }),
+}))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -20,6 +26,11 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/require-staff", () => ({ requireStaff: () => requireStaff() }))
 vi.mock("@/lib/cases/queries", () => ({ getCase: (...args: unknown[]) => getCase(...args) }))
 vi.mock("@/lib/case-flow/load", () => ({ loadCaseFlowFacts: (...args: unknown[]) => loadCaseFlowFacts(...args) }))
+vi.mock("@/lib/records/queries", () => ({
+  recordDetail: (...args: unknown[]) => recordDetail(...args),
+  getMembership: (...args: unknown[]) => getMembership(...args),
+}))
+vi.mock("@/lib/case-journey/read", () => ({ loadJourneyExtension: (...args: unknown[]) => loadJourneyExtension(...args) }))
 
 import CaseJourneyPage from "./page"
 
@@ -76,6 +87,22 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+function records() {
+  recordDetail.mockImplementation(async (entity: string) => ({
+    record: entity === "client"
+      ? { id: "client", name: "Alex Mercer", email: "alex@example.com", phone: null, emailVerified: false, version: 1 }
+      : entity === "business"
+        ? { id: "business", name: "Mercer Bakery", website: null, version: 1 }
+        : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: null, version: 1 },
+    memberships: [],
+    submittedBusinesses: [],
+    duplicates: [],
+    work: [],
+  }))
+  getMembership.mockResolvedValue(undefined)
+  loadJourneyExtension.mockResolvedValue(null)
+}
+
 function allowPreview() {
   vi.stubEnv("VERCEL_ENV", open.VERCEL_ENV)
   vi.stubEnv("VERCEL_GIT_COMMIT_REF", open.VERCEL_GIT_COMMIT_REF)
@@ -95,17 +122,20 @@ describe("the case journey route", () => {
       vi.stubEnv("SUPABASE_URL", env.SUPABASE_URL)
       requireStaff.mockClear()
       getCase.mockClear()
+      recordDetail.mockClear()
       await expect(CaseJourneyPage({
         params: Promise.resolve({ id: CASE_ID }),
         searchParams: Promise.resolve({}),
       })).rejects.toBe(notFoundError)
       expect(requireStaff).not.toHaveBeenCalled()
       expect(getCase).not.toHaveBeenCalled()
+      expect(recordDetail).not.toHaveBeenCalled()
     }
   })
 
   it("shows all eleven steps to an authenticated operator on the develop Preview", async () => {
     allowPreview()
+    records()
     getCase.mockResolvedValue(caseDetail())
     loadCaseFlowFacts.mockResolvedValue(facts())
     render(await CaseJourneyPage({
@@ -120,12 +150,16 @@ describe("the case journey route", () => {
     expect(nav.querySelectorAll("a")).toHaveLength(11)
     expect(nav.querySelector("[data-step='CASE_RECEIVED']")).toHaveAttribute("data-state", "CURRENT")
     expect(screen.getByRole("link", { name: /Case Received/ })).toHaveAttribute("aria-current", "step")
-    expect(document.querySelector("button")).toBeNull()
-    expect(screen.getByText(/does not perform it/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Record the intake review" })).toBeInTheDocument()
+    expect(screen.getByText(/alex@example.com/)).toBeInTheDocument()
+    expect(screen.getByText(/A website is not required/)).toBeInTheDocument()
+    expect(screen.getByText(/Saving a URL does not verify the listing|No Google profile URL is saved/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
   })
 
   it("keeps a locked step readable and says why it is unavailable", async () => {
     allowPreview()
+    records()
     getCase.mockResolvedValue(caseDetail())
     loadCaseFlowFacts.mockResolvedValue(facts())
     render(await CaseJourneyPage({
@@ -134,6 +168,8 @@ describe("the case journey route", () => {
     }))
     expect(screen.getByRole("heading", { name: "Assessment & Recommended Path" })).toBeInTheDocument()
     expect(screen.getByText(/cannot be completed from here/)).toBeInTheDocument()
+    expect(screen.getByText(/does not perform it/)).toBeInTheDocument()
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
   })
 })

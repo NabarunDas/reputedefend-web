@@ -317,18 +317,22 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     authorization: staffAndSession + " The provider webhook authenticates by signature instead, with no session at all.",
     persistence: "Payment events are append-only; a replayed webhook returns the first outcome rather than applying twice.",
     negative:
-      "An unsigned or replayed Stripe webhook is rejected, and no collection can be started while the live payment gate is off.",
+      "An unsigned or replayed Stripe webhook is rejected, and no collection can be started while the live payment gate is off. A mismatched, live-mode, failed or Guard checkout does not create a guided receipt. A DEV one-shot request is refused while its flag is off, and an unsupported event stays queued.",
     evidence: [
       "lib/payments/database.test.ts",
       "lib/payments/command.test.ts",
       "lib/payments/webhook.test.ts",
+      "lib/payments/webhook-signature.test.ts",
       "lib/payments/provider.test.ts",
       "lib/payments/handlers.test.ts",
+      "lib/payments/synthetic-checkout.database.test.ts",
+      "lib/payments/synthetic-checkout.concurrency.database.test.ts",
+      "../../test/pay-env-05/checkout-creation.database.test.ts",
       "app/money/page.test.tsx",
     ],
     status: "DEFERRED_EXTERNAL",
     statusNote:
-      "Readiness is proven against the simulated provider boundary. Live Stripe stays disabled, so end-to-end collection against the real provider is not part of Step 23.",
+      "Readiness is proven against the simulated provider boundary. The portal HTTP command is covered with a mocked provider. Live Stripe stays disabled, so the portal request plus a hosted Checkout is not part of Step 23.",
   },
   {
     area: "Outgoing communications",

@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: [...configDefaults.exclude, "apps/**"],
+    exclude: [...configDefaults.exclude, "apps/**", "test/pay-env-05/**"],
   },
   resolve: {
     alias: {

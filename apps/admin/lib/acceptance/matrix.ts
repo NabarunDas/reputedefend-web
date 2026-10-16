@@ -327,12 +327,12 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "lib/payments/handlers.test.ts",
       "lib/payments/synthetic-checkout.database.test.ts",
       "lib/payments/synthetic-checkout.concurrency.database.test.ts",
-      "lib/payments/checkout-creation.database.test.ts",
+      "../../test/pay-env-05/checkout-creation.database.test.ts",
       "app/money/page.test.tsx",
     ],
     status: "DEFERRED_EXTERNAL",
     statusNote:
-      "Readiness is proven against the simulated provider boundary. Live Stripe stays disabled, so end-to-end collection against the real provider is not part of Step 23.",
+      "Readiness is proven against the simulated provider boundary. The portal HTTP command is covered with a mocked provider. Live Stripe stays disabled, so the portal request plus a hosted Checkout is not part of Step 23.",
   },
   {
     area: "Outgoing communications",

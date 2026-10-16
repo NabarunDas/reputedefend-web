@@ -26,6 +26,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run smoke:marketing
+      - run: npm run test:pay-env-05
+      - run: npm run typecheck:pay-env-05
       - run: npm run test:admin
       - run: npm run build:admin
       - run: npm run typecheck:admin

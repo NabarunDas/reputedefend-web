@@ -10,6 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:pay-env-05": "vitest run --config test/pay-env-05/vitest.config.ts",
+    "typecheck:pay-env-05": "tsc --noEmit -p test/pay-env-05/tsconfig.json",
     "dev:admin": "npm run dev --workspace=@profilerelaunch/admin",
     "build:admin": "npm run build --workspace=@profilerelaunch/admin",
     "start:admin": "npm run start --workspace=@profilerelaunch/admin",

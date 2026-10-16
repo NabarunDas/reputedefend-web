@@ -3,7 +3,7 @@
  * Quote acceptance and settlement go through the existing RPCs and the real
  * Stripe event handler. Event payloads here are assumed verified: this file
  * does not compute a Stripe signature. Checkout creation is covered by
- * checkout-creation.database.test.ts. The Stripe SDK is mocked, so this file
+ * test/pay-env-05/checkout-creation.database.test.ts. The Stripe SDK is mocked, so this file
  * never calls Stripe or a connected database.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto"

@@ -105,14 +105,30 @@ export function CaseJourneyView({
           })}
         </ol>
       </nav>
-      <StepWorkspace step={selected} brief={brief} caseId={caseId} version={version} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} />
     </div>
     <NextAction journey={journey} caseId={caseId} />
   </section>
 }
 
-function StepWorkspace({ step, brief, caseId, version }: { step: JourneyStepView; brief: JourneyIntakeBrief; caseId: string; version: number }) {
+function StepWorkspace({
+  step,
+  journey,
+  brief,
+  caseId,
+  version,
+}: {
+  step: JourneyStepView
+  journey: CaseJourneyPresentation
+  brief: JourneyIntakeBrief
+  caseId: string
+  version: number
+}) {
   const party = partyLabels[step.responsibleParty]
+  const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
+  const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
+  const showIntakeForm = step.decision === "intake" && step.state !== "LOCKED"
+  const showVerificationForm = step.decision === "verification" && step.state !== "LOCKED" && intakeReviewed
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
     <h2 id="journey-step-heading">{step.title}</h2>
@@ -127,8 +143,8 @@ function StepWorkspace({ step, brief, caseId, version }: { step: JourneyStepView
     <p>{step.whoMustAct}</p>
     <p className="muted">The catalogue names {party} as the responsible party for this step.</p>
     {step.decision && <IntakeBrief brief={brief} />}
-    {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
-    {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} />}
+    {showIntakeForm && <IntakeReviewForm caseId={caseId} version={version} />}
+    {showVerificationForm && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} />}
     <h3>Existing destination</h3>
     <Destination destination={step.destination} />
     <h3>What unlocks the next step</h3>

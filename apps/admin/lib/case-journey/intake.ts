@@ -54,6 +54,46 @@ function same(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase()
 }
 
+/** GB, UK, U.K. and United Kingdom name the same country. Other values stay distinct. */
+export function journeyCountryKey(value: string): string {
+  const compact = value.trim().toLowerCase().replace(/\./g, "").replace(/\s+/g, " ")
+  if (compact === "gb" || compact === "uk" || compact === "united kingdom") return "gb"
+  return compact
+}
+
+function countriesConflict(submitted: string, recorded: string): boolean {
+  const left = blank(submitted)
+  if (!left) return false
+  return journeyCountryKey(left) !== journeyCountryKey(recorded)
+}
+
+function supplied(value: string | null | undefined): string | null {
+  const text = blank(value)
+  return text.length ? text : null
+}
+
+function canonicalUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "").toLowerCase()
+}
+
+/**
+ * A URL the customer left blank is missing information. A URL they supplied
+ * conflicts only when the current record is blank or materially different.
+ */
+function urlConflict(submitted: string, recorded: string | null | undefined): boolean {
+  const left = supplied(submitted)
+  if (!left) return false
+  const right = supplied(recorded)
+  if (!right) return true
+  return canonicalUrl(left) !== canonicalUrl(right)
+}
+
+function textConflict(submitted: string, recorded: string | null | undefined): boolean {
+  const left = supplied(submitted)
+  if (!left) return false
+  return !same(left, recorded ?? "")
+}
+
 export function buildJourneyIntake(input: {
   message: string
   reviewUrl: string | null
@@ -80,11 +120,11 @@ export function buildJourneyIntake(input: {
   const conflicts: string[] = []
   const snapshot = input.snapshot
   if (snapshot) {
-    if (!same(snapshot.businessName, input.business.name ?? "")) conflicts.push("The submitted business name does not match the current business record.")
-    if (!same(snapshot.country, input.location.country ?? "")) conflicts.push("The submitted country does not match the current location.")
-    if (!same(snapshot.email, input.customer.email ?? "")) conflicts.push("The submitted email does not match the current customer email.")
-    if (blank(snapshot.websiteUrl) !== blank(input.business.website)) conflicts.push("The submitted website does not match the current business website.")
-    if (blank(snapshot.businessProfileUrl) !== blank(input.location.profileUrl)) conflicts.push("The submitted profile URL does not match the current location.")
+    if (textConflict(snapshot.businessName, input.business.name)) conflicts.push("The submitted business name does not match the current business record.")
+    if (countriesConflict(snapshot.country, input.location.country ?? "")) conflicts.push("The submitted country does not match the current location.")
+    if (textConflict(snapshot.email, input.customer.email)) conflicts.push("The submitted email does not match the current customer email.")
+    if (urlConflict(snapshot.websiteUrl, input.business.website)) conflicts.push("The submitted website does not match the current business website.")
+    if (urlConflict(snapshot.businessProfileUrl, input.location.profileUrl)) conflicts.push("The submitted profile URL does not match the current location.")
   }
   return {
     message: input.message,

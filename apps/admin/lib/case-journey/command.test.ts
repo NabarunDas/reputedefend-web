@@ -17,17 +17,45 @@ const caseId = "22222222-2222-4222-8222-222222222222"
 const key = "33333333-3333-4333-8333-333333333333"
 const intake = { caseId, version: 1, kind: "intake", data: { outcome: "REVIEWED", nextAction: "", note: "Read the enquiry and the business name." } }
 
-function req(body: unknown = intake, headers: Record<string, string> = {}) {
-  return new NextRequest(`${origin}/api/cases/journey`, {
+function req(body: unknown = intake, headers: Record<string, string> = {}, url = origin) {
+  return new NextRequest(`${url}/api/cases/journey`, {
     method: "POST",
     headers: {
-      origin,
+      origin: url,
       "content-type": "application/json",
       "idempotency-key": key,
       cookie: `${sessionCookie}=${"a".repeat(64)}`,
       ...headers,
     },
     body: JSON.stringify(body),
+  })
+}
+
+const screening = {
+  caseId,
+  version: 1,
+  kind: "verification",
+  data: {
+    outcome: "PRELIMINARY_COMPLETE",
+    source: "The enquiry and the public listing",
+    listing: "NOT_SUPPLIED",
+    website: "NONE",
+    discrepancy: false,
+    reason: "The name and country agree with the records.",
+    note: "Recorded the preliminary check.",
+  },
+}
+
+function agree(events: unknown[]) {
+  mocks.rpc.mockImplementation(async (name: string) => {
+    if (name === "admin_case_detail_v1") return {
+      customerId: caseId, businessId: caseId, locationId: caseId, events,
+    }
+    if (name === "admin_record_detail_v1") return { record: { name: "Bakery", email: "alex@example.com", emailVerified: false, country: "UK" } }
+    if (name === "admin_membership_get_v1") return { missing: true }
+    if (name === "admin_case_authorization_readiness_v1") return { customerEmailVerified: false, businessAuthorityVerified: false }
+    if (name === "admin_case_journey_intake_v1") return { snapshot: null, events: [] }
+    return { status: "success" }
   })
 }
 
@@ -78,6 +106,51 @@ describe("journey decision command", () => {
     expect((await POST(req(intake, { "idempotency-key": "nope" }))).status).toBe(400)
     expect((await POST(req("x".repeat(9000)))).status).toBe(413)
     expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("accepts the stable develop hostname and the deployment hostname", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    for (const permitted of [branch, deployment]) {
+      expect((await POST(req(intake, {}, permitted))).status).toBe(200)
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("rejects cross-host, unlisted, webhook and production origins", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    expect((await POST(req(intake, { origin: branch }, deployment))).status).toBe(403)
+    for (const forbidden of ["https://dev-hooks.profilerelaunch.com", "https://not-a-real-preview.vercel.app"]) {
+      expect((await POST(req(intake, {}, forbidden))).status).toBe(403)
+    }
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect((await POST(req(intake, {}, "https://admin.profilerelaunch.com"))).status).toBe(404)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("does not complete screening before a current intake review or over a record disagreement", async () => {
+    agree([])
+    expect((await POST(req(screening))).status).toBe(409)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_case_journey_decision_v1")).toBe(false)
+    agree([{ event: "INTAKE_REVIEW", createdAt: "2026-01-01T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }])
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_case_detail_v1") return {
+        customerId: caseId, businessId: caseId, locationId: caseId,
+        events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-01T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+      }
+      if (name === "admin_record_detail_v1") return { record: { name: "Bakery", email: "alex@example.com", emailVerified: true, country: "GB" } }
+      if (name === "admin_membership_get_v1") return { status: "pending" }
+      if (name === "admin_case_authorization_readiness_v1") return { customerEmailVerified: false, businessAuthorityVerified: true }
+      if (name === "admin_case_journey_intake_v1") return { snapshot: null, events: [] }
+      return { status: "success" }
+    })
+    expect((await POST(req(screening))).status).toBe(409)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_case_journey_decision_v1")).toBe(false)
   })
 
   it("keeps a storage failure private", async () => {

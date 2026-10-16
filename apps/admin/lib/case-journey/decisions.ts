@@ -131,6 +131,23 @@ export function verificationScreeningComplete(events: readonly JourneyWorkEvent[
   return decision.outcome === "PRELIMINARY_COMPLETE" && !decision.discrepancy
 }
 
+/**
+ * Why a preliminary screening must not be treated as complete.
+ * An unverified email or a pending membership is not one of these reasons.
+ * A stale screening event does not override a current disagreement.
+ */
+export function preliminaryBlock(input: {
+  events: readonly JourneyWorkEvent[]
+  emailRecordsDisagree: boolean
+  authorityRecordsDisagree: boolean
+  submittedConflict: boolean
+}): "review" | "records" | null {
+  const recordsDisagree = input.emailRecordsDisagree || input.authorityRecordsDisagree || input.submittedConflict
+  if (recordsDisagree) return "records"
+  if (!intakeReviewComplete(input.events)) return "review"
+  return null
+}
+
 function trimmed(value: unknown, min: number, max: number): string | null {
   if (typeof value !== "string") return null
   const text = value.trim()

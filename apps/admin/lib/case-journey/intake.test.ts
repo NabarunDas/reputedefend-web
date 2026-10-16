@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildJourneyIntake } from "./intake"
+import { buildJourneyIntake, journeyCountryKey } from "./intake"
 
 const snapshot = {
   fullName: "Alex",
@@ -68,5 +68,51 @@ describe("journey intake brief", () => {
       snapshot: null,
     })
     expect(brief.authority).toBe("revoked")
+  })
+
+  it("treats legacy UK labels and canonical GB as the same country", () => {
+    for (const country of ["GB", "UK", "U.K.", "United Kingdom"]) {
+      expect(journeyCountryKey(country)).toBe("gb")
+    }
+    expect(journeyCountryKey("France")).not.toBe(journeyCountryKey("United Kingdom"))
+    expect(journeyCountryKey("Ireland")).not.toBe("gb")
+    const brief = buildJourneyIntake({
+      message: "The profile disappeared.",
+      reviewUrl: null,
+      customer: { name: "Alex", email: "alex@example.com", emailVerified: false },
+      business: { name: "Bakery", website: "https://bakery.example" },
+      location: { country: "UK", profileUrl: "https://maps.example/listing" },
+      duplicates: [],
+      projectedEmailVerified: false,
+      projectedAuthority: false,
+      membershipStatus: "pending",
+      snapshot: { ...snapshot, country: "GB", websiteUrl: "", businessProfileUrl: "", businessName: "Bakery", email: "alex@example.com" },
+    })
+    expect(brief.conflicts).toEqual([])
+    expect(brief.authority).toBe("pending")
+    expect(brief.emailControl).toBe("not_recorded")
+    expect(brief.profileUrl).toBe("https://maps.example/listing")
+  })
+
+  it("keeps a supplied URL or an unrelated country as a discrepancy and does not rewrite the record", () => {
+    const business = { name: "Bakery", website: "https://bakery.example" }
+    const location = { country: "United Kingdom", profileUrl: "https://maps.example/listing" }
+    const brief = buildJourneyIntake({
+      message: "The profile disappeared.",
+      reviewUrl: null,
+      customer: { name: "Alex", email: "alex@example.com", emailVerified: false },
+      business,
+      location,
+      duplicates: [],
+      projectedEmailVerified: false,
+      projectedAuthority: false,
+      membershipStatus: null,
+      snapshot: { ...snapshot, country: "France", websiteUrl: "https://other.example/", businessProfileUrl: "https://maps.example/listing" },
+    })
+    expect(brief.conflicts.join(" ")).toMatch(/country/)
+    expect(brief.conflicts.join(" ")).toMatch(/website/)
+    expect(brief.conflicts.join(" ")).not.toMatch(/profile URL/)
+    expect(business.website).toBe("https://bakery.example")
+    expect(location.country).toBe("United Kingdom")
   })
 })

@@ -30,6 +30,20 @@ DECLARE
   event_name text;
   details jsonb;
   now_time timestamptz := now();
+  review_outcome text;
+  review_at timestamptz;
+  submitted_name text;
+  submitted_email text;
+  submitted_country text;
+  submitted_website text;
+  submitted_profile text;
+  current_name text;
+  current_email text;
+  current_country text;
+  current_website text;
+  current_profile text;
+  left_country text;
+  right_country text;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN
@@ -105,6 +119,43 @@ BEGIN
   END IF;
   IF c.status IN ('CLOSED', 'CANCELLED') THEN
     RETURN jsonb_build_object('status', 'denied');
+  END IF;
+  IF p_kind = 'verification' AND outcome = 'PRELIMINARY_COMPLETE' THEN
+    SELECT e.details->>'outcome', e.created_at INTO review_outcome, review_at
+    FROM public.case_work_events e
+    WHERE e.case_id = c.id AND e.event = 'INTAKE_REVIEW'
+    ORDER BY e.created_at DESC, e.id DESC
+    LIMIT 1;
+    IF review_outcome IS DISTINCT FROM 'REVIEWED' OR EXISTS (
+      SELECT 1 FROM public.case_work_events reopened
+      WHERE reopened.case_id = c.id AND reopened.event = 'reopen' AND reopened.created_at > review_at
+    ) THEN
+      RETURN jsonb_build_object('status', 'prerequisite');
+    END IF;
+    SELECT u.email, b.display_name, b.website_url, l.country, l.business_profile_url
+      INTO current_email, current_name, current_website, current_country, current_profile
+    FROM public.customers u
+    JOIN public.businesses b ON b.id = c.business_id
+    JOIN public.locations l ON l.id = c.location_id
+    WHERE u.id = c.customer_id;
+    submitted_name := btrim(coalesce(c.intake_snapshot->>'businessName', ''));
+    submitted_email := btrim(coalesce(c.intake_snapshot->>'email', ''));
+    submitted_country := btrim(coalesce(c.intake_snapshot->>'country', ''));
+    submitted_website := regexp_replace(lower(btrim(coalesce(c.intake_snapshot->>'websiteUrl', ''))), '/+$', '');
+    submitted_profile := regexp_replace(lower(btrim(coalesce(c.intake_snapshot->>'businessProfileUrl', ''))), '/+$', '');
+    current_website := regexp_replace(lower(btrim(coalesce(current_website, ''))), '/+$', '');
+    current_profile := regexp_replace(lower(btrim(coalesce(current_profile, ''))), '/+$', '');
+    left_country := lower(regexp_replace(regexp_replace(submitted_country, '\.', '', 'g'), '\s+', ' ', 'g'));
+    right_country := lower(regexp_replace(regexp_replace(btrim(coalesce(current_country, '')), '\.', '', 'g'), '\s+', ' ', 'g'));
+    IF left_country IN ('gb', 'uk', 'united kingdom') THEN left_country := 'gb'; END IF;
+    IF right_country IN ('gb', 'uk', 'united kingdom') THEN right_country := 'gb'; END IF;
+    IF (submitted_name <> '' AND lower(submitted_name) IS DISTINCT FROM lower(btrim(coalesce(current_name, ''))))
+       OR (submitted_email <> '' AND lower(submitted_email) IS DISTINCT FROM lower(btrim(coalesce(current_email, ''))))
+       OR (submitted_country <> '' AND left_country IS DISTINCT FROM right_country)
+       OR (submitted_website <> '' AND submitted_website IS DISTINCT FROM current_website)
+       OR (submitted_profile <> '' AND submitted_profile IS DISTINCT FROM current_profile) THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
   END IF;
   IF p_kind = 'verification' AND outcome = 'PRELIMINARY_COMPLETE' AND EXISTS (
     SELECT 1 FROM public.business_memberships m

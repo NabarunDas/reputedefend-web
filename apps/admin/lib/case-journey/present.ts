@@ -28,6 +28,7 @@ import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId
 import {
   latestIntakeDecision,
   latestVerificationDecision,
+  preliminaryBlock,
   verificationScreeningComplete,
   type JourneyWorkEvent,
 } from "./decisions"
@@ -200,11 +201,11 @@ export function presentCaseJourney(
   facts: CaseFlowFacts,
   now: string,
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean } = {},
 ): CaseJourneyPresentation {
   const flow = resolveCaseFlow(facts, now)
   const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
-  const readings = readSteps(facts, now, events, options.recordConflict === true)
+  const readings = readSteps(facts, now, events, options)
   const focusStepId = chooseFocus(flow.primaryAction, facts, readings, closed)
   const focusIndex = focusStepId ? journeyStepIds.indexOf(focusStepId) : null
   const places = buildPlaces(facts)
@@ -368,10 +369,15 @@ function incompatibleNotes(facts: CaseFlowFacts, suppressed: boolean): string[] 
   return []
 }
 
-function readSteps(facts: CaseFlowFacts, now: string, events: readonly JourneyWorkEvent[], recordConflict: boolean): Record<JourneyStepId, Reading> {
+function readSteps(
+  facts: CaseFlowFacts,
+  now: string,
+  events: readonly JourneyWorkEvent[],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean },
+): Record<JourneyStepId, Reading> {
   return {
     CASE_RECEIVED: readReceived(facts, events),
-    VERIFICATION: readVerification(facts, events, recordConflict),
+    VERIFICATION: readVerification(facts, events, options),
     REQUEST_DOCUMENTS: readRequest(facts),
     EVIDENCE_REVIEW: readEvidence(facts),
     ASSESSMENT: readAssessment(),
@@ -417,7 +423,11 @@ function readReceived(facts: CaseFlowFacts, events: readonly JourneyWorkEvent[])
   }
 }
 
-function readVerification(facts: CaseFlowFacts, events: readonly JourneyWorkEvent[], recordConflict: boolean): Reading {
+function readVerification(
+  facts: CaseFlowFacts,
+  events: readonly JourneyWorkEvent[],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean },
+): Reading {
   const auth = facts.authorization
   const revoked = auth.membershipStatus === "revoked"
   const decision = latestVerificationDecision(events)
@@ -442,7 +452,13 @@ function readVerification(facts: CaseFlowFacts, events: readonly JourneyWorkEven
     known.push("No Google listing was supplied. That does not block this check.")
   }
   if (decision?.website === "NONE") known.push("No website was recorded. A website is not required.")
-  const screening = verificationScreeningComplete(events, revoked) && !recordConflict
+  const block = preliminaryBlock({
+    events,
+    emailRecordsDisagree: options.emailRecordsDisagree === true,
+    authorityRecordsDisagree: options.authorityRecordsDisagree === true,
+    submittedConflict: options.recordConflict === true,
+  })
+  const screening = verificationScreeningComplete(events, revoked) && block === null
   if (screening) {
     return {
       proof: "complete",
@@ -457,10 +473,12 @@ function readVerification(facts: CaseFlowFacts, events: readonly JourneyWorkEven
   if (decision?.outcome === "LISTING_UNAVAILABLE") missing[0] = "A preliminary screening outcome. The unavailable listing is recorded and does not by itself complete or block the step."
   if (decision?.outcome === "DUPLICATE_REVIEW") missing[0] = "The duplicate review. A possible duplicate does not complete this step."
   if (decision?.outcome === "ESCALATE" || decision?.discrepancy) missing[0] = "The escalated discrepancy. A material conflict does not complete this step."
-  if (recordConflict) missing.unshift("The submitted details do not match the current records. A screening checkbox cannot hide that conflict.")
+  if (block === "review") missing.unshift("A current intake review with outcome REVIEWED. Screening cannot be completed before that, and an earlier review does not survive a reopen.")
+  if (block === "records") missing.unshift("The email, authority or submitted details disagree. A screening checkbox cannot hide that conflict.")
   if (revoked) missing.unshift("A membership that is no longer revoked. A screening checkbox cannot override it.")
+  const contradictory = block === "records"
   return {
-    proof: decision || revoked ? "attention" : "unproven",
+    proof: decision || revoked || contradictory ? "attention" : "unproven",
     known,
     missing,
     who: revoked

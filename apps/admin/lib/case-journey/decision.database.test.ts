@@ -95,16 +95,43 @@ describe("proposed journey decision SQL", () => {
 
   it("stores screening without verifying email or the listing, and refuses a discrepancy or a revoked membership marked complete", async () => {
     const screening = { outcome: "PRELIMINARY_COMPLETE", source: "Public listing", listing: "SUSPENDED_OR_MISSING", website: "NONE", discrepancy: false, reason, note }
-    expect((await decide("verification", screening)).status).toBe("success")
+    expect((await decide("verification", screening)).status).toBe("prerequisite")
+    expect((await decide("intake", { outcome: "INCOMPLETE", nextAction: "Ask for the town", note })).status).toBe("success")
+    expect((await decide("verification", screening, 2)).status).toBe("prerequisite")
+    expect((await decide("intake", { outcome: "REVIEWED", nextAction: "", note }, 2)).status).toBe("success")
+    expect((await decide("verification", screening, 3)).status).toBe("success")
     const stored = (await detail()).events[0].details
     expect(stored).toMatchObject({ outcome: "PRELIMINARY_COMPLETE", listing: "SUSPENDED_OR_MISSING", website: "NONE", discrepancy: false })
     expect(stored).not.toHaveProperty("emailVerified")
-    expect((await decide("verification", { ...screening, discrepancy: true })).status).toBe("invalid")
-    expect((await decide("verification", { ...screening, outcome: "LISTING_UNAVAILABLE", listing: "ACCESSIBLE" })).status).toBe("invalid")
-    expect((await decide("verification", { ...screening, emailVerified: true })).status).toBe("invalid")
+    expect((await db.query(`select display_name from public.businesses where id='${business}'`)).rows[0]).toMatchObject({ display_name: "Bakery" })
+    expect((await decide("verification", { ...screening, discrepancy: true }, 4)).status).toBe("invalid")
+    expect((await decide("verification", { ...screening, outcome: "LISTING_UNAVAILABLE", listing: "ACCESSIBLE" }, 4)).status).toBe("invalid")
+    expect((await decide("verification", { ...screening, emailVerified: true }, 4)).status).toBe("invalid")
     await db.exec(`insert into public.business_memberships(customer_id,business_id,status,evidence) values('${customer}','${business}','revoked','Membership was withdrawn after the check.')`)
-    expect((await decide("verification", screening, 2)).status).toBe("invalid")
-    expect((await decide("verification", { ...screening, outcome: "ESCALATE", discrepancy: true }, 2)).status).toBe("success")
+    expect((await decide("verification", screening, 4)).status).toBe("invalid")
+    expect((await decide("verification", { ...screening, outcome: "ESCALATE", discrepancy: true }, 4)).status).toBe("success")
+  })
+
+  it("treats legacy UK and canonical GB as the same country, and does not treat a blank URL as a contradiction", async () => {
+    await db.exec(`update public.cases set intake_snapshot = '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"GB","details":"The profile disappeared.","websiteUrl":"","businessProfileUrl":""}'::jsonb where id='${caseId}'`)
+    await db.exec(`update public.businesses set website_url='https://bakery.example' where id='${business}'`)
+    await db.exec(`update public.locations set business_profile_url='https://maps.example/listing' where id='${location}'`)
+    const screening = { outcome: "PRELIMINARY_COMPLETE", source: "The enquiry and the location record", listing: "NOT_SUPPLIED", website: "PRESENT", discrepancy: false, reason, note }
+    const version = async () => (await detail()).version as number
+    expect((await decide("intake", { outcome: "REVIEWED", nextAction: "", note }, await version())).status).toBe("success")
+    expect((await decide("verification", screening, await version())).status).toBe("success")
+    expect((await db.query(`select country from public.locations where id='${location}'`)).rows[0]).toMatchObject({ country: "United Kingdom" })
+    await db.exec(`update public.cases set intake_snapshot = jsonb_set(intake_snapshot, '{country}', '"France"') where id='${caseId}'`)
+    expect((await decide("verification", screening, await version())).status).toBe("invalid")
+    await db.exec(`update public.cases set intake_snapshot = jsonb_set(jsonb_set(intake_snapshot, '{country}', '"U.K."'), '{websiteUrl}', '"https://other.example"') where id='${caseId}'`)
+    expect((await decide("verification", screening, await version())).status).toBe("invalid")
+  })
+
+  it("does not let a review from before a reopen complete the screening", async () => {
+    expect((await decide("intake", { outcome: "REVIEWED", nextAction: "", note })).status).toBe("success")
+    await db.exec(`insert into public.case_work_events(case_id,actor_id,event,note,visibility,details,created_at) values('${caseId}','${uid}','reopen','The case was opened again after closure.','INTERNAL','{}','2099-01-01')`)
+    const screening = { outcome: "PRELIMINARY_COMPLETE", source: "The enquiry", listing: "NOT_SUPPLIED", website: "NONE", discrepancy: false, reason, note }
+    expect((await decide("verification", screening, 2)).status).toBe("prerequisite")
   })
 
   it("reads the original snapshot and rolls a decision back", async () => {

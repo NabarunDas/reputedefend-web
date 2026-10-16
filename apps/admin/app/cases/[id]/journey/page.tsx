@@ -55,7 +55,11 @@ export default async function CaseJourneyPage({
     membershipStatus: membership?.status ?? null,
     snapshot: extension?.snapshot ?? null,
   })
-  const journey = presentCaseJourney(facts, new Date().toISOString(), events, { recordConflict: brief.conflicts.length > 0 })
+  const journey = presentCaseJourney(facts, new Date().toISOString(), events, {
+    recordConflict: brief.conflicts.length > 0,
+    emailRecordsDisagree: brief.emailControl === "records_disagree",
+    authorityRecordsDisagree: brief.authority === "records_disagree",
+  })
   const selectedId = selectJourneyStep(journey, query.step)
   return <CaseJourneyView
     reference={detail.reference}

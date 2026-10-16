@@ -155,7 +155,11 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
   }
 }
 
-function show(overrides: Partial<CaseFlowFacts> = {}, events: readonly JourneyWorkEvent[] = [], options: { recordConflict?: boolean } = {}) {
+function show(
+  overrides: Partial<CaseFlowFacts> = {},
+  events: readonly JourneyWorkEvent[] = [],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean } = {},
+) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
 
@@ -673,10 +677,10 @@ describe("intake review and business screening records", () => {
     const genuine = show({}, [intake("REVIEWED"), screening()])
     expect(step(genuine, "VERIFICATION").state).toBe("COMPLETED")
     expect(step(genuine, "VERIFICATION").known.join(" ")).toMatch(/not a verified purchasing establishment/)
-    const noWebsite = show({}, [screening({ website: "NONE" })])
+    const noWebsite = show({}, [intake("REVIEWED"), screening({ website: "NONE" })])
     expect(step(noWebsite, "VERIFICATION").state).toBe("COMPLETED")
     expect(step(noWebsite, "VERIFICATION").known.join(" ")).toMatch(/website is not required/)
-    const suspended = show({}, [screening({ listing: "SUSPENDED_OR_MISSING" })])
+    const suspended = show({}, [intake("REVIEWED"), screening({ listing: "SUSPENDED_OR_MISSING" })])
     expect(step(suspended, "VERIFICATION").state).toBe("COMPLETED")
     expect(step(suspended, "VERIFICATION").known.join(" ")).toMatch(/not a verified listing/)
     expect(step(suspended, "VERIFICATION").known.join(" ")).toMatch(/does not block assessment/)
@@ -685,13 +689,13 @@ describe("intake review and business screening records", () => {
   it("keeps unverified email, and verified email without authority, from being rewritten by the screening record", () => {
     const unverified = show(
       { authorization: authorization({ customerEmailVerified: false, businessAuthorityVerified: false }) },
-      [screening()],
+      [intake("REVIEWED"), screening()],
     )
     expect(step(unverified, "VERIFICATION").state).toBe("COMPLETED")
     expect(step(unverified, "VERIFICATION").known.join(" ")).toMatch(/Verified customer email is not recorded/)
     const emailOnly = show(
       { authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "pending" }) },
-      [screening()],
+      [intake("REVIEWED"), screening()],
     )
     expect(step(emailOnly, "VERIFICATION").state).toBe("COMPLETED")
     expect(step(emailOnly, "VERIFICATION").known.join(" ")).toMatch(/Business authority is not recorded/)
@@ -710,8 +714,29 @@ describe("intake review and business screening records", () => {
     )
     expect(step(revoked, "VERIFICATION").state).not.toBe("COMPLETED")
     expect(step(revoked, "VERIFICATION").missing.join(" ")).toMatch(/checkbox cannot override/)
-    const conflict = show({}, [screening()], { recordConflict: true })
-    expect(step(conflict, "VERIFICATION").state).not.toBe("COMPLETED")
-    expect(step(conflict, "VERIFICATION").missing.join(" ")).toMatch(/do not match the current records/)
+    const conflict = show({}, [intake("REVIEWED"), screening()], { recordConflict: true })
+    expect(step(conflict, "VERIFICATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(conflict, "VERIFICATION").missing.join(" ")).toMatch(/disagree/)
+    const emailGap = show({}, [intake("REVIEWED"), screening()], { emailRecordsDisagree: true })
+    expect(step(emailGap, "VERIFICATION").state).toBe("NEEDS_ATTENTION")
+    const authorityGap = show({}, [intake("REVIEWED"), screening()], { authorityRecordsDisagree: true })
+    expect(step(authorityGap, "VERIFICATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(show({}, [screening()]), "VERIFICATION").state).not.toBe("COMPLETED")
+    const reopened = show({}, [intake("REVIEWED", PAST), { event: "reopen", createdAt: NOW, details: {} }, screening({}, NOW)])
+    expect(step(reopened, "VERIFICATION").state).not.toBe("COMPLETED")
+  })
+
+  it("leaves a later-stage case readable without inventing an intake review", () => {
+    const journey = show({
+      technicalStage: "ASSESSMENT_READY",
+      evidence: {
+        requests: [request({ status: "FULFILLED" })],
+        versions: [upload({ reviewStatus: "ACCEPTED" })],
+      },
+      communications: [delivered()],
+    })
+    expect(step(journey, "CASE_RECEIVED").state).not.toBe("COMPLETED")
+    expect(step(journey, "VERIFICATION").state).not.toBe("COMPLETED")
+    expect(step(journey, "EVIDENCE_REVIEW").state).toBe("COMPLETED")
   })
 })

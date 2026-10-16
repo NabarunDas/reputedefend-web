@@ -172,4 +172,18 @@ describe("the case journey route", () => {
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
   })
+
+  it("does not offer screening completion while the intake review is still the current step", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Business, Profile & Contact Verification" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+    expect(screen.getByText(/no control that skips ahead/)).toBeInTheDocument()
+  })
 })

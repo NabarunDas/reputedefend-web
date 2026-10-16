@@ -123,7 +123,7 @@ export function IntakeReviewForm({ caseId, version }: { caseId: string; version:
   </form>
 }
 
-export function VerificationForm({ caseId, version }: { caseId: string; version: number }) {
+export function VerificationForm({ caseId, version, canComplete }: { caseId: string; version: number; canComplete: boolean }) {
   const { busy, done, uncertain, message, send } = useDecision()
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -148,8 +148,8 @@ export function VerificationForm({ caseId, version }: { caseId: string; version:
     <p>Record what you checked, the outcome and the reason. A website, a Companies House record and an accessible Google listing are not required. A suspended or missing listing does not block assessment or an evidence request. An unavailable listing can only be saved when the listing is marked suspended, missing or inaccessible. A conflict can only be saved as escalation. This form does not verify email, grant business authority, or record the purchasing establishment or tax eligibility.</p>
     <fieldset disabled={busy || done || uncertain}>
       <label>Outcome
-        <select name="outcome" defaultValue="PRELIMINARY_COMPLETE">
-          <option value="PRELIMINARY_COMPLETE">Preliminary checks completed</option>
+        <select name="outcome" defaultValue={canComplete ? "PRELIMINARY_COMPLETE" : "FURTHER_INFORMATION"}>
+          {canComplete && <option value="PRELIMINARY_COMPLETE">Preliminary checks completed</option>}
           <option value="FURTHER_INFORMATION">Further information required</option>
           <option value="LISTING_UNAVAILABLE">Listing unavailable or suspended</option>
           <option value="DUPLICATE_REVIEW">Duplicate review needed</option>

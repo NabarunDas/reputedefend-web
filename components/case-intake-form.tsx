@@ -70,7 +70,7 @@ export const PERSISTED_SUCCESS_COPY = {
   referenceLabel: "Case reference",
   review: "A ProfileRelaunch specialist will review the information you submitted. We may contact you if clarification is needed.",
   keep: "Keep this reference for future correspondence.",
-  emailSent: "We've also sent this reference to your email address.",
+  emailSent: "We've passed this reference to the email provider. That does not confirm it has reached your inbox.",
   emailSuppressed: "Your case has been safely recorded. Confirmation email is not sent in this development environment. Please keep the reference above.",
   emailFailed: "We couldn't send the confirmation email right now, but your case has been safely recorded. Please keep the reference above.",
 } as const

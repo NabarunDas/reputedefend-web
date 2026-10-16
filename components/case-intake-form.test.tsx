@@ -275,6 +275,9 @@ describe("CaseIntakeForm", () => {
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.review)).toBeInTheDocument()
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.keep)).toBeInTheDocument()
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.emailSent)).toBeInTheDocument()
+    expect(PERSISTED_SUCCESS_COPY.emailSent).toContain("email provider")
+    expect(PERSISTED_SUCCESS_COPY.emailSent).toContain("does not confirm")
+    expect(PERSISTED_SUCCESS_COPY.emailSent).not.toMatch(/delivered/i)
     expect(screen.queryByText(SUCCESS_COPY.body)).not.toBeInTheDocument()
   })
 

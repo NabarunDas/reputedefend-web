@@ -103,7 +103,11 @@ export type EnquiryResult = {
   caseRef?: string
   caseType?: string
   receiptEmailSent?: boolean
-  /** sent: delivered. suppressed: DEV gate intentionally did not send. unavailable: a real send did not succeed. */
+  /**
+   * sent: the email provider accepted the message. That is not confirmed delivery.
+   * suppressed: the DEV gate intentionally did not send.
+   * unavailable: a real send did not succeed.
+   */
   receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
 }
 

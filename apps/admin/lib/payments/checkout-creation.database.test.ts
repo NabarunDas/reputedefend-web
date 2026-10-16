@@ -1,16 +1,19 @@
 /**
  * Offline Checkout creation for one accepted Guided order.
- * The Stripe SDK is mocked at customers.create and checkout.sessions.create.
- * No network call and no connected Stripe resource.
+ * Calls the real customer payment command. The Stripe SDK is mocked at
+ * customers.create and checkout.sessions.create. No network call and no
+ * connected Stripe resource. The rehearsal stays in the Admin suite so the
+ * Customer deployment does not compile the database harness.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { PGlite } from "@electric-sql/pglite"
-import { syntheticPurchasingEstablishmentSql } from "../../../admin/lib/commercial/purchasing-establishment.fixture"
-import { paidQuoteCommand } from "../../../admin/lib/commercial/paid-quote-acceptance"
-import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../../../admin/lib/commercial/paid-service-approval.fixture"
-import { applyChain, preparePlatform } from "../../../admin/lib/recovery/harness"
+import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
+import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
+import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
+import { applyChain, preparePlatform } from "../recovery/harness"
+import { sessionCookie } from "../../../customer/lib/config"
 
 const checkoutUrl = "https://checkout.stripe.com/c/pay/cs_test_synthetic"
 const testKey = "rk_test_placeholdernotarealkey"
@@ -62,16 +65,15 @@ vi.mock("stripe", () => ({
   },
 }))
 
-vi.mock("@/lib/backend", async importOriginal => {
-  const actual = await importOriginal<typeof import("@/lib/backend")>()
+vi.mock("../../../customer/lib/backend.ts", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../customer/lib/backend.ts")>()
   return {
     ...actual,
     backend: () => ({ rpc: (name: string, args: Record<string, unknown> = {}) => bridge.rpc(name, args) }),
   }
 })
 
-import { paymentCommand } from "./payment"
-import { sessionCookie } from "@/lib/config"
+import { paymentCommand } from "../../../customer/lib/action/payment"
 
 const db = new PGlite()
 const admin = "11111111-1111-4111-8111-111111111111"

@@ -327,7 +327,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
       "lib/payments/handlers.test.ts",
       "lib/payments/synthetic-checkout.database.test.ts",
       "lib/payments/synthetic-checkout.concurrency.database.test.ts",
-      "../customer/lib/action/checkout-creation.database.test.ts",
+      "lib/payments/checkout-creation.database.test.ts",
       "app/money/page.test.tsx",
     ],
     status: "DEFERRED_EXTERNAL",

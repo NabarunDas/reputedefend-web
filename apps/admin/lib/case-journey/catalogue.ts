@@ -102,7 +102,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "An evidence request exists and the newest evidence-request message is recorded as DELIVERED. A request record, a draft, a reviewed draft, a queued message, or provider acceptance is not delivery. A future decision that no documents are required is not in this projection, so an empty request list is not completion.",
     applicability: "UNIVERSAL",
     unsupported:
-      "The guided preview does not record the evidence list, review a draft, or issue the message, and it has no evidence-waiver command. The communications workspace remains the existing place for the message.",
+      "This step can save an evidence requirement and draft or review the evidence-request message through the existing commands. It does not send email, queue a worker, or record that no documents are required. An empty checklist is not that decision.",
     laterWork: "ADMIN-JOURNEY-03",
     unlocksNext:
       "Confirmed delivery shows the customer was reached. It does not finish evidence review, and a customer upload can be reviewed before that confirmation arrives. Provider acceptance does not count as delivery. A no-documents decision stays unknown until ADMIN-JOURNEY-03 records it.",

@@ -12,10 +12,10 @@ const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
 const caseId = "55555555-5555-4555-8555-555555555555"
 
-function req(body: unknown, headers: Record<string, string> = {}) {
-  return new NextRequest(`${origin}/api/operations/communications`, {
+function req(body: unknown, headers: Record<string, string> = {}, url = origin) {
+  return new NextRequest(`${url}/api/operations/communications`, {
     method: "POST",
-    headers: { origin, "content-type": "application/json", "idempotency-key": key, cookie: `${sessionCookie}=${"a".repeat(64)}`, ...headers },
+    headers: { origin: url, "content-type": "application/json", "idempotency-key": key, cookie: `${sessionCookie}=${"a".repeat(64)}`, ...headers },
     body: JSON.stringify(body),
   })
 }
@@ -68,6 +68,82 @@ describe("communications admin commands", () => {
     const denied = await communicationsCommand(req({ operation: "send_now", html: "<script>alert(1)</script>" }))
     expect(denied.status).toBe(400)
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/send_now|<script>/)
+  })
+
+  it("accepts both authorised preview hostnames and rejects the others", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    const draft = { operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key }
+    for (const permitted of [branch, deployment]) {
+      expect((await communicationsCommand(req(draft, {}, permitted))).status).toBe(200)
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    mocks.rpc.mockClear()
+    expect((await communicationsCommand(req(draft, { origin: branch }, deployment))).status).toBe(403)
+    for (const forbidden of ["https://dev-hooks.profilerelaunch.com", "https://not-a-real-preview.vercel.app", origin]) {
+      expect((await communicationsCommand(req(draft, {}, forbidden))).status).toBe(403)
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect((await communicationsCommand(req(draft))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses a draft or a review when the preview settings are missing and does not send", async () => {
+    vi.stubEnv("CUSTOMER_ORIGIN", "")
+    const missingOrigin = await communicationsCommand(req({
+      operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key,
+    }))
+    expect(missingOrigin.status).toBe(503)
+    expect(await missingOrigin.json()).toEqual({ message: "The customer site origin is not configured." })
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "")
+    const missingSecret = await communicationsCommand(req({
+      operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key,
+    }))
+    expect(missingSecret.status).toBe(503)
+    const missingSecretBody = await missingSecret.json()
+    expect(missingSecretBody).toEqual({ message: "The secure upload link secret is not configured." })
+    expect(JSON.stringify(missingSecretBody)).not.toMatch(/communication-link-secret/)
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "communication-link-secret-for-tests-32b")
+    const missingSender = await communicationsCommand(req({ operation: "review", communicationId: key, version: 1 }))
+    expect(missingSender.status).toBe(503)
+    expect(await missingSender.json()).toEqual({ message: "The outbound sender address is not configured." })
+    const queued = await communicationsCommand(req({ operation: "queue", communicationId: key, version: 1 }))
+    expect(queued.status).toBe(403)
+    expect(await queued.json()).toMatchObject({ message: expect.stringMatching(/not enabled yet/) })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("does not forward browser wording on a draft or a review", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    const drafted = await communicationsCommand(req({
+      operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key,
+      subject: "Attacker subject", bodyText: "Attacker body https://evil.example", recipient: "other@example.com", html: "<b>no</b>",
+    }))
+    expect(drafted.status).toBe(200)
+    expect(mocks.rpc.mock.calls[0][1].p_payload).toEqual(expect.not.objectContaining({
+      subject: "Attacker subject", bodyText: expect.any(String), recipient: "other@example.com", html: expect.any(String),
+    }))
+    expect(mocks.rpc.mock.calls[0][1].p_payload).toEqual(expect.objectContaining({
+      customerOrigin: "https://customer.profilerelaunch.com",
+      templateKey: "EVIDENCE_REQUEST",
+      evidenceRequestId: key,
+    }))
+    const reviewed = await communicationsCommand(req({
+      operation: "review", communicationId: key, version: 1,
+      subject: "Changed after review", bodyText: "Changed body", recipient: "other@example.com",
+    }))
+    expect(reviewed.status).toBe(200)
+    expect(mocks.rpc.mock.calls[1][1].p_payload).toEqual(expect.objectContaining({ fromAddress: "ops@example.com" }))
+    expect(mocks.rpc.mock.calls[1][1].p_payload).toEqual(expect.not.objectContaining({
+      subject: "Changed after review", bodyText: "Changed body", recipient: "other@example.com",
+    }))
   })
 
   it("does not accept a queue payload that tries to change the snapshot", async () => {

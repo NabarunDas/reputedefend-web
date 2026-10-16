@@ -66,7 +66,10 @@ export async function evidenceCommand(request: NextRequest) {
 export async function runEvidenceCommand(request: NextRequest, storage: EvidenceStorage | null) {
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return reply("Reload this page and try again.", 403)
+  const requestOrigin = request.nextUrl.origin
+  if (request.headers.get("origin") !== requestOrigin || !config.allowedOrigins.includes(requestOrigin)) {
+    return reply("Reload this page and try again.", 403)
+  }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply("Reload this page and try again.", 415)
   const token = request.cookies.get(sessionCookie)?.value, key = request.headers.get("idempotency-key")
   if (!validToken(token)) return reply("Please sign in again.", 401)

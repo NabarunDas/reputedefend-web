@@ -1,10 +1,17 @@
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
+import { authConfig } from "@/lib/auth/config"
+import { sendDisabledReason } from "@/lib/communications/gate"
+import { linkSecret } from "@/lib/communications/link"
+import { mailFromAddress } from "@/lib/communications/mail"
+import { loadCaseCommunications } from "@/lib/communications/queries"
 import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
+import { buildJourneyDocuments } from "@/lib/case-journey/documents"
 import { buildJourneyIntake } from "@/lib/case-journey/intake"
 import { loadJourneyExtension } from "@/lib/case-journey/read"
 import { presentCaseJourney, selectJourneyStep } from "@/lib/case-journey/present"
+import { getEvidenceCase } from "@/lib/evidence/queries"
 import { getMembership, recordDetail } from "@/lib/records/queries"
 import { requireStaff } from "@/lib/require-staff"
 import { CaseJourneyView } from "./view"
@@ -62,6 +69,22 @@ export default async function CaseJourneyPage({
     authorityRecordsDisagree: brief.authority === "records_disagree",
   })
   const selectedId = selectJourneyStep(journey, query.step)
+  const selected = journey.steps.find(step => step.id === selectedId)
+  const documents = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+    ? buildJourneyDocuments({
+      caseType: detail.type,
+      issue: brief.snapshot?.details || brief.message,
+      businessName: detail.business,
+      requests: (await getEvidenceCase(detail.id)).requests,
+      history: await loadCaseCommunications(detail.id),
+      sendDisabledReason: sendDisabledReason(),
+      drafting: {
+        customerOriginConfigured: Boolean(authConfig()?.customerOrigin),
+        uploadLinkConfigured: linkSecret() !== null,
+        senderConfigured: mailFromAddress() !== null,
+      },
+    })
+    : null
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -71,5 +94,6 @@ export default async function CaseJourneyPage({
     selectedId={selectedId}
     brief={brief}
     version={detail.version}
+    documents={documents}
   />
 }

@@ -21,6 +21,9 @@ export type JourneySnapshot = {
 export type JourneyIntakeBrief = {
   message: string
   reviewUrl: string | null
+  /** Case opened time. The proposed read returns this as openedAt from cases.created_at. */
+  openedAt: string | null
+  submittedAtLabel: string | null
   customerName: string
   email: string
   phone: string | null
@@ -34,6 +37,63 @@ export type JourneyIntakeBrief = {
   authority: "verified" | "pending" | "revoked" | "not_recorded" | "records_disagree"
   snapshot: JourneySnapshot | null
   conflicts: string[]
+}
+
+export type ScreeningFieldDefaults = {
+  website: "PRESENT" | "NONE"
+  /** Empty when a profile URL is recorded, so the operator must choose. Not an accessible listing. */
+  listing: "NOT_SUPPLIED" | ""
+  websiteRecorded: boolean
+  profileRecorded: boolean
+}
+
+/** UK date and time for the original submission. Europe/London, 24-hour clock. */
+export function formatUkSubmittedAt(iso: string): string | null {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Europe/London",
+  }).format(date)
+}
+
+/**
+ * Website and Google listing controls start from the business and location
+ * records. A saved Google URL is not an accessible or verified listing, so
+ * that control stays unselected until the operator chooses.
+ */
+export function screeningFieldDefaults(input: { website: string | null; profileUrl: string | null }): ScreeningFieldDefaults {
+  const websiteRecorded = blank(input.website).length > 0
+  const profileRecorded = blank(input.profileUrl).length > 0
+  return {
+    website: websiteRecorded ? "PRESENT" : "NONE",
+    listing: profileRecorded ? "" : "NOT_SUPPLIED",
+    websiteRecorded,
+    profileRecorded,
+  }
+}
+
+/**
+ * "No website" or "Not supplied" contradicts a value already on the record.
+ * The operator can still record that, but only by marking the discrepancy and escalating.
+ */
+export function screeningContradictsRecord(input: {
+  website: string
+  listing: string
+  recordedWebsite: string | null
+  recordedProfileUrl: string | null
+  outcome: string
+  discrepancy: boolean
+}): boolean {
+  if (input.outcome === "ESCALATE" && input.discrepancy) return false
+  if (input.website === "NONE" && blank(input.recordedWebsite).length > 0) return true
+  if (input.listing === "NOT_SUPPLIED" && blank(input.recordedProfileUrl).length > 0) return true
+  return false
 }
 
 type RecordShape = {
@@ -105,6 +165,7 @@ export function buildJourneyIntake(input: {
   projectedAuthority: boolean
   membershipStatus: string | null
   snapshot: JourneySnapshot | null
+  openedAt?: string | null
 }): JourneyIntakeBrief {
   const recordEmail = input.customer.emailVerified === true
   const emailControl = recordEmail === input.projectedEmailVerified
@@ -126,9 +187,12 @@ export function buildJourneyIntake(input: {
     if (urlConflict(snapshot.websiteUrl, input.business.website)) conflicts.push("The submitted website does not match the current business website.")
     if (urlConflict(snapshot.businessProfileUrl, input.location.profileUrl)) conflicts.push("The submitted profile URL does not match the current location.")
   }
+  const openedAt = supplied(input.openedAt)
   return {
     message: input.message,
     reviewUrl: input.reviewUrl,
+    openedAt,
+    submittedAtLabel: openedAt ? formatUkSubmittedAt(openedAt) : null,
     customerName: input.customer.name ?? "",
     email: input.customer.email ?? "",
     phone: input.customer.phone ?? null,

@@ -160,6 +160,30 @@ describe("journey decision command", () => {
     expect(await response.text()).not.toContain("does not exist")
   })
 
+  it("does not record no website or not supplied when those details are already stored, unless the operator escalates", async () => {
+    const reviewed = [{ event: "INTAKE_REVIEW", createdAt: "2026-01-01T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }]
+    mocks.rpc.mockImplementation(async (name: string, args: { p_entity?: string }) => {
+      if (name === "admin_case_detail_v1") return { customerId: caseId, businessId: caseId, locationId: caseId, events: reviewed }
+      if (name === "admin_record_detail_v1" && args?.p_entity === "business") return { record: { name: "Bakery", website: "https://bakery.example" } }
+      if (name === "admin_record_detail_v1") return { record: { name: "Alex", email: "alex@example.com", emailVerified: false, country: "UK", profileUrl: "https://maps.example/listing" } }
+      if (name === "admin_membership_get_v1") return { missing: true }
+      if (name === "admin_case_authorization_readiness_v1") return { customerEmailVerified: false, businessAuthorityVerified: false }
+      if (name === "admin_case_journey_intake_v1") return { openedAt: "2026-01-15T12:00:00.000Z", snapshot: null, events: [] }
+      return { status: "success" }
+    })
+    const contradicted = {
+      ...screening,
+      data: { ...screening.data, outcome: "FURTHER_INFORMATION", listing: "SUSPENDED_OR_MISSING", website: "NONE" },
+    }
+    expect((await POST(req(contradicted))).status).toBe(400)
+    expect((await POST(req({ ...screening, data: { ...screening.data, outcome: "FURTHER_INFORMATION", website: "PRESENT", listing: "NOT_SUPPLIED" } }))).status).toBe(400)
+    expect((await POST(req(screening))).status).toBe(400)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_case_journey_decision_v1")).toBe(false)
+    const escalated = { ...contradicted, data: { ...contradicted.data, outcome: "ESCALATE", discrepancy: true } }
+    expect((await POST(req(escalated))).status).toBe(200)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_case_journey_decision_v1")).toBe(true)
+  })
+
   it("rejects an incomplete review with no next action and a discrepancy marked complete", () => {
     expect(intakeDecisionArgs({ outcome: "INCOMPLETE", nextAction: "", note: "The town is missing from the enquiry." })).toBeNull()
     expect(intakeDecisionArgs({ outcome: "REVIEWED", nextAction: "Ignore the gap", note: "Read the enquiry and the business name." })).toBeNull()

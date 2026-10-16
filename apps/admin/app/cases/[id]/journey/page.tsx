@@ -54,6 +54,7 @@ export default async function CaseJourneyPage({
     projectedAuthority: facts.authorization.businessAuthorityVerified,
     membershipStatus: membership?.status ?? null,
     snapshot: extension?.snapshot ?? null,
+    openedAt: extension?.openedAt ?? detail.createdAt,
   })
   const journey = presentCaseJourney(facts, new Date().toISOString(), events, {
     recordConflict: brief.conflicts.length > 0,

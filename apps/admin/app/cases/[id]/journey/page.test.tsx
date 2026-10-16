@@ -186,4 +186,75 @@ describe("the case journey route", () => {
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
     expect(screen.getByText(/no control that skips ahead/)).toBeInTheDocument()
   })
+
+  it("shows the original submission in UK time and prefills screening from the recorded website and profile", async () => {
+    allowPreview()
+    records()
+    recordDetail.mockImplementation(async (entity: string) => ({
+      record: entity === "client"
+        ? { id: "client", name: "Alex Mercer", email: "alex@example.com", phone: "07000900000", emailVerified: false, version: 1 }
+        : entity === "business"
+          ? { id: "business", name: "Mercer Bakery", website: "https://bakery.example", version: 1 }
+          : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: "https://maps.example/listing", version: 1 },
+      memberships: [],
+      submittedBusinesses: [],
+      duplicates: [],
+      work: [],
+    }))
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: {
+        fullName: "Alex Submitted",
+        email: "submitted@example.com",
+        businessName: "Submitted Bakery",
+        country: "United Kingdom",
+        phone: "07000111000",
+        websiteUrl: "",
+        businessProfileUrl: "",
+        reviewUrl: "",
+        details: "The original enquiry text.",
+      },
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Original submission" })).toBeInTheDocument()
+    expect(screen.getByText("Submitted 15 January 2026 at 12:00.")).toBeInTheDocument()
+    expect(screen.getByText(/The original enquiry text/)).toBeInTheDocument()
+    expect(screen.getByText(/Alex Submitted/)).toBeInTheDocument()
+    expect(screen.getByText(/submitted@example.com/)).toBeInTheDocument()
+    expect(screen.getByText(/Submitted Bakery/)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Current business record" })).toBeInTheDocument()
+    expect(screen.getByText(/Website on the business record: https:\/\/bakery\.example/)).toBeInTheDocument()
+    expect(screen.getByText(/A Google profile URL is saved: https:\/\/maps\.example\/listing/)).toBeInTheDocument()
+    expect(screen.getByLabelText("Website")).toHaveValue("PRESENT")
+    expect(screen.getByLabelText("Google listing")).toHaveValue("")
+    expect(screen.getByRole("option", { name: "Accessible" })).toHaveProperty("selected", false)
+    expect(screen.getByRole("option", { name: "Not supplied" })).toHaveProperty("selected", false)
+    expect(screen.getByRole("option", { name: "Suspended, missing or inaccessible" })).toBeInTheDocument()
+  })
+
+  it("starts from no website and not supplied when neither is recorded", async () => {
+    allowPreview()
+    records()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: null,
+      snapshot: null,
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByLabelText("Website")).toHaveValue("NONE")
+    expect(screen.getByLabelText("Google listing")).toHaveValue("NOT_SUPPLIED")
+    expect(screen.getByText("Submitted 18 May 2026 at 11:00.")).toBeInTheDocument()
+    expect(screen.getByText(/not shown as a separate original submission/)).toBeInTheDocument()
+  })
 })

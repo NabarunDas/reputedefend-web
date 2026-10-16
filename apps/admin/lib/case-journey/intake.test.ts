@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { buildJourneyIntake, journeyCountryKey } from "./intake"
+import { buildJourneyIntake, formatUkSubmittedAt, journeyCountryKey, screeningContradictsRecord, screeningFieldDefaults } from "./intake"
+import { parseJourneyExtension } from "./read"
 
 const snapshot = {
   fullName: "Alex",
@@ -114,5 +115,71 @@ describe("journey intake brief", () => {
     expect(brief.conflicts.join(" ")).not.toMatch(/profile URL/)
     expect(business.website).toBe("https://bakery.example")
     expect(location.country).toBe("United Kingdom")
+  })
+
+  it("prefills a recorded website and leaves a saved Google URL unselected", () => {
+    expect(screeningFieldDefaults({ website: " https://bakery.example ", profileUrl: "https://maps.example/listing" })).toEqual({
+      website: "PRESENT",
+      listing: "",
+      websiteRecorded: true,
+      profileRecorded: true,
+    })
+    expect(screeningFieldDefaults({ website: "  ", profileUrl: null })).toEqual({
+      website: "NONE",
+      listing: "NOT_SUPPLIED",
+      websiteRecorded: false,
+      profileRecorded: false,
+    })
+    expect(screeningFieldDefaults({ website: null, profileUrl: "  " }).listing).toBe("NOT_SUPPLIED")
+    expect(screeningFieldDefaults({ website: null, profileUrl: "https://maps.example/listing" }).listing).not.toBe("ACCESSIBLE")
+  })
+
+  it("treats no website or not supplied as a contradiction only when that value is already recorded", () => {
+    expect(screeningContradictsRecord({
+      website: "NONE", listing: "SUSPENDED_OR_MISSING", recordedWebsite: "https://bakery.example", recordedProfileUrl: null,
+      outcome: "PRELIMINARY_COMPLETE", discrepancy: false,
+    })).toBe(true)
+    expect(screeningContradictsRecord({
+      website: "NONE", listing: "NOT_SUPPLIED", recordedWebsite: null, recordedProfileUrl: null,
+      outcome: "FURTHER_INFORMATION", discrepancy: false,
+    })).toBe(false)
+    expect(screeningContradictsRecord({
+      website: "PRESENT", listing: "NOT_SUPPLIED", recordedWebsite: null, recordedProfileUrl: "https://maps.example/listing",
+      outcome: "FURTHER_INFORMATION", discrepancy: false,
+    })).toBe(true)
+    expect(screeningContradictsRecord({
+      website: "NONE", listing: "NOT_SUPPLIED", recordedWebsite: "https://bakery.example", recordedProfileUrl: "https://maps.example/listing",
+      outcome: "ESCALATE", discrepancy: true,
+    })).toBe(false)
+    expect(screeningContradictsRecord({
+      website: "PRESENT", listing: "SUSPENDED_OR_MISSING", recordedWebsite: "https://bakery.example", recordedProfileUrl: "https://maps.example/listing",
+      outcome: "PRELIMINARY_COMPLETE", discrepancy: false,
+    })).toBe(false)
+  })
+
+  it("formats the original submission in UK local time and keeps that time on the brief", () => {
+    expect(formatUkSubmittedAt("2026-01-15T12:00:00.000Z")).toBe("15 January 2026 at 12:00")
+    expect(formatUkSubmittedAt("2026-07-01T12:00:00.000Z")).toBe("1 July 2026 at 13:00")
+    expect(formatUkSubmittedAt("not-a-time")).toBeNull()
+    const brief = buildJourneyIntake({
+      message: "The profile disappeared.",
+      reviewUrl: null,
+      customer: { name: "Alex", email: "alex@example.com" },
+      business: { name: "Bakery", website: null },
+      location: { country: "United Kingdom", profileUrl: null },
+      duplicates: [],
+      projectedEmailVerified: false,
+      projectedAuthority: false,
+      membershipStatus: null,
+      snapshot: null,
+      openedAt: "2026-01-15T12:00:00.000Z",
+    })
+    expect(brief.openedAt).toBe("2026-01-15T12:00:00.000Z")
+    expect(brief.submittedAtLabel).toBe("15 January 2026 at 12:00")
+    expect(parseJourneyExtension({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: null,
+      events: [],
+    })?.openedAt).toBe("2026-01-15T12:00:00.000Z")
   })
 })

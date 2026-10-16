@@ -8,6 +8,8 @@ import type { JourneySnapshot } from "./intake"
 import type { JourneyWorkEvent } from "./decisions"
 
 export type JourneyExtension = {
+  /** cases.created_at, as returned by admin_case_journey_intake_v1. No separate column. */
+  openedAt: string | null
   snapshot: JourneySnapshot | null
   events: JourneyWorkEvent[]
 }
@@ -46,7 +48,8 @@ export function parseJourneyExtension(value: unknown): JourneyExtension | null {
     }
     if (!snapshot.businessName || !snapshot.details) snapshot = null
   }
-  return { snapshot, events }
+  const openedAt = typeof body.openedAt === "string" && body.openedAt.trim() ? body.openedAt : null
+  return { openedAt, snapshot, events }
 }
 
 export async function loadJourneyExtension(caseId: string): Promise<JourneyExtension | null> {

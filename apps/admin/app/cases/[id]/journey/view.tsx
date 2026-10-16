@@ -144,7 +144,7 @@ function StepWorkspace({
     <p className="muted">The catalogue names {party} as the responsible party for this step.</p>
     {step.decision && <IntakeBrief brief={brief} />}
     {showIntakeForm && <IntakeReviewForm caseId={caseId} version={version} />}
-    {showVerificationForm && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} />}
+    {showVerificationForm && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
     <h3>Existing destination</h3>
     <Destination destination={step.destination} />
     <h3>What unlocks the next step</h3>

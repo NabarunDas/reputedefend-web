@@ -6,7 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { devCaseJourneyPreviewEnabled } from "./gate"
 import { intakeDecisionArgs, intakeReviewComplete, preliminaryBlock, verificationDecisionArgs, type JourneyWorkEvent } from "./decisions"
-import { buildJourneyIntake, type JourneySnapshot } from "./intake"
+import { buildJourneyIntake, screeningContradictsRecord, type JourneySnapshot } from "./intake"
 import { parseJourneyExtension } from "./read"
 
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
@@ -71,6 +71,13 @@ export async function journeyDecisionCommand(request: NextRequest) {
       if (block === "records") return reply("The screening cannot be completed while the email, authority or submitted details disagree.", 409)
       if (block === "unavailable") return reply("The decision could not be stored. Reload before trying again.", 503)
     }
+    if (args.kind === "verification") {
+      const recorded = await recordedScreeningConflict(tokenHash(token), args.caseId, args.data)
+      if (recorded === "contradiction") {
+        return reply("That choice contradicts a website or Google profile already on the record. Mark the discrepancy and escalate, with a reason.", 400)
+      }
+      if (recorded === "unavailable") return reply("The decision could not be stored. Reload before trying again.", 503)
+    }
     const result = await backend().rpc<{ status?: string }>("admin_case_journey_decision_v1", {
       p_token: tokenHash(token),
       p_request: key,
@@ -109,6 +116,45 @@ function workEvents(value: unknown): JourneyWorkEvent[] | null {
     events.push({ event: event.event, createdAt: event.createdAt, details })
   }
   return events
+}
+
+/**
+ * "No website" or "Not supplied" is rejected when that value is already on the
+ * business or location record, unless the operator is escalating a discrepancy.
+ * Runs after the preliminary-completion checks so a missing review is still reported first.
+ */
+async function recordedScreeningConflict(
+  token: string,
+  caseId: string,
+  data: { outcome: string; website: string; listing: string; discrepancy: boolean },
+): Promise<"contradiction" | "unavailable" | null> {
+  if (data.outcome === "ESCALATE" && data.discrepancy) return null
+  if (data.website !== "NONE" && data.listing !== "NOT_SUPPLIED") return null
+  const store = backend()
+  const detailBody = asRecord(await store.rpc<unknown>("admin_case_detail_v1", { p_token: token, p_id: caseId, p_before: null }))
+  if (!detailBody || detailBody.missing === true) return "unavailable"
+  const businessId = typeof detailBody.businessId === "string" ? detailBody.businessId : ""
+  const locationId = typeof detailBody.locationId === "string" ? detailBody.locationId : ""
+  if (!businessId || !locationId) return "unavailable"
+  const [business, location] = await Promise.all([
+    store.rpc<unknown>("admin_record_detail_v1", { p_token: token, p_entity: "business", p_id: businessId }),
+    store.rpc<unknown>("admin_record_detail_v1", { p_token: token, p_entity: "location", p_id: locationId }),
+  ])
+  const businessBody = asRecord(business)
+  const locationBody = asRecord(location)
+  if (!businessBody || !locationBody || businessBody.missing === true || locationBody.missing === true) return "unavailable"
+  const businessRecord = asRecord(businessBody.record) ?? {}
+  const locationRecord = asRecord(locationBody.record) ?? {}
+  const recordedWebsite = typeof businessRecord.website === "string" ? businessRecord.website : null
+  const recordedProfileUrl = typeof locationRecord.profileUrl === "string" ? locationRecord.profileUrl : null
+  return screeningContradictsRecord({
+    website: data.website,
+    listing: data.listing,
+    recordedWebsite,
+    recordedProfileUrl,
+    outcome: data.outcome,
+    discrepancy: data.discrepancy,
+  }) ? "contradiction" : null
 }
 
 /**

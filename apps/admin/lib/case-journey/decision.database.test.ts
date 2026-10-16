@@ -116,7 +116,7 @@ describe("proposed journey decision SQL", () => {
     await db.exec(`update public.cases set intake_snapshot = '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"GB","details":"The profile disappeared.","websiteUrl":"","businessProfileUrl":""}'::jsonb where id='${caseId}'`)
     await db.exec(`update public.businesses set website_url='https://bakery.example' where id='${business}'`)
     await db.exec(`update public.locations set business_profile_url='https://maps.example/listing' where id='${location}'`)
-    const screening = { outcome: "PRELIMINARY_COMPLETE", source: "The enquiry and the location record", listing: "NOT_SUPPLIED", website: "PRESENT", discrepancy: false, reason, note }
+    const screening = { outcome: "PRELIMINARY_COMPLETE", source: "The enquiry and the location record", listing: "SUSPENDED_OR_MISSING", website: "PRESENT", discrepancy: false, reason, note }
     const version = async () => (await detail()).version as number
     expect((await decide("intake", { outcome: "REVIEWED", nextAction: "", note }, await version())).status).toBe("success")
     expect((await decide("verification", screening, await version())).status).toBe("success")
@@ -134,10 +134,26 @@ describe("proposed journey decision SQL", () => {
     expect((await decide("verification", screening, 2)).status).toBe("prerequisite")
   })
 
+  it("rejects no website or not supplied when those details are already recorded, and keeps a deliberate escalation", async () => {
+    await db.exec(`update public.businesses set website_url='https://bakery.example' where id='${business}'`)
+    await db.exec(`update public.locations set business_profile_url='https://maps.example/listing' where id='${location}'`)
+    const version = async () => (await detail()).version as number
+    expect((await decide("intake", { outcome: "REVIEWED", nextAction: "", note }, await version())).status).toBe("success")
+    const none = { outcome: "PRELIMINARY_COMPLETE", source: "The business record", listing: "SUSPENDED_OR_MISSING", website: "NONE", discrepancy: false, reason, note }
+    expect((await decide("verification", none, await version())).status).toBe("invalid")
+    expect((await decide("verification", { ...none, outcome: "FURTHER_INFORMATION" }, await version())).status).toBe("invalid")
+    expect((await decide("verification", { ...none, website: "PRESENT", listing: "NOT_SUPPLIED" }, await version())).status).toBe("invalid")
+    expect((await decide("verification", { ...none, outcome: "ESCALATE", discrepancy: false }, await version())).status).toBe("invalid")
+    expect((await decide("verification", { ...none, outcome: "ESCALATE", discrepancy: true }, await version())).status).toBe("success")
+    expect((await decide("verification", { outcome: "PRELIMINARY_COMPLETE", source: "The business record", listing: "SUSPENDED_OR_MISSING", website: "PRESENT", discrepancy: false, reason, note }, await version())).status).toBe("success")
+    expect((await db.query(`select website_url from public.businesses where id='${business}'`)).rows[0]).toMatchObject({ website_url: "https://bakery.example" })
+  })
+
   it("reads the original snapshot and rolls a decision back", async () => {
     const read = await intakeRead()
     expect(read.snapshot.details).toBe("The profile disappeared.")
     expect(read.events).toEqual([])
+    expect(String(read.openedAt)).toContain("2026-01-01")
     await db.exec("BEGIN")
     expect((await decide("intake", { outcome: "INCOMPLETE", nextAction: "Ask for the town", note })).status).toBe("success")
     await db.exec("ROLLBACK")

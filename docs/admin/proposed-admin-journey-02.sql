@@ -120,6 +120,23 @@ BEGIN
   IF c.status IN ('CLOSED', 'CANCELLED') THEN
     RETURN jsonb_build_object('status', 'denied');
   END IF;
+  -- A recorded website or profile URL must not be stored as absent unless the
+  -- operator marks the discrepancy and escalates. A saved profile URL is not
+  -- treated as an accessible listing; suspended or missing remains valid.
+  IF p_kind = 'verification' AND NOT (outcome = 'ESCALATE' AND coalesce((p_data->>'discrepancy')::boolean, false)) THEN
+    IF p_data->>'website' = 'NONE' AND EXISTS (
+      SELECT 1 FROM public.businesses b
+      WHERE b.id = c.business_id AND btrim(coalesce(b.website_url, '')) <> ''
+    ) THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF p_data->>'listing' = 'NOT_SUPPLIED' AND EXISTS (
+      SELECT 1 FROM public.locations l
+      WHERE l.id = c.location_id AND btrim(coalesce(l.business_profile_url, '')) <> ''
+    ) THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+  END IF;
   IF p_kind = 'verification' AND outcome = 'PRELIMINARY_COMPLETE' THEN
     SELECT e.details->>'outcome', e.created_at INTO review_outcome, review_at
     FROM public.case_work_events e

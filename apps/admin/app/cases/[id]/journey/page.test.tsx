@@ -151,10 +151,19 @@ describe("the case journey route", () => {
     expect(nav.querySelector("[data-step='CASE_RECEIVED']")).toHaveAttribute("data-state", "CURRENT")
     expect(screen.getByRole("link", { name: /Case Received/ })).toHaveAttribute("aria-current", "step")
     expect(screen.getByRole("button", { name: "Record the intake review" })).toBeInTheDocument()
+    expect(screen.getByText("The business profile was suspended without warning.")).toBeInTheDocument()
     expect(screen.getByText(/alex@example.com/)).toBeInTheDocument()
-    expect(screen.getByText(/A website is not required/)).toBeInTheDocument()
-    expect(screen.getByText(/Saving a URL does not verify the listing|No Google profile URL is saved/)).toBeInTheDocument()
+    expect(screen.getByText("Mercer Bakery")).toBeInTheDocument()
+    const known = screen.getByRole("heading", { name: "What is already known" })
+    expect(known.closest("details")).not.toHaveAttribute("open")
+    expect(screen.queryByText("No outstanding attention is recorded on the case-flow projection.")).toBeNull()
+    expect(screen.queryByText("No blocker is recorded.")).toBeNull()
+    const system = screen.getByText("System details").closest("details")
+    expect(system).not.toHaveAttribute("open")
+    expect(system).toHaveTextContent("Review the new case")
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+    const locked = nav.querySelectorAll("[data-state='LOCKED'] .guided-step-state")
+    expect(locked).toHaveLength(0)
   })
 
   it("keeps a locked step readable and says why it is unavailable", async () => {
@@ -167,8 +176,11 @@ describe("the case journey route", () => {
       searchParams: Promise.resolve({ step: "ASSESSMENT" }),
     }))
     expect(screen.getByRole("heading", { name: "Assessment & Recommended Path" })).toBeInTheDocument()
+    expect(screen.getByText("Assessment actions are not available in this preview.")).toBeInTheDocument()
     expect(screen.getByText(/cannot be completed from here/)).toBeInTheDocument()
-    expect(screen.getByText(/does not perform it/)).toBeInTheDocument()
+    const extra = screen.getByText("Additional details").closest("details")
+    expect(extra).not.toHaveAttribute("open")
+    expect(extra).toHaveTextContent(/does not perform it/)
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
   })
@@ -222,15 +234,17 @@ describe("the case journey route", () => {
       params: Promise.resolve({ id: CASE_ID }),
       searchParams: Promise.resolve({ step: "VERIFICATION" }),
     }))
-    expect(screen.getByRole("heading", { name: "Original submission" })).toBeInTheDocument()
-    expect(screen.getByText("Submitted 15 January 2026 at 12:00.")).toBeInTheDocument()
-    expect(screen.getByText(/The original enquiry text/)).toBeInTheDocument()
-    expect(screen.getByText(/Alex Submitted/)).toBeInTheDocument()
-    expect(screen.getByText(/submitted@example.com/)).toBeInTheDocument()
-    expect(screen.getByText(/Submitted Bakery/)).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Current business record" })).toBeInTheDocument()
-    expect(screen.getByText(/Website on the business record: https:\/\/bakery\.example/)).toBeInTheDocument()
-    expect(screen.getByText(/A Google profile URL is saved: https:\/\/maps\.example\/listing/)).toBeInTheDocument()
+    expect(screen.getByText("Mercer Bakery")).toBeInTheDocument()
+    expect(screen.getByText("United Kingdom")).toBeInTheDocument()
+    expect(screen.getByText("https://bakery.example")).toBeInTheDocument()
+    expect(screen.getByText("https://maps.example/listing")).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toHaveTextContent(/conflict/i)
+    expect(screen.getByRole("alert")).toHaveTextContent("Submitted Bakery")
+    const details = screen.getByText("Verification details").closest("details")
+    expect(details).not.toHaveAttribute("open")
+    expect(details).toHaveTextContent("The original enquiry text.")
+    expect(details).toHaveTextContent("Submitted 15 January 2026 at 12:00.")
+    expect(details).toHaveTextContent("A website is not required.")
     expect(screen.getByLabelText("Website")).toHaveValue("PRESENT")
     expect(screen.getByLabelText("Google listing")).toHaveValue("")
     expect(screen.getByRole("option", { name: "Accessible" })).toHaveProperty("selected", false)
@@ -254,7 +268,51 @@ describe("the case journey route", () => {
     }))
     expect(screen.getByLabelText("Website")).toHaveValue("NONE")
     expect(screen.getByLabelText("Google listing")).toHaveValue("NOT_SUPPLIED")
-    expect(screen.getByText("Submitted 18 May 2026 at 11:00.")).toBeInTheDocument()
-    expect(screen.getByText(/not shown as a separate original submission/)).toBeInTheDocument()
+    expect(screen.getAllByText("Not provided").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("alert")).toBeNull()
+    const details = screen.getByText("Verification details").closest("details")
+    expect(details).not.toHaveAttribute("open")
+    expect(details).toHaveTextContent("Submitted 18 May 2026 at 11:00.")
+    expect(details).toHaveTextContent(/not shown as a separate original submission/)
+    expect(details).toHaveTextContent(/does not block this screening/)
+  })
+
+  it("keeps the guided step in front of the case-flow recommendation after screening is recorded", async () => {
+    allowPreview()
+    records()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: null,
+      events: [
+        { event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } },
+        {
+          event: "BUSINESS_VERIFICATION",
+          createdAt: "2026-01-17T00:00:00.000Z",
+          details: {
+            outcome: "PRELIMINARY_COMPLETE",
+            source: "The enquiry",
+            listing: "NOT_SUPPLIED",
+            website: "NONE",
+            discrepancy: false,
+            reason: "The name and country agree with the records.",
+          },
+        },
+      ],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({}),
+    }))
+    expect(screen.getByRole("heading", { name: "Review Request & Request Documents" })).toBeInTheDocument()
+    expect(screen.getByText("Document-request actions are not available in this preview.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='REQUEST_DOCUMENTS']")).toHaveAttribute("data-state", "CURRENT")
+    expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+    const system = screen.getByText("System details").closest("details")
+    expect(system).not.toHaveAttribute("open")
+    expect(system).toHaveTextContent("Review the new case")
+    expect(screen.queryByRole("heading", { name: "What the case-flow model already recommends" })).toBeNull()
   })
 })

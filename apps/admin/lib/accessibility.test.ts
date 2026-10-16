@@ -38,6 +38,7 @@ const components = files(new URL("app/", adminRoot), name => name.endsWith(".tsx
 const h1Providers: Record<string, string> = {
   PageHeader: "app/ui.tsx",
   CaseHeader: "app/cases/[id]/cockpit/header.tsx",
+  CaseJourneyView: "app/cases/[id]/journey/view.tsx",
 }
 
 const literalH1s = (source: string) => (source.match(/<h1/g) ?? []).length

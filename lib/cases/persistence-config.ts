@@ -22,5 +22,5 @@ export function devCaseIntakeEmailSuppressed(env: Record<string, string | undefi
   return env.VERCEL_ENV === "preview"
     && env.VERCEL_GIT_COMMIT_REF === "develop"
     && env.DEV_CASE_INTAKE_NO_EMAIL === "true"
-    && env.SUPABASE_URL === "https://rmzozuiamjcclvtgutgd.supabase.co"
+    && /^(https:\/\/rmzozuiamjcclvtgutgd\\.supabase\\.co)\\/?$/.test(env.SUPABASE_URL?.trim() ?? "")
 }

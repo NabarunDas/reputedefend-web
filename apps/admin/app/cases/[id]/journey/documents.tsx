@@ -7,8 +7,10 @@ import {
   alreadySaved,
   messageIsLive,
   openRequirements,
+  requirementCoverage,
   requirementText,
   requirementTitle,
+  reviewBlockReason,
   type JourneyDocuments,
 } from "@/lib/case-journey/documents"
 
@@ -21,7 +23,8 @@ export function DocumentRequestPanel({ caseId, documents }: { caseId: string; do
   const open = openRequirements(documents)
   const live = messageIsLive(documents.currentMessage)
   const historyReady = documents.history === "ready"
-  const canPrepareDraft = historyReady && !live && !documents.verifiedEmailSuppressed && !!documents.verifiedEmail && open.length > 0
+  const canPrepareDraft = historyReady && !live && !documents.verifiedEmailSuppressed && !!documents.verifiedEmail && open.length > 0 && documents.drafting.canDraft
+  const draftBlocked = historyReady && !live && !documents.verifiedEmailSuppressed && !!documents.verifiedEmail && open.length > 0 && !documents.drafting.canDraft
   return <div className="guided-facts">
     <dl>
       <dt>Business</dt><dd>{documents.businessName}</dd>
@@ -38,6 +41,7 @@ export function DocumentRequestPanel({ caseId, documents }: { caseId: string; do
     {historyReady && !documents.verifiedEmail && !documents.verifiedEmailSuppressed && open.length > 0 && !live && (
       <p className="notice">A draft needs a verified customer email. Saving a requirement does not verify the address.</p>
     )}
+    {draftBlocked && documents.drafting.draftReasons.map(reason => <p key={reason} className="notice">{reason}</p>)}
     {documents.cancelledMessage && !live && <p>The last draft was cancelled. It was not sent.</p>}
     {live && documents.currentMessage && <EmailDraft documents={documents} />}
     {open.length === 0 && <RequirementChecklist caseId={caseId} documents={documents} />}
@@ -57,15 +61,29 @@ function SavedRequirements({ documents, open }: { documents: JourneyDocuments; o
   const contacted = documents.currentMessage?.lifecycle === "QUEUED"
     || documents.currentMessage?.delivery === "Delivered"
     || documents.currentMessage?.delivery === "Accepted by email provider"
+  const coverage = messageIsLive(documents.currentMessage) ? requirementCoverage(documents) : null
   return <>
     <h3>Saved requirements</h3>
     <p>{contacted ? "A message has been issued. Issuing it is not the same as confirmed delivery." : "Requirements saved. The customer has not been contacted."}</p>
+    {coverage && coverage.omitted.length > 0 && <p>This email does not request every open requirement.</p>}
+    {coverage && coverage.included && coverage.omitted.length === 0 && <p>This email names only this requirement.</p>}
     <ul className="notice-list">
       {open.map(request => <li key={request.id}>
         <h3>{request.title}</h3>
+        {coverage && <p>{coverage.included?.id === request.id ? "Included in this email" : "Not included in this email"}</p>}
         <p className="preserve-lines">{request.requestText}</p>
       </li>)}
     </ul>
+  </>
+}
+
+function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
+  const { included, omitted } = requirementCoverage(documents)
+  if (!included && omitted.length === 0) return null
+  return <>
+    {included && <p>Included in this email: {included.title}</p>}
+    {omitted.length > 0 && <p>Not included in this email: {omitted.map(request => request.title).join("; ")}.</p>}
+    {omitted.length > 0 && <p>This email does not request every open requirement.</p>}
   </>
 }
 
@@ -74,6 +92,7 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
   if (!message) return null
   const reviewed = message.lifecycle === "REVIEWED"
   const draft = message.lifecycle === "DRAFT"
+  const blocked = reviewBlockReason(documents)
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   return <section aria-labelledby="journey-email-heading">
     <h3 id="journey-email-heading">{draft ? "Email draft" : reviewed ? "Reviewed draft" : "Evidence-request email"}</h3>
@@ -82,6 +101,8 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
     {message.lifecycle === "QUEUED" && <p>Queued means the provider has not confirmed delivery. This page does not send another copy.</p>}
     {message.delivery === "Delivered" && <p>Delivery is recorded. Provider acceptance on its own would not have completed this step.</p>}
     {message.delivery === "Accepted by email provider" && <p>The provider accepted the message. That is not delivery, and the customer has not necessarily been contacted.</p>}
+    <p>The wording below is the approved template snapshot. Editing the customer-facing wording before review is not available yet.</p>
+    <EmailCoverage documents={documents} />
     <dl>
       <dt>Recipient</dt><dd>{message.recipient}</dd>
       <dt>Subject</dt><dd>{message.subject || "No subject"}</dd>
@@ -89,7 +110,9 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
     </dl>
     {message.contentLocked && <p>This wording is locked. A later change is a new draft, not an edit of this message.</p>}
     {reviewed && <p>{documents.sendDisabledReason || "Sending is not offered from this step. The reviewed draft is kept."}</p>}
-    {draft && <ReviewDraft messageId={message.id} version={message.version} />}
+    {draft && blocked && <p className="notice">{blocked}</p>}
+    {draft && !documents.drafting.canReview && documents.drafting.reviewReason && <p className="notice">{documents.drafting.reviewReason}</p>}
+    {draft && !blocked && documents.drafting.canReview && <ReviewDraft messageId={message.id} version={message.version} />}
     {(draft || reviewed) && <ReplaceDraft messageId={message.id} version={message.version} />}
   </section>
 }
@@ -185,6 +208,8 @@ function DraftEmail({
 }) {
   const command = useCommand()
   const [requestId, setRequestId] = useState(requests[0]?.id ?? "")
+  const selected = requests.find(request => request.id === requestId) ?? null
+  const omitted = requests.filter(request => request.id !== requestId)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await command.send("draft", communicationEndpoint, {
@@ -195,7 +220,9 @@ function DraftEmail({
     })
   }
   return <form className="record-form" onSubmit={submit}>
-    <p>The next action is to generate the email from the approved template. The draft is not an approved or sent message.</p>
+    <p>The next action is to generate the email from the approved template. The draft is not an approved or sent message. One message names one requirement and one secure upload link.</p>
+    {selected && <p>Included in this email: {selected.title}</p>}
+    {omitted.length > 0 && <p>Not included in this email: {omitted.map(request => request.title).join("; ")}. This message does not request those requirements.</p>}
     {requests.length > 1 && <label>Requirement for this email
       <select value={requestId} onChange={event => setRequestId(event.target.value)}>
         {requests.map(request => <option key={request.id} value={request.id}>{request.title}</option>)}

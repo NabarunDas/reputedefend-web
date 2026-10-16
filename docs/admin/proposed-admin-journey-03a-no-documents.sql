@@ -66,5 +66,5 @@ EXCEPTION WHEN unique_violation THEN
 END;
 $$;
 
--- Intentionally no GRANT here. A later approved migration would revoke from
--- PUBLIC, anon and authenticated, and grant execute to service_role only.
+REVOKE ALL ON FUNCTION public.admin_case_journey_no_documents_v1(text, uuid, uuid, integer, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_case_journey_no_documents_v1(text, uuid, uuid, integer, text) TO service_role;

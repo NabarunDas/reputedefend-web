@@ -71,6 +71,7 @@ function documents(input: {
   issue?: string
   requests?: EvidenceRequest[]
   history?: CaseCommunicationRead | null
+  drafting?: { customerOriginConfigured: boolean; uploadLinkConfigured: boolean; senderConfigured: boolean }
 } = {}): JourneyDocuments {
   const history = input.history === undefined
     ? {
@@ -90,6 +91,7 @@ function documents(input: {
     requests: input.requests ?? [],
     history,
     sendDisabledReason: sendDisabled,
+    drafting: input.drafting ?? { customerOriginConfigured: true, uploadLinkConfigured: true, senderConfigured: true },
   })
 }
 
@@ -268,9 +270,86 @@ describe("the step 3 document request", () => {
         communications: [],
       },
       sendDisabledReason: sendDisabled,
+      drafting: { customerOriginConfigured: true, uploadLinkConfigured: true, senderConfigured: true },
     })} />)
     expect(screen.getByText(/email address is suppressed/i)).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+  })
+
+  it("explains when the preview cannot draft or review and still lets a requirement be saved", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, "The evidence request has been recorded. No email was sent."))
+    vi.stubGlobal("fetch", fetchMock)
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence")],
+      drafting: { customerOriginConfigured: false, uploadLinkConfigured: false, senderConfigured: false },
+    })} />)
+    expect(screen.getByText(/customer site origin is not configured/i)).toBeInTheDocument()
+    expect(screen.getByText(/secure upload link is not configured/i)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
+    expect(screen.queryByText(/COMMUNICATIONS_LINK_SECRET|CUSTOMER_ORIGIN/)).toBeNull()
+    expect(screen.getByText("Add another requirement")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include other evidence" }))
+    fireEvent.change(screen.getByLabelText("Other evidence title"), { target: { value: "Shop front photo" } })
+    fireEvent.change(screen.getByLabelText("Other evidence description"), { target: { value: "A photo of the shop front and the street name." } })
+    fireEvent.click(screen.getByRole("button", { name: "Save evidence requirements" }))
+    expect(await screen.findByText("The evidence request has been recorded. No email was sent.")).toBeInTheDocument()
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/evidence/command")
+
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      drafting: { customerOriginConfigured: true, uploadLinkConfigured: true, senderConfigured: false },
+      history: {
+        status: "success",
+        complete: true,
+        total: 1,
+        returned: 1,
+        verifiedEmail: "alex@example.com",
+        verifiedEmailSuppressed: false,
+        communications: [communication()],
+      },
+    })} />)
+    expect(screen.getByText(/outbound sender address is not configured/i)).toBeInTheDocument()
+    expect(screen.getByText(/Editing the customer-facing wording before review is not available yet/)).toBeInTheDocument()
+    expect(screen.getByText("To continue with PR-1042, we need the Google suspension notice.")).toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: /customer-facing|message wording|subject/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+  })
+
+  it("names the one requirement in the email and will not review while another open requirement is left out", () => {
+    const other = request("Proof of operating location")
+    other.id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    const { unmount } = render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence"), other],
+    })} />)
+    expect(screen.getByText("Included in this email: Shop licence")).toBeInTheDocument()
+    expect(screen.getByText(/Not included in this email: Proof of operating location/)).toBeInTheDocument()
+    expect(screen.getByText(/does not request those requirements/i)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole("combobox", { name: "Requirement for this email" }), { target: { value: other.id } })
+    expect(screen.getByText("Included in this email: Proof of operating location")).toBeInTheDocument()
+    expect(screen.getByText(/Not included in this email: Shop licence/)).toBeInTheDocument()
+    unmount()
+
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence"), other],
+      history: {
+        status: "success",
+        complete: true,
+        total: 1,
+        returned: 1,
+        verifiedEmail: "alex@example.com",
+        verifiedEmailSuppressed: false,
+        communications: [communication({ evidenceRequestId: REQUEST_ID, subject: "Evidence needed for PR-1042", bodyText: "To continue with PR-1042, we need Shop licence." })],
+      },
+    })} />)
+    expect(screen.getAllByText("Included in this email: Shop licence").length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Not included in this email: Proof of operating location/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Reviewing it would leave those requirements unrequested/)).toBeInTheDocument()
+    expect(screen.getByText(/Editing the customer-facing wording before review is not available yet/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
   })
 })

@@ -54,7 +54,10 @@ function reconcileMessage(deliveryStatus: string | undefined): string {
 export async function communicationsCommand(request: NextRequest) {
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return reply("Reload this page and try again.", 403)
+  const requestOrigin = request.nextUrl.origin
+  if (request.headers.get("origin") !== requestOrigin || !config.allowedOrigins.includes(requestOrigin)) {
+    return reply("Reload this page and try again.", 403)
+  }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply("Reload this page and try again.", 415)
   const token = request.cookies.get(sessionCookie)?.value, key = request.headers.get("idempotency-key")
   if (!validToken(token)) return reply("Please sign in again.", 401)
@@ -110,6 +113,16 @@ export async function communicationsCommand(request: NextRequest) {
     delete payload.fromAddress
     delete payload.sender
     delete payload.senderAddress
+    // Draft and review use the server snapshot. A browser subject, body or
+    // recipient is not a wording edit. Queue still receives those fields so a
+    // changed snapshot is refused.
+    if (operation === "draft" || operation === "resend_draft" || operation === "review") {
+      delete payload.subject
+      delete payload.bodyText
+      delete payload.bodyHtml
+      delete payload.html
+      delete payload.recipient
+    }
     if (operation === "draft" || operation === "resend_draft") {
       payload.customerOrigin = config.customerOrigin
       if (operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && !config.customerOrigin) {

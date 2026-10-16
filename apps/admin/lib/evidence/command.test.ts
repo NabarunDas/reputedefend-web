@@ -59,10 +59,10 @@ function storage(overrides: Partial<EvidenceStorage> = {}): EvidenceStorage {
   }
 }
 
-function req(body: unknown = beginBody, headers: Record<string, string> = {}, path = "/api/evidence/command") {
-  return new NextRequest(`${origin}${path}`, {
+function req(body: unknown = beginBody, headers: Record<string, string> = {}, path = "/api/evidence/command", url = origin) {
+  return new NextRequest(`${url}${path}`, {
     method: "POST",
-    headers: { origin, "content-type": "application/json", "idempotency-key": key, cookie: `${sessionCookie}=${"a".repeat(64)}`, ...headers },
+    headers: { origin: url, "content-type": "application/json", "idempotency-key": key, cookie: `${sessionCookie}=${"a".repeat(64)}`, ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   })
 }
@@ -86,6 +86,39 @@ describe("evidence commands without proxy", () => {
   it("rejects the wrong Origin", async () => {
     expect((await POST(req(beginBody, { origin: "https://evil.example" }))).status).toBe(403)
     expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("accepts both authorised preview hostnames", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    mocks.rpc.mockResolvedValue({ status: "success", id: documentId, version: 1, requestStatus: "OPEN" })
+    const create = { operation: "create_request" as const, caseId, title: "Notice", requestText: "The Google notice.", dueAt: null }
+    for (const permitted of [branch, deployment]) {
+      const response = await runEvidenceCommand(req(create, {}, "/api/evidence/command", permitted), null)
+      expect(response.status).toBe(200)
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+  it("rejects cross-host, unknown, webhook and production origins on a preview", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const deployment = "https://profilerelaunch-admin-kj0yz08w5-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("VERCEL_URL", new URL(deployment).hostname)
+    expect((await POST(req(beginBody, { origin: branch }, "/api/evidence/command", deployment))).status).toBe(403)
+    for (const forbidden of ["https://dev-hooks.profilerelaunch.com", "https://not-a-real-preview.vercel.app", origin]) {
+      expect((await POST(req(beginBody, {}, "/api/evidence/command", forbidden))).status).toBe(403)
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it("still accepts the production admin origin when this deployment is production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    mocks.rpc.mockResolvedValue({ status: "success", id: documentId, version: 1, requestStatus: "OPEN" })
+    const create = { operation: "create_request" as const, caseId, title: "Notice", requestText: "The Google notice.", dueAt: null }
+    expect((await runEvidenceCommand(req(create), null)).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_evidence_request_v1", expect.any(Object))
   })
   it("rejects invalid content type, missing idempotency key and oversized JSON", async () => {
     expect((await POST(req(beginBody, { "content-type": "text/plain" }))).status).toBe(415)

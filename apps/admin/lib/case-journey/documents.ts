@@ -68,6 +68,19 @@ export type JourneyEvidenceMessage = {
   draftedAt: string
 }
 
+export type DraftingInputs = {
+  customerOriginConfigured: boolean
+  uploadLinkConfigured: boolean
+  senderConfigured: boolean
+}
+
+export type DraftingAvailability = {
+  canDraft: boolean
+  canReview: boolean
+  draftReasons: string[]
+  reviewReason: string | null
+}
+
 export type JourneyDocuments = {
   caseTypeLabel: string
   businessName: string
@@ -78,6 +91,7 @@ export type JourneyDocuments = {
   verifiedEmail: string | null
   verifiedEmailSuppressed: boolean
   sendDisabledReason: string
+  drafting: DraftingAvailability
   currentMessage: JourneyEvidenceMessage | null
   cancelledMessage: boolean
 }
@@ -156,6 +170,24 @@ export function alreadySaved(title: string, requests: Array<{ title: string; sta
   return requests.some(request => request.status === "OPEN" && request.title.trim().toLowerCase() === normal)
 }
 
+const CUSTOMER_ORIGIN_REASON = "A customer site origin is not configured for this preview, so an evidence-request draft cannot be created."
+const UPLOAD_LINK_REASON = "The secure upload link is not configured, so a draft cannot be created."
+const SENDER_REASON = "The outbound sender address is not configured, so a draft cannot be marked reviewed."
+
+/** Booleans only. The page must not pass secret values or the origin string. */
+export function draftingAvailability(input: DraftingInputs): DraftingAvailability {
+  const draftReasons = [
+    input.customerOriginConfigured ? null : CUSTOMER_ORIGIN_REASON,
+    input.uploadLinkConfigured ? null : UPLOAD_LINK_REASON,
+  ].filter((reason): reason is string => !!reason)
+  return {
+    canDraft: draftReasons.length === 0,
+    canReview: input.senderConfigured,
+    draftReasons,
+    reviewReason: input.senderConfigured ? null : SENDER_REASON,
+  }
+}
+
 export function buildJourneyDocuments(input: {
   caseType: string
   issue: string
@@ -163,6 +195,7 @@ export function buildJourneyDocuments(input: {
   requests: EvidenceRequest[]
   history: CaseCommunicationRead | null
   sendDisabledReason: string
+  drafting: DraftingInputs
 }): JourneyDocuments {
   const requests = input.requests.map(request => ({
     id: request.id,
@@ -180,6 +213,7 @@ export function buildJourneyDocuments(input: {
     verifiedEmail: input.history?.verifiedEmail ?? null,
     verifiedEmailSuppressed: input.history?.verifiedEmailSuppressed ?? false,
     sendDisabledReason: input.sendDisabledReason,
+    drafting: draftingAvailability(input.drafting),
   }
   if (!input.history) {
     return { ...base, history: "unavailable", currentMessage: null, cancelledMessage: false }
@@ -224,4 +258,30 @@ export function openRequirements(documents: JourneyDocuments): JourneyRequiremen
 
 export function messageIsLive(message: JourneyEvidenceMessage | null): boolean {
   return !!message && message.lifecycle !== "CANCELLED"
+}
+
+export function requirementCoverage(documents: JourneyDocuments): {
+  included: JourneyRequirement | null
+  omitted: JourneyRequirement[]
+} {
+  const open = openRequirements(documents)
+  const named = messageIsLive(documents.currentMessage) ? documents.currentMessage?.evidenceRequestId ?? null : null
+  if (!named) return { included: null, omitted: open }
+  return {
+    included: open.find(request => request.id === named) ?? null,
+    omitted: open.filter(request => request.id !== named),
+  }
+}
+
+/** A reviewed draft must not leave other open requirements unrequested without saying so. */
+export function reviewBlockReason(documents: JourneyDocuments): string | null {
+  const message = documents.currentMessage
+  if (!message || message.lifecycle !== "DRAFT") return null
+  const { included, omitted } = requirementCoverage(documents)
+  if (!included) {
+    return "This draft is not tied to an open requirement, so it cannot be marked reviewed from this step."
+  }
+  if (omitted.length === 0) return null
+  const leftOut = omitted.map(request => request.title).join("; ")
+  return `This email includes only “${included.title}”. Not included: ${leftOut}. Reviewing it would leave those requirements unrequested. Cancel the requirements that should not be requested, or cancel this draft and generate a separate email for each remaining requirement.`
 }

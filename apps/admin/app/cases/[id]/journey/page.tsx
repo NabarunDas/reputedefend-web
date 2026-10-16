@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
+import { authConfig } from "@/lib/auth/config"
 import { sendDisabledReason } from "@/lib/communications/gate"
+import { linkSecret } from "@/lib/communications/link"
+import { mailFromAddress } from "@/lib/communications/mail"
 import { loadCaseCommunications } from "@/lib/communications/queries"
 import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
 import { buildJourneyDocuments } from "@/lib/case-journey/documents"
@@ -75,6 +78,11 @@ export default async function CaseJourneyPage({
       requests: (await getEvidenceCase(detail.id)).requests,
       history: await loadCaseCommunications(detail.id),
       sendDisabledReason: sendDisabledReason(),
+      drafting: {
+        customerOriginConfigured: Boolean(authConfig()?.customerOrigin),
+        uploadLinkConfigured: linkSecret() !== null,
+        senderConfigured: mailFromAddress() !== null,
+      },
     })
     : null
   return <CaseJourneyView

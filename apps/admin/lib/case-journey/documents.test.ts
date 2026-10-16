@@ -4,12 +4,16 @@ import type { EvidenceRequest } from "../evidence/model"
 import {
   alreadySaved,
   buildJourneyDocuments,
+  draftingAvailability,
+  requirementCoverage,
   requirementText,
   requirementTitle,
+  reviewBlockReason,
   suggestDocuments,
 } from "./documents"
 
 const sendDisabled = "Outgoing customer email is not enabled yet. Reviewed drafts are preserved, but sending will be enabled only after the production worker runs at the required cadence."
+const drafting = { customerOriginConfigured: true, uploadLinkConfigured: true, senderConfigured: true }
 
 function request(title: string, status: EvidenceRequest["status"] = "OPEN"): EvidenceRequest {
   return {
@@ -86,6 +90,7 @@ describe("evidence suggestions", () => {
       requests: [],
       history: null,
       sendDisabledReason: sendDisabled,
+      drafting,
     })
     expect(missing.history).toBe("unavailable")
     expect(missing.currentMessage).toBeNull()
@@ -96,6 +101,7 @@ describe("evidence suggestions", () => {
       requests: [request("Notice")],
       history: { ...history(), complete: false, total: 3, returned: 1 },
       sendDisabledReason: sendDisabled,
+      drafting,
     })
     expect(incomplete.history).toBe("incomplete")
     const tied = history([
@@ -109,9 +115,63 @@ describe("evidence suggestions", () => {
       requests: [],
       history: tied,
       sendDisabledReason: sendDisabled,
+      drafting,
     })
     expect(ambiguous.history).toBe("ambiguous")
     expect(ambiguous.currentMessage).toBeNull()
+  })
+
+  it("names the missing preview settings without treating them as a reason to send", () => {
+    const missing = draftingAvailability({
+      customerOriginConfigured: false,
+      uploadLinkConfigured: false,
+      senderConfigured: false,
+    })
+    expect(missing.canDraft).toBe(false)
+    expect(missing.canReview).toBe(false)
+    expect(missing.draftReasons).toEqual([
+      "A customer site origin is not configured for this preview, so an evidence-request draft cannot be created.",
+      "The secure upload link is not configured, so a draft cannot be created.",
+    ])
+    expect(missing.reviewReason).toMatch(/outbound sender address is not configured/)
+    expect(JSON.stringify(missing)).not.toMatch(/COMMUNICATIONS_|CUSTOMER_ORIGIN|secret/i)
+    const ready = draftingAvailability(drafting)
+    expect(ready.canDraft).toBe(true)
+    expect(ready.canReview).toBe(true)
+    expect(ready.draftReasons).toEqual([])
+    expect(ready.reviewReason).toBeNull()
+  })
+
+  it("says which open requirement one email includes and blocks review while others remain", () => {
+    const first = request("Shop licence")
+    const second = { ...request("Proof of operating location"), id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }
+    const built = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [first, second],
+      history: history([{ ...message("2026-02-02T00:00:00.000Z"), evidenceRequestId: first.id }]),
+      sendDisabledReason: sendDisabled,
+      drafting,
+    })
+    expect(requirementCoverage(built)).toMatchObject({
+      included: { id: first.id, title: "Shop licence" },
+      omitted: [{ id: second.id, title: "Proof of operating location" }],
+    })
+    expect(reviewBlockReason(built)).toMatch(/includes only “Shop licence”/)
+    expect(reviewBlockReason(built)).toMatch(/Not included: Proof of operating location/)
+    const alone = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [first],
+      history: history([{ ...message("2026-02-02T00:00:00.000Z"), evidenceRequestId: first.id, lifecycle: "REVIEWED", contentLocked: true }]),
+      sendDisabledReason: sendDisabled,
+      drafting,
+    })
+    expect(requirementCoverage(alone).omitted).toEqual([])
+    expect(reviewBlockReason(alone)).toBeNull()
+    expect(alone.currentMessage?.contentLocked).toBe(true)
   })
 })
 

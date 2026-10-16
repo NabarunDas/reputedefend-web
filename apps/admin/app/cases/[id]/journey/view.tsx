@@ -11,6 +11,8 @@ import {
   type JourneyStepState,
   type JourneyStepView,
 } from "@/lib/case-journey/present"
+import type { JourneyDocuments } from "@/lib/case-journey/documents"
+import { DocumentRequestPanel } from "./documents"
 import { IntakeSummary, VerificationForm, VerificationSummary, IntakeReviewForm } from "./forms"
 
 const partyLabels = {
@@ -33,7 +35,7 @@ const stateClass: Record<JourneyStepState, string> = {
 const previewNote: Record<JourneyStepId, string> = {
   CASE_RECEIVED: "Read the enquiry, then record whether it is reviewed or incomplete.",
   VERIFICATION: "Check the business and listing, then record the screening outcome.",
-  REQUEST_DOCUMENTS: "Document-request actions are not available in this preview.",
+  REQUEST_DOCUMENTS: "Choose the documents, save the requirement, then review the email. Saving does not contact the customer.",
   EVIDENCE_REVIEW: "Evidence review actions are not available in this preview.",
   ASSESSMENT: "Assessment actions are not available in this preview.",
   QUOTE_ACCEPTANCE: "Quote actions are not available in this preview.",
@@ -57,6 +59,7 @@ export function CaseJourneyView({
   selectedId,
   brief,
   version,
+  documents,
 }: {
   reference: string
   customer: string
@@ -66,6 +69,7 @@ export function CaseJourneyView({
   selectedId: string
   brief: JourneyIntakeBrief
   version: number
+  documents: JourneyDocuments | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -99,7 +103,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -133,6 +137,7 @@ function StepWorkspace({
   caseId,
   version,
   reference,
+  documents,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -140,6 +145,7 @@ function StepWorkspace({
   caseId: string
   version: number
   reference: string
+  documents: JourneyDocuments | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -147,7 +153,8 @@ function StepWorkspace({
   const showIntakeForm = step.decision === "intake" && canRecord
   const showVerificationForm = step.decision === "verification" && canRecord && intakeReviewed
   const showAmend = step.state === "COMPLETED" && (step.decision === "intake" || (step.decision === "verification" && intakeReviewed))
-  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
+  const showDocuments = step.id === "REQUEST_DOCUMENTS" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && documents !== null
+  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
     <h2 id="journey-step-heading">{step.title}</h2>
@@ -167,7 +174,8 @@ function StepWorkspace({
       {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
       {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
     </details>}
-    {!step.decision && <Destination destination={step.destination} />}
+    {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} />}
+    {!step.decision && !showDocuments && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
       <h3>What is already known</h3>
@@ -181,12 +189,14 @@ function StepWorkspace({
       <p>{step.unlock}</p>
       <h3>Completion evidence</h3>
       <p>{journeyStep(step.id).completionEvidence}</p>
-      <h3>{step.decision ? "What this form does not do" : "Not available in this preview"}</h3>
+      <h3>{step.decision ? "What this form does not do" : step.id === "REQUEST_DOCUMENTS" ? "What this step does not do" : "Not available in this preview"}</h3>
       <p>{step.unsupported}</p>
       {step.decision
         ? <p>This form records the staff decision for {step.laterWork}. It does not send email, take a payment, or change the technical stage.</p>
-        : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
-      {step.decision && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
+        : step.id === "REQUEST_DOCUMENTS"
+          ? <p>Saving a requirement and reviewing a draft use the existing evidence and communications commands. This page does not send the email, and a draft does not complete the step.</p>
+          : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
+      {(step.decision || step.id === "REQUEST_DOCUMENTS") && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>
   </article>
 }
@@ -198,6 +208,8 @@ function instructionFor(step: JourneyStepView): string {
   if (step.id === "VERIFICATION" && step.state === "NEEDS_ATTENTION") return "Screening cannot be completed until the conflict below is resolved."
   if (step.id === "CASE_RECEIVED" && step.state === "NEEDS_ATTENTION") return "The intake is not reviewed. Record the outcome and the next action."
   if (step.state === "LOCKED" && step.decision === "verification") return "Business verification starts after the intake review is recorded."
+  if (step.id === "REQUEST_DOCUMENTS" && step.state === "LOCKED") return "Document requests stay closed until the earlier steps are recorded."
+  if (step.id === "REQUEST_DOCUMENTS" && step.state === "WAITING") return "The message is waiting on the email provider. That is not delivery."
   return previewNote[step.id]
 }
 

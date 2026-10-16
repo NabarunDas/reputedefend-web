@@ -13,6 +13,8 @@ const loadCaseFlowFacts = vi.fn()
 const recordDetail = vi.fn()
 const getMembership = vi.fn()
 const loadJourneyExtension = vi.fn()
+const getEvidenceCase = vi.fn()
+const loadCaseCommunications = vi.fn()
 
 vi.mock("next/navigation", () => ({
   notFound: () => { throw notFoundError },
@@ -31,6 +33,8 @@ vi.mock("@/lib/records/queries", () => ({
   getMembership: (...args: unknown[]) => getMembership(...args),
 }))
 vi.mock("@/lib/case-journey/read", () => ({ loadJourneyExtension: (...args: unknown[]) => loadJourneyExtension(...args) }))
+vi.mock("@/lib/evidence/queries", () => ({ getEvidenceCase: (...args: unknown[]) => getEvidenceCase(...args) }))
+vi.mock("@/lib/communications/queries", () => ({ loadCaseCommunications: (...args: unknown[]) => loadCaseCommunications(...args) }))
 
 import CaseJourneyPage from "./page"
 
@@ -101,6 +105,16 @@ function records() {
   }))
   getMembership.mockResolvedValue(undefined)
   loadJourneyExtension.mockResolvedValue(null)
+  getEvidenceCase.mockResolvedValue({ caseId: CASE_ID, reference: "PR-1042", requests: [], documents: [] })
+  loadCaseCommunications.mockResolvedValue({
+    status: "success",
+    complete: true,
+    total: 0,
+    returned: 0,
+    verifiedEmail: "alex@example.com",
+    verifiedEmailSuppressed: false,
+    communications: [],
+  })
 }
 
 function allowPreview() {
@@ -130,6 +144,8 @@ describe("the case journey route", () => {
       expect(requireStaff).not.toHaveBeenCalled()
       expect(getCase).not.toHaveBeenCalled()
       expect(recordDetail).not.toHaveBeenCalled()
+      expect(getEvidenceCase).not.toHaveBeenCalled()
+      expect(loadCaseCommunications).not.toHaveBeenCalled()
     }
   })
 
@@ -306,7 +322,12 @@ describe("the case journey route", () => {
       searchParams: Promise.resolve({}),
     }))
     expect(screen.getByRole("heading", { name: "Review Request & Request Documents" })).toBeInTheDocument()
-    expect(screen.getByText("Document-request actions are not available in this preview.")).toBeInTheDocument()
+    expect(screen.getByText("Choose the documents, save the requirement, then review the email. Saving does not contact the customer.")).toBeInTheDocument()
+    expect(screen.getByText("The business profile was suspended without warning.")).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "Include Google suspension or rejection notice" })).toBeChecked()
+    expect(screen.getByRole("button", { name: "Save evidence requirements" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+    expect(screen.queryByText("Document-request actions are not available in this preview.")).toBeNull()
     expect(document.querySelector("[data-step='REQUEST_DOCUMENTS']")).toHaveAttribute("data-state", "CURRENT")
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
@@ -424,5 +445,24 @@ describe("the case journey route", () => {
     expect(document.querySelector("[data-step='VERIFICATION']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByText("Amend recorded decision")).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+  })
+
+  it("keeps document requests closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    getEvidenceCase.mockClear()
+    loadCaseCommunications.mockClear()
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "REQUEST_DOCUMENTS" }),
+    }))
+    expect(document.querySelector("[data-step='REQUEST_DOCUMENTS']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.getByText("Document requests stay closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Save evidence requirements" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
+    expect(getEvidenceCase).not.toHaveBeenCalled()
+    expect(loadCaseCommunications).not.toHaveBeenCalled()
   })
 })

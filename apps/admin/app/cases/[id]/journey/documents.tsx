@@ -1,0 +1,319 @@
+"use client"
+
+import { useRef, useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
+import { lifecycleLabel } from "@/lib/communications/model"
+import {
+  alreadySaved,
+  messageIsLive,
+  openRequirements,
+  requirementText,
+  requirementTitle,
+  type JourneyDocuments,
+} from "@/lib/case-journey/documents"
+
+const evidenceEndpoint = "/api/evidence/command"
+const communicationEndpoint = "/api/operations/communications"
+
+type Row = { key: string; name: string; title: string; detail: string; selected: boolean }
+
+export function DocumentRequestPanel({ caseId, documents }: { caseId: string; documents: JourneyDocuments }) {
+  const open = openRequirements(documents)
+  const live = messageIsLive(documents.currentMessage)
+  const historyReady = documents.history === "ready"
+  const canPrepareDraft = historyReady && !live && !documents.verifiedEmailSuppressed && !!documents.verifiedEmail && open.length > 0
+  return <div className="guided-facts">
+    <dl>
+      <dt>Business</dt><dd>{documents.businessName}</dd>
+      <dt>Issue</dt><dd>{documents.caseTypeLabel}</dd>
+    </dl>
+    <h3>Original request</h3>
+    <p className="preserve-lines">{documents.issue}</p>
+    <p>Nothing on this step sends an email.</p>
+    {documents.history === "unavailable" && <p className="notice">The communication history could not be loaded. That is not the same as no email having been prepared.</p>}
+    {documents.history === "incomplete" && <p className="notice">Older communications exist and are not shown, so a draft is not offered from this page.</p>}
+    {documents.history === "ambiguous" && <p className="notice">The evidence-request messages disagree, so this page will not draft or review one.</p>}
+    {open.length > 0 && <SavedRequirements documents={documents} open={open} />}
+    {documents.verifiedEmailSuppressed && <p className="notice">This email address is suppressed. No draft is created, and nothing is sent.</p>}
+    {historyReady && !documents.verifiedEmail && !documents.verifiedEmailSuppressed && open.length > 0 && !live && (
+      <p className="notice">A draft needs a verified customer email. Saving a requirement does not verify the address.</p>
+    )}
+    {documents.cancelledMessage && !live && <p>The last draft was cancelled. It was not sent.</p>}
+    {live && documents.currentMessage && <EmailDraft documents={documents} />}
+    {open.length === 0 && <RequirementChecklist caseId={caseId} documents={documents} />}
+    {open.length > 0 && !live && historyReady && (
+      <details className="guided-details">
+        <summary>Add another requirement</summary>
+        <p>Another requirement is saved separately. The email names only the requirement selected above.</p>
+        <RequirementChecklist caseId={caseId} documents={documents} />
+      </details>
+    )}
+    {canPrepareDraft && <DraftEmail caseId={caseId} documents={documents} requests={open} />}
+    {historyReady && !live && open.map(request => <CancelRequirement key={request.id} caseId={caseId} request={request} />)}
+  </div>
+}
+
+function SavedRequirements({ documents, open }: { documents: JourneyDocuments; open: ReturnType<typeof openRequirements> }) {
+  const contacted = documents.currentMessage?.lifecycle === "QUEUED"
+    || documents.currentMessage?.delivery === "Delivered"
+    || documents.currentMessage?.delivery === "Accepted by email provider"
+  return <>
+    <h3>Saved requirements</h3>
+    <p>{contacted ? "A message has been issued. Issuing it is not the same as confirmed delivery." : "Requirements saved. The customer has not been contacted."}</p>
+    <ul className="notice-list">
+      {open.map(request => <li key={request.id}>
+        <h3>{request.title}</h3>
+        <p className="preserve-lines">{request.requestText}</p>
+      </li>)}
+    </ul>
+  </>
+}
+
+function EmailDraft({ documents }: { documents: JourneyDocuments }) {
+  const message = documents.currentMessage
+  if (!message) return null
+  const reviewed = message.lifecycle === "REVIEWED"
+  const draft = message.lifecycle === "DRAFT"
+  const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
+  return <section aria-labelledby="journey-email-heading">
+    <h3 id="journey-email-heading">{draft ? "Email draft" : reviewed ? "Reviewed draft" : "Evidence-request email"}</h3>
+    <p>{draft ? "This is a draft. It is not approved, and it has not been sent." : reviewed ? "Reviewed means the wording is locked. It has not been sent." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
+    {failed && <p>Failure is not delivery. This page does not send the message again. Contact recovery stays on the communications workspace.</p>}
+    {message.lifecycle === "QUEUED" && <p>Queued means the provider has not confirmed delivery. This page does not send another copy.</p>}
+    {message.delivery === "Delivered" && <p>Delivery is recorded. Provider acceptance on its own would not have completed this step.</p>}
+    {message.delivery === "Accepted by email provider" && <p>The provider accepted the message. That is not delivery, and the customer has not necessarily been contacted.</p>}
+    <dl>
+      <dt>Recipient</dt><dd>{message.recipient}</dd>
+      <dt>Subject</dt><dd>{message.subject || "No subject"}</dd>
+      <dt>Message</dt><dd className="preserve-lines">{message.bodyText || "No message text."}</dd>
+    </dl>
+    {message.contentLocked && <p>This wording is locked. A later change is a new draft, not an edit of this message.</p>}
+    {reviewed && <p>{documents.sendDisabledReason || "Sending is not offered from this step. The reviewed draft is kept."}</p>}
+    {draft && <ReviewDraft messageId={message.id} version={message.version} />}
+    {(draft || reviewed) && <ReplaceDraft messageId={message.id} version={message.version} />}
+  </section>
+}
+
+function RequirementChecklist({ caseId, documents }: { caseId: string; documents: JourneyDocuments }) {
+  const command = useCommand()
+  const [rows, setRows] = useState<Row[]>(() => [
+    ...documents.suggestions.map(item => ({ key: item.key, name: item.title, title: item.title, detail: item.detail, selected: item.selected })),
+    { key: "other", name: "Other evidence", title: "Other evidence", detail: "", selected: false },
+  ])
+  const selected = rows.filter(row => row.selected)
+  function update(key: string, patch: Partial<Row>) {
+    setRows(current => current.map(row => row.key === key ? { ...row, ...patch } : row))
+  }
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (selected.length === 0) {
+      command.setLocalMessage("Select a document, or leave the list empty. An empty list is not a decision that no documents are required.")
+      return
+    }
+    const other = selected.find(row => row.key === "other")
+    if (other && (other.title.trim().length < 3 || other.detail.trim().length < 10)) {
+      command.setLocalMessage("Describe the other evidence in a few words before saving it.")
+      return
+    }
+    const title = requirementTitle(selected)
+    const requestText = requirementText(selected)
+    if (!title || !requestText) {
+      command.setLocalMessage("Shorten the document names. The customer email can name 200 characters, and the saved note can hold 4,000.")
+      return
+    }
+    if (alreadySaved(title, documents.requests)) {
+      command.setLocalMessage("That requirement is already saved. It was not created again, and the customer was not contacted.")
+      return
+    }
+    await command.send("save", evidenceEndpoint, {
+      operation: "create_request",
+      caseId,
+      title,
+      requestText,
+      dueAt: null,
+    })
+  }
+  return <form className="record-form" onSubmit={save}>
+    <h3>Documents to request</h3>
+    <p>Choose only what this case needs. These suggestions are not required for every case, and none of them asks for a personal identity document.</p>
+    <ul className="guided-checklist">
+      {rows.map(row => <li key={row.key}>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={row.selected}
+            aria-label={row.key === "other" ? "Include other evidence" : `Include ${row.name}`}
+            onChange={event => update(row.key, { selected: event.target.checked })}
+          />
+          <span className="sr-only">{row.key === "other" ? "Other evidence" : "Include this requirement"}</span>
+        </label>
+        <label>
+          {row.key === "other" ? "Other evidence title" : "Document name"}
+          <input
+            aria-label={row.key === "other" ? "Other evidence title" : `Document name: ${row.name}`}
+            value={row.title}
+            maxLength={200}
+            onChange={event => update(row.key, { title: event.target.value })}
+          />
+        </label>
+        {(row.selected || row.key === "other") && <label>
+          {row.key === "other" ? "Other evidence description" : "What to ask for"}
+          <textarea
+            aria-label={row.key === "other" ? "Other evidence description" : `What to ask for: ${row.name}`}
+            value={row.detail}
+            maxLength={1000}
+            rows={2}
+            onChange={event => update(row.key, { detail: event.target.value })}
+          />
+        </label>}
+      </li>)}
+    </ul>
+    <p>An empty list is not a decision that no documents are required. Saving records the requirement and does not email the customer.</p>
+    <fieldset disabled={command.busy || command.uncertain || command.done}>
+      <button type="submit" disabled={selected.length === 0}>Save evidence requirements</button>
+    </fieldset>
+    <CommandStatus command={command} />
+  </form>
+}
+
+function DraftEmail({
+  caseId, documents, requests,
+}: {
+  caseId: string
+  documents: JourneyDocuments
+  requests: ReturnType<typeof openRequirements>
+}) {
+  const command = useCommand()
+  const [requestId, setRequestId] = useState(requests[0]?.id ?? "")
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await command.send("draft", communicationEndpoint, {
+      operation: "draft",
+      templateKey: "EVIDENCE_REQUEST",
+      caseId,
+      evidenceRequestId: requestId,
+    })
+  }
+  return <form className="record-form" onSubmit={submit}>
+    <p>The next action is to generate the email from the approved template. The draft is not an approved or sent message.</p>
+    {requests.length > 1 && <label>Requirement for this email
+      <select value={requestId} onChange={event => setRequestId(event.target.value)}>
+        {requests.map(request => <option key={request.id} value={request.id}>{request.title}</option>)}
+      </select>
+    </label>}
+    {documents.verifiedEmail && <p>Recipient: {documents.verifiedEmail}</p>}
+    <fieldset disabled={command.busy || command.uncertain || command.done}>
+      <button type="submit">Generate email draft</button>
+    </fieldset>
+    <CommandStatus command={command} />
+  </form>
+}
+
+function ReviewDraft({ messageId, version }: { messageId: string; version: number }) {
+  const command = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await command.send("review", communicationEndpoint, { operation: "review", communicationId: messageId, version })
+  }
+  return <form className="record-form" onSubmit={submit}>
+    <fieldset disabled={command.busy || command.uncertain || command.done}>
+      <button type="submit">Mark reviewed</button>
+    </fieldset>
+    <p>Review locks this wording. It does not send the email.</p>
+    <CommandStatus command={command} />
+  </form>
+}
+
+function ReplaceDraft({ messageId, version }: { messageId: string; version: number }) {
+  const command = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await command.send("cancel", communicationEndpoint, { operation: "cancel", communicationId: messageId, version })
+  }
+  return <details className="guided-details">
+    <summary>Replace this draft</summary>
+    <p>Cancelling keeps the current wording on this message and allows a new draft. It does not send a replacement, and it does not edit the locked text.</p>
+    <form className="record-form" onSubmit={submit}>
+      <fieldset disabled={command.busy || command.uncertain || command.done}>
+        <button type="submit">Cancel this draft</button>
+      </fieldset>
+      <CommandStatus command={command} />
+    </form>
+  </details>
+}
+
+function CancelRequirement({ caseId, request }: { caseId: string; request: { id: string; title: string; version: number } }) {
+  const command = useCommand()
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const note = String(new FormData(event.currentTarget).get("note") ?? "")
+    await command.send(`cancel-${request.id}`, evidenceEndpoint, {
+      operation: "cancel_request",
+      caseId,
+      requestId: request.id,
+      version: request.version,
+      note,
+    })
+  }
+  return <details className="guided-details">
+    <summary>Change the saved requirement</summary>
+    <p>A saved requirement cannot be edited in place. Cancelling it, with a note, is the existing record. The customer is not contacted.</p>
+    <form className="record-form" onSubmit={submit}>
+      <fieldset disabled={command.busy || command.uncertain || command.done}>
+        <label>Reason for cancelling {request.title}
+          <textarea name="note" required minLength={10} maxLength={1000} rows={2} />
+        </label>
+        <button type="submit">Cancel this requirement</button>
+      </fieldset>
+      <CommandStatus command={command} />
+    </form>
+  </details>
+}
+
+function useCommand() {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [uncertain, setUncertain] = useState(false)
+  const [done, setDone] = useState(false)
+  const [message, setMessage] = useState("")
+  const keys = useRef<Record<string, string>>({})
+  const inflight = useRef(false)
+  function setLocalMessage(value: string) {
+    setMessage(value)
+  }
+  async function send(name: string, url: string, body: unknown) {
+    if (busy || uncertain || done || inflight.current) return
+    inflight.current = true
+    keys.current[name] ||= crypto.randomUUID()
+    setBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": keys.current[name] },
+        body: JSON.stringify(body),
+      })
+      const result = await response.json().catch(() => ({})) as { message?: string }
+      setMessage(result.message || "Unable to confirm the change.")
+      if (response.ok) setDone(true)
+      else if (response.status >= 500 || response.status === 409) setUncertain(true)
+      else delete keys.current[name]
+      if (response.ok) router.refresh()
+    } catch {
+      setMessage("Uncertain result. Reload before trying again.")
+      setUncertain(true)
+    } finally {
+      inflight.current = false
+      setBusy(false)
+    }
+  }
+  return { busy, uncertain, done, message, send, setLocalMessage }
+}
+
+function CommandStatus({ command }: { command: ReturnType<typeof useCommand> }) {
+  return <>
+    {command.message && <p role="status">{command.message}</p>}
+    {(command.uncertain || command.done) && <button type="button" onClick={() => window.location.reload()}>Reload this step</button>}
+  </>
+}
+

@@ -883,6 +883,9 @@ summary { cursor: pointer; }
 }
 .guided-warning p, .guided-warning ul { margin: .35rem 0; }
 .guided-warning ul { padding-left: 1.15rem; }
+.guided-checklist { list-style: none; margin: .5rem 0 1rem; padding: 0; }
+.guided-checklist > li { margin: .85rem 0; padding-top: .85rem; border-top: 1px solid var(--line); }
+.guided-checklist > li:first-child { border-top: 0; padding-top: 0; }
 .guided-details { margin-top: 1rem; }
 .guided-details > summary { font-weight: 700; }
 .guided-details > summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }

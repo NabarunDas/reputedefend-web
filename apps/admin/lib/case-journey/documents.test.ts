@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest"
+import type { CaseCommunicationRead } from "../communications/model"
+import type { EvidenceRequest } from "../evidence/model"
+import {
+  alreadySaved,
+  buildJourneyDocuments,
+  requirementText,
+  requirementTitle,
+  suggestDocuments,
+} from "./documents"
+
+const sendDisabled = "Outgoing customer email is not enabled yet. Reviewed drafts are preserved, but sending will be enabled only after the production worker runs at the required cadence."
+
+function request(title: string, status: EvidenceRequest["status"] = "OPEN"): EvidenceRequest {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    title,
+    requestText: title,
+    status,
+    dueAt: null,
+    createdAt: "2026-02-01T00:00:00.000Z",
+    fulfilledAt: null,
+    version: 1,
+  }
+}
+
+function history(communications: CaseCommunicationRead["communications"] = []): CaseCommunicationRead {
+  return {
+    status: "success",
+    complete: true,
+    total: communications.length,
+    returned: communications.length,
+    verifiedEmail: "alex@example.com",
+    verifiedEmailSuppressed: false,
+    communications,
+  }
+}
+
+describe("evidence suggestions", () => {
+  it("suggests a suspension notice for a suspended profile and does not ask for identity documents", () => {
+    const suggestions = suggestDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "The business profile was suspended without warning.",
+    })
+    expect(suggestions.map(item => item.title)).toContain("Google suspension or rejection notice")
+    expect(suggestions.find(item => item.key === "suspension")?.selected).toBe(true)
+    expect(suggestions.map(item => item.title).join(" ")).not.toMatch(/passport|driving licence|national insurance|proof of identity/i)
+  })
+
+  it("suggests registration and location evidence without treating them as mandatory for every case", () => {
+    const suggestions = suggestDocuments({
+      caseType: "REVIEW_PROTECTION",
+      issue: "The shop needs its premises licence and Companies House registration checked.",
+    })
+    expect(suggestions.find(item => item.key === "registration")?.selected).toBe(true)
+    expect(suggestions.find(item => item.key === "location")?.selected).toBe(false)
+    expect(suggestions.find(item => item.key === "suspension")).toBeUndefined()
+    expect(suggestions.find(item => item.key === "registration")?.detail).toMatch(/not a personal identity document/i)
+    expect(suggestions.filter(item => item.selected)).toHaveLength(1)
+  })
+
+  it("suggests contact details for monitoring and leaves them unselected when the issue does not mention them", () => {
+    const suggestions = suggestDocuments({ caseType: "MONITORING", issue: "Watch the listing each month." })
+    expect(suggestions.map(item => item.key)).toEqual(["contact"])
+    expect(suggestions[0]?.selected).toBe(false)
+  })
+
+  it("keeps an empty checklist from becoming a saved title", () => {
+    expect(requirementTitle([])).toBeNull()
+    expect(requirementText([{ title: "  ", detail: "" }])).toBeNull()
+    expect(requirementTitle([{ title: "x".repeat(201) }])).toBeNull()
+    expect(requirementText([{ title: "Notice", detail: "The Google email." }])).toBe("Notice — The Google email.")
+  })
+
+  it("treats an open requirement with the same title as already saved", () => {
+    expect(alreadySaved("Suspension notice", [request("Suspension notice")])).toBe(true)
+    expect(alreadySaved("Suspension notice", [request("Suspension notice", "CANCELLED")])).toBe(false)
+    expect(alreadySaved("A different notice", [request("Suspension notice")])).toBe(false)
+  })
+
+  it("does not choose a draft when the communication history is incomplete, missing or ambiguous", () => {
+    const missing = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [],
+      history: null,
+      sendDisabledReason: sendDisabled,
+    })
+    expect(missing.history).toBe("unavailable")
+    expect(missing.currentMessage).toBeNull()
+    const incomplete = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [request("Notice")],
+      history: { ...history(), complete: false, total: 3, returned: 1 },
+      sendDisabledReason: sendDisabled,
+    })
+    expect(incomplete.history).toBe("incomplete")
+    const tied = history([
+      message("2026-02-01T00:00:00.000Z"),
+      message("2026-02-01T00:00:00.000Z", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+    ])
+    const ambiguous = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [],
+      history: tied,
+      sendDisabledReason: sendDisabled,
+    })
+    expect(ambiguous.history).toBe("ambiguous")
+    expect(ambiguous.currentMessage).toBeNull()
+  })
+})
+
+function message(draftedAt: string, id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"): CaseCommunicationRead["communications"][number] {
+  return {
+    id,
+    caseId: "55555555-5555-4555-8555-555555555555",
+    caseReference: "PR-1042",
+    communicationType: "EVIDENCE_REQUEST",
+    templateKey: "EVIDENCE_REQUEST",
+    templateVersion: 1,
+    lifecycle: "DRAFT",
+    deliveryStatus: "NONE",
+    legacyStatus: null,
+    recipient: "alex@example.com",
+    subject: "Evidence needed",
+    bodyText: "Please upload the notice.",
+    provider: null,
+    providerMessageId: null,
+    lastError: null,
+    contentLocked: false,
+    contentVersion: 1,
+    version: 2,
+    draftedAt,
+    reviewedAt: null,
+    queuedAt: null,
+    firstProviderAttemptAt: null,
+    providerAcceptedAt: null,
+    deliveredAt: null,
+    failedAt: null,
+    cancelledAt: null,
+    supersededBy: null,
+    events: [],
+    evidenceRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    eventsTruncated: false,
+    canReplace: false,
+  }
+}

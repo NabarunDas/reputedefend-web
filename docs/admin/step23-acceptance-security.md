@@ -52,6 +52,7 @@ exercised. Rendering a component is not acceptance and was not accepted as such.
 | Enquiry triage and conversion | `/enquiries/[id]`, `/enquiries/new` | PASS |
 | Cases list | `/cases` | PASS |
 | Case workflow | `/cases/[id]` | PASS |
+| Guided case workflow preview | `/cases/[id]/journey` | PASS |
 | Case authorization and manager access | `/records/client/[id]/link` | PASS |
 | Case evidence | `/cases/[id]/evidence` | PASS |
 | Prepared packs | — | PASS |

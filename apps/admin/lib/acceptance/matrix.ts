@@ -166,6 +166,25 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     status: "PASS",
   },
   {
+    area: "Guided case workflow preview",
+    routes: ["/cases/[id]/journey"],
+    surfaces: [],
+    action: "Read the eleven-step operator preview for one case.",
+    expected:
+      "Automated tests show all eleven steps and complete a step only from existing case-flow records. This PASS is not an authenticated browser test on the deployed develop Preview.",
+    authorization:
+      "The develop Preview gate runs before any case read. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
+    persistence: "Read-only. The preview writes nothing and adds no workflow state.",
+    negative:
+      "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. A missing record cannot turn a step complete, and the page has no control that marks one done.",
+    evidence: [
+      "app/cases/[id]/journey/page.test.tsx",
+      "lib/case-journey/present.test.ts",
+      "lib/case-journey/gate.test.ts",
+    ],
+    status: "PASS",
+  },
+  {
     area: "Case authorization and manager access",
     routes: ["/records/client/[id]/link"],
     surfaces: ["/api/authorization/command", "/api/manager-access/command"],

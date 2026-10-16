@@ -336,6 +336,12 @@ describe("the case workspace below the cockpit", () => {
     expect(within(preview).getByText(/^This is a preview\./)).toBeInTheDocument()
   })
 
+  it("hides the eleven-step preview unless this is the develop Preview", async () => {
+    await show("newCase")
+    expect(screen.queryByRole("link", { name: "Open the eleven-step workflow preview" })).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Case journey" }).closest("section")!.querySelectorAll("li")).toHaveLength(9)
+  })
+
   it("keeps the history newest first with its pagination unchanged", async () => {
     const events = Array.from({ length: 51 }, (_, index) => ({
       id: `event-${index}`, event: "CASE_NOTE", note: `note ${index}`, visibility: "INTERNAL",

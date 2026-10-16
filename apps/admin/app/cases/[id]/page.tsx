@@ -17,6 +17,7 @@ import { CaseAttention, CaseBlockers } from "./cockpit/notices"
 import { CasePrerequisites } from "./cockpit/prerequisites"
 import { CaseSnapshot } from "./cockpit/snapshot"
 import { actionTarget } from "./cockpit/presentation"
+import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
 
 export const metadata = { title: "Case" }
 
@@ -75,6 +76,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   return <section className="page">
     <Link className="back-link" href="/cases">Back to cases</Link>
     <CaseHeader c={c} flow={flow} />
+    {devCaseJourneyPreviewEnabled() && <p className="notice">
+      Development preview for the develop branch. This does not replace the case cockpit or change the case.
+      {" "}
+      <Link href={`/cases/${c.id}/journey`}>Open the eleven-step workflow preview</Link>
+    </p>}
     {flow.reopened && <p className="notice">This case was previously closed and has been reopened for further work.</p>}
     <CaseJourney phases={flow.phases} phase={flow.phase} progress={flow.progressSummary} />
     <div className="cockpit-split">

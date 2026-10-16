@@ -863,6 +863,58 @@ summary { cursor: pointer; }
 .journey-needs-attention .journey-mark { color: var(--warning); }
 .journey-step[aria-current="step"] { box-shadow: inset 0 0 0 1px var(--green); }
 
+.guided-workflow-layout {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.guided-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .45rem;
+}
+.guided-step {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: .45rem;
+  background: var(--paper);
+  min-width: 0;
+}
+.guided-step a {
+  display: grid;
+  grid-template-columns: 1.25rem auto minmax(0, 1fr);
+  grid-template-areas: "mark order title" "mark order state";
+  gap: .05rem .45rem;
+  padding: .55rem .6rem;
+  color: inherit;
+  text-decoration: none;
+}
+.guided-step-mark { grid-area: mark; font-weight: 800; }
+.guided-step-order { grid-area: order; font-weight: 800; }
+.guided-step-title { grid-area: title; font-weight: 700; }
+.guided-step-state { grid-area: state; color: var(--muted); font-size: .8rem; }
+.guided-step-complete { border-left-color: var(--green); }
+.guided-step-complete .guided-step-mark { color: var(--green); }
+.guided-step-current,
+.guided-step.is-focus { border-left-color: var(--accent); background: color-mix(in srgb, var(--lime) 32%, var(--surface)); }
+.guided-step-waiting { border-left-color: var(--accent); }
+.guided-step-attention,
+.guided-step-unknown { border-left-color: var(--warning); }
+.guided-step-attention { background: #fdf5e6; }
+.guided-step-locked .guided-step-title,
+.guided-step-na .guided-step-title { color: var(--muted); }
+.guided-step.is-selected { box-shadow: inset 0 0 0 1px var(--green); }
+.guided-step.is-focus a { outline: 2px solid var(--green); outline-offset: -2px; }
+.guided-workspace h3 { margin-top: 1.1rem; }
+.guided-workspace ul { margin: .35rem 0 0; padding-left: 1.15rem; }
+@media (max-width: 800px) {
+  .guided-workflow-layout { grid-template-columns: minmax(0, 1fr); }
+  .guided-step a { padding: .7rem .65rem; }
+}
+
 .cockpit-blockers { border-left: 3px solid var(--danger); }
 
 .notice-list { list-style: none; margin: 0; padding: 0; }

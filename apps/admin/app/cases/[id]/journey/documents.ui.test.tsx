@@ -222,15 +222,15 @@ describe("the step 3 document request", () => {
     expect(screen.getByText("alex@example.com")).toBeInTheDocument()
     expect(screen.getByText("Evidence needed for PR-1042")).toBeInTheDocument()
     expect(screen.getByText("To continue with PR-1042, we need the Google suspension notice.")).toBeInTheDocument()
-    expect(screen.getByText(/not approved, and it has not been sent/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }))
+    expect(screen.getByText(/has not been approved, and it has not been sent/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Approve email" }))
     expect(await screen.findByText("That communication changed. Reload the page and try again.")).toBeInTheDocument()
     expect(JSON.parse(String(reviewedFetch.mock.calls[0][1].body))).toMatchObject({
       operation: "review",
       communicationId: MESSAGE_ID,
       version: 2,
     })
-    expect(screen.getByRole("button", { name: "Mark reviewed" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Approve email" })).toBeDisabled()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
   })
 
@@ -247,12 +247,14 @@ describe("the step 3 document request", () => {
         communications: [communication({ lifecycle: "REVIEWED", contentLocked: true, reviewedAt: "2026-02-03T00:00:00.000Z" })],
       },
     })} />)
-    expect(screen.getByText(sendDisabled)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Approved — Not sent" })).toBeInTheDocument()
+    expect(screen.getByText("The customer has not been sent this email.")).toBeInTheDocument()
     expect(screen.getByText("To continue with PR-1042, we need the Google suspension notice.")).toBeInTheDocument()
-    expect(screen.getByText("This wording is locked. A later change is a new draft, not an edit of this message.")).toBeInTheDocument()
+    expect(screen.getByText("This approved wording is kept. A later change is a new draft.")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
+    expect(screen.queryByText(sendDisabled)).toBeNull()
 
     cleanup()
     render(<DocumentRequestPanel caseId={CASE_ID} documents={buildJourneyDocuments({
@@ -311,10 +313,8 @@ describe("the step 3 document request", () => {
       },
     })} />)
     expect(screen.getByText(/outbound sender address is not configured/i)).toBeInTheDocument()
-    expect(screen.getByText(/Editing the customer-facing wording before review is not available yet/)).toBeInTheDocument()
     expect(screen.getByText("To continue with PR-1042, we need the Google suspension notice.")).toBeInTheDocument()
-    expect(screen.queryByRole("textbox", { name: /customer-facing|message wording|subject/i })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
   })
 
@@ -346,10 +346,53 @@ describe("the step 3 document request", () => {
     })} />)
     expect(screen.getAllByText("Included in this email: Shop licence").length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Not included in this email: Proof of operating location/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Reviewing it would leave those requirements unrequested/)).toBeInTheDocument()
-    expect(screen.getByText(/Editing the customer-facing wording before review is not available yet/)).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull()
+    expect(screen.getByText(/Approving does not cancel those requests/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Approve email" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
+  })
+
+  it("saves plain wording without the upload link and hides approval until that wording is saved", async () => {
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, "The wording was saved. The email has not been sent."))
+    vi.stubGlobal("fetch", fetchMock)
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence")],
+      history: {
+        status: "success",
+        complete: true,
+        total: 1,
+        returned: 1,
+        verifiedEmail: "alex@example.com",
+        verifiedEmailSuppressed: false,
+        communications: [communication({
+          subject: "Evidence needed for PR-1042",
+          bodyText: `To continue with PR-1042, we need the shop licence.\n\n${upload}`,
+          evidenceRequestId: REQUEST_ID,
+        })],
+      },
+    })} />)
+    expect(screen.getAllByText(/To continue with PR-1042, we need the shop licence/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(upload).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Approve email" })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Email message"), { target: { value: "Please use https://evil.example/steal for the file." } })
+    fireEvent.click(screen.getByRole("button", { name: "Save wording" }))
+    expect(await screen.findByText(/Use plain wording/)).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText("Email subject"), { target: { value: "Documents for your profile" } })
+    fireEvent.change(screen.getByLabelText("Email message"), { target: { value: "Please send the shop licence and the suspension notice." } })
+    expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Save wording" }))
+    await screen.findByText("The wording was saved. The email has not been sent.")
+    const sent = JSON.parse(String(fetchMock.mock.calls[0][1].body))
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/cases/journey/wording")
+    expect(sent).toEqual({
+      communicationId: MESSAGE_ID,
+      version: 2,
+      subject: "Documents for your profile",
+      message: "Please send the shop licence and the suspension notice.",
+    })
+    expect(JSON.stringify(sent)).not.toContain(upload)
+    expect(JSON.stringify(sent)).not.toMatch(/recipient|fromAddress|<|https?:/)
   })
 })

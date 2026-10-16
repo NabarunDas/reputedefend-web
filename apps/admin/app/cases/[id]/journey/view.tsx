@@ -35,7 +35,7 @@ const stateClass: Record<JourneyStepState, string> = {
 const previewNote: Record<JourneyStepId, string> = {
   CASE_RECEIVED: "Read the enquiry, then record whether it is reviewed or incomplete.",
   VERIFICATION: "Check the business and listing, then record the screening outcome.",
-  REQUEST_DOCUMENTS: "Choose the documents, save the requirement, then review the email. Saving does not contact the customer.",
+  REQUEST_DOCUMENTS: "Choose the documents, save one request, then edit and approve the email. Approving does not send it.",
   EVIDENCE_REVIEW: "Evidence review actions are not available in this preview.",
   ASSESSMENT: "Assessment actions are not available in this preview.",
   QUOTE_ACCEPTANCE: "Quote actions are not available in this preview.",
@@ -194,7 +194,7 @@ function StepWorkspace({
       {step.decision
         ? <p>This form records the staff decision for {step.laterWork}. It does not send email, take a payment, or change the technical stage.</p>
         : step.id === "REQUEST_DOCUMENTS"
-          ? <p>Saving a requirement and reviewing a draft use the existing evidence and communications commands. This page does not send the email, and a draft does not complete the step.</p>
+          ? <p>Saving a requirement, editing the wording, and approving the email do not send it. An approved email does not complete this step.</p>
           : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || step.id === "REQUEST_DOCUMENTS") && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>

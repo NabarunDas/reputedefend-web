@@ -42,53 +42,107 @@ function useDecision() {
   return { busy, done, uncertain, message, send }
 }
 
-export function IntakeBrief({ brief }: { brief: JourneyIntakeBrief }) {
+function safeLink(value: string) {
+  if (!/^https?:\/\//i.test(value)) return value
+  return <a href={value} target="_blank" rel="noopener noreferrer">{value} (new tab)</a>
+}
+
+function ConflictNotice({ brief }: { brief: JourneyIntakeBrief }) {
+  const notes = [...brief.conflicts]
+  if (brief.emailControl === "records_disagree") notes.push("The email-control records do not agree.")
+  if (brief.authority === "records_disagree") notes.push("The business-authority records do not agree.")
+  if (brief.authority === "revoked") notes.push("Business authority was revoked. This screening cannot restore it.")
+  if (notes.length === 0) return null
+  const submitted = brief.snapshot
+  const joined = brief.conflicts.join(" ")
+  const rows = submitted ? [
+    joined.includes("business name") ? ["Business", submitted.businessName || "Not submitted", brief.businessName || "Not recorded"] : null,
+    joined.includes("country") ? ["Country", submitted.country || "Not submitted", brief.country || "Not recorded"] : null,
+    joined.includes("email") ? ["Email", submitted.email || "Not submitted", brief.email || "Not recorded"] : null,
+    joined.includes("website") ? ["Website", submitted.websiteUrl || "Not submitted", brief.website || "Not recorded"] : null,
+    joined.includes("profile URL") ? ["Google Profile", submitted.businessProfileUrl || "Not submitted", brief.profileUrl || "Not recorded"] : null,
+  ].filter((row): row is [string, string, string] => row !== null) : []
+  return <div className="guided-warning" role="alert">
+    <p><strong>These records conflict.</strong></p>
+    <ul>{notes.map(item => <li key={item}>{item}</li>)}</ul>
+    {rows.length > 0 && <dl>{rows.map(([label, from, current]) => [
+      <dt key={`${label}-label`}>{label}</dt>,
+      <dd key={`${label}-value`}>Submitted: {from}. Current: {current}.</dd>,
+    ])}</dl>}
+  </div>
+}
+
+export function IntakeSummary({ brief, reference }: { brief: JourneyIntakeBrief; reference: string }) {
+  const submitted = brief.snapshot
+  const enquiry = submitted?.details || brief.message
+  return <div className="guided-facts">
+    <dl>
+      <dt>Case</dt><dd>{reference}</dd>
+      <dt>Submitted</dt><dd>{brief.submittedAtLabel ?? "Time not recorded"}</dd>
+      <dt>Customer</dt><dd>{submitted?.fullName || brief.customerName || "Not recorded"}</dd>
+      <dt>Email</dt><dd>{submitted?.email || brief.email || "No email"}</dd>
+      <dt>Business</dt><dd>{submitted?.businessName || brief.businessName || "Not recorded"}</dd>
+    </dl>
+    <h3>Original enquiry</h3>
+    <p className="preserve-lines">{enquiry || "No case message is stored."}</p>
+    <ConflictNotice brief={brief} />
+    <details className="guided-details">
+      <summary>View original submission</summary>
+      {submitted
+        ? <dl>
+          <dt>Phone</dt><dd>{submitted.phone || "No phone"}</dd>
+          <dt>Country</dt><dd>{submitted.country || "No country"}</dd>
+          <dt>Website</dt><dd>{submitted.websiteUrl ? safeLink(submitted.websiteUrl) : "Not provided"}</dd>
+          <dt>Google Profile</dt><dd>{submitted.businessProfileUrl ? safeLink(submitted.businessProfileUrl) : "Not provided"}</dd>
+          <dt>Review URL</dt><dd>{submitted.reviewUrl ? safeLink(submitted.reviewUrl) : "Not provided"}</dd>
+        </dl>
+        : <p>The original intake snapshot is not available from the reviewed read yet, so the submitted contact and business details are not shown as a separate original submission.</p>}
+    </details>
+  </div>
+}
+
+export function VerificationSummary({ brief }: { brief: JourneyIntakeBrief }) {
   const email = brief.emailControl === "verified"
     ? "Email control is recorded. That is not business authority and it is not a review of this case."
     : brief.emailControl === "records_disagree"
       ? "The email-control records do not agree, so email is not shown as verified."
-      : "Email control is not recorded. A delivered or opened message is not email control."
+      : "Email control is not recorded. A delivered or opened message is not email control, and it does not block this screening."
   const authority = brief.authority === "verified"
     ? "Business authority is recorded. It is separate from email control."
     : brief.authority === "pending"
-      ? "A business membership is pending. That is not verified authority."
+      ? "A business membership is pending. That is not verified authority, and it does not block this screening."
       : brief.authority === "revoked"
         ? "Business authority was revoked. A checkbox on this form cannot restore it."
         : brief.authority === "records_disagree"
           ? "The business-authority records do not agree, so authority is not shown as verified."
-          : "No business-authority membership is recorded."
-  return <div>
-    <h3>Original submission</h3>
-    <p>Submitted {brief.submittedAtLabel ?? "at a time that is not recorded"}.</p>
-    {brief.snapshot
-      ? <div>
-        <p>Original enquiry: {brief.snapshot.details}</p>
-        <p>Submitted contact: {brief.snapshot.fullName || "No name"} · {brief.snapshot.email || "No email"} · {brief.snapshot.phone || "No phone"}</p>
-        <p>Submitted business: {brief.snapshot.businessName || "Not recorded"} · {brief.snapshot.country || "No country"}</p>
-        <p>{brief.snapshot.websiteUrl ? `Submitted website: ${brief.snapshot.websiteUrl}` : "No website was submitted."}</p>
-        <p>{brief.snapshot.businessProfileUrl ? `Submitted Google profile URL: ${brief.snapshot.businessProfileUrl}` : "No Google profile URL was submitted."}</p>
-        {brief.snapshot.reviewUrl && <p>Submitted review URL: {brief.snapshot.reviewUrl}</p>}
-      </div>
-      : <div>
-        <p>Original enquiry on the case: {brief.message || "No case message is stored."}</p>
-        <p>The original intake snapshot is not available from the reviewed read yet, so the submitted contact and business details are not shown as a separate original submission.</p>
-      </div>}
-    <h3>Current business record</h3>
-    <p>These are the records held now. They can differ from what the customer first submitted.</p>
-    {brief.reviewUrl && <p>Review URL on the case: {brief.reviewUrl}</p>}
-    <p>Customer: {brief.customerName || "Not recorded"} · {brief.email || "No email"} · {brief.phone || "No phone"}</p>
-    <p>Business: {brief.businessName || "Not recorded"}</p>
-    <p>{brief.website ? `Website on the business record: ${brief.website}. A website is not required.` : "No website is recorded. A website is not required."}</p>
-    <p>Location: {brief.locationName || "Not named"} · {brief.country || "No country recorded"}</p>
-    <p>{brief.profileUrl
-      ? `A Google profile URL is saved: ${brief.profileUrl}. Saving a URL does not verify the listing.`
-      : "No Google profile URL is saved. An accessible listing is not required."}</p>
-    <p>{email}</p>
-    <p>{authority}</p>
-    {brief.duplicates.length
-      ? <p>Other businesses with this exact name: {brief.duplicates.map(row => row.name).join(", ")}. Matching names are a prompt to check, not a merge.</p>
-      : <p>No other business has this exact name.</p>}
-    {brief.conflicts.length > 0 && <ul>{brief.conflicts.map(item => <li key={item}>{item}</li>)}</ul>}
+          : "No business-authority membership is recorded. That does not block this screening."
+  return <div className="guided-facts">
+    <ConflictNotice brief={brief} />
+    <dl>
+      <dt>Business</dt><dd>{brief.businessName || "Not recorded"}</dd>
+      <dt>Country</dt><dd>{brief.country || "Not recorded"}</dd>
+      <dt>Customer</dt><dd>{brief.customerName || "Not recorded"}</dd>
+      <dt>Email</dt><dd>{brief.email || "No email"}</dd>
+      <dt>Website</dt><dd>{brief.website ? safeLink(brief.website) : "Not provided"}</dd>
+      <dt>Google Profile</dt><dd>{brief.profileUrl ? safeLink(brief.profileUrl) : "Not provided"}</dd>
+    </dl>
+    <details className="guided-details">
+      <summary>Verification details</summary>
+      <p>{email}</p>
+      <p>{authority}</p>
+      <p>{brief.website ? "A website is not required." : "No website is recorded. A website is not required."}</p>
+      <p>{brief.profileUrl ? "Saving a URL does not verify the listing." : "No Google profile URL is saved. An accessible listing is not required."}</p>
+      <p>The purchasing establishment, country and tax eligibility are not part of this screening.</p>
+      {brief.locationName && <p>Location name: {brief.locationName}.</p>}
+      {brief.phone && <p>Phone: {brief.phone}.</p>}
+      {brief.duplicates.length
+        ? <p>Other businesses with this exact name: {brief.duplicates.map(row => row.name).join(", ")}. Matching names are a prompt to check, not a merge.</p>
+        : <p>No other business has this exact name.</p>}
+      {brief.snapshot
+        ? <p>Original enquiry: {brief.snapshot.details}</p>
+        : <p>The original intake snapshot is not available from the reviewed read yet, so the submitted contact and business details are not shown as a separate original submission.</p>}
+      {brief.submittedAtLabel && <p>Submitted {brief.submittedAtLabel}.</p>}
+    </details>
   </div>
 }
 
@@ -111,7 +165,7 @@ export function IntakeReviewForm({ caseId, version }: { caseId: string; version:
   }
   return <form className="record-form" onSubmit={submit}>
     <h3>Record the intake review</h3>
-    <p>Saving this records that you reviewed the enquiry. Sending or opening a confirmation email does not. If the enquiry is incomplete, record that and the next action instead of marking it reviewed.</p>
+    <p>A confirmation email is not a review. If the enquiry is incomplete, record the next action.</p>
     <fieldset disabled={busy || done || uncertain}>
       <label>Outcome
         <select name="outcome" defaultValue="REVIEWED">
@@ -176,7 +230,7 @@ export function VerificationForm({
   }
   return <form className="record-form" onSubmit={submit}>
     <h3>Record the screening decision</h3>
-    <p>Record what you checked, the outcome and the reason. A website, a Companies House record and an accessible Google listing are not required. A suspended or missing listing does not block assessment or an evidence request. An unavailable listing can only be saved when the listing is marked suspended, missing or inaccessible. A conflict can only be saved as escalation. This form does not verify email, grant business authority, or record the purchasing establishment or tax eligibility.</p>
+    <p>A saved Google URL is not a verified listing. A conflict is saved only as an escalation, with a reason.</p>
     <fieldset disabled={busy || done || uncertain}>
       <label>Outcome
         <select name="outcome" defaultValue={canComplete ? "PRELIMINARY_COMPLETE" : "FURTHER_INFORMATION"}>
@@ -197,8 +251,8 @@ export function VerificationForm({
         </select>
       </label>
       {defaults.websiteRecorded
-        ? <p>The business record already has a website, so this starts as “A website exists”. Choosing “No website” is a discrepancy: mark it, escalate, and give the reason.</p>
-        : <p>No website is on the business record, so this starts as “No website”.</p>}
+        ? <p>A website is already recorded. “No website” needs the discrepancy marked, escalation, and a reason.</p>
+        : null}
       <label>Google listing
         <select name="listing" defaultValue={defaults.listing} required>
           {defaults.profileRecorded && <option value="">Choose how the listing stands</option>}
@@ -208,8 +262,8 @@ export function VerificationForm({
         </select>
       </label>
       {defaults.profileRecorded
-        ? <p>A Google profile URL is saved. That does not mean the listing is accessible or verified. Choose accessible, or suspended, missing or inaccessible. “Not supplied” is a discrepancy and needs escalation.</p>
-        : <p>No Google profile URL is saved, so this starts as “Not supplied”.</p>}
+        ? <p>Choose accessible, or suspended, missing or inaccessible. “Not supplied” needs escalation.</p>
+        : null}
       <label className="checkbox"><input type="checkbox" name="discrepancy" value="yes" /> The business details conflict and need escalation</label>
       <label>Reason
         <textarea name="reason" required minLength={10} maxLength={1000} rows={3} />

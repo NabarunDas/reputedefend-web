@@ -866,9 +866,27 @@ summary { cursor: pointer; }
 .guided-workflow-layout {
   display: grid;
   grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  grid-template-areas: "nav workspace";
   gap: 1.25rem;
   align-items: start;
 }
+.guided-nav { grid-area: nav; }
+.guided-workspace { grid-area: workspace; }
+.guided-instruction { margin: .2rem 0 .85rem; font-size: 1.05rem; }
+.guided-facts dl { margin-bottom: .85rem; }
+.guided-warning {
+  margin: .75rem 0;
+  padding: .75rem .85rem;
+  border-left: 3px solid var(--warning);
+  background: #fdf5e6;
+  border-radius: .35rem;
+}
+.guided-warning p, .guided-warning ul { margin: .35rem 0; }
+.guided-warning ul { padding-left: 1.15rem; }
+.guided-details { margin-top: 1rem; }
+.guided-details > summary { font-weight: 700; }
+.guided-details > summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.guided-system { margin-top: 1.25rem; }
 .guided-steps {
   list-style: none;
   margin: 0;
@@ -906,13 +924,20 @@ summary { cursor: pointer; }
 .guided-step-attention { background: #fdf5e6; }
 .guided-step-locked .guided-step-title,
 .guided-step-na .guided-step-title { color: var(--muted); }
+.guided-step.is-quiet a {
+  grid-template-areas: "mark order title";
+}
 .guided-step.is-selected { box-shadow: inset 0 0 0 1px var(--green); }
 .guided-step.is-focus a { outline: 2px solid var(--green); outline-offset: -2px; }
 .guided-workspace h3 { margin-top: 1.1rem; }
 .guided-workspace ul { margin: .35rem 0 0; padding-left: 1.15rem; }
 @media (max-width: 800px) {
-  .guided-workflow-layout { grid-template-columns: minmax(0, 1fr); }
+  .guided-workflow-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "workspace" "nav";
+  }
   .guided-step a { padding: .7rem .65rem; }
+  .guided-facts dl, .guided-warning dl { grid-template-columns: minmax(0, 1fr); }
 }
 
 .cockpit-blockers { border-left: 3px solid var(--danger); }

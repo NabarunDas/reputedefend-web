@@ -1,7 +1,10 @@
--- ADMIN-JOURNEY-02 proposed database change.
--- NOT a migration. Do not copy this file into supabase/migrations and do not
--- apply it to DEV or Production from this pull request. It is reviewed here
--- and exercised only inside the local PGlite test, which rolls the writes back.
+-- ADMIN-JOURNEY-02 source SQL / DEV deployment record.
+-- Reviewed and applied ONLY to profilerelaunch-dev on 2026-10-16 as tracked
+-- Supabase migration 20261016175917_admin_journey_02_dev_intake_review_screening_v1.
+-- This historical source is intentionally outside the shared supabase/migrations
+-- chain. Do not reapply to DEV, and do not apply to Production without separate
+-- approval and a Production-specific release plan. Local PGlite tests use this
+-- function body with local, disposable test data.
 --
 -- Adds two functions. It does not alter cases, case_work_events, audit actions,
 -- intake, email verification, membership, or the case-flow transition matrix.

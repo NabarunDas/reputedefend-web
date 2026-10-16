@@ -25,6 +25,13 @@ import type {
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
+import {
+  latestIntakeDecision,
+  latestVerificationDecision,
+  preliminaryBlock,
+  verificationScreeningComplete,
+  type JourneyWorkEvent,
+} from "./decisions"
 
 export const journeyStepStates = [
   "COMPLETED",
@@ -73,6 +80,7 @@ export type JourneyStepView = {
   unavailableReason: string | null
   unsupported: string
   laterWork: string
+  decision: "intake" | "verification" | null
 }
 
 export type CaseJourneyPresentation = {
@@ -189,10 +197,15 @@ export function presentJourneyState(proof: Proof, place: "focus" | "before" | "a
   return "UNKNOWN"
 }
 
-export function presentCaseJourney(facts: CaseFlowFacts, now: string): CaseJourneyPresentation {
+export function presentCaseJourney(
+  facts: CaseFlowFacts,
+  now: string,
+  events: readonly JourneyWorkEvent[] = [],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean } = {},
+): CaseJourneyPresentation {
   const flow = resolveCaseFlow(facts, now)
   const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
-  const readings = readSteps(facts, now)
+  const readings = readSteps(facts, now, events, options)
   const focusStepId = chooseFocus(flow.primaryAction, facts, readings, closed)
   const focusIndex = focusStepId ? journeyStepIds.indexOf(focusStepId) : null
   const places = buildPlaces(facts)
@@ -218,6 +231,7 @@ export function presentCaseJourney(facts: CaseFlowFacts, now: string): CaseJourn
       unavailableReason: unavailableReason(state),
       unsupported: definition.unsupported,
       laterWork: definition.laterWork,
+      decision: definition.decision ?? null,
     }
   })
 
@@ -355,10 +369,15 @@ function incompatibleNotes(facts: CaseFlowFacts, suppressed: boolean): string[] 
   return []
 }
 
-function readSteps(facts: CaseFlowFacts, now: string): Record<JourneyStepId, Reading> {
+function readSteps(
+  facts: CaseFlowFacts,
+  now: string,
+  events: readonly JourneyWorkEvent[],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean },
+): Record<JourneyStepId, Reading> {
   return {
-    CASE_RECEIVED: readReceived(facts),
-    VERIFICATION: readVerification(facts),
+    CASE_RECEIVED: readReceived(facts, events),
+    VERIFICATION: readVerification(facts, events, options),
     REQUEST_DOCUMENTS: readRequest(facts),
     EVIDENCE_REVIEW: readEvidence(facts),
     ASSESSMENT: readAssessment(),
@@ -371,45 +390,95 @@ function readSteps(facts: CaseFlowFacts, now: string): Record<JourneyStepId, Rea
   }
 }
 
-function readReceived(facts: CaseFlowFacts): Reading {
+function readReceived(facts: CaseFlowFacts, events: readonly JourneyWorkEvent[]): Reading {
+  const known = [
+    `Case ${facts.reference} is on file with status ${facts.caseStatus}.`,
+    "A confirmation email, whether delivered or opened, is not a review of this case and is not verified identity.",
+  ]
+  const decision = latestIntakeDecision(events)
+  if (!decision) {
+    return { proof: "unproven", known, missing: ["A recorded operator review of the intake."], who: "ProfileRelaunch reviews the new case." }
+  }
+  if (decision.reopened) {
+    return {
+      proof: "attention",
+      known: [...known, "An earlier intake review is behind a reopen, so it no longer completes this step."],
+      missing: ["A new operator review recorded after the reopen."],
+      who: "ProfileRelaunch reviews the reopened case again.",
+    }
+  }
+  if (decision.outcome === "REVIEWED") {
+    return {
+      proof: "complete",
+      known: [...known, "A staff member recorded that they reviewed this intake."],
+      missing: [],
+      who: "The intake review is recorded.",
+    }
+  }
   return {
-    proof: "unproven",
-    known: [
-      `Case ${facts.reference} is on file with status ${facts.caseStatus}.`,
-      "A confirmation email, whether delivered or opened, is not a review of this case and is not verified identity.",
-    ],
-    missing: ["A recorded operator review of the intake."],
-    who: "ProfileRelaunch reviews the new case.",
+    proof: "attention",
+    known: [...known, `The intake was recorded as incomplete. Next action: ${decision.nextAction}.`],
+    missing: ["A reviewed intake. An incomplete enquiry is not a completed review."],
+    who: "ProfileRelaunch follows the recorded next action before treating the intake as reviewed.",
   }
 }
 
-function readVerification(facts: CaseFlowFacts): Reading {
+function readVerification(
+  facts: CaseFlowFacts,
+  events: readonly JourneyWorkEvent[],
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean },
+): Reading {
   const auth = facts.authorization
+  const revoked = auth.membershipStatus === "revoked"
+  const decision = latestVerificationDecision(events)
   const known = [
-    "Basic business screening is not in this projection. It is a different fact from verified email, business authority and the purchasing establishment.",
     auth.customerEmailVerified
-      ? "Verified customer email is recorded. That is control of the address, not authority to speak for the business. A delivered or opened email is not this record and is not verified identity."
-      : "Verified customer email is not recorded. A delivered or opened email would not establish it.",
+      ? "Verified customer email is recorded. That is control of the address, not authority to speak for the business, and it does not finish this step. A delivered or opened email is not this record and is not verified identity."
+      : "Verified customer email is not recorded. A delivered or opened email would not establish it, and this step does not require it.",
     auth.businessAuthorityVerified
-      ? `Business authority is recorded. Membership status is ${auth.membershipStatus}.`
-      : `Business authority is not recorded. Membership status is ${auth.membershipStatus}.`,
+      ? `Business authority is recorded. Membership status is ${auth.membershipStatus}. Authority is separate from email control.`
+      : `Business authority is not recorded. Membership status is ${auth.membershipStatus}. This step does not grant it.`,
     auth.hasLocation
       ? "A location is recorded on the case. That is not a verified Google listing."
       : "No location is recorded on the case.",
-    "Google listing verification is not in this projection. A suspended or missing listing does not have to be verified before the case is assessed, and this preview does not invent that verification.",
-    "The legally verified purchasing establishment is not in this projection. It is not required before an evidence request. It is required, with country and tax eligibility, before a binding paid quote is issued.",
+    "A website, a Companies House registration and an accessible Google listing are not required for this check.",
+    "The legally verified purchasing establishment is not part of this step. It is required, with country and tax eligibility, before a binding paid quote is issued.",
   ]
-  const missing = [
-    "A basic business-screening record.",
-    "A Google listing record. Its absence does not block assessment of a suspended or missing listing and does not block an evidence request.",
-    "The legally verified purchasing establishment, required before a binding paid quote and not before an evidence request.",
-    "Country and tax eligibility, required before a binding paid quote and not before an evidence request.",
-  ]
-  if (!auth.customerEmailVerified) missing.push("Verified customer email. Delivery or an open of a message is not a substitute.")
-  if (!auth.businessAuthorityVerified) missing.push("Verified authority to speak for the business.")
-  const revoked = auth.membershipStatus === "revoked"
+  if (decision?.listing === "SUSPENDED_OR_MISSING") {
+    known.push("The screening record says the Google listing is suspended, missing or inaccessible. That is not a verified listing, and it does not block assessment or an evidence request.")
+  } else if (decision?.listing === "ACCESSIBLE") {
+    known.push("The operator recorded the listing as accessible. The saved URL is not what verified it.")
+  } else if (decision?.listing === "NOT_SUPPLIED") {
+    known.push("No Google listing was supplied. That does not block this check.")
+  }
+  if (decision?.website === "NONE") known.push("No website was recorded. A website is not required.")
+  const block = preliminaryBlock({
+    events,
+    emailRecordsDisagree: options.emailRecordsDisagree === true,
+    authorityRecordsDisagree: options.authorityRecordsDisagree === true,
+    submittedConflict: options.recordConflict === true,
+  })
+  const screening = verificationScreeningComplete(events, revoked) && block === null
+  if (screening) {
+    return {
+      proof: "complete",
+      known: [...known, `Preliminary checks were recorded from ${decision?.source}. This is not a verified purchasing establishment and it is not tax eligibility.`],
+      missing: [],
+      who: "The preliminary check is recorded. The purchasing establishment still waits for the quote.",
+    }
+  }
+  const missing = ["A preliminary screening record with a source, an outcome and a reason."]
+  if (decision?.reopened) missing[0] = "A new screening record after the reopen. The earlier one no longer completes this step."
+  if (decision?.outcome === "FURTHER_INFORMATION") missing[0] = "The further information named in the screening record. The step stays open."
+  if (decision?.outcome === "LISTING_UNAVAILABLE") missing[0] = "A preliminary screening outcome. The unavailable listing is recorded and does not by itself complete or block the step."
+  if (decision?.outcome === "DUPLICATE_REVIEW") missing[0] = "The duplicate review. A possible duplicate does not complete this step."
+  if (decision?.outcome === "ESCALATE" || decision?.discrepancy) missing[0] = "The escalated discrepancy. A material conflict does not complete this step."
+  if (block === "review") missing.unshift("A current intake review with outcome REVIEWED. Screening cannot be completed before that, and an earlier review does not survive a reopen.")
+  if (block === "records") missing.unshift("The email, authority or submitted details disagree. A screening checkbox cannot hide that conflict.")
+  if (revoked) missing.unshift("A membership that is no longer revoked. A screening checkbox cannot override it.")
+  const contradictory = block === "records"
   return {
-    proof: revoked ? "attention" : "unproven",
+    proof: decision || revoked || contradictory ? "attention" : "unproven",
     known,
     missing,
     who: revoked

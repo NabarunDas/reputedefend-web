@@ -10,8 +10,14 @@ const notFoundError = new Error("NEXT_NOT_FOUND")
 const requireStaff = vi.fn()
 const getCase = vi.fn()
 const loadCaseFlowFacts = vi.fn()
+const recordDetail = vi.fn()
+const getMembership = vi.fn()
+const loadJourneyExtension = vi.fn()
 
-vi.mock("next/navigation", () => ({ notFound: () => { throw notFoundError } }))
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw notFoundError },
+  useRouter: () => ({ refresh: () => undefined }),
+}))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -20,6 +26,11 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/require-staff", () => ({ requireStaff: () => requireStaff() }))
 vi.mock("@/lib/cases/queries", () => ({ getCase: (...args: unknown[]) => getCase(...args) }))
 vi.mock("@/lib/case-flow/load", () => ({ loadCaseFlowFacts: (...args: unknown[]) => loadCaseFlowFacts(...args) }))
+vi.mock("@/lib/records/queries", () => ({
+  recordDetail: (...args: unknown[]) => recordDetail(...args),
+  getMembership: (...args: unknown[]) => getMembership(...args),
+}))
+vi.mock("@/lib/case-journey/read", () => ({ loadJourneyExtension: (...args: unknown[]) => loadJourneyExtension(...args) }))
 
 import CaseJourneyPage from "./page"
 
@@ -76,6 +87,22 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+function records() {
+  recordDetail.mockImplementation(async (entity: string) => ({
+    record: entity === "client"
+      ? { id: "client", name: "Alex Mercer", email: "alex@example.com", phone: null, emailVerified: false, version: 1 }
+      : entity === "business"
+        ? { id: "business", name: "Mercer Bakery", website: null, version: 1 }
+        : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: null, version: 1 },
+    memberships: [],
+    submittedBusinesses: [],
+    duplicates: [],
+    work: [],
+  }))
+  getMembership.mockResolvedValue(undefined)
+  loadJourneyExtension.mockResolvedValue(null)
+}
+
 function allowPreview() {
   vi.stubEnv("VERCEL_ENV", open.VERCEL_ENV)
   vi.stubEnv("VERCEL_GIT_COMMIT_REF", open.VERCEL_GIT_COMMIT_REF)
@@ -95,17 +122,20 @@ describe("the case journey route", () => {
       vi.stubEnv("SUPABASE_URL", env.SUPABASE_URL)
       requireStaff.mockClear()
       getCase.mockClear()
+      recordDetail.mockClear()
       await expect(CaseJourneyPage({
         params: Promise.resolve({ id: CASE_ID }),
         searchParams: Promise.resolve({}),
       })).rejects.toBe(notFoundError)
       expect(requireStaff).not.toHaveBeenCalled()
       expect(getCase).not.toHaveBeenCalled()
+      expect(recordDetail).not.toHaveBeenCalled()
     }
   })
 
   it("shows all eleven steps to an authenticated operator on the develop Preview", async () => {
     allowPreview()
+    records()
     getCase.mockResolvedValue(caseDetail())
     loadCaseFlowFacts.mockResolvedValue(facts())
     render(await CaseJourneyPage({
@@ -120,12 +150,16 @@ describe("the case journey route", () => {
     expect(nav.querySelectorAll("a")).toHaveLength(11)
     expect(nav.querySelector("[data-step='CASE_RECEIVED']")).toHaveAttribute("data-state", "CURRENT")
     expect(screen.getByRole("link", { name: /Case Received/ })).toHaveAttribute("aria-current", "step")
-    expect(document.querySelector("button")).toBeNull()
-    expect(screen.getByText(/does not perform it/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Record the intake review" })).toBeInTheDocument()
+    expect(screen.getByText(/alex@example.com/)).toBeInTheDocument()
+    expect(screen.getByText(/A website is not required/)).toBeInTheDocument()
+    expect(screen.getByText(/Saving a URL does not verify the listing|No Google profile URL is saved/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
   })
 
   it("keeps a locked step readable and says why it is unavailable", async () => {
     allowPreview()
+    records()
     getCase.mockResolvedValue(caseDetail())
     loadCaseFlowFacts.mockResolvedValue(facts())
     render(await CaseJourneyPage({
@@ -134,6 +168,93 @@ describe("the case journey route", () => {
     }))
     expect(screen.getByRole("heading", { name: "Assessment & Recommended Path" })).toBeInTheDocument()
     expect(screen.getByText(/cannot be completed from here/)).toBeInTheDocument()
+    expect(screen.getByText(/does not perform it/)).toBeInTheDocument()
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
+  })
+
+  it("does not offer screening completion while the intake review is still the current step", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Business, Profile & Contact Verification" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
+    expect(screen.getByText(/no control that skips ahead/)).toBeInTheDocument()
+  })
+
+  it("shows the original submission in UK time and prefills screening from the recorded website and profile", async () => {
+    allowPreview()
+    records()
+    recordDetail.mockImplementation(async (entity: string) => ({
+      record: entity === "client"
+        ? { id: "client", name: "Alex Mercer", email: "alex@example.com", phone: "07000900000", emailVerified: false, version: 1 }
+        : entity === "business"
+          ? { id: "business", name: "Mercer Bakery", website: "https://bakery.example", version: 1 }
+          : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: "https://maps.example/listing", version: 1 },
+      memberships: [],
+      submittedBusinesses: [],
+      duplicates: [],
+      work: [],
+    }))
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: {
+        fullName: "Alex Submitted",
+        email: "submitted@example.com",
+        businessName: "Submitted Bakery",
+        country: "United Kingdom",
+        phone: "07000111000",
+        websiteUrl: "",
+        businessProfileUrl: "",
+        reviewUrl: "",
+        details: "The original enquiry text.",
+      },
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Original submission" })).toBeInTheDocument()
+    expect(screen.getByText("Submitted 15 January 2026 at 12:00.")).toBeInTheDocument()
+    expect(screen.getByText(/The original enquiry text/)).toBeInTheDocument()
+    expect(screen.getByText(/Alex Submitted/)).toBeInTheDocument()
+    expect(screen.getByText(/submitted@example.com/)).toBeInTheDocument()
+    expect(screen.getByText(/Submitted Bakery/)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Current business record" })).toBeInTheDocument()
+    expect(screen.getByText(/Website on the business record: https:\/\/bakery\.example/)).toBeInTheDocument()
+    expect(screen.getByText(/A Google profile URL is saved: https:\/\/maps\.example\/listing/)).toBeInTheDocument()
+    expect(screen.getByLabelText("Website")).toHaveValue("PRESENT")
+    expect(screen.getByLabelText("Google listing")).toHaveValue("")
+    expect(screen.getByRole("option", { name: "Accessible" })).toHaveProperty("selected", false)
+    expect(screen.getByRole("option", { name: "Not supplied" })).toHaveProperty("selected", false)
+    expect(screen.getByRole("option", { name: "Suspended, missing or inaccessible" })).toBeInTheDocument()
+  })
+
+  it("starts from no website and not supplied when neither is recorded", async () => {
+    allowPreview()
+    records()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: null,
+      snapshot: null,
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByLabelText("Website")).toHaveValue("NONE")
+    expect(screen.getByLabelText("Google listing")).toHaveValue("NOT_SUPPLIED")
+    expect(screen.getByText("Submitted 18 May 2026 at 11:00.")).toBeInTheDocument()
+    expect(screen.getByText(/not shown as a separate original submission/)).toBeInTheDocument()
   })
 })

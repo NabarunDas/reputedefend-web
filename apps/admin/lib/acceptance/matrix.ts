@@ -168,19 +168,22 @@ export const acceptanceMatrix: AcceptanceRow[] = [
   {
     area: "Guided case workflow preview",
     routes: ["/cases/[id]/journey"],
-    surfaces: [],
-    action: "Read the eleven-step operator preview for one case.",
+    surfaces: ["/api/cases/journey"],
+    action: "Read the eleven-step operator preview and record the intake review or the preliminary screening.",
     expected:
-      "Automated tests show all eleven steps and complete a step only from existing case-flow records. This PASS is not an authenticated browser test on the deployed develop Preview.",
+      "Automated tests show all eleven steps. Steps 1 and 2 complete only from their staff decision events. This PASS is not an authenticated browser test on the deployed develop Preview.",
     authorization:
-      "The develop Preview gate runs before any case read. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
-    persistence: "Read-only. The preview writes nothing and adds no workflow state.",
+      "The develop Preview gate runs before any case read and again on the decision command. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
+    persistence:
+      "A decision is an INTERNAL case_work_events row plus a CASE_CHANGED audit row, written by admin_case_journey_decision_v1. That function is proposed and not applied. The command does not change the technical stage.",
     negative:
-      "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. A missing record cannot turn a step complete, and the page has no control that marks one done.",
+      "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. An incomplete review, a discrepancy, a duplicate, or a revoked membership cannot show the step complete. The other nine steps have no control that marks them done.",
     evidence: [
       "app/cases/[id]/journey/page.test.tsx",
       "lib/case-journey/present.test.ts",
       "lib/case-journey/gate.test.ts",
+      "lib/case-journey/command.test.ts",
+      "lib/case-journey/decision.database.test.ts",
     ],
     status: "PASS",
   },

@@ -10,8 +10,8 @@ The preview is `/cases/[id]/journey`. It is available only when `VERCEL_ENV` is 
 
 | Step | Completes only when | Existing record | Still missing |
 | --- | --- | --- | --- |
-| 1. Case Received | Never, in this build | The case row shows that a case exists | An intake-review record. A confirmation email is not that review and is not identity verification |
-| 2. Business, Profile & Contact Verification | Never, in this build | Verified customer email and business-membership authority, separately | Basic business screening, Google listing state and the legal purchasing establishment are not in the case-flow projection. A delivered or opened email is not verified identity. The establishment is not required before an evidence request |
+| 1. Case Received | The latest `INTAKE_REVIEW` work event is `REVIEWED` and is not behind a reopen | The case row, the case message, and the current customer, business and location records | A confirmation email is not that review. The decision function is proposed and is not applied to DEV until it is approved |
+| 2. Business, Profile & Contact Verification | The latest `BUSINESS_VERIFICATION` work event is `PRELIMINARY_COMPLETE`, with no material discrepancy, and is not behind a reopen or a revoked membership | Verified customer email and business-membership authority, separately. They are shown and are not created by this step | The purchasing establishment and tax eligibility stay quote checks. A website, Companies House registration, or accessible Google listing is not required. The decision function is proposed and is not applied to DEV until it is approved |
 | 3. Review Request & Request Documents | An evidence request exists and the newest `EVIDENCE_REQUEST` message is `DELIVERED` | `summariseEvidence` and `evidenceContactState` | The preview does not record the need, review the draft, or issue the message. Queued, provider-accepted and delivered stay separate. A no-documents decision is an ADMIN-JOURNEY-03 record and is unknown here |
 | 4. Evidence Review | At least one accepted version, no live blocked or pending file, and no open request | Evidence version and request states | Upload is not acceptance. A rejected file returns to the evidence loop. An outstanding threat blocks that file. A no-documents waiver is an ADMIN-JOURNEY-04 record and is unknown here |
 | 5. Assessment & Recommended Path | Never, in this build | Nothing. `ASSESSMENT_READY` means ready to assess | No assessment record is projected. A suspended or missing listing does not have to be verified before assessment |
@@ -42,7 +42,7 @@ Agreement `PS-2026-10-14.2` invoices a Managed success fee only after documented
 
 | Later slice | Owns | Already in Admin | Not in this preview |
 | --- | --- | --- | --- |
-| ADMIN-JOURNEY-02 | Steps 1 and 2 | Case intake, client and business records, email verification, membership authority | Intake-review record, basic business screening, Google listing state, legal purchasing establishment. The establishment is a quote check, not an evidence-request check |
+| ADMIN-JOURNEY-02 | Steps 1 and 2 | Case intake, client and business records, email verification, membership authority, `case_work_events` and `admin_audit_events` | The two decision functions in `docs/admin/proposed-admin-journey-02.sql` are not applied. The purchasing establishment remains a quote check |
 | ADMIN-JOURNEY-03 | Step 3 | Evidence requests and the communications lifecycle, including queued, provider-accepted and delivered | A guided record, draft review and issue operation. A no-documents decision, which stays unknown until that record exists |
 | ADMIN-JOURNEY-04 | Step 4 | Scan, review, accept, reject and fulfil on the evidence workspace | Those commands inside the new workflow, and an evidence waiver. Until the waiver exists, no documents is not completion |
 | ADMIN-JOURNEY-05 | Step 5 | The stage `ASSESSMENT_READY` and the action `COMPLETE_ASSESSMENT` | An assessment record |

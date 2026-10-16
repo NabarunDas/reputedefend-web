@@ -171,12 +171,12 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     surfaces: [],
     action: "Read the eleven-step operator preview for one case.",
     expected:
-      "On the develop Preview against the DEV project, an authenticated operator sees all eleven steps, with a step complete only when the existing case-flow records prove it.",
+      "Automated tests show all eleven steps and complete a step only from existing case-flow records. This PASS is not an authenticated browser test on the deployed develop Preview.",
     authorization:
-      "The develop Preview gate runs before any case read. On that lane, requireStaff() is the same staff session the rest of Admin uses.",
+      "The develop Preview gate runs before any case read. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
     persistence: "Read-only. The preview writes nothing and adds no workflow state.",
     negative:
-      "Production and any other Preview branch are not found before a case is read. A missing record cannot turn a step complete, and the page has no control that marks one done.",
+      "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. A missing record cannot turn a step complete, and the page has no control that marks one done.",
     evidence: [
       "app/cases/[id]/journey/page.test.tsx",
       "lib/case-journey/present.test.ts",

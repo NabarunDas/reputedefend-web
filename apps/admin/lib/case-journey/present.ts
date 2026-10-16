@@ -376,7 +376,7 @@ function readReceived(facts: CaseFlowFacts): Reading {
     proof: "unproven",
     known: [
       `Case ${facts.reference} is on file with status ${facts.caseStatus}.`,
-      "A confirmation email, if one was sent, is not a review of this case and is not identity verification.",
+      "A confirmation email, whether delivered or opened, is not a review of this case and is not verified identity.",
     ],
     missing: ["A recorded operator review of the intake."],
     who: "ProfileRelaunch reviews the new case.",
@@ -386,68 +386,120 @@ function readReceived(facts: CaseFlowFacts): Reading {
 function readVerification(facts: CaseFlowFacts): Reading {
   const auth = facts.authorization
   const known = [
+    "Basic business screening is not in this projection. It is a different fact from verified email, business authority and the purchasing establishment.",
     auth.customerEmailVerified
-      ? "Email control is recorded. That proves control of the address, not authority to speak for the business."
-      : "Email control is not recorded.",
+      ? "Verified customer email is recorded. That is control of the address, not authority to speak for the business. A delivered or opened email is not this record and is not verified identity."
+      : "Verified customer email is not recorded. A delivered or opened email would not establish it.",
     auth.businessAuthorityVerified
       ? `Business authority is recorded. Membership status is ${auth.membershipStatus}.`
       : `Business authority is not recorded. Membership status is ${auth.membershipStatus}.`,
-    auth.hasLocation ? "A location is recorded on the case. That is not a verified Google listing." : "No location is recorded on the case.",
+    auth.hasLocation
+      ? "A location is recorded on the case. That is not a verified Google listing."
+      : "No location is recorded on the case.",
+    "Google listing verification is not in this projection. A suspended or missing listing does not have to be verified before the case is assessed, and this preview does not invent that verification.",
+    "The legally verified purchasing establishment is not in this projection. It is not required before an evidence request. It is required, with country and tax eligibility, before a binding paid quote is issued.",
   ]
   const missing = [
-    "Google listing verification is not in this projection.",
-    "The legal purchasing establishment is not in this projection.",
+    "A basic business-screening record.",
+    "A Google listing record. Its absence does not block assessment of a suspended or missing listing and does not block an evidence request.",
+    "The legally verified purchasing establishment, required before a binding paid quote and not before an evidence request.",
+    "Country and tax eligibility, required before a binding paid quote and not before an evidence request.",
   ]
-  if (!auth.customerEmailVerified) missing.push("Verified email control.")
+  if (!auth.customerEmailVerified) missing.push("Verified customer email. Delivery or an open of a message is not a substitute.")
   if (!auth.businessAuthorityVerified) missing.push("Verified authority to speak for the business.")
   const revoked = auth.membershipStatus === "revoked"
   return {
     proof: revoked ? "attention" : "unproven",
     known,
     missing,
-    who: revoked ? "ProfileRelaunch has to look at a membership that is no longer valid." : "ProfileRelaunch verifies the business, the profile and the contact.",
+    who: revoked
+      ? "ProfileRelaunch has to look at a membership that is no longer valid."
+      : "ProfileRelaunch makes the initial business, Google Profile and contact check. The purchasing establishment waits for the quote.",
   }
 }
 
 function readRequest(facts: CaseFlowFacts): Reading {
   const summary = summariseEvidence(facts.evidence, facts.communications)
   const liveRequests = summary.requests.filter(request => request.state !== "CANCELLED")
+  const contact = summary.contact
   const known = [
     liveRequests.length
-      ? `${liveRequests.length} evidence request${liveRequests.length === 1 ? "" : "s"} on file. A request record contacts nobody by itself.`
-      : "No evidence request is on file.",
-    `The newest evidence-request message is ${summary.contact}.`,
+      ? `${liveRequests.length} evidence request${liveRequests.length === 1 ? "" : "s"} on file. Recording what is needed contacts nobody by itself.`
+      : "No evidence request is on file. Recording what is needed is the first part of this step.",
+    messageStatus(contact),
   ]
-  if (summary.contact === "DELIVERED" && liveRequests.length > 0) {
+  const waiver =
+    "A documented decision that no additional evidence is required is not in this projection. That decision is an ADMIN-JOURNEY-03 dependency and stays unknown, so an empty request list is not completion."
+  if (contact === "DELIVERED" && liveRequests.length > 0) {
     return {
       proof: "complete",
-      known: [...known, "Delivery is recorded, so the customer was reached."],
+      known: [...known, "The message status is DELIVERED. Only that recorded status describes the message as delivered."],
       missing: [],
-      who: "The customer has the request.",
+      who: "The customer has the issued request.",
     }
   }
-  if (summary.contact === "FAILED") {
+  if (contact === "FAILED") {
     return {
       proof: "attention",
-      known,
-      missing: ["A delivered evidence request. The latest message failed."],
+      known: [...known, "The latest message failed. Failure is not delivery."],
+      missing: ["A message whose status is DELIVERED."],
       who: "ProfileRelaunch has to recover contact before the customer can be expected to reply.",
     }
   }
-  if (summary.contact === "QUEUED" || summary.contact === "PROVIDER_ACCEPTED" || summary.contact === "ACCEPTANCE_UNKNOWN") {
+  if (contact === "QUEUED") {
     return {
       proof: "waiting",
-      known: [...known, "Provider acceptance and a queued message are not delivery."],
-      missing: ["A delivery status of DELIVERED."],
-      who: "The message is with the provider. The customer has not been reached.",
+      known: [...known, "Queued means the message is waiting for the provider. It is not provider acceptance and it is not delivery."],
+      missing: ["Provider acceptance, and then a recorded delivery status of DELIVERED."],
+      who: "The provider has not accepted the message. The customer has not been reached.",
+    }
+  }
+  if (contact === "PROVIDER_ACCEPTED") {
+    return {
+      proof: "waiting",
+      known: [...known, "The provider accepted the message. Acceptance is not delivery, and this preview does not describe it as delivered."],
+      missing: ["A recorded delivery status of DELIVERED."],
+      who: "The provider has accepted the message. Delivery is not confirmed.",
+    }
+  }
+  if (contact === "ACCEPTANCE_UNKNOWN") {
+    return {
+      proof: "waiting",
+      known: [...known, "Provider acceptance was not established. That is not delivery."],
+      missing: ["A reconciled provider result, and then a recorded delivery status of DELIVERED."],
+      who: "ProfileRelaunch has to reconcile the message before anyone treats it as accepted or delivered.",
+    }
+  }
+  if (contact === "DRAFTED") {
+    return {
+      proof: "unproven",
+      known: [...known, "The request is drafted. ProfileRelaunch still has to review that draft before it is issued."],
+      missing: ["A review of the drafted request, then an issued message. Delivery is a later status."],
+      who: "ProfileRelaunch reviews the drafted request.",
+    }
+  }
+  if (contact === "REVIEWED") {
+    return {
+      proof: "unproven",
+      known: [...known, "The draft has been reviewed. It has not been issued, and it has not been delivered."],
+      missing: ["The issued message. Queued, provider-accepted and delivered stay separate after it is issued."],
+      who: "ProfileRelaunch issues the reviewed request.",
     }
   }
   return {
     proof: "unproven",
-    known,
-    missing: ["An evidence request the customer has actually received."],
-    who: "ProfileRelaunch prepares and sends the request.",
+    known: [...known, waiver],
+    missing: liveRequests.length
+      ? ["A drafted request, a review of that draft, and an issued message. None of those is delivery."]
+      : ["An evidence request, or the future ADMIN-JOURNEY-03 record that no additional evidence is required. That record is unknown here."],
+    who: "ProfileRelaunch records the evidence needed, reviews the draft and issues it.",
   }
+}
+
+function messageStatus(contact: string): string {
+  if (contact === "DELIVERED") return "The newest evidence-request message has a recorded delivery status of DELIVERED."
+  if (contact === "NOT_PREPARED") return "No evidence-request message has been prepared. Nothing has been queued, accepted or delivered."
+  return `The newest evidence-request message status is ${contact}. That status is not delivery.`
 }
 
 function readEvidence(facts: CaseFlowFacts): Reading {
@@ -457,13 +509,24 @@ function readEvidence(facts: CaseFlowFacts): Reading {
     summary.accepted ? `${summary.accepted} accepted version${summary.accepted === 1 ? "" : "s"}.` : "No version has been accepted.",
     summary.awaitingReview ? `${summary.awaitingReview} version${summary.awaitingReview === 1 ? "" : "s"} awaiting review.` : "Nothing is waiting for a review decision.",
   ]
+  if (summary.anyUpload && summary.contact !== "DELIVERED") {
+    known.push("A customer upload can be reviewed before email delivery is confirmed. Missing delivery does not accept the file and does not describe the message as delivered.")
+  }
   const problems = summary.threatBlocked + summary.contentInvalid + summary.scanInProgress + summary.uploadInProgress + summary.needsScanCheck
-  if (summary.threatBlocked || summary.contentInvalid) {
+  if (summary.threatBlocked) {
+    return {
+      proof: "attention",
+      known: [...known, "An outstanding malware threat blocks use of the affected file. Another accepted file does not clear it."],
+      missing: ["The threatened file kept out of use, with no outstanding threat left on a live file."],
+      who: "ProfileRelaunch has to deal with the threat before that file can be used.",
+    }
+  }
+  if (summary.contentInvalid) {
     return {
       proof: "attention",
       known,
-      missing: ["A clean accepted version, and no live file blocked or invalid."],
-      who: "ProfileRelaunch has to deal with the file before it can count as evidence.",
+      missing: ["A clean accepted version, and no live file still invalid."],
+      who: "ProfileRelaunch has to deal with the invalid file before it can count as evidence.",
     }
   }
   const fulfilled = summary.complete && summary.accepted > 0 && summary.awaitingReview === 0 && problems === 0
@@ -473,6 +536,14 @@ function readEvidence(facts: CaseFlowFacts): Reading {
       known: [...known, "The open requests are fulfilled and the accepted files are clear of a pending review."],
       missing: [],
       who: "ProfileRelaunch has reviewed the evidence.",
+    }
+  }
+  if (summary.rejected > 0) {
+    return {
+      proof: "attention",
+      known: [...known, "A rejected file is not accepted evidence. Rejection, or a request for a replacement, returns the case to the evidence loop."],
+      missing: ["A replacement that is accepted, with the request fulfilled and no outstanding threat on a live file."],
+      who: "ProfileRelaunch asks for a replacement and reviews it. The rejected file stays rejected.",
     }
   }
   if (summary.awaitingReview > 0 || summary.satisfiedButOpen.length > 0) {
@@ -489,6 +560,14 @@ function readEvidence(facts: CaseFlowFacts): Reading {
       known,
       missing: ["A document from the customer."],
       who: "The customer still has to send the documents.",
+    }
+  }
+  if (!summary.anyRequest && !summary.anyUpload) {
+    return {
+      proof: "unproven",
+      known: [...known, "No evidence-waiver record exists. ADMIN-JOURNEY-04 would have to store a decision that no documents are required before this step could be complete without a file. That status is unknown."],
+      missing: ["Accepted evidence and a fulfilled request, or the future waiver record. Silence is not that record."],
+      who: "ProfileRelaunch reviews whatever the customer submits. Nothing here has been reviewed.",
     }
   }
   return {
@@ -521,7 +600,10 @@ function readQuote(facts: CaseFlowFacts, now: string): Reading {
   if (commercial.state === "ACCEPTED") {
     return {
       proof: "complete",
-      known: ["A quote is recorded as accepted."],
+      known: [
+        "A quote is recorded as accepted.",
+        "Acceptance is not a purchasing-establishment record and it is not country or tax eligibility. This preview does not infer those checks from the quote status.",
+      ],
       missing: [],
       who: "The customer has accepted the quote.",
     }
@@ -530,7 +612,10 @@ function readQuote(facts: CaseFlowFacts, now: string): Reading {
     return {
       proof: "waiting",
       known: ["A quote has been offered and an acceptance link is still open. Opening the contract is not acceptance."],
-      missing: ["The quote status ACCEPTED."],
+      missing: [
+        "The quote status ACCEPTED.",
+        "This preview cannot confirm that the purchasing establishment and the country and tax eligibility checks were made before the quote was offered.",
+      ],
       who: "The customer has to accept the quote.",
     }
   }
@@ -545,7 +630,10 @@ function readQuote(facts: CaseFlowFacts, now: string): Reading {
   return {
     proof: "unproven",
     known: [commercial.state === "NONE" ? "No quote is on file." : `The quote is ${commercial.state}.`],
-    missing: ["An accepted quote."],
+    missing: [
+      "An accepted quote.",
+      "The legally verified purchasing establishment and the country and tax eligibility check, both required before a binding paid quote is issued. Neither is in this projection, so this preview cannot clear a quote to be issued.",
+    ],
     who: "ProfileRelaunch prepares the quote. The customer accepts it.",
   }
 }

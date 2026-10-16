@@ -222,10 +222,167 @@ describe("journey status from authoritative records", () => {
     })
     const verification = step(journey, "VERIFICATION")
     expect(verification.state).not.toBe("COMPLETED")
+    expect(verification.known.join(" ")).toMatch(/Basic business screening/)
+    expect(verification.known.join(" ")).toMatch(/Verified customer email is recorded/)
     expect(verification.known.join(" ")).toMatch(/not authority/)
+    expect(verification.known.join(" ")).toMatch(/Business authority is not recorded/)
+    expect(verification.known.join(" ")).toMatch(/purchasing establishment/)
     expect(verification.missing.join(" ")).toMatch(/Google listing/)
-    expect(verification.missing.join(" ")).toMatch(/purchasing establishment/)
+    expect(verification.missing.join(" ")).toMatch(/not before an evidence request/)
+    expect(verification.unlock).toMatch(/does not wait for the legal purchasing establishment/)
+    expect(verification.unlock).toMatch(/country and tax eligibility/)
+    expect(verification.unlock).not.toMatch(/All four facts have to be recorded before the request for documents/)
     expect(completed(journey)).toEqual([])
+  })
+
+  it("does not hold an evidence request for the purchasing establishment or a missing listing", () => {
+    const journey = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      authorization: authorization({ customerEmailVerified: false, businessAuthorityVerified: false }),
+      evidence: { requests: [request()], versions: [] },
+      communications: [{ ...delivered(), lifecycle: "DRAFT", deliveryStatus: null }],
+    })
+    expect(step(journey, "VERIFICATION").state).not.toBe("COMPLETED")
+    expect(step(journey, "REQUEST_DOCUMENTS").state).not.toBe("LOCKED")
+    expect(step(journey, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(journey, "ASSESSMENT").unlock).toMatch(/suspended or missing/)
+    expect(step(journey, "ASSESSMENT").missing.join(" ")).not.toMatch(/listing verification/)
+    expect(completed(journey)).toEqual([])
+  })
+
+  it("does not treat a delivered or opened email as verified identity", () => {
+    const journey = show({
+      authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" }),
+      communications: [{ ...delivered(), id: "confirmation", templateKey: "CASE_RECEIVED" }],
+    })
+    const text = `${step(journey, "CASE_RECEIVED").known.join(" ")} ${step(journey, "VERIFICATION").known.join(" ")}`
+    expect(text).toMatch(/opened/)
+    expect(text).toMatch(/not verified identity/)
+    expect(step(journey, "VERIFICATION").state).not.toBe("COMPLETED")
+    expect(completed(journey)).toEqual([])
+  })
+
+  it("keeps queued, provider-accepted and delivered as different statuses", () => {
+    const queued = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [{ ...delivered(), deliveryStatus: null, lifecycle: "QUEUED" }],
+    })
+    const accepted = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" }],
+    })
+    const arrived = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [delivered()],
+    })
+    expect(step(queued, "REQUEST_DOCUMENTS").state).toBe("WAITING")
+    expect(step(queued, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/Queued/)
+    expect(step(queued, "REQUEST_DOCUMENTS").known.join(" ")).not.toMatch(/recorded delivery status of DELIVERED/)
+    expect(step(accepted, "REQUEST_DOCUMENTS").state).toBe("WAITING")
+    expect(step(accepted, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/provider accepted/i)
+    expect(step(accepted, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/not delivery/)
+    expect(step(accepted, "REQUEST_DOCUMENTS").known.join(" ")).not.toMatch(/recorded delivery status of DELIVERED/)
+    expect(step(arrived, "REQUEST_DOCUMENTS").state).toBe("COMPLETED")
+    expect(step(arrived, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/recorded delivery status of DELIVERED/)
+    expect(completed(queued)).toEqual([])
+    expect(completed(accepted)).toEqual([])
+  })
+
+  it("shows a draft review and an issue as unfinished admin work", () => {
+    const drafted = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [{ ...delivered(), lifecycle: "DRAFT", deliveryStatus: null }],
+    })
+    const reviewed = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [] },
+      communications: [{ ...delivered(), lifecycle: "REVIEWED", deliveryStatus: null }],
+    })
+    expect(step(drafted, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/review that draft/)
+    expect(step(reviewed, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/has not been issued/)
+    expect(step(drafted, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(reviewed, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(completed(drafted)).toEqual([])
+    expect(completed(reviewed)).toEqual([])
+  })
+
+  it("lets a customer upload be reviewed before delivery is confirmed", () => {
+    const journey = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [upload()] },
+      communications: [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" }],
+    })
+    expect(step(journey, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("LOCKED")
+    expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
+    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/reviewed before email delivery is confirmed/)
+    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).not.toMatch(/recorded delivery status of DELIVERED/)
+    expect(completed(journey)).toEqual([])
+  })
+
+  it("returns a rejected file to the evidence loop and keeps an outstanding threat blocked", () => {
+    const rejected = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: { requests: [request()], versions: [upload({ reviewStatus: "REJECTED" })] },
+      communications: [delivered()],
+    })
+    const threatened = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: {
+        requests: [request({ status: "FULFILLED" })],
+        versions: [
+          upload({ reviewStatus: "ACCEPTED" }),
+          upload({ documentId: "document-2", versionId: "version-2", reviewStatus: "UNREVIEWED", scanStatus: "THREATS_FOUND" }),
+        ],
+      },
+      communications: [delivered()],
+    })
+    expect(step(rejected, "EVIDENCE_REVIEW").state).toBe("NEEDS_ATTENTION")
+    expect(step(rejected, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/returns the case to the evidence loop/)
+    expect(step(rejected, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
+    expect(step(threatened, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
+    expect(step(threatened, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/blocks use of the affected file/)
+    expect(completed(rejected)).not.toContain("EVIDENCE_REVIEW")
+    expect(completed(threatened)).not.toContain("EVIDENCE_REVIEW")
+    const replaced = show({
+      technicalStage: "ASSESSMENT_READY",
+      evidence: {
+        requests: [request({ status: "FULFILLED" })],
+        versions: [
+          upload({ reviewStatus: "REJECTED", versionId: "version-old" }),
+          upload({ reviewStatus: "ACCEPTED" }),
+        ],
+      },
+      communications: [delivered()],
+    })
+    expect(step(replaced, "EVIDENCE_REVIEW").state).toBe("COMPLETED")
+  })
+
+  it("leaves a no-documents path unknown until a waiver record exists", () => {
+    const journey = show({ technicalStage: "EVIDENCE_COLLECTION" })
+    expect(step(journey, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/ADMIN-JOURNEY-03/)
+    expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/unknown/)
+    expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
+    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/ADMIN-JOURNEY-04/)
+    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/unknown/)
+    expect(completed(journey)).toEqual([])
+  })
+
+  it("does not treat an unissued quote as cleared for the purchasing establishment", () => {
+    const journey = show({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "GUIDED",
+      commercial: { complete: true, quotes: [quote()] },
+    })
+    expect(step(journey, "QUOTE_ACCEPTANCE").state).not.toBe("COMPLETED")
+    expect(step(journey, "QUOTE_ACCEPTANCE").missing.join(" ")).toMatch(/purchasing establishment/)
+    expect(step(journey, "QUOTE_ACCEPTANCE").missing.join(" ")).toMatch(/tax eligibility/)
+    expect(step(journey, "QUOTE_ACCEPTANCE").unlock).toMatch(/Issuing a binding paid quote still requires/)
   })
 
   it("keeps an evidence request that has not reached the customer unfinished", () => {

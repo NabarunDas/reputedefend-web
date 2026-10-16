@@ -44,7 +44,7 @@ function useDecision() {
 
 function safeLink(value: string) {
   if (!/^https?:\/\//i.test(value)) return value
-  return <a href={value} target="_blank" rel="noreferrer">{value}</a>
+  return <a href={value} target="_blank" rel="noopener noreferrer">{value} (new tab)</a>
 }
 
 function ConflictNotice({ brief }: { brief: JourneyIntakeBrief }) {

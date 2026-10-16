@@ -1,4 +1,5 @@
 import "server-only"
+import { devCaseIntakeEmailSuppressed } from "@/lib/cases/persistence-config"
 
 import {
   isCasePublicRef,
@@ -200,7 +201,8 @@ export async function persistGetHelpCase(
 
   const now = options.now ?? new Date()
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
-  const provider = liveProvider(emailConfig, nodeEnv, options.provider)
+  const noDevEmail = devCaseIntakeEmailSuppressed()
+  const provider = noDevEmail ? undefined : liveProvider(emailConfig, nodeEnv, options.provider)
   const client = options.updateCommunication ? null : (supabaseReady ? createSupabaseServerClient() : null)
   const updateCommunication = options.updateCommunication
     ?? (client ? defaultUpdateCommunication(client) : async () => {})
@@ -261,7 +263,7 @@ export async function persistGetHelpCase(
         customerRecipient,
       ),
       provider,
-      configReady: emailConfig.ready,
+      configReady: emailConfig.ready && !noDevEmail,
       now,
       updateCommunication,
     })
@@ -288,7 +290,7 @@ export async function persistGetHelpCase(
         now,
       ),
       provider,
-      configReady: emailConfig.ready,
+      configReady: emailConfig.ready && !noDevEmail,
       now,
       updateCommunication,
     })

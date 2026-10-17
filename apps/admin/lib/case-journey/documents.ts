@@ -60,6 +60,7 @@ export type JourneyRequirement = {
 export type JourneyEvidenceMessage = {
   id: string
   version: number
+  templateVersion: number | null
   recipient: string
   subject: string | null
   bodyText: string | null
@@ -104,6 +105,7 @@ type MessageSource = {
   id: string
   version: number
   templateKey: string | null
+  templateVersion?: number | null
   recipient: string
   subject: string | null
   bodyText: string | null
@@ -276,6 +278,7 @@ function toMessage(row: MessageSource): JourneyEvidenceMessage {
   return {
     id: row.id,
     version: row.version,
+    templateVersion: row.templateVersion ?? null,
     recipient: row.recipient,
     subject: row.subject,
     bodyText: row.bodyText,

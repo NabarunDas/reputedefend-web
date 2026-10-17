@@ -105,7 +105,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -140,6 +140,7 @@ function StepWorkspace({
   version,
   reference,
   documents,
+  replyMailbox,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -148,6 +149,7 @@ function StepWorkspace({
   version: number
   reference: string
   documents: JourneyDocuments | null
+  replyMailbox: string | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0

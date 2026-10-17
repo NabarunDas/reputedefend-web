@@ -4,6 +4,8 @@ import type { EvidenceRequest } from "../evidence/model"
 import {
   alreadySaved,
   buildJourneyDocuments,
+  evidencePreviewBlocks,
+  vagueEvidenceTitle,
   draftingAvailability,
   approvalNotice,
   requirementCoverage,
@@ -75,6 +77,21 @@ describe("evidence suggestions", () => {
     expect(requirementText([{ title: "  ", detail: "" }])).toBeNull()
     expect(requirementTitle([{ title: "x".repeat(201) }])).toBeNull()
     expect(requirementText([{ title: "Notice", detail: "The Google email." }])).toBe("Notice — The Google email.")
+  })
+
+  it("rejects a vague document name and keeps a specific one", () => {
+    expect(vagueEvidenceTitle("Other evidence")).toBe(true)
+    expect(vagueEvidenceTitle(" evidence ")).toBe(true)
+    expect(vagueEvidenceTitle("Shop licence; Other evidence")).toBe(true)
+    expect(vagueEvidenceTitle("Shop front photograph")).toBe(false)
+  })
+
+  it("shows the secure upload link once, after the paragraphs", () => {
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const blocks = evidencePreviewBlocks(`Hello,\n\nPlease send this document:\n\n- Shop licence\n- Suspension notice\n\n${upload}`)
+    expect(blocks.filter(block => block.type === "link")).toEqual([{ type: "link", url: upload }])
+    expect(blocks.find(block => block.type === "list")).toEqual({ type: "list", items: ["Shop licence", "Suspension notice"] })
+    expect(evidencePreviewBlocks(`See https://evil.example/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa and ${upload}`).some(block => block.type === "link")).toBe(false)
   })
 
   it("treats an open requirement with the same title as already saved", () => {

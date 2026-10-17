@@ -1,7 +1,9 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { screeningContradictsRecord, screeningFieldDefaults, type JourneyIntakeBrief } from "@/lib/case-journey/intake"
+import { emailReadiness, screeningContradictsRecord, screeningFieldDefaults, type JourneyIntakeBrief } from "@/lib/case-journey/intake"
+import { isUuid } from "@/lib/records/model"
 
 function postDecision(key: string, body: unknown) {
   return fetch("/api/cases/journey", {
@@ -72,6 +74,36 @@ function ConflictNotice({ brief }: { brief: JourneyIntakeBrief }) {
   </div>
 }
 
+function EmailStatus({ brief }: { brief: JourneyIntakeBrief }) {
+  const readiness = emailReadiness(brief)
+  return <>
+    <dt>{readiness.sameAddress ? "Email" : "Submitted email"}</dt>
+    <dd>{readiness.submittedEmail || "No email"} — {readiness.label}</dd>
+    {!readiness.sameAddress && <>
+      <dt>Customer email</dt><dd>{readiness.customerEmail || "No email"}</dd>
+    </>}
+  </>
+}
+
+function EmailFollowUp({ brief, workflow }: { brief: JourneyIntakeBrief; workflow: boolean }) {
+  const readiness = emailReadiness(brief)
+  const href = isUuid(brief.customerId) ? `/records/client/${brief.customerId}` : null
+  return <>
+    <p>{readiness.detail}</p>
+    {workflow && readiness.outstanding && <div className="guided-warning" role="status">
+      <p><strong>Email verification is still outstanding.</strong></p>
+      <p>A later evidence email needs a verified address. This screening can still be recorded. This page does not verify the address, and it has no checkbox that would do so.</p>
+      {href
+        ? <p>On the customer record, open “Record a contact verification”. That action needs evidence of how the address was confirmed. <Link href={href}>Open the customer record</Link></p>
+        : <p>The customer record is not available, so that verification action cannot be opened from here.</p>}
+    </div>}
+    {workflow && readiness.state === "suppressed" && <div className="guided-warning" role="status">
+      <p><strong>This verified address is suppressed.</strong></p>
+      <p>Sending to it stays blocked. This page does not clear a suppression.</p>
+    </div>}
+  </>
+}
+
 export function IntakeSummary({ brief, reference }: { brief: JourneyIntakeBrief; reference: string }) {
   const submitted = brief.snapshot
   const enquiry = submitted?.details || brief.message
@@ -80,9 +112,10 @@ export function IntakeSummary({ brief, reference }: { brief: JourneyIntakeBrief;
       <dt>Case</dt><dd>{reference}</dd>
       <dt>Submitted</dt><dd>{brief.submittedAtLabel ?? "Time not recorded"}</dd>
       <dt>Customer</dt><dd>{submitted?.fullName || brief.customerName || "Not recorded"}</dd>
-      <dt>Email</dt><dd>{submitted?.email || brief.email || "No email"}</dd>
+      <EmailStatus brief={brief} />
       <dt>Business</dt><dd>{submitted?.businessName || brief.businessName || "Not recorded"}</dd>
     </dl>
+    <EmailFollowUp brief={brief} workflow={false} />
     <h3>Original enquiry</h3>
     <p className="preserve-lines">{enquiry || "No case message is stored."}</p>
     <ConflictNotice brief={brief} />
@@ -102,11 +135,6 @@ export function IntakeSummary({ brief, reference }: { brief: JourneyIntakeBrief;
 }
 
 export function VerificationSummary({ brief }: { brief: JourneyIntakeBrief }) {
-  const email = brief.emailControl === "verified"
-    ? "Email control is recorded. That is not business authority and it is not a review of this case."
-    : brief.emailControl === "records_disagree"
-      ? "The email-control records do not agree, so email is not shown as verified."
-      : "Email control is not recorded. A delivered or opened message is not email control, and it does not block this screening."
   const authority = brief.authority === "verified"
     ? "Business authority is recorded. It is separate from email control."
     : brief.authority === "pending"
@@ -122,13 +150,13 @@ export function VerificationSummary({ brief }: { brief: JourneyIntakeBrief }) {
       <dt>Business</dt><dd>{brief.businessName || "Not recorded"}</dd>
       <dt>Country</dt><dd>{brief.country || "Not recorded"}</dd>
       <dt>Customer</dt><dd>{brief.customerName || "Not recorded"}</dd>
-      <dt>Email</dt><dd>{brief.email || "No email"}</dd>
+      <EmailStatus brief={brief} />
       <dt>Website</dt><dd>{brief.website ? safeLink(brief.website) : "Not provided"}</dd>
       <dt>Google Profile</dt><dd>{brief.profileUrl ? safeLink(brief.profileUrl) : "Not provided"}</dd>
     </dl>
+    <EmailFollowUp brief={brief} workflow />
     <details className="guided-details">
       <summary>Verification details</summary>
-      <p>{email}</p>
       <p>{authority}</p>
       <p>{brief.website ? "A website is not required." : "No website is recorded. A website is not required."}</p>
       <p>{brief.profileUrl ? "Saving a URL does not verify the listing." : "No Google profile URL is saved. An accessible listing is not required."}</p>

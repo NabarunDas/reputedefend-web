@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildJourneyIntake, formatUkSubmittedAt, journeyCountryKey, screeningContradictsRecord, screeningFieldDefaults } from "./intake"
+import { buildJourneyIntake, emailReadiness, formatUkSubmittedAt, journeyCountryKey, screeningContradictsRecord, screeningFieldDefaults } from "./intake"
 import { parseJourneyExtension } from "./read"
 
 const snapshot = {
@@ -29,6 +29,9 @@ describe("journey intake brief", () => {
       snapshot: null,
     })
     expect(brief.emailControl).toBe("verified")
+    expect(emailReadiness({ ...brief, emailSuppressed: false }).state).toBe("verified")
+    expect(emailReadiness({ ...brief, emailSuppressed: true })).toMatchObject({ state: "suppressed", outstanding: false, label: "Verified and suppressed" })
+    expect(emailReadiness({ ...brief, emailSuppressed: null }).state).toBe("verified_unchecked")
     expect(brief.authority).toBe("not_recorded")
     expect(brief.profileUrl).toBe("https://maps.example/listing")
     expect(brief.website).toBeNull()
@@ -49,6 +52,7 @@ describe("journey intake brief", () => {
       snapshot,
     })
     expect(brief.emailControl).toBe("records_disagree")
+    expect(emailReadiness(brief)).toMatchObject({ state: "records_disagree", label: "Not verified", outstanding: true })
     expect(brief.authority).toBe("pending")
     expect(brief.conflicts.join(" ")).toMatch(/business name/)
     expect(brief.conflicts.join(" ")).toMatch(/email/)
@@ -92,6 +96,15 @@ describe("journey intake brief", () => {
     expect(brief.conflicts).toEqual([])
     expect(brief.authority).toBe("pending")
     expect(brief.emailControl).toBe("not_recorded")
+    expect(emailReadiness(brief).detail).toMatch(/does not verify this address/)
+    expect(emailReadiness({ ...brief, email: "", snapshot: null })).toMatchObject({ label: "No email", outstanding: true })
+    expect(emailReadiness({
+      ...brief,
+      email: "new@example.com",
+      emailControl: "verified",
+      emailSuppressed: false,
+      snapshot: { ...snapshot, email: "submitted@example.com" },
+    })).toMatchObject({ state: "address_differs", label: "Not verified", outstanding: true })
     expect(brief.profileUrl).toBe("https://maps.example/listing")
   })
 

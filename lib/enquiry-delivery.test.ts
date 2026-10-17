@@ -7,7 +7,7 @@ import {
   buildInternalEnquiryMessage,
   deliverEnquiry,
 } from "@/lib/enquiry-delivery"
-import { customerAcknowledgementSubject, enquiryEmailSubject } from "@/lib/enquiry-email"
+import { customerAcknowledgementHtml, customerAcknowledgementSubject, customerAcknowledgementText, enquiryEmailSubject } from "@/lib/enquiry-email"
 import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
 import { POST } from "@/app/api/enquiry/route"
@@ -263,6 +263,17 @@ describe("enquiry email mapping", () => {
       source: "homepage",
     })).toBe("[ProfileRelaunch] General enquiry — Review issue")
     expect(customerAcknowledgementSubject()).toBe("[ProfileRelaunch] We have received your enquiry")
+    const acknowledgement = customerAcknowledgementText()
+    expect(acknowledgement.split("\n\n")).toEqual([
+      "Hello,",
+      "Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it.",
+      "Sending this form does not, by itself, create a client or paid-service relationship.",
+      "If we need anything further, we will write to the email address you provided.",
+      "Kind regards,",
+      "ProfileRelaunch Support Team",
+    ])
+    expect(customerAcknowledgementHtml()).toBe(`<div>${acknowledgement.split("\n\n").map(paragraph => `<p>${paragraph}</p>`).join("")}</div>`)
+    expect(acknowledgement).not.toMatch(/\b(reply|outcome|guarantee|payment|delivered|lifecycle|template)\b/i)
   })
 
   it("includes case-intake fields and omits empty optionals and any honeypot", () => {

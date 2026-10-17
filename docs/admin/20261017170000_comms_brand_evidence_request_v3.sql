@@ -16,6 +16,12 @@
 --
 -- Reply-To is snapshotted only from the server setting profilerelaunch.reply_to
 -- or from the revise function's server argument. A browser field is not read.
+--
+-- Review of an EVIDENCE_REQUEST whose template_version is 3 or newer refuses a
+-- missing, repeated or mismatched upload URL, a URL whose action UUID is not
+-- the communication's customer_action_id, a customer action that is not the
+-- open request-scoped COMMUNICATION_ACCESS action used by queue, a secret #t=
+-- token, and executable HTML. Version 1 and version 2 review is unchanged.
 
 BEGIN;
 
@@ -299,8 +305,16 @@ DECLARE
   review_text text;
   review_html text;
   review_key text;
+  review_version integer;
+  review_action uuid;
+  review_request uuid;
+  review_case uuid;
   review_upload text;
   review_html_upload text;
+  review_text_urls integer;
+  review_html_urls integer;
+  review_scoped_action uuid;
+  review_open_request uuid;
 BEGIN
   PERFORM set_config(
     'profilerelaunch.reply_to',
@@ -317,28 +331,48 @@ BEGIN
     AND jsonb_typeof(p_payload) = 'object'
     AND NULLIF(p_payload->>'communicationId', '') IS NOT NULL
   THEN
-    SELECT m.body_text, m.body_html, m.template_key
-      INTO review_text, review_html, review_key
+    SELECT m.body_text, m.body_html, m.template_key, m.template_version,
+           m.customer_action_id, m.evidence_request_id, m.case_id
+      INTO review_text, review_html, review_key, review_version,
+           review_action, review_request, review_case
       FROM public.communications m
       WHERE m.id = NULLIF(p_payload->>'communicationId', '')::uuid;
-    review_upload := substring(coalesce(review_text, '') from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
-    review_html_upload := substring(coalesce(review_html, '') from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
-    IF review_key = 'EVIDENCE_REQUEST' AND (
-      review_text IS NULL
-      OR review_html IS NULL
-      OR position('#t=' in review_text) > 0
-      OR position('#t=' in review_html) > 0
-      OR review_html ~* '<\s*(script|iframe|object|embed)|javascript:|\son[a-z]+\s*='
-      OR review_upload IS DISTINCT FROM review_html_upload
-      OR (
-        review_upload IS NOT NULL
-        AND (
-          (length(review_text) - length(replace(review_text, review_upload, ''))) IS DISTINCT FROM length(review_upload)
-          OR (length(review_html) - length(replace(review_html, review_upload, ''))) IS DISTINCT FROM length(review_upload)
-        )
-      )
-    ) THEN
-      RETURN jsonb_build_object('status', 'denied');
+    IF review_key = 'EVIDENCE_REQUEST' AND coalesce(review_version, 0) >= 3 THEN
+      review_upload := substring(coalesce(review_text, '') from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+      review_html_upload := substring(coalesce(review_html, '') from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+      SELECT count(*)::integer INTO review_text_urls
+        FROM regexp_matches(coalesce(review_text, ''), 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+      SELECT count(*)::integer INTO review_html_urls
+        FROM regexp_matches(coalesce(review_html, ''), 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+      -- Same open request-scoped action predicate the queue operation already uses.
+      SELECT a.id INTO review_scoped_action
+        FROM public.customer_actions a
+        WHERE a.id = review_action
+          AND a.kind = 'COMMUNICATION_ACCESS'
+          AND a.status = 'OPEN'
+          AND a.expires_at > now()
+          AND a.evidence_request_id IS NOT DISTINCT FROM review_request;
+      SELECT r.id INTO review_open_request
+        FROM public.evidence_requests r
+        WHERE r.id = review_request
+          AND r.status = 'OPEN'
+          AND r.case_id = review_case;
+      IF review_text IS NULL
+        OR review_html IS NULL
+        OR review_upload IS NULL
+        OR review_html_upload IS NULL
+        OR review_text_urls IS DISTINCT FROM 1
+        OR review_html_urls IS DISTINCT FROM 1
+        OR review_upload IS DISTINCT FROM review_html_upload
+        OR review_upload IS DISTINCT FROM 'https://' || substring(review_upload from 'https://([A-Za-z0-9.-]+)') || '/action/' || review_action::text
+        OR review_scoped_action IS NULL
+        OR review_open_request IS NULL
+        OR position('#t=' in coalesce(review_text, '')) > 0
+        OR position('#t=' in coalesce(review_html, '')) > 0
+        OR review_html ~* '<\s*(script|iframe|object|embed)\y|javascript:|data:text/html|\son[a-z]+\s*='
+      THEN
+        RETURN jsonb_build_object('status', 'denied');
+      END IF;
     END IF;
   END IF;
   IF btrim(coalesce(p_operation, '')) = 'queue'

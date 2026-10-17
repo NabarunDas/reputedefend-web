@@ -69,17 +69,31 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_jobs_outbox_operational_health_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_communications_outgoing_mail_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_catalogue_quotes_orders_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_stripe_payments_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_guard_onboarding_activation_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_guard_subscriptions_billing_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_guard_manual_checks_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_guard_alerts_escalation_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_admin_dashboard_search_reports_v1.sql"))!,
+    readdirSync(dir).find(n => n.endsWith("_admin_settings_privacy_operations_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
-  await db.exec(readFileSync(new URL("../../../../docs/admin/20261016233000_admin_journey_evidence_draft_wording_v1.sql", import.meta.url), "utf8"))
+  const docs = new URL("../../../../docs/admin/", import.meta.url)
+  await db.exec(readFileSync(new URL("20261016233000_admin_journey_evidence_draft_wording_v1.sql", docs), "utf8"))
+  await db.exec(readFileSync(new URL("20261017143000_admin_journey_communication_templates_v2.sql", docs), "utf8"))
   await db.exec(`
-    alter table admin_private.communication_templates add column if not exists status text;
-    alter table admin_private.communication_templates add column if not exists reason text not null default '';
-    update admin_private.communication_templates set status = 'APPROVED' where status is null;
-    alter table admin_private.communication_templates alter column status set not null;
+    insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
+    update public.admin_identity set auth_user_id = '${uid}', enabled = true where singleton;
+    insert into public.admin_sessions(token_hash,auth_user_id,created_at) values('${token}','${uid}',now());
   `)
-  await db.exec(readFileSync(new URL("../../../../docs/admin/20261017170000_comms_brand_evidence_request_v3.sql", import.meta.url), "utf8"))
-}, 60000)
+  const evidenceV2 = (await db.query<{ id: string; record_version: number }>(
+    "select id, record_version from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' and version = 2",
+  )).rows[0]
+  const approvedV2 = await rpc("admin_settings_command_v1", [token, key(), "approve_template_draft", { id: evidenceV2.id }, evidenceV2.record_version])
+  if (approvedV2?.status !== "success") throw new Error(`version 2 template approval failed: ${JSON.stringify(approvedV2)}`)
+  await db.exec(readFileSync(new URL("20261017170000_comms_brand_evidence_request_v3.sql", docs), "utf8"))
+}, 180000)
 
 afterAll(async () => { await db.close() })
 
@@ -87,10 +101,24 @@ async function seed() {
   await db.exec(`    alter table public.admin_audit_events disable trigger admin_audit_immutable;
     alter table public.customer_action_events disable trigger customer_action_events_immutable;
     alter table public.case_document_events disable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events disable trigger case_prepared_pack_events_immutable;
+    alter table public.agreement_versions disable trigger agreement_versions_immutable;
+    alter table public.authorization_events disable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events disable trigger location_manager_access_events_immutable;
+    alter table public.guard_coverage_events disable trigger guard_coverage_events_immutable;
+    alter table public.guard_subscription_events disable trigger guard_subscription_events_immutable;
+    alter table public.guard_recurring_consents disable trigger guard_recurring_consents_immutable;
     truncate public.admin_audit_events,public.admin_sessions,public.admin_identity,auth.users,admin_private.job_attempts,admin_private.jobs,admin_private.job_outbox,admin_private.job_worker_heartbeats,admin_private.job_command_receipts,admin_private.communication_delivery_events,admin_private.communication_webhook_events,admin_private.email_suppressions,admin_private.communication_command_receipts,public.communications,public.customer_action_events,public.customer_actions,public.evidence_requests,public.customer_contact_verifications,public.business_memberships cascade;
     alter table public.admin_audit_events enable trigger admin_audit_immutable;
     alter table public.customer_action_events enable trigger customer_action_events_immutable;
     alter table public.case_document_events enable trigger case_document_events_immutable;
+    alter table public.case_prepared_pack_events enable trigger case_prepared_pack_events_immutable;
+    alter table public.agreement_versions enable trigger agreement_versions_immutable;
+    alter table public.authorization_events enable trigger authorization_events_immutable;
+    alter table public.location_manager_access_events enable trigger location_manager_access_events_immutable;
+    alter table public.guard_coverage_events enable trigger guard_coverage_events_immutable;
+    alter table public.guard_subscription_events enable trigger guard_subscription_events_immutable;
+    alter table public.guard_recurring_consents enable trigger guard_recurring_consents_immutable;
     insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);
     insert into auth.users values('${customerAuth}','alex@example.com',now(),null,null);
     insert into public.admin_identity(singleton,auth_user_id,enabled) values(true,'${uid}',true);
@@ -156,19 +184,72 @@ describe("branded evidence request migration", () => {
     expect(html).toBeNull()
     const escaped = (await db.query<{ value: string }>("select admin_private.customer_email_escape_v1($1) as value", ["<script>alert(1)</script>"])).rows[0].value
     expect(escaped).toBe("&lt;script&gt;alert(1)&lt;/script&gt;")
-    const templates = (await db.query<{ version: number; status: string; body_text_template: string }>(
-      "select version, status, body_text_template from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' order by version",
+    const templates = (await db.query<{ version: number; status: string; approval_source: string | null; body_text_template: string }>(
+      "select version, status, approval_source, body_text_template from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' order by version",
     )).rows
-    expect(templates.map(row => row.version)).toEqual([1, 3])
+    expect(templates.map(row => row.version)).toEqual([1, 2, 3])
+    expect(templates[0]).toMatchObject({ version: 1, status: "APPROVED", approval_source: "MIGRATED_EXISTING" })
     expect(templates[0].body_text_template.startsWith("To continue with {case_ref}")).toBe(true)
-    expect(templates[1]).toMatchObject({ version: 3, status: "DRAFT" })
-    expect(templates[1].body_text_template).not.toMatch(/\breply\b/i)
+    expect(templates[1]).toMatchObject({ version: 2, status: "APPROVED", approval_source: "ADMIN" })
+    expect(templates[1].body_text_template).toContain("Secure document-upload link:")
+    expect(templates[2]).toMatchObject({ version: 3, status: "DRAFT", approval_source: null })
+    expect(templates[2].body_text_template).not.toMatch(/\breply\b/i)
   })
 
   it("generates, edits, edits again and approves one list, one link, one sign-off and one footer", async () => {
     await seed()
-    const setup = await openEvidence("Shop licence; Proof of operating location")
     const publicRef = (await db.query<{ public_ref: string }>("select public_ref from public.cases where id = $1", [caseId])).rows[0].public_ref
+    const legacy = await openEvidence("Shop licence")
+    const legacyDraft = await rpc("admin_communication_command_v1", [token, key(), "draft", {
+      templateKey: "EVIDENCE_REQUEST",
+      caseId,
+      evidenceRequestId: legacy.evidenceRequestId,
+      customerOrigin: "https://customer.profilerelaunch.com",
+      actionId: legacy.actionId,
+      secretHash: legacy.secretHash,
+      linkKeyVersion: 1,
+    }, null])
+    expect(legacyDraft?.status).toBe("success")
+    const legacyRow = (await db.query<{ template_version: number; body_text: string; body_html: string }>(
+      "select template_version, body_text, body_html from public.communications where id = $1",
+      [legacyDraft!.id],
+    )).rows[0]
+    expect(legacyRow.template_version).toBe(2)
+    expect(legacyRow.body_text).toContain(uploadFor(legacy.actionId))
+    expect(legacyRow.body_html).not.toContain("Upload your documents securely")
+    expect((await db.query<{ status: string }>(
+      "select status from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' and version = 3",
+    )).rows[0].status).toBe("DRAFT")
+    const legacyText = "Please send the shop licence using the instructions already given to you."
+    await db.query("update public.communications set body_text = $2, body_html = $3 where id = $1", [legacyDraft!.id, legacyText, `<p>${legacyText}</p>`])
+    const legacyReviewed = await rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: legacyDraft!.id, fromAddress: "ops@example.com",
+    }, legacyDraft!.version])
+    expect(legacyReviewed).toMatchObject({ status: "success", lifecycle: "REVIEWED" })
+    expect(await rpc("admin_communication_command_v1", [token, key(), "cancel", {
+      communicationId: legacyDraft!.id,
+    }, legacyReviewed!.version])).toMatchObject({ status: "success", lifecycle: "CANCELLED" })
+
+    const beforeApproval = (await db.query<{ version: number; status: string; body_text_template: string }>(
+      "select version, status, body_text_template from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' order by version",
+    )).rows
+    const version3 = (await db.query<{ id: string; record_version: number; status: string }>(
+      "select id, record_version, status from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' and version = 3",
+    )).rows[0]
+    expect(version3.status).toBe("DRAFT")
+    const approvedTemplate = await rpc("admin_settings_command_v1", [token, key(), "approve_template_draft", { id: version3.id }, version3.record_version])
+    expect(approvedTemplate).toMatchObject({ status: "success", approvedVersion: 3 })
+    const afterApproval = (await db.query<{ version: number; status: string; approval_source: string | null; body_text_template: string }>(
+      "select version, status, approval_source, body_text_template from admin_private.communication_templates where template_key = 'EVIDENCE_REQUEST' order by version",
+    )).rows
+    expect(afterApproval.filter(row => row.version < 3).map(row => ({ version: row.version, body_text_template: row.body_text_template }))).toEqual(
+      beforeApproval.filter(row => row.version < 3).map(row => ({ version: row.version, body_text_template: row.body_text_template })),
+    )
+    expect(afterApproval[0]).toMatchObject({ status: "APPROVED" })
+    expect(afterApproval[1]).toMatchObject({ status: "APPROVED" })
+    expect(afterApproval[2]).toMatchObject({ version: 3, status: "APPROVED", approval_source: "ADMIN" })
+
+    const setup = await openEvidence("Shop licence; Proof of operating location")
     const created = await rpc("admin_communication_command_v1", [token, key(), "draft", {
       templateKey: "EVIDENCE_REQUEST",
       caseId,
@@ -257,28 +338,87 @@ describe("branded evidence request migration", () => {
     expect(counts(third.body_text)).toMatchObject({ signOffs: 1, security: 1, replies: 1 })
     expect(await rpc("admin_communication_revise_evidence_draft_v1", [token, key(), created!.id, created!.version, `Documents for ${publicRef}`, secondIntro, ""])).toMatchObject({ status: "conflict" })
     expect(await rpc("admin_communication_revise_evidence_draft_v1", [token, key(), again!.id, (again?.version ?? 0) + 1, `Documents for ${publicRef}`, secondIntro, "cases@profilerelaunch.com"])).toMatchObject({ status: "conflict" })
+    const reviewDraft = () => rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: again!.id, fromAddress: "ops@example.com",
+    }, again!.version])
+    const storeBodies = (text: string, html: string) => db.query(
+      "update public.communications set body_text = $2, body_html = $3 where id = $1",
+      [again!.id, text, html],
+    )
     await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
     await db.query("update public.customer_actions set expires_at = now() - interval '1 minute' where id = $1", [setup.actionId])
     await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
     expect(await rpc("admin_communication_revise_evidence_draft_v1", [token, key(), again!.id, again!.version, `Documents for ${publicRef}`, secondIntro, "cases@profilerelaunch.com"])).toMatchObject({ status: "denied" })
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
     await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
     await db.query("update public.customer_actions set expires_at = now() + interval '14 days' where id = $1", [setup.actionId])
     await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
 
-    await db.query("update public.communications set body_html = '<p>Plain only</p>' where id = $1", [again!.id])
-    expect(await rpc("admin_communication_command_v1", [token, key(), "review", {
-      communicationId: again!.id, fromAddress: "ops@example.com",
-    }, again!.version])).toMatchObject({ status: "denied" })
-    await db.query("update public.communications set body_html = $2 where id = $1", [again!.id, third.body_html])
-    const approved = await rpc("admin_communication_command_v1", [token, key(), "review", {
-      communicationId: again!.id, fromAddress: "ops@example.com",
-    }, again!.version])
+    const otherRequest = (await db.query<{ id: string }>(
+      "insert into public.evidence_requests(case_id, title, request_text, created_by) values($1,'Premises rates bill','Please send the named documents.',$2) returning id",
+      [caseId, uid],
+    )).rows[0]
+    const wrongAction = crypto.randomUUID()
+    const wrongUpload = uploadFor(wrongAction)
+    const wrongMaterial = accessMaterial(wrongAction)
+    await db.query(
+      `insert into public.customer_actions(id, customer_id, business_id, location_id, case_id, evidence_request_id, link_key_version, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
+       values($1,$2,$3,$4,$5,$6,1,'COMMUNICATION_ACCESS',$7,'alex@example.com', now() + interval '14 days', $8)`,
+      [wrongAction, customer, business, location, caseId, otherRequest.id, wrongMaterial.secretHash, uid],
+    )
+    await storeBodies(third.body_text.replace(upload, ""), third.body_html)
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text, "<p>Plain only</p>")
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(`${third.body_text}\n${upload}`, third.body_html)
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text, `${third.body_html}<p>${upload}</p>`)
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text, third.body_html.replace(upload, wrongUpload))
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text.replace(upload, wrongUpload), third.body_html.replace(upload, wrongUpload))
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await db.query("update public.communications set customer_action_id = $2 where id = $1", [again!.id, wrongAction])
+    await storeBodies(third.body_text.replace(upload, wrongUpload), third.body_html.replace(upload, wrongUpload))
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await db.query("update public.communications set customer_action_id = $2 where id = $1", [again!.id, setup.actionId])
+    await storeBodies(third.body_text.replace(upload, `${upload}#t=secret`), third.body_html.replace(upload, `${upload}#t=secret`))
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text, `${third.body_html}<script>alert(1)</script>`)
+    expect(await reviewDraft()).toMatchObject({ status: "denied" })
+    await storeBodies(third.body_text, third.body_html)
+    const approved = await reviewDraft()
     expect(approved).toMatchObject({ status: "success", lifecycle: "REVIEWED" })
-    const locked = (await db.query<{ content_locked: boolean; body_text: string; lifecycle: string }>(
-      "select content_locked, body_text, lifecycle from public.communications where id = $1",
+    const locked = (await db.query<{
+      content_locked: boolean
+      body_text: string
+      body_html: string
+      lifecycle: string
+      reply_to_address: string | null
+      template_version: number
+      content_version: number
+      record_version: number
+      customer_action_id: string
+    }>(
+      "select content_locked, body_text, body_html, lifecycle, reply_to_address, template_version, content_version, record_version, customer_action_id from public.communications where id = $1",
       [again!.id],
     )).rows[0]
-    expect(locked).toMatchObject({ content_locked: true, lifecycle: "REVIEWED", body_text: third.body_text })
+    expect(locked).toMatchObject({
+      content_locked: true,
+      lifecycle: "REVIEWED",
+      body_text: third.body_text,
+      body_html: third.body_html,
+      reply_to_address: "cases@profilerelaunch.com",
+      template_version: 3,
+      content_version: 3,
+      customer_action_id: setup.actionId,
+    })
+    expect(locked.record_version).toBe(approved!.version)
+    expect(locked.record_version).toBeGreaterThan(again!.version ?? 0)
+    expect(locked.body_text.match(new RegExp(upload, "g"))).toHaveLength(1)
+    expect(locked.body_html.match(new RegExp(upload, "g"))).toHaveLength(1)
+    expect(locked.body_text).not.toContain("#t=")
+    expect(locked.body_html).not.toContain("#t=")
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(0)
     expect(await rpc("admin_communication_revise_evidence_draft_v1", [token, key(), again!.id, approved!.version, `Documents for ${publicRef}`, secondIntro, "cases@profilerelaunch.com"])).toMatchObject({ status: "denied" })
     await expect(db.query("update public.communications set body_text = 'A different body that is long enough to store.' where id = $1", [again!.id])).rejects.toThrow(/immutable/i)

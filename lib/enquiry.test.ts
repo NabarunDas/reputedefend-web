@@ -41,9 +41,36 @@ describe("validateEnquiry", () => {
     expect(result.valid).toBe(true)
     if (result.valid) {
       expect(result.data.fullName).toBe("Alex Morgan")
+      expect(result.data.country).toBe("GB")
       expect(result.data.websiteUrl).toBe("https://harbourbakery.example")
       expect(result.data.source).toBe("get-help")
     }
+  })
+
+  it("stores a canonical country code and still accepts UK and country names", () => {
+    for (const [country, code] of [["UK", "GB"], ["United Kingdom", "GB"], ["Ireland", "IE"], ["KP", "KP"]] as const) {
+      const result = validateEnquiry({ ...validCase, country })
+      expect(result.valid).toBe(true)
+      if (result.valid) expect(result.data.country).toBe(code)
+    }
+    const rejected = validateEnquiry({ ...validCase, country: "Atlantis" })
+    expect(rejected.valid).toBe(false)
+    if (!rejected.valid) expect(rejected.errors?.country).toMatch(/country where your business is located/i)
+  })
+
+  it("does not rewrite a contact enquiry country or apply a case country gate", () => {
+    const result = validateEnquiry({
+      fullName: "Sam Patel",
+      email: "sam@example.com",
+      subject: "general-question",
+      details: "Could you explain how you work with clients?",
+      source: "contact",
+      country: "United Kingdom",
+      informationAccurate: false,
+      privacyAccepted: false,
+    })
+    expect(result.valid).toBe(true)
+    if (result.valid) expect(result.data.country).toBe("United Kingdom")
   })
 
   it("accepts a lightweight homepage enquiry", () => {
@@ -228,8 +255,29 @@ describe("getCaseIntakeStepErrors", () => {
       source: "get-help",
     })
     expect(aboutYou.fullName).toBeTruthy()
+    expect(aboutYou.country).toMatch(/country where your business is located/i)
     expect(aboutYou.service).toBeUndefined()
     expect(aboutYou.details).toBeUndefined()
+    expect(aboutYou.informationAccurate).toBeUndefined()
+
+    const issue = getCaseIntakeStepErrors(3, {
+      service: "profile-recovery",
+      source: "get-help",
+      details: validCase.details,
+      informationAccurate: false,
+      privacyAccepted: false,
+    })
+    expect(issue).toEqual({})
+
+    const review = getCaseIntakeStepErrors(4, {
+      source: "get-help",
+      informationAccurate: false,
+      privacyAccepted: true,
+    })
+    expect(review.informationAccurate).toMatch(/accurate/i)
+    expect(review.privacyAccepted).toBeUndefined()
+    expect(review.country).toBeUndefined()
+    expect(review.details).toBeUndefined()
   })
 })
 

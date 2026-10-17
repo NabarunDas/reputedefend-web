@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Check } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, CircleHelp } from "lucide-react"
 import {
   FORMAL_CASE_SERVICES,
   caseServiceLabel,
@@ -448,12 +448,23 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         {step === 3 && (
           <div className={styles.fields}>
             {showsBusinessProfileUrl(values.service) && (
-              <Field id={`${formId}-businessProfileUrl`} label="Google Business Profile URL" hint={PROFILE_URL_HINT} optional error={errors.businessProfileUrl}>
+              <Field id={`${formId}-businessProfileUrl`} label="Google Business Profile URL" hint={PROFILE_URL_HINT} hintAsHelp optional error={errors.businessProfileUrl}
+                helpContent={<>
+                  <p>To find your link:</p>
+                  <ol>
+                    <li>Open the listing in Google Maps.</li>
+                    <li>Choose <strong>Share</strong>, then <strong>Copy link</strong>.</li>
+                    <li>Paste the link into the field below.</li>
+                  </ol>
+                  <p>Example: <code>https://maps.app.goo.gl/…</code></p>
+                  <p>Leave it blank if the listing is suspended, missing, or cannot be opened.</p>
+                  <p>Never enter a Google password or verification code.</p>
+                </>}>
                 <input name="businessProfileUrl" type="url" value={values.businessProfileUrl} onChange={(event) => update("businessProfileUrl", event.target.value)} maxLength={enquiryLimits.businessProfileUrl} autoComplete="off" inputMode="url" placeholder="https://maps.app.goo.gl/…" />
               </Field>
             )}
             {showsReviewUrl(values.service) && (
-              <Field id={`${formId}-reviewUrl`} label="Relevant review URL" hint={REVIEW_URL_HINT} optional error={errors.reviewUrl}>
+              <Field id={`${formId}-reviewUrl`} label="Relevant review URL" hint={REVIEW_URL_HINT} hintAsHelp optional error={errors.reviewUrl}>
                 <input name="reviewUrl" type="url" value={values.reviewUrl} onChange={(event) => update("reviewUrl", event.target.value)} maxLength={enquiryLimits.reviewUrl} autoComplete="off" inputMode="url" placeholder="https://maps.app.goo.gl/…" />
               </Field>
             )}
@@ -461,6 +472,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               id={`${formId}-details`}
               label="Tell us what happened"
               hint={DETAILS_HINTS[values.service || ""]}
+              hintAsHelp
               error={errors.details}
             >
               <textarea name="details" value={values.details} onChange={(event) => update("details", event.target.value)} maxLength={enquiryLimits.details} rows={8} required />
@@ -558,31 +570,36 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
 }
 
 function Field({
-  id,
-  label,
-  optional,
-  hint,
-  error,
-  children,
+  id, label, optional, hint, hintAsHelp, helpContent, error, children,
 }: {
   id: string
   label: string
   optional?: boolean
   hint?: string
+  hintAsHelp?: boolean
+  helpContent?: ReactNode
   error?: string
   children: ReactElement<{ id?: string; className?: string; "aria-invalid"?: boolean; "aria-describedby"?: string }>
 }) {
-  const hintId = hint ? `${id}-hint` : undefined
+  const showHelp = Boolean(hint && hintAsHelp)
+  const hintId = hint && !showHelp ? `${id}-hint` : undefined
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined
 
   return (
     <div className={styles.field}>
-      <label htmlFor={id}>
-        {label}
-        {optional ? <span>Optional</span> : null}
-      </label>
-      {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
+      {showHelp ? (
+        <div className={styles.fieldHeading}>
+          <label htmlFor={id}>{label}</label>
+          <HelpPopover id={id} label={label}>
+            {helpContent ?? <p>{hint}</p>}
+          </HelpPopover>
+          {optional ? <span className={styles.helpOptional}>Optional</span> : null}
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}{optional ? <span>Optional</span> : null}</label>
+      )}
+      {hint && !showHelp ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
       {cloneElement(children, {
         id,
         className: styles.control,
@@ -590,6 +607,57 @@ function Field({
         "aria-describedby": describedBy,
       })}
       {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
+    </div>
+  )
+}
+
+function HelpPopover({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const host = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onOutside(event: PointerEvent) {
+      if (host.current && !host.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("pointerdown", onOutside)
+    return () => document.removeEventListener("pointerdown", onOutside)
+  }, [open])
+
+  return (
+    <div
+      className={styles.helpTrigger}
+      ref={host}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+    >
+      <button
+        type="button"
+        className={styles.helpButton}
+        aria-label={label === "Google Business Profile URL"
+          ? "How to find the Google Maps link"
+          : label === "Relevant review URL"
+            ? "How to find the review link"
+            : label === "Tell us what happened"
+              ? "Tips for describing the issue"
+              : `Help for ${label}`}
+        aria-expanded={open}
+        aria-controls={`${id}-help`}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation()
+            setOpen(false)
+            event.currentTarget.blur()
+          }
+        }}
+      >
+        <CircleHelp size={18} aria-hidden="true" />
+      </button>
+      {open ? <div id={`${id}-help`} className={styles.helpPanel} role="note">{children}</div> : null}
     </div>
   )
 }

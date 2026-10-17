@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { CaseIntakeForm, COUNTRY_HINT, EVIDENCE_NOTE, PERSISTED_SUCCESS_COPY, PROFILE_URL_HINT, REVIEW_URL_HINT, STEP_TITLES, SUBMIT_NOTE, SUCCESS_COPY, SIMULATED_COPY, WEBSITE_HINT } from "./case-intake-form"
+import { CaseIntakeForm, COUNTRY_HINT, EVIDENCE_NOTE, PERSISTED_SUCCESS_COPY, STEP_TITLES, SUBMIT_NOTE, SUCCESS_COPY, SIMULATED_COPY, WEBSITE_HINT } from "./case-intake-form"
 import { CASE_SERVICES, FORMAL_CASE_SERVICES, parseServiceParam } from "@/lib/enquiry"
 
 vi.mock("next/link", () => ({
@@ -130,7 +130,7 @@ describe("CaseIntakeForm", () => {
     continueStep()
 
     expect(screen.getByRole("heading", { name: STEP_TITLES[3] })).toBeInTheDocument()
-    expect(screen.getByText(PROFILE_URL_HINT)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "How to find the Google Maps link" })).toBeInTheDocument()
     expect(screen.getByLabelText(/Google Business Profile URL/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Relevant review URL/i)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
@@ -168,7 +168,7 @@ describe("CaseIntakeForm", () => {
     continueStep()
     fillAboutYou()
     continueStep()
-    expect(screen.getByText(REVIEW_URL_HINT)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "How to find the review link" })).toBeInTheDocument()
     expect(screen.getByLabelText(/Relevant review URL/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Google Business Profile URL/i)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
@@ -406,8 +406,20 @@ describe("CaseIntakeForm", () => {
     expect(country).toHaveValue("Ireland")
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
     continueStep()
-    expect(screen.getByText(PROFILE_URL_HINT)).toHaveTextContent(/suspended, missing, or you cannot open it/i)
-    expect(screen.getByText(PROFILE_URL_HINT)).toHaveTextContent(/password or verification code/i)
+    const help = screen.getByRole("button", { name: "How to find the Google Maps link" })
+    expect(help).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText(/Open the listing in Google Maps/i)).not.toBeInTheDocument()
+    fireEvent.mouseEnter(help.parentElement!)
+    expect(screen.getByText(/Open the listing in Google Maps/i)).toBeInTheDocument()
+    expect(screen.getByText(/listing is suspended, missing, or cannot be opened/i)).toBeInTheDocument()
+    fireEvent.mouseLeave(help.parentElement!)
+    expect(screen.queryByText(/Open the listing in Google Maps/i)).not.toBeInTheDocument()
+    fireEvent.click(help)
+    expect(help).toHaveAttribute("aria-expanded", "true")
+    fireEvent.keyDown(help, { key: "Escape" })
+    expect(help).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByText(/Never send passwords, OTPs, verification codes/i)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Tips for describing the issue" })).toBeInTheDocument()
     expect(screen.getByLabelText(/Google Business Profile URL/i)).toHaveValue("")
     fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
     continueStep()

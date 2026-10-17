@@ -37,18 +37,26 @@ describe("Admin response headers", () => {
     expect(headers["Permissions-Policy"]).toBe("camera=(), microphone=(), geolocation=()")
   })
 
-  it("restricts content to the same origin, with the presigned upload as the only exception", async () => {
-    // The Admin workspace handles the most sensitive data in the system, so
-    // its content policy must not be weaker than the customer app's. Both are
-    // asserted together because a policy that drifts on one side is exactly
-    // the kind of gap nobody notices.
+  it("restricts content to the same origin, with the presigned upload and public logo as the only exceptions", async () => {
+    // Every directive except images must match the customer app. Admin also
+    // allows the public ProfileRelaunch logo so a sandboxed email preview can
+    // show the stored HTML. No other external image host is permitted.
     const admin = await headerMap(adminConfig)
     const customer = await headerMap(customerConfig)
-    expect(admin["Content-Security-Policy"]).toBe(customer["Content-Security-Policy"])
     const directives = Object.fromEntries(
       admin["Content-Security-Policy"].split(";").map(part => part.trim()).filter(Boolean)
         .map(part => [part.split(" ")[0], part]),
     )
+    const customerDirectives = Object.fromEntries(
+      customer["Content-Security-Policy"].split(";").map(part => part.trim()).filter(Boolean)
+        .map(part => [part.split(" ")[0], part]),
+    )
+    expect(customerDirectives["img-src"]).toBe("img-src 'self' data:")
+    expect(directives["img-src"]).toBe("img-src 'self' data: https://profilerelaunch.com")
+    for (const [name, value] of Object.entries(customerDirectives)) {
+      if (name === "img-src") continue
+      expect(directives[name]).toBe(value)
+    }
     expect(directives["default-src"]).toBe("default-src 'self'")
     expect(directives["connect-src"]).toBe("connect-src 'self' https://*.amazonaws.com")
     expect(directives["frame-ancestors"]).toBe("frame-ancestors 'none'")

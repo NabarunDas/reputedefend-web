@@ -88,7 +88,12 @@ describe("Settings page", () => {
     expect(screen.getAllByText("Not configured").length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Retention policy not approved/).length).toBeGreaterThan(0)
     expect(screen.getByRole("link", { name: "Manage sessions" })).toHaveAttribute("href", "/security")
-    expect(screen.getByRole("link", { name: "Approved template lifecycle" })).toHaveAttribute("href", "/settings/templates")
+    expect(screen.getByRole("link", { name: "Review and approve templates" })).toHaveAttribute("href", "/settings/templates")
+    for (const name of ["account", "service", "guard", "templates", "privacy", "complaints", "incidents", "integrations", "system"]) {
+      const link = document.querySelector(`nav[aria-label="Settings sections"] a[href="/settings?section=${name}#${name}"]`)
+      expect(link, `missing section link for ${name}`).not.toBeNull()
+      expect(document.getElementById(name), `missing target section for ${name}`).not.toBeNull()
+    }
     expect(screen.getByRole("link", { name: "Privacy requests and legal holds" })).toHaveAttribute("href", "/privacy")
     expect(screen.getByText(/Google: Not configured/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/invite staff|Owner \/ Finance|capability matrix|sk_live|otp|STRIPE_SECRET/i)

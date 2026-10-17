@@ -76,7 +76,7 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
     <PageHeader title="Settings" description="Account, sessions, versioned service settings, Guard schedule/rota, templates, privacy, complaints and incidents. No secrets are stored or displayed here." />
     <nav className="filters" aria-label="Settings sections">
       {sections.map(item => (
-        <Link key={item.id} href={`/settings?section=${item.id}`} aria-current={section === item.id ? "page" : undefined}>{item.label}</Link>
+        <Link key={item.id} href={`/settings?section=${item.id}#${item.id}`} aria-current={section === item.id ? "page" : undefined}>{item.label}</Link>
       ))}
     </nav>
     <p className="muted">{overview.temporalNote}</p>
@@ -178,7 +178,7 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
     <section id="templates" className="panel">
       <h2>Communication templates</h2>
       <p>Approved templates: {overview.templates?.approved ?? 0}. Drafts: {overview.templates?.drafts ?? 0}.</p>
-      <p><Link href="/settings/templates">Approved template lifecycle</Link></p>
+      <p><Link href="/settings/templates">Review and approve templates</Link></p>
       <p className="muted">Existing templates were migrated as APPROVED with provenance MIGRATED_EXISTING. New approvals record the active Admin. Draft and retired versions are never selected for send.</p>
     </section>
     <section id="privacy" className="panel">

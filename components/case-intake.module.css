@@ -331,20 +331,21 @@ textarea.control {
   box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
-.option,
-.optionActive,
-.optionEmpty {
+.countryOption,
+.countryOptionActive,
+.countryOptionEmpty {
+  display: block;
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
   line-height: 1.4;
 }
 
-.optionActive {
+.countryOptionActive {
   background: color-mix(in srgb, var(--green) 14%, var(--paper));
 }
 
-.optionEmpty {
+.countryOptionEmpty {
   cursor: default;
   color: var(--muted-strong);
 }

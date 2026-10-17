@@ -126,7 +126,7 @@ export function CountryCombobox({
               active={index === active}
               onSelect={commit}
             />
-          )) : <li className={styles.optionEmpty} role="presentation">No matching country</li>}
+          )) : <li className={styles.countryOptionEmpty} role="presentation">No matching country</li>}
         </ul>
       ) : null}
     </div>
@@ -149,7 +149,7 @@ function CountryOptionRow({
       id={`${inputId}-option-${country.code}`}
       role="option"
       aria-selected={active}
-      className={active ? styles.optionActive : styles.option}
+      className={active ? styles.countryOptionActive : styles.countryOption}
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => onSelect(country.code)}
     >

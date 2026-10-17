@@ -22,7 +22,7 @@ Saving the checklist still creates one evidence request. If other open requests 
 
 `docs/admin/20261016233000_admin_journey_evidence_draft_wording_v1.sql` is the migration-ready change. It is not in `supabase/migrations`, and it has not been applied to DEV or Production. The local communications database test applies it to a disposable PGlite database.
 
-It corrects the earlier wording proposal: plain-text checks are stricter, the upload path must occur once and must name the same action, and a superseded draft cannot be approved. Execute is revoked from `PUBLIC`, `anon`, and `authenticated`, and granted to `service_role`, in that same file.
+It corrects the earlier wording proposal: plain-text checks are stricter, the upload path must occur once and must name the same action, and a superseded row cannot be rewritten or moved into reviewed or queued. A message that was already queued, then superseded by the existing replacement draft, can still receive provider delivery updates, including a first RFC Message-ID. Execute is revoked from `PUBLIC`, `anon`, and `authenticated`, and granted to `service_role`, in that same file.
 
 Until that migration is approved and applied, saving wording on the preview returns an unavailable result. Generating a draft, reading it, and the disabled-sending state can still be checked. `CUSTOMER_ORIGIN`, `COMMUNICATIONS_LINK_SECRET`, and `COMMUNICATIONS_FROM_EMAIL` are still required before a draft can be created or approved. Sending stays off.
 

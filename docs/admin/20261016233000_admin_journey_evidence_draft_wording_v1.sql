@@ -7,7 +7,8 @@
 --   subject and body are not used as PL/pgSQL variable names
 --   staff prose cannot contain HTML, a scheme, www., or a #t= token
 --   the stored upload URL must occur once and must name the same action
---   a superseded draft cannot be rewritten, reviewed, or queued
+--   a superseded row cannot be rewritten, and cannot move into REVIEWED or QUEUED
+--   a queued message superseded by resend_draft can still receive delivery updates
 --   the public command wrapper returns denied for that refusal
 --   PUBLIC, anon, and authenticated lose execute in this same file
 
@@ -20,6 +21,9 @@ SET search_path = ''
 AS $$
 BEGIN
   IF OLD.superseded_by IS NULL THEN RETURN NEW; END IF;
+  -- resend_draft leaves a failed send QUEUED. Provider webhooks then update
+  -- delivery fields without changing that lifecycle. A transition into
+  -- REVIEWED or QUEUED is still a new approval or send, and is refused.
   IF NEW.subject IS DISTINCT FROM OLD.subject
      OR NEW.body_text IS DISTINCT FROM OLD.body_text
      OR NEW.body_html IS DISTINCT FROM OLD.body_html
@@ -33,7 +37,7 @@ BEGIN
      OR NEW.template_version IS DISTINCT FROM OLD.template_version
      OR NEW.content_version IS DISTINCT FROM OLD.content_version
      OR NEW.link_key_version IS DISTINCT FROM OLD.link_key_version
-     OR NEW.lifecycle IN ('REVIEWED', 'QUEUED')
+     OR (NEW.lifecycle IS DISTINCT FROM OLD.lifecycle AND NEW.lifecycle IN ('REVIEWED', 'QUEUED'))
   THEN
     RAISE EXCEPTION 'superseded_communication_immutable' USING ERRCODE = 'P0001';
   END IF;

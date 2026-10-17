@@ -270,6 +270,53 @@
   color: var(--muted);
 }
 
+.fieldHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  min-width: 0;
+}
+.fieldHeading label { display: inline; min-width: 0; }
+.helpOptional { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); }
+.helpTrigger { display: inline-flex; align-items: center; flex: none; }
+.helpButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--green-dark);
+  cursor: help;
+}
+.helpButton:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+.helpPanel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: min(54vh, 310px);
+  overflow-y: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 15%, transparent);
+}
+.helpPanel p + p, .helpPanel ol + p { margin-top: 10px; }
+.helpPanel ol { margin: 8px 0 0; padding-left: 22px; }
+.helpPanel li + li { margin-top: 4px; }
+.helpPanel code { overflow-wrap: anywhere; font-size: 13px; }
+
 .hint {
   margin-top: 8px;
   color: var(--muted-strong);

@@ -612,6 +612,9 @@ th { background: color-mix(in srgb, var(--lime) 22%, var(--surface)); font-size:
 .email-preview-label { display: block; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
 .email-preview-link { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92rem; }
 .email-preview-frame { width: 100%; min-height: 28rem; border: 1px solid var(--line); background: #fff; }
+/* Keep the actual saved email isolated in a sandbox, without a text-area-like border. */
+.email-preview > .email-preview-frame { border: 0; min-height: 24rem; }
+.email-preview > .email-preview-frame-branded { min-height: 48rem; }
 .email-message { min-height: 18rem; }
 .email-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .email-actions button { min-height: 2.75rem; }

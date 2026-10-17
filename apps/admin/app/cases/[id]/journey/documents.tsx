@@ -94,19 +94,20 @@ function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
 }
 
 function EmailPreview({
-  recipient, subject, bodyText, bodyHtml,
+  recipient, subject, bodyText, bodyHtml, branded,
 }: {
   recipient: string
   subject: string
   bodyText: string | null
   bodyHtml: string | null
+  branded: boolean
 }) {
   const snapshot = trustedEmailSnapshot(bodyText, bodyHtml)
   return <div className="email-preview">
     <p><span className="email-preview-label">Recipient</span> <span>{recipient}</span></p>
     <p><span className="email-preview-label">Subject</span> <span>{subject || "No subject"}</span></p>
     {snapshot
-      ? <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={snapshot.html} />
+      ? <iframe className={branded ? "email-preview-frame email-preview-frame-branded" : "email-preview-frame"} title="Branded email preview" sandbox="" srcDoc={snapshot.html} />
       : <p className="notice">The stored email preview is not available.</p>}
     {/* Both saved formats are validated; display only the actual customer-facing email. */}
   </div>
@@ -173,7 +174,7 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
     {command.done && <p className="notice">Reload this step to view the saved email. Approval remains blocked until the new version is read back.</p>}
-    {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} />}
+    {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} branded={message.templateVersion >= 3} />}
     {message.templateVersion < 3 && !command.done && <p className="muted">This saved email uses an earlier template. Editing the wording does not upgrade its design; newly generated drafts use version 3 after approval.</p>}
     {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>
     {canEdit && editing && <form className="record-form" onSubmit={saveWording}>

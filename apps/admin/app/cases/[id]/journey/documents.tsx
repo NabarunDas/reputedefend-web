@@ -130,7 +130,7 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const documentTitle = requirementCoverage(documents).included?.title ?? null
   const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
-  const editingPreview = message.templateVersion >= 3 && parts.uploadUrl
+  const editingPreview = (message?.templateVersion ?? 0) >= 3 && parts.uploadUrl
     ? brandStoredEvidenceEmail({
       subject: nextSubject,
       body: `${nextMessage.trim()}\n\n${parts.uploadUrl}`,

@@ -27,13 +27,13 @@ The corrected function still refuses a merge when any of these are true:
 
 One exact business match reuses that business. One exact location match reuses that location. The stored country text stays `UK`, `uk`, or `United Kingdom`.
 
-## DEV deployment and separate Production release
+## DEV and Production deployment records
 
-`docs/customer/proposed-intake-country-key-v1.sql` remains the reviewed source and is intentionally outside the shared `supabase/migrations` chain. It was **applied to DEV only** on 17 October 2026 as tracked Supabase migration `20261017113702_get_help_legacy_country_match_dev_v1`. Production remains unchanged.
+`docs/customer/proposed-intake-country-key-v1.sql` remains the reviewed source and is intentionally outside the shared `supabase/migrations` chain. It was applied on 17 October 2026 as separately tracked migrations: DEV `20261017113702_get_help_legacy_country_match_dev_v1` and Production `20261017114946_get_help_legacy_country_match_prod_v1`. It remains outside the shared migration chain so DEV-only changes cannot accidentally reach Production.
 
 DEV deployment was explicitly approved and completed in Supabase project `profilerelaunch-dev` (`rmzozuiamjcclvtgutgd`) after head `20261017111446`. The new head is `20261017113702`. Checked after install: UK/United Kingdom/GB resolve to `gb`, US remains `us`, intake RPC retains `service_role` execute and the helper is unavailable to anon/authenticated. No historical business or location rows were rewritten.
 
-**Production remains pending:** Production Supabase is in a separate organisation not accessible to the current connector. Confirm its migration head and exact intake function body before applying this source to Production; require the same four-comparison-only change. Apply the DB compatibility patch before releasing the new Get Help form on `main`. Do not merge unrelated DEV Admin changes into Production, and do not copy the DEV-only migration history into Production.
+**Production database complete:** Production project `ProfileRelaunch-prod` (`cxwwekdzkkjjbiyofrov`) was directly inspected with authorised access. Original head `20261014170000` and intake function body were compared to the canonical applied baseline before deployment. The only business-logic change is the four country comparisons. Production migration `20261017114946_get_help_legacy_country_match_prod_v1` was installed and verified: UK/U.K./United Kingdom/GB map to `gb`, US remains `us`, helper is inaccessible to `anon` and `authenticated`, and the existing intake remains executable only by `service_role`. Production case count remained 1 before and after. No historical business/location/case rows were rewritten. This document does not authorise other DEV functionality to be deployed to Production.
 
 `CREATE OR REPLACE` preserves the existing `service_role` execute grant on `create_case_intake_v1`. The new key is revoked from `PUBLIC`, `anon`, and `authenticated`, and is not granted to `service_role`. The intake function is `SECURITY DEFINER`, so it can call the key.
 

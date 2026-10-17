@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { privateAppContentSecurityPolicy } from "../../lib/security/content-security-policy.mjs"
+import { adminContentSecurityPolicy } from "../../lib/security/content-security-policy.mjs"
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url))
 
@@ -18,11 +18,13 @@ const config = {
         { key: "Referrer-Policy", value: "no-referrer" },
         { key: "Strict-Transport-Security", value: "max-age=63072000" },
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-        // Same enforced policy as the customer app. Neither workspace loads a
-        // third-party script. The only cross-origin browser request is the
-        // presigned evidence upload to S3. Inline event handlers stay blocked.
-        // Script eval is added only while NODE_ENV is development.
-        { key: "Content-Security-Policy", value: privateAppContentSecurityPolicy() },
+        // The customer app keeps the private policy unchanged. Admin adds only
+        // https://profilerelaunch.com for the public logo in stored email HTML.
+        // No other external image host is allowed. The sandboxed preview stays
+        // opaque. The other cross-origin browser request is the presigned
+        // evidence upload to S3. Inline event handlers stay blocked. Script
+        // eval is added only while NODE_ENV is development.
+        { key: "Content-Security-Policy", value: adminContentSecurityPolicy() },
       ],
     }]
   },

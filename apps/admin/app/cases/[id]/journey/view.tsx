@@ -60,6 +60,7 @@ export function CaseJourneyView({
   brief,
   version,
   documents,
+  replyMailbox = null,
 }: {
   reference: string
   customer: string
@@ -70,6 +71,7 @@ export function CaseJourneyView({
   brief: JourneyIntakeBrief
   version: number
   documents: JourneyDocuments | null
+  replyMailbox?: string | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -174,7 +176,7 @@ function StepWorkspace({
       {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
       {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
     </details>}
-    {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} />}
+    {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} replyMailbox={replyMailbox} />}
     {!step.decision && !showDocuments && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>

@@ -179,6 +179,7 @@ describe("communications admin commands", () => {
     const drafted = await communicationsCommand(req({
       operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key,
       actionId: "99999999-9999-4999-8999-999999999999", fromAddress: "attacker@example.com",
+      replyTo: "attacker@example.com", replyToAddress: "attacker@example.com",
     }))
     expect(drafted.status).toBe(200)
     expect(mocks.rpc.mock.calls[0][1].p_payload).toEqual(expect.objectContaining({
@@ -187,6 +188,8 @@ describe("communications admin commands", () => {
     expect(mocks.rpc.mock.calls[0][1].p_payload).not.toEqual(expect.objectContaining({
       fromAddress: "attacker@example.com",
     }))
+    expect(mocks.rpc.mock.calls[0][1].p_payload).not.toHaveProperty("replyTo")
+    expect(mocks.rpc.mock.calls[0][1].p_payload).not.toHaveProperty("replyToAddress")
     const reviewed = await communicationsCommand(req({
       operation: "review", communicationId: key, version: 1, fromAddress: "attacker@example.com",
     }))

@@ -1,4 +1,5 @@
 import { brandName } from "@/lib/brand"
+import { renderCustomerEmail } from "@/lib/email/customer-message"
 import {
   CASE_SERVICES,
   CONTACT_SUBJECTS,
@@ -118,17 +119,24 @@ export function customerAcknowledgementSubject() {
   return brandedSubject("We have received your enquiry")
 }
 
+function customerAcknowledgement() {
+  return renderCustomerEmail({
+    title: "We have received your enquiry",
+    blocks: [
+      { type: "paragraph", text: "Hello," },
+      { type: "paragraph", text: "Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it." },
+      { type: "paragraph", text: "Sending this form does not, by itself, create a client or paid-service relationship." },
+      { type: "paragraph", text: "If we need anything further, we will write to the email address you provided." },
+      { type: "paragraph", text: "Kind regards," },
+      { type: "paragraph", text: "ProfileRelaunch Support Team" },
+    ],
+  })
+}
+
 export function customerAcknowledgementText() {
-  return [
-    "Hello,",
-    "Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it.",
-    "Sending this form does not, by itself, create a client or paid-service relationship.",
-    "If we need anything further, we will write to the email address you provided.",
-    "Kind regards,",
-    "ProfileRelaunch Support Team",
-  ].join("\n\n")
+  return customerAcknowledgement()?.text ?? ""
 }
 
 export function customerAcknowledgementHtml() {
-  return `<div>${customerAcknowledgementText().split("\n\n").map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}</div>`
+  return customerAcknowledgement()?.html ?? ""
 }

@@ -113,6 +113,10 @@ export async function communicationsCommand(request: NextRequest) {
     delete payload.fromAddress
     delete payload.sender
     delete payload.senderAddress
+    delete payload.replyTo
+    delete payload.reply_to
+    delete payload.replyToAddress
+    delete payload.reply_to_address
     // Draft and review use the server snapshot. A browser subject, body or
     // recipient is not a wording edit. Queue still receives those fields so a
     // changed snapshot is refused.

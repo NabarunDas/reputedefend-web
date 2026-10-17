@@ -264,16 +264,17 @@ describe("enquiry email mapping", () => {
     })).toBe("[ProfileRelaunch] General enquiry — Review issue")
     expect(customerAcknowledgementSubject()).toBe("[ProfileRelaunch] We have received your enquiry")
     const acknowledgement = customerAcknowledgementText()
-    expect(acknowledgement.split("\n\n")).toEqual([
-      "Hello,",
-      "Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it.",
-      "Sending this form does not, by itself, create a client or paid-service relationship.",
-      "If we need anything further, we will write to the email address you provided.",
-      "Kind regards,",
-      "ProfileRelaunch Support Team",
-    ])
-    expect(customerAcknowledgementHtml()).toBe(`<div>${acknowledgement.split("\n\n").map(paragraph => `<p>${paragraph}</p>`).join("")}</div>`)
+    const acknowledgementHtml = customerAcknowledgementHtml()
+    expect(acknowledgement).toContain("Hello,")
+    expect(acknowledgement).toContain("Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it.")
+    expect(acknowledgement).toContain("does not, by itself, create a client or paid-service relationship")
+    expect(acknowledgement).toContain("If we need anything further, we will write to the email address you provided.")
+    expect(acknowledgement.trim().endsWith("sign-in credentials.")).toBe(true)
+    expect(acknowledgementHtml).toContain("<!DOCTYPE html>")
+    expect(acknowledgementHtml).toContain("profile-relaunch-logo.png")
+    expect(acknowledgementHtml).toContain("does not, by itself, create a client or paid-service relationship")
     expect(acknowledgement).not.toMatch(/\b(reply|outcome|guarantee|payment|delivered|lifecycle|template)\b/i)
+    expect(acknowledgementHtml).not.toMatch(/\b(reply|outcome|guarantee|payment|delivered)\b/i)
   })
 
   it("includes case-intake fields and omits empty optionals and any honeypot", () => {

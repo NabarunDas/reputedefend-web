@@ -5,6 +5,7 @@ import { authConfig } from "@/lib/auth/config"
 import { sendDisabledReason } from "@/lib/communications/gate"
 import { linkSecret } from "@/lib/communications/link"
 import { mailFromAddress } from "@/lib/communications/mail"
+import { monitoredReplyMailbox } from "@/lib/communications/brand-email"
 import { loadCaseCommunications } from "@/lib/communications/queries"
 import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
 import { buildJourneyDocuments } from "@/lib/case-journey/documents"
@@ -103,5 +104,6 @@ export default async function CaseJourneyPage({
     brief={readyBrief}
     version={detail.version}
     documents={documents}
+    replyMailbox={monitoredReplyMailbox()}
   />
 }

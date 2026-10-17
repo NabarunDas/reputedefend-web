@@ -108,8 +108,7 @@ function EmailPreview({
     {snapshot
       ? <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={snapshot.html} />
       : <p className="notice">The stored email preview is not available.</p>}
-    <p className="email-preview-label">Plain text</p>
-    {snapshot ? <p className="preserve-lines">{snapshot.text}</p> : <p>No message text.</p>}
+    {/* Both saved formats are validated; display only the actual customer-facing email. */}
   </div>
 }
 
@@ -130,7 +129,7 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const documentTitle = requirementCoverage(documents).included?.title ?? null
   const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
-  const editingPreview = parts.uploadUrl
+  const editingPreview = message.templateVersion >= 3 && parts.uploadUrl
     ? brandStoredEvidenceEmail({
       subject: nextSubject,
       body: `${nextMessage.trim()}\n\n${parts.uploadUrl}`,
@@ -173,16 +172,11 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
     {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
-    {command.done && <div className="email-preview">
-      <p><span className="email-preview-label">Subject</span> <span>{nextSubject}</span></p>
-      <p className="preserve-lines">{nextMessage}</p>
-      {parts.uploadUrl && <p className="email-preview-link">{parts.uploadUrl}</p>}
-      <p>Reload this step before approving. The saved email is shown only after it is read back.</p>
-    </div>}
+    {command.done && <p className="notice">Reload this step to view the saved email. Approval remains blocked until the new version is read back.</p>}
     {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} />}
-    {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>}
+    {message.templateVersion < 3 && !command.done && <p className="muted">This saved email uses an earlier template. Editing the wording does not upgrade its design; newly generated drafts use version 3 after approval.</p>}
+    {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>
     {canEdit && editing && <form className="record-form" onSubmit={saveWording}>
-      {editingPreview && <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={editingPreview.html} />}
       <p>Edit the subject and message, then save. The upload link is not edited.</p>
       <label>Subject
         <input aria-label="Email subject" value={nextSubject} maxLength={200} onChange={event => setNextSubject(event.target.value)} />
@@ -190,8 +184,15 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
       <label>Message
         <textarea className="email-message" aria-label="Email message" value={nextMessage} maxLength={4000} rows={16} onChange={event => setNextMessage(event.target.value)} />
       </label>
-      <p className="email-preview-label">Secure upload link</p>
-      <p className="email-preview-link">{parts.uploadUrl}</p>
+      {editingPreview && <details className="guided-details">
+        <summary>Preview unsaved changes</summary>
+        <p className="muted">Preview only. Save and reload to review the actual stored email before approval.</p>
+        <iframe className="email-preview-frame" title="Unsaved email preview" sandbox="" srcDoc={editingPreview.html} />
+      </details>}
+      <details className="guided-details">
+        <summary>View secure upload link (not editable)</summary>
+        <p className="email-preview-link">{parts.uploadUrl}</p>
+      </details>
       <div className="email-actions">
         <button type="submit" disabled={command.busy}>Save changes</button>
         <button type="button" onClick={cancelEditing} disabled={command.busy}>Cancel editing</button>

@@ -86,6 +86,7 @@ describe("persistGetHelpCase", () => {
       caseRef: "PR-26-7K4M2Q",
       caseType: "PROFILE_RECOVERY",
       receiptEmailSent: true,
+      receiptEmailStatus: "sent",
     })
     expect(result).not.toHaveProperty("case_id")
     expect(result).not.toHaveProperty("customer_id")
@@ -226,6 +227,7 @@ describe("persistGetHelpCase", () => {
     expect(result.ok).toBe(true)
     expect(result.caseRef).toBe("PR-26-7K4M2Q")
     expect(result.receiptEmailSent).toBe(false)
+    expect(result.receiptEmailStatus).toBe("unavailable")
   })
 
   it("still returns case success when the internal email fails", async () => {
@@ -264,8 +266,61 @@ describe("persistGetHelpCase", () => {
     })
     expect(result.ok).toBe(true)
     expect(result.receiptEmailSent).toBe(true)
+    expect(result.receiptEmailStatus).toBe("sent")
     expect(send).not.toHaveBeenCalled()
     expect(updates).toEqual([])
+  })
+
+  it("reports intentional DEV suppression without sending or calling it an unexpected failure", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("DEV_CASE_INTAKE_NO_EMAIL", "true")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    try {
+      const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake: async () => intakeRow(),
+        updateCommunication: async (_id, values) => { updates.push(values) },
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.ok).toBe(true)
+      expect(result.receiptEmailSent).toBe(false)
+      expect(result.receiptEmailStatus).toBe("suppressed")
+      expect(send).not.toHaveBeenCalled()
+      expect(updates.some((value) => value.status === "FAILED")).toBe(true)
+      expect(JSON.stringify(result)).not.toMatch(/couldn't send|unexpected/i)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("keeps an already sent receipt as sent when the DEV suppression gate is on", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("DEV_CASE_INTAKE_NO_EMAIL", "true")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+    try {
+      const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake: async () => intakeRow({
+          was_existing: true,
+          customer_communication_status: "SENT",
+          internal_communication_status: "SENT",
+        }),
+        updateCommunication: async () => {},
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.receiptEmailSent).toBe(true)
+      expect(result.receiptEmailStatus).toBe("sent")
+      expect(send).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("retries FAILED and PENDING communications without creating new rows", async () => {
@@ -304,6 +359,7 @@ describe("persistGetHelpCase", () => {
     expect(result.ok).toBe(true)
     expect(result.caseRef).toBe("PR-26-7K4M2Q")
     expect(result.receiptEmailSent).toBe(false)
+    expect(result.receiptEmailStatus).toBe("unavailable")
     expect(send).not.toHaveBeenCalled()
     expect(updates.some((value) => value.status === "FAILED")).toBe(true)
     expect(JSON.stringify(updates)).not.toMatch(/re_test_key|SUPABASE|stack/i)
@@ -426,6 +482,7 @@ describe("persistGetHelpCase", () => {
     expect(result.ok).toBe(true)
     expect(result.caseRef).toBe("PR-26-7K4M2Q")
     expect(result.receiptEmailSent).toBe(false)
+    expect(result.receiptEmailStatus).toBe("unavailable")
     expect(send).not.toHaveBeenCalled()
     expect(updates.every((value) => value.status === "FAILED")).toBe(true)
     expect(JSON.stringify(updates)).not.toMatch(/corrupted|stack|Beta Ltd/i)

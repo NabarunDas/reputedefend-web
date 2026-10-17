@@ -310,6 +310,45 @@ textarea.control {
   line-height: 1.5;
 }
 
+.combo {
+  position: relative;
+}
+
+.listbox {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.option,
+.optionActive,
+.optionEmpty {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.optionActive {
+  background: color-mix(in srgb, var(--green) 14%, var(--paper));
+}
+
+.optionEmpty {
+  cursor: default;
+  color: var(--muted-strong);
+}
+
 .metaRow {
   display: flex;
   align-items: flex-start;

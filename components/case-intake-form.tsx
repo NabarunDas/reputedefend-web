@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from "react"
+import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, Check } from "lucide-react"
 import {
   FORMAL_CASE_SERVICES,
@@ -18,6 +18,8 @@ import {
 } from "@/lib/enquiry"
 import { sendLeadConversion } from "@/lib/analytics"
 import { HoneypotField } from "@/components/honeypot-field"
+import { CountryCombobox } from "@/components/country-combobox"
+import { countryLabel } from "@/lib/countries"
 import { brandName } from "@/lib/brand"
 import styles from "./case-intake.module.css"
 
@@ -41,6 +43,18 @@ export const DETAILS_HINTS = {
     "Include when the issue started, any messages you received, changes you noticed and what you have already tried. You don't need to know the cause.",
 } as const
 
+export const COUNTRY_HINT =
+  "Where this business is located. This is the business location, not a verified purchasing establishment, and it does not decide whether you can request help."
+
+export const WEBSITE_HINT =
+  "Optional. For example, https://www.example.com. Leave this blank if the business has no website."
+
+export const PROFILE_URL_HINT =
+  "Optional. In Google Maps, open the profile, choose Share, and copy the link (for example https://maps.app.goo.gl/…). Leave this blank if the profile is suspended, missing, or you cannot open it. Do not enter a Google password or verification code."
+
+export const REVIEW_URL_HINT =
+  "Optional. Paste a link to the review, such as a Google Maps share link. Leave this blank if the review is missing or you cannot open it."
+
 export const EVIDENCE_NOTE =
   "Start with the links, messages and details you have. If additional documents or screenshots would materially help the assessment, we'll tell you what is needed after reviewing your submission."
 
@@ -56,7 +70,8 @@ export const PERSISTED_SUCCESS_COPY = {
   referenceLabel: "Case reference",
   review: "A ProfileRelaunch specialist will review the information you submitted. We may contact you if clarification is needed.",
   keep: "Keep this reference for future correspondence.",
-  emailSent: "We've also sent this reference to your email address.",
+  emailSent: "We've passed this reference to the email provider. That does not confirm it has reached your inbox.",
+  emailSuppressed: "Your case has been safely recorded. Confirmation email is not sent in this development environment. Please keep the reference above.",
   emailFailed: "We couldn't send the confirmation email right now, but your case has been safely recorded. Please keep the reference above.",
 } as const
 
@@ -128,6 +143,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
   const [simulated, setSimulated] = useState(false)
   const [persistedRef, setPersistedRef] = useState("")
   const [receiptEmailSent, setReceiptEmailSent] = useState(false)
+  const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "suppressed" | "unavailable" | "">("")
   const [statusText, setStatusText] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -205,7 +221,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
     setStatus("idle")
     setDeliveryError(false)
     setStatusText("")
-    setStep((current) => (current < 4 ? ((current + 1) as 2 | 3 | 4) : current))
+    if (step < 4) setStep((current) => ((current + 1) as 2 | 3 | 4))
     requestFocus("heading")
   }
 
@@ -213,14 +229,19 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
     goToStep((step > 1 ? step - 1 : 1) as 1 | 2 | 3)
   }
 
-  async function submitCase(event: FormEvent<HTMLFormElement>) {
+  async function submitCase(event: FormEvent<HTMLFormElement> | { preventDefault: () => void; currentTarget: EventTarget | null }) {
     event.preventDefault()
     if (step < 4) {
       continueToNext()
       return
     }
 
-    const companyFax = new FormData(event.currentTarget).get("companyFax")
+    const form = event.currentTarget instanceof HTMLFormElement
+      ? event.currentTarget
+      : event.currentTarget instanceof HTMLButtonElement
+        ? event.currentTarget.form
+        : null
+    const companyFax = form ? new FormData(form).get("companyFax") : ""
     const body = { ...payload(), companyFax: typeof companyFax === "string" ? companyFax : "" }
     const localErrors = collectEnquiryErrors(body)
     if (Object.keys(localErrors).length) {
@@ -253,6 +274,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         persisted?: boolean
         caseRef?: string
         receiptEmailSent?: boolean
+        receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
         errors?: EnquiryFieldErrors
       }
 
@@ -260,6 +282,11 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         setSimulated(json.simulated === true)
         setPersistedRef(json.persisted && json.caseRef ? json.caseRef : "")
         setReceiptEmailSent(json.receiptEmailSent === true)
+        setReceiptEmailStatus(
+          json.receiptEmailStatus === "sent" || json.receiptEmailStatus === "suppressed" || json.receiptEmailStatus === "unavailable"
+            ? json.receiptEmailStatus
+            : json.receiptEmailSent === true ? "sent" : "unavailable",
+        )
         setStatus("success")
         setStatusText(json.simulated ? "Development simulation complete." : "Your case has been received.")
         // Validated service enum only. The case reference is never sent.
@@ -304,7 +331,13 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <p className={styles.caseRef}>{persistedRef}</p>
             <p>{PERSISTED_SUCCESS_COPY.review}</p>
             <p>{PERSISTED_SUCCESS_COPY.keep}</p>
-            <p>{receiptEmailSent ? PERSISTED_SUCCESS_COPY.emailSent : PERSISTED_SUCCESS_COPY.emailFailed}</p>
+            <p>{
+              receiptEmailStatus === "suppressed"
+                ? PERSISTED_SUCCESS_COPY.emailSuppressed
+                : receiptEmailSent || receiptEmailStatus === "sent"
+                  ? PERSISTED_SUCCESS_COPY.emailSent
+                  : PERSISTED_SUCCESS_COPY.emailFailed
+            }</p>
           </>
         ) : (
           <>
@@ -402,11 +435,11 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>
                 <input name="businessName" value={values.businessName} onChange={(event) => update("businessName", event.target.value)} maxLength={enquiryLimits.businessName} autoComplete="organization" required />
               </Field>
-              <Field id={`${formId}-country`} label="Country" hint="Where the business is based. ProfileRelaunch is designed for businesses internationally." error={errors.country}>
-                <input name="country" value={values.country} onChange={(event) => update("country", event.target.value)} maxLength={enquiryLimits.country} autoComplete="country-name" required />
+              <Field id={`${formId}-country`} label="Country" hint={COUNTRY_HINT} error={errors.country}>
+                <CountryCombobox name="country" value={values.country} onChange={(next) => update("country", next)} required />
               </Field>
-              <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
-                <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(event) => update("websiteUrl", event.target.value)} maxLength={enquiryLimits.websiteUrl} autoComplete="url" inputMode="url" placeholder="https://" />
+              <Field id={`${formId}-websiteUrl`} label="Business website URL" hint={WEBSITE_HINT} optional error={errors.websiteUrl}>
+                <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(event) => update("websiteUrl", event.target.value)} maxLength={enquiryLimits.websiteUrl} autoComplete="url" inputMode="url" placeholder="https://www.example.com" />
               </Field>
             </div>
           </div>
@@ -415,13 +448,13 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         {step === 3 && (
           <div className={styles.fields}>
             {showsBusinessProfileUrl(values.service) && (
-              <Field id={`${formId}-businessProfileUrl`} label="Google Business Profile URL" optional error={errors.businessProfileUrl}>
-                <input name="businessProfileUrl" type="url" value={values.businessProfileUrl} onChange={(event) => update("businessProfileUrl", event.target.value)} maxLength={enquiryLimits.businessProfileUrl} autoComplete="off" inputMode="url" placeholder="https://" />
+              <Field id={`${formId}-businessProfileUrl`} label="Google Business Profile URL" hint={PROFILE_URL_HINT} optional error={errors.businessProfileUrl}>
+                <input name="businessProfileUrl" type="url" value={values.businessProfileUrl} onChange={(event) => update("businessProfileUrl", event.target.value)} maxLength={enquiryLimits.businessProfileUrl} autoComplete="off" inputMode="url" placeholder="https://maps.app.goo.gl/…" />
               </Field>
             )}
             {showsReviewUrl(values.service) && (
-              <Field id={`${formId}-reviewUrl`} label="Relevant review URL" optional error={errors.reviewUrl}>
-                <input name="reviewUrl" type="url" value={values.reviewUrl} onChange={(event) => update("reviewUrl", event.target.value)} maxLength={enquiryLimits.reviewUrl} autoComplete="off" inputMode="url" placeholder="https://" />
+              <Field id={`${formId}-reviewUrl`} label="Relevant review URL" hint={REVIEW_URL_HINT} optional error={errors.reviewUrl}>
+                <input name="reviewUrl" type="url" value={values.reviewUrl} onChange={(event) => update("reviewUrl", event.target.value)} maxLength={enquiryLimits.reviewUrl} autoComplete="off" inputMode="url" placeholder="https://maps.app.goo.gl/…" />
               </Field>
             )}
             <Field
@@ -451,7 +484,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
               <ReviewItem label="Email" value={values.email} />
               <ReviewItem label="Phone" value={values.phone} />
               <ReviewItem label="Business" value={values.businessName} />
-              <ReviewItem label="Country" value={values.country} />
+              <ReviewItem label="Country" value={countryLabel(values.country)} />
               <ReviewItem label="Website" value={values.websiteUrl} />
             </ReviewBlock>
             <ReviewBlock title="The issue" onEdit={() => goToStep(3)}>
@@ -501,11 +534,14 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
           </button>
         ) : <span />}
         {step < 4 ? (
-          <button type="button" className={styles.next} onClick={continueToNext}>
+          // A separate element from Submit. Enter on Continue must not retarget a
+          // control that has just become type="submit", which would validate the
+          // unchecked review boxes in the same keydown.
+          <button key="continue" type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (
-          <button type="submit" className={styles.next} disabled={status === "loading"} aria-describedby={`${formId}-submit-note`}>
+          <button key="submit" type="button" className={styles.next} disabled={status === "loading"} aria-describedby={`${formId}-submit-note`} onClick={submitCase}>
             {status === "loading" ? "Submitting…" : "Submit assessment"}
           </button>
         )}
@@ -534,7 +570,7 @@ function Field({
   optional?: boolean
   hint?: string
   error?: string
-  children: ReactElement<InputHTMLAttributes<HTMLInputElement> | TextareaHTMLAttributes<HTMLTextAreaElement>>
+  children: ReactElement<{ id?: string; className?: string; "aria-invalid"?: boolean; "aria-describedby"?: string }>
 }) {
   const hintId = hint ? `${id}-hint` : undefined
   const errorId = error ? `${id}-error` : undefined

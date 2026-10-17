@@ -28,6 +28,10 @@ export type CommunicationRow = {
   recipient: string
   subject: string | null
   bodyText: string | null
+  /** Stored HTML snapshot. Absent on reads that predate the branded snapshot. */
+  bodyHtml?: string | null
+  /** Snapshotted Reply-To. Absent when no monitored mailbox was confirmed. */
+  replyToAddress?: string | null
   provider: string | null
   providerMessageId: string | null
   lastError: string | null

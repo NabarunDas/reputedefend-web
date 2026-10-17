@@ -1,2 +1,7 @@
-export { brandStoredEvidenceEmail, composeEvidenceRequestEmail } from "../../../../lib/email/evidence-request"
-export { monitoredReplyMailbox } from "../../../../lib/email/reply-mailbox"
+export {
+  brandStoredEvidenceEmail,
+  composeEvidenceRequestEmail,
+  editableEvidenceIntroduction,
+  renderEvidenceRequest,
+} from "../../../../lib/email/evidence-request"
+export { confirmedReplyMailbox, monitoredReplyMailbox } from "../../../../lib/email/reply-mailbox"

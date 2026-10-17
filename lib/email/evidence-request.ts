@@ -5,7 +5,7 @@ import {
   trustedActionUrl,
   type CustomerEmailBlock,
 } from "./customer-message"
-import { monitoredReplyMailbox } from "./reply-mailbox"
+import { validReplyMailbox } from "./reply-mailbox"
 
 const vagueTitles = new Set([
   "other",
@@ -47,11 +47,92 @@ export function splitTrailingActionUrl(body: string | null): { prose: string; up
   return { prose: body.slice(0, match.index).trim(), uploadUrl: match[0] }
 }
 
+export const evidenceReplySentence = "If you're unsure what to provide or have any questions, simply reply to this email. We're happy to help."
+export const evidenceWebsiteSentence = "If you're unsure what to provide, you can contact our team through the ProfileRelaunch website."
+export const evidenceButtonLabel = "Upload your documents securely"
+export const evidenceButtonSentence = "Please use the secure button below to upload your documents."
+const evidenceTitle = "Supporting documents"
+const canonicalIntroduction = [
+  "Hello,",
+  `Thank you for contacting ${brandName}.`,
+  "We're reviewing your Google Business Profile enquiry. To help us understand the issue and advise you on the next steps, could you please provide the following information?",
+]
+
+const structuralParagraphs = new Set([
+  brandName,
+  evidenceTitle,
+  "Documents requested",
+  evidenceButtonSentence,
+  evidenceButtonLabel,
+  evidenceReplySentence,
+  evidenceWebsiteSentence,
+  "Kind regards,",
+  `${brandName} Support Team`,
+  customerEmailSecurityNote,
+  brandSiteUrl,
+  "Restore visibility. Protect your reputation.",
+])
+
 function replyParagraph(replyTo: string | null | undefined): string {
-  if (replyTo && monitoredReplyMailbox({ COMMUNICATIONS_REPLY_TO_EMAIL: replyTo })) {
-    return "If you're unsure what to provide or have any questions, simply reply to this email. We're happy to help."
+  return validReplyMailbox(replyTo) ? evidenceReplySentence : evidenceWebsiteSentence
+}
+
+function introductionParagraphs(introduction: string | null | undefined): string[] | null {
+  const source = introduction?.trim() ? introduction.trim() : canonicalIntroduction.join("\n\n")
+  const paragraphs = source.split(/\n{2,}/).map(item => item.trim()).filter(Boolean)
+  if (paragraphs.length === 0 || paragraphs.some(item => item.length > 2000)) return null
+  return paragraphs
+}
+
+/**
+ * The operator-editable introduction of a branded evidence email.
+ * The document list, button, sign-off and footer stay on the server.
+ */
+export function editableEvidenceIntroduction(body: string, uploadUrl: string): string | null {
+  if (!body || !trustedActionUrl(uploadUrl) || body.includes("#t=")) return null
+  const paragraphs = body.split(/\n{2,}/).map(item => item.replaceAll(uploadUrl, "").trim()).filter(Boolean)
+  const intro: string[] = []
+  for (const paragraph of paragraphs) {
+    if (paragraph === "Documents requested" || paragraph.startsWith("Documents requested\n")) break
+    if (structuralParagraphs.has(paragraph) || /^Case reference:\s+\S/.test(paragraph)) continue
+    if (paragraph.split("\n").every(line => /^[-•]\s+\S/.test(line.trim()))) continue
+    intro.push(paragraph)
   }
-  return "If you're unsure what to provide, you can contact our team through the ProfileRelaunch website."
+  const text = intro.join("\n\n").trim()
+  if (text.length < 20 || text.length > 4000) return null
+  if (/[<>]|#t=|https?:\/\/|javascript:|data:|www\./i.test(text)) return null
+  return text
+}
+
+export function renderEvidenceRequest(input: {
+  caseRef: string
+  documents: string[]
+  uploadUrl: string
+  replyTo?: string | null
+  introduction?: string | null
+  subject?: string | null
+}): { subject: string; html: string; text: string } | null {
+  const caseRef = input.caseRef.trim()
+  if (!caseRef || caseRef.length > 40 || /[\s<>]/.test(caseRef)) return null
+  if (!trustedActionUrl(input.uploadUrl) || input.uploadUrl.includes("#t=")) return null
+  const items = evidenceDocumentItems(input.documents.join("; "))
+  if (!items || items.join("\n") !== input.documents.map(item => item.trim()).join("\n")) return null
+  const introduction = introductionParagraphs(input.introduction)
+  if (!introduction) return null
+  const blocks: CustomerEmailBlock[] = [
+    ...introduction.map(text => ({ type: "paragraph" as const, text })),
+    { type: "list", title: "Documents requested", items },
+    { type: "paragraph", text: evidenceButtonSentence },
+    { type: "button", label: evidenceButtonLabel, url: input.uploadUrl },
+    { type: "paragraph", text: replyParagraph(input.replyTo) },
+    { type: "paragraph", text: "Kind regards," },
+    { type: "paragraph", text: `${brandName} Support Team` },
+  ]
+  const rendered = renderCustomerEmail({ title: evidenceTitle, blocks, caseRef })
+  if (!rendered) return null
+  const subject = input.subject?.trim() || evidenceRequestSubject.replaceAll("{case_ref}", caseRef)
+  if (!subject.includes(caseRef) || subject.length > 200) return null
+  return { subject, html: rendered.html, text: rendered.text }
 }
 
 export function composeEvidenceRequestEmail(input: {
@@ -60,34 +141,7 @@ export function composeEvidenceRequestEmail(input: {
   uploadUrl: string
   replyTo?: string | null
 }): { subject: string; html: string; text: string } | null {
-  const caseRef = input.caseRef.trim()
-  if (!caseRef || caseRef.length > 40 || /[\s<>]/.test(caseRef)) return null
-  if (input.documents.length === 0 || input.documents.some(item => vagueTitles.has(item.trim().toLowerCase()))) return null
-  if (!trustedActionUrl(input.uploadUrl) || input.uploadUrl.includes("#t=")) return null
-  const items = evidenceDocumentItems(input.documents.join("; "))
-  if (!items || items.join("\n") !== input.documents.map(item => item.trim()).join("\n")) return null
-  const blocks: CustomerEmailBlock[] = [
-    { type: "paragraph", text: "Hello," },
-    { type: "paragraph", text: `Thank you for contacting ${brandName}.` },
-    { type: "paragraph", text: "We're reviewing your Google Business Profile enquiry. To help us understand the issue and advise you on the next steps, could you please provide the following information?" },
-    { type: "list", title: "Documents requested", items },
-    { type: "paragraph", text: "Please use the secure button below to upload your documents." },
-    { type: "button", label: "Upload your documents securely", url: input.uploadUrl },
-    { type: "paragraph", text: replyParagraph(input.replyTo) },
-    { type: "paragraph", text: "Kind regards," },
-    { type: "paragraph", text: `${brandName} Support Team` },
-  ]
-  const rendered = renderCustomerEmail({
-    title: "Supporting documents",
-    blocks,
-    caseRef,
-  })
-  if (!rendered) return null
-  return {
-    subject: evidenceRequestSubject.replaceAll("{case_ref}", caseRef),
-    html: rendered.html,
-    text: rendered.text,
-  }
+  return renderEvidenceRequest(input)
 }
 
 /**
@@ -123,7 +177,7 @@ export function brandStoredEvidenceEmail(input: {
   if (parts.uploadUrl) {
     blocks.push({ type: "button", label: "Upload your documents securely", url: parts.uploadUrl })
   }
-  if (input.replyTo && monitoredReplyMailbox({ COMMUNICATIONS_REPLY_TO_EMAIL: input.replyTo })) {
+  if (validReplyMailbox(input.replyTo)) {
     const already = blocks.some(block => block.type === "paragraph" && /\breply\b/i.test(block.text))
     if (!already) {
       blocks.push({ type: "paragraph", text: replyParagraph(input.replyTo) })

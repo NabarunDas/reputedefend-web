@@ -199,6 +199,24 @@ describe("evidence suggestions", () => {
       uploadUrl: upload,
     })
     expect(splitEvidenceMessage(`See https://evil.example/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa and ${upload}`).uploadUrl).toBeNull()
+    const mismatched = buildJourneyDocuments({
+      caseType: "PROFILE_RECOVERY",
+      issue: "Suspended",
+      businessName: "Mercer Bakery",
+      requests: [first],
+      history: history([{
+        ...message("2026-02-02T00:00:00.000Z"),
+        evidenceRequestId: first.id,
+        bodyText: `Please send the shop licence.\n\n${upload}`,
+        bodyHtml: "<p>Please send the shop licence.</p>",
+      }]),
+      sendDisabledReason: sendDisabled,
+      drafting,
+    })
+    expect(approvalNotice(mismatched)).toEqual({
+      blocked: true,
+      text: "This draft cannot be approved until the saved email preview matches the stored message.",
+    })
   })
 })
 
@@ -216,6 +234,7 @@ function message(draftedAt: string, id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
     recipient: "alex@example.com",
     subject: "Evidence needed",
     bodyText: "Please upload the notice.",
+    bodyHtml: "<p>Please upload the notice.</p>",
     provider: null,
     providerMessageId: null,
     lastError: null,

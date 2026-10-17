@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { confirmedReplyMailbox } from "../communications/brand-email"
 import { devCaseJourneyPreviewEnabled } from "./gate"
 import { evidenceWording } from "./wording-text"
 
@@ -72,6 +73,7 @@ export async function journeyWordingCommand(request: NextRequest) {
       p_version: record.version,
       p_subject: wording.subject,
       p_body: wording.message,
+      p_reply_to: confirmedReplyMailbox() ?? "",
     })
     if (result?.status === "success") {
       return reply("The wording was saved. The email has not been sent.", 200, { id: result.id, version: result.version })

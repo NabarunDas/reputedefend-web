@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   brandStoredEvidenceEmail,
   composeEvidenceRequestEmail,
+  editableEvidenceIntroduction,
   evidenceDocumentItems,
   evidenceRequestSubject,
+  renderEvidenceRequest,
 } from "@/lib/email/evidence-request"
 import { customerEmailLogoUrl } from "@/lib/email/customer-message"
 
@@ -92,6 +94,45 @@ describe("evidence request email", () => {
     })?.html).not.toContain("Other evidence")
   })
 
+  it("keeps one list, one button, one sign-off and one footer when the introduction is edited again", () => {
+    const first = composeEvidenceRequestEmail({
+      caseRef: "PR-1042",
+      documents: ["Shop licence", "Proof of operating location"],
+      uploadUrl: upload,
+    })
+    const intro = editableEvidenceIntroduction(first?.text ?? "", upload)
+    expect(intro).toContain("Thank you for contacting ProfileRelaunch.")
+    expect(intro).not.toContain("Documents requested")
+    expect(intro).not.toContain(upload)
+    const edited = "Hello Alex,\n\nPlease send the two documents named below so we can review the listing."
+    const second = renderEvidenceRequest({
+      caseRef: "PR-1042",
+      documents: ["Shop licence", "Proof of operating location"],
+      uploadUrl: upload,
+      introduction: edited,
+      subject: first?.subject,
+    })
+    const third = renderEvidenceRequest({
+      caseRef: "PR-1042",
+      documents: ["Shop licence", "Proof of operating location"],
+      uploadUrl: upload,
+      introduction: editableEvidenceIntroduction(second?.text ?? "", upload),
+      subject: second?.subject,
+    })
+    for (const message of [first, second, third]) {
+      expect(message?.html.match(/<ul/g)).toHaveLength(1)
+      expect(message?.html.match(/<li/g)).toHaveLength(2)
+      expect(message?.html.match(/Upload your documents securely/g)).toHaveLength(1)
+      expect(message?.html.match(/ProfileRelaunch Support Team/g)).toHaveLength(1)
+      expect(message?.html.match(/For your security/g)).toHaveLength(1)
+      expect(message?.text.match(new RegExp(upload, "g"))).toHaveLength(1)
+    }
+    expect(third?.text).toBe(second?.text)
+    expect(third?.html).toBe(second?.html)
+    expect(second?.text).toContain(edited.split("\n\n")[0])
+    expect(second?.text).not.toContain("Thank you for contacting ProfileRelaunch.")
+  })
+
   it("renders a snapshotted bullet list once, including its footer", () => {
     const branded = brandStoredEvidenceEmail({
       subject: "Supporting documents for your ProfileRelaunch enquiry — PR-1042",
@@ -124,7 +165,7 @@ describe("evidence request email", () => {
     expect(sql).toContain("'EVIDENCE_REQUEST'")
     expect(sql).toMatch(/3,\s*\n\s*'Evidence request'/)
     expect(sql).toContain("'DRAFT'")
-    expect(sql).not.toMatch(/^\s*UPDATE\b/im)
+    expect(sql).not.toMatch(/UPDATE\s+(admin_private|public)\.communication_templates/i)
     expect(sql).not.toMatch(/SET\s+status\s*=\s*'APPROVED'/i)
     expect(sql).toContain("template_version, 0) < 3")
   })

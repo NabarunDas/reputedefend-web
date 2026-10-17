@@ -6,7 +6,9 @@
  * which names one open request. Nothing here decides that the step is complete.
  */
 
+import { editableEvidenceIntroduction } from "../communications/brand-email"
 import { deliveryLabel, type CaseCommunicationRead, type DeliveryStatus } from "../communications/model"
+import { trustedEmailSnapshot } from "../communications/snapshot"
 import type { EvidenceRequest } from "../evidence/model"
 
 const caseTypeLabels: Record<string, string> = {
@@ -61,6 +63,8 @@ export type JourneyEvidenceMessage = {
   recipient: string
   subject: string | null
   bodyText: string | null
+  bodyHtml: string | null
+  replyToAddress: string | null
   lifecycle: string | null
   delivery: string
   contentLocked: boolean
@@ -103,6 +107,8 @@ type MessageSource = {
   recipient: string
   subject: string | null
   bodyText: string | null
+  bodyHtml?: string | null
+  replyToAddress?: string | null
   lifecycle: string | null
   deliveryStatus: DeliveryStatus | null
   legacyStatus: string | null
@@ -273,6 +279,8 @@ function toMessage(row: MessageSource): JourneyEvidenceMessage {
     recipient: row.recipient,
     subject: row.subject,
     bodyText: row.bodyText,
+    bodyHtml: row.bodyHtml ?? null,
+    replyToAddress: row.replyToAddress ?? null,
     lifecycle: row.lifecycle,
     delivery: deliveryLabel({ deliveryStatus: row.deliveryStatus, legacyStatus: row.legacyStatus }),
     contentLocked: row.contentLocked,
@@ -331,13 +339,19 @@ export function splitEvidenceMessage(body: string | null): { prose: string; uplo
   const matches = [...body.matchAll(uploadUrlPattern)]
   const match = matches[0]
   if (!match || matches.length !== 1 || match.index == null) return { prose: body.trim(), uploadUrl: null }
-  if (body.slice(match.index + match[0].length).trim() !== "") return { prose: body.trim(), uploadUrl: null }
-  return { prose: body.slice(0, match.index).trim(), uploadUrl: match[0] }
+  const uploadUrl = match[0]
+  if (body.slice(match.index + uploadUrl.length).trim() === "") {
+    return { prose: body.slice(0, match.index).trim(), uploadUrl }
+  }
+  const prose = editableEvidenceIntroduction(body, uploadUrl)
+  if (!prose) return { prose: body.trim(), uploadUrl: null }
+  return { prose, uploadUrl }
 }
 
 /**
- * Other open requests stay open. Approval is withheld only when this email
- * is not linked to an open request at all.
+ * Other open requests stay open. Approval is withheld when this email is not
+ * linked to an open request, or when the stored HTML and plain text cannot
+ * be shown as the same snapshot.
  */
 export function approvalNotice(documents: JourneyDocuments): { blocked: boolean; text: string | null } {
   const message = documents.currentMessage
@@ -345,6 +359,9 @@ export function approvalNotice(documents: JourneyDocuments): { blocked: boolean;
   const { included, omitted } = requirementCoverage(documents)
   if (!included) {
     return { blocked: true, text: "This email is not linked to an open document request, so it cannot be approved." }
+  }
+  if (!trustedEmailSnapshot(message.bodyText, message.bodyHtml)) {
+    return { blocked: true, text: "This draft cannot be approved until the saved email preview matches the stored message." }
   }
   if (omitted.length === 0) return { blocked: false, text: null }
   const leftOut = omitted.map(request => request.title).join("; ")

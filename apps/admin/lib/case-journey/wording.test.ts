@@ -84,8 +84,19 @@ describe("journey wording command", () => {
       p_version: 2,
       p_subject: "Documents for your profile",
       p_body: message,
+      p_reply_to: "",
     })
     expect(mocks.rpc.mock.calls[0][1].p_token).not.toBe("a".repeat(64))
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "yes")
+    mocks.rpc.mockClear()
+    expect((await POST(req())).status).toBe(200)
+    expect(mocks.rpc.mock.calls[0][1].p_reply_to).toBe("")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+    mocks.rpc.mockClear()
+    expect((await POST(req({ ...body, replyTo: "attacker@example.com" }))).status).toBe(400)
+    expect((await POST(req())).status).toBe(200)
+    expect(mocks.rpc.mock.calls[0][1].p_reply_to).toBe("cases@profilerelaunch.com")
     mocks.rpc.mockClear()
     expect((await POST(req({ ...body, recipient: "other@example.com" }))).status).toBe(400)
     expect((await POST(req({ ...body, fromAddress: "attacker@example.com" }))).status).toBe(400)

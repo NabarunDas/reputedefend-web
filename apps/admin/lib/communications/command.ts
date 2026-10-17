@@ -6,6 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { communicationsSendEnabled, sendDisabledReason } from "./gate"
 import { deriveCommunicationActionId, prepareCommunicationAccessLink } from "./link"
+import { confirmedReplyMailbox } from "./brand-email"
 import { mailFromAddress } from "./mail"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -117,6 +118,8 @@ export async function communicationsCommand(request: NextRequest) {
     delete payload.reply_to
     delete payload.replyToAddress
     delete payload.reply_to_address
+    delete payload.serverReplyTo
+    delete payload.server_reply_to
     // Draft and review use the server snapshot. A browser subject, body or
     // recipient is not a wording edit. Queue still receives those fields so a
     // changed snapshot is refused.
@@ -132,6 +135,8 @@ export async function communicationsCommand(request: NextRequest) {
       if (operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && !config.customerOrigin) {
         return reply("The customer site origin is not configured.", 503)
       }
+      const mailbox = confirmedReplyMailbox()
+      if (mailbox) payload.serverReplyTo = mailbox
       if (payload.templateKey === "EVIDENCE_REQUEST" || operation === "resend_draft") {
         const actionId = deriveCommunicationActionId(key)
         const prepared = prepareCommunicationAccessLink(actionId)

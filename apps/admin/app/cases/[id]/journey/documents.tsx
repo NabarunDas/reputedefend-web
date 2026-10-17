@@ -6,7 +6,6 @@ import { lifecycleLabel } from "@/lib/communications/model"
 import {
   alreadySaved,
   approvalNotice,
-  evidencePreviewBlocks,
   messageIsLive,
   openRequirements,
   requirementCoverage,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/case-journey/documents"
 import { evidenceWording } from "@/lib/case-journey/wording-text"
 import { brandStoredEvidenceEmail } from "@/lib/communications/brand-email"
+import { trustedEmailSnapshot } from "@/lib/communications/snapshot"
 
 const evidenceEndpoint = "/api/evidence/command"
 const communicationEndpoint = "/api/operations/communications"
@@ -94,31 +94,22 @@ function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
 }
 
 function EmailPreview({
-  recipient, subject, body, documentTitle, replyMailbox,
+  recipient, subject, bodyText, bodyHtml,
 }: {
   recipient: string
   subject: string
-  body: string | null
-  documentTitle: string | null
-  replyMailbox: string | null
+  bodyText: string | null
+  bodyHtml: string | null
 }) {
-  const blocks = evidencePreviewBlocks(body)
-  const branded = body ? brandStoredEvidenceEmail({ subject, body, documentTitle, replyTo: replyMailbox }) : null
-  const requested = branded?.documents ?? []
+  const snapshot = trustedEmailSnapshot(bodyText, bodyHtml)
   return <div className="email-preview">
     <p><span className="email-preview-label">Recipient</span> <span>{recipient}</span></p>
     <p><span className="email-preview-label">Subject</span> <span>{subject || "No subject"}</span></p>
-    {requested.length > 0 && <div>
-      <p className="email-preview-label">Documents requested</p>
-      <ul>{requested.map(item => <li key={item}>{item}</li>)}</ul>
-    </div>}
-    {branded && <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={branded.html} />}
-    {blocks.length === 0 && <p>No message text.</p>}
-    {blocks.map((block, index) => {
-      if (block.type === "list") return <ul key={index}>{block.items.map(item => <li key={item}>{item}</li>)}</ul>
-      if (block.type === "link") return <p key={index} className="email-preview-link">{block.url}</p>
-      return <p key={index}>{block.text}</p>
-    })}
+    {snapshot
+      ? <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={snapshot.html} />
+      : <p className="notice">The stored email preview is not available.</p>}
+    <p className="email-preview-label">Plain text</p>
+    {snapshot ? <p className="preserve-lines">{snapshot.text}</p> : <p>No message text.</p>}
   </div>
 }
 
@@ -136,8 +127,6 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   const savedSubject = message.subject || ""
   const savedProse = parts.prose
   const dirty = nextSubject.trim() !== savedSubject.trim() || nextMessage.trim() !== savedProse.trim()
-  const previewSubject = command.done ? nextSubject : savedSubject
-  const previewBody = command.done && parts.uploadUrl ? `${nextMessage.trim()}\n\n${parts.uploadUrl}` : message.bodyText
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const documentTitle = requirementCoverage(documents).included?.title ?? null
   const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
@@ -184,7 +173,13 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
     {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
-    {!editing && <EmailPreview recipient={message.recipient} subject={previewSubject} body={previewBody} documentTitle={documentTitle} replyMailbox={replyMailbox} />}
+    {command.done && <div className="email-preview">
+      <p><span className="email-preview-label">Subject</span> <span>{nextSubject}</span></p>
+      <p className="preserve-lines">{nextMessage}</p>
+      {parts.uploadUrl && <p className="email-preview-link">{parts.uploadUrl}</p>}
+      <p>Reload this step before approving. The saved email is shown only after it is read back.</p>
+    </div>}
+    {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} />}
     {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>}
     {canEdit && editing && <form className="record-form" onSubmit={saveWording}>
       {editingPreview && <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={editingPreview.html} />}

@@ -26,7 +26,7 @@ AS $function$
     'approvedAt', p.approved_at,
     'retiredAt', p.retired_at
   ) END;
-$function$
+$function$;
 
 REVOKE ALL ON FUNCTION admin_private.template_public_json_v1(admin_private.communication_templates)
   FROM PUBLIC, anon, authenticated, service_role;

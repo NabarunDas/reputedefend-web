@@ -1,15 +1,16 @@
 -- Proposed intake country key v1
--- Source of DEV-only applied migration 20261017113702_get_help_legacy_country_match_dev_v1.
--- Reviewed and applied to profilerelaunch-dev on 2026-10-17. Not applied
--- to Production. Stored outside the shared supabase/migrations chain.
--- Production requires independent migration-head/function verification
--- and application in its own environment before release.
+-- Reviewed source for separately tracked Get Help migrations applied on 2026-10-17:
+-- DEV: 20261017113702_get_help_legacy_country_match_dev_v1.
+-- PROD: 20261017114946_get_help_legacy_country_match_prod_v1.
+-- Production intake body was checked against the canonical baseline before apply.
+-- Both deployments were verified. This source remains outside the shared
+-- supabase/migrations chain; do not reapply either migration.
 --
 -- It does not edit 20260915193000_case_intake_transaction_v1.sql.
 -- It does not replace public._intake_norm_text.
 -- It does not update historical customers, businesses, locations or cases.
 -- DEV was applied after head 20261017111446_admin_journey_03b_evidence_draft_wording_dev_v1.
--- Do not reapply to DEV; use the source for a separately verified Production release.
+-- Do not reapply to either environment; further changes require a new review.
 
 CREATE OR REPLACE FUNCTION public._intake_country_key(p_value text)
 RETURNS text

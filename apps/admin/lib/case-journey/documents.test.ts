@@ -5,10 +5,11 @@ import {
   alreadySaved,
   buildJourneyDocuments,
   draftingAvailability,
+  approvalNotice,
   requirementCoverage,
   requirementText,
   requirementTitle,
-  reviewBlockReason,
+  splitEvidenceMessage,
   suggestDocuments,
 } from "./documents"
 
@@ -158,8 +159,11 @@ describe("evidence suggestions", () => {
       included: { id: first.id, title: "Shop licence" },
       omitted: [{ id: second.id, title: "Proof of operating location" }],
     })
-    expect(reviewBlockReason(built)).toMatch(/includes only “Shop licence”/)
-    expect(reviewBlockReason(built)).toMatch(/Not included: Proof of operating location/)
+    const notice = approvalNotice(built)
+    expect(notice.blocked).toBe(false)
+    expect(notice.text).toMatch(/covers only “Shop licence”/)
+    expect(notice.text).toMatch(/Proof of operating location/)
+    expect(notice.text).toMatch(/does not cancel/)
     const alone = buildJourneyDocuments({
       caseType: "PROFILE_RECOVERY",
       issue: "Suspended",
@@ -170,8 +174,14 @@ describe("evidence suggestions", () => {
       drafting,
     })
     expect(requirementCoverage(alone).omitted).toEqual([])
-    expect(reviewBlockReason(alone)).toBeNull()
+    expect(approvalNotice(alone)).toEqual({ blocked: false, text: null })
     expect(alone.currentMessage?.contentLocked).toBe(true)
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    expect(splitEvidenceMessage(`Please send the shop licence.\n\n${upload}`)).toEqual({
+      prose: "Please send the shop licence.",
+      uploadUrl: upload,
+    })
+    expect(splitEvidenceMessage(`See https://evil.example/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa and ${upload}`).uploadUrl).toBeNull()
   })
 })
 

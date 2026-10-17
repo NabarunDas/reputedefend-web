@@ -107,6 +107,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_incoming_mail_conversations_v1.sql"))!,
     readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
+  await db.exec(readFileSync(new URL("../../../../docs/admin/20261016233000_admin_journey_evidence_draft_wording_v1.sql", import.meta.url), "utf8"))
 }, 45000)
 
 afterAll(async () => { await db.close() })
@@ -994,5 +995,278 @@ describe("communications outgoing mail SQL", () => {
       "select delivery_status, provider_message_id from public.communications where id=$1",
       [unknown.id],
     )).rows[0]).toEqual({ delivery_status: "ACCEPTANCE_UNKNOWN", provider_message_id: null })
+  })
+})
+
+describe("evidence draft wording", () => {
+  const prose = "Please send the shop licence and the suspension notice. A photo of the shop front is enough."
+
+  async function revise(communicationId: string, version: number, subject: string, body: string, request = key()) {
+    return rpc("admin_communication_revise_evidence_draft_v1", [token, request, communicationId, version, subject, body])
+  }
+
+  it("replaces an unlocked draft, keeps the upload link, and replays the same request", async () => {
+    const created = await draft()
+    expect(created?.status).toBe("success")
+    const original = (await db.query<{
+      subject: string
+      body_text: string
+      recipient: string
+      evidence_request_id: string
+      customer_action_id: string
+      content_version: number
+    }>("select subject, body_text, recipient, evidence_request_id, customer_action_id, content_version from public.communications where id=$1", [created!.id])).rows[0]
+    const upload = original.body_text.match(/https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f-]{36}/)?.[0]
+    expect(upload).toBe(`https://customer.profilerelaunch.com/action/${original.customer_action_id}`)
+    expect(original.body_text).not.toContain("#t=")
+    const request = key()
+    const revised = await revise(created!.id!, created!.version!, "Documents for your profile", prose, request)
+    expect(revised).toMatchObject({ status: "success", lifecycle: "DRAFT", version: 1, contentVersion: original.content_version + 1, supersedes: created!.id })
+    expect(await revise(created!.id!, created!.version!, "Documents for your profile", prose, request)).toEqual(revised)
+    expect(await revise(created!.id!, created!.version!, "A different subject", prose, request)).toMatchObject({ status: "conflict" })
+    const saved = (await db.query<{
+      subject: string
+      body_text: string
+      recipient: string
+      evidence_request_id: string
+      customer_action_id: string
+      sender_address: string | null
+      content_locked: boolean
+      lifecycle: string
+    }>("select subject, body_text, recipient, evidence_request_id, customer_action_id, sender_address, content_locked, lifecycle from public.communications where id=$1", [revised!.id])).rows[0]
+    expect(saved).toMatchObject({
+      subject: "Documents for your profile",
+      recipient: original.recipient,
+      evidence_request_id: original.evidence_request_id,
+      customer_action_id: original.customer_action_id,
+      sender_address: null,
+      content_locked: false,
+      lifecycle: "DRAFT",
+    })
+    expect(saved.body_text).toBe(`${prose}\n\n${upload}`)
+    expect(saved.body_text).not.toContain("#t=")
+    const previous = (await db.query<{ subject: string; body_text: string; superseded_by: string; lifecycle: string }>(
+      "select subject, body_text, superseded_by, lifecycle from public.communications where id=$1",
+      [created!.id],
+    )).rows[0]
+    expect(previous).toMatchObject({ subject: original.subject, body_text: original.body_text, superseded_by: revised!.id, lifecycle: "DRAFT" })
+    const audit = (await db.query<{ actor_id: string; action: string; target_id: string; request_id: string; details: { operation: string; previousId: string } }>(
+      "select actor_id, action, target_id, request_id, details from public.admin_audit_events where target_id=$1",
+      [revised!.id],
+    )).rows[0]
+    expect(audit).toMatchObject({
+      actor_id: uid,
+      action: "COMMUNICATION_CHANGED",
+      target_id: revised!.id,
+      request_id: request,
+      details: { operation: "revise_evidence_draft", previousId: created!.id },
+    })
+    expect(JSON.stringify(audit)).not.toContain("#t=")
+    expect(await revise(created!.id!, created!.version!, "Documents for your profile", prose)).toMatchObject({ status: "conflict" })
+    expect(await rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: created!.id, fromAddress: "ops@example.com",
+    }, created!.version! + 1])).toMatchObject({ status: "denied" })
+    await expect(db.query("update public.communications set subject='Changed old subject' where id=$1", [created!.id])).rejects.toThrow(/superseded_communication_immutable/)
+    const approved = await rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: revised!.id, fromAddress: "ops@example.com",
+    }, revised!.version])
+    expect(approved).toMatchObject({ status: "success", lifecycle: "REVIEWED" })
+    expect((await db.query<{ content_locked: boolean; sender_address: string; body_text: string }>(
+      "select content_locked, sender_address, body_text from public.communications where id=$1",
+      [revised!.id],
+    )).rows[0]).toMatchObject({ content_locked: true, sender_address: "ops@example.com", body_text: `${prose}\n\n${upload}` })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(0)
+    expect(await revise(revised!.id!, approved!.version!, "Documents for your profile", prose)).toMatchObject({ status: "denied" })
+    await expect(db.query("update public.communications set body_text='A different body that is long enough to store.' where id=$1", [revised!.id])).rejects.toThrow(/immutable/i)
+  })
+
+  it("refuses malicious wording, a stale version, a closed case, and an anonymous caller", async () => {
+    const created = await draft()
+    const before = (await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n
+    for (const body of [
+      "Please send <b>the licence</b> for the shop.",
+      "Please upload it at https://evil.example/steal instead.",
+      "Please use javascript:alert(1) to open the form.",
+      "Please include the token #t=abcdef in the message.",
+      "Short",
+    ]) {
+      expect(await revise(created!.id!, created!.version!, "Documents for your profile", body)).toMatchObject({ status: "invalid" })
+    }
+    expect(await revise(created!.id!, created!.version!, "Bad\nsubject", prose)).toMatchObject({ status: "invalid" })
+    expect(await revise(created!.id!, 99, "Documents for your profile", prose)).toMatchObject({ status: "conflict" })
+    expect(await rpc("admin_communication_revise_evidence_draft_v1", ["b".repeat(64), key(), created!.id, created!.version, "Documents for your profile", prose])).toMatchObject({ status: "unauthorized" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(before)
+    await db.query("update public.cases set status='CLOSED' where id=$1", [caseId])
+    expect(await revise(created!.id!, created!.version!, "Documents for your profile", prose)).toMatchObject({ status: "denied" })
+    for (const role of ["anon", "authenticated"]) {
+      expect((await db.query<{ ok: boolean }>(
+        "select has_function_privilege($1,'public.admin_communication_revise_evidence_draft_v1(text,uuid,uuid,integer,text,text)','EXECUTE') as ok",
+        [role],
+      )).rows[0].ok).toBe(false)
+    }
+    expect((await db.query<{ ok: boolean }>(
+      "select has_function_privilege('service_role','public.admin_communication_revise_evidence_draft_v1(text,uuid,uuid,integer,text,text)','EXECUTE') as ok",
+    )).rows[0].ok).toBe(true)
+  })
+
+  it("accepts a later provider event on a queued message superseded by resend_draft", async () => {
+    const created = await reviewed()
+    const queued = await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(created.id), created.version])
+    expect(queued).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+    await rpc("communication_mark_provider_accepted_v1", [created.id, "resend", "msg_superseded", `send-email:${created.id}:v1`])
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_sup_bounce", "email.bounced", "msg_superseded", "2026-09-29T12:12:00.000Z", "permanent",
+    ])).toMatchObject({ applied: true })
+    const original = (await db.query<{
+      subject: string
+      body_text: string
+      body_html: string
+      recipient: string
+      sender_address: string
+      customer_action_id: string
+      evidence_request_id: string
+      content_version: number
+      lifecycle: string
+    }>(
+      `select subject, body_text, body_html, recipient, sender_address, customer_action_id, evidence_request_id, content_version, lifecycle
+       from public.communications where id=$1`,
+      [created.id],
+    )).rows[0]
+    expect(original.lifecycle).toBe("QUEUED")
+    expect(original.body_text).toContain(`/action/${original.customer_action_id}`)
+    expect(original.body_text).not.toContain("#t=")
+
+    await db.query("update public.customers set email='alex.new@example.com' where id=$1", [customer])
+    await db.query(
+      "insert into public.customer_contact_verifications(customer_id,channel,verified_value,verified_by,evidence) values($1,'email','alex.new@example.com',$2,'Verified the replacement address on a live call.')",
+      [customer, uid],
+    )
+    await db.query(
+      `insert into public.customer_actions(customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by)
+       values($1,$2,$3,$4,'CASE_ACCESS',$5,'alex.new@example.com', now() + interval '2 days', $6)`,
+      [customer, business, location, caseId, secretHash(), uid],
+    )
+    const replacementLink = accessMaterial()
+    const outboxBefore = (await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n
+    const replacement = await rpc("admin_communication_command_v1", [token, key(), "resend_draft", {
+      communicationId: created.id,
+      caseId,
+      customerOrigin: "https://customer.profilerelaunch.com",
+      actionId: replacementLink.actionId,
+      secretHash: replacementLink.secretHash,
+    }, null])
+    expect(replacement).toMatchObject({ status: "success", lifecycle: "DRAFT" })
+    const linked = (await db.query<{ superseded_by: string; lifecycle: string; record_version: number }>(
+      "select superseded_by, lifecycle, record_version from public.communications where id=$1",
+      [created.id],
+    )).rows[0]
+    expect(linked).toMatchObject({ superseded_by: replacement!.id, lifecycle: "QUEUED" })
+    const auditsBefore = (await db.query<{ n: number }>(
+      "select count(*)::int as n from public.admin_audit_events where target_id=$1",
+      [created.id],
+    )).rows[0].n
+    const replacementAudit = (await db.query<{ action: string; details: { operation: string } }>(
+      "select action, details from public.admin_audit_events where target_id=$1",
+      [replacement!.id],
+    )).rows[0]
+    expect(replacementAudit).toMatchObject({ action: "COMMUNICATION_CHANGED", details: { operation: "resend_draft" } })
+    expect(JSON.stringify(replacementAudit)).not.toContain("#t=")
+    expect(JSON.stringify(replacementAudit)).not.toContain(replacementLink.token)
+
+    const sent = await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_sup_sent", "email.sent", "msg_superseded", "2026-09-29T12:30:00.000Z", null, "<Original-Out@mail.example>",
+    ])
+    expect(sent).toMatchObject({ status: "success", applied: false, duplicate: false })
+    expect((await db.query<{ rfc_message_id: string; delivery_status: string }>(
+      "select rfc_message_id, delivery_status from public.communications where id=$1",
+      [created.id],
+    )).rows[0]).toEqual({ rfc_message_id: "original-out@mail.example", delivery_status: "BOUNCED" })
+
+    const complaint = await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_sup_complaint", "email.complained", "msg_superseded", "2026-09-29T13:00:00.000Z", null, "<other-rfc@mail.example>",
+    ])
+    expect(complaint).toMatchObject({ status: "success", applied: true, duplicate: false })
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_sup_complaint", "email.complained", "msg_superseded", "2026-09-29T13:00:00.000Z",
+    ])).toMatchObject({ duplicate: true })
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_sup_older", "email.delivered", "msg_superseded", "2026-09-29T12:00:00.000Z",
+    ])).toMatchObject({ applied: false, duplicate: false })
+
+    const after = (await db.query<{
+      subject: string
+      body_text: string
+      body_html: string
+      recipient: string
+      sender_address: string
+      customer_action_id: string
+      evidence_request_id: string
+      content_version: number
+      lifecycle: string
+      delivery_status: string
+      rfc_message_id: string
+      superseded_by: string
+    }>(
+      `select subject, body_text, body_html, recipient, sender_address, customer_action_id, evidence_request_id,
+              content_version, lifecycle, delivery_status, rfc_message_id, superseded_by
+       from public.communications where id=$1`,
+      [created.id],
+    )).rows[0]
+    expect(after).toMatchObject({
+      subject: original.subject,
+      body_text: original.body_text,
+      body_html: original.body_html,
+      recipient: original.recipient,
+      sender_address: original.sender_address,
+      customer_action_id: original.customer_action_id,
+      evidence_request_id: original.evidence_request_id,
+      content_version: original.content_version,
+      lifecycle: "QUEUED",
+      delivery_status: "COMPLAINED",
+      rfc_message_id: "original-out@mail.example",
+      superseded_by: replacement!.id,
+    })
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from admin_private.communication_delivery_events where communication_id=$1 and event_type='COMPLAINED'",
+      [created.id],
+    )).rows[0].n).toBe(1)
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.admin_audit_events where target_id=$1",
+      [created.id],
+    )).rows[0].n).toBe(auditsBefore)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(outboxBefore)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.jobs where job_type='SEND_EMAIL'")).rows[0].n).toBe(0)
+    expect(await rpc("communication_record_rfc_message_id_v1", [created.id, "<original-out@mail.example>"])).toMatchObject({
+      status: "success", duplicate: true, rfcMessageId: "original-out@mail.example",
+    })
+    expect(await rpc("communication_record_rfc_message_id_v1", [created.id, "<changed-rfc@mail.example>"])).toMatchObject({ status: "conflict" })
+    await expect(db.query("update public.communications set rfc_message_id='changed-rfc@mail.example' where id=$1", [created.id])).rejects.toThrow(/RFC Message-ID is immutable/)
+
+    const currentVersion = (await db.query<{ record_version: number }>(
+      "select record_version from public.communications where id=$1",
+      [created.id],
+    )).rows[0].record_version
+    expect(await rpc("admin_communication_command_v1", [token, key(), "review", {
+      communicationId: created.id, fromAddress: "ops@example.com",
+    }, currentVersion])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(created.id), currentVersion])).toMatchObject({ status: "denied" })
+    expect(await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(replacement!.id), replacement!.version])).toMatchObject({ status: "denied" })
+    await expect(db.query("update public.communications set subject='Changed old subject' where id=$1", [created.id])).rejects.toThrow(/immutable/)
+    await expect(db.query("update public.communications set lifecycle='REVIEWED' where id=$1", [created.id])).rejects.toThrow(/superseded_communication_immutable/)
+    expect((await db.query<{ subject: string; lifecycle: string; body_text: string }>(
+      "select subject, lifecycle, body_text from public.communications where id=$1",
+      [created.id],
+    )).rows[0]).toEqual({ subject: original.subject, lifecycle: "QUEUED", body_text: original.body_text })
+    const replacementRow = (await db.query<{ customer_action_id: string; body_text: string }>(
+      "select customer_action_id, body_text from public.communications where id=$1",
+      [replacement!.id],
+    )).rows[0]
+    expect(replacementRow.customer_action_id).toBe(replacementLink.actionId)
+    expect(replacementRow.customer_action_id).not.toBe(original.customer_action_id)
+    expect(replacementRow.body_text).toContain(`/action/${replacementLink.actionId}`)
+    expect(replacementRow.body_text).not.toContain(original.customer_action_id)
+    expect(replacementRow.body_text).not.toContain("#t=")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(outboxBefore)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.jobs where job_type='SEND_EMAIL'")).rows[0].n).toBe(0)
   })
 })

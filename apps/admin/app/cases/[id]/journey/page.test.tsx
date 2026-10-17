@@ -322,7 +322,7 @@ describe("the case journey route", () => {
       searchParams: Promise.resolve({}),
     }))
     expect(screen.getByRole("heading", { name: "Review Request & Request Documents" })).toBeInTheDocument()
-    expect(screen.getByText("Choose the documents, save the requirement, then review the email. Saving does not contact the customer.")).toBeInTheDocument()
+    expect(screen.getByText("Choose the documents, save one request, then edit and approve the email. Approving does not send it.")).toBeInTheDocument()
     expect(screen.getByText("The business profile was suspended without warning.")).toBeInTheDocument()
     expect(screen.getByRole("checkbox", { name: "Include Google suspension or rejection notice" })).toBeChecked()
     expect(screen.getByRole("button", { name: "Save evidence requirements" })).toBeEnabled()

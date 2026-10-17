@@ -273,15 +273,33 @@ export function requirementCoverage(documents: JourneyDocuments): {
   }
 }
 
-/** A reviewed draft must not leave other open requirements unrequested without saying so. */
-export function reviewBlockReason(documents: JourneyDocuments): string | null {
+const uploadUrlPattern = /https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+/** The editable message is the prose. The upload link stays on its own. */
+export function splitEvidenceMessage(body: string | null): { prose: string; uploadUrl: string | null } {
+  if (!body) return { prose: "", uploadUrl: null }
+  const matches = [...body.matchAll(uploadUrlPattern)]
+  const match = matches[0]
+  if (!match || matches.length !== 1 || match.index == null) return { prose: body.trim(), uploadUrl: null }
+  if (body.slice(match.index + match[0].length).trim() !== "") return { prose: body.trim(), uploadUrl: null }
+  return { prose: body.slice(0, match.index).trim(), uploadUrl: match[0] }
+}
+
+/**
+ * Other open requests stay open. Approval is withheld only when this email
+ * is not linked to an open request at all.
+ */
+export function approvalNotice(documents: JourneyDocuments): { blocked: boolean; text: string | null } {
   const message = documents.currentMessage
-  if (!message || message.lifecycle !== "DRAFT") return null
+  if (!message || message.lifecycle !== "DRAFT") return { blocked: false, text: null }
   const { included, omitted } = requirementCoverage(documents)
   if (!included) {
-    return "This draft is not tied to an open requirement, so it cannot be marked reviewed from this step."
+    return { blocked: true, text: "This email is not linked to an open document request, so it cannot be approved." }
   }
-  if (omitted.length === 0) return null
+  if (omitted.length === 0) return { blocked: false, text: null }
   const leftOut = omitted.map(request => request.title).join("; ")
-  return `This email includes only “${included.title}”. Not included: ${leftOut}. Reviewing it would leave those requirements unrequested. Cancel the requirements that should not be requested, or cancel this draft and generate a separate email for each remaining requirement.`
+  return {
+    blocked: false,
+    text: `This email covers only “${included.title}”. Still open and not included: ${leftOut}. Approving does not cancel those requests and does not ask the customer for them.`,
+  }
 }

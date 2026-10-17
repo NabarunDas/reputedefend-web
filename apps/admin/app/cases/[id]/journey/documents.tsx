@@ -1,21 +1,24 @@
 "use client"
 
-import { useRef, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { lifecycleLabel } from "@/lib/communications/model"
 import {
   alreadySaved,
+  approvalNotice,
   messageIsLive,
   openRequirements,
   requirementCoverage,
   requirementText,
   requirementTitle,
-  reviewBlockReason,
+  splitEvidenceMessage,
   type JourneyDocuments,
 } from "@/lib/case-journey/documents"
+import { evidenceWording } from "@/lib/case-journey/wording-text"
 
 const evidenceEndpoint = "/api/evidence/command"
 const communicationEndpoint = "/api/operations/communications"
+const wordingEndpoint = "/api/cases/journey/wording"
 
 type Row = { key: string; name: string; title: string; detail: string; selected: boolean }
 
@@ -48,7 +51,7 @@ export function DocumentRequestPanel({ caseId, documents }: { caseId: string; do
     {open.length > 0 && !live && historyReady && (
       <details className="guided-details">
         <summary>Add another requirement</summary>
-        <p>Another requirement is saved separately. The email names only the requirement selected above.</p>
+        <p>A second request stays separate. This email covers one request and its own upload link. It does not cancel the other request.</p>
         <RequirementChecklist caseId={caseId} documents={documents} />
       </details>
     )}
@@ -88,33 +91,87 @@ function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
 }
 
 function EmailDraft({ documents }: { documents: JourneyDocuments }) {
+  const [wordingDirty, setWordingDirty] = useState(false)
   const message = documents.currentMessage
   if (!message) return null
   const reviewed = message.lifecycle === "REVIEWED"
   const draft = message.lifecycle === "DRAFT"
-  const blocked = reviewBlockReason(documents)
+  const notice = approvalNotice(documents)
+  const parts = splitEvidenceMessage(message.bodyText)
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
+  const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
   return <section aria-labelledby="journey-email-heading">
-    <h3 id="journey-email-heading">{draft ? "Email draft" : reviewed ? "Reviewed draft" : "Evidence-request email"}</h3>
-    <p>{draft ? "This is a draft. It is not approved, and it has not been sent." : reviewed ? "Reviewed means the wording is locked. It has not been sent." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
-    {failed && <p>Failure is not delivery. This page does not send the message again. Contact recovery stays on the communications workspace.</p>}
-    {message.lifecycle === "QUEUED" && <p>Queued means the provider has not confirmed delivery. This page does not send another copy.</p>}
-    {message.delivery === "Delivered" && <p>Delivery is recorded. Provider acceptance on its own would not have completed this step.</p>}
-    {message.delivery === "Accepted by email provider" && <p>The provider accepted the message. That is not delivery, and the customer has not necessarily been contacted.</p>}
-    <p>The wording below is the approved template snapshot. Editing the customer-facing wording before review is not available yet.</p>
+    <h3 id="journey-email-heading">{approvedUnsent ? "Approved — Not sent" : draft ? "Email draft" : reviewed ? "Approved email" : "Evidence-request email"}</h3>
+    <p>{draft ? "This is a draft. It has not been approved, and it has not been sent." : approvedUnsent ? "The customer has not been sent this email." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
+    {failed && <p>This email was not delivered. This page does not send it again.</p>}
+    {message.lifecycle === "QUEUED" && <p>This email is waiting. This page does not send another copy.</p>}
+    {message.delivery === "Delivered" && <p>Delivery is recorded.</p>}
+    {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
     <EmailCoverage documents={documents} />
+    {notice.text && <p className="notice">{notice.text}</p>}
     <dl>
       <dt>Recipient</dt><dd>{message.recipient}</dd>
       <dt>Subject</dt><dd>{message.subject || "No subject"}</dd>
       <dt>Message</dt><dd className="preserve-lines">{message.bodyText || "No message text."}</dd>
     </dl>
-    {message.contentLocked && <p>This wording is locked. A later change is a new draft, not an edit of this message.</p>}
-    {reviewed && <p>{documents.sendDisabledReason || "Sending is not offered from this step. The reviewed draft is kept."}</p>}
-    {draft && blocked && <p className="notice">{blocked}</p>}
+    {draft && parts.uploadUrl && <WordingEditor
+      messageId={message.id}
+      version={message.version}
+      subject={message.subject || ""}
+      prose={parts.prose}
+      uploadUrl={parts.uploadUrl}
+      onDirty={setWordingDirty}
+    />}
+    {message.contentLocked && <p>This approved wording is kept. A later change is a new draft.</p>}
     {draft && !documents.drafting.canReview && documents.drafting.reviewReason && <p className="notice">{documents.drafting.reviewReason}</p>}
-    {draft && !blocked && documents.drafting.canReview && <ReviewDraft messageId={message.id} version={message.version} />}
+    {draft && !notice.blocked && documents.drafting.canReview && (!parts.uploadUrl || !wordingDirty) && <ReviewDraft messageId={message.id} version={message.version} />}
     {(draft || reviewed) && <ReplaceDraft messageId={message.id} version={message.version} />}
   </section>
+}
+
+function WordingEditor({
+  messageId, version, subject, prose, uploadUrl, onDirty,
+}: {
+  messageId: string
+  version: number
+  subject: string
+  prose: string
+  uploadUrl: string
+  onDirty: (dirty: boolean) => void
+}) {
+  const command = useCommand()
+  const [nextSubject, setNextSubject] = useState(subject)
+  const [nextMessage, setNextMessage] = useState(prose)
+  const dirty = nextSubject.trim() !== subject.trim() || nextMessage.trim() !== prose.trim()
+  useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!evidenceWording(nextSubject, nextMessage)) {
+      command.setLocalMessage("Use plain wording. Leave out links. The upload link stays as it is.")
+      return
+    }
+    await command.send("wording", wordingEndpoint, {
+      communicationId: messageId,
+      version,
+      subject: nextSubject,
+      message: nextMessage,
+    })
+  }
+  return <form className="record-form" onSubmit={submit}>
+    <p>Edit the subject and message, then save. The upload link is not edited.</p>
+    <label>Subject
+      <input aria-label="Email subject" value={nextSubject} maxLength={200} onChange={event => setNextSubject(event.target.value)} />
+    </label>
+    <label>Message
+      <textarea aria-label="Email message" value={nextMessage} maxLength={4000} rows={6} onChange={event => setNextMessage(event.target.value)} />
+    </label>
+    <p>Upload link</p>
+    <p>{uploadUrl}</p>
+    {dirty && <fieldset disabled={command.busy || command.uncertain || command.done}>
+      <button type="submit">Save wording</button>
+    </fieldset>}
+    <CommandStatus command={command} />
+  </form>
 }
 
 function RequirementChecklist({ caseId, documents }: { caseId: string; documents: JourneyDocuments }) {
@@ -244,9 +301,9 @@ function ReviewDraft({ messageId, version }: { messageId: string; version: numbe
   }
   return <form className="record-form" onSubmit={submit}>
     <fieldset disabled={command.busy || command.uncertain || command.done}>
-      <button type="submit">Mark reviewed</button>
+      <button type="submit">Approve email</button>
     </fieldset>
-    <p>Review locks this wording. It does not send the email.</p>
+    <p>Approving keeps this exact wording. It does not send the email.</p>
     <CommandStatus command={command} />
   </form>
 }

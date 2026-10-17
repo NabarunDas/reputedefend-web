@@ -27,7 +27,11 @@ export type JourneyIntakeBrief = {
   customerName: string
   email: string
   phone: string | null
+  /** Customer record used by the existing contact-verification action. */
+  customerId: string | null
   emailControl: "verified" | "not_recorded" | "records_disagree"
+  /** Null when the communications read was not loaded. False is a loaded, clear result. */
+  emailSuppressed: boolean | null
   businessName: string
   website: string | null
   locationName: string | null
@@ -154,6 +158,91 @@ function textConflict(submitted: string, recorded: string | null | undefined): b
   return !same(left, recorded ?? "")
 }
 
+export type EmailReadinessState = "verified" | "suppressed" | "verified_unchecked" | "not_recorded" | "records_disagree" | "address_differs"
+
+export type EmailReadiness = {
+  submittedEmail: string
+  customerEmail: string
+  sameAddress: boolean
+  state: EmailReadinessState
+  label: string
+  detail: string
+  /** Verification is still missing. Suppression is reported separately. */
+  outstanding: boolean
+}
+
+/**
+ * Verification comes only from the customer record and the case projection agreeing.
+ * Format, delivery, opening a message, or a checkbox on this workflow is not evidence.
+ */
+export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailControl" | "emailSuppressed" | "snapshot">): EmailReadiness {
+  const customerEmail = blank(brief.email)
+  const submittedEmail = blank(brief.snapshot?.email) || customerEmail
+  const sameAddress = !submittedEmail || !customerEmail || same(submittedEmail, customerEmail)
+  const base = { submittedEmail, customerEmail, sameAddress }
+  if (!customerEmail && !submittedEmail) {
+    return {
+      ...base,
+      state: "not_recorded",
+      label: "No email",
+      detail: "There is no customer email to verify. The enquiry can still be reviewed.",
+      outstanding: true,
+    }
+  }
+  if (brief.emailControl === "records_disagree") {
+    return {
+      ...base,
+      state: "records_disagree",
+      label: "Not verified",
+      detail: "The customer record and the case record do not agree, so this address is not shown as verified. A delivered or opened message does not resolve that.",
+      outstanding: true,
+    }
+  }
+  if (brief.emailControl === "verified" && !sameAddress) {
+    return {
+      ...base,
+      state: "address_differs",
+      label: "Not verified",
+      detail: "The customer record has a verification for a different address. The submitted address is not verified.",
+      outstanding: true,
+    }
+  }
+  if (brief.emailControl === "verified" && brief.emailSuppressed === true) {
+    return {
+      ...base,
+      state: "suppressed",
+      label: "Verified and suppressed",
+      detail: "This address is verified, and sending to it is suppressed. A draft is not created. This page does not remove the suppression.",
+      outstanding: false,
+    }
+  }
+  if (brief.emailControl === "verified" && brief.emailSuppressed == null) {
+    return {
+      ...base,
+      state: "verified_unchecked",
+      label: "Verified",
+      detail: "The customer record and the case record both show this address as verified. Whether sending is suppressed could not be loaded.",
+      outstanding: false,
+    }
+  }
+  if (brief.emailControl === "verified") {
+    return {
+      ...base,
+      state: "verified",
+      label: "Verified",
+      detail: "The customer record and the case record both show this address as verified.",
+      outstanding: false,
+    }
+  }
+  return {
+    ...base,
+    state: "not_recorded",
+    label: "Not verified",
+    detail: "A correct email format, a delivered message, or an opened message does not verify this address. The enquiry can still be reviewed.",
+    outstanding: true,
+  }
+}
+
 export function buildJourneyIntake(input: {
   message: string
   reviewUrl: string | null
@@ -166,6 +255,8 @@ export function buildJourneyIntake(input: {
   membershipStatus: string | null
   snapshot: JourneySnapshot | null
   openedAt?: string | null
+  customerId?: string | null
+  emailSuppressed?: boolean | null
 }): JourneyIntakeBrief {
   const recordEmail = input.customer.emailVerified === true
   const emailControl = recordEmail === input.projectedEmailVerified
@@ -196,7 +287,9 @@ export function buildJourneyIntake(input: {
     customerName: input.customer.name ?? "",
     email: input.customer.email ?? "",
     phone: input.customer.phone ?? null,
+    customerId: supplied(input.customerId),
     emailControl,
+    emailSuppressed: input.emailSuppressed === true ? true : input.emailSuppressed === false ? false : null,
     businessName: input.business.name ?? "",
     website: input.business.website ?? null,
     locationName: input.location.name ?? null,

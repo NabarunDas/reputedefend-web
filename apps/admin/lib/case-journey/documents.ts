@@ -165,6 +165,35 @@ export function requirementText(items: Array<{ title: string; detail: string }>)
   return text
 }
 
+const vagueTitles = new Set([
+  "other",
+  "other evidence",
+  "other document",
+  "other documents",
+  "evidence",
+  "document",
+  "documents",
+  "doc",
+  "docs",
+  "n/a",
+  "na",
+  "none",
+  "tbd",
+  "misc",
+  "miscellaneous",
+  "something else",
+])
+
+/** A title the customer would see without learning which document to send. */
+export function vagueEvidenceTitle(title: string): boolean {
+  const parts = title.split(";").map(part => part.trim()).filter(Boolean)
+  if (parts.length === 0) return true
+  return parts.some(part => {
+    const normal = part.toLowerCase().replace(/[.:]+$/g, "").replace(/\s+/g, " ").trim()
+    return vagueTitles.has(normal)
+  })
+}
+
 export function alreadySaved(title: string, requests: Array<{ title: string; status: string }>): boolean {
   const normal = title.trim().toLowerCase()
   return requests.some(request => request.status === "OPEN" && request.title.trim().toLowerCase() === normal)
@@ -271,6 +300,27 @@ export function requirementCoverage(documents: JourneyDocuments): {
     included: open.find(request => request.id === named) ?? null,
     omitted: open.filter(request => request.id !== named),
   }
+}
+
+export type EvidencePreviewBlock =
+  | { type: "paragraph"; text: string }
+  | { type: "list"; items: string[] }
+  | { type: "link"; url: string }
+
+/** Paragraphs and bullet lines, with the secure upload link once at the end. */
+export function evidencePreviewBlocks(body: string | null): EvidencePreviewBlock[] {
+  const parts = splitEvidenceMessage(body)
+  const blocks: EvidencePreviewBlock[] = []
+  for (const chunk of parts.prose.split(/\n{2,}/).map(item => item.trim()).filter(Boolean)) {
+    const lines = chunk.split("\n").map(line => line.trim()).filter(Boolean)
+    if (lines.length > 0 && lines.every(line => /^[-•]\s+\S/.test(line))) {
+      blocks.push({ type: "list", items: lines.map(line => line.replace(/^[-•]\s+/, "")) })
+    } else {
+      blocks.push({ type: "paragraph", text: chunk })
+    }
+  }
+  if (parts.uploadUrl) blocks.push({ type: "link", url: parts.uploadUrl })
+  return blocks
 }
 
 const uploadUrlPattern = /https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi

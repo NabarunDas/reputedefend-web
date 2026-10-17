@@ -597,6 +597,23 @@ th { background: color-mix(in srgb, var(--lime) 22%, var(--surface)); font-size:
   background: var(--paper);
 }
 .preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.email-preview {
+  display: grid;
+  gap: .75rem;
+  margin: .75rem 0;
+  padding: .85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: .45rem;
+  background: var(--paper);
+  max-width: 40rem;
+}
+.email-preview p, .email-preview li { margin: 0; overflow-wrap: anywhere; }
+.email-preview ul { margin: 0; padding-left: 1.15rem; }
+.email-preview-label { display: block; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
+.email-preview-link { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92rem; }
+.email-message { min-height: 18rem; }
+.email-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.email-actions button { min-height: 2.75rem; }
 .reference { overflow-wrap: anywhere; font-size: .85rem; color: var(--muted); }
 .comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
 dl { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: .4rem 1rem; margin: 0 0 1rem; }

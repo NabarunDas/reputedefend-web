@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import type { CaseFlowFacts } from "@/lib/case-flow/model"
-import { caseDetail, CASE_ID } from "../cockpit/fixtures"
+import { caseDetail, CASE_ID, CUSTOMER_ID } from "../cockpit/fixtures"
 
 const notFoundError = new Error("NEXT_NOT_FOUND")
 const requireStaff = vi.fn()
@@ -168,7 +168,9 @@ describe("the case journey route", () => {
     expect(screen.getByRole("link", { name: /Case Received/ })).toHaveAttribute("aria-current", "step")
     expect(screen.getByRole("button", { name: "Record the intake review" })).toBeInTheDocument()
     expect(screen.getByText("The business profile was suspended without warning.")).toBeInTheDocument()
-    expect(screen.getByText(/alex@example.com/)).toBeInTheDocument()
+    expect(screen.getByText(/alex@example.com — Not verified/)).toBeInTheDocument()
+    expect(screen.getByText(/does not verify this address/)).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Open the customer record" })).toBeNull()
     expect(screen.getByText("Mercer Bakery")).toBeInTheDocument()
     const known = screen.getByRole("heading", { name: "What is already known" })
     expect(known.closest("details")).not.toHaveAttribute("open")
@@ -464,5 +466,80 @@ describe("the case journey route", () => {
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
     expect(getEvidenceCase).not.toHaveBeenCalled()
     expect(loadCaseCommunications).not.toHaveBeenCalled()
+  })
+
+  it("shows verified, suppressed and conflicting email status before step 3", async () => {
+    allowPreview()
+    records()
+    recordDetail.mockImplementation(async (entity: string) => ({
+      record: entity === "client"
+        ? { id: CUSTOMER_ID, name: "Alex Mercer", email: "alex@example.com", phone: null, emailVerified: true, version: 1 }
+        : entity === "business"
+          ? { id: "business", name: "Mercer Bakery", website: null, version: 1 }
+          : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: null, version: 1 },
+      memberships: [],
+      submittedBusinesses: [],
+      duplicates: [],
+      work: [],
+    }))
+    getCase.mockResolvedValue(caseDetail())
+    const verified = facts()
+    verified.authorization.customerEmailVerified = true
+    loadCaseFlowFacts.mockResolvedValue(verified)
+    loadCaseCommunications.mockResolvedValue({
+      status: "success",
+      complete: true,
+      total: 0,
+      returned: 0,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: false,
+      communications: [],
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CASE_RECEIVED" }),
+    }))
+    expect(screen.getByText(/alex@example.com — Verified/)).toBeInTheDocument()
+    expect(screen.queryByText(/Email verification is still outstanding/)).toBeNull()
+    expect(screen.getByRole("button", { name: "Record the intake review" })).toBeInTheDocument()
+
+    cleanup()
+    loadJourneyExtension.mockResolvedValue({
+      openedAt: "2026-01-15T12:00:00.000Z",
+      snapshot: null,
+      events: [{ event: "INTAKE_REVIEW", createdAt: "2026-01-16T00:00:00.000Z", details: { outcome: "REVIEWED", nextAction: "" } }],
+    })
+    loadCaseCommunications.mockResolvedValue({
+      status: "success",
+      complete: true,
+      total: 0,
+      returned: 0,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: true,
+      communications: [],
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByText(/Verified and suppressed/)).toBeInTheDocument()
+    expect(screen.getByText(/This verified address is suppressed/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Record the screening decision" })).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /email/i })).toBeNull()
+
+    cleanup()
+    const conflict = facts()
+    conflict.authorization.customerEmailVerified = false
+    loadCaseFlowFacts.mockResolvedValue(conflict)
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByText(/alex@example.com — Not verified/)).toBeInTheDocument()
+    expect(screen.getAllByText(/do not agree/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Email verification is still outstanding/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open the customer record" })).toHaveAttribute("href", `/records/client/${CUSTOMER_ID}`)
+    expect(screen.getByRole("button", { name: "Record the screening decision" })).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /email/i })).toBeNull()
   })
 })

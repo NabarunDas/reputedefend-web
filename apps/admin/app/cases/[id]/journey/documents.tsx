@@ -1,17 +1,19 @@
 "use client"
 
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { lifecycleLabel } from "@/lib/communications/model"
 import {
   alreadySaved,
   approvalNotice,
+  evidencePreviewBlocks,
   messageIsLive,
   openRequirements,
   requirementCoverage,
   requirementText,
   requirementTitle,
   splitEvidenceMessage,
+  vagueEvidenceTitle,
   type JourneyDocuments,
 } from "@/lib/case-journey/documents"
 import { evidenceWording } from "@/lib/case-journey/wording-text"
@@ -46,7 +48,7 @@ export function DocumentRequestPanel({ caseId, documents }: { caseId: string; do
     )}
     {draftBlocked && documents.drafting.draftReasons.map(reason => <p key={reason} className="notice">{reason}</p>)}
     {documents.cancelledMessage && !live && <p>The last draft was cancelled. It was not sent.</p>}
-    {live && documents.currentMessage && <EmailDraft documents={documents} />}
+    {live && documents.currentMessage && <EmailDraft key={`${documents.currentMessage.id}:${documents.currentMessage.version}`} documents={documents} />}
     {open.length === 0 && <RequirementChecklist caseId={caseId} documents={documents} />}
     {open.length > 0 && !live && historyReady && (
       <details className="guided-details">
@@ -90,16 +92,64 @@ function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
   </>
 }
 
+function EmailPreview({ recipient, subject, body }: { recipient: string; subject: string; body: string | null }) {
+  const blocks = evidencePreviewBlocks(body)
+  return <div className="email-preview">
+    <p><span className="email-preview-label">Recipient</span> <span>{recipient}</span></p>
+    <p><span className="email-preview-label">Subject</span> <span>{subject || "No subject"}</span></p>
+    {blocks.length === 0 && <p>No message text.</p>}
+    {blocks.map((block, index) => {
+      if (block.type === "list") return <ul key={index}>{block.items.map(item => <li key={item}>{item}</li>)}</ul>
+      if (block.type === "link") return <p key={index} className="email-preview-link">{block.url}</p>
+      return <p key={index}>{block.text}</p>
+    })}
+  </div>
+}
+
 function EmailDraft({ documents }: { documents: JourneyDocuments }) {
-  const [wordingDirty, setWordingDirty] = useState(false)
   const message = documents.currentMessage
+  const parts = splitEvidenceMessage(message?.bodyText ?? null)
+  const [editing, setEditing] = useState(false)
+  const [nextSubject, setNextSubject] = useState(message?.subject ?? "")
+  const [nextMessage, setNextMessage] = useState(parts.prose)
+  const command = useCommand()
   if (!message) return null
   const reviewed = message.lifecycle === "REVIEWED"
   const draft = message.lifecycle === "DRAFT"
   const notice = approvalNotice(documents)
-  const parts = splitEvidenceMessage(message.bodyText)
+  const savedSubject = message.subject || ""
+  const savedProse = parts.prose
+  const dirty = nextSubject.trim() !== savedSubject.trim() || nextMessage.trim() !== savedProse.trim()
+  const previewSubject = command.done ? nextSubject : savedSubject
+  const previewBody = command.done && parts.uploadUrl ? `${nextMessage.trim()}\n\n${parts.uploadUrl}` : message.bodyText
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
+  const canEdit = draft && !!parts.uploadUrl && !command.uncertain && !command.done
+  const wordingHold = editing || dirty || command.uncertain || command.done
+  function cancelEditing() {
+    setNextSubject(savedSubject)
+    setNextMessage(savedProse)
+    setEditing(false)
+    if (!command.uncertain && !command.done) command.setLocalMessage("")
+  }
+  const saveWording = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!dirty) {
+      setEditing(false)
+      return
+    }
+    if (!evidenceWording(nextSubject, nextMessage)) {
+      command.setLocalMessage("Use plain wording. Leave out links. The upload link stays as it is.")
+      return
+    }
+    const saved = await command.send("wording", wordingEndpoint, {
+      communicationId: message.id,
+      version: message.version,
+      subject: nextSubject,
+      message: nextMessage,
+    })
+    if (saved === "ok" || saved === "uncertain") setEditing(false)
+  }
   return <section aria-labelledby="journey-email-heading">
     <h3 id="journey-email-heading">{approvedUnsent ? "Approved — Not sent" : draft ? "Email draft" : reviewed ? "Approved email" : "Evidence-request email"}</h3>
     <p>{draft ? "This is a draft. It has not been approved, and it has not been sent." : approvedUnsent ? "The customer has not been sent this email." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
@@ -109,69 +159,31 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
     {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
-    <dl>
-      <dt>Recipient</dt><dd>{message.recipient}</dd>
-      <dt>Subject</dt><dd>{message.subject || "No subject"}</dd>
-      <dt>Message</dt><dd className="preserve-lines">{message.bodyText || "No message text."}</dd>
-    </dl>
-    {draft && parts.uploadUrl && <WordingEditor
-      messageId={message.id}
-      version={message.version}
-      subject={message.subject || ""}
-      prose={parts.prose}
-      uploadUrl={parts.uploadUrl}
-      onDirty={setWordingDirty}
-    />}
+    {!editing && <EmailPreview recipient={message.recipient} subject={previewSubject} body={previewBody} />}
+    {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>}
+    {canEdit && editing && <form className="record-form" onSubmit={saveWording}>
+      <p>Edit the subject and message, then save. The upload link is not edited.</p>
+      <label>Subject
+        <input aria-label="Email subject" value={nextSubject} maxLength={200} onChange={event => setNextSubject(event.target.value)} />
+      </label>
+      <label>Message
+        <textarea className="email-message" aria-label="Email message" value={nextMessage} maxLength={4000} rows={16} onChange={event => setNextMessage(event.target.value)} />
+      </label>
+      <p className="email-preview-label">Secure upload link</p>
+      <p className="email-preview-link">{parts.uploadUrl}</p>
+      <div className="email-actions">
+        <button type="submit" disabled={command.busy}>Save changes</button>
+        <button type="button" onClick={cancelEditing} disabled={command.busy}>Cancel editing</button>
+      </div>
+    </form>}
+    {command.done
+      ? command.message && <p role="status">{command.message}</p>
+      : <CommandStatus command={command} />}
     {message.contentLocked && <p>This approved wording is kept. A later change is a new draft.</p>}
     {draft && !documents.drafting.canReview && documents.drafting.reviewReason && <p className="notice">{documents.drafting.reviewReason}</p>}
-    {draft && !notice.blocked && documents.drafting.canReview && (!parts.uploadUrl || !wordingDirty) && <ReviewDraft messageId={message.id} version={message.version} />}
+    {draft && !notice.blocked && documents.drafting.canReview && !wordingHold && <ReviewDraft messageId={message.id} version={message.version} />}
     {(draft || reviewed) && <ReplaceDraft messageId={message.id} version={message.version} />}
   </section>
-}
-
-function WordingEditor({
-  messageId, version, subject, prose, uploadUrl, onDirty,
-}: {
-  messageId: string
-  version: number
-  subject: string
-  prose: string
-  uploadUrl: string
-  onDirty: (dirty: boolean) => void
-}) {
-  const command = useCommand()
-  const [nextSubject, setNextSubject] = useState(subject)
-  const [nextMessage, setNextMessage] = useState(prose)
-  const dirty = nextSubject.trim() !== subject.trim() || nextMessage.trim() !== prose.trim()
-  useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!evidenceWording(nextSubject, nextMessage)) {
-      command.setLocalMessage("Use plain wording. Leave out links. The upload link stays as it is.")
-      return
-    }
-    await command.send("wording", wordingEndpoint, {
-      communicationId: messageId,
-      version,
-      subject: nextSubject,
-      message: nextMessage,
-    })
-  }
-  return <form className="record-form" onSubmit={submit}>
-    <p>Edit the subject and message, then save. The upload link is not edited.</p>
-    <label>Subject
-      <input aria-label="Email subject" value={nextSubject} maxLength={200} onChange={event => setNextSubject(event.target.value)} />
-    </label>
-    <label>Message
-      <textarea aria-label="Email message" value={nextMessage} maxLength={4000} rows={6} onChange={event => setNextMessage(event.target.value)} />
-    </label>
-    <p>Upload link</p>
-    <p>{uploadUrl}</p>
-    {dirty && <fieldset disabled={command.busy || command.uncertain || command.done}>
-      <button type="submit">Save wording</button>
-    </fieldset>}
-    <CommandStatus command={command} />
-  </form>
 }
 
 function RequirementChecklist({ caseId, documents }: { caseId: string; documents: JourneyDocuments }) {
@@ -191,8 +203,8 @@ function RequirementChecklist({ caseId, documents }: { caseId: string; documents
       return
     }
     const other = selected.find(row => row.key === "other")
-    if (other && (other.title.trim().length < 3 || other.detail.trim().length < 10)) {
-      command.setLocalMessage("Describe the other evidence in a few words before saving it.")
+    if (other && (vagueEvidenceTitle(other.title) || other.detail.trim().length < 10)) {
+      command.setLocalMessage("Name the document the customer should send, and describe it. “Other evidence” is not specific enough for the customer email.")
       return
     }
     const title = requirementTitle(selected)
@@ -267,8 +279,13 @@ function DraftEmail({
   const [requestId, setRequestId] = useState(requests[0]?.id ?? "")
   const selected = requests.find(request => request.id === requestId) ?? null
   const omitted = requests.filter(request => request.id !== requestId)
+  const vague = selected ? vagueEvidenceTitle(selected.title) : false
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!selected || vague) {
+      command.setLocalMessage("Name the document before preparing the customer email. This page does not rename a saved requirement, and it does not send an email.")
+      return
+    }
     await command.send("draft", communicationEndpoint, {
       operation: "draft",
       templateKey: "EVIDENCE_REQUEST",
@@ -279,6 +296,7 @@ function DraftEmail({
   return <form className="record-form" onSubmit={submit}>
     <p>The next action is to generate the email from the approved template. The draft is not an approved or sent message. One message names one requirement and one secure upload link.</p>
     {selected && <p>Included in this email: {selected.title}</p>}
+    {vague && <p className="notice">This requirement is named “{selected?.title}”. Cancel it and save a specific document name before preparing the customer email. The saved requirement is left as it is.</p>}
     {omitted.length > 0 && <p>Not included in this email: {omitted.map(request => request.title).join("; ")}. This message does not request those requirements.</p>}
     {requests.length > 1 && <label>Requirement for this email
       <select value={requestId} onChange={event => setRequestId(event.target.value)}>
@@ -286,8 +304,8 @@ function DraftEmail({
       </select>
     </label>}
     {documents.verifiedEmail && <p>Recipient: {documents.verifiedEmail}</p>}
-    <fieldset disabled={command.busy || command.uncertain || command.done}>
-      <button type="submit">Generate email draft</button>
+    <fieldset disabled={command.busy || command.uncertain || command.done || vague}>
+      <button type="submit" disabled={vague}>Generate email draft</button>
     </fieldset>
     <CommandStatus command={command} />
   </form>
@@ -299,8 +317,9 @@ function ReviewDraft({ messageId, version }: { messageId: string; version: numbe
     event.preventDefault()
     await command.send("review", communicationEndpoint, { operation: "review", communicationId: messageId, version })
   }
+  if (command.uncertain || command.done) return <CommandStatus command={command} />
   return <form className="record-form" onSubmit={submit}>
-    <fieldset disabled={command.busy || command.uncertain || command.done}>
+    <fieldset disabled={command.busy}>
       <button type="submit">Approve email</button>
     </fieldset>
     <p>Approving keeps this exact wording. It does not send the email.</p>
@@ -365,8 +384,8 @@ function useCommand() {
   function setLocalMessage(value: string) {
     setMessage(value)
   }
-  async function send(name: string, url: string, body: unknown) {
-    if (busy || uncertain || done || inflight.current) return
+  async function send(name: string, url: string, body: unknown): Promise<"ok" | "uncertain" | "rejected" | "skipped"> {
+    if (busy || uncertain || done || inflight.current) return "skipped"
     inflight.current = true
     keys.current[name] ||= crypto.randomUUID()
     setBusy(true)
@@ -379,13 +398,21 @@ function useCommand() {
       })
       const result = await response.json().catch(() => ({})) as { message?: string }
       setMessage(result.message || "Unable to confirm the change.")
-      if (response.ok) setDone(true)
-      else if (response.status >= 500 || response.status === 409) setUncertain(true)
-      else delete keys.current[name]
-      if (response.ok) router.refresh()
+      if (response.ok) {
+        setDone(true)
+        router.refresh()
+        return "ok"
+      }
+      if (response.status >= 500 || response.status === 409) {
+        setUncertain(true)
+        return "uncertain"
+      }
+      delete keys.current[name]
+      return "rejected"
     } catch {
       setMessage("Uncertain result. Reload before trying again.")
       setUncertain(true)
+      return "uncertain"
     } finally {
       inflight.current = false
       setBusy(false)
@@ -394,10 +421,11 @@ function useCommand() {
   return { busy, uncertain, done, message, send, setLocalMessage }
 }
 
-function CommandStatus({ command }: { command: ReturnType<typeof useCommand> }) {
+function CommandStatus({ command, reloadWhenDone = true }: { command: ReturnType<typeof useCommand>; reloadWhenDone?: boolean }) {
+  const reload = command.uncertain || (reloadWhenDone && command.done)
   return <>
     {command.message && <p role="status">{command.message}</p>}
-    {(command.uncertain || command.done) && <button type="button" onClick={() => window.location.reload()}>Reload this step</button>}
+    {reload && <button type="button" onClick={() => window.location.reload()}>Reload this step</button>}
   </>
 }
 

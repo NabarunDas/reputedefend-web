@@ -7,7 +7,7 @@ import {
   buildInternalEnquiryMessage,
   deliverEnquiry,
 } from "@/lib/enquiry-delivery"
-import { customerAcknowledgementSubject, enquiryEmailSubject } from "@/lib/enquiry-email"
+import { customerAcknowledgementSubject, customerAcknowledgementText, enquiryEmailSubject } from "@/lib/enquiry-email"
 import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
 import { resetEnquiryRateLimit } from "@/lib/enquiry-rate-limit"
 import { POST } from "@/app/api/enquiry/route"
@@ -263,6 +263,11 @@ describe("enquiry email mapping", () => {
       source: "homepage",
     })).toBe("[ProfileRelaunch] General enquiry — Review issue")
     expect(customerAcknowledgementSubject()).toBe("[ProfileRelaunch] We have received your enquiry")
+    const acknowledgement = customerAcknowledgementText()
+    expect(acknowledgement.startsWith("Hello,")).toBe(true)
+    expect(acknowledgement.trim().endsWith("ProfileRelaunch")).toBe(true)
+    expect(acknowledgement).toContain("does not confirm an outcome")
+    expect(acknowledgement).not.toMatch(/password|verification code|simply reply/i)
   })
 
   it("includes case-intake fields and omits empty optionals and any honeypot", () => {

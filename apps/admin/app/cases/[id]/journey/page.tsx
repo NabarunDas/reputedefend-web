@@ -70,13 +70,21 @@ export default async function CaseJourneyPage({
   })
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
-  const documents = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const documentsOpen = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const emailReadinessOpen = selected?.id === "CASE_RECEIVED" || selected?.id === "VERIFICATION"
+  const communications = documentsOpen || emailReadinessOpen ? await loadCaseCommunications(detail.id) : null
+  const readyBrief = {
+    ...brief,
+    customerId: detail.customerId,
+    emailSuppressed: communications ? communications.verifiedEmailSuppressed : null,
+  }
+  const documents = documentsOpen
     ? buildJourneyDocuments({
       caseType: detail.type,
       issue: brief.snapshot?.details || brief.message,
       businessName: detail.business,
       requests: (await getEvidenceCase(detail.id)).requests,
-      history: await loadCaseCommunications(detail.id),
+      history: communications,
       sendDisabledReason: sendDisabledReason(),
       drafting: {
         customerOriginConfigured: Boolean(authConfig()?.customerOrigin),
@@ -92,7 +100,7 @@ export default async function CaseJourneyPage({
     caseId={detail.id}
     journey={journey}
     selectedId={selectedId}
-    brief={brief}
+    brief={readyBrief}
     version={detail.version}
     documents={documents}
   />

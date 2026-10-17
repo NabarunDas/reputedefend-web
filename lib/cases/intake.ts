@@ -222,10 +222,16 @@ export async function persistGetHelpCase(
     message: "Your assessment has been received.",
   }
 
+  const customerReceipt = (sent: boolean) => {
+    if (sent) return { receiptEmailSent: true as const, receiptEmailStatus: "sent" as const }
+    if (noDevEmail) return { receiptEmailSent: false as const, receiptEmailStatus: "suppressed" as const }
+    return { receiptEmailSent: false as const, receiptEmailStatus: "unavailable" as const }
+  }
+
   if (!customerNeedsDelivery && !internalNeedsDelivery) {
     return {
       ...success,
-      receiptEmailSent: intake.customer_communication_status === "SENT",
+      ...customerReceipt(intake.customer_communication_status === "SENT"),
     }
   }
 
@@ -244,7 +250,7 @@ export async function persistGetHelpCase(
     }
     return {
       ...success,
-      receiptEmailSent: intake.customer_communication_status === "SENT",
+      ...customerReceipt(intake.customer_communication_status === "SENT"),
     }
   }
 
@@ -303,7 +309,7 @@ export async function persistGetHelpCase(
 
   return {
     ...success,
-    receiptEmailSent: customerSent || intake.customer_communication_status === "SENT",
+    ...customerReceipt(customerSent || intake.customer_communication_status === "SENT"),
   }
 }
 

@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
-import { CaseIntakeForm, EVIDENCE_NOTE, PERSISTED_SUCCESS_COPY, STEP_TITLES, SUBMIT_NOTE, SUCCESS_COPY, SIMULATED_COPY } from "./case-intake-form"
+import { CaseIntakeForm, COUNTRY_HINT, EVIDENCE_NOTE, PERSISTED_SUCCESS_COPY, PROFILE_URL_HINT, REVIEW_URL_HINT, STEP_TITLES, SUBMIT_NOTE, SUCCESS_COPY, SIMULATED_COPY, WEBSITE_HINT } from "./case-intake-form"
 import { CASE_SERVICES, FORMAL_CASE_SERVICES, parseServiceParam } from "@/lib/enquiry"
 
 vi.mock("next/link", () => ({
@@ -122,11 +122,15 @@ describe("CaseIntakeForm", () => {
     continueStep()
     expect(screen.getByRole("heading", { name: STEP_TITLES[2] })).toBeInTheDocument()
     expect(screen.getByLabelText(/Phone number/)).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Country" })).toBeInTheDocument()
+    expect(screen.getByText(COUNTRY_HINT)).toBeInTheDocument()
+    expect(screen.getByText(WEBSITE_HINT)).toBeInTheDocument()
     expect(screen.getByLabelText(/Business website URL/)).toBeInTheDocument()
     fillAboutYou()
     continueStep()
 
     expect(screen.getByRole("heading", { name: STEP_TITLES[3] })).toBeInTheDocument()
+    expect(screen.getByText(PROFILE_URL_HINT)).toBeInTheDocument()
     expect(screen.getByLabelText(/Google Business Profile URL/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Relevant review URL/i)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
@@ -136,8 +140,13 @@ describe("CaseIntakeForm", () => {
     expect(screen.getByRole("heading", { name: STEP_TITLES[4] })).toBeInTheDocument()
     expect(screen.getByText("Harbour Bakery")).toBeInTheDocument()
     expect(screen.getByText("Ireland")).toBeInTheDocument()
-    expect(screen.getByRole("checkbox", { name: /accurate/i })).toBeInTheDocument()
-    expect(screen.getByRole("checkbox", { name: /privacy/i })).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    const accurate = screen.getByRole("checkbox", { name: /accurate/i })
+    const privacy = screen.getByRole("checkbox", { name: /privacy/i })
+    expect(accurate).not.toBeChecked()
+    expect(privacy).not.toBeChecked()
+    expect(accurate).not.toHaveAttribute("aria-invalid")
+    expect(privacy).not.toHaveAttribute("aria-invalid")
     expect(screen.getByRole("button", { name: "Submit assessment" })).toBeInTheDocument()
     expect(screen.getByText(SUBMIT_NOTE)).toBeInTheDocument()
 
@@ -159,6 +168,7 @@ describe("CaseIntakeForm", () => {
     continueStep()
     fillAboutYou()
     continueStep()
+    expect(screen.getByText(REVIEW_URL_HINT)).toBeInTheDocument()
     expect(screen.getByLabelText(/Relevant review URL/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Google Business Profile URL/i)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
@@ -173,6 +183,7 @@ describe("CaseIntakeForm", () => {
     expect(body.service).toBe("review-protection")
     expect(body.companyFax).toBe("")
     expect(body.fullName).toBe("Alex Morgan")
+    expect(body.country).toBe("IE")
     await screen.findByRole("heading", { name: SUCCESS_COPY.title })
     expect(screen.getByText(SUCCESS_COPY.body)).toBeInTheDocument()
     expect(screen.queryByText(SIMULATED_COPY.kicker)).not.toBeInTheDocument()
@@ -264,6 +275,9 @@ describe("CaseIntakeForm", () => {
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.review)).toBeInTheDocument()
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.keep)).toBeInTheDocument()
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.emailSent)).toBeInTheDocument()
+    expect(PERSISTED_SUCCESS_COPY.emailSent).toContain("email provider")
+    expect(PERSISTED_SUCCESS_COPY.emailSent).toContain("does not confirm")
+    expect(PERSISTED_SUCCESS_COPY.emailSent).not.toMatch(/delivered/i)
     expect(screen.queryByText(SUCCESS_COPY.body)).not.toBeInTheDocument()
   })
 
@@ -282,6 +296,141 @@ describe("CaseIntakeForm", () => {
     await submitValidAssessment("review-protection")
     await screen.findByText("RV-26-X8P3LM")
     expect(screen.getByText(PERSISTED_SUCCESS_COPY.emailFailed)).toBeInTheDocument()
+    expect(screen.queryByText(PERSISTED_SUCCESS_COPY.emailSent)).not.toBeInTheDocument()
+    expect(screen.queryByText(PERSISTED_SUCCESS_COPY.emailSuppressed)).not.toBeInTheDocument()
+  })
+
+  it("does not show checkbox errors when Continue opens review, and Enter on that control does not submit", () => {
+    render(<CaseIntakeForm initialService="profile-recovery" />)
+    continueStep()
+    fillAboutYou()
+    continueStep()
+    fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
+    const continueButton = screen.getByRole("button", { name: "Continue" })
+    continueButton.focus()
+    fireEvent.keyDown(continueButton, { key: "Enter" })
+    fireEvent.click(continueButton)
+    const submit = screen.getByRole("button", { name: "Submit assessment" })
+    expect(screen.getByRole("heading", { name: STEP_TITLES[4] })).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(submit).not.toBe(continueButton)
+    expect(submit).toHaveAttribute("type", "button")
+    for (const box of screen.getAllByRole("checkbox")) {
+      expect(box).not.toBeChecked()
+      expect(box).not.toHaveAttribute("aria-invalid")
+    }
+    submit.focus()
+    fireEvent.keyDown(submit, { key: "Enter" })
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("shows only the unchecked confirmation after submit, and clears it when that box is checked", async () => {
+    render(<CaseIntakeForm initialService="profile-recovery" />)
+    continueStep()
+    fillAboutYou()
+    continueStep()
+    fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
+    continueStep()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const accurate = screen.getByRole("checkbox", { name: /accurate/i })
+    const privacy = screen.getByRole("checkbox", { name: /privacy/i })
+    accurate.focus()
+    expect(document.activeElement).toBe(accurate)
+    fireEvent.keyDown(accurate, { key: "Enter" })
+    fireEvent.keyDown(accurate, { key: " " })
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }))
+    expect(screen.getByRole("alert")).toHaveTextContent(/accurate/i)
+    expect(screen.getByRole("alert")).toHaveTextContent(/privacy/i)
+    expect(accurate).toHaveAttribute("aria-invalid", "true")
+    expect(privacy).toHaveAttribute("aria-invalid", "true")
+
+    fireEvent.click(accurate)
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/accurate/i)
+    expect(accurate).not.toHaveAttribute("aria-invalid")
+    expect(screen.getByRole("alert")).toHaveTextContent(/privacy/i)
+
+    privacy.focus()
+    fireEvent.click(privacy)
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(privacy).toBeChecked()
+  })
+
+  it("keeps entered values across Back and Edit, and shows the corrected country on return", () => {
+    render(<CaseIntakeForm initialService="profile-recovery" />)
+    continueStep()
+    fillAboutYou()
+    continueStep()
+    fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
+    continueStep()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(screen.getByLabelText("Tell us what happened")).toHaveValue(validDetails)
+    continueStep()
+    expect(screen.getByRole("heading", { name: STEP_TITLES[4] })).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[1])
+    expect(screen.getByRole("heading", { name: STEP_TITLES[2] })).toBeInTheDocument()
+    expect(screen.getByLabelText("Country")).toHaveValue("Ireland")
+    const country = screen.getByRole("combobox", { name: "Country" })
+    fireEvent.change(country, { target: { value: "UK" } })
+    fireEvent.blur(country)
+    expect(country).toHaveValue("United Kingdom")
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex Morgan-Jones" } })
+    continueStep()
+    continueStep()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.getByText("Alex Morgan-Jones")).toBeInTheDocument()
+    expect(screen.getByText("United Kingdom")).toBeInTheDocument()
+    expect(screen.queryByText("Ireland")).not.toBeInTheDocument()
+  })
+
+  it("selects a country from the keyboard and can leave the profile link blank", () => {
+    render(<CaseIntakeForm initialService="profile-recovery" />)
+    continueStep()
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex Morgan" } })
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "alex@example.com" } })
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Harbour Bakery" } })
+    const country = screen.getByRole("combobox", { name: "Country" })
+    country.focus()
+    fireEvent.change(country, { target: { value: "ire" } })
+    expect(screen.getByRole("listbox", { name: "Countries" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Ireland" })).toBeInTheDocument()
+    fireEvent.keyDown(country, { key: "ArrowDown" })
+    fireEvent.keyDown(country, { key: "ArrowUp" })
+    fireEvent.keyDown(country, { key: "Enter" })
+    expect(country).toHaveValue("Ireland")
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
+    continueStep()
+    expect(screen.getByText(PROFILE_URL_HINT)).toHaveTextContent(/suspended, missing, or you cannot open it/i)
+    expect(screen.getByText(PROFILE_URL_HINT)).toHaveTextContent(/password or verification code/i)
+    expect(screen.getByLabelText(/Google Business Profile URL/i)).toHaveValue("")
+    fireEvent.change(screen.getByLabelText("Tell us what happened"), { target: { value: validDetails } })
+    continueStep()
+    expect(screen.getByRole("heading", { name: STEP_TITLES[4] })).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("confirms a recorded case when DEV email is intentionally suppressed", async () => {
+    stubSubmissionKey()
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        persisted: true,
+        caseRef: "PR-26-7K4M2Q",
+        receiptEmailSent: false,
+        receiptEmailStatus: "suppressed",
+      }),
+    }))
+    await submitValidAssessment()
+    await screen.findByText("PR-26-7K4M2Q")
+    expect(screen.getByText(PERSISTED_SUCCESS_COPY.emailSuppressed)).toBeInTheDocument()
+    expect(screen.queryByText(PERSISTED_SUCCESS_COPY.emailFailed)).not.toBeInTheDocument()
     expect(screen.queryByText(PERSISTED_SUCCESS_COPY.emailSent)).not.toBeInTheDocument()
   })
 })

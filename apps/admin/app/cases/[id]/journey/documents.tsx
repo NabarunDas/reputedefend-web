@@ -176,7 +176,7 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
     {command.done && <p className="notice">Reload this step to view the saved email. Approval remains blocked until the new version is read back.</p>}
     {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} branded={message.templateVersion >= 3} />}
     {message.templateVersion < 3 && !command.done && <p className="muted">This saved email uses an earlier template. Editing the wording does not upgrade its design; newly generated drafts use version 3 after approval.</p>}
-    {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>
+    {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>}
     {canEdit && editing && <form className="record-form" onSubmit={saveWording}>
       <p>Edit the subject and message, then save. The upload link is not edited.</p>
       <label>Subject

@@ -27,18 +27,13 @@ The corrected function still refuses a merge when any of these are true:
 
 One exact business match reuses that business. One exact location match reuses that location. The stored country text stays `UK`, `uk`, or `United Kingdom`.
 
-## Proposed migration
+## DEV deployment and separate Production release
 
-`docs/customer/proposed-intake-country-key-v1.sql` is the complete proposal. It is not in `supabase/migrations` and has not been applied.
+`docs/customer/proposed-intake-country-key-v1.sql` remains the reviewed source and is intentionally outside the shared `supabase/migrations` chain. It was **applied to DEV only** on 17 October 2026 as tracked Supabase migration `20261017113702_get_help_legacy_country_match_dev_v1`. Production remains unchanged.
 
-Deployment order, after separate approval:
+DEV deployment was explicitly approved and completed in Supabase project `profilerelaunch-dev` (`rmzozuiamjcclvtgutgd`) after head `20261017111446`. The new head is `20261017113702`. Checked after install: UK/United Kingdom/GB resolve to `gb`, US remains `us`, intake RPC retains `service_role` execute and the helper is unavailable to anon/authenticated. No historical business or location rows were rewritten.
 
-1. Leave `20260915193000_case_intake_transaction_v1.sql` unchanged.
-2. Confirm the target database head is `20261015230000_dev_stripe_one_shot_v1.sql`.
-3. Copy the proposal into a new additive migration file. Do not edit an applied file.
-4. Apply that file to the approved DEV database only.
-5. Do not run an `UPDATE` on customers, businesses, locations, or cases.
-6. Leave Production unchanged.
+**Production remains pending:** Production Supabase is in a separate organisation not accessible to the current connector. Confirm its migration head and exact intake function body before applying this source to Production; require the same four-comparison-only change. Apply the DB compatibility patch before releasing the new Get Help form on `main`. Do not merge unrelated DEV Admin changes into Production, and do not copy the DEV-only migration history into Production.
 
 `CREATE OR REPLACE` preserves the existing `service_role` execute grant on `create_case_intake_v1`. The new key is revoked from `PUBLIC`, `anon`, and `authenticated`, and is not granted to `service_role`. The intake function is `SECURITY DEFINER`, so it can call the key.
 

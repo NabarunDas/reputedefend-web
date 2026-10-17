@@ -35,7 +35,13 @@ try {
     assert.match(policy, /default-src 'self'/)
     assert.match(policy, /connect-src 'self' https:\/\/\*\.amazonaws\.com/)
     assert.match(policy, /frame-ancestors 'none'/)
+    assert.match(policy, /frame-src 'none'/)
     assert.match(policy, /script-src-attr 'none'/)
+    assert.match(policy, /object-src 'none'/)
+    assert.equal(
+      policy.split(";").map(part => part.trim()).find(part => part.startsWith("img-src")),
+      "img-src 'self' data: https://profilerelaunch.com",
+    )
     assert.doesNotMatch(policy, /unsafe-eval/)
     if (path === "/login") {
       const html = await response.text()

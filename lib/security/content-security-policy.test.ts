@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { marketingContentSecurityPolicy, privateAppContentSecurityPolicy } from "./content-security-policy.mjs"
+import { customerEmailLogoUrl } from "../email/customer-message"
+import { renderEvidenceRequest } from "../email/evidence-request"
+import { adminContentSecurityPolicy, marketingContentSecurityPolicy, privateAppContentSecurityPolicy } from "./content-security-policy.mjs"
 
 const marketingConfig = await import(/* @vite-ignore */ new URL("../../next.config.mjs", import.meta.url).href)
 
@@ -49,5 +51,41 @@ describe("content security policy", () => {
     expect(privateAppContentSecurityPolicy()).not.toContain("unsafe-eval")
     expect(privateAppContentSecurityPolicy()).toContain("connect-src 'self' https://*.amazonaws.com")
     expect(privateAppContentSecurityPolicy()).not.toContain("googletagmanager")
+  })
+
+  it("allows the public ProfileRelaunch logo in Admin and nowhere else", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const adminConfig = (await import(/* @vite-ignore */ new URL("../../apps/admin/next.config.mjs", import.meta.url).href)).default
+    const customerConfig = (await import(/* @vite-ignore */ new URL("../../apps/customer/next.config.mjs", import.meta.url).href)).default
+    const headerValue = async (config: { headers: () => Promise<Array<{ headers: Array<{ key: string; value: string }> }>> }) => {
+      const rules = await config.headers()
+      return rules[0].headers.find(header => header.key === "Content-Security-Policy")?.value ?? ""
+    }
+    const adminPolicy = await headerValue(adminConfig)
+    const customerPolicy = await headerValue(customerConfig)
+    const admin = directives(adminPolicy)
+    const customer = directives(customerPolicy)
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const email = renderEvidenceRequest({
+      caseRef: "PR-1042",
+      documents: ["Shop licence"],
+      uploadUrl: upload,
+    })
+    expect(customerEmailLogoUrl).toBe("https://profilerelaunch.com/brand/profile-relaunch-logo.png")
+    expect(email?.html).toContain(`src="${customerEmailLogoUrl}"`)
+    expect(email?.html).not.toContain("#t=")
+    expect(admin["img-src"]).toBe("img-src 'self' data: https://profilerelaunch.com")
+    expect(admin["img-src"]?.split(" ").slice(1)).toEqual(["'self'", "data:", new URL(customerEmailLogoUrl).origin])
+    expect(customer["img-src"]).toBe("img-src 'self' data:")
+    expect(adminPolicy).not.toMatch(/img-src[^;]*\s(?:https:|\*)(?:;|\s)/)
+    for (const name of ["default-src", "script-src", "script-src-attr", "style-src", "font-src", "connect-src", "frame-src", "frame-ancestors", "base-uri", "object-src", "form-action"]) {
+      expect(admin[name]).toBe(customer[name])
+    }
+    expect(admin["frame-src"]).toBe("frame-src 'none'")
+    expect(admin["object-src"]).toBe("object-src 'none'")
+    expect(adminPolicy).not.toContain("googletagmanager")
+    expect(adminContentSecurityPolicy()).toBe(adminPolicy)
+    expect(privateAppContentSecurityPolicy()).toBe(customerPolicy)
+    expect(marketingContentSecurityPolicy()).not.toContain("https://profilerelaunch.com")
   })
 })

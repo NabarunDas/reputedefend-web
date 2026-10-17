@@ -6,6 +6,7 @@ import "@testing-library/jest-dom/vitest"
 import type { CaseCommunicationRead } from "@/lib/communications/model"
 import type { EvidenceRequest } from "@/lib/evidence/model"
 import { buildJourneyDocuments, type JourneyDocuments } from "@/lib/case-journey/documents"
+import { renderEvidenceRequest } from "@/lib/communications/brand-email"
 import { DocumentRequestPanel } from "./documents"
 
 const refresh = vi.fn()
@@ -379,6 +380,51 @@ describe("the step 3 document request", () => {
     expect(screen.getByRole("button", { name: "Generate email draft" })).toBeDisabled()
     fireEvent.click(screen.getByRole("button", { name: "Generate email draft" }))
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("keeps the public logo inside sandboxed previews for a new draft and an approved email", () => {
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const rendered = renderEvidenceRequest({
+      caseRef: "PR-1042",
+      documents: ["Shop licence"],
+      uploadUrl: upload,
+    })
+    expect(rendered?.html).toContain("https://profilerelaunch.com/brand/profile-relaunch-logo.png")
+    const history = (lifecycle: "DRAFT" | "REVIEWED") => ({
+      status: "success" as const,
+      complete: true,
+      total: 1,
+      returned: 1,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: false,
+      communications: [communication({
+        templateVersion: 3,
+        lifecycle,
+        subject: rendered!.subject,
+        bodyText: rendered!.text,
+        bodyHtml: rendered!.html,
+        contentLocked: lifecycle === "REVIEWED",
+        evidenceRequestId: REQUEST_ID,
+      })],
+    })
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence")],
+      history: history("DRAFT"),
+    })} />)
+    const draftPreview = screen.getByTitle("Branded email preview")
+    expect(draftPreview).toHaveAttribute("sandbox", "")
+    expect(draftPreview.getAttribute("srcdoc")).toBe(rendered!.html)
+    expect(screen.getByRole("heading", { name: "Email draft" })).toBeInTheDocument()
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence")],
+      history: history("REVIEWED"),
+    })} />)
+    const approvedPreview = screen.getByTitle("Branded email preview")
+    expect(approvedPreview).toHaveAttribute("sandbox", "")
+    expect(approvedPreview.getAttribute("srcdoc")).toBe(rendered!.html)
+    expect(screen.getByRole("heading", { name: "Approved — Not sent" })).toBeInTheDocument()
+    expect(approvedPreview.getAttribute("srcdoc")).toContain("https://profilerelaunch.com/brand/profile-relaunch-logo.png")
   })
 
   it("shows the stored email and withholds approval when that snapshot is missing", () => {

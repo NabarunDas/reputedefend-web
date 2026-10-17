@@ -636,7 +636,13 @@ function HelpPopover({ id, label, children }: { id: string; label: string; child
       <button
         type="button"
         className={styles.helpButton}
-        aria-label={`Help with ${label}`}
+        aria-label={label === "Google Business Profile URL"
+          ? "How to find the Google Maps link"
+          : label === "Relevant review URL"
+            ? "How to find the review link"
+            : label === "Tell us what happened"
+              ? "Tips for describing the issue"
+              : `Help for ${label}`}
         aria-expanded={open}
         aria-controls={`${id}-help`}
         onFocus={() => setOpen(true)}

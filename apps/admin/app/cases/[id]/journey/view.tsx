@@ -60,6 +60,7 @@ export function CaseJourneyView({
   brief,
   version,
   documents,
+  replyMailbox = null,
 }: {
   reference: string
   customer: string
@@ -70,6 +71,7 @@ export function CaseJourneyView({
   brief: JourneyIntakeBrief
   version: number
   documents: JourneyDocuments | null
+  replyMailbox?: string | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -103,7 +105,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -138,6 +140,7 @@ function StepWorkspace({
   version,
   reference,
   documents,
+  replyMailbox,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -146,6 +149,7 @@ function StepWorkspace({
   version: number
   reference: string
   documents: JourneyDocuments | null
+  replyMailbox: string | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -174,7 +178,7 @@ function StepWorkspace({
       {step.decision === "intake" && <IntakeReviewForm caseId={caseId} version={version} />}
       {step.decision === "verification" && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
     </details>}
-    {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} />}
+    {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} replyMailbox={replyMailbox} />}
     {!step.decision && !showDocuments && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>

@@ -30,7 +30,7 @@ function request(title = "Google suspension or rejection notice"): EvidenceReque
 }
 
 function communication(overrides: Partial<CaseCommunicationRead["communications"][number]> = {}): CaseCommunicationRead["communications"][number] {
-  return {
+  const row: CaseCommunicationRead["communications"][number] = {
     id: MESSAGE_ID,
     caseId: CASE_ID,
     caseReference: "PR-1042",
@@ -64,6 +64,10 @@ function communication(overrides: Partial<CaseCommunicationRead["communications"
     canReplace: false,
     ...overrides,
   }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "bodyHtml")) {
+    row.bodyHtml = `<p>${row.bodyText ?? ""}</p>`
+  }
+  return row
 }
 
 function documents(input: {
@@ -222,6 +226,11 @@ describe("the step 3 document request", () => {
     expect(screen.getByText("alex@example.com")).toBeInTheDocument()
     expect(screen.getByText("Evidence needed for PR-1042")).toBeInTheDocument()
     expect(screen.getByText("To continue with PR-1042, we need the Google suspension notice.")).toBeInTheDocument()
+    const preview = screen.getByTitle("Branded email preview")
+    expect(preview).toHaveAttribute("sandbox", "")
+    expect(preview.getAttribute("srcdoc")).toBe("<p>To continue with PR-1042, we need the Google suspension notice.</p>")
+    expect(preview.getAttribute("srcdoc")).not.toContain("profile-relaunch-logo.png")
+    expect(preview.getAttribute("srcdoc")).not.toContain("#t=")
     expect(screen.getByText(/has not been approved, and it has not been sent/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Approve email" }))
     expect(await screen.findByText("That communication changed. Reload the page and try again.")).toBeInTheDocument()
@@ -372,6 +381,56 @@ describe("the step 3 document request", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("shows the stored email and withholds approval when that snapshot is missing", () => {
+    const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const stored = `<!DOCTYPE html><html><body><img src="https://profilerelaunch.com/profile-relaunch-logo.png" alt="ProfileRelaunch"><ul><li>Shop licence</li></ul><a href="${upload}">Upload your documents securely</a><p>Kind regards,</p><p>ProfileRelaunch Support Team</p><p>For your security, please never share passwords, verification codes or sign-in credentials.</p><p>simply reply to this email</p></body></html>`
+    const text = `Please send the shop licence so we can review the listing.\n\n${upload}`
+    render(<DocumentRequestPanel caseId={CASE_ID} replyMailbox="cases@profilerelaunch.com" documents={documents({
+      requests: [request("Shop licence")],
+      history: {
+        status: "success",
+        complete: true,
+        total: 1,
+        returned: 1,
+        verifiedEmail: "alex@example.com",
+        verifiedEmailSuppressed: false,
+        communications: [communication({
+          subject: "Documents for PR-1042",
+          bodyText: text,
+          bodyHtml: stored,
+          replyToAddress: "cases@profilerelaunch.com",
+          evidenceRequestId: REQUEST_ID,
+        })],
+      },
+    })} />)
+    const preview = screen.getByTitle("Branded email preview")
+    expect(preview).toHaveAttribute("sandbox", "")
+    expect(preview.getAttribute("srcdoc")).toBe(stored)
+    expect(screen.getByText(/Please send the shop licence so we can review the listing/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(upload.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Approve email" })).toBeInTheDocument()
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request("Shop licence")],
+      history: {
+        status: "success",
+        complete: true,
+        total: 1,
+        returned: 1,
+        verifiedEmail: "alex@example.com",
+        verifiedEmailSuppressed: false,
+        communications: [communication({
+          bodyText: text,
+          bodyHtml: null,
+          evidenceRequestId: REQUEST_ID,
+        })],
+      },
+    })} />)
+    expect(screen.queryByTitle("Branded email preview")).toBeNull()
+    expect(screen.getByText(/cannot be approved until the saved email preview matches/i)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
+  })
+
   it("saves plain wording without the upload link and hides approval until that wording is saved", async () => {
     const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, "The wording was saved. The email has not been sent."))
@@ -393,7 +452,7 @@ describe("the step 3 document request", () => {
       },
     })} />)
     expect(screen.getAllByText(/To continue with PR-1042, we need the shop licence/)).toHaveLength(1)
-    expect(screen.getAllByText(upload)).toHaveLength(1)
+    expect(screen.getByText(new RegExp(upload.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeInTheDocument()
     expect(screen.queryByLabelText("Email subject")).toBeNull()
     expect(screen.queryByLabelText("Email message")).toBeNull()
     expect(screen.getByRole("button", { name: "Approve email" })).toBeInTheDocument()

@@ -47,6 +47,7 @@ export type CommunicationCard = {
   recipient: string
   subject: string | null
   bodyText: string | null
+  bodyHtml: string | null
   lifecycle: string
   delivery: string
   deliveryClarification: string | null
@@ -198,6 +199,7 @@ function card(row: CaseCommunicationRow, role: CommunicationCard["role"]): Commu
     recipient: row.recipient,
     subject: row.subject,
     bodyText: row.bodyText,
+    bodyHtml: row.bodyHtml ?? null,
     lifecycle: lifecycleLabel(row.lifecycle),
     delivery,
     deliveryClarification: row.deliveryStatus === "PROVIDER_ACCEPTED" || row.legacyStatus === "SENT"

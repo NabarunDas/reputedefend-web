@@ -26,6 +26,10 @@ describe("secure communication access links", () => {
     const materialised = materializeUploadUrl(body, actionId, "https://customer.profilerelaunch.com", first)
     expect(materialised).toBe(`${body}#t=${first}`)
     expect(materializeUploadUrl(`${body}#t=already`, actionId, "https://customer.profilerelaunch.com", first)).toBeNull()
+    const html = `<a href="https://customer.profilerelaunch.com/action/${actionId}">Upload your documents securely</a>`
+    const sentHtml = materializeUploadUrl(html, actionId, "https://customer.profilerelaunch.com", first)
+    expect(sentHtml).toBe(`<a href="https://customer.profilerelaunch.com/action/${actionId}#t=${first}">Upload your documents securely</a>`)
+    expect(sentHtml?.match(/#t=/g)).toHaveLength(1)
     expect(prepareCommunicationAccessLink(actionId, { COMMUNICATIONS_LINK_SECRET: secret })?.tokenHash).toBe(communicationAccessTokenHash(first))
     expect(prepareCommunicationAccessLink(actionId, {})).toBeNull()
   })

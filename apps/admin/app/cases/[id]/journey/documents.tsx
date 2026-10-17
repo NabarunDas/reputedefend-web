@@ -6,7 +6,6 @@ import { lifecycleLabel } from "@/lib/communications/model"
 import {
   alreadySaved,
   approvalNotice,
-  evidencePreviewBlocks,
   messageIsLive,
   openRequirements,
   requirementCoverage,
@@ -17,6 +16,8 @@ import {
   type JourneyDocuments,
 } from "@/lib/case-journey/documents"
 import { evidenceWording } from "@/lib/case-journey/wording-text"
+import { brandStoredEvidenceEmail } from "@/lib/communications/brand-email"
+import { trustedEmailSnapshot } from "@/lib/communications/snapshot"
 
 const evidenceEndpoint = "/api/evidence/command"
 const communicationEndpoint = "/api/operations/communications"
@@ -24,7 +25,7 @@ const wordingEndpoint = "/api/cases/journey/wording"
 
 type Row = { key: string; name: string; title: string; detail: string; selected: boolean }
 
-export function DocumentRequestPanel({ caseId, documents }: { caseId: string; documents: JourneyDocuments }) {
+export function DocumentRequestPanel({ caseId, documents, replyMailbox = null }: { caseId: string; documents: JourneyDocuments; replyMailbox?: string | null }) {
   const open = openRequirements(documents)
   const live = messageIsLive(documents.currentMessage)
   const historyReady = documents.history === "ready"
@@ -48,7 +49,7 @@ export function DocumentRequestPanel({ caseId, documents }: { caseId: string; do
     )}
     {draftBlocked && documents.drafting.draftReasons.map(reason => <p key={reason} className="notice">{reason}</p>)}
     {documents.cancelledMessage && !live && <p>The last draft was cancelled. It was not sent.</p>}
-    {live && documents.currentMessage && <EmailDraft key={`${documents.currentMessage.id}:${documents.currentMessage.version}`} documents={documents} />}
+    {live && documents.currentMessage && <EmailDraft key={`${documents.currentMessage.id}:${documents.currentMessage.version}`} documents={documents} replyMailbox={replyMailbox} />}
     {open.length === 0 && <RequirementChecklist caseId={caseId} documents={documents} />}
     {open.length > 0 && !live && historyReady && (
       <details className="guided-details">
@@ -92,21 +93,27 @@ function EmailCoverage({ documents }: { documents: JourneyDocuments }) {
   </>
 }
 
-function EmailPreview({ recipient, subject, body }: { recipient: string; subject: string; body: string | null }) {
-  const blocks = evidencePreviewBlocks(body)
+function EmailPreview({
+  recipient, subject, bodyText, bodyHtml,
+}: {
+  recipient: string
+  subject: string
+  bodyText: string | null
+  bodyHtml: string | null
+}) {
+  const snapshot = trustedEmailSnapshot(bodyText, bodyHtml)
   return <div className="email-preview">
     <p><span className="email-preview-label">Recipient</span> <span>{recipient}</span></p>
     <p><span className="email-preview-label">Subject</span> <span>{subject || "No subject"}</span></p>
-    {blocks.length === 0 && <p>No message text.</p>}
-    {blocks.map((block, index) => {
-      if (block.type === "list") return <ul key={index}>{block.items.map(item => <li key={item}>{item}</li>)}</ul>
-      if (block.type === "link") return <p key={index} className="email-preview-link">{block.url}</p>
-      return <p key={index}>{block.text}</p>
-    })}
+    {snapshot
+      ? <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={snapshot.html} />
+      : <p className="notice">The stored email preview is not available.</p>}
+    <p className="email-preview-label">Plain text</p>
+    {snapshot ? <p className="preserve-lines">{snapshot.text}</p> : <p>No message text.</p>}
   </div>
 }
 
-function EmailDraft({ documents }: { documents: JourneyDocuments }) {
+function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; replyMailbox: string | null }) {
   const message = documents.currentMessage
   const parts = splitEvidenceMessage(message?.bodyText ?? null)
   const [editing, setEditing] = useState(false)
@@ -120,10 +127,17 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
   const savedSubject = message.subject || ""
   const savedProse = parts.prose
   const dirty = nextSubject.trim() !== savedSubject.trim() || nextMessage.trim() !== savedProse.trim()
-  const previewSubject = command.done ? nextSubject : savedSubject
-  const previewBody = command.done && parts.uploadUrl ? `${nextMessage.trim()}\n\n${parts.uploadUrl}` : message.bodyText
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
+  const documentTitle = requirementCoverage(documents).included?.title ?? null
   const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
+  const editingPreview = parts.uploadUrl
+    ? brandStoredEvidenceEmail({
+      subject: nextSubject,
+      body: `${nextMessage.trim()}\n\n${parts.uploadUrl}`,
+      documentTitle,
+      replyTo: replyMailbox,
+    })
+    : null
   const canEdit = draft && !!parts.uploadUrl && !command.uncertain && !command.done
   const wordingHold = editing || dirty || command.uncertain || command.done
   function cancelEditing() {
@@ -159,9 +173,16 @@ function EmailDraft({ documents }: { documents: JourneyDocuments }) {
     {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
-    {!editing && <EmailPreview recipient={message.recipient} subject={previewSubject} body={previewBody} />}
+    {command.done && <div className="email-preview">
+      <p><span className="email-preview-label">Subject</span> <span>{nextSubject}</span></p>
+      <p className="preserve-lines">{nextMessage}</p>
+      {parts.uploadUrl && <p className="email-preview-link">{parts.uploadUrl}</p>}
+      <p>Reload this step before approving. The saved email is shown only after it is read back.</p>
+    </div>}
+    {!editing && !command.done && <EmailPreview recipient={message.recipient} subject={savedSubject} bodyText={message.bodyText} bodyHtml={message.bodyHtml} />}
     {canEdit && !editing && <button type="button" onClick={() => setEditing(true)}>Edit email</button>}
     {canEdit && editing && <form className="record-form" onSubmit={saveWording}>
+      {editingPreview && <iframe className="email-preview-frame" title="Branded email preview" sandbox="" srcDoc={editingPreview.html} />}
       <p>Edit the subject and message, then save. The upload link is not edited.</p>
       <label>Subject
         <input aria-label="Email subject" value={nextSubject} maxLength={200} onChange={event => setNextSubject(event.target.value)} />

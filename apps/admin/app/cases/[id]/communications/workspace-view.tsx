@@ -2,6 +2,7 @@ import Link from "next/link"
 import { ukDate } from "@/lib/admin/activity"
 import type { CommunicationsWorkspaceModel } from "@/lib/communications-workspace/model"
 import { deliveryLabel, lifecycleLabel, type DeliveryStatus } from "@/lib/communications/model"
+import { trustedEmailSnapshot } from "@/lib/communications/snapshot"
 import { conversationStateLabel, senderMatchLabel } from "@/lib/conversations/model"
 import type { CaseDetail } from "@/lib/cases/model"
 import { Badge, Notice } from "../../../ui"
@@ -10,6 +11,17 @@ import {
   AssignForm, AttentionForm, CloseForm, ContactRecoveryForm, DraftReplyForm, PhoneNoteForm, PromoteAttachmentForm,
 } from "../../../conversations/forms"
 import { CaseEvidenceRequestDraftForm, CaseUpdateDraftForm, ReconcileAcceptanceForm } from "./forms"
+
+function StoredMessage({ bodyText, bodyHtml }: { bodyText: string | null; bodyHtml: string | null }) {
+  if (!bodyText) return null
+  const snapshot = trustedEmailSnapshot(bodyText, bodyHtml)
+  return <details>
+    <summary>Message text</summary>
+    {snapshot && <iframe className="email-preview-frame" title="Stored email preview" sandbox="" srcDoc={snapshot.html} />}
+    <p className="email-preview-label">Plain text</p>
+    <p className="preserve-lines">{snapshot?.text ?? bodyText}</p>
+  </details>
+}
 
 function CaseAction({ model }: { model: CommunicationsWorkspaceModel }) {
   const action = model.caseAction
@@ -114,10 +126,7 @@ export function CommunicationsWorkspace({ caseDetail, model }: { caseDetail: Cas
             {row.providerMessageId && <p className="muted">Provider message id: {row.providerMessageId}</p>}
             <p className="muted">Communication id: {row.id}</p>
           </details>}
-          {row.bodyText && <details>
-            <summary>Message text</summary>
-            <p className="preserve-lines">{row.bodyText}</p>
-          </details>}
+          <StoredMessage bodyText={row.bodyText} bodyHtml={row.bodyHtml} />
         </article>)}
     </section>
 

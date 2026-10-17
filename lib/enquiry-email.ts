@@ -122,10 +122,10 @@ export function customerAcknowledgementText() {
   return [
     "Hello,",
     "Thank you for contacting ProfileRelaunch. We have received your enquiry and will review it.",
-    "Submitting a form does not, by itself, create a client or paid-service relationship, and it does not confirm an outcome.",
+    "Sending this form does not, by itself, create a client or paid-service relationship.",
     "If we need anything further, we will write to the email address you provided.",
     "Kind regards,",
-    "ProfileRelaunch",
+    "ProfileRelaunch Support Team",
   ].join("\n\n")
 }
 

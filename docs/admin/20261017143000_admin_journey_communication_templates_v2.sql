@@ -12,8 +12,13 @@
 -- Placeholders are only the ones admin_communication_command_core_v1 already
 -- supplies: evidence requests receive case_ref, specific_document and upload_url;
 -- case updates receive case_ref, fact, effect and next_step.
--- specific_document is the one evidence-request title. One rendered message
--- still names one request and one upload link.
+-- specific_document is the title of one evidence request. Several checklist
+-- items saved together are already joined with '; ' in that title.
+-- render_template_v1 substitutes the whole title. It does not turn the
+-- semicolon list into bullets. One rendered message still has one request
+-- and one trailing upload link.
+-- This file does not update public.communications. Drafted, reviewed and
+-- queued snapshots stay as stored.
 
 BEGIN;
 
@@ -23,16 +28,16 @@ INSERT INTO admin_private.communication_templates (
   'EVIDENCE_REQUEST',
   2,
   'Evidence request',
-  'Documents for {case_ref}',
-  E'Hello,\n\nThank you for contacting us about case {case_ref}.\n\nPlease send this document:\n\n{specific_document}\n\nWe will review what you send. This message does not confirm a Google outcome, a payment, or a time for that review.\n\nThe secure upload page below is only for this request.\n\nKind regards,\n\nProfileRelaunch\n\n{upload_url}',
+  'Supporting information for your enquiry — {case_ref}',
+  E'Hello,\n\nThank you for contacting ProfileRelaunch about your Google Business Profile.\n\nWe\'re reviewing your enquiry, reference {case_ref}. To help us understand the issue and advise you on the next steps, could you please provide the following supporting information?\n\n{specific_document}\n\nPlease upload the requested information using the secure link at the end of this email.\n\nIf you\'re unsure what to provide, you can contact our team through the ProfileRelaunch website.\n\nFor your security, please never share passwords, verification codes or sign-in credentials.\n\nKind regards,\n\nProfileRelaunch Support Team\n\nSecure document-upload link:\n\n{upload_url}',
   'DRAFT',
   'Proposed customer wording. Not approved. Version 1 remains the live approved template.'
 ), (
   'CASE_UPDATE',
   2,
   'Case update',
-  'An update on {case_ref}',
-  E'Hello,\n\nHere is an update on case {case_ref}.\n\n{fact}\n\n{effect}\n\nWhat happens next:\n\n{next_step}\n\nKind regards,\n\nProfileRelaunch',
+  'An update on your enquiry — {case_ref}',
+  E'Hello,\n\nHere is an update on your enquiry, reference {case_ref}.\n\n{fact}\n\n{effect}\n\nWhat happens next:\n\n{next_step}\n\nKind regards,\n\nProfileRelaunch Support Team',
   'DRAFT',
   'Proposed customer wording. Not approved. Version 1 remains the live approved template.'
 );

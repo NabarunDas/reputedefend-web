@@ -634,8 +634,8 @@ function readEvidence(facts: CaseFlowFacts): Reading {
   if (!summary.anyRequest && !summary.anyUpload) {
     return {
       proof: "unproven",
-      known: [...known, "No evidence-waiver record exists. ADMIN-JOURNEY-04 would have to store a decision that no documents are required before this step could be complete without a file. That status is unknown."],
-      missing: ["Accepted evidence and a fulfilled request, or the future waiver record. Silence is not that record."],
+      known: [...known, "No evidence-waiver record exists. A decision that no documents are required has to be recorded separately before this step can be complete without a file. That decision is not in this projection, so the status stays unknown."],
+      missing: ["Accepted evidence and a fulfilled request, or a separately recorded decision that no documents are required. Silence is not that decision."],
       who: "ProfileRelaunch reviews whatever the customer submits. Nothing here has been reviewed.",
     }
   }

@@ -953,6 +953,7 @@ summary { cursor: pointer; }
 }
 .guided-step.is-selected { box-shadow: inset 0 0 0 1px var(--green); }
 .guided-step.is-focus a { outline: 2px solid var(--green); outline-offset: -2px; }
+.guided-workspace .evidence-workspace > .panel { margin-top: .85rem; }
 .guided-workspace h3 { margin-top: 1.1rem; }
 .guided-workspace ul { margin: .35rem 0 0; padding-left: 1.15rem; }
 @media (max-width: 800px) {

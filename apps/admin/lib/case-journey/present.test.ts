@@ -374,8 +374,10 @@ describe("journey status from authoritative records", () => {
     expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/ADMIN-JOURNEY-03/)
     expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/unknown/)
     expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
-    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/ADMIN-JOURNEY-04/)
+    expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/recorded separately/)
     expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/unknown/)
+    expect(step(journey, "EVIDENCE_REVIEW").missing.join(" ")).toMatch(/Silence is not that decision/)
+    expect(step(journey, "EVIDENCE_REVIEW").unsupported).toMatch(/record that no documents are required/)
     expect(completed(journey)).toEqual([])
   })
 

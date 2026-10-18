@@ -94,7 +94,7 @@ export function ReviewForms({ caseId, version, actions, context }: { caseId: str
       <CommandForm actionUrl={endpoint} endpoint="command" submitLabel="Accept version" submitName={`Accept ${name}`} payload={form => ({
         operation: "accept", caseId, versionId: version.id, recordVersion: version.recordVersion, note: form.get("note"),
       })}>
-        <p>Accepting records the review only. It does not make this file customer visible, and it does not fulfil an evidence request.</p>
+        <p>Accepting records the review only. A clean scan is not approval. Accepting does not make this file customer visible, and it does not fulfil an evidence request.</p>
         <Reason name="note" label="Review note" maxLength={2000} />
       </CommandForm>
     </details>}

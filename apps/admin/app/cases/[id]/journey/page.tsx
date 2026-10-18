@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
+import { resolveCaseFlow } from "@/lib/case-flow/resolve"
 import { authConfig } from "@/lib/auth/config"
 import { sendDisabledReason } from "@/lib/communications/gate"
 import { linkSecret } from "@/lib/communications/link"
@@ -13,6 +14,8 @@ import { buildJourneyIntake } from "@/lib/case-journey/intake"
 import { loadJourneyExtension } from "@/lib/case-journey/read"
 import { presentCaseJourney, selectJourneyStep } from "@/lib/case-journey/present"
 import { getEvidenceCase } from "@/lib/evidence/queries"
+import { buildEvidenceWorkspaceModel } from "@/lib/evidence/workspace"
+import type { PreparedPackCase } from "@/lib/packs/model"
 import { getMembership, recordDetail } from "@/lib/records/queries"
 import { requireStaff } from "@/lib/require-staff"
 import { CaseJourneyView } from "./view"
@@ -64,7 +67,8 @@ export default async function CaseJourneyPage({
     snapshot: extension?.snapshot ?? null,
     openedAt: extension?.openedAt ?? detail.createdAt,
   })
-  const journey = presentCaseJourney(facts, new Date().toISOString(), events, {
+  const now = new Date().toISOString()
+  const journey = presentCaseJourney(facts, now, events, {
     recordConflict: brief.conflicts.length > 0,
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
@@ -72,6 +76,7 @@ export default async function CaseJourneyPage({
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
   const documentsOpen = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const evidenceOpen = selected?.id === "EVIDENCE_REVIEW" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const emailReadinessOpen = selected?.id === "CASE_RECEIVED" || selected?.id === "VERIFICATION"
   const communications = documentsOpen || emailReadinessOpen ? await loadCaseCommunications(detail.id) : null
   const readyBrief = {
@@ -94,6 +99,7 @@ export default async function CaseJourneyPage({
       },
     })
     : null
+  const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, facts, now) : null
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -105,5 +111,34 @@ export default async function CaseJourneyPage({
     version={detail.version}
     documents={documents}
     replyMailbox={monitoredReplyMailbox()}
+    evidenceReview={evidenceReview}
   />
+}
+
+/**
+ * The same evidence reading the evidence page uses.
+ * Pack rows stay out of this step. `hasPack` is false so an empty request
+ * list is not hidden behind a pack that belongs to a later step.
+ */
+async function loadEvidenceReview(
+  detail: Awaited<ReturnType<typeof getCase>>,
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  now: string,
+) {
+  const evidence = await getEvidenceCase(detail.id)
+  const packs: PreparedPackCase = { caseId: detail.id, packs: [], eligible: [] }
+  const flow = resolveCaseFlow(facts, now)
+  return {
+    caseDetail: detail,
+    evidence,
+    packs,
+    model: buildEvidenceWorkspaceModel({
+      evidence,
+      evidenceFacts: facts.evidence,
+      communications: facts.communications,
+      primaryAction: flow.primaryAction,
+      now,
+      hasPack: false,
+    }),
+  }
 }

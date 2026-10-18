@@ -135,19 +135,23 @@ function message(overrides: Partial<CaseFlowCommunicationFact> = {}): CaseFlowCo
   }
 }
 
-function projectionFrom(item: EvidenceCase, communications: CaseFlowCommunicationFact[], versions = item.documents.flatMap(row => row.versions.map(file => ({
-  documentId: row.id,
-  versionId: file.id,
-  evidenceRequestId: row.evidenceRequestId,
-  uploadStatus: file.uploadStatus,
-  scanStatus: file.scanStatus,
-  validationStatus: file.validationStatus,
-  reviewStatus: file.reviewStatus,
-})))) {
+function projectionFrom(
+  item: EvidenceCase,
+  communications: CaseFlowCommunicationFact[],
+  versions?: CaseFlowFacts["evidence"]["versions"],
+) {
   return facts({
     evidence: {
       requests: item.requests.map(row => ({ id: row.id, status: row.status, dueAt: row.dueAt, createdAt: row.createdAt })),
-      versions,
+      versions: versions ?? item.documents.flatMap(row => row.versions.map(file => ({
+        documentId: row.id,
+        versionId: file.id,
+        evidenceRequestId: row.evidenceRequestId,
+        uploadStatus: file.uploadStatus,
+        scanStatus: file.scanStatus,
+        validationStatus: file.validationStatus,
+        reviewStatus: file.reviewStatus,
+      }))),
     },
     communications,
   })

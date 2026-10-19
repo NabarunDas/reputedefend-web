@@ -148,8 +148,12 @@ export default async function CaseJourneyPage({
   const closureStep = journey.steps.find(step => step.id === "CLOSURE")
   const closureSelected = selectedId === "CLOSURE" && closureStep?.state !== "LOCKED" && closureStep?.state !== "NOT_APPLICABLE"
   const closure = closureSelected ? await loadJourneyClosure(facts, detail, now, journey) : null
-  if (closure?.disagreed) {
-    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, outcomeRecordsDisagree: true })
+  if (closure && (closure.disagreed || closure.closureRecordsDisagree)) {
+    journey = presentCaseJourney(facts, now, events, {
+      ...journeyOptions,
+      ...(closure.disagreed ? { outcomeRecordsDisagree: true } : {}),
+      ...(closure.closureRecordsDisagree ? { closureRecordsDisagree: true } : {}),
+    })
   }
   const closureAfter = journey.steps.find(step => step.id === "CLOSURE")
   const closureVisible = closure && closureAfter?.state !== "LOCKED" && closureAfter?.state !== "NOT_APPLICABLE"
@@ -285,7 +289,8 @@ async function loadJourneyClosure(
     },
     precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
   }
-  return { disagreed: presentJourneyClosure(input).disagreed, input }
+  const presented = presentJourneyClosure(input)
+  return { disagreed: presented.disagreed, closureRecordsDisagree: presented.closureRecordsDisagree, input }
 }
 
 function loadJourneySubmission(

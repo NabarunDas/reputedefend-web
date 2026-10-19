@@ -216,6 +216,12 @@ export type JourneyPresentationOptions = {
   /** The loaded outcome and billing records do not match the case-flow projection. */
   outcomeRecordsDisagree?: boolean
   /**
+   * The loaded case detail does not match the case-flow projection on the
+   * closure identity: status, stage, track, outcome, summary, tasks or submissions.
+   * This is separate from a Step 10 billing conflict.
+   */
+  closureRecordsDisagree?: boolean
+  /**
    * Case-detail work events, including ids. Step 10 uses these to tell a fresh
    * record_outcome after reopen from an outcome retained across reopen.
    * Omitted events fail that check closed.
@@ -424,7 +430,7 @@ function readSteps(
     PREPARATION: readPreparation(facts, options),
     SUBMISSION: readSubmission(facts, options),
     OUTCOME_BILLING: readOutcome(facts, now, events, options),
-    CLOSURE: readClosure(facts),
+    CLOSURE: readClosure(facts, options),
   }
 }
 
@@ -1205,8 +1211,20 @@ function readOutcome(facts: CaseFlowFacts, now: string, events: readonly Journey
   }
 }
 
-function readClosure(facts: CaseFlowFacts): Reading {
+function readClosure(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
   const terminal = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
+  if (options.closureRecordsDisagree) {
+    return {
+      proof: "attention",
+      known: [
+        terminal ? `The database status is ${facts.caseStatus}.` : "The case is open.",
+        "The loaded case record and the case-flow projection do not agree.",
+        "Optional Guard is not offered while these records disagree.",
+      ],
+      missing: ["A case record that matches the projection."],
+      who: "ProfileRelaunch reconciles the case record and the projection before treating this step as finished.",
+    }
+  }
   const coherent = coherentTerminalClosure({
     caseType: facts.caseType,
     stage: facts.technicalStage,

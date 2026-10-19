@@ -170,7 +170,7 @@ export function presentJourneyClosure(input: {
   detail: CaseDetail
   /** Every earlier guided step is complete or does not apply. */
   precedingComplete: boolean
-}): { disagreed: boolean; panel: JourneyClosurePanel } {
+}): { disagreed: boolean; closureRecordsDisagree: boolean; panel: JourneyClosurePanel } {
   const outcomeView = presentJourneyOutcome({
     facts: input.facts,
     now: input.now,
@@ -281,6 +281,7 @@ export function presentJourneyClosure(input: {
 
   return {
     disagreed: outcomeView.disagreed,
+    closureRecordsDisagree: !identityAgrees,
     panel: {
       headline: verified ? statusWord(facts.caseStatus) : databaseClosed ? "Inconsistent closure" : "Not closed",
       detail: verified

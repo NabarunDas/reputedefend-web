@@ -159,7 +159,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function show(
   overrides: Partial<CaseFlowFacts> = {},
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean; submissionRecordsDisagree?: boolean } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean; submissionRecordsDisagree?: boolean; outcomeRecordsDisagree?: boolean; closureRecordsDisagree?: boolean } = {},
 ) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
@@ -804,6 +804,39 @@ describe("journey status from authoritative records", () => {
     })
     expect(step(shortSummary, "CLOSURE").state).toBe("NEEDS_ATTENTION")
     expect(step(shortSummary, "CLOSURE").known.join(" ")).not.toMatch(/Guard was not required/)
+  })
+
+  it("does not complete closure when the loaded case record disagrees with the projection", () => {
+    const summary = "The listing was restored after the recorded appeal."
+    const closed = {
+      caseStatus: "CLOSED" as const,
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED" as const,
+    }
+    const agreed = show(closed)
+    const disagreed = show(closed, [], { closureRecordsDisagree: true })
+    expect(step(agreed, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(disagreed, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(disagreed, "CLOSURE").known.join(" ")).toMatch(/loaded case record and the case-flow projection do not agree/)
+    expect(step(disagreed, "CLOSURE").known.join(" ")).not.toMatch(/Guard was not required/)
+    expect(completed(disagreed)).not.toContain("CLOSURE")
+    expect(step(disagreed, "OUTCOME_BILLING").state).toBe(step(agreed, "OUTCOME_BILLING").state)
+
+    const billing = show(closed, [], { outcomeRecordsDisagree: true })
+    expect(step(billing, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(billing, "OUTCOME_BILLING").state).toBe("NEEDS_ATTENTION")
+
+    const open = show({
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    }, [], { closureRecordsDisagree: true })
+    expect(step(open, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(open, "CLOSURE").known.join(" ")).toMatch(/The case is open/)
+    expect(completed(open)).not.toContain("CLOSURE")
   })
 
   it("treats a reopened case as open again", () => {

@@ -213,7 +213,7 @@ function show(
     } : {}),
     ...options.detail,
   })
-  return presentJourneyClosure({
+  const presented = presentJourneyClosure({
     facts: source,
     now: NOW,
     recorded: {
@@ -234,7 +234,8 @@ function show(
     events: options.events ?? [],
     detail,
     precedingComplete: options.precedingComplete ?? true,
-  }).panel
+  })
+  return { ...presented.panel, closureRecordsDisagree: presented.closureRecordsDisagree, billingDisagreed: presented.disagreed }
 }
 
 describe("guided closure", () => {
@@ -370,6 +371,8 @@ describe("guided closure", () => {
       events: [{ id: "8", event: "close", details: { outcome: "WITHDRAWN", summary: SUMMARY } }],
     })
     expect(panel.headline).toBe("Cancelled")
+    expect(panel.closureRecordsDisagree).toBe(false)
+    expect(panel.billingDisagreed).toBe(false)
     expect(panel.closureRecord).toEqual({ status: "CANCELLED", outcomeLabel: "Withdrawn", summary: SUMMARY })
     expect(panel.commands).toEqual({ close: false, reopen: true })
     expect(panel.history[0].label).toBe("Close command")
@@ -557,6 +560,8 @@ describe("guided closure", () => {
     expect(panel.closureRecord).toBeNull()
     expect(panel.guard.offered).toBe(false)
     expect(panel.commands).toBeNull()
+    expect(panel.closureRecordsDisagree).toBe(true)
+    expect(panel.billingDisagreed).toBe(false)
     expect(panel.otherSummary).toBe(`${SUMMARY} changed`)
   })
 
@@ -565,6 +570,7 @@ describe("guided closure", () => {
     expect(panel.headline).toBe("Not closed")
     expect(panel.commands).toBeNull()
     expect(panel.closureRecord).toBeNull()
+    expect(panel.closureRecordsDisagree).toBe(true)
     expect(panel.blockers).toContain("The case record and the projection do not agree.")
   })
 })

@@ -320,7 +320,7 @@ function StepWorkspace({
                       : step.id === "OUTCOME_BILLING"
                         ? <p>Recording an outcome uses the case command. It does not close the case, change the stage, or set a closure date. Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Recording an outcome does not approve a fee, create an invoice, or take a payment. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance.</p>
                         : step.id === "CLOSURE"
-                          ? <p>Closing and reopening use the existing case commands. Closing repeats a recorded outcome and summary exactly. It does not send email, submit anything to Google, collect a payment, or enrol Guard. A withdrawal stays CANCELLED. The step is complete only when the status, outcome, summary and finished stage agree.</p>
+                          ? <p>Closing and reopening use the existing case commands. Closing repeats a recorded outcome and summary exactly. It does not send email, submit anything to Google, collect a payment, or enrol Guard. A withdrawal stays CANCELLED. The step is complete only when the status, outcome, summary and finished stage agree, and the loaded case record matches that projection.</p>
                           : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>
@@ -330,6 +330,7 @@ function StepWorkspace({
 function instructionFor(step: JourneyStepView, journey: CaseJourneyPresentation): string {
   if (step.id === "CLOSURE" && step.state === "COMPLETED" && journey.caseStatus === "CANCELLED") return "This case is cancelled. The database status is CANCELLED. Optional Guard was not required."
   if (step.id === "CLOSURE" && step.state === "COMPLETED") return "This case is closed. The database status is CLOSED. Optional Guard was not required."
+  if (step.id === "CLOSURE" && step.state === "NEEDS_ATTENTION" && !journey.closed) return "The loaded case record and the case-flow projection do not agree, so closure is not offered from here."
   if (step.id === "CLOSURE" && step.state === "NEEDS_ATTENTION") return "This closure record is inconsistent. The database status is shown for diagnosis. It is not a verified closure."
   if (step.id === "CLOSURE" && step.state === "LOCKED") return "Closure stays closed until the earlier steps are recorded."
   if (step.id === "CLOSURE" && journey.reopened) return "This case was reopened. Closure is not complete. The earlier outcome stays in the history."

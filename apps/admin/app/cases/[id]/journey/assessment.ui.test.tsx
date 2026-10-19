@@ -181,7 +181,7 @@ describe("guided assessment", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ operation: "submit_review", data: { recordVersion: 2 } })
     unmount()
 
-    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "Approved. The step is complete only while this approval still matches the evidence and the case has not been reopened." }) })
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "Approved. The step is complete only while this approval still matches the case, the profile, and the evidence, and the case has not been reopened." }) })
     show(assessment([version({ status: "REVIEWED", reviewedAt: "2026-10-02T12:00:00.000Z", recordVersion: 3 })]), "reviewed")
     expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Approve assessment" }))
@@ -215,7 +215,7 @@ describe("guided assessment", () => {
       approvedAt: "2026-10-03T12:00:00.000Z",
     })]), "stale")
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
-    expect(screen.getAllByText(/no longer matches the case issue or the evidence/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/no longer matches the case, the profile, or the evidence/).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Save draft" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Approve assessment" })).toBeNull()
   })

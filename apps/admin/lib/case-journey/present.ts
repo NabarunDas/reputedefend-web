@@ -657,7 +657,7 @@ function readEvidence(facts: CaseFlowFacts): Reading {
 }
 
 function readAssessment(facts: CaseFlowFacts, judgement: AssessmentJudgement | null | undefined): Reading {
-  const recommended = "An approved assessment that still matches the case issue and the evidence, recommending Guided or Managed. The recommendation is not an accepted service agreement."
+  const recommended = "An approved assessment that still matches the case, the profile, and the evidence, recommending Guided or Managed. The recommendation is not an accepted service agreement. A blank Google profile URL is allowed."
   if (!judgement || judgement.phase === "none") {
     return {
       proof: "unproven",
@@ -671,7 +671,7 @@ function readAssessment(facts: CaseFlowFacts, judgement: AssessmentJudgement | n
     return {
       proof: "unproven",
       known: ["A draft assessment is on file. Saving it does not complete this step."],
-      missing: ["A review, then an approval that still matches the case issue and the evidence, recommending Guided or Managed."],
+      missing: ["A review, then an approval that still matches the case, the profile, and the evidence, recommending Guided or Managed."],
       who: "ProfileRelaunch reviews and approves the draft.",
     }
   }
@@ -694,8 +694,8 @@ function readAssessment(facts: CaseFlowFacts, judgement: AssessmentJudgement | n
   if (judgement.phase === "stale") {
     return {
       proof: "attention",
-      known: ["The approved assessment no longer matches the case issue or the evidence."],
-      missing: ["A new assessment that is reviewed and approved against the current case issue and evidence."],
+      known: ["The approved assessment no longer matches the case, the profile, or the evidence."],
+      missing: ["A new assessment that is reviewed and approved against the current case, profile, and evidence."],
       who: "ProfileRelaunch writes a new draft and approves it.",
     }
   }

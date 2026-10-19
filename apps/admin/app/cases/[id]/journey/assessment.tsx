@@ -124,12 +124,12 @@ export function AssessmentPanel({
     {assessment === null && <p className="notice">No assessment is on file from the reviewed read. A save stays a draft until an approval is stored. If the reviewed database change is not applied yet, the save cannot be stored.</p>}
     {current && <div className="notice" role="status">
       <p>This recommends {assessmentPathwayLabel(latestApproved.servicePathway)}. It is not an accepted agreement and the service is not activated.</p>
-      {open && <p>A newer draft is open. The current approval still completes this step until it no longer matches the evidence or the case is reopened.</p>}
+      {open && <p>A newer draft is open. The current approval still completes this step until the case, the profile, or the evidence changes, or the case is reopened.</p>}
     </div>}
     {latestApproved && !current && <div className="guided-warning" role="status">
       <p>{latestApproved.staleReason === "reopened"
         ? "The case was reopened after this assessment was approved. That approval is not current."
-        : "This approval no longer matches the case issue or the evidence."}</p>
+        : "This approval no longer matches the case, the profile, or the evidence."}</p>
       <p>Saving a new draft does not repair the old approval. The step is complete only after a new review and approval.</p>
     </div>}
     {stepState === "NEEDS_ATTENTION" && current && <div className="guided-warning" role="status">

@@ -28,7 +28,7 @@ export async function loadCaseAssessment(caseId: string): Promise<CaseAssessment
 
 function successMessage(operation: string | undefined): string {
   if (operation === "submit_review") return "Marked for review. Reviewing it does not complete this step."
-  if (operation === "approve") return "Approved. The step is complete only while this approval still matches the evidence and the case has not been reopened."
+  if (operation === "approve") return "Approved. The step is complete only while this approval still matches the case, the profile, and the evidence, and the case has not been reopened."
   return "Saved as a draft. Saving a draft does not complete this step."
 }
 

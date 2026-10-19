@@ -231,7 +231,7 @@ function StepWorkspace({
           : step.id === "EVIDENCE_REVIEW"
             ? <p>Refreshing a scan, opening a cleared file, accepting, rejecting and fulfilling a request use the existing evidence commands. An upload is not acceptance. A clean scan is not approval. Accepting a file does not fulfil its request. This step does not send email, take a payment, or record that no documents are required.</p>
             : step.id === "ASSESSMENT"
-              ? <p>Saving a draft, submitting it for review, or approving it does not send email, take a payment, submit anything to Google, accept a quote, or activate a service. A recommended Guided or Managed pathway is not an accepted service agreement. A suspended or missing listing does not block the assessment. The step is complete only while the latest approval still matches the case issue and the evidence and the case has not been reopened.</p>
+              ? <p>Saving a draft, submitting it for review, or approving it does not send email, take a payment, submit anything to Google, accept a quote, or activate a service. A recommended Guided or Managed pathway is not an accepted service agreement. A suspended or missing listing does not block the assessment. The step is complete only while the latest approval still matches the case, the profile, and the evidence, and the case has not been reopened.</p>
               : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>

@@ -175,6 +175,52 @@ describe("proposed assessment SQL", () => {
     expect((await read()).versions[0]).toMatchObject({ current: false, stale: true, staleReason: "reopened" })
   })
 
+  it("stales an approval when a material profile or evidence fact changes, and ignores unrelated edits", async () => {
+    await db.exec(`update public.locations set business_profile_url='' where id='${location}'`)
+    await acceptEvidence()
+    const saved = await command("save_draft", draft, await versionOf())
+    const reviewed = await command("submit_review", { recordVersion: saved.recordVersion }, await versionOf())
+    expect((await command("approve", { recordVersion: reviewed.recordVersion }, await versionOf())).status).toBe("success")
+    const current = { status: "APPROVED", current: true, stale: false, staleReason: null }
+    const facts = { status: "APPROVED", current: false, stale: true, staleReason: "facts" }
+    expect((await read()).versions[0]).toMatchObject(current)
+
+    const material = [
+      [`update public.businesses set display_name='Other Bakery' where id='${business}'`, `update public.businesses set display_name='Bakery' where id='${business}'`],
+      [`update public.businesses set website_url='https://bakery.example' where id='${business}'`, `update public.businesses set website_url=null where id='${business}'`],
+      [`update public.locations set location_name='High Street' where id='${location}'`, `update public.locations set location_name=null where id='${location}'`],
+      [`update public.locations set country='Ireland' where id='${location}'`, `update public.locations set country='United Kingdom' where id='${location}'`],
+      [`update public.locations set business_profile_url='https://maps.example/live' where id='${location}'`, `update public.locations set business_profile_url='' where id='${location}'`],
+      [`update public.cases set review_url='https://maps.example/review/1' where id='${caseId}'`, `update public.cases set review_url=null where id='${caseId}'`],
+      [`update public.evidence_requests set title='Ownership certificate' where id='${requestId}'`, `update public.evidence_requests set title='Ownership letter' where id='${requestId}'`],
+      [`update public.evidence_requests set request_text='Upload the signed letter.' where id='${requestId}'`, `update public.evidence_requests set request_text='Upload the ownership letter.' where id='${requestId}'`],
+      [`update public.case_documents set title='Signed ownership letter' where id='${documentId}'`, `update public.case_documents set title='Ownership letter' where id='${documentId}'`],
+      [`update public.case_documents set title='Quarantined file' where id='${threatId}'`, `update public.case_documents set title='Rejected threat' where id='${threatId}'`],
+      [`update public.case_document_versions set review_status='REJECTED' where id='${versionId}'`, `update public.case_document_versions set review_status='ACCEPTED' where id='${versionId}'`],
+    ]
+    for (const [change, restore] of material) {
+      await db.exec(change)
+      expect((await read()).versions[0]).toMatchObject(facts)
+      await db.exec(restore)
+      expect((await read()).versions[0]).toMatchObject(current)
+    }
+
+    await db.exec(`update public.customers set full_name='Sam', email='other@example.com', phone='+447700900123' where id='${customer}'`)
+    await db.exec(`update public.businesses set display_name=' Bakery ', website_url='', updated_at='2020-01-01' where id='${business}'`)
+    await db.exec(`update public.locations set business_profile_url=null, updated_at='2020-01-01' where id='${location}'`)
+    await db.exec(`update public.cases set intake_snapshot='{"fullName":"Sam","email":"sam@example.com","phone":"+447700900123"}'::jsonb, priority='HIGH', next_action='Call the customer tomorrow.' where id='${caseId}'`)
+    await db.exec(`update public.evidence_requests set due_at='2030-01-01', fulfilled_at='2026-02-01' where id='${requestId}'`)
+    await db.exec(`update public.case_document_versions set original_filename='renamed.pdf', review_note='A staff note that is not a source fact.' where id='${versionId}'`)
+    expect((await read()).versions[0]).toMatchObject(current)
+
+    const basis = await db.query<{ src: string }>(
+      "select p.prosrc as src from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'admin_private' and p.proname = 'case_assessment_basis_v1'",
+    )
+    expect(basis.rows[0].src).toMatch(/business_profile_url/)
+    expect(basis.rows[0].src).toMatch(/request_text/)
+    expect(basis.rows[0].src).not.toMatch(/intake_snapshot|full_name|\bemail\b|\bphone\b|updated_at|original_filename|review_note|due_at|service_track/)
+  })
+
   it("keeps the first approval immutable when a second version is approved", async () => {
     await acceptEvidence()
     const firstSave = await command("save_draft", draft, await versionOf())

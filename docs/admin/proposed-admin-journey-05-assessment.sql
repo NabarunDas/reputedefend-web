@@ -10,6 +10,14 @@
 -- Staff identity comes from the existing session. The client cannot name the actor.
 -- basis_fingerprint is md5 of the canonical jsonb text, the same digest the
 -- existing command receipts use. pgcrypto is not added.
+-- The basis is a bounded set of facts the assessment relies on: the trimmed
+-- case issue and review URL; the business name and website; the location name,
+-- country and Google profile URL; each evidence request id, status, title and
+-- text; each document id, linked request and title; and each version id with
+-- its upload, scan, validation and review status. A blank profile URL is a
+-- stored value, not a requirement, so a missing or suspended listing can still
+-- be approved. Customer name, email, phone, the intake snapshot, filenames,
+-- review notes, due dates and other timestamps are not part of the basis.
 
 CREATE TABLE public.case_assessments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -121,10 +129,32 @@ RETURNS jsonb
 LANGUAGE sql STABLE SET search_path = '' AS $$
   SELECT jsonb_build_object(
     'issue', btrim(coalesce(c.issue_description, '')),
+    'reviewUrl', btrim(coalesce(c.review_url, '')),
+    'profile', jsonb_build_object(
+      'businessName', btrim(coalesce(b.display_name, '')),
+      'website', btrim(coalesce(b.website_url, '')),
+      'locationName', btrim(coalesce(l.location_name, '')),
+      'country', btrim(coalesce(l.country, '')),
+      'profileUrl', btrim(coalesce(l.business_profile_url, ''))
+    ),
     'requests', coalesce((
-      SELECT jsonb_agg(jsonb_build_object('id', r.id, 'status', r.status) ORDER BY r.id)
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', r.id,
+        'status', r.status,
+        'title', btrim(r.title),
+        'text', btrim(r.request_text)
+      ) ORDER BY r.id)
       FROM public.evidence_requests r
       WHERE r.case_id = p_case
+    ), '[]'::jsonb),
+    'documents', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', d.id,
+        'requestId', d.evidence_request_id,
+        'title', btrim(d.title)
+      ) ORDER BY d.id)
+      FROM public.case_documents d
+      WHERE d.case_id = p_case
     ), '[]'::jsonb),
     'versions', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
@@ -141,6 +171,8 @@ LANGUAGE sql STABLE SET search_path = '' AS $$
     ), '[]'::jsonb)
   )
   FROM public.cases c
+  JOIN public.businesses b ON b.id = c.business_id
+  JOIN public.locations l ON l.id = c.location_id
   WHERE c.id = p_case;
 $$;
 

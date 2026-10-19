@@ -130,9 +130,9 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     title: "Assessment & Recommended Path",
     purpose: "Record what the evidence shows and which path is recommended.",
     responsibleParty: "ADMIN",
-    dataDependencies: ["case_assessments", "the case issue", "evidence request status", "evidence version review"],
+    dataDependencies: ["case_assessments", "the case issue and review URL", "the business and location profile", "evidence request title, text and status", "document title", "evidence version review"],
     completionEvidence:
-      "The latest approved assessment is current: its basis still matches the case issue and the evidence, it was not approved before a later reopen, and it recommends Guided or Managed. A draft, a review, a stale approval, or moving the technical stage does not complete the step. The recommendation is not an accepted service agreement and does not activate the service.",
+      "The latest approved assessment is current: its basis still matches the case issue, review URL, business and location profile, evidence-request title and text, document title, and evidence version state. A blank Google profile URL is allowed. It was not approved before a later reopen, and it recommends Guided or Managed. A draft, a review, a stale approval, or moving the technical stage does not complete the step. The recommendation is not an accepted service agreement and does not activate the service.",
     applicability: "UNIVERSAL",
     unsupported:
       "This step records the assessment through the proposed commands. It does not send email, take a payment, submit anything to Google, accept a quote, or activate a service. A suspended or missing listing does not block the assessment.",

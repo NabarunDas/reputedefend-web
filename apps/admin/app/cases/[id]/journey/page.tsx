@@ -8,6 +8,8 @@ import { linkSecret } from "@/lib/communications/link"
 import { mailFromAddress } from "@/lib/communications/mail"
 import { monitoredReplyMailbox } from "@/lib/communications/brand-email"
 import { loadCaseCommunications } from "@/lib/communications/queries"
+import { judgeAssessment } from "@/lib/case-journey/assessment"
+import { loadCaseAssessment } from "@/lib/case-journey/assessment-command"
 import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
 import { buildJourneyDocuments } from "@/lib/case-journey/documents"
 import { buildJourneyIntake } from "@/lib/case-journey/intake"
@@ -41,7 +43,7 @@ export default async function CaseJourneyPage({
   const { id } = await params
   const query = await searchParams
   if (Array.isArray(query.step)) notFound()
-  const [detail, facts] = await Promise.all([getCase(id), loadCaseFlowFacts(id)])
+  const [detail, facts, assessment] = await Promise.all([getCase(id), loadCaseFlowFacts(id), loadCaseAssessment(id)])
   const [customer, business, location, membership, extension] = await Promise.all([
     recordDetail("client", detail.customerId),
     recordDetail("business", detail.businessId),
@@ -72,6 +74,7 @@ export default async function CaseJourneyPage({
     recordConflict: brief.conflicts.length > 0,
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
+    assessment: assessment ? judgeAssessment(assessment) : null,
   })
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
@@ -112,6 +115,7 @@ export default async function CaseJourneyPage({
     documents={documents}
     replyMailbox={monitoredReplyMailbox()}
     evidenceReview={evidenceReview}
+    assessment={assessment}
   />
 }
 

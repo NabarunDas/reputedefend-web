@@ -11,11 +11,13 @@ import {
   type JourneyStepState,
   type JourneyStepView,
 } from "@/lib/case-journey/present"
+import type { CaseAssessmentView } from "@/lib/case-journey/assessment"
 import type { JourneyDocuments } from "@/lib/case-journey/documents"
 import type { CaseDetail } from "@/lib/cases/model"
 import type { EvidenceCase } from "@/lib/evidence/model"
 import type { EvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
+import { AssessmentPanel } from "./assessment"
 import { DocumentRequestPanel } from "./documents"
 import { EvidenceWorkspace } from "../evidence/workspace-view"
 import { IntakeSummary, VerificationForm, VerificationSummary, IntakeReviewForm } from "./forms"
@@ -42,7 +44,7 @@ const previewNote: Record<JourneyStepId, string> = {
   VERIFICATION: "Check the business and listing, then record the screening outcome.",
   REQUEST_DOCUMENTS: "Choose the documents, save one request, then edit and approve the email. Approving does not send it.",
   EVIDENCE_REVIEW: "Review each uploaded file. A clean scan is not approval, and accepting a file does not fulfil its request.",
-  ASSESSMENT: "Assessment actions are not available in this preview.",
+  ASSESSMENT: "Record the findings and the recommended pathway, then review and approve them. Saving the form does not complete this step.",
   QUOTE_ACCEPTANCE: "Quote actions are not available in this preview.",
   SERVICE_ACTIVATION: "Service activation actions are not available in this preview.",
   PREPARATION: "Pack preparation actions are not available in this preview.",
@@ -61,7 +63,7 @@ export type JourneyEvidenceReview = {
 /**
  * The eleven-step preview. Steps 1 and 2 record a staff decision.
  * Steps 3 and 4 reuse the existing document and evidence commands.
- * Later steps still only link to a place that already exists.
+ * Step 5 records an assessment. Later steps still only link to a place that already exists.
  */
 export function CaseJourneyView({
   reference,
@@ -75,6 +77,7 @@ export function CaseJourneyView({
   documents,
   replyMailbox = null,
   evidenceReview = null,
+  assessment = null,
 }: {
   reference: string
   customer: string
@@ -87,6 +90,7 @@ export function CaseJourneyView({
   documents: JourneyDocuments | null
   replyMailbox?: string | null
   evidenceReview?: JourneyEvidenceReview | null
+  assessment?: CaseAssessmentView | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -120,7 +124,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -157,6 +161,7 @@ function StepWorkspace({
   documents,
   replyMailbox,
   evidenceReview,
+  assessment,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -167,6 +172,7 @@ function StepWorkspace({
   documents: JourneyDocuments | null
   replyMailbox: string | null
   evidenceReview: JourneyEvidenceReview | null
+  assessment: CaseAssessmentView | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -176,8 +182,9 @@ function StepWorkspace({
   const showAmend = step.state === "COMPLETED" && (step.decision === "intake" || (step.decision === "verification" && intakeReviewed))
   const showDocuments = step.id === "REQUEST_DOCUMENTS" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && documents !== null
   const showEvidence = step.id === "EVIDENCE_REVIEW" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && evidenceReview !== null
-  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW"
-  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
+  const showAssessment = step.id === "ASSESSMENT" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE"
+  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW" || step.id === "ASSESSMENT"
+  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && !showAssessment && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
     <h2 id="journey-step-heading">{step.title}</h2>
@@ -200,7 +207,8 @@ function StepWorkspace({
     {showDocuments && <DocumentRequestPanel caseId={caseId} documents={documents} replyMailbox={replyMailbox} />}
     {step.id === "EVIDENCE_REVIEW" && !showEvidence && step.state !== "NOT_APPLICABLE" && <Outstanding step={step} />}
     {showEvidence && evidenceReview && <EvidenceReview step={step} review={evidenceReview} />}
-    {!step.decision && !showDocuments && !showEvidence && <Destination destination={step.destination} />}
+    {showAssessment && <AssessmentPanel caseId={caseId} version={version} assessment={assessment} stepState={step.state} />}
+    {!step.decision && !showDocuments && !showEvidence && !showAssessment && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
       <h3>What is already known</h3>
@@ -222,13 +230,16 @@ function StepWorkspace({
           ? <p>Saving a requirement, editing the wording, and approving the email do not send it. An approved email does not complete this step.</p>
           : step.id === "EVIDENCE_REVIEW"
             ? <p>Refreshing a scan, opening a cleared file, accepting, rejecting and fulfilling a request use the existing evidence commands. An upload is not acceptance. A clean scan is not approval. Accepting a file does not fulfil its request. This step does not send email, take a payment, or record that no documents are required.</p>
-            : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
+            : step.id === "ASSESSMENT"
+              ? <p>Saving a draft, submitting it for review, or approving it does not send email, take a payment, submit anything to Google, accept a quote, or activate a service. A recommended Guided or Managed pathway is not an accepted service agreement. A suspended or missing listing does not block the assessment. The step is complete only while the latest approval still matches the case, the profile, and the evidence, and the case has not been reopened.</p>
+              : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>
   </article>
 }
 
 function instructionFor(step: JourneyStepView): string {
+  if (step.id === "ASSESSMENT" && step.state === "COMPLETED") return "This assessment is approved. It recommends a pathway. It is not an accepted agreement and the service is not activated."
   if (step.state === "COMPLETED" && step.decision === "intake") return "This intake review is recorded."
   if (step.state === "COMPLETED" && step.decision === "verification") return "Preliminary screening is recorded."
   if (step.state === "COMPLETED") return "This step is complete."
@@ -241,6 +252,8 @@ function instructionFor(step: JourneyStepView): string {
   if (step.id === "EVIDENCE_REVIEW" && step.state === "WAITING") return "The customer still has to send the documents. Delivery of the request is not a review."
   if (step.id === "EVIDENCE_REVIEW" && step.state === "NEEDS_ATTENTION") return "A file or request needs attention. The original record stays as it was recorded."
   if (step.id === "EVIDENCE_REVIEW" && step.state === "UNKNOWN") return "No evidence is on file. A decision that none is required has to be recorded separately."
+  if (step.id === "ASSESSMENT" && step.state === "LOCKED") return "Assessment stays closed until the earlier steps are recorded."
+  if (step.id === "ASSESSMENT" && step.state === "NEEDS_ATTENTION") return "This approval is not current. A new draft has to be reviewed and approved."
   return previewNote[step.id]
 }
 

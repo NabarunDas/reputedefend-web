@@ -10,6 +10,7 @@ import type {
 } from "../case-flow/model"
 import { journeyCatalogue, journeyStepIds, type JourneyStepId } from "./catalogue"
 import type { JourneyWorkEvent } from "./decisions"
+import type { AssessmentJudgement } from "./assessment"
 import { presentCaseJourney, presentJourneyState, type JourneyStepState } from "./present"
 
 const CASE_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -158,7 +159,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function show(
   overrides: Partial<CaseFlowFacts> = {},
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null } = {},
 ) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
@@ -740,5 +741,56 @@ describe("intake review and business screening records", () => {
     expect(step(journey, "CASE_RECEIVED").state).not.toBe("COMPLETED")
     expect(step(journey, "VERIFICATION").state).not.toBe("COMPLETED")
     expect(step(journey, "EVIDENCE_REVIEW").state).toBe("COMPLETED")
+  })
+})
+
+describe("assessment completion", () => {
+  const approved: AssessmentJudgement = { phase: "approved", pathway: "GUIDED", versionNumber: 1 }
+  const ready = {
+    technicalStage: "ASSESSMENT_READY" as const,
+    evidence: reviewedEvidence,
+    communications: [delivered()],
+  }
+
+  it("completes only a current Guided or Managed approval, and not from the service track", () => {
+    const journey = show(ready, [], { assessment: approved })
+    const assessment = step(journey, "ASSESSMENT")
+    expect(assessment.state).toBe("COMPLETED")
+    expect(assessment.known.join(" ")).toMatch(/recommends Guided/)
+    expect(assessment.known.join(" ")).toMatch(/not an accepted agreement/)
+    expect(assessment.missing.join(" ")).not.toMatch(/accessible|listing verification/)
+    expect(journey.serviceTrack).toBe("UNDECIDED")
+    expect(step(show({ ...ready, serviceTrack: "GUIDED" }), "ASSESSMENT").state).not.toBe("COMPLETED")
+    expect(step(show(ready, [], { assessment: { phase: "draft", pathway: "GUIDED", versionNumber: 1 } }), "ASSESSMENT").state).not.toBe("COMPLETED")
+    expect(step(show(ready, [], { assessment: { phase: "reviewed", pathway: "MANAGED", versionNumber: 1 } }), "ASSESSMENT").state).not.toBe("COMPLETED")
+    expect(step(show(ready, [], { assessment: { phase: "approved", pathway: "UNDECIDED", versionNumber: 1 } }), "ASSESSMENT").state).not.toBe("COMPLETED")
+  })
+
+  it("keeps a stale or reopened approval in attention after the focus has moved on", () => {
+    const later = {
+      ...ready,
+      technicalStage: "SERVICE_SELECTION" as const,
+      serviceTrack: "GUIDED" as const,
+      commercial: { complete: true, quotes: [quote()] },
+    }
+    const stale = show(later, [], { assessment: { phase: "stale", pathway: "GUIDED", versionNumber: 1 } })
+    const reopened = show(later, [], { assessment: { phase: "reopened", pathway: "MANAGED", versionNumber: 2 } })
+    expect(step(stale, "ASSESSMENT").state).toBe("NEEDS_ATTENTION")
+    expect(step(stale, "ASSESSMENT").known.join(" ")).toMatch(/no longer matches/)
+    expect(step(reopened, "ASSESSMENT").state).toBe("NEEDS_ATTENTION")
+    expect(step(reopened, "ASSESSMENT").known.join(" ")).toMatch(/reopened/)
+    expect(completed(stale)).not.toContain("ASSESSMENT")
+    expect(completed(reopened)).not.toContain("ASSESSMENT")
+  })
+
+  it("does not repair an approval that disagrees with the evidence projection", () => {
+    const journey = show(
+      { technicalStage: "ASSESSMENT_READY", evidence: { requests: [], versions: [] } },
+      [],
+      { assessment: approved },
+    )
+    expect(step(journey, "ASSESSMENT").state).toBe("NEEDS_ATTENTION")
+    expect(step(journey, "ASSESSMENT").known.join(" ")).toMatch(/disagree/)
+    expect(step(journey, "ASSESSMENT").state).not.toBe("COMPLETED")
   })
 })

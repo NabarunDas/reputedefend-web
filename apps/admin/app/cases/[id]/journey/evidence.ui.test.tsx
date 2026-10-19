@@ -228,7 +228,7 @@ describe("guided evidence review", () => {
     expect(screen.getAllByText(/Who must act/).length).toBeGreaterThan(0)
     expect(screen.queryByRole("heading", { name: "Prepared submission pack" })).toBeNull()
     expect(screen.queryByRole("heading", { name: "Create request" })).toBeNull()
-    expect(screen.queryByText("Assessment actions are not available in this preview.")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
   })
 
   it("keeps an accepted file short of fulfilment", () => {
@@ -376,7 +376,8 @@ describe("guided evidence review", () => {
 
     show(item, [message({ deliveryStatus: "DELIVERED" })], { selected: "ASSESSMENT" })
     expect(screen.getByRole("heading", { name: "Assessment & Recommended Path" })).toBeTruthy()
-    expect(screen.getByText("Assessment actions are not available in this preview.")).toBeTruthy()
+    expect(screen.getByText("Assessment stays closed until the earlier steps are recorded.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
     expect(screen.queryByRole("heading", { name: "Open evidence requests" })).toBeNull()
   })

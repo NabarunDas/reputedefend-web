@@ -24,6 +24,7 @@ import type {
 } from "../case-flow/model"
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
+import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
 import {
   latestIntakeDecision,
@@ -197,11 +198,19 @@ export function presentJourneyState(proof: Proof, place: "focus" | "before" | "a
   return "UNKNOWN"
 }
 
+export type JourneyPresentationOptions = {
+  recordConflict?: boolean
+  emailRecordsDisagree?: boolean
+  authorityRecordsDisagree?: boolean
+  /** Omitted or null means no assessment was read. The step stays unapproved. */
+  assessment?: AssessmentJudgement | null
+}
+
 export function presentCaseJourney(
   facts: CaseFlowFacts,
   now: string,
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean } = {},
+  options: JourneyPresentationOptions = {},
 ): CaseJourneyPresentation {
   const flow = resolveCaseFlow(facts, now)
   const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
@@ -373,14 +382,14 @@ function readSteps(
   facts: CaseFlowFacts,
   now: string,
   events: readonly JourneyWorkEvent[],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean },
+  options: JourneyPresentationOptions,
 ): Record<JourneyStepId, Reading> {
   return {
     CASE_RECEIVED: readReceived(facts, events),
     VERIFICATION: readVerification(facts, events, options),
     REQUEST_DOCUMENTS: readRequest(facts),
     EVIDENCE_REVIEW: readEvidence(facts),
-    ASSESSMENT: readAssessment(),
+    ASSESSMENT: readAssessment(facts, options.assessment),
     QUOTE_ACCEPTANCE: readQuote(facts, now),
     SERVICE_ACTIVATION: readActivation(facts, now),
     PREPARATION: readPreparation(facts),
@@ -647,12 +656,73 @@ function readEvidence(facts: CaseFlowFacts): Reading {
   }
 }
 
-function readAssessment(): Reading {
+function readAssessment(facts: CaseFlowFacts, judgement: AssessmentJudgement | null | undefined): Reading {
+  const recommended = "An approved assessment that still matches the case, the profile, and the evidence, recommending Guided or Managed. The recommendation is not an accepted service agreement. A blank Google profile URL is allowed."
+  if (!judgement || judgement.phase === "none") {
+    return {
+      proof: "unproven",
+      known: ["No approved assessment is on file. A draft or a review would not complete this step."],
+      missing: [recommended],
+      who: "ProfileRelaunch writes, reviews and approves the assessment.",
+    }
+  }
+  const pathway = judgement.pathway === "GUIDED" ? "Guided" : judgement.pathway === "MANAGED" ? "Managed" : "not yet decided"
+  if (judgement.phase === "draft") {
+    return {
+      proof: "unproven",
+      known: ["A draft assessment is on file. Saving it does not complete this step."],
+      missing: ["A review, then an approval that still matches the case, the profile, and the evidence, recommending Guided or Managed."],
+      who: "ProfileRelaunch reviews and approves the draft.",
+    }
+  }
+  if (judgement.phase === "reviewed") {
+    return {
+      proof: "unproven",
+      known: ["The assessment has been reviewed and has not been approved."],
+      missing: ["An approval of this reviewed assessment. Reviewing it does not complete the step."],
+      who: "ProfileRelaunch approves the reviewed assessment.",
+    }
+  }
+  if (judgement.phase === "reopened") {
+    return {
+      proof: "attention",
+      known: ["The case was reopened after the assessment was approved. That approval is not current."],
+      missing: ["A new assessment approved after the case was reopened."],
+      who: "ProfileRelaunch assesses the reopened case.",
+    }
+  }
+  if (judgement.phase === "stale") {
+    return {
+      proof: "attention",
+      known: ["The approved assessment no longer matches the case, the profile, or the evidence."],
+      missing: ["A new assessment that is reviewed and approved against the current case, profile, and evidence."],
+      who: "ProfileRelaunch writes a new draft and approves it.",
+    }
+  }
+  if (judgement.pathway !== "GUIDED" && judgement.pathway !== "MANAGED") {
+    return {
+      proof: "unproven",
+      known: [`An approval is on file, and the pathway is ${pathway}. That is not a Guided or Managed recommendation.`],
+      missing: [recommended],
+      who: "ProfileRelaunch approves a Guided or Managed recommendation.",
+    }
+  }
+  if (!evidenceReadyForAssessment(facts.evidence)) {
+    return {
+      proof: "attention",
+      known: ["The approved assessment and the evidence on this case disagree. This page does not change either record."],
+      missing: ["Evidence that still matches the approved assessment, or a new assessment approved against the current evidence."],
+      who: "ProfileRelaunch reconciles the assessment with the evidence before treating either as current.",
+    }
+  }
   return {
-    proof: "unproven",
-    known: ["No assessment record is present in the case-flow projection."],
-    missing: ["A stored assessment and the recommended path."],
-    who: "ProfileRelaunch writes the assessment.",
+    proof: "complete",
+    known: [
+      `The approved assessment recommends ${pathway}.`,
+      "This recommends a pathway. It is not an accepted agreement and the service is not activated.",
+    ],
+    missing: [],
+    who: "ProfileRelaunch has approved the assessment.",
   }
 }
 

@@ -228,7 +228,7 @@ describe("outcome verification and billing", () => {
     })
     const { presented, step } = shown(source, [row], [submission({ actor: "ADMIN", track: "MANAGED" })], { order: serviceOrder() })
     expect(presented.panel.headline).toBe("Pending billing")
-    expect(presented.panel.commands).toEqual({ approve: true, invoice: false })
+    expect(presented.panel.commands).toEqual({ approve: true, invoice: false, record: false })
     expect(presented.panel.evidence).toEqual(["outcome.png · v1"])
     expect(step?.state).toBe("WAITING")
     expect(step?.state).not.toBe("COMPLETED")
@@ -298,7 +298,7 @@ describe("outcome verification and billing", () => {
     const attempt = submission({ actor: "ADMIN", track: "MANAGED" })
     const approved = shown(managed, [baseMoney], [attempt], { order: serviceOrder() })
     expect(approved.presented.panel.headline).toBe("Approved fee")
-    expect(approved.presented.panel.commands).toEqual({ approve: false, invoice: true })
+    expect(approved.presented.panel.commands).toEqual({ approve: false, invoice: true, record: false })
     expect(approved.step?.state).toBe("WAITING")
 
     const drafted = shown(managed, [{ ...baseMoney, invoiceStatus: "DRAFT" }], [attempt], { order: serviceOrder() })
@@ -320,7 +320,7 @@ describe("outcome verification and billing", () => {
     })
     const failed = shown(failedSource, [{ ...baseMoney, obligationState: "FAILED" }], [attempt], { order: serviceOrder() })
     expect(failed.presented.panel.headline).toBe("Payment failed")
-    expect(failed.presented.panel.commands).toEqual({ approve: false, invoice: true })
+    expect(failed.presented.panel.commands).toEqual({ approve: false, invoice: true, record: false })
     expect(failed.step?.state).toBe("NEEDS_ATTENTION")
     expect(failed.step?.state).not.toBe("COMPLETED")
 
@@ -366,7 +366,8 @@ describe("outcome verification and billing", () => {
     const open = shown(facts({ caseStatus: "UNDER_REVIEW", technicalStage: "OUTCOME_REVIEW" }))
     expect(open.presented.panel.headline).toBe("Settled")
     expect(open.presented.panel.commands).toBeNull()
-    expect(open.presented.panel.notices.join(" ")).toMatch(/record_outcome command is proposed and is not applied/)
+    expect(open.presented.panel.commands?.record ?? false).toBe(false)
+    expect(open.presented.panel.notices.join(" ")).toMatch(/already stored on an open case/)
     expect(open.presented.panel.notices.join(" ")).toMatch(/does not close the case/)
     expect(open.step?.state).toBe("COMPLETED")
     const journey = presentCaseJourney(facts({ caseStatus: "UNDER_REVIEW", technicalStage: "OUTCOME_REVIEW" }), NOW)
@@ -394,10 +395,65 @@ describe("outcome verification and billing", () => {
       receiptId: null,
       acceptedEvidence: [{ id: versionId, filename: "outcome.png", versionNumber: 1 }],
     })], [submission({ actor: "ADMIN", track: "MANAGED" })], { order: serviceOrder() })
-    expect(approval.presented.panel.commands).toEqual({ approve: true, invoice: false })
+    expect(approval.presented.panel.commands).toEqual({ approve: true, invoice: false, record: false })
     expect(approval.presented.panel.order).not.toBeNull()
     expect(approval.step?.state).not.toBe("COMPLETED")
     expect(presentCaseJourney(managed, NOW).steps.find(item => item.id === "CLOSURE")?.state).not.toBe("COMPLETED")
+  })
+
+  it("offers a record command only while the outcome is absent and the records agree", () => {
+    const open = shown(facts({
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      commercial: { complete: true, quotes: [] },
+      payment: { complete: true, orders: [] },
+    }), [], [])
+    expect(open.presented.panel.headline).toBe("Outcome not recorded")
+    expect(open.presented.panel.commands).toEqual({ approve: false, invoice: false, record: true })
+    expect(open.presented.panel.notices.join(" ")).toMatch(/does not close the case/)
+    expect(open.presented.panel.notices.join(" ")).toMatch(/approve a success fee/)
+    expect(open.step?.state).not.toBe("LOCKED")
+    expect(open.step?.state).not.toBe("COMPLETED")
+
+    const stored = shown(facts({ caseStatus: "UNDER_REVIEW", technicalStage: "OUTCOME_REVIEW" }))
+    expect(stored.presented.panel.commands?.record ?? false).toBe(false)
+
+    const disagree = shown(facts({
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: null,
+      outcomeSummary: "",
+      payment: { complete: true, orders: [upfront({ orderState: "ACCEPTED_AWAITING_PAYMENT", obligationState: "PAID", receiptRecorded: true })] },
+    }))
+    expect(disagree.presented.panel.headline).toBe("Billing records disagree")
+    expect(disagree.presented.panel.commands).toBeNull()
+
+    const unfinished = shown(facts({
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      commercial: { complete: false, quotes: [] },
+      payment: { complete: true, orders: [] },
+    }), [], [])
+    expect(unfinished.presented.panel.headline).toBe("Billing records are incomplete")
+    expect(unfinished.presented.panel.commands).toBeNull()
+
+    const otherType = shown(facts({
+      caseType: "OTHER",
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      commercial: { complete: true, quotes: [] },
+      payment: { complete: true, orders: [] },
+    }), [], [])
+    expect(otherType.presented.panel.commands).toBeNull()
   })
 
   it("does not treat an open outcome, a reopened case, or a fee on an unsuccessful case as finished", () => {
@@ -442,7 +498,7 @@ describe("outcome verification and billing", () => {
     const again = shown(reopened)
     expect(again.presented.panel.headline).toBe("Outcome not recorded")
     expect(again.presented.panel.notices.join(" ")).toMatch(/reopened/)
-    expect(again.presented.panel.commands).toBeNull()
+    expect(again.presented.panel.commands).toEqual({ approve: false, invoice: false, record: true })
     expect(again.step?.state).not.toBe("COMPLETED")
     expect(judgeOutcomeBilling(reopened, NOW).known.join(" ")).toMatch(/does not close the case/)
 
@@ -547,7 +603,7 @@ describe("outcome verification and billing", () => {
       version("77777777-7777-4777-8777-777777777777"),
       version("88888888-8888-4888-8888-888888888888"),
     ]), [row(selected)], [attempt], { order: serviceOrder() })
-    expect(eligible.presented.panel.commands).toEqual({ approve: true, invoice: false })
+    expect(eligible.presented.panel.commands).toEqual({ approve: true, invoice: false, record: false })
     expect(eligible.presented.panel.evidence).toEqual(["outcome.png · v1"])
 
     for (const bad of [
@@ -591,7 +647,7 @@ describe("outcome verification and billing", () => {
     })
     const attempt = submission({ actor: "ADMIN", track: "MANAGED" })
     const ready = shown(source, [row], [attempt], { order: serviceOrder() })
-    expect(ready.presented.panel.commands).toEqual({ approve: true, invoice: false })
+    expect(ready.presented.panel.commands).toEqual({ approve: true, invoice: false, record: false })
 
     const otherCustomer = "12121212-1212-4121-8121-121212121212"
     const wrongCustomer = shown(source, [money({ ...row, customerId: otherCustomer })], [attempt], { order: serviceOrder() })

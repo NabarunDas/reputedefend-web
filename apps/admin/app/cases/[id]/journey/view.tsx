@@ -121,7 +121,7 @@ export function CaseJourneyView({
   activation?: JourneyActivationPanel | null
   preparation?: JourneyPreparationPanel | null
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
-  outcome?: JourneyOutcomePanel | null
+  outcome?: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -223,7 +223,7 @@ function StepWorkspace({
   activation: JourneyActivationPanel | null
   preparation: JourneyPreparationPanel | null
   submission: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
-  outcome: JourneyOutcomePanel | null
+  outcome: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -276,7 +276,7 @@ function StepWorkspace({
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
     {showSubmission && submission && <SubmissionPanel caseDetail={submission.caseDetail} panel={submission.panel} />}
-    {showOutcome && outcome && <OutcomePanel panel={outcome} />}
+    {showOutcome && outcome && <OutcomePanel caseDetail={outcome.caseDetail} panel={outcome.panel} />}
     {!step.decision && !showDocuments && !showEvidence && !showAssessment && !showQuote && !showActivation && !showPreparation && !showSubmission && !showOutcome && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
@@ -310,7 +310,7 @@ function StepWorkspace({
                     : step.id === "SUBMISSION"
                       ? <p>Recording an attempt, a decision or a withdrawal uses the existing case commands. None of those submits anything to Google. A Guided attempt is the customer&apos;s and a Managed attempt is ProfileRelaunch&apos;s. An open attempt does not finish this step. Outcome review, billing and closure stay on later steps.</p>
                       : step.id === "OUTCOME_BILLING"
-                        ? <p>Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance. A pre-closure outcome command is proposed and is not applied. This step does not offer that command.</p>
+                        ? <p>Recording an outcome uses the case command. It does not close the case, change the stage, or set a closure date. Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Recording an outcome does not approve a fee, create an invoice, or take a payment. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance.</p>
                         : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>

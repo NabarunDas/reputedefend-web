@@ -155,7 +155,7 @@ export default async function CaseJourneyPage({
     activation={activation}
     preparation={preparation?.panel ?? null}
     submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
-    outcome={outcome?.panel ?? null}
+    outcome={outcome ? { caseDetail: detail, panel: outcome.panel } : null}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}

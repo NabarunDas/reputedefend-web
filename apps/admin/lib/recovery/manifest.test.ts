@@ -19,11 +19,13 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261019163645_admin_journey_05_assessment_dev_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261019163645_admin_journey_05_assessment_dev_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261019183000_admin_journey_10b_record_outcome_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
-    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")).toBeNull()
+    expect(findMigration("20261019163645_admin_journey_05_assessment_dev_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")?.appliedToDev).toBe(false)
+    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")?.safeToReplay).toBe(false)
   })
 
   it("never marks any migration as safe to replay", () => {
@@ -31,7 +33,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261019183000_admin_journey_10b_record_outcome_v1.sql"])
+    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")?.appliedToDev).toBe(false)
+    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261015153000_payment_lane_isolation_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015153000_payment_lane_isolation_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261015140000_commercial_eligibility_gate_v1.sql")?.appliedToDev).toBe(true)

@@ -1,11 +1,10 @@
 /**
- * Proposal only. Nothing in this file is wired to `admin_case_command_v1`
- * and nothing here is a migration.
+ * Readable checks for `record_outcome` and the close guard.
  *
- * `assessProposedOutcomeRecord` and `assessProposedClose` describe a future
- * command. The journey does not call them. `readStoredOutcome` is the current
- * read-only check: it recognises a row the future command would have written,
- * and it does not record or close anything.
+ * The live function is `public.admin_case_command_v1` in
+ * `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`.
+ * That migration is not applied to DEV or Production. The journey page does
+ * not call these functions. `readStoredOutcome` is the current read-only check.
  */
 
 const recoveryOutcomes = ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"]
@@ -34,8 +33,8 @@ function summaryOk(summary: string): boolean {
 }
 
 /**
- * The checks a pre-closure outcome command would have to enforce.
- * `closesCase` and `changesStage` stay false: the proposal does not close the case.
+ * The checks `record_outcome` enforces.
+ * `closesCase` and `changesStage` stay false: recording does not close the case.
  */
 export function assessProposedOutcomeRecord(input: {
   caseType: string
@@ -56,15 +55,17 @@ export function assessProposedOutcomeRecord(input: {
 }
 
 /**
- * The close guard that would accompany `record_outcome`.
- * A different stored outcome is refused. Closing still closes the case, and
- * this function does not replace the stored outcome with another value.
+ * The close guard that accompanies `record_outcome`.
+ * A stored outcome and its summary must be repeated exactly. A different
+ * value is refused. Closing still closes the case, and this function does
+ * not replace the stored outcome or summary.
  */
 export function assessProposedClose(input: {
   caseType: string
   stage: string
   status: string
   existingOutcome: string | null
+  existingSummary: string | null
   outcome: string
   summary: string
   openWork: boolean
@@ -74,13 +75,15 @@ export function assessProposedClose(input: {
   if (input.status === "CLOSED" || input.status === "CANCELLED") return { status: "refused", reason: "already_closed" }
   if (input.outcome !== "WITHDRAWN" && input.stage !== "OUTCOME_REVIEW") return { status: "refused", reason: "wrong_stage" }
   if (input.openWork) return { status: "refused", reason: "open_work" }
-  if (input.existingOutcome && input.existingOutcome !== input.outcome) return { status: "refused", reason: "outcome_conflict" }
+  if (input.existingOutcome && (input.existingOutcome !== input.outcome || input.existingSummary !== input.summary)) {
+    return { status: "refused", reason: "outcome_conflict" }
+  }
   return { status: "would_close", outcome: input.outcome, closesCase: true, overwroteOutcome: false }
 }
 
 /**
  * Read-only. A `pre_closure` result means the stored row has the shape
- * `record_outcome` would write. It does not mean that command exists.
+ * `record_outcome` writes. It does not mean the migration has been applied.
  */
 export function readStoredOutcome(input: {
   caseType: string

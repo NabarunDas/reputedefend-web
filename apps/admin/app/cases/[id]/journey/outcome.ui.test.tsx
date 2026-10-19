@@ -7,7 +7,7 @@ import type { CaseFlowFacts } from "@/lib/case-flow/model"
 import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { presentCaseJourney } from "@/lib/case-journey/present"
-import type { Submission } from "@/lib/cases/model"
+import type { CaseDetail, Submission } from "@/lib/cases/model"
 import type { ServiceOrder } from "@/lib/commerce/model"
 import type { MoneyOrder } from "@/lib/payments/model"
 import { CaseJourneyView } from "./view"
@@ -153,11 +153,46 @@ function serviceOrder(overrides: Partial<ServiceOrder> = {}): ServiceOrder {
   }
 }
 
+function caseDetail(overrides: Partial<CaseDetail> = {}): CaseDetail {
+  return {
+    id: CASE_ID,
+    reference: "PR-1",
+    type: "PROFILE_RECOVERY",
+    stage: "OUTCOME_REVIEW",
+    track: "GUIDED",
+    status: "UNDER_REVIEW",
+    client: "Alex",
+    business: "Bakery",
+    assigned: true,
+    priority: "NORMAL",
+    nextAction: "",
+    due: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    version: 4,
+    outcome: null,
+    summary: "",
+    priorityReason: "",
+    firstResponseDue: null,
+    issue: "Profile suspended",
+    reviewUrl: null,
+    customerId: "11111111-1111-4111-8111-111111111111",
+    businessId: "22222222-2222-4222-8222-222222222222",
+    locationId: "33333333-3333-4333-8333-333333333333",
+    events: [],
+    tasks: [],
+    submissions: [],
+    transitions: [],
+    customerPreview: { reference: "PR-1", type: "PROFILE_RECOVERY", summary: "", notes: [] },
+    ...overrides,
+  }
+}
+
 function show(
   source: CaseFlowFacts,
   orders: MoneyOrder[] | null,
   submissions: Submission[] | null,
   order: ServiceOrder | null = null,
+  detail: CaseDetail = caseDetail({ stage: source.technicalStage === "OUTCOME_REVIEW" ? "OUTCOME_REVIEW" : "INITIAL_REVIEW", type: source.caseType, track: source.serviceTrack === "MANAGED" ? "MANAGED" : source.serviceTrack === "GUIDED" ? "GUIDED" : "UNDECIDED", status: source.caseStatus, outcome: source.outcome as CaseDetail["outcome"] }),
 ) {
   const presented = presentJourneyOutcome({
     facts: source,
@@ -183,7 +218,7 @@ function show(
     brief={brief}
     version={4}
     documents={null}
-    outcome={locked ? null : presented.panel}
+    outcome={locked ? null : { caseDetail: detail, panel: presented.panel }}
   />)
 }
 
@@ -199,6 +234,7 @@ describe("guided outcome verification", () => {
     expect(screen.getByText("Outcome verification stays closed until the earlier steps are recorded.")).toBeTruthy()
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
     expect(screen.queryByRole("button", { name: /Close case|Submit to Google/i })).toBeNull()
   })
 
@@ -210,6 +246,7 @@ describe("guided outcome verification", () => {
     expect(screen.getAllByText(/No second charge/).length).toBeGreaterThan(0)
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
     expect(screen.queryByRole("button", { name: /Close case|Submit to Google|Mark as paid/i })).toBeNull()
   })
 
@@ -285,6 +322,7 @@ describe("guided outcome verification", () => {
     expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
   })
 
   it("offers approval for one valid proof among extra accepted files, and withholds a rejected or mismatched record", () => {
@@ -338,5 +376,69 @@ describe("guided outcome verification", () => {
     show(source, [money({ ...row, customerId: "12121212-1212-4121-8121-121212121212" })], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder())
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+  })
+
+  it("records an outcome without closing the case, approving a fee, or taking payment", async () => {
+    const source = facts({
+      technicalStage: "OUTCOME_REVIEW",
+      caseStatus: "UNDER_REVIEW",
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      commercial: { complete: true, quotes: [] },
+      payment: { complete: true, orders: [] },
+    })
+    show(source, [], [])
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).not.toHaveAttribute("data-state", "LOCKED")
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Outcome not recorded")
+    fireEvent.click(screen.getByText("Record outcome", { selector: "summary" }))
+    expect(screen.getByText(/does not close the case, change the stage, approve a success fee/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "RESTORED" } })
+    fireEvent.change(screen.getByLabelText("Customer summary"), { target: { value: "The listing was restored and the customer can see it." } })
+    fireEvent.change(screen.getByRole("textbox", { name: /Supporting note/ }), { target: { value: "Reviewed the restoration evidence before recording it." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /checked the outcome evidence/ }))
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "Saved. The case history has been updated.", id: CASE_ID }) })
+    vi.stubGlobal("fetch", fetchMock)
+    fireEvent.submit(screen.getByRole("button", { name: "Record outcome" }).closest("form")!)
+    expect(await screen.findByText("Saved. The case history has been updated.")).toBeTruthy()
+    expect(screen.queryByText(/case is closed|success fee is approved|invoice issued/i)).toBeNull()
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/cases/command")
+    expect(payload.operation).toBe("record_outcome")
+    expect(payload.data.outcome).toBe("RESTORED")
+    expect(payload.data.summary).toBe("The listing was restored and the customer can see it.")
+    expect(payload.operation).not.toBe("close")
+    expect(payload.operation).not.toBe("approve_success_fee")
+    expect(payload.operation).not.toBe("issue_invoice_fallback")
+
+    cleanup()
+    show(source, [], [])
+    fireEvent.click(screen.getByText("Record outcome", { selector: "summary" }))
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "RESTORED" } })
+    fireEvent.change(screen.getByLabelText("Customer summary"), { target: { value: "The listing was restored and the customer can see it." } })
+    fireEvent.change(screen.getByRole("textbox", { name: /Supporting note/ }), { target: { value: "Reviewed the restoration evidence before recording it." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /checked the outcome evidence/ }))
+    const denied = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({ message: "This action is not available at the current case stage. Reload and check the case." }) })
+    vi.stubGlobal("fetch", denied)
+    fireEvent.submit(screen.getByRole("button", { name: "Record outcome" }).closest("form")!)
+    expect(await screen.findByText(/not available at the current case stage/)).toBeTruthy()
+
+    cleanup()
+    show(source, [], [])
+    fireEvent.click(screen.getByText("Record outcome", { selector: "summary" }))
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "RESTORED" } })
+    fireEvent.change(screen.getByLabelText("Customer summary"), { target: { value: "The listing was restored and the customer can see it." } })
+    fireEvent.change(screen.getByRole("textbox", { name: /Supporting note/ }), { target: { value: "Reviewed the restoration evidence before recording it." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /checked the outcome evidence/ }))
+    const stale = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: "This case has changed. Reload it before trying again." }) })
+    vi.stubGlobal("fetch", stale)
+    fireEvent.submit(screen.getByRole("button", { name: "Record outcome" }).closest("form")!)
+    expect(await screen.findByText(/Reload it before trying again/)).toBeTruthy()
+  })
+
+  it("hides the record form when an outcome is already stored", () => {
+    show(facts({ technicalStage: "OUTCOME_REVIEW", caseStatus: "UNDER_REVIEW" }), [money()], [attempt()])
+    expect(screen.queryByText("Record outcome")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record outcome" })).toBeNull()
   })
 })

@@ -53,29 +53,32 @@ describe("proposed pre-closure outcome record", () => {
 
   it("lets close finish a recorded outcome and refuses to overwrite it", () => {
     const recorded = assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: "RESTORED", outcome: "RESTORED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: "RESTORED", existingSummary: summary, outcome: "RESTORED", summary, openWork: false,
     })
     expect(recorded).toEqual({ status: "would_close", outcome: "RESTORED", closesCase: true, overwroteOutcome: false })
 
     const firstClose = assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, outcome: "RESTORED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, existingSummary: null, outcome: "RESTORED", summary, openWork: false,
     })
     expect(firstClose).toMatchObject({ status: "would_close", closesCase: true, overwroteOutcome: false })
 
     expect(assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: "RESTORED", outcome: "NOT_RESTORED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: "RESTORED", existingSummary: summary, outcome: "NOT_RESTORED", summary, openWork: false,
     })).toMatchObject({ status: "refused", reason: "outcome_conflict" })
     expect(assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, outcome: "RESTORED", summary, openWork: true,
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: "RESTORED", existingSummary: summary, outcome: "RESTORED", summary: "A different supporting summary that is long enough.", openWork: false,
+    })).toMatchObject({ status: "refused", reason: "outcome_conflict" })
+    expect(assessProposedClose({
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, existingSummary: "A stray summary that close may still replace.", outcome: "RESTORED", summary, openWork: true,
     })).toMatchObject({ status: "refused", reason: "open_work" })
     expect(assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "PREPARATION", status: "UNDER_REVIEW", existingOutcome: null, outcome: "RESTORED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "PREPARATION", status: "UNDER_REVIEW", existingOutcome: null, existingSummary: null, outcome: "RESTORED", summary, openWork: false,
     })).toMatchObject({ status: "refused", reason: "wrong_stage" })
     expect(assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", existingOutcome: "RESTORED", outcome: "RESTORED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", existingOutcome: "RESTORED", existingSummary: summary, outcome: "RESTORED", summary, openWork: false,
     })).toMatchObject({ status: "refused", reason: "already_closed" })
     expect(assessProposedClose({
-      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, outcome: "REMOVED", summary, openWork: false,
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", existingOutcome: null, existingSummary: null, outcome: "REMOVED", summary, openWork: false,
     })).toMatchObject({ status: "refused", reason: "invalid_outcome" })
   })
 

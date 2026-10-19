@@ -1,36 +1,21 @@
-# Proposal — record a case outcome without closing the case
+# Record a case outcome without closing the case
 
-Status: not applied. This is not a migration and it is not wired to `admin_case_command_v1`. Do not apply it to DEV or Production from this pull request. The executable text is `docs/admin/proposed-admin-journey-10-outcome.sql`. That file stays outside `supabase/migrations`.
+Status: the reviewable migration is `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`. It is not applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request.
 
-## Why it is separate
+`docs/admin/proposed-admin-journey-10-outcome.sql` is the earlier proposal. It stays outside `supabase/migrations`. The migration is that function plus one stricter close rule: when an outcome is already stored, close refuses a different `closure_summary` as well as a different outcome.
 
-`public.admin_case_command_v1` operation `close` is the only writer of `cases.outcome`. The same statement sets `status` to `CLOSED` or `CANCELLED`, `work_stage` to `FINISHED`, and `closed_at`. `reopen` clears the outcome. `approve_success_fee` then requires `admin_private.qualifying_success_outcome_v1`, which reads that column.
+## What the command does
 
-Step 10 must not call `close`. Without a pre-closure outcome, a qualifying success fee cannot be approved, and Step 10 cannot be completed from an open case, until the case has already been closed from the case cockpit. That is still the live behaviour. This proposal is the smallest later change that would let Step 10 finish before Step 11.
+`record_outcome` accepts the same outcome vocabulary `close` already accepts. It requires a summary of 10 to 2000 characters. `WITHDRAWN` is allowed from an open stage. Every other outcome requires `OUTCOME_REVIEW`. It refuses a finished stage, a closed or cancelled case, and an outcome that is already stored.
 
-## Current reader and future command
+It sets `cases.outcome` and `cases.closure_summary` only. Status, `work_stage` and `closed_at` stay as they are. It does not approve a success fee, create an invoice, collect a payment, or close the case.
 
-These are different.
+`close` is unchanged when no outcome is stored. If an outcome is stored, the close payload must repeat that outcome and its summary exactly. Reopen clears both, and that is the correction path. Staff session, request fingerprint, `workflow_version`, the open-task and unresolved-submission checks, `case_work_events` and `admin_private.write_record_audit_v1` stay as they are.
 
-The journey reader, `readStoredOutcome`, only looks at the row that is already stored. A coherent closed record remains authoritative: `CLOSED` with a non-withdrawal outcome at `FINISHED`, or `CANCELLED` with `WITHDRAWN` at `FINISHED`. An open case is also accepted when the row already has the shape `record_outcome` would write: an allowed outcome, a summary of 10 to 2000 characters, `OUTCOME_REVIEW` for every outcome except `WITHDRAWN`, and any other open stage for `WITHDRAWN`. A reopened case, a finished stage on an open case, a missing summary, the wrong outcome for the case type, and a closed status that does not match the outcome still fail closed.
+`approve_success_fee` is unchanged. A qualifying stored outcome can satisfy its existing check before closure. Approval still does not charge a card, and Step 10 does not call it automatically.
 
-That reader does not record an outcome. The journey does not render a record control, and `assessProposedOutcomeRecord` is not called from the page. Saying the stored shape is recognisable is not a claim that the command exists today.
+## Reader
 
-`assessProposedOutcomeRecord` describes the future write. It returns `closesCase: false` and `changesStage: false`, and it refuses a short summary, an outcome the case type does not allow, a closed case, an outcome that is already stored, and a stage `close` would not accept. `WITHDRAWN` from `FINISHED` is refused because that stage belongs to a closed case.
+`readStoredOutcome` only looks at the stored row. A coherent closed record remains authoritative. An open case is also accepted when the row has the shape `record_outcome` writes. A reopened case, a finished stage on an open case, a missing summary, the wrong outcome for the case type, and a closed status that does not match the outcome still fail closed.
 
-## Proposed command
-
-`docs/admin/proposed-admin-journey-10-outcome.sql` is a replacement for `public.admin_case_command_v1` with two changes:
-
-- operation `record_outcome` accepts the same outcome vocabulary `close` already accepts, requires a summary of 10 to 2000 characters, allows `WITHDRAWN` from an open stage, and allows every other outcome only from `OUTCOME_REVIEW`
-- it refuses a finished stage, a closed or cancelled case, and an outcome that is already stored
-- it sets `cases.outcome` and `cases.closure_summary` only, and leaves `status`, `work_stage` and `closed_at` unchanged
-- `close` refuses when `cases.outcome` is already set to a different value. The same outcome may still close the case. Staff session, request fingerprint, `workflow_version`, the open-task and unresolved-submission checks, the outcome vocabulary, `case_work_events` and `admin_private.write_record_audit_v1` stay as they are. The existing workflow-version trigger still bumps the version on update
-
-`approve_success_fee` stays as it is. Once an outcome is recorded, its existing qualifying check can succeed before closure. Approval would still not charge a card.
-
-## Tests
-
-`apps/admin/lib/case-journey/outcome-proposal.ts` holds the future checks and the current reader. The future functions are not called from the journey page or the case command. `outcome.test.ts` covers a legitimate open outcome, a forged stage, a reopened case, a contradictory closed record, and the fact that Step 11 stays incomplete while the case is open.
-
-No SQL file is added under `supabase/migrations`.
+The journey offers the record form only while Step 10 is open, the billing records agree, and no outcome is stored. `assessProposedOutcomeRecord` and `assessProposedClose` describe the same checks and are not called from the page.

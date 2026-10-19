@@ -34,10 +34,10 @@ Approve and the TEST-MODE invoice are offered only when the uniquely accepted qu
 
 ## Outcome and closure
 
-The existing `close` command records the outcome and closes the case together. Step 10 does not call it, and it does not invent an outcome so that a fee can be approved.
+Step 10 records an outcome with `record_outcome`. That command writes `cases.outcome` and `cases.closure_summary` only. It does not change status, stage or the closure date, and it does not approve a success fee, create an invoice, collect a payment, or close the case. The form is shown only while Step 10 is open, the records agree, and no outcome is stored. The select offers an outcome the case type and current stage allow.
 
-The current reader accepts two authoritative shapes. A closed case is authoritative when `CLOSED` holds a non-withdrawal outcome at `FINISHED`, or `CANCELLED` holds `WITHDRAWN` at `FINISHED`. An open case is authoritative only when the stored row already matches the proposed pre-closure record: the outcome vocabulary, a summary, and the stage that command would require. The reader does not record that row. The page does not offer `record_outcome`. A reopened case, a finished stage while the case is open, a missing summary, and a closed status that contradicts the outcome fail closed.
+The reader accepts two authoritative shapes. A closed case is authoritative when `CLOSED` holds a non-withdrawal outcome at `FINISHED`, or `CANCELLED` holds `WITHDRAWN` at `FINISHED`. An open case is authoritative when the stored row has the recorded pre-closure shape: the outcome vocabulary, a summary, and the stage the command requires. A reopened case, a finished stage while the case is open, a missing summary, and a closed status that contradicts the outcome fail closed.
 
-A pre-closure outcome command, and the close-command guard that would stop a later close from overwriting that outcome, are described in `docs/admin/admin-journey-10-outcome-proposal.md` and `docs/admin/proposed-admin-journey-10-outcome.sql`. Neither is applied.
+`close` is unchanged when no outcome is stored. If an outcome is already stored, close must repeat that outcome and its summary exactly. A different value is refused. Reopen clears both, and that is the correction path. The migration is `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`. It is not applied to DEV or Production. Until it is applied, the live function still rejects `record_outcome`.
 
 Closure and optional Guard stay on Step 11. An open case with a verified outcome is not a closed case.

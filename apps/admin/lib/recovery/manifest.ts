@@ -2,12 +2,12 @@
  * Repository migration chain, in the order a rebuild applies it.
  *
  * `appliedToDev` records files whose statements are already in the DEV ledger.
- * DEV-HISTORY-01 adds the seven versions after `20261015230000`, so the
- * observed DEV ledger head and this applied-file head are both
- * `20261019163645`. That is not an instruction to replay those statements,
- * and it does not authorise Production. Production and AWS
- * ApprovedMigrationHead stay at `20261014170000`. The separate Step 10B
- * proposal `20261019183000` is not in this chain. See
+ * DEV-HISTORY-01 records the seven versions after `20261015230000` as already
+ * applied, so the observed DEV ledger head is `20261019163645`. That is not
+ * an instruction to replay those statements, and it does not authorise
+ * Production. Production and AWS ApprovedMigrationHead stay at
+ * `20261014170000`. The repository source head is the unapplied Step 10B
+ * file `20261019183000`, the only pending migration. See
  * `docs/admin/dev-history-01.md`.
  *
  * This manifest never contains migration SQL. It records the facts a recovery
@@ -663,6 +663,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "case assessment", probe: "public.admin_case_assessment_command_v1" },
+  },
+  {
+    // Reviewed Step 10B statement. Not applied to DEV or Production.
+    // It is the only pending migration after observed DEV head 20261019163645.
+    version: "20261019183000",
+    filename: "20261019183000_admin_journey_10b_record_outcome_v1.sql",
+    step: "ADMIN-JOURNEY-10B record outcome",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "pre-closure outcome", probe: "public.admin_case_command_v1" },
   },
 ]
 

@@ -14,7 +14,7 @@ The comparison runs only when Step 9 is open. A locked step does not show the fo
 
 ## Completion
 
-Step 9 is complete only when at least one attempt is recorded and every attempt has a decision or a withdrawal. An open attempt stays waiting. A Guided attempt is the customer's. A Managed attempt is ProfileRelaunch's. A party that does not match the track, a result that is neither a decision nor a withdrawal, or a case row that does not match the projection keeps the step unfinished and hides the commands.
+Step 9 is complete only when at least one attempt is recorded and every attempt has a decision or a withdrawal. An open attempt stays waiting. A Guided attempt is the customer's. A Managed attempt is ProfileRelaunch's. The recorded track on each attempt has to be the case track. The case command refuses a track change after a submission exists, so a stored attempt from the other track is a conflict, not a historical attempt that can be extended. A party or track that does not match, a result that is neither a decision nor a withdrawal, or a case row that does not match the projection keeps the step unfinished and hides every submission command.
 
 Recording an attempt does not submit it to Google. The confirmation on the existing form stays required. Outcome review, billing and closure stay on later steps.
 

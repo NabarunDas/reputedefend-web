@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { CaseFlowFacts } from "../case-flow/model"
 import type { Submission } from "../cases/model"
+import { presentCaseJourney } from "./present"
 import { buildJourneySubmissionPanel } from "./submission"
 
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
@@ -196,5 +197,78 @@ describe("submission tracking", () => {
     })
     expect(missing.commands).toBeNull()
     expect(missing.headline).toBe("Submission records disagree")
+  })
+
+  it("fails closed when a recorded attempt belongs to the other service track", () => {
+    const now = "2026-10-03T12:00:00.000Z"
+    const managed = facts({
+      serviceTrack: "MANAGED",
+      technicalStage: "FURTHER_REVIEW",
+      submissions: [projected({ actor: "CUSTOMER", result: "DECIDED" })],
+    })
+    const managedPanel = buildJourneySubmissionPanel({
+      facts: managed,
+      submissions: [attempt({ actor: "CUSTOMER", track: "GUIDED", result: "DECIDED", resultNote: "The listing was restored." })],
+      status: "UNDER_REVIEW",
+      track: "MANAGED",
+      stage: "FURTHER_REVIEW",
+    })
+    const managedStep = presentCaseJourney(managed, now).steps.find(step => step.id === "SUBMISSION")
+    expect(managedPanel.headline).toBe("Submission records disagree")
+    expect(managedPanel.headline).not.toBe("Decision recorded")
+    expect(managedPanel.commands).toBeNull()
+    expect(managedPanel.notices.join(" ")).toMatch(/different service track/)
+    expect(managedPanel.who).toMatch(/recorded submission track/)
+    expect(managedStep?.state).toBe("NEEDS_ATTENTION")
+
+    const guided = facts({
+      serviceTrack: "GUIDED",
+      technicalStage: "FURTHER_REVIEW",
+      submissions: [projected({ actor: "ADMIN", result: "DECIDED" })],
+    })
+    const guidedPanel = buildJourneySubmissionPanel({
+      facts: guided,
+      submissions: [attempt({ actor: "ADMIN", track: "MANAGED", result: "DECIDED", resultNote: "ProfileRelaunch sent the appeal." })],
+      status: "UNDER_REVIEW",
+      track: "GUIDED",
+      stage: "FURTHER_REVIEW",
+    })
+    const guidedStep = presentCaseJourney(guided, now).steps.find(step => step.id === "SUBMISSION")
+    expect(guidedPanel.headline).toBe("Submission records disagree")
+    expect(guidedPanel.commands).toBeNull()
+    expect(guidedPanel.notices.join(" ")).toMatch(/different service track/)
+    expect(guidedStep?.state).toBe("NEEDS_ATTENTION")
+
+    const matchingGuided = buildJourneySubmissionPanel({
+      facts: facts({ submissions: [projected({ result: "DECIDED" })], technicalStage: "OUTCOME_REVIEW" }),
+      submissions: [attempt({ result: "DECIDED", resultNote: "The listing was restored." })],
+      status: "UNDER_REVIEW",
+      track: "GUIDED",
+      stage: "OUTCOME_REVIEW",
+    })
+    expect(matchingGuided.headline).toBe("Decision recorded")
+    expect(matchingGuided.commands).toEqual({ record: false, resolveIds: [] })
+    expect(presentCaseJourney(facts({ submissions: [projected({ result: "DECIDED" })], technicalStage: "OUTCOME_REVIEW" }), now).steps.find(step => step.id === "SUBMISSION")?.state).toBe("COMPLETED")
+
+    const matchingManaged = buildJourneySubmissionPanel({
+      facts: facts({ serviceTrack: "MANAGED", submissions: [projected({ actor: "ADMIN", result: "WITHDRAWN" })], technicalStage: "FURTHER_REVIEW" }),
+      submissions: [attempt({ actor: "ADMIN", track: "MANAGED", result: "WITHDRAWN", resultNote: "The customer stopped the attempt." })],
+      status: "UNDER_REVIEW",
+      track: "MANAGED",
+      stage: "FURTHER_REVIEW",
+    })
+    expect(matchingManaged.headline).toBe("Withdrawn")
+    expect(matchingManaged.commands).toEqual({ record: true, resolveIds: [] })
+
+    const pending = buildJourneySubmissionPanel({
+      facts: facts({ submissions: [projected()], technicalStage: "WAITING_GOOGLE" }),
+      submissions: [attempt()],
+      status: "UNDER_REVIEW",
+      track: "GUIDED",
+      stage: "WAITING_GOOGLE",
+    })
+    expect(pending.headline).toBe("Submitted, awaiting Google's decision")
+    expect(pending.commands).toEqual({ record: false, resolveIds: ["submission-1"] })
+    expect(presentCaseJourney(facts({ submissions: [projected()], technicalStage: "WAITING_GOOGLE" }), now).steps.find(step => step.id === "SUBMISSION")?.state).toBe("WAITING")
   })
 })

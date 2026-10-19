@@ -261,4 +261,43 @@ describe("guided submission tracking", () => {
     expect(screen.queryByText("Record an externally completed submission")).toBeNull()
     expect(screen.queryByText("Record a decision or withdrawal")).toBeNull()
   })
+
+  it("withholds every command when the recorded track is not the case track", () => {
+    const managed = facts({
+      serviceTrack: "MANAGED",
+      technicalStage: "FURTHER_REVIEW",
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: WHEN, result: "DECIDED" }],
+    })
+    show(managed, [attempt({ actor: "CUSTOMER", track: "GUIDED", result: "DECIDED", resultNote: "The listing was restored." })], "FURTHER_REVIEW")
+    expect(document.querySelector("[data-step='SUBMISSION']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-submission]")).toHaveAttribute("data-submission", "Submission records disagree")
+    expect(screen.getAllByText(/service track/).length).toBeGreaterThan(0)
+    expect(screen.queryByText("Record an externally completed submission")).toBeNull()
+    expect(screen.queryByText("Record a decision or withdrawal")).toBeNull()
+
+    cleanup()
+    const guided = facts({
+      serviceTrack: "GUIDED",
+      technicalStage: "FURTHER_REVIEW",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+    })
+    show(guided, [attempt({ actor: "ADMIN", track: "MANAGED", result: "DECIDED", resultNote: "ProfileRelaunch sent the appeal." })], "FURTHER_REVIEW")
+    expect(document.querySelector("[data-step='SUBMISSION']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-submission]")).toHaveAttribute("data-submission", "Submission records disagree")
+    expect(screen.queryByText("Record an externally completed submission")).toBeNull()
+    expect(screen.queryByText("Record a decision or withdrawal")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+
+    cleanup()
+    const matching = facts({
+      serviceTrack: "MANAGED",
+      technicalStage: "OUTCOME_REVIEW",
+      allowedTransitions: ["FINISHED"],
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+    })
+    show(matching, [attempt({ actor: "ADMIN", track: "MANAGED", result: "DECIDED", resultNote: "The listing was restored." })], "OUTCOME_REVIEW")
+    expect(document.querySelector("[data-step='SUBMISSION']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-submission]")).toHaveAttribute("data-submission", "Decision recorded")
+    expect(screen.queryByText("Record a decision or withdrawal")).toBeNull()
+  })
 })

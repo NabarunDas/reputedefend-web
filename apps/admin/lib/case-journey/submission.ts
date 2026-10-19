@@ -84,6 +84,9 @@ export function submissionRecordsDisagree(
       || row.actor !== found.actor
       || !sameInstant(row.submittedAt, found.submittedAt)
       || (row.result ?? null) !== (found.result ?? null)
+      || found.track !== caseTrack
+      || !submissionPartyMatches(caseTrack, found.actor)
+      || !submissionPartyMatches(caseTrack, row.actor)
       || !submissionPartyMatches(found.track, found.actor)
       || !evidenceKept(found)
       || (found.result !== null && !authoritativeSubmissionResult(found.result))
@@ -118,8 +121,10 @@ export function buildJourneySubmissionPanel(input: {
   const closed = input.status === "CLOSED" || input.status === "CANCELLED"
   const trackReady = input.track === "GUIDED" || input.track === "MANAGED"
   const stageReady = recordingStages.includes(input.stage)
+  const trackConflict = rows.some(row => row.track !== input.track)
   const notices: string[] = []
   if (!loaded) notices.push("The case submission record could not be loaded, so no submission command is offered from here.")
+  else if (trackConflict) notices.push("A recorded attempt uses a different service track from this case. The case command does not change the track after a submission, so no submission command is offered from here.")
   else if (disagreed) notices.push("The case submission record and the case-flow projection do not describe the same attempts. These records disagree, so no submission command is offered from here.")
   if (loaded && rows.some(row => !evidenceKept(row))) {
     notices.push("A submission is missing its reference, channel or evidence. That attempt is not offered for a new result.")
@@ -169,8 +174,10 @@ export function buildJourneySubmissionPanel(input: {
       detail: "An open attempt is still waiting. A decision and a withdrawal are different results, and neither contacts Google.",
     },
   ]
-  const who = disagreed || unrecognised
-    ? "ProfileRelaunch reconciles the submission records before treating an attempt as finished."
+  const who = trackConflict
+    ? "ProfileRelaunch reconciles the recorded submission track with the case track before treating an attempt as finished."
+    : disagreed || unrecognised
+      ? "ProfileRelaunch reconciles the submission records before treating an attempt as finished."
     : unresolved.length > 0
       ? "Google has not answered the open attempt. ProfileRelaunch records the decision or withdrawal when it arrives."
       : ready && withdrawn

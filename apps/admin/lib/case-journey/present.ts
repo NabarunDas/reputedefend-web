@@ -1148,10 +1148,10 @@ function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOption
   if (options.submissionRecordsDisagree || partyConflict || unrecognised.length > 0) {
     return {
       proof: "attention",
-      known: [...known, options.submissionRecordsDisagree
-        ? "The case submission record and the case-flow projection do not describe the same attempts. These records disagree."
-        : partyConflict
-          ? "The submitting party does not match the service track. These records disagree."
+      known: [...known, partyConflict
+        ? "The submitting party does not match the service track. These records disagree."
+        : options.submissionRecordsDisagree
+          ? "The case submission record and the case-flow projection do not describe the same attempts. These records disagree."
           : "A recorded result is not a decision or a withdrawal."],
       missing: ["Submission records that agree, and a decision or withdrawal on every attempt."],
       who: "ProfileRelaunch reconciles the submission records before treating an attempt as finished.",

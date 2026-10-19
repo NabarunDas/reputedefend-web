@@ -326,6 +326,7 @@ describe("the case journey route", () => {
     expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
     expect(screen.queryByRole("button", { name: /Close case|Submit to Google|Mark as paid/i })).toBeNull()
     expect(loadMoney).not.toHaveBeenCalled()
     expect(loadOrder).not.toHaveBeenCalled()

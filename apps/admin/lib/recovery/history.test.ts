@@ -7,7 +7,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
-// synthetic chain ends at the observed DEV ledger head 20261019163645.
+// synthetic chain ends at the observed DEV ledger head 20261019183000.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -31,8 +31,8 @@ describe("the migration history validator", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.version)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261019163645",
-      name: "admin_journey_05_assessment_dev_v1",
+      version: "20261019183000",
+      name: "admin_journey_10b_record_outcome_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
@@ -222,6 +222,23 @@ describe("the migration history validator", () => {
     })
     expect(codes(result)).toContain("replay_of_applied_migration")
     expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("refuses to replay Step 10B and the prior observed DEV head", () => {
+    const pending = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261019183000_admin_journey_10b_record_outcome_v1.sql"],
+    })
+    expect(codes(pending)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(pending)).toBe(false)
+    const historical = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261019163645_admin_journey_05_assessment_dev_v1.sql"],
+    })
+    expect(codes(historical)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(historical)).toBe(false)
   })
 
   it("permits a genuinely new migration once the chain is confirmed", () => {

@@ -2,12 +2,12 @@
  * Repository migration chain, in the order a rebuild applies it.
  *
  * `appliedToDev` records files whose statements are already in the DEV ledger.
- * DEV-HISTORY-01 adds the seven versions after `20261015230000`, so the
- * observed DEV ledger head and this applied-file head are both
- * `20261019163645`. That is not an instruction to replay those statements,
- * and it does not authorise Production. Production and AWS
- * ApprovedMigrationHead stay at `20261014170000`. The separate Step 10B
- * proposal `20261019183000` is not in this chain. See
+ * DEV-HISTORY-01 records the seven versions after `20261015230000` as already
+ * applied, so the observed DEV ledger head is `20261019163645`. That is not
+ * an instruction to replay those statements, and it does not authorise
+ * Production. Production and AWS ApprovedMigrationHead stay at
+ * `20261014170000`. Step 10B `20261019183000` is now applied to DEV only; no migrations
+ * remain pending on the DEV chain. See
  * `docs/admin/dev-history-01.md`.
  *
  * This manifest never contains migration SQL. It records the facts a recovery
@@ -664,6 +664,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "case assessment", probe: "public.admin_case_assessment_command_v1" },
   },
+  {
+    // Reviewed Step 10B statement. Applied to DEV only on 2026-10-19,
+    // canonical ledger version 20261019183000. Not applied to Production.
+    version: "20261019183000",
+    filename: "20261019183000_admin_journey_10b_record_outcome_v1.sql",
+    step: "ADMIN-JOURNEY-10B record outcome",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "pre-closure outcome", probe: "public.admin_case_command_v1" },
+  },
 ]
 
 /**
@@ -674,9 +686,9 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest repository migration marked `appliedToDev`. After DEV-HISTORY-01
- * this is the observed DEV ledger head `20261019163645`. It is behind
- * `migrationHead` only when a reviewed file is still waiting to be applied.
+ * The newest repository migration marked `appliedToDev`. After Step 10B,
+ * this is the verified DEV ledger head `20261019183000`. It is behind
+ * `migrationHead` only when a future reviewed file awaits DEV application.
  * It is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

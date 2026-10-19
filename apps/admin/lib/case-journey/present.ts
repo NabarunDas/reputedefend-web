@@ -27,6 +27,7 @@ import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePa
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
+import type { OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
@@ -214,6 +215,12 @@ export type JourneyPresentationOptions = {
   submissionRecordsDisagree?: boolean
   /** The loaded outcome and billing records do not match the case-flow projection. */
   outcomeRecordsDisagree?: boolean
+  /**
+   * Case-detail work events, including ids. Step 10 uses these to tell a fresh
+   * record_outcome after reopen from an outcome retained across reopen.
+   * Omitted events fail that check closed.
+   */
+  outcomeEvents?: readonly OutcomeProofEvent[]
 }
 
 export function presentCaseJourney(
@@ -416,7 +423,7 @@ function readSteps(
     SERVICE_ACTIVATION: readActivation(facts, now, options),
     PREPARATION: readPreparation(facts, options),
     SUBMISSION: readSubmission(facts, options),
-    OUTCOME_BILLING: readOutcome(facts, now, options),
+    OUTCOME_BILLING: readOutcome(facts, now, events, options),
     CLOSURE: readClosure(facts),
   }
 }
@@ -1184,8 +1191,8 @@ function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOption
   }
 }
 
-function readOutcome(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
-  const judged = judgeOutcomeBilling(facts, now)
+function readOutcome(facts: CaseFlowFacts, now: string, events: readonly JourneyWorkEvent[], options: JourneyPresentationOptions): Reading {
+  const judged = judgeOutcomeBilling(facts, now, options.outcomeEvents ?? events)
   if (!options.outcomeRecordsDisagree) return judged
   const known = judged.known.some(line => /do not agree|is incomplete/.test(line))
     ? judged.known

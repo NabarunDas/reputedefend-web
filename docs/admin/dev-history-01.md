@@ -9,8 +9,9 @@ The observed DEV ledger head is `20261019163645 admin_journey_05_assessment_dev_
 The repository applied-file head is the same version. Production and AWS
 `ApprovedMigrationHead` stay `20261014170000 evidence_content_sha256_v1`.
 
-The separate Step 10B proposal `20261019183000` is not part of this chain. It
-stays on draft PR #233 and remains unapplied.
+The repository source and DEV applied head are now Step 10B canonical version
+`20261019183000`. It was applied separately after this historical reconciliation. Its statement is separate
+from these seven recovered files, which stay unchanged.
 
 ## How the statements were recovered
 
@@ -67,4 +68,4 @@ These files are in `supabase/migrations` so a disposable rebuild can reproduce t
 - Disposable PGlite rehearsals apply the chain to a throwaway database. That is not a live apply.
 - Draft template rows do not become the live approved template and do not turn sending on.
 
-`pendingMigrations()` is empty on this chain. `20261019183000` is absent from it.
+`pendingMigrations()` is now empty following the separately reviewed DEV-only Step 10B application. The seven recovered statements stay `appliedToDev` and are not replayed.

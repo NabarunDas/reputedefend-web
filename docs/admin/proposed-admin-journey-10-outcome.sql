@@ -1,21 +1,10 @@
--- ADMIN-JOURNEY-10 proposed SQL. NOT APPLIED.
--- This file is not a Supabase migration. Do not copy it into supabase/migrations.
--- Do not apply it to DEV (rmzozuiamjcclvtgutgd) or Production (cxwwekdzkkjjbiyofrov).
--- It is a reviewable replacement for public.admin_case_command_v1.
--- The live function is unchanged. Step 10 does not call record_outcome.
---
--- Two changes from supabase/migrations/20260930132106_stripe_payments_v1.sql:
--- 1. record_outcome sets cases.outcome and cases.closure_summary only.
---    It does not change status, work_stage, or closed_at. It refuses a
---    finished stage, a closed case (the existing status guard), an outcome
---    the case type does not allow, and an outcome that is already stored.
---    WITHDRAWN is allowed from an open stage. Every other outcome requires
---    OUTCOME_REVIEW.
--- 2. close refuses when cases.outcome is already set to a different value.
---    The same outcome may still close the case. Staff session, request
---    fingerprint, workflow_version, open-work checks, outcome vocabulary,
---    case_work_events and admin_private.write_record_audit_v1 are unchanged.
---    The cases_workflow_version trigger still bumps workflow_version on update.
+-- ADMIN-JOURNEY-10 proposed SQL. NOT A MIGRATION.
+-- Superseded by supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql.
+-- Do not copy this file into supabase/migrations and do not apply it.
+-- The migration is not applied to DEV (rmzozuiamjcclvtgutgd) or Production (cxwwekdzkkjjbiyofrov).
+-- The migration adds one guard this file does not have: when an outcome is already
+-- stored, close also refuses a different closure_summary. Repeat both values exactly.
+-- Reopen is the correction path. It clears the outcome and the summary.
 
 CREATE OR REPLACE FUNCTION public.admin_case_command_v1(p_token text,p_request uuid,p_case uuid,p_version integer,p_operation text,p_data jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$

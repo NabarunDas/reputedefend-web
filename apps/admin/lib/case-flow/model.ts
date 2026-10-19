@@ -237,7 +237,7 @@ export type CaseFlowModel = {
   caseComplete: boolean
   /** True while a previously closed case is being worked again. */
   reopened: boolean
-  /** The recorded outcome, which a reopened case no longer has. */
+  /** The stored outcome. Reopen clears it. A later record_outcome may store a new one. */
   outcome: string | null
   outcomeSummary: string
 }

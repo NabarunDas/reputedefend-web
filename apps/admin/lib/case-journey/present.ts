@@ -1208,14 +1208,20 @@ function readOutcome(facts: CaseFlowFacts, now: string, events: readonly Journey
 function readClosure(facts: CaseFlowFacts): Reading {
   const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
   if (closed) {
+    const known = [
+      `The case status is ${facts.caseStatus}.`,
+      facts.caseStatus === "CANCELLED"
+        ? "This is a cancellation. It is not a CLOSED result."
+        : "This is a closure. It is not a CANCELLED result.",
+    ]
+    if (facts.outcome === "WITHDRAWN" && facts.caseStatus === "CANCELLED") known.push("The withdrawal keeps the CANCELLED status.")
+    if (facts.outcome === "WITHDRAWN" && facts.caseStatus === "CLOSED") known.push("The stored outcome is Withdrawn while the status is CLOSED. Those records do not agree.")
+    known.push("Optional Guard was not required and did not block closure.")
     return {
       proof: "complete",
-      known: [
-        `The case status is ${facts.caseStatus}.`,
-        "Optional Guard was not required and did not block closure.",
-      ],
+      known,
       missing: [],
-      who: "The case is closed.",
+      who: facts.caseStatus === "CANCELLED" ? "The case is cancelled." : "The case is closed.",
     }
   }
   return {

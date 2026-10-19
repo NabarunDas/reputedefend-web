@@ -3,9 +3,10 @@
  *
  * The live function is `public.admin_case_command_v1` in
  * `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`.
- * That migration is not applied to DEV or Production. `readStoredOutcome` is
- * the current read-only check. `assessProposedOutcomeRecord` and
- * `assessProposedClose` describe the writer and are not called from the page.
+ * That migration is applied to DEV only. It is not applied to Production.
+ * `readStoredOutcome` is the read-only check. `assessProposedClose` is the
+ * read-only close guard Step 11 uses before offering the existing command.
+ * Neither function closes the case.
  */
 
 /**

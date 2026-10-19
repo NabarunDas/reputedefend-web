@@ -14,4 +14,20 @@ export function SubmissionForm({c}:{c:CaseDetail}){return <CaseForm c={c} operat
 export function ResolveSubmission({c,s}:{c:CaseDetail;s:Submission}){return <CaseForm c={c} operation="resolve_submission" data={f=>({submissionId:s.id,result:f.get('result')})}><label>Attempt status<select name="result"><option value="DECIDED">Google decision received</option><option value="WITHDRAWN">Attempt withdrawn</option></select></label><p>Record the decision or withdrawal evidence below. The original submission remains unchanged.</p></CaseForm>}
 function outcomeChoices(c:CaseDetail){return c.type==='PROFILE_RECOVERY'?['RESTORED','PARTIALLY_RESTORED','NOT_RESTORED','WITHDRAWN']:['REMOVED','NOT_REMOVED','RESPONSE_RECOMMENDED','WITHDRAWN']}
 export function RecordOutcomeForm({c}:{c:CaseDetail}){const valid=outcomeChoices(c);return <CaseForm c={c} operation="record_outcome" submitLabel="Record outcome" data={f=>({outcome:f.get('outcome'),summary:f.get('summary')})}><label>Outcome<select name="outcome" required defaultValue=""><option value="">Choose an outcome</option>{valid.map(v=><option key={v} value={v} disabled={v!=='WITHDRAWN'&&c.stage!=='OUTCOME_REVIEW'}>{outcomes[v as keyof typeof outcomes]}</option>)}</select></label><label>Customer summary<textarea name="summary" required minLength={10} maxLength={2000}/></label><p>Saving records this outcome and summary on the open case. It does not close the case, change the stage, approve a success fee, create an invoice, or take a payment.</p><label className="checkbox"><input type="checkbox" required/>I checked the outcome evidence and reviewed the customer summary.</label></CaseForm>}
-export function CloseForm({c}:{c:CaseDetail}){const valid=outcomeChoices(c);return <CaseForm c={c} operation="close" submitClass="danger" data={f=>({outcome:f.get('outcome'),summary:f.get('summary')})}><label>Outcome<select name="outcome" required defaultValue=""><option value="">Choose an outcome</option>{valid.map(v=><option key={v} value={v} disabled={v!=='WITHDRAWN'&&c.stage!=='OUTCOME_REVIEW'}>{outcomes[v as keyof typeof outcomes]}</option>)}</select></label><label>Customer summary<textarea name="summary" required minLength={10} maxLength={2000}/></label><p>Resolve every open task and submission attempt first. A successful outcome requires the outcome-review stage. If an outcome is already recorded, repeat that outcome and its summary exactly. A different value is refused. Reopen the case before recording a different outcome. Closing does not collect a fee or activate Guard.</p><label className="checkbox"><input type="checkbox" required/>I checked the outcome evidence and reviewed the customer summary.</label></CaseForm>}
+export function CloseForm({ c, locked }: { c: CaseDetail; locked?: { outcome: string; summary: string } }) {
+  const valid = outcomeChoices(c)
+  return <CaseForm c={c} operation="close" submitClass="danger" submitLabel={locked ? "Close the case" : undefined} data={f => locked ? { outcome: locked.outcome, summary: locked.summary } : { outcome: f.get("outcome"), summary: f.get("summary") }}>
+    {locked
+      ? <>
+        <p>Outcome: {locked.outcome in outcomes ? outcomes[locked.outcome as keyof typeof outcomes] : locked.outcome}</p>
+        <p className="preserve-lines">Customer summary: {locked.summary}</p>
+        <p>These are the outcome and summary already recorded. Closing repeats them exactly. This form cannot change either value.</p>
+      </>
+      : <>
+        <label>Outcome<select name="outcome" required defaultValue=""><option value="">Choose an outcome</option>{valid.map(v => <option key={v} value={v} disabled={v !== "WITHDRAWN" && c.stage !== "OUTCOME_REVIEW"}>{outcomes[v as keyof typeof outcomes]}</option>)}</select></label>
+        <label>Customer summary<textarea name="summary" required minLength={10} maxLength={2000} /></label>
+      </>}
+    <p>Resolve every open task and submission attempt first. A successful outcome requires the outcome-review stage. If an outcome is already recorded, repeat that outcome and its summary exactly. A different value is refused. Reopen the case before recording a different outcome. Closing does not collect a fee or activate Guard.</p>
+    <label className="checkbox"><input type="checkbox" required />I checked the outcome evidence and reviewed the customer summary.</label>
+  </CaseForm>
+}

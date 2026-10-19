@@ -6,6 +6,7 @@ import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
+import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
@@ -125,6 +126,11 @@ export default async function CaseJourneyPage({
   if (preparation?.disagreed) {
     journey = presentCaseJourney(facts, now, events, { ...journeyOptions, packRecordsDisagree: true })
   }
+  const submissionOpen = selected?.id === "SUBMISSION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const submission = submissionOpen ? loadJourneySubmission(facts, detail) : null
+  if (submission?.disagreed) {
+    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, submissionRecordsDisagree: true })
+  }
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -141,6 +147,7 @@ export default async function CaseJourneyPage({
     quote={quote}
     activation={activation}
     preparation={preparation?.panel ?? null}
+    submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
@@ -194,6 +201,22 @@ async function loadJourneyActivation(
     authorization,
     recordsConflict: conflicts.recordConflict || conflicts.emailRecordsDisagree || conflicts.authorityRecordsDisagree,
   })
+}
+
+function loadJourneySubmission(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  detail: Awaited<ReturnType<typeof getCase>>,
+) {
+  return {
+    disagreed: submissionRecordsDisagree(facts, detail.submissions, detail.track),
+    panel: buildJourneySubmissionPanel({
+      facts,
+      submissions: detail.submissions,
+      status: detail.status,
+      track: detail.track,
+      stage: detail.stage,
+    }),
+  }
 }
 
 async function loadJourneyPreparation(

@@ -159,7 +159,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function show(
   overrides: Partial<CaseFlowFacts> = {},
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean; submissionRecordsDisagree?: boolean } = {},
 ) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
@@ -644,11 +644,71 @@ describe("journey status from authoritative records", () => {
     const journey = show({
       technicalStage: "WAITING_GOOGLE",
       serviceTrack: "GUIDED",
-      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: PAST, result: null }],
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: null }],
     })
     expect(step(journey, "SUBMISSION").state).toBe("WAITING")
     expect(step(journey, "SUBMISSION").state).not.toBe("COMPLETED")
     expect(step(journey, "SUBMISSION").known.join(" ")).toMatch(/No live Google/)
+    expect(step(journey, "SUBMISSION").known.join(" ")).toMatch(/did not submit it/)
+    expect(step(journey, "OUTCOME_BILLING").state).not.toBe("COMPLETED")
+  })
+
+  it("completes submission only when every attempt has a decision or a withdrawal", () => {
+    const decided = show({
+      technicalStage: "OUTCOME_REVIEW",
+      serviceTrack: "GUIDED",
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "DECIDED" }],
+    })
+    expect(step(decided, "SUBMISSION").state).toBe("COMPLETED")
+    expect(step(decided, "SUBMISSION").known.join(" ")).toMatch(/later step/)
+    expect(step(decided, "OUTCOME_BILLING").state).not.toBe("COMPLETED")
+
+    const withdrawn = show({
+      technicalStage: "FURTHER_REVIEW",
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: PAST, result: "WITHDRAWN" }],
+    })
+    expect(step(withdrawn, "SUBMISSION").state).toBe("COMPLETED")
+
+    const mixed = show({
+      technicalStage: "FURTHER_REVIEW",
+      serviceTrack: "GUIDED",
+      submissions: [
+        { id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "DECIDED" },
+        { id: "submission-2", actor: "CUSTOMER", submittedAt: PAST, result: null },
+      ],
+    })
+    expect(step(mixed, "SUBMISSION").state).toBe("WAITING")
+    expect(completed(mixed)).not.toContain("SUBMISSION")
+
+    const none = show({ technicalStage: "READY_TO_SUBMIT", serviceTrack: "GUIDED", submissions: [] })
+    expect(step(none, "SUBMISSION").state).not.toBe("COMPLETED")
+
+    const wrongParty = show({
+      technicalStage: "WAITING_GOOGLE",
+      serviceTrack: "GUIDED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: PAST, result: "DECIDED" }],
+    })
+    expect(step(wrongParty, "SUBMISSION").state).toBe("NEEDS_ATTENTION")
+    expect(step(wrongParty, "SUBMISSION").known.join(" ")).toMatch(/service track/)
+    expect(completed(wrongParty)).not.toContain("SUBMISSION")
+
+    const unrecognised = show({
+      technicalStage: "OUTCOME_REVIEW",
+      serviceTrack: "GUIDED",
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "RESTORED" }],
+    })
+    expect(step(unrecognised, "SUBMISSION").state).toBe("NEEDS_ATTENTION")
+    expect(completed(unrecognised)).not.toContain("SUBMISSION")
+
+    const conflict = show({
+      technicalStage: "WAITING_GOOGLE",
+      serviceTrack: "GUIDED",
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "DECIDED" }],
+    }, [], { submissionRecordsDisagree: true })
+    expect(step(conflict, "SUBMISSION").state).toBe("NEEDS_ATTENTION")
+    expect(step(conflict, "SUBMISSION").known.join(" ")).toMatch(/records disagree/)
+    expect(completed(conflict)).not.toContain("SUBMISSION")
   })
 
   it("does not complete outcome review before an outcome is recorded", () => {
@@ -657,7 +717,7 @@ describe("journey status from authoritative records", () => {
       serviceTrack: "GUIDED",
       outcome: null,
       tasks: [{ id: "task-1", title: "Confirm the listing", owner: "ADMIN", kind: "FOLLOW_UP", status: "OPEN", dueAt: FUTURE }],
-      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: PAST, result: "RESTORED" }],
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: PAST, result: "DECIDED" }],
     })
     expect(step(journey, "OUTCOME_BILLING").state).not.toBe("COMPLETED")
     expect(step(journey, "OUTCOME_BILLING").focus).toBe(true)

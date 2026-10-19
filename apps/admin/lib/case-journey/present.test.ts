@@ -159,7 +159,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function show(
   overrides: Partial<CaseFlowFacts> = {},
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean } = {},
 ) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
@@ -530,6 +530,79 @@ describe("journey status from authoritative records", () => {
     expect(step(missing, "PREPARATION").state).not.toBe("COMPLETED")
     expect(step(stale, "PREPARATION").state).toBe("NEEDS_ATTENTION")
     expect(completed(stale)).not.toContain("PREPARATION")
+  })
+
+  it("completes preparation only for the current published pack", () => {
+    const published = {
+      id: "pack-2",
+      packNumber: 2,
+      status: "APPROVED",
+      published: true,
+      everPublished: true,
+      itemCount: 2,
+    }
+    const ready = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [published], eligibleCount: 2 },
+    })
+    expect(step(ready, "PREPARATION").state).toBe("COMPLETED")
+    expect(step(ready, "PREPARATION").known.join(" ")).toMatch(/does not submit anything to Google/)
+    expect(step(ready, "SUBMISSION").state).not.toBe("COMPLETED")
+
+    const approved = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [{ ...published, published: false }], eligibleCount: 2 },
+    })
+    expect(step(approved, "PREPARATION").state).not.toBe("COMPLETED")
+    expect(step(approved, "PREPARATION").missing.join(" ")).toMatch(/Publication/)
+
+    const draft = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [{ ...published, status: "DRAFT", published: false, itemCount: 0 }], eligibleCount: 1 },
+    })
+    expect(step(draft, "PREPARATION").state).not.toBe("COMPLETED")
+    expect(step(draft, "PREPARATION").missing.join(" ")).toMatch(/not eligible/)
+
+    const history = show({
+      technicalStage: "PREPARATION",
+      packs: {
+        packs: [
+          { ...published, id: "pack-1", packNumber: 1, status: "SUPERSEDED", published: false },
+          { ...published, status: "DRAFT", published: false },
+        ],
+        eligibleCount: 2,
+      },
+    })
+    expect(step(history, "PREPARATION").state).not.toBe("COMPLETED")
+
+    const earlierPublished = show({
+      technicalStage: "PREPARATION",
+      packs: {
+        packs: [
+          { ...published, id: "pack-1", packNumber: 1 },
+          { ...published, status: "DRAFT", published: false },
+        ],
+        eligibleCount: 2,
+      },
+    })
+    expect(step(earlierPublished, "PREPARATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(earlierPublished, "PREPARATION").known.join(" ")).toMatch(/records disagree/)
+    expect(completed(earlierPublished)).not.toContain("PREPARATION")
+
+    const conflict = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [published], eligibleCount: 2 },
+    }, [], { recordConflict: true })
+    expect(step(conflict, "PREPARATION").state).toBe("NEEDS_ATTENTION")
+    expect(completed(conflict)).not.toContain("PREPARATION")
+
+    const mismatched = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [published], eligibleCount: 2 },
+    }, [], { packRecordsDisagree: true })
+    expect(step(mismatched, "PREPARATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(mismatched, "PREPARATION").known.join(" ")).toMatch(/prepared-pack record/)
+    expect(completed(mismatched)).not.toContain("PREPARATION")
   })
 
   it("waits while a submission has no result from Google", () => {

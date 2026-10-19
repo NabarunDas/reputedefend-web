@@ -5,6 +5,7 @@ import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
@@ -23,6 +24,7 @@ import { presentCaseJourney, selectJourneyStep } from "@/lib/case-journey/presen
 import { getEvidenceCase } from "@/lib/evidence/queries"
 import { buildEvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
+import { getPreparedPackCase } from "@/lib/packs/queries"
 import { getMembership, recordDetail } from "@/lib/records/queries"
 import { requireStaff } from "@/lib/require-staff"
 import { CaseJourneyView } from "./view"
@@ -76,12 +78,13 @@ export default async function CaseJourneyPage({
   })
   const now = new Date().toISOString()
   const assessmentJudgement = assessment ? judgeAssessment(assessment) : null
-  const journey = presentCaseJourney(facts, now, events, {
+  const journeyOptions = {
     recordConflict: brief.conflicts.length > 0,
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
     assessment: assessmentJudgement,
-  })
+  }
+  let journey = presentCaseJourney(facts, now, events, journeyOptions)
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
   const documentsOpen = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
@@ -117,6 +120,11 @@ export default async function CaseJourneyPage({
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
   }) : null
+  const preparationOpen = selected?.id === "PREPARATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const preparation = preparationOpen ? await loadJourneyPreparation(facts, journeyOptions.recordConflict || journeyOptions.emailRecordsDisagree || journeyOptions.authorityRecordsDisagree) : null
+  if (preparation?.disagreed) {
+    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, packRecordsDisagree: true })
+  }
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -132,6 +140,7 @@ export default async function CaseJourneyPage({
     assessment={assessment}
     quote={quote}
     activation={activation}
+    preparation={preparation?.panel ?? null}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
@@ -185,6 +194,17 @@ async function loadJourneyActivation(
     authorization,
     recordsConflict: conflicts.recordConflict || conflicts.emailRecordsDisagree || conflicts.authorityRecordsDisagree,
   })
+}
+
+async function loadJourneyPreparation(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  recordsConflict: boolean,
+) {
+  const packs = await getPreparedPackCase(facts.caseId)
+  return {
+    disagreed: preparationRecordsDisagree(facts, packs),
+    panel: buildJourneyPreparationPanel({ facts, packs, recordsConflict }),
+  }
 }
 
 async function loadEvidenceReview(

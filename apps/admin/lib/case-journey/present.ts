@@ -205,6 +205,8 @@ export type JourneyPresentationOptions = {
   authorityRecordsDisagree?: boolean
   /** Omitted or null means no assessment was read. The step stays unapproved. */
   assessment?: AssessmentJudgement | null
+  /** The detailed pack read does not match the case-flow pack projection. */
+  packRecordsDisagree?: boolean
 }
 
 export function presentCaseJourney(
@@ -405,7 +407,7 @@ function readSteps(
     ASSESSMENT: readAssessment(facts, options.assessment),
     QUOTE_ACCEPTANCE: readQuote(facts, now, options.assessment),
     SERVICE_ACTIVATION: readActivation(facts, now, options),
-    PREPARATION: readPreparation(facts),
+    PREPARATION: readPreparation(facts, options),
     SUBMISSION: readSubmission(facts),
     OUTCOME_BILLING: readOutcome(facts),
     CLOSURE: readClosure(facts),
@@ -1063,31 +1065,66 @@ function readManagedActivation(facts: CaseFlowFacts, now: string, options: Journ
   }
 }
 
-function readPreparation(facts: CaseFlowFacts): Reading {
+function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
   const live = facts.packs.packs.filter(pack => pack.status !== "SUPERSEDED")
-  const published = facts.packs.packs.some(pack => pack.published && pack.status === "APPROVED" && pack.itemCount > 0)
+  const current = live.reduce<(typeof live)[number] | null>(
+    (best, pack) => (best === null || pack.packNumber > best.packNumber ? pack : best),
+    null,
+  )
   const stale = live.some(pack => pack.status === "STALE")
+  const currentPublished = !!current && current.status === "APPROVED" && current.published && current.itemCount > 0
+  const otherPublished = facts.packs.packs.some(pack => pack !== current && pack.status === "APPROVED" && pack.published && pack.itemCount > 0)
   const known = [
     facts.packs.packs.length ? `${facts.packs.packs.length} pack${facts.packs.packs.length === 1 ? "" : "s"} on file.` : "No prepared pack is on file.",
-    published ? "An approved, non-empty pack is published." : "No approved non-empty pack is published.",
+    current ? `The current pack is #${current.packNumber} and its state is ${current.status}.` : "There is no current pack. A superseded pack is history, not the pack to submit.",
+    currentPublished ? "The current pack is approved, published and non-empty." : "No current approved non-empty pack is published.",
     stale ? "A live pack is stale." : "No live pack is marked stale.",
+    "Approval does not publish a pack. Publication does not submit anything to Google.",
   ]
   if (stale) {
     return {
       proof: "attention",
       known,
-      missing: ["A published approved pack that is not stale."],
+      missing: ["A new draft built from the current accepted evidence, then approved and published. The stale pack cannot be reused."],
       who: "ProfileRelaunch has to rebuild the stale pack.",
     }
   }
-  if (published && !stale) {
-    return { proof: "complete", known, missing: [], who: "The published pack is current." }
+  if (otherPublished || (currentPublished && recordsConflict(options)) || options.packRecordsDisagree) {
+    return {
+      proof: "attention",
+      known: [...known, options.packRecordsDisagree
+        ? "The case projection and the prepared-pack record do not describe the same packs. These records disagree."
+        : otherPublished
+          ? "More than one pack is published, or an earlier pack is still published. These records disagree."
+          : "The customer, business or authority records disagree. The published pack is not treated as current while they disagree."],
+      missing: ["One current approved, published, non-empty pack, and records that agree."],
+      who: "ProfileRelaunch reconciles the pack records before treating the pack as ready.",
+    }
   }
+  if (currentPublished) {
+    return {
+      proof: "complete",
+      known: [...known, "Superseded packs stay read-only. Publishing did not create an open document link."],
+      missing: [],
+      who: "The published pack is current.",
+    }
+  }
+  const missing = !current
+    ? ["A prepared pack."]
+    : current.status === "DRAFT" && current.itemCount === 0
+      ? ["Accepted, validated, clean evidence in the current draft. An unscanned, rejected or unlinked file is not eligible."]
+      : current.status === "DRAFT"
+        ? ["Approval of the current draft. Approval does not publish it."]
+        : current.status === "APPROVED" && !current.published
+          ? ["Publication of the approved pack. Publication does not submit anything to Google."]
+          : ["An approved, published, non-empty pack that is not stale."]
   return {
     proof: "unproven",
     known,
-    missing: ["An approved, published, non-empty pack that is not stale."],
-    who: "ProfileRelaunch prepares and publishes the pack.",
+    missing,
+    who: current?.status === "APPROVED"
+      ? "ProfileRelaunch publishes the approved pack."
+      : "ProfileRelaunch prepares and approves the pack, then publishes it.",
   }
 }
 

@@ -22,6 +22,8 @@ import { QuotePanel } from "./quote"
 import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
 import { ActivationPanel } from "./activation"
 import type { JourneyActivationPanel } from "@/lib/case-journey/activation"
+import { PreparationPanel } from "./preparation"
+import type { JourneyPreparationPanel } from "@/lib/case-journey/preparation"
 import { DocumentRequestPanel } from "./documents"
 import { EvidenceWorkspace } from "../evidence/workspace-view"
 import { IntakeSummary, VerificationForm, VerificationSummary, IntakeReviewForm } from "./forms"
@@ -51,7 +53,7 @@ const previewNote: Record<JourneyStepId, string> = {
   ASSESSMENT: "Record the findings and the recommended pathway, then review and approve them. Saving the form does not complete this step.",
   QUOTE_ACCEPTANCE: "Prepare and offer the quote with the existing commercial commands. Only an accepted quote on a complete list finishes this step.",
   SERVICE_ACTIVATION: "Guided activation is the settled upfront payment. Managed activation is the accepted order and the authorisation record. A saved card is not required.",
-  PREPARATION: "Pack preparation actions are not available in this preview.",
+  PREPARATION: "Assemble the pack from accepted evidence, approve it, then publish it. Approval does not publish, and publication does not submit to Google.",
   SUBMISSION: "Google submission is not available in this preview.",
   OUTCOME_BILLING: "Billing actions are not available in this preview.",
   CLOSURE: "Closure actions are not available in this preview.",
@@ -69,6 +71,7 @@ export type JourneyEvidenceReview = {
  * Steps 3 and 4 reuse the existing document and evidence commands.
  * Step 5 records an assessment. Step 6 reuses the existing quote commands.
  * Step 7 reuses the existing payment-link and authorisation commands.
+ * Step 8 reuses the existing prepared-pack commands.
  * Later steps still only link to a place that already exists.
  */
 export function CaseJourneyView({
@@ -86,6 +89,7 @@ export function CaseJourneyView({
   assessment = null,
   quote = null,
   activation = null,
+  preparation = null,
   customerId = "",
   businessId = "",
   locationId = null,
@@ -107,6 +111,7 @@ export function CaseJourneyView({
   assessment?: CaseAssessmentView | null
   quote?: JourneyQuotePanel | null
   activation?: JourneyActivationPanel | null
+  preparation?: JourneyPreparationPanel | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -140,7 +145,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -185,6 +190,7 @@ function StepWorkspace({
   assessment,
   quote,
   activation,
+  preparation,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -203,6 +209,7 @@ function StepWorkspace({
   assessment: CaseAssessmentView | null
   quote: JourneyQuotePanel | null
   activation: JourneyActivationPanel | null
+  preparation: JourneyPreparationPanel | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -215,8 +222,9 @@ function StepWorkspace({
   const showAssessment = step.id === "ASSESSMENT" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE"
   const showQuote = step.id === "QUOTE_ACCEPTANCE" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && quote !== null
   const showActivation = step.id === "SERVICE_ACTIVATION" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && activation !== null
-  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW" || step.id === "ASSESSMENT" || step.id === "QUOTE_ACCEPTANCE" || step.id === "SERVICE_ACTIVATION"
-  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && !showAssessment && !showActivation && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
+  const showPreparation = step.id === "PREPARATION" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && preparation !== null
+  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW" || step.id === "ASSESSMENT" || step.id === "QUOTE_ACCEPTANCE" || step.id === "SERVICE_ACTIVATION" || step.id === "PREPARATION"
+  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && !showAssessment && !showActivation && !showPreparation && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
     <h2 id="journey-step-heading">{step.title}</h2>
@@ -250,7 +258,8 @@ function StepWorkspace({
       businessName={business}
     />}
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
-    {!step.decision && !showDocuments && !showEvidence && !showAssessment && !showQuote && !showActivation && <Destination destination={step.destination} />}
+    {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
+    {!step.decision && !showDocuments && !showEvidence && !showAssessment && !showQuote && !showActivation && !showPreparation && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
       <h3>What is already known</h3>
@@ -278,7 +287,9 @@ function StepWorkspace({
                 ? <p>Preparing, reviewing, offering or issuing an acceptance link uses the existing quote commands. None of those accepts the quote. A recommended pathway is not an agreement by the customer and this step does not change the selected service track. Offering a binding paid quote still requires the purchasing establishment and the country and tax eligibility checks. This step does not take a payment, activate the service, send email, or submit anything to Google.</p>
                 : step.id === "SERVICE_ACTIVATION"
                   ? <p>Issuing a payment link or an authorisation link uses the existing commands. Neither marks an obligation paid, grants Google access, prepares a pack, or submits anything to Google. A saved card is not required for Managed activation. Live payment collection stays on the existing provider gate.</p>
-                  : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
+                  : step.id === "PREPARATION"
+                    ? <p>Creating a draft, changing its evidence, approving it, and publishing or unpublishing it use the existing pack commands. Approval does not publish the pack. Publication does not submit anything to Google and does not create an open document link. An unscanned, rejected, superseded or unlinked file is not offered.</p>
+                    : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>
   </article>
@@ -287,6 +298,9 @@ function StepWorkspace({
 function instructionFor(step: JourneyStepView): string {
   if (step.id === "ASSESSMENT" && step.state === "COMPLETED") return "This assessment is approved. It recommends a pathway. It is not an accepted agreement and the service is not activated."
   if (step.id === "QUOTE_ACCEPTANCE" && step.state === "COMPLETED") return "This quote is accepted. That is the customer's agreement. It does not activate the service and it does not take a payment."
+  if (step.id === "PREPARATION" && step.state === "COMPLETED") return "This pack is the current approved and published pack. Approval alone did not finish the step, and publication did not submit anything to Google."
+  if (step.id === "PREPARATION" && step.state === "LOCKED") return "Case preparation stays closed until the earlier steps are recorded."
+  if (step.id === "PREPARATION" && step.state === "NEEDS_ATTENTION") return "This pack is not ready. A stale pack, a conflicting record, or more than one published pack does not finish the step."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "COMPLETED") return "This service is activated from the recorded payment or authorisation. A checkout return, a saved card, and the selected track are not what completed it."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "LOCKED") return "Service activation stays closed until the earlier steps are recorded."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "NEEDS_ATTENTION") return "Activation is not recorded. A failed payment, an expired link, a revoked permission, or disagreeing records do not activate the service."

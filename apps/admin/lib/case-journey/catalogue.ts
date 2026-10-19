@@ -216,13 +216,12 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     title: "Outcome Verification & Billing",
     purpose: "Record what happened, and bill only what the service track actually allows.",
     responsibleParty: "ADMIN",
-    dataDependencies: ["cases.outcome", "upfront obligation state", "a post-success Managed invoice"],
-    completionEvidence:
-      "Guided: a recorded case outcome and an upfront obligation already PAID. Managed: a recorded outcome is not enough, because no post-success invoice is projected. Checkout and a saved card are not billing.",
+    dataDependencies: ["cases.outcome", "accepted quote and service order", "upfront obligation and receipt", "success-fee approval, invoice and receipt"],
+    completionEvidence: "Guided: a recorded outcome on a closed case, the accepted quote linked to the only upfront order, that obligation PAID, and a receipt. A paid obligation without a receipt is not settlement, and this step does not create a second charge. Managed: provider-confirmed settlement after a qualifying outcome, or a recorded non-qualifying outcome with no success-fee obligation. Approval, an invoice link, a saved card and a checkout return are not payment. An unsuccessful case is not invoiced to finish the step. A conflicting or incomplete record is not completion. The existing close command records the outcome and closes the case together, and this step does not call it.",
     applicability: "CONDITIONAL",
-    unsupported: "Managed success-fee invoicing after documented success is not in the case-flow projection.",
+    unsupported: "This step uses the existing success-fee approval and TEST-MODE hosted-invoice commands. It does not close the case, send email, submit anything to Google, or collect a card automatically. Agreement PS-2026-10-14.2 invoices a Managed success fee only after documented success. A pre-closure outcome command is proposed and is not applied.",
     laterWork: "ADMIN-JOURNEY-10",
-    unlocksNext: "A verified outcome and the track's real billing record unlock closure. An open outcome review does not.",
+    unlocksNext: "A settled Guided fee, a settled Managed success fee, or a recorded non-billable outcome unlocks closure. An open fee does not. Closure itself stays on the next step.",
   },
   {
     id: "CLOSURE",
@@ -234,7 +233,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     completionEvidence: "The case status is CLOSED or CANCELLED. Guard is optional and is not part of this evidence. A reopened case is open again.",
     applicability: "UNIVERSAL",
     unsupported: "Guard subscriptions, checks and alerts are not part of this preview and cannot block closure.",
-    laterWork: "ADMIN-JOURNEY-10",
+    laterWork: "ADMIN-JOURNEY-11",
     unlocksNext: "Closure is the last step. Optional Guard can be offered later and must not hold the case open.",
   },
 ]

@@ -26,6 +26,7 @@ import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
+import { judgeOutcomeBilling } from "./outcome"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
@@ -211,6 +212,8 @@ export type JourneyPresentationOptions = {
   packRecordsDisagree?: boolean
   /** The case submission rows do not match the case-flow submission projection. */
   submissionRecordsDisagree?: boolean
+  /** The loaded outcome and billing records do not match the case-flow projection. */
+  outcomeRecordsDisagree?: boolean
 }
 
 export function presentCaseJourney(
@@ -413,7 +416,7 @@ function readSteps(
     SERVICE_ACTIVATION: readActivation(facts, now, options),
     PREPARATION: readPreparation(facts, options),
     SUBMISSION: readSubmission(facts, options),
-    OUTCOME_BILLING: readOutcome(facts),
+    OUTCOME_BILLING: readOutcome(facts, now, options),
     CLOSURE: readClosure(facts),
   }
 }
@@ -1181,43 +1184,17 @@ function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOption
   }
 }
 
-function readOutcome(facts: CaseFlowFacts): Reading {
-  const payment = summarisePayment(facts)
-  const known = [
-    facts.outcome ? `The case outcome is ${facts.outcome}.` : "No case outcome is recorded.",
-  ]
-  if (facts.serviceTrack === "MANAGED") {
-    return {
-      proof: "unproven",
-      known: [
-        ...known,
-        "A Managed success fee is invoiced only after documented success. No post-success invoice is in this projection, so billing cannot be marked complete.",
-      ],
-      missing: ["A recorded outcome and a post-success invoice. Neither a checkout return nor a saved card is that invoice."],
-      who: "ProfileRelaunch verifies the outcome. Billing waits for a real invoice after success.",
-    }
-  }
-  if (!facts.outcome) {
-    return {
-      proof: "unproven",
-      known,
-      missing: ["A recorded case outcome."],
-      who: "ProfileRelaunch reviews the outcome.",
-    }
-  }
-  if (facts.serviceTrack === "GUIDED" && facts.payment.complete && payment.upfrontPaid) {
-    return {
-      proof: "complete",
-      known: [...known, "The Guided upfront obligation is already PAID. No second charge is inferred."],
-      missing: [],
-      who: "The outcome is recorded and the Guided fee was already settled.",
-    }
-  }
+function readOutcome(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
+  const judged = judgeOutcomeBilling(facts, now)
+  if (!options.outcomeRecordsDisagree) return judged
+  const known = judged.known.some(line => /do not agree|is incomplete/.test(line))
+    ? judged.known
+    : [...judged.known, "The loaded billing records do not agree with the case projection, so this step is not finished."]
   return {
-    proof: "unproven",
-    known: [...known, "The outcome is recorded. Billing is not, because settlement is not in a complete payment record."],
-    missing: ["Verified billing for this track."],
-    who: "ProfileRelaunch still has to confirm billing.",
+    proof: "attention",
+    known,
+    missing: ["Outcome and billing records that agree."],
+    who: "ProfileRelaunch reconciles the outcome and billing records before treating this step as finished.",
   }
 }
 

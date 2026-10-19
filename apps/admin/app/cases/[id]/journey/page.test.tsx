@@ -310,6 +310,25 @@ describe("the case journey route", () => {
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
   })
 
+  it("keeps outcome verification closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    loadMoney.mockClear()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "OUTCOME_BILLING" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Outcome Verification & Billing" })).toBeInTheDocument()
+    expect(screen.getByText("Outcome verification stays closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Close case|Submit to Google|Mark as paid/i })).toBeNull()
+    expect(loadMoney).not.toHaveBeenCalled()
+  })
+
   it("does not offer screening completion while the intake review is still the current step", async () => {
     allowPreview()
     records()

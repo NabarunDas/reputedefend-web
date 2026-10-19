@@ -177,10 +177,10 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "Google manager access",
     ],
     completionEvidence:
-      "Guided: an accepted order and an upfront obligation recorded as PAID. Managed: an accepted success-fee order, database authorisation readiness, verified business authority, an active case-management permission and verified Google access. Saved-card setup is not evidence.",
+      "Guided: one accepted quote, an accepted paid order, an upfront obligation recorded as PAID, and a receipt, all read from complete lists. Managed: an accepted success-fee order, an accepted service agreement, verified business authority, an active case-management permission, verified Google manager access, and database authorisation readiness. A checkout return, an accepted quote alone, a saved card, a selected track, an expired link, and a revoked permission are not activation.",
     applicability: "CONDITIONAL",
     unsupported:
-      "The older Managed saved-card and automatic-charge path is still present in the existing case-flow recommendation. Agreement PS-2026-10-14.2 does not allow it as activation, and this preview does not offer it.",
+      "This step uses the existing payment-link and authorisation commands. It does not mark an obligation paid, grant Google access by itself, issue a saved-card setup, approve a success fee, prepare a pack, or submit anything to Google. Live collection stays on the existing payment gate. Agreement PS-2026-10-14.2 does not allow a saved card as activation.",
     laterWork: "ADMIN-JOURNEY-07",
     unlocksNext: "Guided settlement, or Managed authority with Google access, unlocks preparation. Returning from Checkout, or choosing Managed, does not.",
   },

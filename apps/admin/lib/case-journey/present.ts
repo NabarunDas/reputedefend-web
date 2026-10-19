@@ -403,7 +403,7 @@ function readSteps(
     EVIDENCE_REVIEW: readEvidence(facts),
     ASSESSMENT: readAssessment(facts, options.assessment),
     QUOTE_ACCEPTANCE: readQuote(facts, now, options.assessment),
-    SERVICE_ACTIVATION: readActivation(facts, now),
+    SERVICE_ACTIVATION: readActivation(facts, now, options),
     PREPARATION: readPreparation(facts),
     SUBMISSION: readSubmission(facts),
     OUTCOME_BILLING: readOutcome(facts),
@@ -839,28 +839,42 @@ function readQuote(facts: CaseFlowFacts, now: string, assessment: AssessmentJudg
   }
 }
 
-function readActivation(facts: CaseFlowFacts, now: string): Reading {
-  if (facts.serviceTrack === "GUIDED") return readGuidedActivation(facts, now)
-  if (facts.serviceTrack === "MANAGED") return readManagedActivation(facts, now)
+function recordsConflict(options: JourneyPresentationOptions): boolean {
+  return !!(options.recordConflict || options.emailRecordsDisagree || options.authorityRecordsDisagree)
+}
+
+function reopenNote(facts: CaseFlowFacts): string[] {
+  return facts.reopened
+    ? ["This case was reopened. Activation still depends on the current payment or authorisation record, not on the earlier closure."]
+    : []
+}
+
+function readActivation(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
+  if (facts.serviceTrack === "GUIDED") return readGuidedActivation(facts, now, options)
+  if (facts.serviceTrack === "MANAGED") return readManagedActivation(facts, now, options)
   return {
     proof: "unproven",
-    known: ["No service track has been chosen, so neither the Guided nor the Managed branch applies yet."],
+    known: ["No service track has been chosen, so neither the Guided nor the Managed branch applies yet.", ...reopenNote(facts)],
     missing: ["A Guided or Managed track, and then that track's own activation record."],
     who: "ProfileRelaunch and the customer still have to choose the service.",
   }
 }
 
-function readGuidedActivation(facts: CaseFlowFacts, now: string): Reading {
+function readGuidedActivation(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
   const payment = summarisePayment(facts)
   const commercial = summariseCommercial(facts, now)
   const state = payment.upfrontState ?? "none"
+  const order = payment.upfrontOrder
   const known = [
     "This is the Guided branch. The upfront fee is the activation payment.",
     facts.payment.complete
       ? `The upfront obligation state is ${state}. Returning from Checkout is not payment.`
       : "The payment list may be incomplete, so a paid row in what was returned is not treated as settlement.",
     commercial.state === "ACCEPTED" && facts.commercial.complete ? "An accepted quote is on file." : "No complete accepted quote is on file.",
+    order ? `The service order state is ${order.orderState}.` : "No upfront service order is on file.",
+    ...reopenNote(facts),
   ]
+  const settled = "An upfront obligation recorded as PAID, on an accepted order, with a receipt."
   if (!facts.payment.complete || !facts.commercial.complete) {
     return {
       proof: "unproven",
@@ -869,19 +883,59 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string): Reading {
       who: "The payment position has to be read in full before it can be called settled.",
     }
   }
-  if (payment.upfrontPaid && commercial.state === "ACCEPTED") {
+  if (commercialQuotesTied(facts)) {
+    return {
+      proof: "attention",
+      known: [...known, "More than one quote shares the same relevance, so none supplies the accepted order for activation."],
+      missing: [settled],
+      who: "ProfileRelaunch has to confirm which quote is current before a payment can activate the service.",
+    }
+  }
+  if (payment.upfrontPaid && order && !order.receiptRecorded) {
+    return {
+      proof: "attention",
+      known: [...known, "The obligation is marked paid, but no receipt is recorded. This step does not treat that as settlement."],
+      missing: [settled],
+      who: "The payment record has to show a receipt before the upfront fee is settled.",
+    }
+  }
+  if (payment.upfrontPaid && order && order.orderState !== "ACCEPTED_PAID") {
+    return {
+      proof: "attention",
+      known: [...known, "The obligation and the service order do not show the same accepted paid position."],
+      missing: [settled],
+      who: "ProfileRelaunch has to reconcile the order and the obligation.",
+    }
+  }
+  if (payment.upfrontPaid && commercial.state === "ACCEPTED" && order?.orderState === "ACCEPTED_PAID" && order.receiptRecorded) {
+    if (recordsConflict(options)) {
+      return {
+        proof: "attention",
+        known: [...known, "The customer, business or authority records disagree. The payment record is not treated as activation while they disagree."],
+        missing: ["Records that agree, and the settled upfront payment."],
+        who: "ProfileRelaunch reconciles the disagreeing records.",
+      }
+    }
     return {
       proof: "complete",
-      known: [...known, "The payment provider has recorded the upfront obligation as PAID."],
+      known: [...known, "The payment provider has recorded the upfront obligation as PAID.", "A receipt is recorded for that accepted order."],
       missing: [],
       who: "The upfront payment is settled.",
+    }
+  }
+  if (payment.upfrontState === "VOID") {
+    return {
+      proof: "attention",
+      known: [...known, "The obligation is void. Nothing is being collected."],
+      missing: [settled],
+      who: "ProfileRelaunch reviews the void obligation. It is not a settled payment.",
     }
   }
   if (payment.upfrontFailed || payment.upfrontAuthenticationRequired) {
     return {
       proof: "attention",
       known,
-      missing: ["An upfront obligation recorded as PAID."],
+      missing: [settled],
       who: "The customer and the payment provider have an unfinished payment.",
     }
   }
@@ -889,23 +943,27 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string): Reading {
     return {
       proof: "waiting",
       known,
-      missing: ["An upfront obligation recorded as PAID."],
+      missing: [settled],
       who: "The customer still has to pay. ProfileRelaunch does not treat a checkout return as payment.",
     }
   }
   return {
     proof: "unproven",
     known,
-    missing: ["An accepted Guided order and an upfront obligation recorded as PAID."],
+    missing: [settled],
     who: "The customer pays the upfront fee after the quote is accepted.",
   }
 }
 
-function readManagedActivation(facts: CaseFlowFacts, now: string): Reading {
+function readManagedActivation(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
   const auth = facts.authorization
   const payment = summarisePayment(facts)
   const commercial = summariseCommercial(facts, now)
-  const order = facts.payment.complete && payment.successFeeOrder ? "An accepted success-fee order is on file." : "No complete success-fee order is on file."
+  const successOrder = payment.successFeeOrder
+  const acceptedOrder = !!successOrder && successOrder.orderState === "ACCEPTED_SUCCESS_FEE"
+  const order = facts.payment.complete && acceptedOrder
+    ? "An accepted success-fee order is on file."
+    : "No complete accepted success-fee order is on file."
   const known = [
     "This is the Managed branch. Choosing Managed does not grant Google access.",
     "There is no upfront success fee. A saved card is not an activation requirement under the current agreement.",
@@ -917,6 +975,10 @@ function readManagedActivation(facts: CaseFlowFacts, now: string): Reading {
     auth.managerAccessVerified ? "Google manager access is recorded." : "Google manager access is not recorded.",
     auth.authorizationReady ? "The database authorisation rule is ready." : "The database authorisation rule is not ready.",
     payment.managedSetupReady ? "A saved payment method exists. It is not used as evidence of activation." : "No saved payment method is used in this decision.",
+    ...reopenNote(facts),
+  ]
+  const missing = [
+    "An accepted success-fee order, verified business authority, an accepted service agreement, an active case-management permission, verified Google access, and the database authorisation rule.",
   ]
   const invalidated = auth.reviewRequired.length > 0 || auth.membershipStatus === "revoked"
   if (invalidated) {
@@ -927,16 +989,30 @@ function readManagedActivation(facts: CaseFlowFacts, now: string): Reading {
       who: "ProfileRelaunch has to re-establish the permission that is no longer valid.",
     }
   }
+  if (!facts.commercial.complete || !facts.payment.complete || commercialQuotesTied(facts)) {
+    return {
+      proof: "unproven",
+      known: [...known, "The quote or payment list is incomplete, or more than one quote shares the same relevance, so activation is not read from it."],
+      missing,
+      who: "The commercial position has to be read in full before Managed activation can be called ready.",
+    }
+  }
   const ready =
-    facts.commercial.complete &&
-    facts.payment.complete &&
     commercial.state === "ACCEPTED" &&
-    !!payment.successFeeOrder &&
+    acceptedOrder &&
     auth.authorizationReady &&
     auth.businessAuthorityVerified &&
     auth.caseManagementPermissionActive &&
     auth.managerAccessVerified &&
     auth.serviceAgreementAccepted
+  if (ready && recordsConflict(options)) {
+    return {
+      proof: "attention",
+      known: [...known, "The customer, business or authority records disagree. Authorisation is not treated as activation while they disagree."],
+      missing: ["Records that agree, and the current Managed authorisation."],
+      who: "ProfileRelaunch reconciles the disagreeing records.",
+    }
+  }
   if (ready) {
     return {
       proof: "complete",
@@ -945,15 +1021,21 @@ function readManagedActivation(facts: CaseFlowFacts, now: string): Reading {
       who: "Managed activation is recorded from authority and Google access, not from a saved card.",
     }
   }
-  const agreementOpen = facts.customerActions.some(
-    action => action.kind === "AGREEMENT_ACCEPTANCE" && action.status === "OPEN" && action.expiresAt > now,
-  )
+  const agreements = facts.customerActions.filter(action => action.kind === "AGREEMENT_ACCEPTANCE" && action.status === "OPEN")
+  const agreementOpen = agreements.some(action => action.expiresAt > now)
+  const agreementExpired = agreements.some(action => action.expiresAt <= now)
+  if (agreementExpired && !agreementOpen) {
+    return {
+      proof: "attention",
+      known: [...known, "An agreement or permission link has expired. An expired link is not acceptance and it does not grant Google access."],
+      missing,
+      who: "ProfileRelaunch can issue another link. The customer has to accept it.",
+    }
+  }
   return {
     proof: agreementOpen ? "waiting" : "unproven",
     known,
-    missing: [
-      "Verified business authority, an active case-management permission, verified Google access, and the database authorisation rule.",
-    ],
+    missing,
     who: agreementOpen ? "The customer still has an open agreement or permission to answer." : "ProfileRelaunch verifies authority and Google access. The customer accepts the agreement and the case permission.",
   }
 }

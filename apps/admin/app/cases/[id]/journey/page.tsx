@@ -2,8 +2,11 @@ import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
 import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
-import { loadCatalogue, loadQuote } from "@/lib/commerce/queries"
+import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
+import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import { getCaseAuthorization } from "@/lib/authorization/queries"
+import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
 import { sendDisabledReason } from "@/lib/communications/gate"
 import { linkSecret } from "@/lib/communications/link"
@@ -108,6 +111,12 @@ export default async function CaseJourneyPage({
   const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, facts, now) : null
   const quoteOpen = selected?.id === "QUOTE_ACCEPTANCE" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const quote = quoteOpen ? await loadJourneyQuote(facts, now, assessmentJudgement) : null
+  const activationOpen = selected?.id === "SERVICE_ACTIVATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const activation = activationOpen ? await loadJourneyActivation(facts, now, {
+    recordConflict: brief.conflicts.length > 0,
+    emailRecordsDisagree: brief.emailControl === "records_disagree",
+    authorityRecordsDisagree: brief.authority === "records_disagree",
+  }) : null
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -122,6 +131,7 @@ export default async function CaseJourneyPage({
     evidenceReview={evidenceReview}
     assessment={assessment}
     quote={quote}
+    activation={activation}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
@@ -151,6 +161,29 @@ async function loadJourneyQuote(
     prices: catalogue.prices,
     quote,
     quoteDetailMissing: !!quoteId && quote?.id !== quoteId,
+  })
+}
+
+async function loadJourneyActivation(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  now: string,
+  conflicts: { recordConflict: boolean; emailRecordsDisagree: boolean; authorityRecordsDisagree: boolean },
+) {
+  const commercial = summariseCommercial(facts, now)
+  const orderId = commercial.quote?.orderId ?? null
+  const [order, money, authorization] = await Promise.all([
+    orderId ? loadOrder(orderId) : Promise.resolve(null),
+    loadMoney(),
+    facts.serviceTrack === "MANAGED" ? getCaseAuthorization(facts.caseId) : Promise.resolve(null),
+  ])
+  return buildJourneyActivationPanel({
+    facts,
+    now,
+    order,
+    orderDetailMissing: !!orderId && order?.id !== orderId,
+    moneyOrders: money.orders,
+    authorization,
+    recordsConflict: conflicts.recordConflict || conflicts.emailRecordsDisagree || conflicts.authorityRecordsDisagree,
   })
 }
 

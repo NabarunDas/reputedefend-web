@@ -93,8 +93,8 @@ function normalized(sql: string): string {
 }
 
 describe("DEV-HISTORY-01 recovered statements", () => {
-  it("locks the seven applied statements and leaves Step 10B as the only pending migration", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261019183000"])
+  it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
+    expect(pendingMigrations().map(entry => entry.version)).toEqual([])
     expect(manifestVersions().at(-1)).toBe("20261019183000")
     for (const item of recovered) {
       const sql = read(`supabase/migrations/${item.filename}`)

@@ -1,6 +1,6 @@
 # Record a case outcome without closing the case
 
-Status: the reviewable migration is `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`. It is not applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request.
+Status: the reviewable migration is `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`. It was applied to DEV (`rmzozuiamjcclvtgutgd`) only, at canonical ledger version `20261019183000`, after independent review. It is not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay it.
 
 `docs/admin/proposed-admin-journey-10-outcome.sql` is the earlier proposal. It stays outside `supabase/migrations`. The migration is that function plus one stricter close rule: when an outcome is already stored, close refuses a different `closure_summary` as well as a different outcome.
 
@@ -26,4 +26,4 @@ The journey offers the record form only while Step 10 is open, the billing recor
 
 DEV-HISTORY-01 recorded the seven statements already in the DEV ledger after `20261015230000`. They stay in `supabase/migrations`, marked `appliedToDev`, and their bytes are unchanged. The observed DEV applied head is `20261019163645 admin_journey_05_assessment_dev_v1`. Provenance is in `docs/admin/dev-history-01.md`.
 
-`20261019183000_admin_journey_10b_record_outcome_v1.sql` is the only pending migration. It is not applied to DEV or Production. Do not replay the seven historical statements. Production `cxwwekdzkkjjbiyofrov` and AWS `ApprovedMigrationHead` stay at `20261014170000`.
+`20261019183000_admin_journey_10b_record_outcome_v1.sql` is now applied to DEV only; the repository has no pending DEV migrations. It is not applied to Production. Do not replay the seven historical statements. Production `cxwwekdzkkjjbiyofrov` and AWS `ApprovedMigrationHead` stay at `20261014170000`.

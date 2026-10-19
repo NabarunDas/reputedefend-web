@@ -7,7 +7,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
-// synthetic chain ends at the observed DEV ledger head 20261019163645.
+// synthetic chain ends at the observed DEV ledger head 20261019183000.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -29,7 +29,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual(["20261019183000"])
+    expect(pending.map(entry => entry.version)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261019163645",
       name: "admin_journey_05_assessment_dev_v1",
@@ -224,14 +224,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(false)
   })
 
-  it("permits the unapplied Step 10B file and refuses to replay the observed DEV head", () => {
+  it("refuses to replay Step 10B and the prior observed DEV head", () => {
     const pending = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261019183000_admin_journey_10b_record_outcome_v1.sql"],
     })
-    expect(pending.status).toBe("clean")
-    expect(mayApplyMigrations(pending)).toBe(true)
+    expect(codes(pending)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(pending)).toBe(false)
     const historical = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,

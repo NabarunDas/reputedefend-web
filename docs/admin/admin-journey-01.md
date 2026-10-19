@@ -50,10 +50,10 @@ Agreement `PS-2026-10-14.2` invoices a Managed success fee only after documented
 | ADMIN-JOURNEY-07 | Step 7 | The existing upfront payment link and Managed authorisation commands | Saved-card setup, success-fee approval, pack preparation and Google submission. See `docs/admin/admin-journey-07.md` |
 | ADMIN-JOURNEY-08 | Step 8 | The existing draft, approve, publish, unpublish and stale-pack commands | Google submission. See `docs/admin/admin-journey-08.md` |
 | ADMIN-JOURNEY-09 | Step 9 | The existing external-submission and decision commands | Live Google submission. See `docs/admin/admin-journey-09.md` |
-| ADMIN-JOURNEY-10 | Step 10 | The outcome record, upfront receipt, success-fee approval and TEST-MODE hosted invoice | Closure stays on Step 11. The record_outcome migration is not applied. See `docs/admin/admin-journey-10.md` |
+| ADMIN-JOURNEY-10 | Step 10 | The outcome record, upfront receipt, success-fee approval and TEST-MODE hosted invoice | Closure stays on Step 11. The record_outcome migration is applied to DEV only. See `docs/admin/admin-journey-10.md` |
 | ADMIN-JOURNEY-11 | Step 11 | Case status `CLOSED` or `CANCELLED`, and reopen | Guard stays optional and must not block closure |
 
-ADMIN-JOURNEY-10B adds `20261019183000_admin_journey_10b_record_outcome_v1.sql`. That migration is not applied to DEV or Production. No Production setting changes.
+ADMIN-JOURNEY-10B adds `20261019183000_admin_journey_10b_record_outcome_v1.sql`. That migration is applied to DEV only, not Production. No Production setting changes.
 
 ## Readiness before documents and before a quote
 

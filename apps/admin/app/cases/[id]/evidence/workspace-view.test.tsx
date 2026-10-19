@@ -55,7 +55,7 @@ function message(overrides: Partial<CaseFlowCommunicationFact>): CaseFlowCommuni
 
 const noPacks: PreparedPackCase = { caseId, packs: [], eligible: [] }
 
-function show(item: EvidenceCase, communications: CaseFlowCommunicationFact[] = [], packs: PreparedPackCase = noPacks, primaryAction: CaseNextAction | null = null) {
+function show(item: EvidenceCase, communications: CaseFlowCommunicationFact[] = [], packs: PreparedPackCase = noPacks, primaryAction: CaseNextAction | null = null, scope: "workspace" | "review" = "workspace") {
   const model = buildEvidenceWorkspaceModel({
     evidence: item,
     evidenceFacts: {
@@ -70,7 +70,7 @@ function show(item: EvidenceCase, communications: CaseFlowCommunicationFact[] = 
     now: NOW,
     hasPack: packs.packs.length > 0 || packs.eligible.length > 0,
   })
-  return render(<EvidenceWorkspace caseDetail={caseDetail} evidence={item} packs={packs} model={model} />)
+  return render(<EvidenceWorkspace caseDetail={caseDetail} evidence={item} packs={packs} model={model} scope={scope} />)
 }
 
 afterEach(() => cleanup())
@@ -92,6 +92,17 @@ describe("evidence workspace presentation", () => {
     expect(screen.queryByRole("heading", { name: "Prepared submission pack" })).toBeNull()
     expect(screen.queryByRole("heading", { name: "Customer contact" })).toBeNull()
     expect(document.body.textContent).not.toMatch(/Request sent/)
+  })
+
+  it("tells a guided review that silence is not a waiver", () => {
+    show(evidence([], []), [], noPacks, null, "review")
+    expect(screen.getByRole("heading", { name: "No evidence on file" })).toBeTruthy()
+    expect(screen.getByText(/separately recorded decision that no documents are required/)).toBeTruthy()
+    expect(screen.getByText(/does not mark itself complete/)).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Create request" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Add evidence" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Prepared submission pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Accept|Mark fulfilled|waiver/i })).toBeNull()
   })
 
   it("shows an open request with nothing received and no invented wait", () => {

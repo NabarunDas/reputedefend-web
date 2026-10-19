@@ -117,7 +117,8 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     completionEvidence:
       "At least one accepted version, no live file still blocked by a threat, invalid, scanning or awaiting review, and no evidence request left open. An upload is not acceptance. A rejected file is not acceptance. No evidence-waiver record exists, so a case with no documents cannot be completed from silence.",
     applicability: "UNIVERSAL",
-    unsupported: "Accept, reject, fulfil and an evidence waiver stay on the evidence workspace. This preview does not add those commands.",
+    unsupported:
+      "Review uses the existing evidence commands. It does not send email, change the document-request message, or record that no documents are required. An empty evidence list is not that decision. Pack preparation stays on a later step.",
     laterWork: "ADMIN-JOURNEY-04",
     unlocksNext:
       "Accepted evidence with the request fulfilled unlocks assessment. A file sitting in review does not. A rejected file or a request for a replacement returns to the evidence loop. An outstanding malware threat continues to block use of the affected file.",

@@ -176,9 +176,9 @@ function detailFor(source: CaseFlowFacts, overrides: Partial<CaseDetail> = {}): 
     firstResponseDue: null,
     issue: "Profile suspended",
     reviewUrl: null,
-    customerId: source.customerId,
-    businessId: source.businessId,
-    locationId: source.locationId,
+    customerId: source.customerId ?? "",
+    businessId: source.businessId ?? "",
+    locationId: source.locationId ?? "",
     events: [],
     tasks: [],
     submissions: [attempt({

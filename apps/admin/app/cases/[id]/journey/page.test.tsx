@@ -16,6 +16,8 @@ const loadJourneyExtension = vi.fn()
 const loadCaseAssessment = vi.fn(async (..._args: unknown[]) => null)
 const getEvidenceCase = vi.fn()
 const loadCaseCommunications = vi.fn()
+const loadCatalogue = vi.fn(async (..._args: unknown[]) => ({ prices: [], services: [] }))
+const loadQuote = vi.fn(async (..._args: unknown[]) => null)
 
 vi.mock("next/navigation", () => ({
   notFound: () => { throw notFoundError },
@@ -37,6 +39,10 @@ vi.mock("@/lib/case-journey/read", () => ({ loadJourneyExtension: (...args: unkn
 vi.mock("@/lib/case-journey/assessment-command", () => ({ loadCaseAssessment: (...args: unknown[]) => loadCaseAssessment(...args) }))
 vi.mock("@/lib/evidence/queries", () => ({ getEvidenceCase: (...args: unknown[]) => getEvidenceCase(...args) }))
 vi.mock("@/lib/communications/queries", () => ({ loadCaseCommunications: (...args: unknown[]) => loadCaseCommunications(...args) }))
+vi.mock("@/lib/commerce/queries", () => ({
+  loadCatalogue: (...args: unknown[]) => loadCatalogue(...args),
+  loadQuote: (...args: unknown[]) => loadQuote(...args),
+}))
 
 import CaseJourneyPage from "./page"
 
@@ -148,6 +154,8 @@ describe("the case journey route", () => {
       expect(recordDetail).not.toHaveBeenCalled()
       expect(getEvidenceCase).not.toHaveBeenCalled()
       expect(loadCaseCommunications).not.toHaveBeenCalled()
+      expect(loadCatalogue).not.toHaveBeenCalled()
+      expect(loadQuote).not.toHaveBeenCalled()
     }
   })
 
@@ -204,6 +212,29 @@ describe("the case journey route", () => {
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
+  })
+
+  it("keeps quote preparation closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    loadCatalogue.mockClear()
+    loadQuote.mockClear()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "QUOTE_ACCEPTANCE" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Quote & Contract Acceptance" })).toBeInTheDocument()
+    expect(screen.getByText("Quote and acceptance stay closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Offer quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Set draft tax" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe|Choose the service track/i })).toBeNull()
+    expect(loadCatalogue).not.toHaveBeenCalled()
+    expect(loadQuote).not.toHaveBeenCalled()
   })
 
   it("does not offer screening completion while the intake review is still the current step", async () => {

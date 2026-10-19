@@ -32,6 +32,7 @@ function mapStatus(status: string | undefined): number {
     case "denied": return 403
     case "invalid": return 400
     case "reauth_required": return 403
+    case "eligibility_blocked": return 409
     default: return 503
   }
 }
@@ -112,6 +113,9 @@ export async function quoteCommand(request: NextRequest): Promise<NextResponse> 
     }>("admin_quote_command_v1", {
       p_token: tokenHash(gated.token), p_request: gated.key, p_operation: operation, p_payload: payload, p_version: version,
     })
+    if (result.status === "eligibility_blocked") {
+      return reply("This quote cannot be issued yet. The purchasing establishment and the country and tax eligibility checks have not cleared a binding paid quote.", 409)
+    }
     if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
     const issued = issuesLink && result.replay !== true && result.id && gated.config.customerOrigin
     return reply(

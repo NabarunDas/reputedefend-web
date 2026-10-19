@@ -1,6 +1,7 @@
--- ADMIN-JOURNEY-05 proposed SQL. NOT a migration.
--- Do not apply this file to DEV. Do not apply it to Production.
--- It is the reviewable proposal for a later, separately approved database change.
+-- ADMIN-JOURNEY-05 proposed SQL. NOT a shared migration.
+-- Applied to DEV only as admin_journey_05_assessment_dev_v1 on
+-- profilerelaunch-dev (rmzozuiamjcclvtgutgd). Production was not changed.
+-- Do not copy this file into supabase/migrations. Do not apply it again.
 -- Disposable PGlite tests load this file on a throwaway database only.
 --
 -- Adds public.case_assessments and two functions. It does not alter cases,

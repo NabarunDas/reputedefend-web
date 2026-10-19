@@ -23,7 +23,7 @@ import type {
   CaseServiceTrack,
 } from "../case-flow/model"
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
-import { resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
+import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
 import {
@@ -257,7 +257,7 @@ export function presentCaseJourney(
     reopened: facts.reopened && !closed,
     closed,
     attention: flow.attentionItems.map(item => ({ code: item.code, title: item.title, explanation: item.explanation })),
-    blockers: flow.blockers.filter(item => !incompatibleBlockers.has(item.code)),
+    blockers: flow.blockers.filter(item => !incompatibleBlockers.has(item.code)).map(item => undecidedTrackBlocker(item, options.assessment)),
     incompatibilities,
     nextAction: suppressed ? null : flow.primaryAction,
     suppressedAction: suppressed ? { id: suppressed.id, label: suppressed.label, reason: savedCardReason } : null,
@@ -317,6 +317,18 @@ function stageFocus(stage: TechnicalStage): JourneyStepId {
       return "OUTCOME_BILLING"
     case "FINISHED":
       return "CLOSURE"
+  }
+}
+
+function undecidedTrackBlocker(blocker: CaseBlocker, assessment: AssessmentJudgement | null | undefined): CaseBlocker {
+  if (blocker.code !== "SERVICE_TRACK_UNDECIDED") return blocker
+  const pathway = assessment?.phase === "approved" && (assessment.pathway === "GUIDED" || assessment.pathway === "MANAGED")
+    ? assessment.pathway === "GUIDED" ? "Guided" : "Managed"
+    : null
+  if (!pathway) return blocker
+  return {
+    ...blocker,
+    explanation: `The service track is not chosen. The approved assessment recommends ${pathway}. A draft on the quote step can use that recommendation. It does not select the track and it is not the customer's agreement.`,
   }
 }
 
@@ -390,7 +402,7 @@ function readSteps(
     REQUEST_DOCUMENTS: readRequest(facts),
     EVIDENCE_REVIEW: readEvidence(facts),
     ASSESSMENT: readAssessment(facts, options.assessment),
-    QUOTE_ACCEPTANCE: readQuote(facts, now),
+    QUOTE_ACCEPTANCE: readQuote(facts, now, options.assessment),
     SERVICE_ACTIVATION: readActivation(facts, now),
     PREPARATION: readPreparation(facts),
     SUBMISSION: readSubmission(facts),
@@ -726,14 +738,31 @@ function readAssessment(facts: CaseFlowFacts, judgement: AssessmentJudgement | n
   }
 }
 
-function readQuote(facts: CaseFlowFacts, now: string): Reading {
+function pathwayNote(assessment: AssessmentJudgement | null | undefined): string[] {
+  if (!assessment || assessment.phase !== "approved") return []
+  if (assessment.pathway !== "GUIDED" && assessment.pathway !== "MANAGED") return []
+  const name = assessment.pathway === "GUIDED" ? "Guided" : "Managed"
+  return [`The approved assessment recommends ${name}. That recommendation is not the customer's agreement and it does not change the selected service track.`]
+}
+
+function readQuote(facts: CaseFlowFacts, now: string, assessment: AssessmentJudgement | null | undefined): Reading {
   const commercial = summariseCommercial(facts, now)
+  const pathway = pathwayNote(assessment)
+  const checks = "The legally verified purchasing establishment and the country and tax eligibility check, both required before a binding paid quote is issued. Neither is inferred from the quote status."
   if (!facts.commercial.complete) {
     return {
       proof: "unproven",
-      known: ["The quote list may be incomplete, so an acceptance in the rows that were returned is not enough to complete this step."],
+      known: ["The quote list may be incomplete, so an acceptance in the rows that were returned is not enough to complete this step.", ...pathway],
       missing: ["A complete quote list showing an accepted quote."],
       who: "The commercial position has to be read again before anyone treats a quote as accepted.",
+    }
+  }
+  if (commercialQuotesTied(facts)) {
+    return {
+      proof: "attention",
+      known: ["More than one quote shares the same relevance, so none is the accepted quote for this step.", ...pathway],
+      missing: ["One accepted quote on a complete list.", checks],
+      who: "ProfileRelaunch has to confirm which quote is current before this step can be complete.",
     }
   }
   if (commercial.state === "ACCEPTED") {
@@ -741,7 +770,9 @@ function readQuote(facts: CaseFlowFacts, now: string): Reading {
       proof: "complete",
       known: [
         "A quote is recorded as accepted.",
-        "Acceptance is not a purchasing-establishment record and it is not country or tax eligibility. This preview does not infer those checks from the quote status.",
+        "Acceptance is the customer's agreement. It is not a purchasing-establishment record and it is not country or tax eligibility.",
+        "Accepting the quote does not activate the service and does not take a payment.",
+        ...pathway,
       ],
       missing: [],
       who: "The customer has accepted the quote.",
@@ -750,29 +781,60 @@ function readQuote(facts: CaseFlowFacts, now: string): Reading {
   if (commercial.state === "OFFERED_AWAITING") {
     return {
       proof: "waiting",
-      known: ["A quote has been offered and an acceptance link is still open. Opening the contract is not acceptance."],
-      missing: [
-        "The quote status ACCEPTED.",
-        "This preview cannot confirm that the purchasing establishment and the country and tax eligibility checks were made before the quote was offered.",
-      ],
+      known: ["A quote has been offered and an acceptance link is still open. Opening the contract is not acceptance.", ...pathway],
+      missing: ["The quote status ACCEPTED.", checks],
       who: "The customer has to accept the quote.",
     }
   }
   if (commercial.state === "DECLINED") {
     return {
       proof: "attention",
-      known: ["The quote was declined."],
-      missing: ["An accepted quote."],
+      known: ["The quote was declined. A declined quote is not acceptance.", ...pathway],
+      missing: ["An accepted quote.", checks],
       who: "ProfileRelaunch has to review the declined quote.",
     }
   }
+  if (commercial.acceptanceExpired) {
+    return {
+      proof: "attention",
+      known: ["The acceptance link has expired. The quote is still offered. An expired link is not acceptance.", ...pathway],
+      missing: ["The quote status ACCEPTED.", checks],
+      who: "ProfileRelaunch can issue another acceptance link. The customer has to accept the quote.",
+    }
+  }
+  if (commercial.quote?.status === "EXPIRED") {
+    return {
+      proof: "attention",
+      known: ["The quote has expired. An expired quote is not acceptance.", ...pathway],
+      missing: ["An accepted quote.", checks],
+      who: "ProfileRelaunch prepares another quote. The customer accepts it.",
+    }
+  }
+  if (commercial.state === "DRAFT_READY" || commercial.state === "DRAFT_UNCONFIGURED") {
+    return {
+      proof: "unproven",
+      known: ["A draft quote is on file. Preparing or reviewing it does not complete this step.", ...pathway],
+      missing: ["An accepted quote.", checks],
+      who: "ProfileRelaunch prepares the quote. The customer accepts it.",
+    }
+  }
+  if (commercial.state === "OFFERED_NO_LINK") {
+    return {
+      proof: "unproven",
+      known: ["A quote has been offered. The customer does not have a usable acceptance link. Offering the quote is not acceptance.", ...pathway],
+      missing: ["The quote status ACCEPTED.", checks],
+      who: "ProfileRelaunch issues the acceptance link. The customer accepts the quote.",
+    }
+  }
+  const closed = commercial.quote?.status === "SUPERSEDED"
+    ? "The quote was superseded. A superseded quote is not acceptance."
+    : commercial.quote?.status === "CANCELLED"
+      ? "The quote was cancelled. A cancelled quote is not acceptance."
+      : "No quote is on file."
   return {
     proof: "unproven",
-    known: [commercial.state === "NONE" ? "No quote is on file." : `The quote is ${commercial.state}.`],
-    missing: [
-      "An accepted quote.",
-      "The legally verified purchasing establishment and the country and tax eligibility check, both required before a binding paid quote is issued. Neither is in this projection, so this preview cannot clear a quote to be issued.",
-    ],
+    known: [closed, ...pathway],
+    missing: ["An accepted quote.", checks],
     who: "ProfileRelaunch prepares the quote. The customer accepts it.",
   }
 }

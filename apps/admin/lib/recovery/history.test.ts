@@ -31,8 +31,8 @@ describe("the migration history validator", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.version)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261019163645",
-      name: "admin_journey_05_assessment_dev_v1",
+      version: "20261019183000",
+      name: "admin_journey_10b_record_outcome_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })

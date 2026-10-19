@@ -24,6 +24,7 @@ import type {
 } from "../case-flow/model"
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
+import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
 import {
@@ -891,6 +892,16 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string, options: Journe
       who: "ProfileRelaunch has to confirm which quote is current before a payment can activate the service.",
     }
   }
+  const link = activationOrderLink(facts, now)
+  const linkProblem = commercial.state === "ACCEPTED" ? activationLinkProblem(link, facts.serviceTrack) : null
+  if (linkProblem) {
+    return {
+      proof: "attention",
+      known: [...known, linkProblem],
+      missing: [settled],
+      who: ACTIVATION_ORDER_DISAGREE_WHO,
+    }
+  }
   if (payment.upfrontPaid && order && !order.receiptRecorded) {
     return {
       proof: "attention",
@@ -907,7 +918,7 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string, options: Journe
       who: "ProfileRelaunch has to reconcile the order and the obligation.",
     }
   }
-  if (payment.upfrontPaid && commercial.state === "ACCEPTED" && order?.orderState === "ACCEPTED_PAID" && order.receiptRecorded) {
+  if (link.linked && payment.upfrontPaid && commercial.state === "ACCEPTED" && order?.orderState === "ACCEPTED_PAID" && order.orderId === link.quoteOrderId && order.receiptRecorded) {
     if (recordsConflict(options)) {
       return {
         proof: "attention",
@@ -997,9 +1008,21 @@ function readManagedActivation(facts: CaseFlowFacts, now: string, options: Journ
       who: "The commercial position has to be read in full before Managed activation can be called ready.",
     }
   }
+  const link = activationOrderLink(facts, now)
+  const linkProblem = commercial.state === "ACCEPTED" ? activationLinkProblem(link, facts.serviceTrack) : null
+  if (linkProblem) {
+    return {
+      proof: "attention",
+      known: [...known, linkProblem],
+      missing,
+      who: ACTIVATION_ORDER_DISAGREE_WHO,
+    }
+  }
   const ready =
+    link.linked &&
     commercial.state === "ACCEPTED" &&
     acceptedOrder &&
+    successOrder?.orderId === link.quoteOrderId &&
     auth.authorizationReady &&
     auth.businessAuthorityVerified &&
     auth.caseManagementPermissionActive &&

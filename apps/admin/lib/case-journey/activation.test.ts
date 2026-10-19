@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { CaseAuthorization } from "../authorization/model"
 import type { CaseFlowAuthorizationFact, CaseFlowFacts, CaseFlowOrderFact, CaseFlowQuoteFact } from "../case-flow/model"
+import type { ServiceOrder } from "../commerce/model"
 import type { MoneyOrder } from "../payments/model"
 import { buildJourneyActivationPanel } from "./activation"
 
@@ -8,6 +9,7 @@ const NOW = "2026-06-01T12:00:00.000Z"
 const FUTURE = "2026-07-01T12:00:00.000Z"
 const PAST = "2026-05-01T12:00:00.000Z"
 const ORDER_ID = "55555555-5555-4555-8555-555555555555"
+const OTHER_ORDER_ID = "99999999-9999-4999-8999-999999999999"
 const CASE_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 
 function authorization(overrides: Partial<CaseFlowAuthorizationFact> = {}): CaseFlowAuthorizationFact {
@@ -134,12 +136,39 @@ const managedAuthorization = {
   managerAccess: null,
 } as CaseAuthorization
 
-function panel(overrides: Partial<CaseFlowFacts> = {}, extra: { recordsConflict?: boolean; moneyOrders?: MoneyOrder[]; authorization?: CaseAuthorization | null } = {}) {
+function serviceOrder(overrides: Partial<ServiceOrder> = {}): ServiceOrder {
+  return {
+    id: ORDER_ID,
+    publicRef: "SO-100",
+    quoteId: "quote-1",
+    quoteRef: "Q-1",
+    quoteVersionId: "version-1",
+    customerName: "Alex",
+    businessName: "Bakery",
+    caseReference: "CASE-0001",
+    caseId: CASE_ID,
+    serviceCode: "GUIDED_RELAUNCH",
+    amountMinor: 9900,
+    currency: "GBP",
+    paymentModel: "UPFRONT",
+    taxBehaviour: "INCLUSIVE",
+    taxAmountMinor: 0,
+    state: "ACCEPTED_AWAITING_PAYMENT",
+    acceptedAt: "2026-05-02T12:00:00.000Z",
+    ...overrides,
+  }
+}
+
+function panel(
+  overrides: Partial<CaseFlowFacts> = {},
+  extra: { recordsConflict?: boolean; moneyOrders?: MoneyOrder[]; authorization?: CaseAuthorization | null; order?: ServiceOrder | null; orderDetailMissing?: boolean } = {},
+) {
+  const source = facts(overrides)
   return buildJourneyActivationPanel({
-    facts: facts(overrides),
+    facts: source,
     now: NOW,
-    order: null,
-    orderDetailMissing: false,
+    order: extra.order === undefined ? (source.serviceTrack === "GUIDED" ? serviceOrder() : null) : extra.order,
+    orderDetailMissing: extra.orderDetailMissing ?? false,
     moneyOrders: extra.moneyOrders ?? [money()],
     authorization: extra.authorization ?? null,
     recordsConflict: extra.recordsConflict ?? false,
@@ -208,6 +237,94 @@ describe("guided service activation", () => {
     expect(view.notices.join(" ")).toMatch(/saved card is not required/i)
     expect(view.notices.join(" ")).toMatch(/expired/)
     expect(view.detail).toMatch(/Nothing is collected now/)
+  })
+
+  it("does not activate or issue a link when the accepted quote names a different order", () => {
+    const mismatched = panel({
+      commercial: { complete: true, quotes: [quote({ orderId: OTHER_ORDER_ID })] },
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+    }, { moneyOrders: [money({ orderState: "ACCEPTED_PAID", obligationState: "PAID", receiptId: "receipt-1" })] })
+    expect(mismatched.headline).toBe("Activation records disagree")
+    expect(mismatched.issueUpfront).toBeNull()
+    expect(mismatched.who).toMatch(/reconciles the quote and the service order/)
+    expect(mismatched.notices.join(" ")).toMatch(/do not refer to the same order/)
+    expect(mismatched.requirements.find(item => item.label === "Upfront obligation PAID")?.state).toBe("Not met")
+
+    const missingQuoteOrder = panel({
+      commercial: { complete: true, quotes: [quote({ orderId: null })] },
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+    })
+    expect(missingQuoteOrder.headline).toBe("Activation records disagree")
+    expect(missingQuoteOrder.issueUpfront).toBeNull()
+
+    const several = panel({
+      payment: { complete: true, orders: [upfront(), upfront({ orderId: OTHER_ORDER_ID })] },
+    })
+    expect(several.headline).toBe("Activation records disagree")
+    expect(several.issueUpfront).toBeNull()
+    expect(several.notices.join(" ")).toMatch(/More than one upfront order/)
+  })
+
+  it("issues a payment link only for the order named by the accepted quote", () => {
+    const matching = panel({}, {
+      moneyOrders: [money({ orderId: OTHER_ORDER_ID, version: 9 }), money({ version: 4 })],
+    })
+    expect(matching.issueUpfront).toEqual({ serviceOrderId: ORDER_ID, version: 4 })
+    expect(matching.issueUpfront?.serviceOrderId).not.toBe(OTHER_ORDER_ID)
+
+    const missingDetail = panel({}, { order: null })
+    expect(missingDetail.issueUpfront).toBeNull()
+    expect(missingDetail.notices.join(" ")).toMatch(/order detail is missing/)
+
+    const otherCustomer = panel({}, { moneyOrders: [money({ customerId: "00000000-0000-4000-8000-000000000000" })] })
+    expect(otherCustomer.issueUpfront).toBeNull()
+    expect(otherCustomer.notices.join(" ")).toMatch(/records disagree/)
+
+    const otherCase = panel({}, { order: serviceOrder({ caseId: null }) })
+    expect(otherCase.issueUpfront).toBeNull()
+    expect(otherCase.notices.join(" ")).toMatch(/does not match the accepted quote/)
+
+    const otherModel = panel({}, { order: serviceOrder({ paymentModel: "SUCCESS_FEE" }) })
+    expect(otherModel.issueUpfront).toBeNull()
+  })
+
+  it("does not treat a Managed order as activated when it is not the accepted quote's order", () => {
+    const source = {
+      technicalStage: "AUTHORIZATION_REQUIRED" as const,
+      serviceTrack: "MANAGED" as const,
+      authorization: authorization({
+        businessAuthorityVerified: true,
+        serviceAgreementAccepted: true,
+        caseManagementPermissionActive: true,
+        managerAccessVerified: true,
+        authorizationReady: true,
+      }),
+      payment: { complete: true, orders: [upfront({ paymentModel: "SUCCESS_FEE" as const, orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })] },
+    }
+    const mismatched = panel({
+      ...source,
+      commercial: { complete: true, quotes: [quote({ orderId: OTHER_ORDER_ID })] },
+    }, { authorization: managedAuthorization, moneyOrders: [] })
+    expect(mismatched.headline).toBe("Activation records disagree")
+    expect(mismatched.issueUpfront).toBeNull()
+    expect(mismatched.requirements.find(item => item.label === "Accepted success-fee order")?.state).toBe("Not met")
+
+    const missing = panel({
+      ...source,
+      commercial: { complete: true, quotes: [quote({ orderId: null })] },
+    }, { authorization: managedAuthorization, moneyOrders: [] })
+    expect(missing.headline).toBe("Activation records disagree")
+    expect(missing.issueUpfront).toBeNull()
+
+    const several = panel({
+      ...source,
+      payment: { complete: true, orders: [
+        upfront({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+        upfront({ orderId: OTHER_ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+      ] },
+    }, { authorization: managedAuthorization, moneyOrders: [] })
+    expect(several.headline).toBe("Activation records disagree")
+    expect(several.notices.join(" ")).toMatch(/More than one success-fee order/)
   })
 
   it("does not treat an unchosen track as either branch", () => {

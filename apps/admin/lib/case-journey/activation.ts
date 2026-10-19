@@ -9,11 +9,108 @@
  */
 
 import type { CaseAuthorization } from "../authorization/model"
-import type { CaseFlowFacts, CaseServiceTrack } from "../case-flow/model"
+import type { CaseFlowFacts, CaseFlowOrderFact, CaseServiceTrack } from "../case-flow/model"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { formatGbp, paymentModelLabel, type ServiceOrder } from "../commerce/model"
 import { ukDate } from "../admin/activity"
 import type { MoneyOrder } from "../payments/model"
+
+export type ActivationOrderLink = {
+  linked: boolean
+  quoteId: string | null
+  quoteOrderId: string | null
+  trackOrder: CaseFlowOrderFact | null
+  reason: "linked" | "not_accepted" | "missing_order" | "mismatch" | "ambiguous_orders"
+}
+
+function nonempty(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? ""
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * The accepted quote and the track order are one activation only when the
+ * quote names exactly one order and that id is the only Guided upfront or
+ * Managed success-fee order. A missing id is not a match.
+ */
+export function activationOrderLink(facts: CaseFlowFacts, now: string): ActivationOrderLink {
+  const commercial = summariseCommercial(facts, now)
+  const quoteOrderId = nonempty(commercial.quote?.orderId)
+  const model = facts.serviceTrack === "GUIDED" ? "UPFRONT" : facts.serviceTrack === "MANAGED" ? "SUCCESS_FEE" : null
+  const trackOrders = model ? facts.payment.orders.filter(order => order.paymentModel === model) : []
+  const accepted = facts.commercial.complete
+    && !commercialQuotesTied(facts)
+    && commercial.state === "ACCEPTED"
+    && !!commercial.quote
+    && !!model
+  if (!accepted || !commercial.quote) {
+    return { linked: false, quoteId: commercial.quote?.id ?? null, quoteOrderId, trackOrder: trackOrders[0] ?? null, reason: "not_accepted" }
+  }
+  if (trackOrders.length > 1) {
+    return { linked: false, quoteId: commercial.quote.id, quoteOrderId, trackOrder: null, reason: "ambiguous_orders" }
+  }
+  const trackOrder = trackOrders[0] ?? null
+  if (!quoteOrderId || !trackOrder) {
+    return { linked: false, quoteId: commercial.quote.id, quoteOrderId, trackOrder, reason: "missing_order" }
+  }
+  if (quoteOrderId !== trackOrder.orderId) {
+    return { linked: false, quoteId: commercial.quote.id, quoteOrderId, trackOrder, reason: "mismatch" }
+  }
+  return { linked: true, quoteId: commercial.quote.id, quoteOrderId, trackOrder, reason: "linked" }
+}
+
+export function activationLinkProblem(link: ActivationOrderLink, track: CaseServiceTrack): string | null {
+  if (link.linked || link.reason === "not_accepted") return null
+  if (link.reason === "ambiguous_orders") {
+    const kind = track === "MANAGED" ? "success-fee" : "upfront"
+    return `More than one ${kind} order is on file, so the accepted quote is not matched to a single order. These records disagree.`
+  }
+  if (link.reason === "missing_order") {
+    return "The accepted quote has no order, or the service order for this track is missing. These records disagree."
+  }
+  return "The accepted quote and the service order do not refer to the same order. These records disagree."
+}
+
+export const ACTIVATION_ORDER_DISAGREE_WHO =
+  "ProfileRelaunch reconciles the quote and the service order before activation. A payment on a different order is not activation."
+
+function sameId(value: string | null | undefined, expected: string | null | undefined): boolean {
+  return !!nonempty(value) && nonempty(value) === nonempty(expected)
+}
+
+/**
+ * A payment link needs the quote, the loaded order and the money row to name
+ * the same Guided order, case and customer. A missing field is not agreement.
+ * Returns a notice when the link must be withheld, or null when it may be issued.
+ */
+function paymentLinkProblem(
+  facts: CaseFlowFacts,
+  link: ActivationOrderLink,
+  moneyOrder: MoneyOrder | null,
+  loadedOrder: ServiceOrder | null,
+  orderDetailMissing: boolean,
+): string | null {
+  if (!link.linked || !link.quoteOrderId || !link.quoteId) return null
+  if (orderDetailMissing || !loadedOrder) {
+    return "The service order detail is missing, so it is not proof that this payment belongs to the accepted quote. No payment link is issued from here."
+  }
+  const orderAgrees = loadedOrder.id === link.quoteOrderId
+    && loadedOrder.quoteId === link.quoteId
+    && loadedOrder.paymentModel === "UPFRONT"
+    && sameId(loadedOrder.caseId, facts.caseId)
+  if (!orderAgrees) {
+    return "The service order detail does not match the accepted quote, this case, or the Guided payment model. These records disagree, so no payment link is issued from here."
+  }
+  const moneyAgrees = !!moneyOrder
+    && moneyOrder.orderId === link.quoteOrderId
+    && moneyOrder.paymentModel === "UPFRONT"
+    && sameId(moneyOrder.caseId, facts.caseId)
+    && sameId(moneyOrder.customerId, facts.customerId)
+  if (!moneyAgrees) {
+    return "The money record does not match the accepted quote's order, this case, or this customer. These records disagree, so no payment link is issued from here."
+  }
+  return null
+}
 
 export type JourneyActivationOrder = {
   orderId: string
@@ -60,8 +157,9 @@ export function buildJourneyActivationPanel(input: {
   const payment = summarisePayment(facts)
   const commercial = summariseCommercial(facts, input.now)
   const flow = resolveCaseFlow(facts, input.now)
+  const link = activationOrderLink(facts, input.now)
   const notices: string[] = []
-  const orderId = commercial.quote?.orderId ?? payment.upfrontOrder?.orderId ?? payment.successFeeOrder?.orderId ?? null
+  const orderId = link.quoteOrderId
   const moneyMatches = orderId ? input.moneyOrders.filter(row => row.orderId === orderId) : []
   const moneyOrder = moneyMatches.length === 1 ? moneyMatches[0] : null
   const loadedOrder = input.order && orderId && input.order.id === orderId ? input.order : null
@@ -79,6 +177,10 @@ export function buildJourneyActivationPanel(input: {
   if (moneyMatches.length > 1) notices.push("More than one money record matches this order, so no payment link is issued from here.")
   const moneyDisagrees = !!moneyOrder && !!flowOrder && (moneyOrder.orderState !== flowOrder.orderState || (moneyOrder.obligationState ?? null) !== (flowOrder.obligationState ?? null))
   if (moneyDisagrees) notices.push("The money record and the case projection do not show the same order state, so no payment link is issued from here.")
+  const linkProblem = listsComplete && !tied && commercial.state === "ACCEPTED"
+    ? activationLinkProblem(link, facts.serviceTrack)
+    : null
+  if (linkProblem) notices.push(linkProblem)
   if (input.recordsConflict) notices.push("The customer, business or authority records disagree, so this step does not start a payment or treat authorisation as activation.")
   if (facts.serviceTrack === "GUIDED" && !facts.capabilities.paymentsEnabled && payment.upfrontState !== "PAID") {
     notices.push("Payment collection is switched off in this deployment. This step does not start a customer payment.")
@@ -95,22 +197,20 @@ export function buildJourneyActivationPanel(input: {
     orderId,
     reference: loadedOrder?.publicRef || moneyOrder?.orderRef || orderId,
     amountLabel: loadedOrder ? `${formatGbp(loadedOrder.amountMinor)} ${loadedOrder.currency}` : moneyOrder ? `${formatGbp(moneyOrder.amountMinor)} ${moneyOrder.currency}` : null,
-    paymentModel: paymentModelLabel(loadedOrder?.paymentModel || moneyOrder?.paymentModel || flowOrder?.paymentModel || ""),
-    orderState: flowOrder?.orderState || loadedOrder?.state || moneyOrder?.orderState || "Unknown",
-    obligationState: flowOrder?.obligationState ?? moneyOrder?.obligationState ?? null,
+    paymentModel: paymentModelLabel(loadedOrder?.paymentModel || moneyOrder?.paymentModel || (link.linked ? flowOrder?.paymentModel : "") || ""),
+    orderState: (link.linked ? flowOrder?.orderState : null) || loadedOrder?.state || moneyOrder?.orderState || "Unknown",
+    obligationState: (link.linked ? flowOrder?.obligationState : null) ?? moneyOrder?.obligationState ?? null,
   } : null
 
-  const acceptedQuote = listsComplete && !tied && commercial.state === "ACCEPTED"
+  const acceptedQuote = link.linked
   const guidedSettled = acceptedQuote
-    && !!payment.upfrontOrder
-    && payment.upfrontOrder.orderState === "ACCEPTED_PAID"
+    && link.trackOrder?.orderState === "ACCEPTED_PAID"
     && payment.upfrontPaid
-    && payment.upfrontOrder.receiptRecorded
+    && !!link.trackOrder?.receiptRecorded
     && !input.recordsConflict
   const managedReady = facts.serviceTrack === "MANAGED"
     && acceptedQuote
-    && !!payment.successFeeOrder
-    && payment.successFeeOrder.orderState === "ACCEPTED_SUCCESS_FEE"
+    && link.trackOrder?.orderState === "ACCEPTED_SUCCESS_FEE"
     && facts.authorization.authorizationReady
     && facts.authorization.businessAuthorityVerified
     && facts.authorization.serviceAgreementAccepted
@@ -122,7 +222,7 @@ export function buildJourneyActivationPanel(input: {
 
   const requirements = facts.serviceTrack === "MANAGED"
     ? [
-      requirement("Accepted success-fee order", !!payment.successFeeOrder && payment.successFeeOrder.orderState === "ACCEPTED_SUCCESS_FEE", "The order exists only after the customer accepts the quote."),
+      requirement("Accepted success-fee order", link.linked && link.trackOrder?.orderState === "ACCEPTED_SUCCESS_FEE", "The order named by the accepted quote. A different order on the case is not this acceptance."),
       requirement("Service agreement", facts.authorization.serviceAgreementAccepted, "The customer accepts the existing agreement. This step does not change its wording."),
       requirement("Business authority", facts.authorization.businessAuthorityVerified, "Verified membership of the business. Email control is not authority."),
       requirement("Case-management permission", facts.authorization.caseManagementPermissionActive, "An active permission. A revoked permission is not still valid."),
@@ -132,22 +232,28 @@ export function buildJourneyActivationPanel(input: {
     ]
     : facts.serviceTrack === "GUIDED"
       ? [
-        requirement("Accepted quote", acceptedQuote, "One accepted quote on a complete list. The quote alone is not activation."),
-        requirement("Accepted paid order", payment.upfrontOrder?.orderState === "ACCEPTED_PAID", "The service order state has to be the accepted paid order."),
-        requirement("Upfront obligation PAID", payment.upfrontPaid, "Returning from Checkout is not payment."),
-        requirement("Receipt recorded", !!payment.upfrontOrder?.receiptRecorded && payment.upfrontPaid, "A paid mark without a receipt is not settlement."),
+        requirement("Accepted quote", acceptedQuote, linkProblem ? "The accepted quote does not name the service order for this track." : "One accepted quote on a complete list. The quote alone is not activation."),
+        requirement("Accepted paid order", link.linked && link.trackOrder?.orderState === "ACCEPTED_PAID", "The service order named by the accepted quote has to be the accepted paid order."),
+        requirement("Upfront obligation PAID", link.linked && payment.upfrontPaid, "Returning from Checkout is not payment."),
+        requirement("Receipt recorded", link.linked && !!link.trackOrder?.receiptRecorded && payment.upfrontPaid, "A paid mark without a receipt is not settlement."),
       ]
       : []
 
   const canIssue = flow.primaryAction?.id === "START_UPFRONT_PAYMENT" && flow.primaryAction.state === "ACTION_REQUIRED"
-  const issueUpfront = canIssue && facts.serviceTrack === "GUIDED" && listsComplete && !tied && !input.recordsConflict && !input.orderDetailMissing && !moneyDisagrees && moneyOrder
-    ? { serviceOrderId: moneyOrder.orderId, version: moneyOrder.version }
+  const identityProblem = canIssue && facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !moneyDisagrees
+    ? paymentLinkProblem(facts, link, moneyOrder, loadedOrder, input.orderDetailMissing)
+    : null
+  if (identityProblem) notices.push(identityProblem)
+  const issueUpfront = canIssue && facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !input.orderDetailMissing && !moneyDisagrees && !identityProblem && moneyOrder && link.quoteOrderId
+    ? { serviceOrderId: link.quoteOrderId, version: moneyOrder.version }
     : null
 
   const headline = facts.serviceTrack === "UNDECIDED"
     ? "Service track not chosen"
-    : !listsComplete || tied || moneyDisagrees
+    : !listsComplete || tied
       ? "Activation records incomplete"
+      : linkProblem || moneyDisagrees
+        ? linkProblem ? "Activation records disagree" : "Activation records incomplete"
       : facts.serviceTrack === "GUIDED"
         ? guidedSettled
           ? "Guided payment settled"
@@ -176,7 +282,9 @@ export function buildJourneyActivationPanel(input: {
       ? "The selected service track is Managed. Choosing Managed does not grant Google access, and a saved card is not the customer's agreement to start work."
       : "No service track is chosen. A recommended pathway does not select it."
 
-  const who = facts.serviceTrack === "GUIDED"
+  const who = linkProblem
+    ? ACTIVATION_ORDER_DISAGREE_WHO
+    : facts.serviceTrack === "GUIDED"
     ? guidedSettled
       ? "The upfront payment is settled."
       : "The customer pays the upfront fee. ProfileRelaunch does not mark the obligation paid from this step."

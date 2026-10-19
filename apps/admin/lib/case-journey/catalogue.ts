@@ -177,7 +177,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "Google manager access",
     ],
     completionEvidence:
-      "Guided: one accepted quote, an accepted paid order, an upfront obligation recorded as PAID, and a receipt, all read from complete lists. Managed: an accepted success-fee order, an accepted service agreement, verified business authority, an active case-management permission, verified Google manager access, and database authorisation readiness. A checkout return, an accepted quote alone, a saved card, a selected track, an expired link, and a revoked permission are not activation.",
+      "Guided: one accepted quote whose order id is the only upfront order, that order accepted and paid, the upfront obligation PAID, and a receipt, all read from complete lists. Managed: that same quote order id on the only success-fee order, plus an accepted service agreement, verified business authority, an active case-management permission, verified Google manager access, and database authorisation readiness. A checkout return, an accepted quote alone, a quote that names a different order, a saved card, a selected track, an expired link, and a revoked permission are not activation.",
     applicability: "CONDITIONAL",
     unsupported:
       "This step uses the existing payment-link and authorisation commands. It does not mark an obligation paid, grant Google access by itself, issue a saved-card setup, approve a success fee, prepare a pack, or submit anything to Google. Live collection stays on the existing payment gate. Agreement PS-2026-10-14.2 does not allow a saved card as activation.",

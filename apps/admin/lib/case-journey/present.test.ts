@@ -928,4 +928,72 @@ describe("service activation", () => {
     expect(completed(expired)).not.toContain("SERVICE_ACTIVATION")
     expect(completed(revoked)).not.toContain("SERVICE_ACTIVATION")
   })
+
+  it("does not activate when the accepted quote names a different order", () => {
+    const paidGuided = {
+      ...guidedPaid,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-2" })] },
+    }
+    const guidedMismatch = show(paidGuided)
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/records disagree/)
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").whoMustAct).toMatch(/reconciles the quote and the service order/)
+    expect(completed(guidedMismatch)).not.toContain("SERVICE_ACTIVATION")
+
+    const guidedMissing = show({
+      ...guidedPaid,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: null })] },
+    })
+    expect(step(guidedMissing, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedMissing, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/records disagree/)
+    expect(completed(guidedMissing)).not.toContain("SERVICE_ACTIVATION")
+
+    const guidedSeveral = show({
+      ...guidedPaid,
+      payment: { complete: true, orders: [
+        order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true }),
+        order({ orderId: "order-2", obligationState: "DUE" }),
+      ] },
+    })
+    expect(step(guidedSeveral, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedSeveral, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/More than one upfront order/)
+    expect(completed(guidedSeveral)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedBase = {
+      technicalStage: "AUTHORIZATION_REQUIRED" as const,
+      serviceTrack: "MANAGED" as const,
+      payment: { complete: true, orders: [order({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })] },
+      authorization: fullyAuthorised(),
+    }
+    const managedMismatch = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-2" })] },
+    })
+    expect(step(managedMismatch, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(managedMismatch, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/do not refer to the same order/)
+    expect(completed(managedMismatch)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedMissing = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: null })] },
+    })
+    expect(step(managedMissing, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(completed(managedMissing)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedSeveral = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [
+        order({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+        order({ orderId: "order-2", paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+      ] },
+    })
+    expect(step(managedSeveral, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(managedSeveral, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/More than one success-fee order/)
+    expect(completed(managedSeveral)).not.toContain("SERVICE_ACTIVATION")
+
+    const stillSettled = show(guidedPaid)
+    expect(step(stillSettled, "SERVICE_ACTIVATION").state).toBe("COMPLETED")
+  })
 })

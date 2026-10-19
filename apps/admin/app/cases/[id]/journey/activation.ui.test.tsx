@@ -8,6 +8,7 @@ import type { CaseFlowFacts } from "@/lib/case-flow/model"
 import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { presentCaseJourney } from "@/lib/case-journey/present"
+import type { ServiceOrder } from "@/lib/commerce/model"
 import type { MoneyOrder } from "@/lib/payments/model"
 import { CaseJourneyView } from "./view"
 
@@ -136,12 +137,34 @@ const authorization = {
   managerAccess: null,
 } as CaseAuthorization
 
+function loadedOrder(source: CaseFlowFacts): ServiceOrder {
+  return {
+    id: ORDER_ID,
+    publicRef: "SO-100",
+    quoteId: "quote-1",
+    quoteRef: "Q-1",
+    quoteVersionId: "version-1",
+    customerName: "Alex",
+    businessName: "Bakery",
+    caseReference: "PR-1",
+    caseId: CASE_ID,
+    serviceCode: source.serviceTrack === "MANAGED" ? "MANAGED_RELAUNCH" : "GUIDED_RELAUNCH",
+    amountMinor: 9900,
+    currency: "GBP",
+    paymentModel: source.serviceTrack === "MANAGED" ? "SUCCESS_FEE" : "UPFRONT",
+    taxBehaviour: "INCLUSIVE",
+    taxAmountMinor: 0,
+    state: source.payment.orders[0]?.orderState ?? "ACCEPTED_AWAITING_PAYMENT",
+    acceptedAt: "2026-05-02T12:00:00.000Z",
+  }
+}
+
 function show(source: CaseFlowFacts, authorizationRecord: CaseAuthorization | null = null, moneyOrders: MoneyOrder[] = [money()]) {
   const journey = presentCaseJourney(source, NOW)
   const panel = buildJourneyActivationPanel({
     facts: source,
     now: NOW,
-    order: null,
+    order: source.serviceTrack === "GUIDED" ? loadedOrder(source) : null,
     orderDetailMissing: false,
     moneyOrders,
     authorization: authorizationRecord,

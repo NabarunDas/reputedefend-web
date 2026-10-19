@@ -109,4 +109,29 @@ describe("commercial admin commands", () => {
     expect(denied.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+
+  it("keeps a binding offer behind the existing eligibility check and the staff session", async () => {
+    mocks.rpc.mockResolvedValue({ status: "eligibility_blocked", reason: "commercial_eligibility:establishment" })
+    const blocked = await quoteCommand(req("/api/operations/quotes", {
+      operation: "offer", quoteId, version: 2, quoteVersionId: quoteId,
+    }))
+    expect(blocked.status).toBe(409)
+    const body = await blocked.json() as { message?: string }
+    expect(body.message).toMatch(/purchasing establishment/)
+    expect(body.message).toMatch(/country and tax eligibility/)
+    expect(body.message).not.toMatch(/United States|US only|country list|restricted countr/i)
+
+    mocks.rpc.mockResolvedValue({ status: "denied" })
+    const denied = await quoteCommand(req("/api/operations/quotes", {
+      operation: "offer", quoteId, version: 2, quoteVersionId: quoteId,
+    }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ message: "That commercial action is not allowed." })
+
+    mocks.rpc.mockResolvedValue({ status: "unauthorized" })
+    const unsigned = await quoteCommand(req("/api/operations/quotes", {
+      operation: "offer", quoteId, version: 2, quoteVersionId: quoteId,
+    }))
+    expect(unsigned.status).toBe(401)
+  })
 })

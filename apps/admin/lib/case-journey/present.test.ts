@@ -794,3 +794,69 @@ describe("assessment completion", () => {
     expect(step(journey, "ASSESSMENT").state).not.toBe("COMPLETED")
   })
 })
+
+describe("quote acceptance", () => {
+  const approved: AssessmentJudgement = { phase: "approved", pathway: "GUIDED", versionNumber: 1 }
+  const atQuote = {
+    technicalStage: "SERVICE_SELECTION" as const,
+    serviceTrack: "GUIDED" as const,
+  }
+
+  it("finishes only from one accepted quote on a complete list", () => {
+    const accepted = show({
+      ...atQuote,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+    })
+    expect(step(accepted, "QUOTE_ACCEPTANCE").state).toBe("COMPLETED")
+    expect(step(accepted, "QUOTE_ACCEPTANCE").known.join(" ")).toMatch(/does not activate the service/)
+    expect(step(accepted, "QUOTE_ACCEPTANCE").known.join(" ")).toMatch(/does not take a payment/)
+    expect(step(accepted, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
+
+    const declined = show({ ...atQuote, commercial: { complete: true, quotes: [quote({ status: "DECLINED" })] } })
+    const expired = show({ ...atQuote, commercial: { complete: true, quotes: [quote({ status: "EXPIRED" })] } })
+    expect(step(declined, "QUOTE_ACCEPTANCE").state).toBe("NEEDS_ATTENTION")
+    expect(step(expired, "QUOTE_ACCEPTANCE").state).toBe("NEEDS_ATTENTION")
+    expect(completed(declined)).not.toContain("QUOTE_ACCEPTANCE")
+    expect(completed(expired)).not.toContain("QUOTE_ACCEPTANCE")
+    expect(step(declined, "QUOTE_ACCEPTANCE").missing.join(" ")).toMatch(/purchasing establishment/)
+    expect(step(expired, "QUOTE_ACCEPTANCE").missing.join(" ")).toMatch(/tax eligibility/)
+
+    const tied = show({
+      ...atQuote,
+      commercial: {
+        complete: true,
+        quotes: [
+          quote({ status: "ACCEPTED", orderId: "order-1" }),
+          quote({ id: "quote-2", status: "ACCEPTED", orderId: "order-2" }),
+        ],
+      },
+    })
+    expect(step(tied, "QUOTE_ACCEPTANCE").state).toBe("NEEDS_ATTENTION")
+    expect(step(tied, "QUOTE_ACCEPTANCE").state).not.toBe("COMPLETED")
+    expect(step(tied, "QUOTE_ACCEPTANCE").known.join(" ")).toMatch(/same relevance/)
+  })
+
+  it("shows the approved pathway and does not treat it as acceptance or a track change", () => {
+    const journey = show({
+      ...atQuote,
+      serviceTrack: "UNDECIDED",
+      commercial: { complete: true, quotes: [quote()] },
+    }, [], { assessment: approved })
+    const quoteStep = step(journey, "QUOTE_ACCEPTANCE")
+    expect(quoteStep.state).not.toBe("COMPLETED")
+    expect(quoteStep.known.join(" ")).toMatch(/recommends Guided/)
+    expect(quoteStep.known.join(" ")).toMatch(/not the customer's agreement/)
+    expect(quoteStep.known.join(" ")).toMatch(/does not change the selected service track/)
+    expect(journey.serviceTrack).toBe("UNDECIDED")
+    expect(quoteStep.missing.join(" ")).toMatch(/tax eligibility/)
+    expect(journey.blockers.find(item => item.code === "SERVICE_TRACK_UNDECIDED")?.explanation).toMatch(/does not select the track/)
+    expect(journey.blockers.find(item => item.code === "SERVICE_TRACK_UNDECIDED")?.explanation).not.toMatch(/Nothing commercial can be raised/)
+
+    const stale = show({
+      ...atQuote,
+      commercial: { complete: true, quotes: [] },
+    }, [], { assessment: { phase: "stale", pathway: "GUIDED", versionNumber: 1 } })
+    expect(step(stale, "QUOTE_ACCEPTANCE").known.join(" ")).not.toMatch(/recommends Guided/)
+    expect(step(stale, "QUOTE_ACCEPTANCE").state).not.toBe("COMPLETED")
+  })
+})

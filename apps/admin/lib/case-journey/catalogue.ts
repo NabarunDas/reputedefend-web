@@ -154,9 +154,9 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "country and tax eligibility",
     ],
     completionEvidence:
-      "A quote whose status is ACCEPTED, read from a complete quote list. An open acceptance link is not acceptance. Acceptance is not a purchasing-establishment record and it is not a country or tax eligibility record.",
+      "A quote whose status is ACCEPTED, read from a complete quote list. An open acceptance link, a draft, a declined quote and an expired quote are not acceptance. A recommended pathway is not acceptance. Acceptance is not a purchasing-establishment record and it is not a country or tax eligibility record.",
     applicability: "UNIVERSAL",
-    unsupported: "Creating, offering and issuing the quote stay on the commercial workspace. This preview does not invent the establishment or tax check.",
+    unsupported: "This step uses the existing quote commands. It does not change the selected service track, take a payment, activate the service, send email, or submit anything to Google. Offering a binding paid quote still uses the existing purchasing-establishment and country and tax eligibility checks. This step does not add a country list and does not infer those checks from the quote status.",
     laterWork: "ADMIN-JOURNEY-06",
     unlocksNext:
       "An accepted quote is the authoritative acceptance and leads to that track's activation checks. Issuing a binding paid quote still requires the legally verified purchasing establishment and the country and tax eligibility checks. Opening the contract does not accept it, and this preview does not infer those checks from the quote status.",

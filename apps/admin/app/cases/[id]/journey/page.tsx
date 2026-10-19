@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
-import { resolveCaseFlow } from "@/lib/case-flow/resolve"
+import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
+import { loadCatalogue, loadQuote } from "@/lib/commerce/queries"
+import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { authConfig } from "@/lib/auth/config"
 import { sendDisabledReason } from "@/lib/communications/gate"
 import { linkSecret } from "@/lib/communications/link"
@@ -70,11 +72,12 @@ export default async function CaseJourneyPage({
     openedAt: extension?.openedAt ?? detail.createdAt,
   })
   const now = new Date().toISOString()
+  const assessmentJudgement = assessment ? judgeAssessment(assessment) : null
   const journey = presentCaseJourney(facts, now, events, {
     recordConflict: brief.conflicts.length > 0,
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
-    assessment: assessment ? judgeAssessment(assessment) : null,
+    assessment: assessmentJudgement,
   })
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
@@ -103,6 +106,8 @@ export default async function CaseJourneyPage({
     })
     : null
   const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, facts, now) : null
+  const quoteOpen = selected?.id === "QUOTE_ACCEPTANCE" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const quote = quoteOpen ? await loadJourneyQuote(facts, now, assessmentJudgement) : null
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -116,6 +121,10 @@ export default async function CaseJourneyPage({
     replyMailbox={monitoredReplyMailbox()}
     evidenceReview={evidenceReview}
     assessment={assessment}
+    quote={quote}
+    customerId={detail.customerId}
+    businessId={detail.businessId}
+    locationId={detail.locationId}
   />
 }
 
@@ -124,6 +133,27 @@ export default async function CaseJourneyPage({
  * Pack rows stay out of this step. `hasPack` is false so an empty request
  * list is not hidden behind a pack that belongs to a later step.
  */
+async function loadJourneyQuote(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  now: string,
+  assessment: ReturnType<typeof judgeAssessment> | null,
+) {
+  const commercial = summariseCommercial(facts, now)
+  const quoteId = commercial.quote?.id ?? null
+  const [catalogue, quote] = await Promise.all([
+    loadCatalogue(),
+    quoteId ? loadQuote(quoteId) : Promise.resolve(null),
+  ])
+  return buildJourneyQuotePanel({
+    facts,
+    now,
+    assessment,
+    prices: catalogue.prices,
+    quote,
+    quoteDetailMissing: !!quoteId && quote?.id !== quoteId,
+  })
+}
+
 async function loadEvidenceReview(
   detail: Awaited<ReturnType<typeof getCase>>,
   facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,

@@ -453,7 +453,7 @@ describe("journey status from authoritative records", () => {
       technicalStage: "PREPARATION",
       serviceTrack: "GUIDED",
       commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
-      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID" })] },
+      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
       evidence: reviewedEvidence,
       communications: [delivered()],
     })
@@ -858,5 +858,142 @@ describe("quote acceptance", () => {
     }, [], { assessment: { phase: "stale", pathway: "GUIDED", versionNumber: 1 } })
     expect(step(stale, "QUOTE_ACCEPTANCE").known.join(" ")).not.toMatch(/recommends Guided/)
     expect(step(stale, "QUOTE_ACCEPTANCE").state).not.toBe("COMPLETED")
+  })
+})
+
+describe("service activation", () => {
+  const guidedPaid = {
+    technicalStage: "PREPARATION" as const,
+    serviceTrack: "GUIDED" as const,
+    commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+    payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+  }
+
+  it("settles Guided activation only from a paid accepted order with a receipt", () => {
+    const settled = show(guidedPaid)
+    expect(step(settled, "SERVICE_ACTIVATION").state).toBe("COMPLETED")
+    expect(step(settled, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/receipt/)
+    const noReceipt = show({
+      ...guidedPaid,
+      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID" })] },
+    })
+    const failed = show({
+      ...guidedPaid,
+      technicalStage: "PAYMENT_REQUIRED",
+      payment: { complete: true, orders: [order({ obligationState: "FAILED" })] },
+    })
+    const quoteOnly = show({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "GUIDED",
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+    })
+    expect(step(noReceipt, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(failed, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(quoteOnly, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
+    expect(completed(noReceipt)).not.toContain("SERVICE_ACTIVATION")
+    expect(completed(failed)).not.toContain("SERVICE_ACTIVATION")
+  })
+
+  it("keeps a reopened Guided case settled only while the payment record still is", () => {
+    const reopened = show({ ...guidedPaid, reopened: true })
+    expect(step(reopened, "SERVICE_ACTIVATION").state).toBe("COMPLETED")
+    expect(step(reopened, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/reopened/)
+    const conflict = show(guidedPaid, [], { recordConflict: true })
+    expect(step(conflict, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(conflict, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/disagree/)
+  })
+
+  it("does not activate Managed work from a saved card, an expired link, or a revoked permission", () => {
+    const base = {
+      technicalStage: "AUTHORIZATION_REQUIRED" as const,
+      serviceTrack: "MANAGED" as const,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true })] },
+    }
+    const cardOnly = show(base)
+    const expired = show({
+      ...base,
+      customerActions: [{ id: "action-1", kind: "AGREEMENT_ACCEPTANCE", agreementKind: "SERVICE_AGREEMENT", status: "OPEN", expiresAt: PAST }],
+    })
+    const revoked = show({
+      ...base,
+      authorization: fullyAuthorised({ membershipStatus: "revoked", businessAuthorityVerified: false, authorizationReady: false }),
+    })
+    expect(step(cardOnly, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
+    expect(step(cardOnly, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/saved card is not an activation requirement/i)
+    expect(step(expired, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(expired, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/expired link is not acceptance/)
+    expect(step(revoked, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(completed(cardOnly)).not.toContain("SERVICE_ACTIVATION")
+    expect(completed(expired)).not.toContain("SERVICE_ACTIVATION")
+    expect(completed(revoked)).not.toContain("SERVICE_ACTIVATION")
+  })
+
+  it("does not activate when the accepted quote names a different order", () => {
+    const paidGuided = {
+      ...guidedPaid,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-2" })] },
+    }
+    const guidedMismatch = show(paidGuided)
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/records disagree/)
+    expect(step(guidedMismatch, "SERVICE_ACTIVATION").whoMustAct).toMatch(/reconciles the quote and the service order/)
+    expect(completed(guidedMismatch)).not.toContain("SERVICE_ACTIVATION")
+
+    const guidedMissing = show({
+      ...guidedPaid,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: null })] },
+    })
+    expect(step(guidedMissing, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedMissing, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/records disagree/)
+    expect(completed(guidedMissing)).not.toContain("SERVICE_ACTIVATION")
+
+    const guidedSeveral = show({
+      ...guidedPaid,
+      payment: { complete: true, orders: [
+        order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true }),
+        order({ orderId: "order-2", obligationState: "DUE" }),
+      ] },
+    })
+    expect(step(guidedSeveral, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(guidedSeveral, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/More than one upfront order/)
+    expect(completed(guidedSeveral)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedBase = {
+      technicalStage: "AUTHORIZATION_REQUIRED" as const,
+      serviceTrack: "MANAGED" as const,
+      payment: { complete: true, orders: [order({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })] },
+      authorization: fullyAuthorised(),
+    }
+    const managedMismatch = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-2" })] },
+    })
+    expect(step(managedMismatch, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(managedMismatch, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/do not refer to the same order/)
+    expect(completed(managedMismatch)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedMissing = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: null })] },
+    })
+    expect(step(managedMissing, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(completed(managedMissing)).not.toContain("SERVICE_ACTIVATION")
+
+    const managedSeveral = show({
+      ...managedBase,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [
+        order({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+        order({ orderId: "order-2", paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null }),
+      ] },
+    })
+    expect(step(managedSeveral, "SERVICE_ACTIVATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(managedSeveral, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/More than one success-fee order/)
+    expect(completed(managedSeveral)).not.toContain("SERVICE_ACTIVATION")
+
+    const stillSettled = show(guidedPaid)
+    expect(step(stillSettled, "SERVICE_ACTIVATION").state).toBe("COMPLETED")
   })
 })

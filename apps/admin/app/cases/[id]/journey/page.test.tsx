@@ -18,6 +18,9 @@ const getEvidenceCase = vi.fn()
 const loadCaseCommunications = vi.fn()
 const loadCatalogue = vi.fn(async (..._args: unknown[]) => ({ prices: [], services: [] }))
 const loadQuote = vi.fn(async (..._args: unknown[]) => null)
+const loadOrder = vi.fn(async (..._args: unknown[]) => null)
+const loadMoney = vi.fn(async (..._args: unknown[]) => ({ orders: [] }))
+const getCaseAuthorization = vi.fn(async (..._args: unknown[]) => null)
 
 vi.mock("next/navigation", () => ({
   notFound: () => { throw notFoundError },
@@ -42,7 +45,10 @@ vi.mock("@/lib/communications/queries", () => ({ loadCaseCommunications: (...arg
 vi.mock("@/lib/commerce/queries", () => ({
   loadCatalogue: (...args: unknown[]) => loadCatalogue(...args),
   loadQuote: (...args: unknown[]) => loadQuote(...args),
+  loadOrder: (...args: unknown[]) => loadOrder(...args),
 }))
+vi.mock("@/lib/payments/queries", () => ({ loadMoney: (...args: unknown[]) => loadMoney(...args) }))
+vi.mock("@/lib/authorization/queries", () => ({ getCaseAuthorization: (...args: unknown[]) => getCaseAuthorization(...args) }))
 
 import CaseJourneyPage from "./page"
 
@@ -156,6 +162,9 @@ describe("the case journey route", () => {
       expect(loadCaseCommunications).not.toHaveBeenCalled()
       expect(loadCatalogue).not.toHaveBeenCalled()
       expect(loadQuote).not.toHaveBeenCalled()
+      expect(loadOrder).not.toHaveBeenCalled()
+      expect(loadMoney).not.toHaveBeenCalled()
+      expect(getCaseAuthorization).not.toHaveBeenCalled()
     }
   })
 
@@ -235,6 +244,30 @@ describe("the case journey route", () => {
     expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe|Choose the service track/i })).toBeNull()
     expect(loadCatalogue).not.toHaveBeenCalled()
     expect(loadQuote).not.toHaveBeenCalled()
+  })
+
+  it("keeps service activation closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    loadOrder.mockClear()
+    loadMoney.mockClear()
+    getCaseAuthorization.mockClear()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "SERVICE_ACTIVATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Service Activation — Guided or Managed" })).toBeInTheDocument()
+    expect(screen.getByText("Service activation stays closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Issue upfront payment link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record Manager access" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve success fee" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Mark as paid|Grant Google|Submit to Google/i })).toBeNull()
+    expect(loadOrder).not.toHaveBeenCalled()
+    expect(loadMoney).not.toHaveBeenCalled()
+    expect(getCaseAuthorization).not.toHaveBeenCalled()
   })
 
   it("does not offer screening completion while the intake review is still the current step", async () => {

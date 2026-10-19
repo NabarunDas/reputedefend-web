@@ -69,7 +69,7 @@ function IssueActionForm({ caseId, operation, extra, allowPermission = false }: 
   </form>
 }
 
-export function AuthorizationPanel({ caseId, data }: { caseId: string; data: CaseAuthorization }) {
+export function AuthorizationPanel({ caseId, data, scope = "case" }: { caseId: string; data: CaseAuthorization; scope?: "case" | "activation" }) {
   const ready = data.readiness
   const managed = data.track === "MANAGED"
   return <section className="panel">
@@ -117,12 +117,12 @@ export function AuthorizationPanel({ caseId, data }: { caseId: string; data: Cas
     <details><summary>{managed ? "Create service agreement or case-management permission action" : "Create service agreement action"}</summary>
       <IssueActionForm caseId={caseId} operation="create_agreement_action" allowPermission={managed} />
     </details>
-    <details><summary>Issue customer case-access link</summary>
+    {scope === "case" && <details><summary>Issue customer case-access link</summary>
       <p>The customer can view only an explicitly published approved pack after email OTP. This is not a long-lived login and does not allow uploads.</p>
       {data.actions.some(action => action.status === "OPEN" && action.kind === "CASE_ACCESS")
         ? <p className="muted">An open case-access action already exists. Revoke it below before issuing a new link.</p>
         : <IssueActionForm caseId={caseId} operation="create_case_access_action" />}
-    </details>
+    </details>}
     {data.actions.filter(action => action.status === "OPEN").map(action => <details key={action.id}>
       <summary>Revoke open action {action.id.slice(0, 8)} · {action.kind}</summary>
       <CommandForm actionUrl={authEndpoint} endpoint="command" submitLabel="Revoke open action" submitClass="danger" payload={form => ({

@@ -3,7 +3,8 @@
  *
  * This is a catalogue, not a workflow engine. A technical `work_stage` is
  * not in this list and is not evidence that any step is finished. Completion
- * is decided later, from records the case projection already carries.
+ * is decided later, from stored records. The technical stage is not one of
+ * those records. The assessment is read separately from the case-flow projection.
  */
 
 export const journeyStepIds = [
@@ -129,13 +130,15 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     title: "Assessment & Recommended Path",
     purpose: "Record what the evidence shows and which path is recommended.",
     responsibleParty: "ADMIN",
-    dataDependencies: ["an assessment record"],
-    completionEvidence: "No assessment record is projected. The stage ASSESSMENT_READY means the case is ready to assess, not that an assessment was written.",
+    dataDependencies: ["case_assessments", "the case issue", "evidence request status", "evidence version review"],
+    completionEvidence:
+      "The latest approved assessment is current: its basis still matches the case issue and the evidence, it was not approved before a later reopen, and it recommends Guided or Managed. A draft, a review, a stale approval, or moving the technical stage does not complete the step. The recommendation is not an accepted service agreement and does not activate the service.",
     applicability: "UNIVERSAL",
-    unsupported: "There is no assessment document in the current case-flow facts.",
+    unsupported:
+      "This step records the assessment through the proposed commands. It does not send email, take a payment, submit anything to Google, accept a quote, or activate a service. A suspended or missing listing does not block the assessment.",
     laterWork: "ADMIN-JOURNEY-05",
     unlocksNext:
-      "A stored assessment would unlock the quote. Advancing the technical stage does not. Assessment of a suspended or missing Google listing does not wait for listing verification this projection does not have.",
+      "A current approved assessment unlocks the quote. Advancing the technical stage does not. Assessment of a suspended or missing Google listing does not wait for listing verification this projection does not have.",
   },
   {
     id: "QUOTE_ACCEPTANCE",

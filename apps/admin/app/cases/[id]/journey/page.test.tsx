@@ -13,6 +13,7 @@ const loadCaseFlowFacts = vi.fn()
 const recordDetail = vi.fn()
 const getMembership = vi.fn()
 const loadJourneyExtension = vi.fn()
+const loadCaseAssessment = vi.fn(async (..._args: unknown[]) => null)
 const getEvidenceCase = vi.fn()
 const loadCaseCommunications = vi.fn()
 
@@ -33,6 +34,7 @@ vi.mock("@/lib/records/queries", () => ({
   getMembership: (...args: unknown[]) => getMembership(...args),
 }))
 vi.mock("@/lib/case-journey/read", () => ({ loadJourneyExtension: (...args: unknown[]) => loadJourneyExtension(...args) }))
+vi.mock("@/lib/case-journey/assessment-command", () => ({ loadCaseAssessment: (...args: unknown[]) => loadCaseAssessment(...args) }))
 vi.mock("@/lib/evidence/queries", () => ({ getEvidenceCase: (...args: unknown[]) => getEvidenceCase(...args) }))
 vi.mock("@/lib/communications/queries", () => ({ loadCaseCommunications: (...args: unknown[]) => loadCaseCommunications(...args) }))
 
@@ -194,12 +196,13 @@ describe("the case journey route", () => {
       searchParams: Promise.resolve({ step: "ASSESSMENT" }),
     }))
     expect(screen.getByRole("heading", { name: "Assessment & Recommended Path" })).toBeInTheDocument()
-    expect(screen.getByText("Assessment actions are not available in this preview.")).toBeInTheDocument()
+    expect(screen.getByText("Assessment stays closed until the earlier steps are recorded.")).toBeInTheDocument()
     expect(screen.getByText(/cannot be completed from here/)).toBeInTheDocument()
     const extra = screen.getByText("Additional details").closest("details")
     expect(extra).not.toHaveAttribute("open")
-    expect(extra).toHaveTextContent(/does not perform it/)
+    expect(extra).toHaveTextContent(/does not activate the service/)
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
   })
 
@@ -435,6 +438,7 @@ describe("the case journey route", () => {
       searchParams: Promise.resolve({ step: "ASSESSMENT" }),
     }))
     expect(document.querySelector("[data-step='ASSESSMENT']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
     expect(screen.queryByText("Amend recorded decision")).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the intake review" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()

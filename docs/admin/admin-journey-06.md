@@ -36,4 +36,4 @@ An acceptance link still requires the existing verified customer email and verif
 
 ## Assessment database
 
-`admin_journey_05_assessment_dev_v1` was applied to DEV only. See `docs/admin/admin-journey-05.md`. It is not applied to Production and it is not copied into `supabase/migrations`.
+`admin_journey_05_assessment_dev_v1` was applied to DEV only as `20261019163645`. See `docs/admin/admin-journey-05.md`. It is not applied to Production. The recovered statement is in `supabase/migrations` and must not be replayed.

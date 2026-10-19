@@ -175,7 +175,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     authorization:
       "The develop Preview gate runs before any case read and again on the decision command. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
     persistence:
-      "A decision is an INTERNAL case_work_events row plus a CASE_CHANGED audit row, written by admin_case_journey_decision_v1. That function is proposed and not applied. The command does not change the technical stage.",
+      "A decision is an INTERNAL case_work_events row plus a CASE_CHANGED audit row, written by admin_case_journey_decision_v1. That function is applied on DEV only as 20261016175917 and is not applied to Production. The command does not change the technical stage.",
     negative:
       "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. An incomplete review, a discrepancy, a duplicate, or a revoked membership cannot show the step complete. The other nine steps have no control that marks them done.",
     evidence: [

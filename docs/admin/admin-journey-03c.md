@@ -4,11 +4,11 @@ DEV preview only. No template row was approved or updated. No email was sent. St
 
 Version 1 templates in `admin_private.communication_templates` stay as they are. The proposal below inserts version 2 as `DRAFT` only. The draft command still selects `status = 'APPROVED' ORDER BY version DESC LIMIT 1`, so live evidence requests and case updates keep using version 1 until a separate review approves version 2.
 
-## Unapplied SQL
+## DEV-applied draft insert
 
-`docs/admin/20261017143000_admin_journey_communication_templates_v2.sql`
+The statement applied to DEV is `supabase/migrations/20261017145801_admin_journey_03c_customer_templates_v2_draft_dev.sql`. It is byte-identical to `docs/admin/20261017143000_admin_journey_communication_templates_v2.sql`, including the header written before application. That header still says unapplied; those words are the applied text, not the current status.
 
-Do not apply it from this change. It is not under `supabase/migrations`.
+Do not replay it on DEV. Do not apply it to Production. Version 2 was inserted as `DRAFT` and this record does not approve it.
 
 The evidence-request subject is `Supporting information for your enquiry — {case_ref}`. The body greets the customer, names the enquiry reference, asks for the following supporting information, puts `{specific_document}` in its own paragraph, and asks the customer to use the secure link. If they are unsure, it points them to the ProfileRelaunch website. It asks them never to share passwords, verification codes or sign-in credentials. It signs off as ProfileRelaunch Support Team. The last paragraph is the label `Secure document-upload link:` and the body ends with the one `{upload_url}`.
 
@@ -50,10 +50,10 @@ Reviewed, queued and sent communications are snapshots. This change does not upd
 
 ## DEV activation
 
-This change does not apply the SQL and does not approve version 2. Sending, Resend and Production stay off. After an independent review, the safe sequence is:
+DEV already received this insert as `20261017145801`. Repeating that apply would replay it. The insert did not approve version 2. Sending, Resend and Production stay off. The remaining sequence is:
 
-1. Independently approve `docs/admin/20261017143000_admin_journey_communication_templates_v2.sql`.
-2. Apply that file to DEV only. Both inserts are version 2 with status `DRAFT`. Do not edit the statement to set `APPROVED`, and do not retire version 1. Do not also create a template draft for the same key: that command assigns the next version and would add a second draft.
+1. The reviewed statement is `supabase/migrations/20261017145801_admin_journey_03c_customer_templates_v2_draft_dev.sql`. It has already been applied to DEV.
+2. Do not apply it again, and do not apply it to Production. Both inserts are version 2 with status `DRAFT`. Do not edit the statement to set `APPROVED`, and do not retire version 1. Do not also create a template draft for the same key: that command assigns the next version and would add a second draft.
 3. Review the proposed template in Admin Settings → Templates. Approve it with the existing `approve_template_draft` action. That action requires the row to still be `DRAFT`, the record version to match, the text to pass `template_text_valid_v1`, and the staff session to have been created within the last five minutes. It sets that row to `APPROVED`. It does not change version 1.
 4. Confirm a newly generated evidence-request draft uses approved version 2. The draft command selects `status = 'APPROVED' ORDER BY version DESC LIMIT 1`. Until step 3, that selection remains version 1.
 5. Test the email preview, Edit email, Save changes, Cancel editing and Approve email on that new draft. Do not send it.

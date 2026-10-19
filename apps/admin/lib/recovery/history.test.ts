@@ -4,12 +4,11 @@ import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHis
 
 const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
-// This validator fixture models the complete applied manifest, not literal
-// live DEV migration history, which has a separately tracked baseline discrepancy.
-// The synthetic chain ends at applied DEV PAY-ENV-04.
+// This validator fixture models the complete applied manifest, not a literal
+// copy of live DEV migration history. Live DEV is still missing the three
+// initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
+// synthetic chain ends at the observed DEV ledger head 20261019163645.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
-// Separately, the live DEV history predates three initial foundation entries;
-// that pre-existing baseline discrepancy is tracked, not modified here.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -28,13 +27,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(true)
   })
 
-  it("keeps synthetic remote history aligned through applied DEV PAY-ENV-04", () => {
+  it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.version)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261015230000",
-      name: "dev_stripe_one_shot_v1",
+      version: "20261019163645",
+      name: "admin_journey_05_assessment_dev_v1",
     })
+    expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])
@@ -50,6 +50,16 @@ describe("the migration history validator", () => {
     const result = validateMigrationHistory({ repoFilenames, remote: stopped })
     expect(codes(result)).toContain("applied_not_in_remote")
     expect(result.status).toBe("diverged")
+    expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("refuses to replay a DEV-HISTORY-01 statement that DEV has already applied", () => {
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261019163645_admin_journey_05_assessment_dev_v1.sql"],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
     expect(mayApplyMigrations(result)).toBe(false)
   })
 

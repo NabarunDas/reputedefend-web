@@ -42,7 +42,7 @@ Agreement `PS-2026-10-14.2` invoices a Managed success fee only after documented
 
 | Later slice | Owns | Already in Admin | Not in this preview |
 | --- | --- | --- | --- |
-| ADMIN-JOURNEY-02 | Steps 1 and 2 | Case intake, client and business records, email verification, membership authority, `case_work_events` and `admin_audit_events` | The two decision functions in `docs/admin/proposed-admin-journey-02.sql` are not applied. The purchasing establishment remains a quote check |
+| ADMIN-JOURNEY-02 | Steps 1 and 2 | Case intake, client and business records, email verification, membership authority, `case_work_events` and `admin_audit_events` | The two decision functions are applied on DEV only as `20261016175917` and are not applied to Production. The purchasing establishment remains a quote check |
 | ADMIN-JOURNEY-03 | Step 3 | Evidence requests and the communications lifecycle, including queued, provider-accepted and delivered | A guided record, draft review and issue operation. A no-documents decision, which stays unknown until that record exists |
 | ADMIN-JOURNEY-04 | Step 4 | Scan, review, accept, reject and fulfil on the evidence workspace | Those commands inside the new workflow, and an evidence waiver. Until the waiver exists, no documents is not completion |
 | ADMIN-JOURNEY-05 | Step 5 | The assessment record and its draft, review and approve commands | Selecting the service track. The recommendation is not an agreement. The DEV apply is recorded in `docs/admin/admin-journey-05.md` |

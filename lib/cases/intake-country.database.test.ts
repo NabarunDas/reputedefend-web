@@ -135,7 +135,7 @@ afterAll(async () => {
 })
 
 describe("legacy country matching", () => {
-  it("keeps the proposed country key out of the applied migration chain", () => {
+  it("keeps the country key in the recovered DEV statement and out of every other migration", () => {
     const appliedFunctionSql = appliedFunction()
     expect(appliedFunctionSql.split(countryComparison)).toHaveLength(5)
     expect(appliedSql).not.toContain("_intake_country_key")
@@ -146,9 +146,13 @@ describe("legacy country matching", () => {
     expect(proposalSql).not.toMatch(/UPDATE public\.locations/)
     expect(proposalSql).not.toMatch(/GRANT EXECUTE ON FUNCTION public\._intake_country_key/)
     const filenames = readdirSync(migrationsDir)
+    const historical = "20261017113702_get_help_legacy_country_match_dev_v1.sql"
+    expect(filenames).toContain(historical)
     expect(filenames).not.toContain("proposed-intake-country-key-v1.sql")
     for (const filename of filenames) {
-      expect(readFileSync(new URL(filename, migrationsDir), "utf8")).not.toContain("_intake_country_key")
+      const sql = readFileSync(new URL(filename, migrationsDir), "utf8")
+      if (filename === historical) expect(sql).toContain("_intake_country_key")
+      else expect(sql).not.toContain("_intake_country_key")
     }
   })
 

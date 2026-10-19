@@ -111,10 +111,13 @@ function draft(overrides: Partial<PreparedPack> = {}): PreparedPack {
   }
 }
 
-function show(source: CaseFlowFacts, packs: PreparedPackCase | null) {
+function show(source: CaseFlowFacts, packs: PreparedPackCase | null, options: { recordsConflict?: boolean } = {}) {
   const now = "2026-10-03T12:00:00.000Z"
-  const panel = buildJourneyPreparationPanel({ facts: source, packs, recordsConflict: false })
-  const journey = presentCaseJourney(source, now, [], packs && panel.headline === "Pack records disagree" ? { packRecordsDisagree: true } : {})
+  const panel = buildJourneyPreparationPanel({ facts: source, packs, recordsConflict: !!options.recordsConflict })
+  const journey = presentCaseJourney(source, now, [], {
+    ...(packs !== null && panel.headline === "Pack records disagree" ? { packRecordsDisagree: true } : {}),
+    ...(options.recordsConflict ? { authorityRecordsDisagree: true } : {}),
+  })
   const locked = journey.steps.find(step => step.id === "PREPARATION")?.state === "LOCKED"
   return render(<CaseJourneyView
     reference="PR-1"
@@ -193,5 +196,64 @@ describe("guided case preparation", () => {
     expect(screen.queryByRole("button", { name: "Create new draft pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Approve prepared pack" })).toBeNull()
+  })
+
+  it("agrees the step, the headline and the controls for published and conflicting packs", () => {
+    const published = draft({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z", approvalNote: "Selected evidence only." })
+    const row = { id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }
+    const noCommands = () => {
+      for (const name of ["Create new draft pack", "Approve prepared pack", "Publish pack", "Unpublish pack"]) {
+        expect(screen.queryByRole("button", { name, hidden: true })).toBeNull()
+      }
+      expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+    }
+
+    show(facts({ packs: { packs: [row], eligibleCount: 0 } }), { caseId: CASE_ID, packs: [published], eligible: [] })
+    expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Prepared pack is current")
+    expect(screen.getByText(/Publication: Met/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Unpublish pack", hidden: true })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+
+    cleanup()
+    show(facts({
+      packs: { packs: [row, { ...row, id: "pack-2", packNumber: 2 }], eligibleCount: 0 },
+    }), { caseId: CASE_ID, packs: [published, { ...published, id: "pack-2", packNumber: 2 }], eligible: [] })
+    expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Another pack is still published")
+    expect(screen.getAllByText(/evidence workspace/).length).toBeGreaterThan(0)
+    noCommands()
+
+    cleanup()
+    show(facts({
+      packs: {
+        packs: [
+          { ...row, id: "pack-old", status: "SUPERSEDED", published: false },
+          { ...row, id: "pack-2", packNumber: 2 },
+        ],
+        eligibleCount: 0,
+      },
+    }), {
+      caseId: CASE_ID,
+      packs: [
+        { ...published, id: "pack-old", status: "SUPERSEDED", published: false },
+        { ...published, id: "pack-2", packNumber: 2 },
+      ],
+      eligible: [],
+    })
+    expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Prepared pack is current")
+    expect(screen.getByText(/This approved history is read-only/)).toBeTruthy()
+
+    cleanup()
+    show(
+      facts({ packs: { packs: [row], eligibleCount: 0 } }),
+      { caseId: CASE_ID, packs: [published], eligible: [] },
+      { recordsConflict: true },
+    )
+    expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Case records disagree")
+    expect(screen.getAllByText(/authority records/).length).toBeGreaterThan(0)
+    noCommands()
   })
 })

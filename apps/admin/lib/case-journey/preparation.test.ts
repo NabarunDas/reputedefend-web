@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
 import type { EligiblePackVersion, PreparedPack, PreparedPackCase } from "../packs/model"
-import { buildJourneyPreparationPanel } from "./preparation"
+import { buildJourneyPreparationPanel, preparationReadiness } from "./preparation"
 
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
 const VERSION_ID = "66666666-6666-4666-8666-666666666666"
@@ -193,5 +193,99 @@ describe("prepared pack panel", () => {
     expect(history.headline).toBe("Prepared pack is current")
     expect(history.packs.map(item => item.state)).toEqual(["Superseded", "Published"])
     expect(history.packs[0]?.history).toBe(true)
+  })
+
+  it("does not call a pack current while another approved pack is still published", () => {
+    const rows = [
+      { id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 },
+      { id: "pack-2", packNumber: 2, status: "APPROVED", published: true, everPublished: true, itemCount: 1 },
+    ]
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: rows, eligibleCount: 0 }),
+      packs: loaded([
+        pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" }),
+        pack({ id: "pack-2", packNumber: 2, status: "APPROVED", published: true, approvedAt: "2026-06-03T12:00:00.000Z" }),
+      ]),
+      recordsConflict: false,
+    })
+    const readiness = preparationReadiness(rows)
+    expect(readiness.ready).toBe(false)
+    expect(readiness.otherPublished).toBe(true)
+    expect(view.headline).toBe("Another pack is still published")
+    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
+    expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
+    expect(view.requirements.find(item => item.label === "Current pack")?.detail).toMatch(/still published/)
+    expect(view.notices.join(" ")).toMatch(/earlier pack is still published/)
+    expect(view.who).toMatch(/evidence workspace/)
+    expect(view.commands).toBeNull()
+  })
+
+  it("withholds pack commands when an earlier pack stays published beside a newer draft", () => {
+    const rows = [
+      { id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 },
+      { id: "pack-2", packNumber: 2, status: "DRAFT", published: false, everPublished: false, itemCount: 1 },
+    ]
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: rows, eligibleCount: 0 }),
+      packs: loaded([
+        pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" }),
+        pack({ id: "pack-2", packNumber: 2, status: "DRAFT" }),
+      ]),
+      recordsConflict: false,
+    })
+    expect(preparationReadiness(rows).ready).toBe(false)
+    expect(view.headline).toBe("Another pack is still published")
+    expect(view.commands).toBeNull()
+    expect(view.who).toMatch(/evidence workspace/)
+  })
+
+  it("treats superseded history as read-only and a single published pack as current", () => {
+    const current = { id: "pack-2", packNumber: 2, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }
+    const rows = [
+      { id: "pack-1", packNumber: 1, status: "SUPERSEDED", published: false, everPublished: true, itemCount: 1 },
+      current,
+    ]
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: rows, eligibleCount: 0 }),
+      packs: loaded([
+        pack({ status: "SUPERSEDED", published: false }),
+        pack({ id: "pack-2", packNumber: 2, status: "APPROVED", published: true, approvedAt: "2026-06-03T12:00:00.000Z" }),
+      ]),
+      recordsConflict: false,
+    })
+    expect(preparationReadiness(rows).ready).toBe(true)
+    expect(view.headline).toBe("Prepared pack is current")
+    expect(view.who).toBe("The published pack is current.")
+    expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Met")
+    expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Met")
+    expect(view.commands?.packs.map(item => item.id)).toEqual(["pack-1", "pack-2"])
+
+    const alone = [current]
+    const single = buildJourneyPreparationPanel({
+      facts: facts({ packs: alone, eligibleCount: 0 }),
+      packs: loaded([pack({ id: "pack-2", packNumber: 2, status: "APPROVED", published: true, approvedAt: "2026-06-03T12:00:00.000Z" })]),
+      recordsConflict: false,
+    })
+    expect(preparationReadiness(alone).ready).toBe(true)
+    expect(single.headline).toBe("Prepared pack is current")
+    expect(single.commands).not.toBeNull()
+  })
+
+  it("withholds pack commands when authority records disagree", () => {
+    const rows = [{ id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }]
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: rows, eligibleCount: 0 }),
+      packs: loaded([pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" })]),
+      recordsConflict: true,
+    })
+    expect(preparationReadiness(rows, { recordsConflict: true }).ready).toBe(false)
+    expect(view.headline).toBe("Case records disagree")
+    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
+    expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
+    expect(view.notices.join(" ")).toMatch(/authority records disagree/)
+    expect(view.who).toMatch(/authority records/)
+    expect(view.commands).toBeNull()
   })
 })

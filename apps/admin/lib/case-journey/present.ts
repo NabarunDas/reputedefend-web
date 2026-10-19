@@ -25,6 +25,7 @@ import type {
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
+import { preparationReadiness } from "./preparation"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
 import {
@@ -1066,14 +1067,14 @@ function readManagedActivation(facts: CaseFlowFacts, now: string, options: Journ
 }
 
 function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
-  const live = facts.packs.packs.filter(pack => pack.status !== "SUPERSEDED")
-  const current = live.reduce<(typeof live)[number] | null>(
-    (best, pack) => (best === null || pack.packNumber > best.packNumber ? pack : best),
-    null,
-  )
-  const stale = live.some(pack => pack.status === "STALE")
-  const currentPublished = !!current && current.status === "APPROVED" && current.published && current.itemCount > 0
-  const otherPublished = facts.packs.packs.some(pack => pack !== current && pack.status === "APPROVED" && pack.published && pack.itemCount > 0)
+  const readiness = preparationReadiness(facts.packs.packs, {
+    packRecordsDisagree: !!options.packRecordsDisagree,
+    recordsConflict: recordsConflict(options),
+  })
+  const current = readiness.current
+  const stale = readiness.stale
+  const currentPublished = readiness.latestPublished
+  const otherPublished = readiness.otherPublished
   const known = [
     facts.packs.packs.length ? `${facts.packs.packs.length} pack${facts.packs.packs.length === 1 ? "" : "s"} on file.` : "No prepared pack is on file.",
     current ? `The current pack is #${current.packNumber} and its state is ${current.status}.` : "There is no current pack. A superseded pack is history, not the pack to submit.",

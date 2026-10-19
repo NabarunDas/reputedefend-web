@@ -603,6 +603,41 @@ describe("journey status from authoritative records", () => {
     expect(step(mismatched, "PREPARATION").state).toBe("NEEDS_ATTENTION")
     expect(step(mismatched, "PREPARATION").known.join(" ")).toMatch(/prepared-pack record/)
     expect(completed(mismatched)).not.toContain("PREPARATION")
+
+    const bothPublished = show({
+      technicalStage: "PREPARATION",
+      packs: {
+        packs: [
+          { ...published, id: "pack-1", packNumber: 1 },
+          published,
+        ],
+        eligibleCount: 2,
+      },
+    })
+    expect(step(bothPublished, "PREPARATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(bothPublished, "PREPARATION").known.join(" ")).toMatch(/earlier pack is still published/)
+    expect(completed(bothPublished)).not.toContain("PREPARATION")
+
+    const supersededHistory = show({
+      technicalStage: "PREPARATION",
+      packs: {
+        packs: [
+          { ...published, id: "pack-1", packNumber: 1, status: "SUPERSEDED", published: false },
+          published,
+        ],
+        eligibleCount: 2,
+      },
+    })
+    expect(step(supersededHistory, "PREPARATION").state).toBe("COMPLETED")
+    expect(step(supersededHistory, "PREPARATION").whoMustAct).toBe("The published pack is current.")
+
+    const authority = show({
+      technicalStage: "PREPARATION",
+      packs: { packs: [published], eligibleCount: 2 },
+    }, [], { authorityRecordsDisagree: true })
+    expect(step(authority, "PREPARATION").state).toBe("NEEDS_ATTENTION")
+    expect(step(authority, "PREPARATION").known.join(" ")).toMatch(/authority records disagree/)
+    expect(completed(authority)).not.toContain("PREPARATION")
   })
 
   it("waits while a submission has no result from Google", () => {

@@ -72,6 +72,37 @@ export function provenEligible(facts: CaseFlowFacts, packs: PreparedPackCase): E
   return packs.eligible.filter(item => safeVersion(versions.get(item.versionId), item.documentId))
 }
 
+export type PreparationReadiness = {
+  current: CaseFlowFacts["packs"]["packs"][number] | null
+  /** The latest pack that is not superseded is approved, published and non-empty. */
+  latestPublished: boolean
+  stale: boolean
+  /** Another approved, non-empty pack is still published. Superseded history does not count. */
+  otherPublished: boolean
+  /** Latest published pack, no stale pack, no other published pack, and the records agree. */
+  ready: boolean
+}
+
+/**
+ * The same five facts the step and the panel use.
+ * This is not a pack state machine. It only reads the projection.
+ */
+export function preparationReadiness(
+  packs: CaseFlowFacts["packs"]["packs"],
+  flags: { packRecordsDisagree?: boolean; recordsConflict?: boolean } = {},
+): PreparationReadiness {
+  const live = packs.filter(pack => pack.status !== "SUPERSEDED")
+  const current = live.reduce<(typeof live)[number] | null>(
+    (best, pack) => (best === null || pack.packNumber > best.packNumber ? pack : best),
+    null,
+  )
+  const stale = live.some(pack => pack.status === "STALE")
+  const latestPublished = !!current && current.status === "APPROVED" && current.published && current.itemCount > 0
+  const otherPublished = packs.some(pack => pack !== current && pack.status === "APPROVED" && pack.published && pack.itemCount > 0)
+  const ready = latestPublished && !stale && !otherPublished && !flags.packRecordsDisagree && !flags.recordsConflict
+  return { current, latestPublished, stale, otherPublished, ready }
+}
+
 function listedPack(pack: { id: string; packNumber: number; status: string; published?: boolean; itemCount?: number; items?: { length: number } }): JourneyPreparationPack {
   return {
     id: pack.id,
@@ -93,41 +124,46 @@ export function buildJourneyPreparationPanel(input: {
   const notices: string[] = []
   if (!loaded) notices.push("The prepared-pack record could not be loaded, so no pack command is offered from here.")
   else if (disagreed) notices.push("The case projection and the prepared-pack record do not describe the same packs. These records disagree, so no pack command is offered from here.")
-  if (input.recordsConflict) notices.push("The customer, business or authority records disagree, so this step does not treat a pack as ready.")
+  if (input.recordsConflict) notices.push("The customer, business or authority records disagree, so this step does not treat a pack as ready and no pack command is offered from here.")
 
   const source = loaded ?? null
   const display = (source ? source.packs : facts.packs.packs).map(listedPack)
-  const live = facts.packs.packs.filter(pack => pack.status !== "SUPERSEDED")
-  const current = live.reduce<(typeof live)[number] | null>(
-    (best, pack) => (best === null || pack.packNumber > best.packNumber ? pack : best),
-    null,
-  )
-  const stale = live.some(pack => pack.status === "STALE")
+  const readiness = preparationReadiness(facts.packs.packs, {
+    packRecordsDisagree: disagreed,
+    recordsConflict: input.recordsConflict,
+  })
+  const current = readiness.current
   const eligible = loaded ? provenEligible(facts, loaded) : []
   if (loaded && eligible.length !== loaded.eligible.length) {
     notices.push("A listed file is not an accepted, validated, clean version linked to a request. It is not offered for this pack.")
   }
+  if (readiness.otherPublished) {
+    notices.push("More than one pack is published, or an earlier pack is still published. These records disagree, so no pack command is offered from here. Resolve the extra published pack on the evidence workspace.")
+  }
 
-  const commands = loaded && !disagreed
+  const commands = loaded && !disagreed && !input.recordsConflict && !readiness.otherPublished
     ? { ...loaded, eligible }
     : null
 
-  const currentPublished = !!current && current.status === "APPROVED" && current.published && current.itemCount > 0 && !stale && !disagreed && !input.recordsConflict
   const headline = disagreed
     ? "Pack records disagree"
-    : stale
+    : readiness.stale
       ? "Prepared pack is stale"
-      : !current
-        ? "No prepared pack"
-        : current.status === "DRAFT" && current.itemCount === 0
-          ? "Prepared pack needs evidence"
-          : current.status === "DRAFT"
-            ? "Prepared pack needs approval"
-            : current.status === "APPROVED" && !current.published
-              ? "Prepared pack needs publication"
-              : current.status === "APPROVED" && current.published && current.itemCount > 0
-                ? input.recordsConflict ? "Pack records disagree" : "Prepared pack is current"
-                : "Prepared pack is not ready"
+      : readiness.otherPublished
+        ? "Another pack is still published"
+        : input.recordsConflict
+          ? "Case records disagree"
+          : !current
+            ? "No prepared pack"
+            : current.status === "DRAFT" && current.itemCount === 0
+              ? "Prepared pack needs evidence"
+              : current.status === "DRAFT"
+                ? "Prepared pack needs approval"
+                : current.status === "APPROVED" && !current.published
+                  ? "Prepared pack needs publication"
+                  : readiness.ready
+                    ? "Prepared pack is current"
+                    : "Prepared pack is not ready"
 
   const detail = "Case preparation is the current approved pack after it has been published. Approval does not publish it. Publication uses the existing customer case-access rule and does not submit anything to Google."
 
@@ -144,29 +180,35 @@ export function buildJourneyPreparationPanel(input: {
     },
     {
       label: "Publication",
-      state: currentPublished ? "Met" : "Not met",
+      state: readiness.ready ? "Met" : "Not met",
       detail: "Publication makes the approved pack available through the existing secure case-access link. It does not create an open document link.",
     },
     {
       label: "Current pack",
-      state: currentPublished ? "Met" : "Not met",
-      detail: stale
+      state: readiness.ready ? "Met" : "Not met",
+      detail: readiness.stale
         ? "Included evidence changed after approval. The stale pack has to be replaced by a new draft."
-        : "The current pack is the latest one that has not been superseded. A superseded pack stays as history.",
+        : readiness.otherPublished
+          ? "Another approved pack is still published. A superseded pack is history and does not count."
+          : "The current pack is the latest one that has not been superseded. A superseded pack stays as history.",
     },
   ]
 
   const who = disagreed
     ? "ProfileRelaunch reconciles the pack records before changing the pack."
-    : stale
-      ? "ProfileRelaunch creates a new draft from the current accepted evidence and approves it again."
-      : current?.status === "APPROVED" && !current.published
-        ? "ProfileRelaunch publishes the approved pack. Publication does not submit anything to Google."
-        : current?.status === "DRAFT"
-          ? "ProfileRelaunch adds accepted evidence and approves the draft. Approval does not publish it."
-          : currentPublished
-            ? "The published pack is current."
-            : "ProfileRelaunch creates a draft pack."
+    : readiness.otherPublished
+      ? "ProfileRelaunch resolves the extra published pack on the evidence workspace before treating a pack as current."
+      : input.recordsConflict
+        ? "ProfileRelaunch reconciles the customer, business or authority records before changing the pack."
+        : readiness.stale
+          ? "ProfileRelaunch creates a new draft from the current accepted evidence and approves it again."
+          : current?.status === "APPROVED" && !current.published
+            ? "ProfileRelaunch publishes the approved pack. Publication does not submit anything to Google."
+            : current?.status === "DRAFT"
+              ? "ProfileRelaunch adds accepted evidence and approves the draft. Approval does not publish it."
+              : readiness.ready
+                ? "The published pack is current."
+                : "ProfileRelaunch creates a draft pack."
 
   return { headline, detail, packs: display, requirements, notices, who, commands }
 }

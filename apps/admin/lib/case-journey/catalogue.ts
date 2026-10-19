@@ -191,7 +191,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     purpose: "Assemble the evidence pack, approve it, and publish a current copy.",
     responsibleParty: "ADMIN",
     dataDependencies: ["prepared pack status", "published", "item count", "stale"],
-    completionEvidence: "The current pack, the latest one that is not superseded, is approved, published and non-empty, and no live pack is stale. A draft, an unpublished approval, a stale pack, a superseded pack, and a pack whose detailed record disagrees with the case projection are not completion. Approval is not publication, and publication is not a Google submission.",
+    completionEvidence: "The current pack, the latest one that is not superseded, is approved, published and non-empty, no other approved pack is still published, and no live pack is stale. A draft, an unpublished approval, a stale pack, a superseded pack, another published pack, disagreeing customer, business or authority records, and a pack whose detailed record disagrees with the case projection are not completion. Approval is not publication, and publication is not a Google submission.",
     applicability: "UNIVERSAL",
     unsupported: "This step uses the existing pack commands. Approval does not publish the pack. Publication does not submit anything to Google and does not create an open document link. An unscanned, rejected, superseded or unlinked file is not eligible evidence.",
     laterWork: "ADMIN-JOURNEY-08",

@@ -293,6 +293,23 @@ describe("the case journey route", () => {
     expect(getPreparedPackCase).not.toHaveBeenCalled()
   })
 
+  it("keeps submission tracking closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "SUBMISSION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Submission & Tracking" })).toBeInTheDocument()
+    expect(screen.getByText("Submission tracking stays closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='SUBMISSION']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByText("Record an externally completed submission")).toBeNull()
+    expect(screen.queryByText("Record a decision or withdrawal")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+  })
+
   it("does not offer screening completion while the intake review is still the current step", async () => {
     allowPreview()
     records()

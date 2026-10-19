@@ -26,6 +26,7 @@ import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
+import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
 import {
@@ -208,6 +209,8 @@ export type JourneyPresentationOptions = {
   assessment?: AssessmentJudgement | null
   /** The detailed pack read does not match the case-flow pack projection. */
   packRecordsDisagree?: boolean
+  /** The case submission rows do not match the case-flow submission projection. */
+  submissionRecordsDisagree?: boolean
 }
 
 export function presentCaseJourney(
@@ -409,7 +412,7 @@ function readSteps(
     QUOTE_ACCEPTANCE: readQuote(facts, now, options.assessment),
     SERVICE_ACTIVATION: readActivation(facts, now, options),
     PREPARATION: readPreparation(facts, options),
-    SUBMISSION: readSubmission(facts),
+    SUBMISSION: readSubmission(facts, options),
     OUTCOME_BILLING: readOutcome(facts),
     CLOSURE: readClosure(facts),
   }
@@ -1129,28 +1132,43 @@ function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptio
   }
 }
 
-function readSubmission(facts: CaseFlowFacts): Reading {
+function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
   const unresolved = facts.submissions.filter(item => !item.result)
+  const unrecognised = facts.submissions.filter(item => item.result !== null && !authoritativeSubmissionResult(item.result))
+  const partyConflict = facts.submissions.some(item => !submissionPartyMatches(facts.serviceTrack, item.actor))
   const known = [
     facts.submissions.length
       ? `${facts.submissions.length} submission${facts.submissions.length === 1 ? "" : "s"} recorded.`
       : "No submission is recorded.",
     facts.capabilities.googleSubmissionLive
-      ? "A Google submission transport is configured."
+      ? "A Google submission transport is configured. This step still does not send a submission."
       : "No live Google submission transport is configured. Recording a submission is not the same as sending one.",
+    "A Guided attempt is the customer's. A Managed attempt is ProfileRelaunch's.",
   ]
+  if (options.submissionRecordsDisagree || partyConflict || unrecognised.length > 0) {
+    return {
+      proof: "attention",
+      known: [...known, partyConflict
+        ? "The submitting party does not match the service track. These records disagree."
+        : options.submissionRecordsDisagree
+          ? "The case submission record and the case-flow projection do not describe the same attempts. These records disagree."
+          : "A recorded result is not a decision or a withdrawal."],
+      missing: ["Submission records that agree, and a decision or withdrawal on every attempt."],
+      who: "ProfileRelaunch reconciles the submission records before treating an attempt as finished.",
+    }
+  }
   if (unresolved.length > 0) {
     return {
       proof: "waiting",
-      known: [...known, "A submission with no result is still waiting for Google."],
-      missing: ["A recorded result on every submission."],
+      known: [...known, "A submission with no result is still waiting for Google. Recording it did not submit it."],
+      missing: ["A decision or withdrawal on every recorded attempt."],
       who: "Google has not answered the open submission.",
     }
   }
   if (facts.submissions.length > 0) {
     return {
       proof: "complete",
-      known: [...known, "Every recorded submission has a result."],
+      known: [...known, "Every recorded submission has a decision or a withdrawal. Outcome review stays on a later step."],
       missing: [],
       who: "The submission result is recorded.",
     }
@@ -1158,8 +1176,8 @@ function readSubmission(facts: CaseFlowFacts): Reading {
   return {
     proof: "unproven",
     known,
-    missing: ["A submission and its result."],
-    who: "ProfileRelaunch records an externally completed submission. Google then answers it.",
+    missing: ["An externally completed submission, then a decision or withdrawal on every attempt."],
+    who: "ProfileRelaunch records an externally completed submission. Recording it does not submit anything to Google.",
   }
 }
 

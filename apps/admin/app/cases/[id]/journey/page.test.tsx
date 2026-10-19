@@ -21,6 +21,7 @@ const loadQuote = vi.fn(async (..._args: unknown[]) => null)
 const loadOrder = vi.fn(async (..._args: unknown[]) => null)
 const loadMoney = vi.fn(async (..._args: unknown[]) => ({ orders: [] }))
 const getCaseAuthorization = vi.fn(async (..._args: unknown[]) => null)
+const getPreparedPackCase = vi.fn(async (..._args: unknown[]) => ({ caseId: "55555555-5555-4555-8555-555555555555", packs: [], eligible: [] }))
 
 vi.mock("next/navigation", () => ({
   notFound: () => { throw notFoundError },
@@ -49,6 +50,7 @@ vi.mock("@/lib/commerce/queries", () => ({
 }))
 vi.mock("@/lib/payments/queries", () => ({ loadMoney: (...args: unknown[]) => loadMoney(...args) }))
 vi.mock("@/lib/authorization/queries", () => ({ getCaseAuthorization: (...args: unknown[]) => getCaseAuthorization(...args) }))
+vi.mock("@/lib/packs/queries", () => ({ getPreparedPackCase: (...args: unknown[]) => getPreparedPackCase(...args) }))
 
 import CaseJourneyPage from "./page"
 
@@ -165,6 +167,7 @@ describe("the case journey route", () => {
       expect(loadOrder).not.toHaveBeenCalled()
       expect(loadMoney).not.toHaveBeenCalled()
       expect(getCaseAuthorization).not.toHaveBeenCalled()
+      expect(getPreparedPackCase).not.toHaveBeenCalled()
     }
   })
 
@@ -268,6 +271,26 @@ describe("the case journey route", () => {
     expect(loadOrder).not.toHaveBeenCalled()
     expect(loadMoney).not.toHaveBeenCalled()
     expect(getCaseAuthorization).not.toHaveBeenCalled()
+  })
+
+  it("keeps case preparation closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    getPreparedPackCase.mockClear()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "PREPARATION" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Case Preparation & Approval" })).toBeInTheDocument()
+    expect(screen.getByText("Case preparation stays closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Create new draft pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve prepared pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Submit to Google|Mark as paid/i })).toBeNull()
+    expect(getPreparedPackCase).not.toHaveBeenCalled()
   })
 
   it("does not offer screening completion while the intake review is still the current step", async () => {

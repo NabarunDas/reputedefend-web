@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { assessProposedClose, assessProposedOutcomeRecord, readStoredOutcome } from "./outcome-proposal"
+import { assessProposedClose, assessProposedOutcomeRecord, coherentTerminalClosure, readStoredOutcome } from "./outcome-proposal"
 
 const summary = "The listing was restored and the customer can see it again."
 
@@ -167,5 +167,48 @@ describe("proposed pre-closure outcome record", () => {
     expect(readStoredOutcome({ ...open, events: hidden })).toBe("conflict")
     const completeWithoutReopen = [record("1", matching), ...Array.from({ length: 49 }, (_, index) => ({ id: String(index + 2), event: "note", details: {} }))]
     expect(readStoredOutcome({ ...open, events: completeWithoutReopen })).toBe("conflict")
+  })
+})
+
+describe("terminal closure coherence", () => {
+  const summary = "The listing was restored and the customer can see it again."
+
+  it("accepts a finished closure and a finished withdrawal, and nothing that mixes them", () => {
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: "RESTORED", summary,
+    })).toBe(true)
+    expect(coherentTerminalClosure({
+      caseType: "REVIEW_PROTECTION", stage: "FINISHED", status: "CLOSED", outcome: "NOT_REMOVED", summary,
+    })).toBe(true)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CANCELLED", outcome: "WITHDRAWN", summary,
+    })).toBe(true)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: "WITHDRAWN", summary,
+    })).toBe(false)
+    expect(coherentTerminalClosure({
+      caseType: "REVIEW_PROTECTION", stage: "FINISHED", status: "CANCELLED", outcome: "REMOVED", summary,
+    })).toBe(false)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CANCELLED", outcome: "RESTORED", summary,
+    })).toBe(false)
+  })
+
+  it("rejects a terminal case that is not finished or has no usable summary", () => {
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "CLOSED", outcome: "RESTORED", summary,
+    })).toBe(false)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: "RESTORED", summary: "",
+    })).toBe(false)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CANCELLED", outcome: "WITHDRAWN", summary: "short",
+    })).toBe(false)
+    expect(coherentTerminalClosure({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: null, summary,
+    })).toBe(false)
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: "RESTORED", summary, reopened: false,
+    })).toBe("closed")
   })
 })

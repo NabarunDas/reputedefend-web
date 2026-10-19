@@ -18,9 +18,9 @@ The comparison runs only when Step 11 is open. A locked step does not load the m
 
 ## Completion
 
-Step 11 is complete only when the case status is `CLOSED` or `CANCELLED`. A recorded outcome on an open case is not closure. A reopened case is open again. Guard is not part of the evidence.
+Step 11 is complete only when the status, outcome, customer summary and stage agree. `CLOSED` holds a non-withdrawal at `FINISHED`. `CANCELLED` holds `WITHDRAWN` at `FINISHED`. The summary is the one the close command would store. A recorded outcome on an open case is not closure. A reopened case is open again. Guard is not part of the evidence.
 
-`CLOSED` and `CANCELLED` stay distinct. A withdrawal is `CANCELLED`. The step says the case is closed only when the case record and the projection both say `CLOSED`, and cancelled only when both say `CANCELLED`.
+`CLOSED` with `WITHDRAWN`, and `CANCELLED` with any other outcome, are inconsistent. So are a terminal status at the wrong stage and a missing or too-short summary. The step shows the database status for diagnosis and stays needs-attention. It does not show a verified closure record or offer Guard. Reopening remains the existing command when the case record and the projection agree. The loaded case record must match the projection before either a verified closure or that reopen control is shown.
 
 ## The close control
 

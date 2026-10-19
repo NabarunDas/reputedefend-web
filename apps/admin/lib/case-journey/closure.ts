@@ -14,7 +14,7 @@ import type { ServiceOrder } from "../commerce/model"
 import type { MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
 import { presentJourneyOutcome } from "./outcome"
-import { assessProposedClose, readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
+import { assessProposedClose, coherentTerminalClosure, readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { submissionRecordsDisagree } from "./submission"
 
 export type JourneyClosureHistory = {
@@ -48,7 +48,7 @@ export type JourneyClosureCommands = {
 }
 
 export type JourneyClosurePanel = {
-  headline: "Closed" | "Cancelled" | "Not closed"
+  headline: "Closed" | "Cancelled" | "Not closed" | "Inconsistent closure"
   detail: string
   statusLabel: string
   outcomeLabel: string
@@ -108,7 +108,7 @@ function tasksAgree(facts: CaseFlowFacts, tasks: Task[]): boolean {
   return facts.tasks.every(task => tasks.some(row => row.id === task.id && row.status === task.status))
 }
 
-function historyDetail(event: CaseDetail["events"][number], openNow: boolean): { label: string; detail: string } | null {
+function historyDetail(event: CaseDetail["events"][number], mode: "verified" | "inconsistent" | "open"): { label: string; detail: string } | null {
   const outcome = typeof event.details.outcome === "string" ? outcomeLabel(event.details.outcome) : "Not recorded"
   const summary = typeof event.details.summary === "string" ? event.details.summary : "Not recorded"
   const previousOutcome = typeof event.details.previousOutcome === "string" ? outcomeLabel(event.details.previousOutcome) : "Not recorded"
@@ -130,18 +130,20 @@ function historyDetail(event: CaseDetail["events"][number], openNow: boolean): {
   }
   if (event.event === "close") {
     return {
-      label: openNow ? "Earlier close command" : "Close command",
-      detail: openNow
-        ? `Historical outcome: ${outcome}. Historical summary: ${summary} The current case is not closed.`
-        : `${outcome}. ${summary}`,
+      label: mode === "verified" ? "Close command" : "Earlier close command",
+      detail: mode === "verified"
+        ? `${outcome}. ${summary}`
+        : mode === "inconsistent"
+          ? `Historical outcome: ${outcome}. Historical summary: ${summary} This event is not a verified closure.`
+          : `Historical outcome: ${outcome}. Historical summary: ${summary} The current case is not closed.`,
     }
   }
   return null
 }
 
-function relevantHistory(events: CaseDetail["events"], openNow: boolean): JourneyClosureHistory[] {
+function relevantHistory(events: CaseDetail["events"], mode: "verified" | "inconsistent" | "open"): JourneyClosureHistory[] {
   return events.flatMap(event => {
-    const described = historyDetail(event, openNow)
+    const described = historyDetail(event, mode)
     if (!described) return []
     return [{ id: event.id, label: described.label, at: event.createdAt, detail: described.detail }]
   }).sort((left, right) => {
@@ -212,7 +214,14 @@ export function presentJourneyClosure(input: {
     })
     : null
   const databaseClosed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
-  const confirmedClosed = databaseClosed && identityAgrees
+  const coherent = coherentTerminalClosure({
+    caseType: facts.caseType,
+    stage: facts.technicalStage,
+    status: facts.caseStatus,
+    outcome: facts.outcome,
+    summary: facts.outcomeSummary,
+  })
+  const verified = coherent && identityAgrees
   const close = input.precedingComplete
     && identityAgrees
     && !outcomeView.disagreed
@@ -220,11 +229,11 @@ export function presentJourneyClosure(input: {
     && stored === "pre_closure"
     && proposed?.status === "would_close"
     && !databaseClosed
-  const reopen = confirmedClosed
+  const reopen = databaseClosed && identityAgrees
   const locked = close && facts.outcome
     ? { outcome: facts.outcome, summary: facts.outcomeSummary }
     : null
-  const guardOffered = confirmedClosed
+  const guardOffered = verified
     && facts.caseStatus === "CLOSED"
     && facts.serviceTrack === "MANAGED"
     && facts.caseType === "PROFILE_RECOVERY"
@@ -239,14 +248,18 @@ export function presentJourneyClosure(input: {
   if (!identityAgrees && summaryAgrees) notices.push("The case record and the case projection do not agree, so this step does not confirm closure.")
   if (stored === "pre_closure" && identityAgrees) notices.push("The outcome and summary already recorded are repeated exactly. A different value is refused.")
   if (facts.outcome === "WITHDRAWN" && !databaseClosed) notices.push("A withdrawal is recorded as CANCELLED. It is not recorded as CLOSED.")
-  if (confirmedClosed && facts.caseStatus === "CANCELLED" && facts.outcome === "WITHDRAWN") notices.push("The withdrawal keeps the CANCELLED status.")
-  if (confirmedClosed && facts.caseStatus === "CLOSED" && facts.outcome === "WITHDRAWN") notices.push("The status is CLOSED and the outcome is Withdrawn. Those records do not agree.")
+  if (verified && facts.caseStatus === "CANCELLED" && facts.outcome === "WITHDRAWN") notices.push("The withdrawal keeps the CANCELLED status.")
+  if (databaseClosed && !verified) notices.push("This is an inconsistent closure. It is not a verified closed or cancelled result.")
   if (outcomeView.disagreed) notices.push("The outcome and billing records do not agree, so closure is not offered from here.")
   if (!input.precedingComplete && !databaseClosed) notices.push("Earlier guided steps are still open, so closure is not offered from here.")
   if (openTasks.length > 0) notices.push("An open task is still on the case. Resolve or cancel it before closure.")
   if (unresolved.length > 0) notices.push("A submission attempt has no decision or withdrawal.")
 
   const blockers: string[] = []
+  if (databaseClosed && !verified) {
+    if (!coherent) blockers.push("The status, outcome, summary and stage do not form a valid closure.")
+    if (!identityAgrees) blockers.push("The case record and the projection do not agree.")
+  }
   if (!databaseClosed && !close) {
     if (!input.precedingComplete) blockers.push("Earlier guided steps are still open.")
     if (!identityAgrees) blockers.push("The case record and the projection do not agree.")
@@ -257,8 +270,8 @@ export function presentJourneyClosure(input: {
     if (stored === "pre_closure" && proposed?.status === "refused") blockers.push("The existing close command would refuse this case.")
   }
 
-  const history = relevantHistory(detail.events, !confirmedClosed)
-  if (confirmedClosed && history.every(item => item.label !== "Close command")) {
+  const history = relevantHistory(detail.events, verified ? "verified" : databaseClosed ? "inconsistent" : "open")
+  if (verified && history.every(item => item.label !== "Close command")) {
     notices.push("The loaded history has no close event. The case status is still the closure record.")
   }
 
@@ -269,13 +282,15 @@ export function presentJourneyClosure(input: {
   return {
     disagreed: outcomeView.disagreed,
     panel: {
-      headline: confirmedClosed ? statusWord(facts.caseStatus) : "Not closed",
-      detail: confirmedClosed
+      headline: verified ? statusWord(facts.caseStatus) : databaseClosed ? "Inconsistent closure" : "Not closed",
+      detail: verified
         ? facts.caseStatus === "CANCELLED"
           ? "The database status is CANCELLED. This step does not call the case closed."
           : "The database status is CLOSED. This step does not call the case cancelled."
-        : "The database has not confirmed closure. A recorded outcome does not close the case.",
-      statusLabel: confirmedClosed ? statusWord(facts.caseStatus) : `Open (${facts.caseStatus})`,
+        : databaseClosed
+          ? `The database status is ${facts.caseStatus}. That status is not a verified closure.`
+          : "The database has not confirmed closure. A recorded outcome does not close the case.",
+      statusLabel: verified ? statusWord(facts.caseStatus) : databaseClosed ? facts.caseStatus : `Open (${facts.caseStatus})`,
       outcomeLabel: outcomeLabel(identityAgrees ? facts.outcome : detail.outcome ?? facts.outcome),
       summary: identityAgrees ? facts.outcomeSummary : facts.outcomeSummary || "Not recorded",
       otherSummary: summaryAgrees ? null : detail.summary,
@@ -284,14 +299,16 @@ export function presentJourneyClosure(input: {
       tasks: facts.tasks.map(task => ({ id: task.id, title: task.title, state: taskState(task.status) })),
       attempts,
       history,
-      closureRecord: confirmedClosed
+      closureRecord: verified
         ? { status: facts.caseStatus as "CLOSED" | "CANCELLED", outcomeLabel: outcomeLabel(facts.outcome), summary: facts.outcomeSummary }
         : null,
       notices,
       blockers,
-      who: confirmedClosed
+      who: verified
         ? "Nothing further is required to close this case. Reopening uses the existing command and a follow-up task."
-        : close
+        : databaseClosed
+          ? "ProfileRelaunch reconciles this closure. Reopening uses the existing command and a follow-up task."
+          : close
           ? "ProfileRelaunch can close the case with the outcome already recorded. Guard can stay unset."
           : "ProfileRelaunch finishes the earlier steps, the open work and the billing position before closure. Guard can stay unset.",
       guard: {

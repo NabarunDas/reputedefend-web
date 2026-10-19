@@ -488,16 +488,76 @@ describe("guided closure", () => {
     expect(absent.guard.text).toMatch(/does not enrol/)
   })
 
-  it("does not confirm a closed status that contradicts a withdrawal", () => {
-    const panel = show(facts({
+  it("does not verify CLOSED with a withdrawal or CANCELLED with another outcome", () => {
+    const withdrawn = facts({
       caseStatus: "CLOSED",
       technicalStage: "FINISHED",
       outcome: "WITHDRAWN",
+    })
+    const withdrawnPanel = show(withdrawn)
+    expect(withdrawnPanel.headline).toBe("Inconsistent closure")
+    expect(withdrawnPanel.detail).toMatch(/database status is CLOSED/)
+    expect(withdrawnPanel.closureRecord).toBeNull()
+    expect(withdrawnPanel.guard.offered).toBe(false)
+    expect(withdrawnPanel.commands).toEqual({ close: false, reopen: true })
+    expect(withdrawnPanel.notices.join(" ")).toMatch(/inconsistent closure/)
+    expect(presentCaseJourney(withdrawn, NOW).steps.find(step => step.id === "CLOSURE")?.state).toBe("NEEDS_ATTENTION")
+
+    const cancelled = facts({
+      caseType: "REVIEW_PROTECTION",
+      caseStatus: "CANCELLED",
+      technicalStage: "FINISHED",
+      outcome: "REMOVED",
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [successFee()] },
+    })
+    const cancelledPanel = show(cancelled)
+    expect(cancelledPanel.headline).toBe("Inconsistent closure")
+    expect(cancelledPanel.detail).toMatch(/database status is CANCELLED/)
+    expect(cancelledPanel.statusLabel).toBe("CANCELLED")
+    expect(cancelledPanel.closureRecord).toBeNull()
+    expect(cancelledPanel.guard.offered).toBe(false)
+    expect(cancelledPanel.commands).toEqual({ close: false, reopen: true })
+    expect(presentCaseJourney(cancelled, NOW).steps.find(step => step.id === "CLOSURE")?.state).toBe("NEEDS_ATTENTION")
+  })
+
+  it("does not verify a terminal case at the wrong stage or with a missing summary", () => {
+    const wrongStage = show(facts({
+      caseStatus: "CLOSED",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
     }))
-    expect(panel.headline).toBe("Closed")
-    expect(panel.closureRecord?.status).toBe("CLOSED")
-    expect(panel.notices.join(" ")).toMatch(/do not agree/)
-    expect(panel.commands?.close).toBe(false)
+    expect(wrongStage.headline).toBe("Inconsistent closure")
+    expect(wrongStage.closureRecord).toBeNull()
+    expect(wrongStage.guard.offered).toBe(false)
+    expect(wrongStage.commands).toEqual({ close: false, reopen: true })
+    expect(wrongStage.blockers).toContain("The status, outcome, summary and stage do not form a valid closure.")
+
+    const missingSummary = show(facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: "short",
+    }))
+    expect(missingSummary.headline).toBe("Inconsistent closure")
+    expect(missingSummary.closureRecord).toBeNull()
+    expect(missingSummary.guard.offered).toBe(false)
+    expect(missingSummary.commands?.reopen).toBe(true)
+    expect(missingSummary.commands?.close).toBe(false)
+  })
+
+  it("does not verify a coherent projection when the loaded case record disagrees", () => {
+    const panel = show(facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+    }), { detail: { summary: `${SUMMARY} changed` } })
+    expect(panel.headline).toBe("Inconsistent closure")
+    expect(panel.closureRecord).toBeNull()
+    expect(panel.guard.offered).toBe(false)
+    expect(panel.commands).toBeNull()
+    expect(panel.otherSummary).toBe(`${SUMMARY} changed`)
   })
 
   it("withholds both commands when the case stage does not match the projection", () => {

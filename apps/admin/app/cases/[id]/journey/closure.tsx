@@ -12,7 +12,7 @@ import { CloseForm, TaskForm } from "../../forms"
 export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; panel: JourneyClosurePanel }) {
   return <div className="guided-facts" data-closure={panel.headline}>
     <p><strong>{panel.headline}.</strong> {panel.detail}</p>
-    <p>Case status: {panel.statusLabel}. Verified outcome: {panel.outcomeLabel}. Service track: {panel.trackLabel}.</p>
+    <p>Case status: {panel.statusLabel}. {panel.closureRecord ? "Verified outcome" : "Stored outcome"}: {panel.outcomeLabel}. Service track: {panel.trackLabel}.</p>
     <p className="preserve-lines">Stored customer summary: {panel.summary || "Not recorded"}</p>
     {panel.otherSummary !== null && <p className="notice preserve-lines">Case record summary: {panel.otherSummary || "Not recorded"}</p>}
     <p>Billing position: {panel.billingLabel}</p>
@@ -32,7 +32,9 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
         <p>Status {panel.closureRecord.status}. Outcome: {panel.closureRecord.outcomeLabel}.</p>
         <p className="preserve-lines">{panel.closureRecord.summary || "No customer summary is stored."}</p>
       </div>
-      : <p>No closure record. The database status has not confirmed CLOSED or CANCELLED.</p>}
+      : panel.headline === "Inconsistent closure"
+        ? <p>No verified closure record. The database status above is not a completed closure.</p>
+        : <p>No closure record. The database status has not confirmed CLOSED or CANCELLED.</p>}
     <h3>Closure history</h3>
     {panel.history.length === 0
       ? <p>No close, reopen or outcome event is in the loaded history.</p>

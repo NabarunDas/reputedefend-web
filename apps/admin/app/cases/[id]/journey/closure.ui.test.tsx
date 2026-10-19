@@ -330,4 +330,75 @@ describe("the closure step", () => {
     expect(screen.getByText(/does not enrol the customer/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
   })
+
+  it("renders an inconsistent terminal record as needs attention and still offers reopen", () => {
+    const summary = "The customer withdrew the request."
+    const withdrawn = facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "WITHDRAWN",
+      outcomeSummary: summary,
+      submissions: [{ id: "submission-1", actor: "CUSTOMER", submittedAt: WHEN, result: "WITHDRAWN" }],
+    })
+    const withdrawnDetail = caseDetail({
+      status: "CLOSED",
+      stage: "FINISHED",
+      outcome: "WITHDRAWN",
+      summary,
+      submissions: [attempt({ result: "WITHDRAWN" })],
+    })
+    const withdrawnJourney = presentCaseJourney(withdrawn, NOW)
+    render(<CaseJourneyView
+      reference="PR-1"
+      customer="Alex"
+      business="Bakery"
+      caseId={CASE_ID}
+      journey={withdrawnJourney}
+      selectedId="CLOSURE"
+      brief={brief}
+      version={7}
+      documents={null}
+      closure={{ caseDetail: withdrawnDetail, panel: panelFor(withdrawn, withdrawnDetail, false) }}
+    />)
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(screen.getByText("This closure record is inconsistent. The database status is shown for diagnosis. It is not a verified closure.")).toBeTruthy()
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Inconsistent closure")
+    expect(screen.getAllByText(/database status is CLOSED/).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
+    expect(screen.getByText("Reopen with a follow-up task")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+    expect(screen.queryByText(/included Guard offer/)).toBeNull()
+
+    cleanup()
+    const cancelled = facts({
+      caseStatus: "CANCELLED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: SUMMARY,
+    })
+    const cancelledDetail = caseDetail({
+      status: "CANCELLED",
+      stage: "FINISHED",
+      outcome: "RESTORED",
+      summary: SUMMARY,
+    })
+    render(<CaseJourneyView
+      reference="PR-1"
+      customer="Alex"
+      business="Bakery"
+      caseId={CASE_ID}
+      journey={presentCaseJourney(cancelled, NOW)}
+      selectedId="CLOSURE"
+      brief={brief}
+      version={7}
+      documents={null}
+      closure={{ caseDetail: cancelledDetail, panel: panelFor(cancelled, cancelledDetail, false) }}
+    />)
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Inconsistent closure")
+    expect(screen.getAllByText(/database status is CANCELLED/).length).toBeGreaterThan(0)
+    expect(screen.queryByText("Cancelled.")).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
+    expect(screen.getByText("Reopen with a follow-up task")).toBeTruthy()
+  })
 })

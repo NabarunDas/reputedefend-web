@@ -157,3 +157,22 @@ export function readStoredOutcome(input: {
   if (input.outcome !== "WITHDRAWN" && input.stage !== "OUTCOME_REVIEW") return "conflict"
   return "pre_closure"
 }
+
+/**
+ * Step 11 verifies a closure only when the terminal status, the outcome, the
+ * finished stage and the customer summary agree.
+ *
+ * `CLOSED` holds a non-withdrawal. `CANCELLED` holds `WITHDRAWN`. Anything else,
+ * including a short or missing summary, is not a verified closure. This uses
+ * `readStoredOutcome` and does not change what Step 10 accepts.
+ */
+export function coherentTerminalClosure(input: {
+  caseType: string
+  stage: string
+  status: string
+  outcome: string | null
+  summary: string
+}): boolean {
+  if (!summaryOk(input.summary)) return false
+  return readStoredOutcome({ ...input, reopened: false }) === "closed"
+}

@@ -27,7 +27,7 @@ import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePa
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
-import type { OutcomeProofEvent } from "./outcome-proposal"
+import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
@@ -1206,22 +1206,40 @@ function readOutcome(facts: CaseFlowFacts, now: string, events: readonly Journey
 }
 
 function readClosure(facts: CaseFlowFacts): Reading {
-  const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
-  if (closed) {
+  const terminal = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
+  const coherent = coherentTerminalClosure({
+    caseType: facts.caseType,
+    stage: facts.technicalStage,
+    status: facts.caseStatus,
+    outcome: facts.outcome,
+    summary: facts.outcomeSummary,
+  })
+  if (coherent) {
     const known = [
       `The case status is ${facts.caseStatus}.`,
       facts.caseStatus === "CANCELLED"
         ? "This is a cancellation. It is not a CLOSED result."
         : "This is a closure. It is not a CANCELLED result.",
     ]
-    if (facts.outcome === "WITHDRAWN" && facts.caseStatus === "CANCELLED") known.push("The withdrawal keeps the CANCELLED status.")
-    if (facts.outcome === "WITHDRAWN" && facts.caseStatus === "CLOSED") known.push("The stored outcome is Withdrawn while the status is CLOSED. Those records do not agree.")
+    if (facts.outcome === "WITHDRAWN") known.push("The withdrawal keeps the CANCELLED status.")
     known.push("Optional Guard was not required and did not block closure.")
     return {
       proof: "complete",
       known,
       missing: [],
       who: facts.caseStatus === "CANCELLED" ? "The case is cancelled." : "The case is closed.",
+    }
+  }
+  if (terminal) {
+    return {
+      proof: "attention",
+      known: [
+        `The database status is ${facts.caseStatus}.`,
+        "The status, outcome, summary and stage do not form a valid closure.",
+        "Optional Guard is not offered for an inconsistent closure.",
+      ],
+      missing: ["A CLOSED non-withdrawal at FINISHED, or a CANCELLED withdrawal at FINISHED, with the stored customer summary."],
+      who: "ProfileRelaunch reconciles the closure record. Reopening is the existing correction.",
     }
   }
   return {

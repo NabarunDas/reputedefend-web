@@ -26,6 +26,8 @@ import { PreparationPanel } from "./preparation"
 import type { JourneyPreparationPanel } from "@/lib/case-journey/preparation"
 import { SubmissionPanel } from "./submission"
 import type { JourneySubmissionPanel } from "@/lib/case-journey/submission"
+import { OutcomePanel } from "./outcome"
+import type { JourneyOutcomePanel } from "@/lib/case-journey/outcome"
 import { DocumentRequestPanel } from "./documents"
 import { EvidenceWorkspace } from "../evidence/workspace-view"
 import { IntakeSummary, VerificationForm, VerificationSummary, IntakeReviewForm } from "./forms"
@@ -57,7 +59,7 @@ const previewNote: Record<JourneyStepId, string> = {
   SERVICE_ACTIVATION: "Guided activation is the settled upfront payment. Managed activation is the accepted order and the authorisation record. A saved card is not required.",
   PREPARATION: "Assemble the pack from accepted evidence, approve it, then publish it. Approval does not publish, and publication does not submit to Google.",
   SUBMISSION: "Record a submission that was already completed outside this portal, then its decision or withdrawal. Recording it does not submit it to Google.",
-  OUTCOME_BILLING: "Billing actions are not available in this preview.",
+  OUTCOME_BILLING: "Verify the recorded outcome and the billing position. This step does not close the case or take a payment.",
   CLOSURE: "Closure actions are not available in this preview.",
 }
 
@@ -75,7 +77,8 @@ export type JourneyEvidenceReview = {
  * Step 7 reuses the existing payment-link and authorisation commands.
  * Step 8 reuses the existing prepared-pack commands.
  * Step 9 reuses the existing external-submission commands.
- * Later steps still only link to a place that already exists.
+ * Step 10 reuses the existing success-fee approval and TEST-MODE hosted invoice.
+ * Closure still only links to a place that already exists.
  */
 export function CaseJourneyView({
   reference,
@@ -94,6 +97,7 @@ export function CaseJourneyView({
   activation = null,
   preparation = null,
   submission = null,
+  outcome = null,
   customerId = "",
   businessId = "",
   locationId = null,
@@ -117,6 +121,7 @@ export function CaseJourneyView({
   activation?: JourneyActivationPanel | null
   preparation?: JourneyPreparationPanel | null
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
+  outcome?: JourneyOutcomePanel | null
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -150,7 +155,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} submission={submission} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} submission={submission} outcome={outcome} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -197,6 +202,7 @@ function StepWorkspace({
   activation,
   preparation,
   submission,
+  outcome,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -217,6 +223,7 @@ function StepWorkspace({
   activation: JourneyActivationPanel | null
   preparation: JourneyPreparationPanel | null
   submission: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
+  outcome: JourneyOutcomePanel | null
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -231,8 +238,9 @@ function StepWorkspace({
   const showActivation = step.id === "SERVICE_ACTIVATION" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && activation !== null
   const showPreparation = step.id === "PREPARATION" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && preparation !== null
   const showSubmission = step.id === "SUBMISSION" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && submission !== null
-  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW" || step.id === "ASSESSMENT" || step.id === "QUOTE_ACCEPTANCE" || step.id === "SERVICE_ACTIVATION" || step.id === "PREPARATION" || step.id === "SUBMISSION"
-  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && !showAssessment && !showActivation && !showPreparation && !showSubmission && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
+  const showOutcome = step.id === "OUTCOME_BILLING" && step.state !== "LOCKED" && step.state !== "NOT_APPLICABLE" && outcome !== null
+  const guidedCommand = step.id === "REQUEST_DOCUMENTS" || step.id === "EVIDENCE_REVIEW" || step.id === "ASSESSMENT" || step.id === "QUOTE_ACCEPTANCE" || step.id === "SERVICE_ACTIVATION" || step.id === "PREPARATION" || step.id === "SUBMISSION" || step.id === "OUTCOME_BILLING"
+  const showMissing = step.missing.length > 0 && step.state !== "COMPLETED" && step.state !== "LOCKED" && !showDocuments && !showEvidence && !showAssessment && !showActivation && !showPreparation && !showSubmission && !showOutcome && (step.state === "NEEDS_ATTENTION" || (!showIntakeForm && !showVerificationForm))
   return <article className="panel guided-workspace" aria-labelledby="journey-step-heading">
     <p className="eyebrow">Step {step.order} of 11</p>
     <h2 id="journey-step-heading">{step.title}</h2>
@@ -268,7 +276,8 @@ function StepWorkspace({
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
     {showSubmission && submission && <SubmissionPanel caseDetail={submission.caseDetail} panel={submission.panel} />}
-    {!step.decision && !showDocuments && !showEvidence && !showAssessment && !showQuote && !showActivation && !showPreparation && !showSubmission && <Destination destination={step.destination} />}
+    {showOutcome && outcome && <OutcomePanel panel={outcome} />}
+    {!step.decision && !showDocuments && !showEvidence && !showAssessment && !showQuote && !showActivation && !showPreparation && !showSubmission && !showOutcome && <Destination destination={step.destination} />}
     <details className="guided-details">
       <summary>Additional details</summary>
       <h3>What is already known</h3>
@@ -300,7 +309,9 @@ function StepWorkspace({
                     ? <p>Creating a draft, changing its evidence, approving it, and publishing or unpublishing it use the existing pack commands. Approval does not publish the pack. Publication does not submit anything to Google and does not create an open document link. An unscanned, rejected, superseded or unlinked file is not offered.</p>
                     : step.id === "SUBMISSION"
                       ? <p>Recording an attempt, a decision or a withdrawal uses the existing case commands. None of those submits anything to Google. A Guided attempt is the customer&apos;s and a Managed attempt is ProfileRelaunch&apos;s. An open attempt does not finish this step. Outcome review, billing and closure stay on later steps.</p>
-                      : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
+                      : step.id === "OUTCOME_BILLING"
+                        ? <p>Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance. A pre-closure outcome command is proposed and is not applied. This step does not offer that command.</p>
+                        : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>
   </article>
@@ -309,6 +320,10 @@ function StepWorkspace({
 function instructionFor(step: JourneyStepView): string {
   if (step.id === "ASSESSMENT" && step.state === "COMPLETED") return "This assessment is approved. It recommends a pathway. It is not an accepted agreement and the service is not activated."
   if (step.id === "QUOTE_ACCEPTANCE" && step.state === "COMPLETED") return "This quote is accepted. That is the customer's agreement. It does not activate the service and it does not take a payment."
+  if (step.id === "OUTCOME_BILLING" && step.state === "COMPLETED") return "The outcome is recorded and the billing position agrees with it. Approval, an invoice link and a saved card are not what completed this step."
+  if (step.id === "OUTCOME_BILLING" && step.state === "LOCKED") return "Outcome verification stays closed until the earlier steps are recorded."
+  if (step.id === "OUTCOME_BILLING" && step.state === "WAITING") return "Billing is still open. An approval, an invoice link, a saved card or a checkout return is not settlement."
+  if (step.id === "OUTCOME_BILLING" && step.state === "NEEDS_ATTENTION") return "The outcome or the billing record is not ready. A conflicting record does not finish this step, and an unsuccessful case is not invoiced to finish it."
   if (step.id === "SUBMISSION" && step.state === "COMPLETED") return "Every recorded attempt has a decision or a withdrawal. Recording those results did not submit anything to Google."
   if (step.id === "SUBMISSION" && step.state === "LOCKED") return "Submission tracking stays closed until the earlier steps are recorded."
   if (step.id === "SUBMISSION" && step.state === "WAITING") return "An attempt is recorded and is still waiting for a decision. That record is not a submission to Google."

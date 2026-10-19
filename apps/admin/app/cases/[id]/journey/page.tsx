@@ -4,9 +4,10 @@ import { loadCaseFlowFacts } from "@/lib/case-flow/load"
 import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
-import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import { activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
+import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
@@ -131,6 +132,12 @@ export default async function CaseJourneyPage({
   if (submission?.disagreed) {
     journey = presentCaseJourney(facts, now, events, { ...journeyOptions, submissionRecordsDisagree: true })
   }
+  const outcomeOpen = journey.steps.find(step => step.id === "OUTCOME_BILLING")
+  const outcomeSelected = selectedId === "OUTCOME_BILLING" && outcomeOpen?.state !== "LOCKED" && outcomeOpen?.state !== "NOT_APPLICABLE"
+  const outcome = outcomeSelected ? await loadJourneyOutcome(facts, detail, now) : null
+  if (outcome?.disagreed) {
+    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, outcomeRecordsDisagree: true })
+  }
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -148,6 +155,7 @@ export default async function CaseJourneyPage({
     activation={activation}
     preparation={preparation?.panel ?? null}
     submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
+    outcome={outcome?.panel ?? null}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
@@ -200,6 +208,31 @@ async function loadJourneyActivation(
     moneyOrders: money.orders,
     authorization,
     recordsConflict: conflicts.recordConflict || conflicts.emailRecordsDisagree || conflicts.authorityRecordsDisagree,
+  })
+}
+
+async function loadJourneyOutcome(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  detail: Awaited<ReturnType<typeof getCase>>,
+  now: string,
+) {
+  const orderId = activationOrderLink(facts, now).quoteOrderId
+  const [money, order] = await Promise.all([
+    loadMoney(),
+    orderId ? loadOrder(orderId) : Promise.resolve(null),
+  ])
+  return presentJourneyOutcome({
+    facts,
+    now,
+    order,
+    orderDetailMissing: !!orderId && order?.id !== orderId,
+    recorded: {
+      submissions: detail.submissions,
+      caseTrack: detail.track,
+      caseOutcome: detail.outcome,
+      caseStatus: detail.status,
+      moneyOrders: money.orders,
+    },
   })
 }
 

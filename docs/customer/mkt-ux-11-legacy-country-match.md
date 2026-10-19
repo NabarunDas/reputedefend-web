@@ -29,7 +29,7 @@ One exact business match reuses that business. One exact location match reuses t
 
 ## DEV deployment and separate Production release
 
-`docs/customer/proposed-intake-country-key-v1.sql` remains the reviewed source and is intentionally outside the shared `supabase/migrations` chain. It was **applied to DEV only** on 17 October 2026 as tracked Supabase migration `20261017113702_get_help_legacy_country_match_dev_v1`. Production remains unchanged.
+The exact statement applied to DEV is `supabase/migrations/20261017113702_get_help_legacy_country_match_dev_v1.sql`, recovered from `fe945768891be45d922ac16f77e4eba60d2bbb60` before the comment annotation. The annotated review copy remains `docs/customer/proposed-intake-country-key-v1.sql`. It was **applied to DEV only** on 17 October 2026. Do not replay it. Production remains unchanged.
 
 DEV deployment was explicitly approved and completed in Supabase project `profilerelaunch-dev` (`rmzozuiamjcclvtgutgd`) after head `20261017111446`. The new head is `20261017113702`. Checked after install: UK/United Kingdom/GB resolve to `gb`, US remains `us`, intake RPC retains `service_role` execute and the helper is unavailable to anon/authenticated. No historical business or location rows were rewritten.
 
@@ -41,4 +41,4 @@ DEV deployment was explicitly approved and completed in Supabase project `profil
 
 `lib/cases/intake-country.database.test.ts` loads the core and intake migrations in local PGlite. Every data change runs inside `BEGIN` / `ROLLBACK`. The proposal is executed only inside those rolled-back transactions.
 
-The test covers the unfixed duplicate for a missing URL and a matching URL, unchanged submission-key idempotency, reuse after the proposal for `UK`, `uk`, `United Kingdom`, and `GB`, and the non-merge safeguards above. It also checks that the rollback removes the proposal and that no file under `supabase/migrations` defines `_intake_country_key`.
+The test covers the unfixed duplicate for a missing URL and a matching URL, unchanged submission-key idempotency, reuse after the proposal for `UK`, `uk`, `United Kingdom`, and `GB`, and the non-merge safeguards above. It also checks that the rollback removes the proposal and that `20261017113702_get_help_legacy_country_match_dev_v1.sql` is the only file under `supabase/migrations` that defines `_intake_country_key`.

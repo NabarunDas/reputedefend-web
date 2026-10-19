@@ -23,6 +23,13 @@ const upgradedFiles = [
   "20261015140000_commercial_eligibility_gate_v1.sql",
   "20261015153000_payment_lane_isolation_v1.sql",
   "20261015230000_dev_stripe_one_shot_v1.sql",
+  "20261016175917_admin_journey_02_dev_intake_review_screening_v1.sql",
+  "20261017111446_admin_journey_03b_evidence_draft_wording_dev_v1.sql",
+  "20261017113702_get_help_legacy_country_match_dev_v1.sql",
+  "20261017145801_admin_journey_03c_customer_templates_v2_draft_dev.sql",
+  "20261017210826_comms_brand_evidence_request_v3_dev.sql",
+  "20261017215625_admin_template_full_body_preview_dev_v1.sql",
+  "20261019163645_admin_journey_05_assessment_dev_v1.sql",
 ].join(",")
 const db = new PGlite()
 

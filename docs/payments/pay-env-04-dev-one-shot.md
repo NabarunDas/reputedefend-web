@@ -2,7 +2,7 @@
 
 Status: **DEV migration applied; manual execution disabled**. Migration `supabase/migrations/20261015230000_dev_stripe_one_shot_v1.sql` was applied to DEV only on 16 October 2026 after reviewed PR #203, with generated ledger version 20261015231210 reconciled to canonical 20261015230000. It is NOT applied to Production. `DEV_STRIPE_ONE_SHOT_ENABLED` is not set in Vercel. No queued DEV event has been processed by this change. Production worker, Production data, Stripe credentials and webhook configuration are unchanged.
 
-DEV applied head is `20261015230000`. Production applied head and AWS ApprovedMigrationHead stay `20261014170000`.
+When this migration was applied, it was the DEV head `20261015230000`. DEV-HISTORY-01 later recorded the observed DEV head as `20261019163645` without replaying this file. Production applied head and AWS ApprovedMigrationHead stay `20261014170000`.
 
 ## What this is
 

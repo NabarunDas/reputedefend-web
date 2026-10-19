@@ -47,7 +47,7 @@ decision is unresolved; `DEFERRED` postponed to a named later step.
 | `vercel.environment-contract` | Vercel | ACTION_REQUIRED | Production environment variables match the contract in apps/admin/lib/release/environment.ts: everything marked PRESENT is set, and everything marked ABSENT is not. |
 | `vercel.static-aws-credentials-absent` | Vercel | READY_DISABLED | No static AWS credential is configured in production. Evidence storage is reached by assuming a role through Vercel OIDC. |
 | `vercel.cron-unchanged` | Vercel | READY | The scheduler stays at 0 4 * * *. The daily cadence is itself a safety property, because live mail requires a cadence of 300 seconds or less. |
-| `supabase.applied-head` | Supabase | READY | DEV applied head is 20261015230000 dev_stripe_one_shot_v1 following controlled COM-13A, COM-13B, COM-14A and PAY-ENV-01 DEV-only applications on 2026-10-15. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. PAY-ENV-04 20261015230000 dev_stripe_one_shot_v1 was reviewed in PR #203 and applied to DEV only on 16 October 2026; Supabase generated version 20261015231210 was aligned in the DEV ledger to canonical 20261015230000. The new claim RPC is service_role-only and no queued events were processed. Production and AWS ApprovedMigrationHead remain at SEC-08. |
+| `supabase.applied-head` | Supabase | READY | Observed DEV ledger head and repository applied-file head are 20261019163645 admin_journey_05_assessment_dev_v1. The seven already-applied versions 20261016175917, 20261017111446, 20261017113702, 20261017145801, 20261017210826, 20261017215625 and 20261019163645 were recovered from applied source and recorded without replay. 20261015230000 remains the previous repository file. The separate Step 10B proposal 20261019183000 is not in this chain and is not applied. Production applied head and AWS ApprovedMigrationHead remain 20261014170000 evidence_content_sha256_v1 after the verified SEC-03 backup 20261014T153911Z and reviewed CloudFormation update. A genuine scheduled SEC-08 new-head backup 20261014T213909Z subsequently passed completed-marker, manifest, source/migration-head alignment and streamed S3 archive SHA-256 validation. CodeBuild project, IAM role and ENABLED three-hour Scheduler identities were preserved. PAY-ENV-04 20261015230000 dev_stripe_one_shot_v1 was reviewed in PR #203 and applied to DEV only on 16 October 2026; Supabase generated version 20261015231210 was aligned in the DEV ledger to canonical 20261015230000. The new claim RPC is service_role-only and no queued events were processed. Production and AWS ApprovedMigrationHead remain at SEC-08. |
 | `supabase.migration-ledger-discrepancy` | Supabase | READY | Strategy A was chosen and production was built from the canonical repository chain, so the historical DEV ledger discrepancy is not inherited by production. |
 | `supabase.legacy-objects` | Supabase | READY | Production inspection confirms public.set_case_public_ref and public.rls_auto_enable are absent; neither is created by the canonical chain. |
 | `supabase.rls-and-grants` | Supabase | READY | Every table carries row-level security, every function pins an empty search_path, and service_role is the only role that can execute an Admin RPC. |
@@ -213,12 +213,12 @@ None of this depends on a production secret, so it runs in CI unchanged.
 
 ## Migration state
 
-DEV (`rmzozuiamjcclvtgutgd`) has canonical applied migration head
-`20261015230000 dev_stripe_one_shot_v1` after COM-13A
+DEV (`rmzozuiamjcclvtgutgd`) has observed ledger head and repository applied-file head
+`20261019163645 admin_journey_05_assessment_dev_v1`. DEV-HISTORY-01 recorded seven versions already present in that ledger after `20261015230000`: `20261016175917`, `20261017111446`, `20261017113702`, `20261017145801`, `20261017210826`, `20261017215625` and `20261019163645`. Recording them does not replay their SQL and does not insert ledger rows. Provenance, statement hashes and isolation are in `docs/admin/dev-history-01.md`. COM-13A
 (`20261014234000`), COM-13B (`20261015013000`), COM-14A
 (`20261015140000`), PAY-ENV-01 (`20261015153000`) and PAY-ENV-04 (`20261015230000`) were applied **DEV-only**, with PAY-ENV-04 verified on 16 October 2026. Production (`cxwwekdzkkjjbiyofrov`) remains at canonical
 `20261014170000 evidence_content_sha256_v1`; the AWS backup-approved head
-remains SEC-08. None of these five commercial/payment migrations has been applied to Production.
+remains SEC-08. None of these commercial or payment migrations, and none of the seven historical statements, has been applied to Production. The separate Step 10B proposal `20261019183000` is not in this chain.
 DEV agreement PS-2026-10-14.2 is solicitor-approved and operative, with one authenticated approval record; Production approval remains separate. No paid acceptances have occurred and tax is UNCONFIRMED. DEV COM-14A has no approved countries
 and no verified purchasing establishments; its seller VAT status is NOT_VAT_REGISTERED. Neither payment nor Customer Portal,
 Guard or mail activation has occurred. PAY-ENV-01 is applied to DEV only,
@@ -229,7 +229,7 @@ DEV has four signed Stripe sandbox event receipts queued and unprocessed. The Ad
 The SEC-08 migration did not mutate existing evidence rows. DEV has 4 uploaded
 evidence versions, 2 customer-visible and 0 trusted hashes, so historical
 DEV evidence remains unverified. Production had 0 evidence versions when SEC-08
-was applied. `pendingMigrations()` is empty for DEV; PAY-ENV-04 was applied once and its generated ledger version was reconciled to canonical `20261015230000`. Applied SQL is immutable.
+was applied. `pendingMigrations()` is empty because every repository file through `20261019163645` is marked applied. The seven DEV-HISTORY-01 statements were not replayed. PAY-ENV-04 was applied once and its generated ledger version was reconciled to canonical `20261015230000`. Applied SQL is immutable.
 The separate historic three-foundation-entry DEV ledger discrepancy remains
 tracked in GitHub issue #190; this DEV ledger is not asserted fully equivalent
 to the repository chain until the provenance review is complete.

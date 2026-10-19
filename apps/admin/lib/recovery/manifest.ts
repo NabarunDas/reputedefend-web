@@ -1,6 +1,14 @@
 /**
- * Authoritative description of the migration chain that has been applied to
- * `profilerelaunch-dev`, in the exact order PostgreSQL received it.
+ * Repository migration chain, in the order a rebuild applies it.
+ *
+ * `appliedToDev` records files whose statements are already in the DEV ledger.
+ * DEV-HISTORY-01 adds the seven versions after `20261015230000`, so the
+ * observed DEV ledger head and this applied-file head are both
+ * `20261019163645`. That is not an instruction to replay those statements,
+ * and it does not authorise Production. Production and AWS
+ * ApprovedMigrationHead stay at `20261014170000`. The separate Step 10B
+ * proposal `20261019183000` is not in this chain. See
+ * `docs/admin/dev-history-01.md`.
  *
  * This manifest never contains migration SQL. It records the facts a recovery
  * operator needs when a database has to be rebuilt or compared against remote
@@ -568,6 +576,94 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "DEV Stripe one-shot", probe: "public.admin_dev_stripe_one_shot_claim_v1" },
   },
+  {
+    // Already applied to DEV on 2026-10-16 as 20261016175917. Statement is the
+    // pre-annotation source 84c1c49. Not replayed. Not applied to Production.
+    version: "20261016175917",
+    filename: "20261016175917_admin_journey_02_dev_intake_review_screening_v1.sql",
+    step: "ADMIN-JOURNEY-02 DEV intake review",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "journey intake review", probe: "public.admin_case_journey_decision_v1" },
+  },
+  {
+    // Already applied to DEV on 2026-10-17 as 20261017111446. The statement is
+    // the 10491-character evidence-draft file, not the shorter 03A proposal.
+    // Not replayed. Not applied to Production. It does not send email.
+    version: "20261017111446",
+    filename: "20261017111446_admin_journey_03b_evidence_draft_wording_dev_v1.sql",
+    step: "ADMIN-JOURNEY-03B DEV evidence draft wording",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "evidence draft wording", probe: "public.admin_communication_revise_evidence_draft_v1" },
+  },
+  {
+    // Already applied to DEV on 2026-10-17 as 20261017113702. Statement is the
+    // pre-annotation source fe94576. Not replayed. Not applied to Production.
+    // It does not rewrite stored customer, business or location rows.
+    version: "20261017113702",
+    filename: "20261017113702_get_help_legacy_country_match_dev_v1.sql",
+    step: "Get Help DEV legacy country match",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "legacy country match", probe: "public._intake_country_key" },
+  },
+  {
+    // Already applied to DEV on 2026-10-17 as 20261017145801. Inserts version 2
+    // templates as DRAFT only. Not replayed. Not applied to Production.
+    version: "20261017145801",
+    filename: "20261017145801_admin_journey_03c_customer_templates_v2_draft_dev.sql",
+    step: "ADMIN-JOURNEY-03C DEV draft templates",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "draft communication templates", probe: "admin_private.communication_templates" },
+  },
+  {
+    // Already applied to DEV on 2026-10-17 as 20261017210826. Inserts evidence
+    // request version 3 as DRAFT and does not approve it or send mail.
+    // Not replayed. Not applied to Production.
+    version: "20261017210826",
+    filename: "20261017210826_comms_brand_evidence_request_v3_dev.sql",
+    step: "COMMS-BRAND DEV evidence request v3",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "branded evidence draft", probe: "admin_private.brand_evidence_request_snapshot_v1" },
+  },
+  {
+    // Already applied to DEV on 2026-10-17 as 20261017215625. Not replayed.
+    // Not applied to Production.
+    version: "20261017215625",
+    filename: "20261017215625_admin_template_full_body_preview_dev_v1.sql",
+    step: "DEV template full-body preview",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "template preview", probe: "admin_private.template_public_json_v1" },
+  },
+  {
+    // Already applied to DEV on 2026-10-19 as 20261019163645. Statement is the
+    // Step 5 source at 97e6411, before the later comment annotation.
+    // Not replayed. Not applied to Production.
+    version: "20261019163645",
+    filename: "20261019163645_admin_journey_05_assessment_dev_v1.sql",
+    step: "ADMIN-JOURNEY-05 DEV assessment",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "case assessment", probe: "public.admin_case_assessment_command_v1" },
+  },
 ]
 
 /**
@@ -578,9 +674,10 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest migration `profilerelaunch-dev` has actually received. This is
- * what remote migration history should end at, and it is behind
- * `migrationHead` whenever a reviewed migration is still waiting to be applied.
+ * The newest repository migration marked `appliedToDev`. After DEV-HISTORY-01
+ * this is the observed DEV ledger head `20261019163645`. It is behind
+ * `migrationHead` only when a reviewed file is still waiting to be applied.
+ * It is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

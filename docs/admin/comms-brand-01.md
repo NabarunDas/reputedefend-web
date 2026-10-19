@@ -1,6 +1,6 @@
 # COMMS-BRAND-01 — Professional branded customer email
 
-DEV preview only. No email was sent. The version 3 template SQL is not applied and is not approved. Version 2 stays the approved evidence-request template. Resend Receiving, inbound webhooks, MX records, Production and sending stay off.
+DEV preview only. No email was sent. The version 3 template SQL was applied to DEV as `20261017210826` and inserted `EVIDENCE_REQUEST` version 3 as `DRAFT`. It is not approved. Version 2 stays the approved evidence-request template. Resend Receiving, inbound webhooks, MX records, Production and sending stay off.
 
 ## Shared renderer
 
@@ -18,9 +18,9 @@ The Admin preview uses this renderer. Editing stays plain text. The branded HTML
 
 ## Evidence request, version 3
 
-`docs/admin/20261017170000_comms_brand_evidence_request_v3.sql`
+The statement applied to DEV is `supabase/migrations/20261017210826_comms_brand_evidence_request_v3_dev.sql`. It is byte-identical to `docs/admin/20261017170000_comms_brand_evidence_request_v3.sql` (34433 characters). The applied header still says unapplied; those words are the applied text.
 
-Do not apply it from this change. It is not under `supabase/migrations`.
+Do not replay it on DEV. Do not apply it to Production. Do not set the inserted row to `APPROVED`.
 
 It inserts `EVIDENCE_REQUEST` version 3 as `DRAFT` only. It does not update version 1 or version 2. The draft command still selects `status = 'APPROVED' ORDER BY version DESC LIMIT 1`.
 
@@ -61,10 +61,10 @@ Reviewed, queued and sent communications stay snapshots. Approving version 3 lat
 
 ## DEV activation
 
-This change does not perform these steps.
+DEV already received this insert as `20261017210826`. Repeating that apply would replay it. Version 3 remains `DRAFT`.
 
-1. Independently review `docs/admin/20261017170000_comms_brand_evidence_request_v3.sql`.
-2. Apply it to DEV only, after the evidence-draft wording migration. Version 3 is inserted as `DRAFT`. Do not set it to `APPROVED` in the file, and do not retire version 2.
+1. The reviewed statement is `supabase/migrations/20261017210826_comms_brand_evidence_request_v3_dev.sql`. It has already been applied to DEV.
+2. Do not apply it again, and do not apply it to Production. Version 3 was inserted as `DRAFT`. Do not set it to `APPROVED` in the file, and do not retire version 2.
 3. Approve it with the existing `approve_template_draft` action after a fresh sign-in. That approval does not change version 2. Until it happens, new drafts keep using version 2.
 4. Confirm a newly generated evidence-request draft is template version 3, that its HTML contains one list and one action URL, and that the stored body has no `#t=`.
 5. Review the branded preview, edit the plain text, save, and approve without sending.

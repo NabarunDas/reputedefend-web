@@ -20,10 +20,15 @@ async function rpc(name: string, args: unknown[] = []) {
 
 beforeAll(async () => {
   const migrations = new URL("../../../../supabase/migrations/", import.meta.url)
+  const historical = "20261016175917_admin_journey_02_dev_intake_review_screening_v1.sql"
   for (const name of readdirSync(migrations)) {
-    if (name.endsWith(".sql") && readFileSync(new URL(name, migrations), "utf8").includes("admin_case_journey_decision_v1")) {
-      throw new Error(`${name} must not carry the unapproved journey function`)
+    if (!name.endsWith(".sql") || name === historical) continue
+    if (readFileSync(new URL(name, migrations), "utf8").includes("admin_case_journey_decision_v1")) {
+      throw new Error(`${name} must not carry the journey decision function`)
     }
+  }
+  if (!readFileSync(new URL(historical, migrations), "utf8").includes("admin_case_journey_decision_v1")) {
+    throw new Error("the recovered DEV intake-review statement is missing its command")
   }
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);`)
   const read = (name: string) => readFileSync(new URL(name, migrations), "utf8")

@@ -16,13 +16,14 @@ describe("the migration chain manifest", () => {
     expect(manifestVersions()).toEqual(repositoryFilenames.map(migrationVersion))
   })
 
-  it("records PAY-ENV-04 as the verified DEV head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261015230000_dev_stripe_one_shot_v1.sql")
+  it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
+    expect(appliedMigrationHead.filename).toBe("20261019163645_admin_journey_05_assessment_dev_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261015230000_dev_stripe_one_shot_v1.sql")
+    expect(migrationHead.filename).toBe("20261019163645_admin_journey_05_assessment_dev_v1.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261019183000_admin_journey_10b_record_outcome_v1.sql")).toBeNull()
   })
 
   it("never marks any migration as safe to replay", () => {
@@ -68,6 +69,8 @@ describe("the migration chain manifest", () => {
       "20260930222821",
       "20261014234000",
       "20261015140000",
+      "20261017145801",
+      "20261017210826",
     ])
   })
 

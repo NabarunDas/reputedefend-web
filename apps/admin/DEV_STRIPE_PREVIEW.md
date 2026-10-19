@@ -6,7 +6,7 @@ Only `POST /api/webhooks/stripe` may reach the DEV webhook handler via `dev-hook
 
 ## PAY-ENV-04 controlled manual acceptance — 16 October 2026
 
-The reviewed additive PAY-ENV-04 claim SQL is installed **DEV only**, canonical head `20261015230000`, with source record merged as PR #204. For the one-event operator smoke test only, the Admin Vercel **Preview / develop** variable `DEV_STRIPE_ONE_SHOT_ENABLED=true` was explicitly enabled after review. It is not enabled in Production or Customer, does not activate cron, and cannot bypass same-origin or fresh Admin session checks. The test event must be synthetic and `livemode=false`.
+The reviewed additive PAY-ENV-04 claim SQL is installed **DEV only** at canonical version `20261015230000`, with source record merged as PR #204. The later observed DEV head is `20261019163645` and does not change this file. For the one-event operator smoke test only, the Admin Vercel **Preview / develop** variable `DEV_STRIPE_ONE_SHOT_ENABLED=true` was explicitly enabled after review. It is not enabled in Production or Customer, does not activate cron, and cannot bypass same-origin or fresh Admin session checks. The test event must be synthetic and `livemode=false`.
 
 This DEV-only documentation change refreshes Admin Preview after Vercel configuration. Once the one-event proof is recorded, change the flag to `false` and redeploy to close the manual action. The normal job worker stays disabled in Preview. No secrets, Stripe object data or event payloads are included here.
 

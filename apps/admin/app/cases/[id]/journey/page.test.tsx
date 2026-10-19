@@ -314,6 +314,7 @@ describe("the case journey route", () => {
     allowPreview()
     records()
     loadMoney.mockClear()
+    loadOrder.mockClear()
     getCase.mockResolvedValue(caseDetail())
     loadCaseFlowFacts.mockResolvedValue(facts())
     render(await CaseJourneyPage({
@@ -327,6 +328,7 @@ describe("the case journey route", () => {
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
     expect(screen.queryByRole("button", { name: /Close case|Submit to Google|Mark as paid/i })).toBeNull()
     expect(loadMoney).not.toHaveBeenCalled()
+    expect(loadOrder).not.toHaveBeenCalled()
   })
 
   it("does not offer screening completion while the intake review is still the current step", async () => {

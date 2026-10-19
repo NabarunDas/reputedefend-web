@@ -310,7 +310,7 @@ function StepWorkspace({
                     : step.id === "SUBMISSION"
                       ? <p>Recording an attempt, a decision or a withdrawal uses the existing case commands. None of those submits anything to Google. A Guided attempt is the customer&apos;s and a Managed attempt is ProfileRelaunch&apos;s. An open attempt does not finish this step. Outcome review, billing and closure stay on later steps.</p>
                       : step.id === "OUTCOME_BILLING"
-                        ? <p>Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance. A pre-closure outcome command is proposed and is not applied.</p>
+                        ? <p>Success-fee approval and a TEST-MODE hosted invoice use the existing payment commands. Neither marks an obligation paid, charges a card, or closes the case. Agreement PS-2026-10-14.2 does not collect a Managed success fee in advance. A pre-closure outcome command is proposed and is not applied. This step does not offer that command.</p>
                         : <p>The operation itself belongs to {step.laterWork}. This page does not perform it and has no button that pretends to.</p>}
       {(step.decision || guidedCommand) && step.destination && <p><Link href={step.destination.href}>Open {step.destination.label}</Link></p>}
     </details>

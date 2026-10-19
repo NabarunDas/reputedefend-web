@@ -4,7 +4,7 @@ import { loadCaseFlowFacts } from "@/lib/case-flow/load"
 import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
-import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import { activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
@@ -216,10 +216,16 @@ async function loadJourneyOutcome(
   detail: Awaited<ReturnType<typeof getCase>>,
   now: string,
 ) {
-  const money = await loadMoney()
+  const orderId = activationOrderLink(facts, now).quoteOrderId
+  const [money, order] = await Promise.all([
+    loadMoney(),
+    orderId ? loadOrder(orderId) : Promise.resolve(null),
+  ])
   return presentJourneyOutcome({
     facts,
     now,
+    order,
+    orderDetailMissing: !!orderId && order?.id !== orderId,
     recorded: {
       submissions: detail.submissions,
       caseTrack: detail.track,

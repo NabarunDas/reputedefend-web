@@ -8,6 +8,7 @@ import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import type { Submission } from "@/lib/cases/model"
+import type { ServiceOrder } from "@/lib/commerce/model"
 import type { MoneyOrder } from "@/lib/payments/model"
 import { CaseJourneyView } from "./view"
 
@@ -78,7 +79,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
     },
     customerActions: [],
     commercial: { complete: true, quotes: [{ id: "quote-1", status: "ACCEPTED", taxBehaviour: "NOT_APPLICABLE", validUntil: "2026-12-01T00:00:00.000Z", actionStatus: null, actionExpiresAt: null, orderId: ORDER_ID }] },
-    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
+    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_PAID", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
     evidence: { requests: [], versions: [] },
     packs: { packs: [], eligibleCount: 0 },
     communications: [],
@@ -113,7 +114,7 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
     amountMinor: 14900,
     currency: "GBP",
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_AWAITING_PAYMENT",
+    orderState: "ACCEPTED_PAID",
     version: 2,
     obligationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     obligationKind: "UPFRONT",
@@ -129,7 +130,35 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
   }
 }
 
-function show(source: CaseFlowFacts, orders: MoneyOrder[] | null, submissions: Submission[] | null) {
+function serviceOrder(overrides: Partial<ServiceOrder> = {}): ServiceOrder {
+  return {
+    id: ORDER_ID,
+    publicRef: "SO-26-ABCDEF",
+    quoteId: "quote-1",
+    quoteRef: "Q-26-ABCDEF",
+    quoteVersionId: "quote-version-1",
+    customerName: "Alex",
+    businessName: "Bakery",
+    caseReference: "PR-1",
+    caseId: CASE_ID,
+    serviceCode: "MANAGED_RELAUNCH",
+    amountMinor: 14900,
+    currency: "GBP",
+    paymentModel: "SUCCESS_FEE",
+    taxBehaviour: "NOT_APPLICABLE",
+    taxAmountMinor: 0,
+    state: "ACCEPTED_SUCCESS_FEE",
+    acceptedAt: WHEN,
+    ...overrides,
+  }
+}
+
+function show(
+  source: CaseFlowFacts,
+  orders: MoneyOrder[] | null,
+  submissions: Submission[] | null,
+  order: ServiceOrder | null = null,
+) {
   const presented = presentJourneyOutcome({
     facts: source,
     now: NOW,
@@ -140,6 +169,7 @@ function show(source: CaseFlowFacts, orders: MoneyOrder[] | null, submissions: S
       caseStatus: source.caseStatus,
       moneyOrders: orders,
     },
+    order,
   })
   const journey = presentCaseJourney(source, NOW, [], presented.disagreed ? { outcomeRecordsDisagree: true } : {})
   const locked = journey.steps.find(step => step.id === "OUTCOME_BILLING")?.state === "LOCKED"
@@ -204,7 +234,7 @@ describe("guided outcome verification", () => {
       receiptId: null,
       acceptedEvidence: [{ id: versionId, filename: "outcome.png", versionNumber: 1 }],
     })
-    show(source, [row], [attempt({ actor: "ADMIN", track: "MANAGED" })])
+    show(source, [row], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder())
     expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Pending billing")
     expect(document.querySelector("[data-step='OUTCOME_BILLING']")).not.toHaveAttribute("data-state", "COMPLETED")
     fireEvent.click(screen.getByText("Approve the success fee"))
@@ -242,6 +272,70 @@ describe("guided outcome verification", () => {
     })], [attempt({ actor: "ADMIN", track: "MANAGED" })])
     expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Not billable")
     expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+  })
+
+  it("does not treat an awaiting Guided order with a paid obligation as settled", () => {
+    const source = facts({
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
+    })
+    show(source, [money({ orderState: "ACCEPTED_AWAITING_PAYMENT" })], [attempt()])
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Billing records disagree")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+  })
+
+  it("offers approval for one valid proof among extra accepted files, and withholds a rejected or mismatched record", () => {
+    const selected = "66666666-6666-4666-8666-666666666666"
+    const source = facts({
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true, receiptRecorded: false }] },
+      evidence: {
+        requests: [],
+        versions: ["66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"].map(versionId => ({
+          documentId: `doc-${versionId}`,
+          versionId,
+          evidenceRequestId: "request-1",
+          uploadStatus: "UPLOADED",
+          scanStatus: "NO_THREATS_FOUND",
+          validationStatus: "VALID",
+          reviewStatus: "ACCEPTED",
+        })),
+      },
+      capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
+    })
+    const row = money({
+      serviceCode: "MANAGED_RELAUNCH",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      obligationId: null,
+      obligationKind: null,
+      obligationState: null,
+      setupReady: true,
+      consentId: "consent-1",
+      receiptId: null,
+      acceptedEvidence: [{ id: selected, filename: "outcome.png", versionNumber: 1 }],
+    })
+    show(source, [row], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder())
+    expect(screen.getByText("Approve the success fee")).toBeTruthy()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+
+    cleanup()
+    show(facts({
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true, receiptRecorded: false }] },
+      evidence: { requests: [], versions: [{ documentId: "doc-1", versionId: selected, evidenceRequestId: "request-1", uploadStatus: "UPLOADED", scanStatus: "THREATS_FOUND", validationStatus: "VALID", reviewStatus: "REJECTED" }] },
+      capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
+    }), [row], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder())
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+
+    cleanup()
+    show(source, [money({ ...row, customerId: "12121212-1212-4121-8121-121212121212" })], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder())
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
   })

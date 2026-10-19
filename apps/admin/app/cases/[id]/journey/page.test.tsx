@@ -672,4 +672,193 @@ describe("the case journey route", () => {
     expect(screen.getByRole("button", { name: "Record the screening decision" })).toBeInTheDocument()
     expect(screen.queryByRole("checkbox", { name: /email/i })).toBeNull()
   })
+
+  it("keeps closure closed until the earlier steps are recorded", async () => {
+    allowPreview()
+    records()
+    loadMoney.mockClear()
+    loadOrder.mockClear()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(screen.getByRole("heading", { name: "Closure & Optional Guard" })).toBeInTheDocument()
+    expect(screen.getByText("Closure stays closed until the earlier steps are recorded.")).toBeInTheDocument()
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Open the Guard workspace" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Submit to Google|Send email|Mark as paid/i })).toBeNull()
+    expect(loadMoney).not.toHaveBeenCalled()
+    expect(loadOrder).not.toHaveBeenCalled()
+  })
+
+  it("shows a cancelled case from the database status and does not close it again", async () => {
+    allowPreview()
+    records()
+    loadMoney.mockClear()
+    const summary = "The customer withdrew the request."
+    getCase.mockResolvedValue(caseDetail({
+      status: "CANCELLED",
+      stage: "FINISHED",
+      track: "GUIDED",
+      outcome: "WITHDRAWN",
+      summary,
+      events: [{
+        id: "4",
+        event: "close",
+        note: "Customer withdrew.",
+        visibility: "INTERNAL",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        details: { outcome: "WITHDRAWN", summary },
+      }],
+    }))
+    loadCaseFlowFacts.mockResolvedValue({
+      ...facts(),
+      technicalStage: "FINISHED",
+      caseStatus: "CANCELLED",
+      serviceTrack: "GUIDED",
+      outcome: "WITHDRAWN",
+      outcomeSummary: summary,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Cancelled")
+    expect(screen.getByText(/Status CANCELLED/)).toBeInTheDocument()
+    expect(screen.getByText("Reopen with a follow-up task")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Open the Guard workspace" })).toHaveAttribute("href", "/guard")
+    expect(screen.queryByRole("button", { name: /Enrol|Submit to Google|Send/i })).toBeNull()
+    expect(loadMoney).toHaveBeenCalled()
+  })
+
+  it("shows a matching closed record as complete and offers the existing reopen command", async () => {
+    allowPreview()
+    records()
+    const summary = "The listing was restored after the recorded appeal."
+    getCase.mockResolvedValue(caseDetail({
+      status: "CLOSED",
+      stage: "FINISHED",
+      track: "GUIDED",
+      outcome: "RESTORED",
+      summary,
+    }))
+    loadCaseFlowFacts.mockResolvedValue({
+      ...facts(),
+      technicalStage: "FINISHED",
+      caseStatus: "CLOSED",
+      serviceTrack: "GUIDED",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Closed")
+    expect(screen.getByRole("heading", { name: "Closure record" })).toBeInTheDocument()
+    expect(screen.getByText("Reopen with a follow-up task")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+    expect(screen.queryByText(/included Guard offer/)).toBeNull()
+  })
+
+  it("keeps Step 11 at needs attention when the loaded case record disagrees with a coherent projection", async () => {
+    allowPreview()
+    records()
+    const summary = "The listing was restored after the recorded appeal."
+    const projected = {
+      ...facts(),
+      technicalStage: "FINISHED",
+      caseStatus: "CLOSED",
+      serviceTrack: "GUIDED",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+    }
+    const matching = {
+      status: "CLOSED" as const,
+      stage: "FINISHED" as const,
+      track: "GUIDED" as const,
+      outcome: "RESTORED" as const,
+      summary,
+    }
+
+    getCase.mockResolvedValue(caseDetail(matching))
+    loadCaseFlowFacts.mockResolvedValue(projected)
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    const outcomeState = document.querySelector("[data-step='OUTCOME_BILLING']")?.getAttribute("data-state")
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "COMPLETED")
+    cleanup()
+
+    getCase.mockResolvedValue(caseDetail({ ...matching, summary: `${summary} changed` }))
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(screen.getByText("This closure record is inconsistent. The database status is shown for diagnosis. It is not a verified closure.")).toBeInTheDocument()
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Inconsistent closure")
+    expect(screen.getByText(/loaded case record and the case-flow projection do not agree/)).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
+    expect(screen.queryByText("Reopen with a follow-up task")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+    expect(screen.queryByText(/included Guard offer/)).toBeNull()
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", outcomeState)
+
+    cleanup()
+    getCase.mockResolvedValue(caseDetail({ ...matching, status: "UNDER_REVIEW" }))
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Inconsistent closure")
+    expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
+    expect(screen.queryByText("Reopen with a follow-up task")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+
+    cleanup()
+    getCase.mockResolvedValue(caseDetail({ ...matching, stage: "OUTCOME_REVIEW" }))
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    }))
+    expect(document.querySelector("[data-step='CLOSURE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-closure]")).toHaveAttribute("data-closure", "Inconsistent closure")
+    expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
+    expect(screen.queryByText("Reopen with a follow-up task")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Close the case" })).toBeNull()
+  })
+
+  it("does not render closure before staff authentication or outside the develop Preview", async () => {
+    allowPreview()
+    requireStaff.mockRejectedValueOnce(new Error("UNAUTHENTICATED"))
+    getCase.mockClear()
+    await expect(CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    })).rejects.toThrow("UNAUTHENTICATED")
+    expect(getCase).not.toHaveBeenCalled()
+
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("SUPABASE_URL", open.SUPABASE_URL)
+    requireStaff.mockClear()
+    getCase.mockClear()
+    loadMoney.mockClear()
+    await expect(CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "CLOSURE" }),
+    })).rejects.toBe(notFoundError)
+    expect(requireStaff).not.toHaveBeenCalled()
+    expect(getCase).not.toHaveBeenCalled()
+    expect(loadMoney).not.toHaveBeenCalled()
+  })
 })

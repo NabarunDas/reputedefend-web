@@ -159,7 +159,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function show(
   overrides: Partial<CaseFlowFacts> = {},
   events: readonly JourneyWorkEvent[] = [],
-  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean; submissionRecordsDisagree?: boolean } = {},
+  options: { recordConflict?: boolean; emailRecordsDisagree?: boolean; authorityRecordsDisagree?: boolean; assessment?: AssessmentJudgement | null; packRecordsDisagree?: boolean; submissionRecordsDisagree?: boolean; outcomeRecordsDisagree?: boolean; closureRecordsDisagree?: boolean } = {},
 ) {
   return presentCaseJourney(facts(overrides), NOW, events, options)
 }
@@ -724,14 +724,119 @@ describe("journey status from authoritative records", () => {
     expect(step(journey, "SUBMISSION").state).toBe("COMPLETED")
   })
 
-  it("closes from the case status and does not require Guard or paint the earlier steps", () => {
-    for (const caseStatus of ["CLOSED", "CANCELLED"]) {
-      const journey = show({ caseStatus, technicalStage: "FINISHED", outcome: "WITHDRAWN", serviceTrack: "GUIDED" })
-      expect(step(journey, "CLOSURE").state).toBe("COMPLETED")
-      expect(step(journey, "CLOSURE").known.join(" ")).toMatch(/Guard was not required/)
-      expect(journey.focusStepId).toBeNull()
-      expect(completed(journey)).toEqual(["CLOSURE"])
+  it("completes closure only when the terminal status, outcome, stage and summary agree", () => {
+    const summary = "The customer withdrew the request."
+    const cancelled = show({
+      caseStatus: "CANCELLED",
+      technicalStage: "FINISHED",
+      outcome: "WITHDRAWN",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    })
+    expect(step(cancelled, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(cancelled, "CLOSURE").known.join(" ")).toMatch(/Guard was not required/)
+    expect(step(cancelled, "CLOSURE").known.join(" ")).toMatch(/CANCELLED/)
+    expect(cancelled.focusStepId).toBeNull()
+    expect(completed(cancelled)).toEqual(["CLOSURE"])
+
+    const closed = show({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: "The listing was restored after the recorded appeal.",
+      serviceTrack: "GUIDED",
+    })
+    expect(step(closed, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(closed, "CLOSURE").known.join(" ")).toMatch(/Guard was not required/)
+    expect(step(closed, "CLOSURE").known.join(" ")).toMatch(/not a CANCELLED/)
+    expect(completed(closed)).toEqual(["CLOSURE"])
+  })
+
+  it("does not complete an inconsistent terminal closure", () => {
+    const summary = "The listing was restored after the recorded appeal."
+    const withdrawnClosed = show({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "WITHDRAWN",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    })
+    expect(step(withdrawnClosed, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(withdrawnClosed, "CLOSURE").known.join(" ")).toMatch(/database status is CLOSED/)
+    expect(step(withdrawnClosed, "CLOSURE").known.join(" ")).toMatch(/do not form a valid closure/)
+    expect(completed(withdrawnClosed)).not.toContain("CLOSURE")
+
+    const cancelledRestored = show({
+      caseStatus: "CANCELLED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    })
+    expect(step(cancelledRestored, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(cancelledRestored, "CLOSURE").known.join(" ")).toMatch(/database status is CANCELLED/)
+    expect(completed(cancelledRestored)).not.toContain("CLOSURE")
+
+    const wrongStage = show({
+      caseStatus: "CLOSED",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    })
+    expect(step(wrongStage, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+
+    const missingSummary = show({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: "",
+      serviceTrack: "GUIDED",
+    })
+    expect(step(missingSummary, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+
+    const shortSummary = show({
+      caseStatus: "CANCELLED",
+      technicalStage: "FINISHED",
+      outcome: "WITHDRAWN",
+      outcomeSummary: "short",
+      serviceTrack: "GUIDED",
+    })
+    expect(step(shortSummary, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(shortSummary, "CLOSURE").known.join(" ")).not.toMatch(/Guard was not required/)
+  })
+
+  it("does not complete closure when the loaded case record disagrees with the projection", () => {
+    const summary = "The listing was restored after the recorded appeal."
+    const closed = {
+      caseStatus: "CLOSED" as const,
+      technicalStage: "FINISHED",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED" as const,
     }
+    const agreed = show(closed)
+    const disagreed = show(closed, [], { closureRecordsDisagree: true })
+    expect(step(agreed, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(disagreed, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(disagreed, "CLOSURE").known.join(" ")).toMatch(/loaded case record and the case-flow projection do not agree/)
+    expect(step(disagreed, "CLOSURE").known.join(" ")).not.toMatch(/Guard was not required/)
+    expect(completed(disagreed)).not.toContain("CLOSURE")
+    expect(step(disagreed, "OUTCOME_BILLING").state).toBe(step(agreed, "OUTCOME_BILLING").state)
+
+    const billing = show(closed, [], { outcomeRecordsDisagree: true })
+    expect(step(billing, "CLOSURE").state).toBe("COMPLETED")
+    expect(step(billing, "OUTCOME_BILLING").state).toBe("NEEDS_ATTENTION")
+
+    const open = show({
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "GUIDED",
+    }, [], { closureRecordsDisagree: true })
+    expect(step(open, "CLOSURE").state).toBe("NEEDS_ATTENTION")
+    expect(step(open, "CLOSURE").known.join(" ")).toMatch(/The case is open/)
+    expect(completed(open)).not.toContain("CLOSURE")
   })
 
   it("treats a reopened case as open again", () => {

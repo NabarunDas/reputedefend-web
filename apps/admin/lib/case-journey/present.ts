@@ -27,7 +27,7 @@ import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePa
 import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
-import type { OutcomeProofEvent } from "./outcome-proposal"
+import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
 import { journeyCatalogue, journeyStepIds, type JourneyParty, type JourneyStepId } from "./catalogue"
@@ -215,6 +215,12 @@ export type JourneyPresentationOptions = {
   submissionRecordsDisagree?: boolean
   /** The loaded outcome and billing records do not match the case-flow projection. */
   outcomeRecordsDisagree?: boolean
+  /**
+   * The loaded case detail does not match the case-flow projection on the
+   * closure identity: status, stage, track, outcome, summary, tasks or submissions.
+   * This is separate from a Step 10 billing conflict.
+   */
+  closureRecordsDisagree?: boolean
   /**
    * Case-detail work events, including ids. Step 10 uses these to tell a fresh
    * record_outcome after reopen from an outcome retained across reopen.
@@ -424,7 +430,7 @@ function readSteps(
     PREPARATION: readPreparation(facts, options),
     SUBMISSION: readSubmission(facts, options),
     OUTCOME_BILLING: readOutcome(facts, now, events, options),
-    CLOSURE: readClosure(facts),
+    CLOSURE: readClosure(facts, options),
   }
 }
 
@@ -1205,17 +1211,53 @@ function readOutcome(facts: CaseFlowFacts, now: string, events: readonly Journey
   }
 }
 
-function readClosure(facts: CaseFlowFacts): Reading {
-  const closed = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
-  if (closed) {
+function readClosure(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
+  const terminal = facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED"
+  if (options.closureRecordsDisagree) {
+    return {
+      proof: "attention",
+      known: [
+        terminal ? `The database status is ${facts.caseStatus}.` : "The case is open.",
+        "The loaded case record and the case-flow projection do not agree.",
+        "Optional Guard is not offered while these records disagree.",
+      ],
+      missing: ["A case record that matches the projection."],
+      who: "ProfileRelaunch reconciles the case record and the projection before treating this step as finished.",
+    }
+  }
+  const coherent = coherentTerminalClosure({
+    caseType: facts.caseType,
+    stage: facts.technicalStage,
+    status: facts.caseStatus,
+    outcome: facts.outcome,
+    summary: facts.outcomeSummary,
+  })
+  if (coherent) {
+    const known = [
+      `The case status is ${facts.caseStatus}.`,
+      facts.caseStatus === "CANCELLED"
+        ? "This is a cancellation. It is not a CLOSED result."
+        : "This is a closure. It is not a CANCELLED result.",
+    ]
+    if (facts.outcome === "WITHDRAWN") known.push("The withdrawal keeps the CANCELLED status.")
+    known.push("Optional Guard was not required and did not block closure.")
     return {
       proof: "complete",
-      known: [
-        `The case status is ${facts.caseStatus}.`,
-        "Optional Guard was not required and did not block closure.",
-      ],
+      known,
       missing: [],
-      who: "The case is closed.",
+      who: facts.caseStatus === "CANCELLED" ? "The case is cancelled." : "The case is closed.",
+    }
+  }
+  if (terminal) {
+    return {
+      proof: "attention",
+      known: [
+        `The database status is ${facts.caseStatus}.`,
+        "The status, outcome, summary and stage do not form a valid closure.",
+        "Optional Guard is not offered for an inconsistent closure.",
+      ],
+      missing: ["A CLOSED non-withdrawal at FINISHED, or a CANCELLED withdrawal at FINISHED, with the stored customer summary."],
+      who: "ProfileRelaunch reconciles the closure record. Reopening is the existing correction.",
     }
   }
   return {

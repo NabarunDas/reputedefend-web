@@ -8,6 +8,7 @@ import { activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-jou
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
+import { presentJourneyClosure } from "@/lib/case-journey/closure"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
@@ -144,6 +145,23 @@ export default async function CaseJourneyPage({
   if (outcome?.disagreed) {
     journey = presentCaseJourney(facts, now, events, { ...journeyOptions, outcomeRecordsDisagree: true })
   }
+  const closureStep = journey.steps.find(step => step.id === "CLOSURE")
+  const closureSelected = selectedId === "CLOSURE" && closureStep?.state !== "LOCKED" && closureStep?.state !== "NOT_APPLICABLE"
+  const closure = closureSelected ? await loadJourneyClosure(facts, detail, now, journey) : null
+  if (closure && (closure.disagreed || closure.closureRecordsDisagree)) {
+    journey = presentCaseJourney(facts, now, events, {
+      ...journeyOptions,
+      ...(closure.disagreed ? { outcomeRecordsDisagree: true } : {}),
+      ...(closure.closureRecordsDisagree ? { closureRecordsDisagree: true } : {}),
+    })
+  }
+  const closureAfter = journey.steps.find(step => step.id === "CLOSURE")
+  const closureVisible = closure && closureAfter?.state !== "LOCKED" && closureAfter?.state !== "NOT_APPLICABLE"
+    ? presentJourneyClosure({
+      ...closure.input,
+      precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
+    })
+    : null
   return <CaseJourneyView
     reference={detail.reference}
     customer={detail.client}
@@ -162,6 +180,7 @@ export default async function CaseJourneyPage({
     preparation={preparation?.panel ?? null}
     submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
     outcome={outcome ? { caseDetail: detail, panel: outcome.panel } : null}
+    closure={closureVisible ? { caseDetail: detail, panel: closureVisible.panel } : null}
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
@@ -241,6 +260,37 @@ async function loadJourneyOutcome(
       moneyOrders: money.orders,
     },
   })
+}
+
+async function loadJourneyClosure(
+  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  detail: Awaited<ReturnType<typeof getCase>>,
+  now: string,
+  journey: ReturnType<typeof presentCaseJourney>,
+) {
+  const orderId = activationOrderLink(facts, now).quoteOrderId
+  const [money, order] = await Promise.all([
+    loadMoney(),
+    orderId ? loadOrder(orderId) : Promise.resolve(null),
+  ])
+  const input = {
+    facts,
+    now,
+    order,
+    orderDetailMissing: !!orderId && order?.id !== orderId,
+    events: detail.events.map(event => ({ id: event.id, event: event.event, details: event.details })),
+    detail,
+    recorded: {
+      submissions: detail.submissions,
+      caseTrack: detail.track,
+      caseOutcome: detail.outcome,
+      caseStatus: detail.status,
+      moneyOrders: money.orders,
+    },
+    precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
+  }
+  const presented = presentJourneyClosure(input)
+  return { disagreed: presented.disagreed, closureRecordsDisagree: presented.closureRecordsDisagree, input }
 }
 
 function loadJourneySubmission(

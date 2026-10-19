@@ -193,7 +193,9 @@ function show(
   submissions: Submission[] | null,
   order: ServiceOrder | null = null,
   detail: CaseDetail = caseDetail({ stage: source.technicalStage === "OUTCOME_REVIEW" ? "OUTCOME_REVIEW" : "INITIAL_REVIEW", type: source.caseType, track: source.serviceTrack === "MANAGED" ? "MANAGED" : source.serviceTrack === "GUIDED" ? "GUIDED" : "UNDECIDED", status: source.caseStatus, outcome: source.outcome as CaseDetail["outcome"] }),
+  events: { id: string; event: string; details: Record<string, unknown> }[] = [],
 ) {
+  const work = events.map(event => ({ ...event, createdAt: WHEN }))
   const presented = presentJourneyOutcome({
     facts: source,
     now: NOW,
@@ -205,8 +207,12 @@ function show(
       moneyOrders: orders,
     },
     order,
+    events: work,
   })
-  const journey = presentCaseJourney(source, NOW, [], presented.disagreed ? { outcomeRecordsDisagree: true } : {})
+  const journey = presentCaseJourney(source, NOW, work, {
+    ...(presented.disagreed ? { outcomeRecordsDisagree: true } : {}),
+    outcomeEvents: work,
+  })
   const locked = journey.steps.find(step => step.id === "OUTCOME_BILLING")?.state === "LOCKED"
   return render(<CaseJourneyView
     reference="PR-1"
@@ -440,5 +446,87 @@ describe("guided outcome verification", () => {
     show(facts({ technicalStage: "OUTCOME_REVIEW", caseStatus: "UNDER_REVIEW" }), [money()], [attempt()])
     expect(screen.queryByText("Record outcome")).toBeNull()
     expect(screen.queryByRole("button", { name: "Record outcome" })).toBeNull()
+  })
+
+  it("shows a fresh outcome after reopen, and withholds a retained one", () => {
+    const summary = "The listing was restored."
+    const versionId = "66666666-6666-4666-8666-666666666666"
+    const managed = facts({
+      reopened: true,
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true, receiptRecorded: false }] },
+      evidence: { requests: [], versions: [{ documentId: "77777777-7777-4777-8777-777777777777", versionId, evidenceRequestId: "request-1", uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", reviewStatus: "ACCEPTED" }] },
+      capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
+    })
+    const row = money({
+      serviceCode: "MANAGED_RELAUNCH",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      obligationId: null,
+      obligationKind: null,
+      obligationState: null,
+      setupReady: true,
+      consentId: "consent-1",
+      receiptId: null,
+      acceptedEvidence: [{ id: versionId, filename: "outcome.png", versionNumber: 1 }],
+    })
+    const fresh = [
+      { id: "9", event: "reopen", details: { previousOutcome: "RESTORED" } },
+      { id: "10", event: "record_outcome", details: { outcome: "RESTORED", summary, closesCase: false } },
+    ]
+    show(managed, [row], [attempt({ actor: "ADMIN", track: "MANAGED" })], serviceOrder(), caseDetail({
+      stage: "OUTCOME_REVIEW",
+      type: "PROFILE_RECOVERY",
+      track: "MANAGED",
+      status: "UNDER_REVIEW",
+      outcome: "RESTORED",
+      summary,
+    }), fresh)
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Pending billing")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).not.toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-step='CLOSURE']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.getAllByText(/later record stored this outcome/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/not an authoritative pre-closure record/)).toBeNull()
+    expect(screen.getByText("Approve the success fee")).toBeTruthy()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Close case/i })).toBeNull()
+
+    cleanup()
+    show(facts({
+      reopened: true,
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+    }), [money()], [attempt()])
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Billing records disagree")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-step='CLOSURE']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.getAllByText(/not an authoritative pre-closure record/).length).toBeGreaterThan(0)
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
+
+    cleanup()
+    show(facts({
+      reopened: false,
+      caseStatus: "UNDER_REVIEW",
+      technicalStage: "OUTCOME_REVIEW",
+      outcome: "RESTORED",
+      outcomeSummary: summary,
+    }), [money()], [attempt()])
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Settled")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).not.toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-step='CLOSURE']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.getAllByText(/already stored on an open case/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/not an authoritative pre-closure record/)).toBeNull()
+    expect(screen.queryByText("Approve the success fee")).toBeNull()
+    expect(screen.queryByText("Record outcome")).toBeNull()
   })
 })

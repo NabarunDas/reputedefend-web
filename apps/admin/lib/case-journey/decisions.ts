@@ -23,6 +23,8 @@ export type ListingState = (typeof listingStates)[number]
 export type WebsiteState = (typeof websiteStates)[number]
 
 export type JourneyWorkEvent = {
+  /** Case-detail event id. Intake events may omit it. Outcome proof requires it. */
+  id?: string
   event: string
   createdAt: string
   details: Record<string, unknown>

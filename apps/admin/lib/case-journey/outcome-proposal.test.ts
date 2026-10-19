@@ -99,6 +99,20 @@ describe("proposed pre-closure outcome record", () => {
       caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", outcome: "RESTORED", summary, reopened: true,
     })).toBe("conflict")
     expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", outcome: "RESTORED", summary, reopened: true,
+      events: [
+        { id: "9", event: "reopen", details: { previousOutcome: "RESTORED" } },
+        { id: "10", event: "record_outcome", details: { outcome: "RESTORED", summary, closesCase: false } },
+      ],
+    })).toBe("pre_closure")
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY", stage: "FURTHER_REVIEW", status: "UNDER_REVIEW", outcome: "WITHDRAWN", summary, reopened: true,
+      events: [
+        { id: "10", event: "reopen", details: {} },
+        { id: "9", event: "record_outcome", details: { outcome: "WITHDRAWN", summary, closesCase: false } },
+      ],
+    })).toBe("conflict")
+    expect(readStoredOutcome({
       caseType: "PROFILE_RECOVERY", stage: "FINISHED", status: "CLOSED", outcome: "WITHDRAWN", summary, reopened: false,
     })).toBe("conflict")
     expect(readStoredOutcome({
@@ -107,5 +121,51 @@ describe("proposed pre-closure outcome record", () => {
     expect(readStoredOutcome({
       caseType: "PROFILE_RECOVERY", stage: "OUTCOME_REVIEW", status: "UNDER_REVIEW", outcome: "RESTORED", summary: "short", reopened: false,
     })).toBe("conflict")
+  })
+
+  it("accepts a post-reopen outcome only from a later matching record_outcome event", () => {
+    const open = {
+      caseType: "PROFILE_RECOVERY",
+      stage: "OUTCOME_REVIEW",
+      status: "UNDER_REVIEW",
+      outcome: "RESTORED",
+      summary,
+      reopened: true,
+    }
+    const record = (id: string, details: Record<string, unknown>) => ({ id, event: "record_outcome", details })
+    const reopen = (id: string) => ({ id, event: "reopen", details: { previousOutcome: "RESTORED", previousSummary: summary } })
+    const matching = { outcome: "RESTORED", summary, closesCase: false }
+
+    expect(readStoredOutcome({ ...open, events: [reopen("9"), record("10", matching)] })).toBe("pre_closure")
+    expect(readStoredOutcome({ ...open, reopened: false })).toBe("pre_closure")
+    expect(readStoredOutcome({ ...open, events: [record("10", matching)] })).toBe("conflict")
+    expect(readStoredOutcome({ ...open, events: [record("9", matching), reopen("10")] })).toBe("conflict")
+    expect(readStoredOutcome({ ...open, events: [reopen("10"), record("9", matching)] })).toBe("conflict")
+    expect(readStoredOutcome({
+      ...open,
+      events: [reopen("2"), record("3", { outcome: "RESTORED", summary: `${summary} `, closesCase: false })],
+    })).toBe("conflict")
+    expect(readStoredOutcome({
+      ...open,
+      events: [reopen("2"), record("3", { outcome: "RESTORED", summary, closesCase: true })],
+    })).toBe("conflict")
+    expect(readStoredOutcome({
+      ...open,
+      events: [reopen("2"), record("3", { outcome: "RESTORED", summary })],
+    })).toBe("conflict")
+    expect(readStoredOutcome({ ...open, events: [reopen("2"), record("3", { outcome: "NOT_RESTORED", summary, closesCase: false })] })).toBe("conflict")
+    expect(readStoredOutcome({ ...open, stage: "PREPARATION", events: [reopen("2"), record("3", matching)] })).toBe("conflict")
+    expect(readStoredOutcome({ ...open, stage: "FURTHER_REVIEW", outcome: "WITHDRAWN", events: [reopen("2"), record("3", { outcome: "WITHDRAWN", summary, closesCase: false })] })).toBe("pre_closure")
+
+    const buried = [
+      reopen("1"),
+      ...Array.from({ length: 49 }, (_, index) => ({ id: String(index + 2), event: "note", details: {} })),
+      record("51", matching),
+    ]
+    expect(readStoredOutcome({ ...open, events: buried })).toBe("pre_closure")
+    const hidden = Array.from({ length: 51 }, (_, index) => ({ id: String(index + 20), event: "note", details: {} }))
+    expect(readStoredOutcome({ ...open, events: hidden })).toBe("conflict")
+    const completeWithoutReopen = [record("1", matching), ...Array.from({ length: 49 }, (_, index) => ({ id: String(index + 2), event: "note", details: {} }))]
+    expect(readStoredOutcome({ ...open, events: completeWithoutReopen })).toBe("conflict")
   })
 })

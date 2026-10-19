@@ -5,8 +5,10 @@
  * change status, stage or the closure date, and it does not approve a fee,
  * create an invoice or take a payment. `close` remains the closure command.
  * A stored outcome is authoritative when it is a coherent closed record, or
- * when it already has the pre-closure shape. Approval, an invoice link, a
- * saved card and a checkout return are not payment.
+ * when it already has the pre-closure shape. After a reopen, that shape also
+ * needs a later `record_outcome` work event that matches the stored outcome
+ * and summary. Approval, an invoice link, a saved card and a checkout return
+ * are not payment.
  */
 
 import type { CaseFlowFacts, CaseFlowOrderFact } from "../case-flow/model"
@@ -16,7 +18,7 @@ import { formatGbp, type ServiceOrder } from "../commerce/model"
 import { obligationLabel, type MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
 import { activationOrderLink } from "./activation"
-import { readStoredOutcome } from "./outcome-proposal"
+import { readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { submissionPartyMatches, submissionRecordsDisagree } from "./submission"
 
 export type OutcomeBillingPosition =
@@ -160,7 +162,7 @@ function qualifyingEvidence(facts: CaseFlowFacts, versionId: string): boolean {
     && version.reviewStatus === "ACCEPTED"
 }
 
-function projectOutcome(facts: CaseFlowFacts, now: string): Projection {
+function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly OutcomeProofEvent[] | null): Projection {
   const closed = closedStatus(facts.caseStatus)
   const link = activationOrderLink(facts, now)
   const qualifying = isQualifyingSuccessFeeOutcome(facts.caseType, facts.outcome)
@@ -173,6 +175,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string): Projection {
     outcome: facts.outcome,
     summary: facts.outcomeSummary,
     reopened: facts.reopened,
+    events,
   })
   const expectedModel = track === "GUIDED" ? "UPFRONT" : track === "MANAGED" ? "SUCCESS_FEE" : null
   const foreign = expectedModel ? facts.payment.orders.some(row => row.paymentModel !== expectedModel) : facts.payment.orders.length > 0
@@ -228,7 +231,8 @@ function projectOutcome(facts: CaseFlowFacts, now: string): Projection {
     facts.outcome ? `The case outcome is ${outcomeLabel(facts.outcome)}.` : "No case outcome is recorded.",
     `The selected service track is ${trackLabel(track)}.`,
   ]
-  if (facts.reopened && !closed && facts.outcome) known.push("This case was reopened and still has an outcome. That is not an authoritative pre-closure record.")
+  if (facts.reopened && !closed && facts.outcome && outcomeShape === "pre_closure") known.push("This case was reopened. A later record stored this outcome and did not close the case.")
+  if (facts.reopened && !closed && facts.outcome && outcomeShape !== "pre_closure") known.push("This case was reopened and still has an outcome. That is not an authoritative pre-closure record.")
   if (facts.reopened && !closed && !facts.outcome) known.push("This case was reopened. The earlier outcome was cleared and does not verify this step.")
   if (facts.reopened && closed) known.push("This case was reopened before the current outcome was recorded.")
   if (outcomeShape === "pre_closure" && !conflict) known.push("The stored outcome is on an open case. Recording it did not close the case.")
@@ -275,7 +279,8 @@ function projectOutcome(facts: CaseFlowFacts, now: string): Projection {
 
   const notices: string[] = []
   if (facts.reopened && !closed && !facts.outcome) notices.push("This case was reopened. The earlier outcome was cleared and does not verify this step.")
-  if (facts.reopened && !closed && facts.outcome) notices.push("This case was reopened and still has an outcome. That is not an authoritative pre-closure record.")
+  if (facts.reopened && !closed && facts.outcome && outcomeShape === "pre_closure") notices.push("This case was reopened. A later record stored this outcome and did not close the case.")
+  if (facts.reopened && !closed && facts.outcome && outcomeShape !== "pre_closure") notices.push("This case was reopened and still has an outcome. That is not an authoritative pre-closure record.")
   if (outcomeShape === "pre_closure" && !conflict) notices.push("This outcome is already stored on an open case. A different outcome or summary is refused until the case is reopened. This step does not close the case.")
   if (position === "disagree") notices.push("The outcome and billing records do not agree, so no billing command is offered from here.")
   if (position === "incomplete") notices.push("The quote or payment list is incomplete, so no billing command is offered from here.")
@@ -361,8 +366,8 @@ function canRecordOutcome(facts: CaseFlowFacts, position: OutcomeBillingPosition
   }) === "absent"
 }
 
-export function judgeOutcomeBilling(facts: CaseFlowFacts, now: string): OutcomeBillingJudgement {
-  const projected = projectOutcome(facts, now)
+export function judgeOutcomeBilling(facts: CaseFlowFacts, now: string, events?: readonly OutcomeProofEvent[] | null): OutcomeBillingJudgement {
+  const projected = projectOutcome(facts, now, events)
   return {
     proof: projected.proof,
     headline: headlines[projected.position],
@@ -378,8 +383,10 @@ export function presentJourneyOutcome(input: {
   recorded: RecordedOutcome
   order?: ServiceOrder | null
   orderDetailMissing?: boolean
+  /** Case-detail work events. Required to accept an outcome after reopen. */
+  events?: readonly OutcomeProofEvent[] | null
 }): { disagreed: boolean; panel: JourneyOutcomePanel } {
-  const projected = projectOutcome(input.facts, input.now)
+  const projected = projectOutcome(input.facts, input.now, input.events)
   const recorded = input.recorded
   const caseMoney = recorded.moneyOrders?.filter(row => row.caseId === input.facts.caseId) ?? []
   const projectedIds = input.facts.payment.orders.map(row => row.orderId)

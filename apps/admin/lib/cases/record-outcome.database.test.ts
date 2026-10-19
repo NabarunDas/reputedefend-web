@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { readFileSync, readdirSync } from "node:fs"
+import { readStoredOutcome } from "../case-journey/outcome-proposal"
 
 const db = new PGlite()
 const uid = "11111111-1111-4111-8111-111111111111"
@@ -86,7 +87,7 @@ beforeEach(async () => {
 const row = (id = caseId) => db.query<CaseRow>("select status, work_stage, outcome, closure_summary, closed_at, workflow_version from public.cases where id=$1", [id]).then(result => result.rows[0])
 const command = async (operation: string, data: Record<string, unknown>, version?: number, request = key(), id = caseId) => rpc("admin_case_command_v1", [token, request, id, version ?? (await row(id)).workflow_version, operation, { note, ...data }])
 const review = (id = caseId) => db.exec(`update public.cases set work_stage='OUTCOME_REVIEW' where id='${id}'`)
-const events = (id = caseId) => db.query<{ actor_id: string; event: string; details: { closesCase?: boolean; outcome?: string } }>("select actor_id, event, details from public.case_work_events where case_id=$1 order by id", [id]).then(result => result.rows)
+const events = (id = caseId) => db.query<{ id: string; actor_id: string; event: string; details: { closesCase?: boolean; outcome?: string; summary?: string } }>("select id::text as id, actor_id, event, details from public.case_work_events where case_id=$1 order by id", [id]).then(result => result.rows)
 const audits = (id = caseId) => db.query<{ actor_id: string; action: string; outcome: string; details: { operation?: string } }>("select actor_id, action, outcome, details from public.admin_audit_events where target_id=$1 order by id", [id]).then(result => result.rows)
 const payments = async () => (await db.query<{ obligations: number; invoices: number; approvals: number }>("select (select count(*)::int from public.payment_obligations) as obligations, (select count(*)::int from public.payment_invoices) as invoices, (select count(*)::int from public.success_fee_approvals) as approvals")).rows[0]
 
@@ -108,6 +109,15 @@ describe("record_outcome SQL", () => {
     expect(work[0].actor_id).toBe(uid)
     expect(work[0].event).toBe("record_outcome")
     expect(work[0].details.closesCase).toBe(false)
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY",
+      stage: after.work_stage,
+      status: after.status,
+      outcome: after.outcome,
+      summary: after.closure_summary,
+      reopened: false,
+      events: work,
+    })).toBe("pre_closure")
     const audit = await audits()
     expect(audit).toHaveLength(1)
     expect(audit[0]).toMatchObject({ actor_id: uid, action: "CASE_CHANGED", outcome: "success" })
@@ -196,5 +206,65 @@ describe("record_outcome SQL", () => {
     expect(recorded.closed_at).toBeNull()
     expect((await command("close", { outcome: "WITHDRAWN", summary })).status).toBe("open_work")
     expect((await row()).status).toBe("UNDER_REVIEW")
+  })
+
+  it("proves a new outcome after reopen and rejects an outcome retained without that event", async () => {
+    await review()
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("success")
+    const task = { title: "Call the customer", owner: "ADMIN", kind: "FOLLOW_UP", due: "2026-12-01T12:00:00Z", source: "Agreed on the phone", timezone: "Europe/London" }
+    expect((await command("reopen", task)).status).toBe("success")
+    await db.exec(`update public.cases set outcome='RESTORED', closure_summary='${summary}' where id='${caseId}'`)
+    const retained = await row()
+    expect(retained.status).toBe("UNDER_REVIEW")
+    expect(retained.outcome).toBe("RESTORED")
+    expect(retained.closed_at).toBeNull()
+    const retainedEvents = await events()
+    expect(retainedEvents.some(event => event.event === "record_outcome")).toBe(false)
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY",
+      stage: retained.work_stage,
+      status: retained.status,
+      outcome: retained.outcome,
+      summary: retained.closure_summary,
+      reopened: true,
+      events: retainedEvents,
+    })).toBe("conflict")
+
+    await db.exec(`update public.cases set outcome=null, closure_summary='', work_stage='OUTCOME_REVIEW' where id='${caseId}'`)
+    expect((await command("record_outcome", { outcome: "RESTORED", summary })).status).toBe("success")
+    const recorded = await row()
+    expect(recorded.outcome).toBe("RESTORED")
+    expect(recorded.status).toBe("UNDER_REVIEW")
+    expect(recorded.work_stage).toBe("OUTCOME_REVIEW")
+    expect(recorded.closed_at).toBeNull()
+    expect(await payments()).toEqual({ obligations: 0, invoices: 0, approvals: 0 })
+    const work = await events()
+    const reopen = work.filter(event => event.event === "reopen").at(-1)
+    const recordedEvent = work.filter(event => event.event === "record_outcome").at(-1)
+    expect(reopen).toBeTruthy()
+    expect(recordedEvent?.details).toMatchObject({ outcome: "RESTORED", summary, closesCase: false })
+    expect(BigInt(recordedEvent!.id) > BigInt(reopen!.id)).toBe(true)
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY",
+      stage: recorded.work_stage,
+      status: recorded.status,
+      outcome: recorded.outcome,
+      summary: recorded.closure_summary,
+      reopened: true,
+      events: work,
+    })).toBe("pre_closure")
+
+    await db.exec(`update public.cases set outcome='RESTORED', closure_summary='A different supporting summary that is long enough.' where id='${caseId}'`)
+    const forged = await row()
+    expect(readStoredOutcome({
+      caseType: "PROFILE_RECOVERY",
+      stage: forged.work_stage,
+      status: forged.status,
+      outcome: forged.outcome,
+      summary: forged.closure_summary,
+      reopened: true,
+      events: await events(),
+    })).toBe("conflict")
+    expect((await row()).status).not.toBe("CLOSED")
   })
 })

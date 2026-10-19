@@ -65,6 +65,11 @@ export default async function CaseJourneyPage({
     createdAt: event.createdAt,
     details: event.details,
   }))
+  const outcomeEvents = detail.events.map(event => ({
+    id: event.id,
+    event: event.event,
+    details: event.details,
+  }))
   const brief = buildJourneyIntake({
     message: detail.issue,
     reviewUrl: detail.reviewUrl,
@@ -85,6 +90,7 @@ export default async function CaseJourneyPage({
     emailRecordsDisagree: brief.emailControl === "records_disagree",
     authorityRecordsDisagree: brief.authority === "records_disagree",
     assessment: assessmentJudgement,
+    outcomeEvents,
   }
   let journey = presentCaseJourney(facts, now, events, journeyOptions)
   const selectedId = selectJourneyStep(journey, query.step)
@@ -226,6 +232,7 @@ async function loadJourneyOutcome(
     now,
     order,
     orderDetailMissing: !!orderId && order?.id !== orderId,
+    events: detail.events.map(event => ({ id: event.id, event: event.event, details: event.details })),
     recorded: {
       submissions: detail.submissions,
       caseTrack: detail.track,

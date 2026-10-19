@@ -3,9 +3,16 @@
  *
  * The live function is `public.admin_case_command_v1` in
  * `supabase/migrations/20261019183000_admin_journey_10b_record_outcome_v1.sql`.
- * That migration is not applied to DEV or Production. The journey page does
- * not call these functions. `readStoredOutcome` is the current read-only check.
+ * That migration is not applied to DEV or Production. `readStoredOutcome` is
+ * the current read-only check. `assessProposedOutcomeRecord` and
+ * `assessProposedClose` describe the writer and are not called from the page.
  */
+
+/**
+ * `admin_case_detail_v1` returns at most this many work events, newest id first.
+ * A full page can hide an older reopen. It cannot hide a later one.
+ */
+const OUTCOME_EVENT_PAGE = 51
 
 const recoveryOutcomes = ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"]
 const protectionOutcomes = ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED", "WITHDRAWN"]
@@ -20,6 +27,13 @@ export type ProposedClose =
 
 /** What the current Step 10 reader may treat as an authoritative outcome. */
 export type StoredOutcomeReading = "absent" | "closed" | "pre_closure" | "conflict"
+
+/** A case-detail work event. `id` is the bigint primary key as text. */
+export type OutcomeProofEvent = {
+  id?: string
+  event: string
+  details?: Record<string, unknown> | null
+}
 
 function allowedOutcomes(caseType: string): readonly string[] | null {
   if (caseType === "PROFILE_RECOVERY") return recoveryOutcomes
@@ -81,9 +95,44 @@ export function assessProposedClose(input: {
   return { status: "would_close", outcome: input.outcome, closesCase: true, overwroteOutcome: false }
 }
 
+function numericEventId(value: string | undefined): bigint | null {
+  if (!value || !/^[0-9]+$/.test(value)) return null
+  return BigInt(value)
+}
+
+/**
+ * An open reopened case may keep a stored outcome only when a `record_outcome`
+ * event matches it and is newer than every loaded reopen. Missing, mismatched,
+ * or unordered proof stays a conflict. Event ids are compared as integers.
+ */
+function recordedAfterReopen(outcome: string, summary: string, events: readonly OutcomeProofEvent[] | null | undefined): boolean {
+  if (!events || events.length === 0) return false
+  const parsed: { id: bigint; event: string; details: Record<string, unknown> }[] = []
+  for (const row of events) {
+    const id = numericEventId(row.id)
+    if (id === null || typeof row.event !== "string") return false
+    if (!row.details || typeof row.details !== "object" || Array.isArray(row.details)) return false
+    parsed.push({ id, event: row.event, details: row.details })
+  }
+  const truncated = parsed.length >= OUTCOME_EVENT_PAGE
+  const reopens = parsed.filter(row => row.event === "reopen")
+  if (!truncated && reopens.length === 0) return false
+  let latestMatch: bigint | null = null
+  for (const row of parsed) {
+    if (row.event !== "record_outcome") continue
+    if (row.details.closesCase !== false) continue
+    if (row.details.outcome !== outcome || row.details.summary !== summary) continue
+    if (latestMatch === null || row.id > latestMatch) latestMatch = row.id
+  }
+  if (latestMatch === null) return false
+  return reopens.every(row => row.id < latestMatch)
+}
+
 /**
  * Read-only. A `pre_closure` result means the stored row has the shape
- * `record_outcome` writes. It does not mean the migration has been applied.
+ * `record_outcome` writes and, after a reopen, a later matching work event.
+ * It does not mean the migration has been applied. Omitted events do not
+ * prove a post-reopen record.
  */
 export function readStoredOutcome(input: {
   caseType: string
@@ -92,6 +141,7 @@ export function readStoredOutcome(input: {
   outcome: string | null
   summary: string
   reopened: boolean
+  events?: readonly OutcomeProofEvent[] | null
 }): StoredOutcomeReading {
   const closed = input.status === "CLOSED" || input.status === "CANCELLED"
   if (!input.outcome) return closed ? "conflict" : "absent"
@@ -101,7 +151,8 @@ export function readStoredOutcome(input: {
     const statusMatches = withdrawn ? input.status === "CANCELLED" : input.status === "CLOSED"
     return statusMatches && input.stage === "FINISHED" ? "closed" : "conflict"
   }
-  if (input.reopened || input.stage === "FINISHED" || !summaryOk(input.summary)) return "conflict"
+  if (input.reopened && !recordedAfterReopen(input.outcome, input.summary, input.events)) return "conflict"
+  if (input.stage === "FINISHED" || !summaryOk(input.summary)) return "conflict"
   if (input.outcome !== "WITHDRAWN" && input.stage !== "OUTCOME_REVIEW") return "conflict"
   return "pre_closure"
 }

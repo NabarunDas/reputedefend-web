@@ -59,10 +59,10 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is pending ADMIN-JOURNEY-E2E-04. E2E-03 stays the applied DEV head.
+    // The tail is DEV-applied ADMIN-JOURNEY-E2E-04, which is also the applied DEV head.
     // Production remains at SEC-08. This disposable rebuild is not a live apply.
     expect(pending.at(-1)?.version).toBe("20261020210000")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.some(entry => entry.version === "20261020150000" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261020120000" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261019235000" && entry.appliedToDev)).toBe(true)

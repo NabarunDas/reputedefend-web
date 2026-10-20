@@ -2,9 +2,9 @@
 
 Status: acceptance record for the disposable Managed walks. The stage correction was applied to DEV only as migration `20261020120000` and is described in `docs/admin/admin-journey-e2e-02.md`. This is not a Production-readiness decision.
 
-Environment used: PGlite, loading the repository migration chain, including the E2E-02 file, before its separate live DEV application. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. The pending migration was not applied to DEV or Production.
+Environment used: PGlite, loading the repository migration chain, including the E2E-02 file, before its separate live DEV application. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. This exercise did not apply a migration to DEV or Production.
 
-The repository now records `20261020150000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
+The repository now records `20261020210000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
 
 ## How to read a result
 
@@ -97,7 +97,7 @@ Early withdrawal and a Managed cancellation from intake were not composed.
 
 ## Customer-facing unsuccessful outcome visibility — PASS on the disposable chain
 
-Pending migration `20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql` is not applied to DEV or Production. Live DEV still hides `NOT_RESTORED` until independent review applies it. Signed-in browser acceptance is NOT TESTED.
+DEV migration `20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql` is applied to DEV only and is not applied to Production. Signed-in browser acceptance is NOT TESTED.
 
 Both composed walks that store a closed `NOT_RESTORED` now show:
 
@@ -117,7 +117,7 @@ An open or reopened case still returns `outcomeCode: null`. The customer case wo
 | Close while a qualifying success fee is `DUE` | PASS | Walk B. `close` returns `prerequisite`. The headline is “Approved fee”. Step 10 is not complete. |
 | Close while that fee’s hosted invoice is `ISSUED` and unpaid | PASS | Walk B. `close` returns `prerequisite`. The headline is “Invoiced” and says this is not payment. |
 | `approve_success_fee` after `NOT_RESTORED` | PASS | Walk C. Status `denied`. No obligation, invoice, or receipt. |
-| `approve_success_fee` before any stored outcome | PASS on the disposable chain | Walks B and C. A missing outcome returns `denied`. No approval, obligation, invoice, or receipt is stored. Live DEV still has the previous guard until pending `20261020150000` is independently applied. |
+| `approve_success_fee` before any stored outcome | PASS on the disposable chain | Walks B and C. A missing outcome returns `denied`. No approval, obligation, invoice, or receipt is stored. DEV now denies that approval after independently applied `20261020150000`. Signed-in browser acceptance remains untested. |
 | Close of a non-qualifying case that already has a non-void success fee | FAIL | No command can create that fee. `approve_success_fee` is denied for `NOT_RESTORED`. The walk does not insert an obligation. |
 | Close of a non-qualifying case whose success fee is `VOID` | FAIL | No `public` or `admin_private` function updates `payment_obligations.state` to `VOID`. The walk does not insert a `VOID` row. |
 
@@ -182,7 +182,7 @@ These PASS or FAIL on their own. None of them is the composed PASS in the table 
 - `apps/admin/lib/case-journey/acceptance-walk.database.test.ts` — Guided walk, reopen, and the close security checks.
 - `apps/admin/lib/case-journey/managed-acceptance-walk.database.test.ts` — Managed qualifying settlement and Managed unsuccessful close.
 
-The original walks did not change portal SQL. Pending E2E-04 now does, on the disposable chain only. See `docs/admin/admin-journey-e2e-04.md`.
+The original walks did not change portal SQL. E2E-04 now does. It is applied to DEV only and is not applied to Production. See `docs/admin/admin-journey-e2e-04.md`.
 
 ## Unresolved blockers
 
@@ -191,6 +191,6 @@ The original walks did not change portal SQL. Pending E2E-04 now does, on the di
 3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
 4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
 5. DEV fix integrated: early `approve_success_fee` now fails closed with `denied` after DEV migration `20261020150000`; disposable walks confirm no financial rows. Signed-in browser acceptance remains pending. See `docs/admin/admin-journey-e2e-03.md`.
-6. Disposable walks and portal tests show a closed `NOT_RESTORED` outcome. Pending `20261020210000` is not applied to DEV or Production. Signed-in browser acceptance is NOT TESTED. See `docs/admin/admin-journey-e2e-04.md`.
+6. DEV migration integrated: a closed `NOT_RESTORED` outcome is returned after DEV migration `20261020210000`. Disposable walks and portal tests show the same result. Signed-in browser acceptance is NOT TESTED. See `docs/admin/admin-journey-e2e-04.md`.
 7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
 8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

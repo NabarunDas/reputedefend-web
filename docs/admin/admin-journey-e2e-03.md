@@ -2,7 +2,7 @@
 
 Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 as canonical version `20261020150000`, after exact source-to-ledger SQL and ACL verification. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay.
 
-Verified DEV applied head is `20261020150000`. Production and AWS ApprovedMigrationHead stay `20261014170000`. DEV now denies an early `approve_success_fee` without a not-null SQL exception.
+This file was applied to DEV as `20261020150000`. The current canonical DEV head is `20261020210000`. Production and AWS ApprovedMigrationHead stay `20261014170000`. DEV denies an early `approve_success_fee` without a not-null SQL exception.
 
 ## What changes
 
@@ -24,7 +24,7 @@ Both Managed walks on the full chain call the real command:
 
 ## Not in this change
 
-- A closed `NOT_RESTORED` outcome is shown by pending `20261020210000`. That migration is not applied to DEV or Production. See `docs/admin/admin-journey-e2e-04.md`.
+- A closed `NOT_RESTORED` outcome is shown after DEV migration `20261020210000`. That migration is applied to DEV only and is not applied to Production. See `docs/admin/admin-journey-e2e-04.md`.
 - No command writes `payment_obligations.state = 'VOID'`.
 - No signed-in browser journey was run.
 - Live payments, outbound email, and Google submission stay off.

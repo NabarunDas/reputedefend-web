@@ -1,8 +1,8 @@
 # ADMIN-JOURNEY-E2E-04 — customer terminal outcome
 
-Status: proposed. `supabase/migrations/20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql` is in the repository with `appliedToDev: false`. It is not applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request. Do not replay `20261020150000` or any earlier applied migration.
+Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 as canonical version `20261020210000`, after exact source-to-ledger SQL and privilege verification. Generated ledger version `20261020122920` was aligned to canonical. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay this file or any earlier applied migration.
 
-The verified DEV applied head stays `20261020150000`. Production and AWS ApprovedMigrationHead stay `20261014170000`. Until independent review applies this file, live DEV still returns `outcomeCode: null` for a closed `NOT_RESTORED` case.
+The verified DEV applied head is `20261020210000`. `pendingMigrations()` is empty. Production and AWS ApprovedMigrationHead stay `20261014170000`. Live DEV returns the finished terminal `outcomeCode`. The disposable evidence below is unchanged, and signed-in browser acceptance remains NOT TESTED.
 
 ## What changes
 

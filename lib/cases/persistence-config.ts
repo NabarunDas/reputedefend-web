@@ -1,53 +1,23 @@
-/* DEV-MAIL-01: Get Help mail on a Vercel Preview stays closed unless the develop
- * DEV lane is explicitly enabled for every recipient that would be emailed. */
+/* Get Help mail follows the same delivery path in Production and on the
+ * develop DEV Preview. Any other Vercel Preview persists nothing to Resend. */
 import "server-only"
 
-const DEV_SUPABASE_URLS = [
-  "https://rmzozuiamjcclvtgutgd.supabase.co",
-  "https://rmzozuiamjcclvtgutgd.supabase.co/",
-]
-
-/** One mailbox. Display names, lists, wildcards and surrounding punctuation are rejected. */
-const EXACT_ADDRESS = /^[a-z0-9.!#$%&'*+=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
+const DEV_SUPABASE_HOST = "rmzozuiamjcclvtgutgd.supabase.co"
 
 function trimEnv(value: string | undefined) {
   return value?.trim() ?? ""
 }
 
-function isDevProject(url: string | undefined) {
-  return DEV_SUPABASE_URLS.includes(url?.trim() ?? "")
-}
-
-/**
- * A single exact mailbox, compared case-insensitively.
- * The returned value is the normalised form used for the allowlist check.
- */
-function exactAddress(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null
-  const address = value.trim().toLowerCase()
-  if (address.length < 3 || address.length > 254) return null
-  const at = address.indexOf("@")
-  if (at <= 0 || at !== address.lastIndexOf("@")) return null
-  if (address.slice(0, at).length > 64) return null
-  if (!EXACT_ADDRESS.test(address)) return null
-  return address
-}
-
-/**
- * Comma-separated exact addresses. Any empty, malformed or multi-recipient
- * token rejects the whole list. Nothing here is a wildcard or a domain.
- */
-export function parseDevMailAllowlist(raw: string | undefined): ReadonlySet<string> | null {
-  if (typeof raw !== "string") return null
-  const text = raw.trim()
-  if (!text || /[\u0000-\u001f\u007f]/.test(text)) return null
-  const allow = new Set<string>()
-  for (const part of text.split(",")) {
-    const address = exactAddress(part)
-    if (!address) return null
-    allow.add(address)
+/** The DEV project, matched the same way case persistence matches it: https on that hostname. */
+export function isDevSupabaseProject(url: string | undefined) {
+  const raw = url?.trim() ?? ""
+  if (!raw) return false
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === "https:" && parsed.hostname === DEV_SUPABASE_HOST
+  } catch {
+    return false
   }
-  return allow.size > 0 ? allow : null
 }
 
 /**
@@ -60,58 +30,55 @@ export function isCasePersistenceEnabled(
   return trimEnv(env.CASE_PERSISTENCE_ENABLED) === "true"
 }
 
-/** Opt-in kill switch for the develop DEV Preview. It suppresses every
- * Resend case-intake send, including when DEV_MAIL_ENABLED is also true.
- * Production and unrelated previews are never affected by this flag.
- */
-export function devCaseIntakeEmailSuppressed(env: Record<string, string | undefined> = process.env) {
-  return env.VERCEL_ENV === "preview"
-    && env.VERCEL_GIT_COMMIT_REF === "develop"
-    && env.DEV_CASE_INTAKE_NO_EMAIL === "true"
-    && isDevProject(env.SUPABASE_URL)
-}
-
-export type DevMailDecision = "open" | "closed" | "outside"
+export type IntakeMailLane = "shared" | "feature-preview"
 
 /**
- * Whether this Preview may hand these recipients to Resend.
- *
- * `outside` is every non-Preview runtime, including Production. The caller
- * keeps that runtime's existing delivery behaviour.
- * `open` is only the develop Preview on the DEV Supabase project, with
- * DEV_MAIL_ENABLED exactly true, a strict allowlist, and every recipient
- * that would be emailed approved. A null recipient is not being emailed.
- * `closed` persists the case and records the suppression. It never sends.
+ * `shared` is Production, local development, and the develop Preview on the DEV project.
+ * Those runtimes use the normal customer acknowledgement and internal notice.
+ * `feature-preview` is every other Vercel Preview. It records the case and does not send.
  */
-export function devMarketingMailDecision(
-  customer: string | null,
-  internal: string | null,
+export function intakeMailLane(
   env: Record<string, string | undefined> = process.env,
-): DevMailDecision {
-  if (env.VERCEL_ENV !== "preview") return "outside"
-  const lane = env.VERCEL_GIT_COMMIT_REF === "develop" && isDevProject(env.SUPABASE_URL)
-  if (!lane || env.DEV_CASE_INTAKE_NO_EMAIL === "true" || env.DEV_MAIL_ENABLED !== "true") return "closed"
-  const allow = parseDevMailAllowlist(env.DEV_MAIL_ALLOWED_RECIPIENTS)
-  if (!allow) return "closed"
+): IntakeMailLane {
+  if (env.VERCEL_ENV !== "preview") return "shared"
+  if (env.VERCEL_GIT_COMMIT_REF === "develop" && isDevSupabaseProject(env.SUPABASE_URL)) return "shared"
+  return "feature-preview"
+}
 
-  const internalRaw = env.DEV_MAIL_INTERNAL_RECIPIENT
-  const internalConfigured = typeof internalRaw === "string" && internalRaw.trim() !== ""
-  const dedicatedInternal = internalConfigured ? exactAddress(internalRaw) : null
-  if (internalConfigured && !dedicatedInternal) return "closed"
+/** Staff replay of an existing case is only available on the develop DEV Preview. */
+export function developDevIntakeMailLane(
+  env: Record<string, string | undefined> = process.env,
+) {
+  return env.VERCEL_ENV === "preview"
+    && env.VERCEL_GIT_COMMIT_REF === "develop"
+    && isDevSupabaseProject(env.SUPABASE_URL)
+}
 
-  if (customer === null && internal === null) return "closed"
-  const customerAddress = customer === null ? null : exactAddress(customer)
-  if (customer !== null && (!customerAddress || !allow.has(customerAddress))) return "closed"
-  if (internal !== null) {
-    const internalAddress = exactAddress(internal)
-    if (!internalAddress) return "closed"
-    const listed = allow.has(internalAddress)
-    const distinctDedicated = Boolean(
-      dedicatedInternal
-      && internalAddress === dedicatedInternal
-      && dedicatedInternal !== customerAddress,
-    )
-    if (!listed && !distinctDedicated) return "closed"
-  }
-  return "open"
+export type IntakeMailObservation = {
+  vercelEnv: "production" | "preview" | "development" | "other" | "absent"
+  gitRef: "develop" | "other" | "absent"
+  database: "exact-dev" | "other" | "absent"
+  lane: IntakeMailLane
+}
+
+/** Fixed classes only. This never includes a value, an address, or a secret. */
+export function observeIntakeMailRuntime(
+  env: Record<string, string | undefined> = process.env,
+): IntakeMailObservation {
+  const vercel = env.VERCEL_ENV
+  const vercelEnv = vercel === "production" || vercel === "preview" || vercel === "development"
+    ? vercel
+    : vercel ? "other" : "absent"
+  const ref = env.VERCEL_GIT_COMMIT_REF
+  const gitRef = ref === "develop" ? "develop" : ref ? "other" : "absent"
+  const url = env.SUPABASE_URL
+  const database = !url ? "absent" : isDevSupabaseProject(url) ? "exact-dev" : "other"
+  const lane: IntakeMailLane = vercel !== "preview" || (ref === "develop" && database === "exact-dev")
+    ? "shared"
+    : "feature-preview"
+  return { vercelEnv, gitRef, database, lane }
+}
+
+export function featurePreviewMailLogLine(observation: IntakeMailObservation) {
+  return `[case-intake] feature preview mail withheld vercel=${observation.vercelEnv} ref=${observation.gitRef} database=${observation.database}`
 }

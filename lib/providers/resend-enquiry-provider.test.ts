@@ -27,6 +27,20 @@ describe("createResendEnquiryProvider", () => {
     })
   })
 
+  it("passes a stable idempotency key when the message has one", async () => {
+    const send = vi.fn(async () => ({ data: { id: "email_123" }, error: null }))
+    const provider = createResendEnquiryProvider("re_test_key", { emails: { send } })
+    await provider.send({ ...message, idempotencyKey: "case-intake:55555555-5555-4555-8555-555555555555" })
+    expect(send).toHaveBeenCalledWith({
+      from: message.from,
+      to: message.to,
+      replyTo: message.replyTo,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    }, { idempotencyKey: "case-intake:55555555-5555-4555-8555-555555555555" })
+  })
+
   it("treats a Resend error payload as rejection", async () => {
     const send = vi.fn(async () => ({ data: null, error: { message: "invalid from" } }))
     const provider = createResendEnquiryProvider("re_test_key", { emails: { send } })

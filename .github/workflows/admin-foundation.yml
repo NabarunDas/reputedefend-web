@@ -21,6 +21,14 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - name: Install PostgreSQL and PostgREST for the intake mail claim test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+          curl -fsSL -o /tmp/postgrest.tar.xz https://github.com/PostgREST/postgrest/releases/download/v16.5/postgrest-v16.5-linux-static-x86-64.tar.xz
+          sudo tar -xJf /tmp/postgrest.tar.xz -C /usr/local/bin
+          postgrest --version
+          find /usr/lib/postgresql -name initdb
       - run: npm run lint
       - run: npm test -- --maxWorkers=2
       - run: npm run typecheck

@@ -88,6 +88,8 @@ export function presentProgress(status: CaseStatus, workStage: WorkStage): Prese
   })
 }
 
+const WITHDRAWN_STATEMENT = "This case was withdrawn and is now closed. This closure does not report a restoration or removal result."
+
 const TERMINAL_OUTCOME_COPY: Record<OutcomeCode, { title: string; body: string; completed: string; cancelled: string }> = {
   RESTORED: {
     title: "Your profile was restored",
@@ -127,9 +129,9 @@ const TERMINAL_OUTCOME_COPY: Record<OutcomeCode, { title: string; body: string; 
   },
   WITHDRAWN: {
     title: "This case was withdrawn",
-    body: "No Google result is recorded for this case.",
-    completed: "This case was withdrawn. No Google result is recorded.",
-    cancelled: "This case was withdrawn. No Google result is recorded.",
+    body: WITHDRAWN_STATEMENT,
+    completed: WITHDRAWN_STATEMENT,
+    cancelled: WITHDRAWN_STATEMENT,
   },
 }
 

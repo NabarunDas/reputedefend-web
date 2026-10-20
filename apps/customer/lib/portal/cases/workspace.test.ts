@@ -173,7 +173,7 @@ describe("what happens next", () => {
     })
     expect(presentNextStep({ ...base, status: "CANCELLED", workStage: "FINISHED", outcomeCode: "WITHDRAWN" })).toMatchObject({
       title: "This case was withdrawn",
-      body: "No Google result is recorded for this case.",
+      body: "This case was withdrawn and is now closed. This closure does not report a restoration or removal result.",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW", outcomeCode: "NOT_RESTORED" })).toMatchObject({
       title: "We're working on your case",
@@ -220,7 +220,9 @@ describe("timeline wording", () => {
     expect(timelineMessage("CASE_COMPLETED", "REMOVED")).toBe("The review was removed and the case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "NOT_REMOVED")).toBe("The review was not removed and the case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "RESPONSE_RECOMMENDED")).toBe("A response was recommended. The review was not removed, and the case was completed.")
-    expect(timelineMessage("CASE_CANCELLED", "WITHDRAWN")).toBe("This case was withdrawn. No Google result is recorded.")
+    const withdrawn = "This case was withdrawn and is now closed. This closure does not report a restoration or removal result."
+    expect(timelineMessage("CASE_CANCELLED", "WITHDRAWN")).toBe(withdrawn)
+    expect(timelineMessage("CASE_COMPLETED", "WITHDRAWN")).toBe(withdrawn)
     expect(timelineMessage("CASE_CANCELLED", null)).toBe("This ProfileRelaunch case was cancelled.")
     const presented = presentTimeline(detail({ outcomeCode: "RESTORED" }, [
       { code: "CASE_COMPLETED", occurredAt: closedAt },
@@ -228,6 +230,27 @@ describe("timeline wording", () => {
     ]))
     expect(presented.map(item => item.message).join(" ")).not.toMatch(/CASE_|actor|review_note|_/)
     expect(presented[1].dateLabel).toBe("3 October 2026")
+  })
+
+  it("keeps an earlier Google decision when the case is later withdrawn", () => {
+    const presented = presentTimeline(detail({
+      status: "CANCELLED",
+      workStage: "FINISHED",
+      closedAt,
+      outcomeCode: "WITHDRAWN",
+    }, [
+      { code: "CASE_CANCELLED", occurredAt: closedAt },
+      { code: "GOOGLE_DECISION_RECORDED", occurredAt: "2026-10-06T12:00:00.000Z" },
+      { code: "SUBMITTED_TO_GOOGLE", occurredAt: "2026-10-04T12:00:00.000Z" },
+      { code: "CASE_RECEIVED", occurredAt: submittedAt },
+    ]))
+    expect(presented.map(item => item.message)).toEqual([
+      "This case was withdrawn and is now closed. This closure does not report a restoration or removal result.",
+      "A Google decision was recorded for your case.",
+      "Your case was submitted to Google.",
+      "We received your ProfileRelaunch case.",
+    ])
+    expect(presented.map(item => item.message).join(" ")).not.toMatch(/No Google result/)
   })
 })
 

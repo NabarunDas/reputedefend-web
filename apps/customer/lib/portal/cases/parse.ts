@@ -261,9 +261,6 @@ export type OutcomeCode =
   | "RESPONSE_RECOMMENDED"
   | "WITHDRAWN"
 
-const PROFILE_OUTCOMES = ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"] as const
-const REVIEW_OUTCOMES = ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED", "WITHDRAWN"] as const
-
 const WORKSPACE_KEYS = [...CASE_KEYS, "outcomeCode"] as const
 const DETAIL_KEYS = ["found", "case", "timeline", "timelineTruncated"] as const
 const TIMELINE_KEYS = ["code", "occurredAt"] as const
@@ -284,10 +281,26 @@ export type CustomerCaseDetail = {
   timelineTruncated: boolean
 }
 
-function outcomeCode(caseType: CaseType, value: unknown): OutcomeCode | null | undefined {
+const CLOSED_PROFILE_OUTCOMES = ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED"] as const
+const CLOSED_REVIEW_OUTCOMES = ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED"] as const
+
+/**
+ * A non-null outcome is accepted only for a finished, closed case whose
+ * status matches that outcome. Anything else fails the whole payload closed.
+ * A null outcome stays available for an open case or an inconsistent legacy row.
+ */
+function outcomeCode(
+  caseType: CaseType,
+  status: CaseStatus,
+  workStage: WorkStage,
+  closedAt: string | null,
+  value: unknown,
+): OutcomeCode | null | undefined {
   if (value === null) return null
-  if (typeof value !== "string") return undefined
-  const allowed = caseType === "PROFILE_RECOVERY" ? PROFILE_OUTCOMES : REVIEW_OUTCOMES
+  if (typeof value !== "string" || workStage !== "FINISHED" || closedAt === null) return undefined
+  if (status === "CANCELLED") return value === "WITHDRAWN" ? "WITHDRAWN" : undefined
+  if (status !== "CLOSED") return undefined
+  const allowed = caseType === "PROFILE_RECOVERY" ? CLOSED_PROFILE_OUTCOMES : CLOSED_REVIEW_OUTCOMES
   if ((allowed as readonly string[]).includes(value)) return value as OutcomeCode
   return undefined
 }
@@ -298,7 +311,7 @@ function parseWorkspaceCase(value: unknown): CustomerWorkspaceCase | null {
   const { outcomeCode: rawOutcome, ...rest } = row
   const base = parseCaseRow(rest)
   if (!base) return null
-  const outcome = outcomeCode(base.caseType, rawOutcome)
+  const outcome = outcomeCode(base.caseType, base.status, base.workStage, base.closedAt, rawOutcome)
   if (outcome === undefined) return null
   return { ...base, outcomeCode: outcome }
 }

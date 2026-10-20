@@ -26,9 +26,11 @@ The case workspace uses these headings only after that terminal payload. The tim
 | `REVIEW_PROTECTION` | `REMOVED` | `CLOSED` | The review was removed | The review was removed and the case was completed. |
 | `REVIEW_PROTECTION` | `NOT_REMOVED` | `CLOSED` | The review was not removed | The review was not removed and the case was completed. |
 | `REVIEW_PROTECTION` | `RESPONSE_RECOMMENDED` | `CLOSED` | A response was recommended | A response was recommended. The review was not removed, and the case was completed. |
-| Either | `WITHDRAWN` | `CANCELLED` | This case was withdrawn | This case was withdrawn. No Google result is recorded. |
+| Either | `WITHDRAWN` | `CANCELLED` | This case was withdrawn | This case was withdrawn and is now closed. This closure does not report a restoration or removal result. |
 
-Partial restoration says the profile was not fully restored. A recommended response says the review was not removed. Withdrawal says no Google result is recorded.
+Partial restoration says the profile was not fully restored. A recommended response says the review was not removed. Withdrawal says the case is closed and that this closure does not report a restoration or removal result. It does not say whether Google recorded an earlier decision.
+
+The customer parser applies the same rule. A non-null `outcomeCode` is accepted only when `workStage` is `FINISHED`, `closedAt` is present, and the status matches that outcome. Any other non-null outcome rejects the whole payload. A null outcome still parses, including an inconsistent legacy row, and does not invent a result.
 
 ## Evidence classes
 

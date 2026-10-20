@@ -100,7 +100,13 @@ describe("customer case detail parsing", () => {
     expect(isPublicCaseReference("XX-26-ABC234")).toBe(false)
     expect(isPublicCaseReference("PR-26-ABC23I")).toBe(false)
     const parsed = parseCaseDetail(detail({
-      case: workspaceCase({ outcomeCode: "RESTORED", attentionItems: [{ code: "EVIDENCE_REQUIRED", dueAt: null }] }),
+      case: workspaceCase({
+        outcomeCode: "RESTORED",
+        status: "CLOSED",
+        workStage: "FINISHED",
+        closedAt: "2026-06-02T09:00:00.000Z",
+        attentionItems: [{ code: "EVIDENCE_REQUIRED", dueAt: null }],
+      }),
     }))
     expect(parsed && parsed.found && parsed.case.outcomeCode).toBe("RESTORED")
     expect(parseCaseDetail({ found: false })).toEqual({ found: false })
@@ -116,12 +122,16 @@ describe("customer case detail parsing", () => {
     expect(parseCaseDetail(detail({}, { outcomeCode: "CUSTOM_TEXT" }))).toBeNull()
     expect(parseCaseDetail(detail({}, { outcomeCode: "PARTIALLY_RESTORED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))).toBeNull()
     expect(parseCaseDetail(detail({}, { outcomeCode: "NOT_REMOVED" }))).toBeNull()
-    for (const outcomeCode of ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"]) {
-      expect(parseCaseDetail(detail({}, { outcomeCode }))?.found).toBe(true)
+    const closed = { status: "CLOSED", workStage: "FINISHED", closedAt: "2026-06-02T09:00:00.000Z" }
+    const cancelled = { status: "CANCELLED", workStage: "FINISHED", closedAt: "2026-06-02T09:00:00.000Z" }
+    for (const outcomeCode of ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED"]) {
+      expect(parseCaseDetail(detail({}, { outcomeCode, ...closed }))?.found).toBe(true)
     }
-    for (const outcomeCode of ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED", "WITHDRAWN"]) {
-      expect(parseCaseDetail(detail({}, { outcomeCode, caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))?.found).toBe(true)
+    for (const outcomeCode of ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED"]) {
+      expect(parseCaseDetail(detail({}, { outcomeCode, caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF", ...closed }))?.found).toBe(true)
     }
+    expect(parseCaseDetail(detail({}, { outcomeCode: "WITHDRAWN", ...cancelled }))?.found).toBe(true)
+    expect(parseCaseDetail(detail({}, { outcomeCode: "WITHDRAWN", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF", ...cancelled }))?.found).toBe(true)
     expect(parseCaseDetail(detail({}, { id: "secret" }))).toBeNull()
     expect(parseCaseDetail(detail({
       timeline: [{ code: "CASE_NOTE_ADDED", occurredAt: submittedAt }],
@@ -137,7 +147,32 @@ describe("customer case detail parsing", () => {
     expect(parseCaseDetail(detail({ timeline: twenty, timelineTruncated: false }))?.found).toBe(true)
     expect(parseCaseDetail(null)).toBeNull()
     expect(parseCaseDetail(detail({
-      case: workspaceCase({ outcomeCode: "REMOVED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }),
-    })) && true).toBe(true)
+      case: workspaceCase({
+        outcomeCode: "REMOVED",
+        caseType: "REVIEW_PROTECTION",
+        reference: "RV-26-ABCDEF",
+        status: "CLOSED",
+        workStage: "FINISHED",
+        closedAt: "2026-06-02T09:00:00.000Z",
+      }),
+    }))?.found).toBe(true)
+  })
+
+  it("rejects a non-null outcome unless status, stage, and closure agree", () => {
+    const closedAt = "2026-06-02T09:00:00.000Z"
+    const closed = { status: "CLOSED", workStage: "FINISHED", closedAt }
+    const finished = { workStage: "FINISHED", closedAt }
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "NOT_RESTORED", status: "UNDER_REVIEW", workStage: "FURTHER_REVIEW" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", status: "CLOSED", workStage: "OUTCOME_REVIEW", closedAt }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", status: "CLOSED", workStage: "FINISHED", closedAt: null }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "WITHDRAWN", ...closed }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", status: "CANCELLED", ...finished }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "REMOVED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF", status: "CANCELLED", ...finished }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF", ...closed }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "NOT_REMOVED", ...closed }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: null, status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW" }))?.found).toBe(true)
+    expect(parseCaseDetail(detail({}, { outcomeCode: null, ...closed }))?.found).toBe(true)
+    expect(parseCaseDetail(detail({}, { outcomeCode: null, status: "CLOSED", workStage: "OUTCOME_REVIEW", closedAt: null }))?.found).toBe(true)
   })
 })

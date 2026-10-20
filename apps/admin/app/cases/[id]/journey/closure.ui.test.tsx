@@ -242,7 +242,7 @@ describe("the closure step", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ message: "Closure needs the recorded settlement for this service. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close." }),
+      json: async () => ({ message: "Closure needs the accepted service for this case and the recorded settlement that service requires. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close." }),
     })
     vi.stubGlobal("fetch", fetchMock)
     render(<ClosurePanel caseDetail={detail} panel={panel} />)

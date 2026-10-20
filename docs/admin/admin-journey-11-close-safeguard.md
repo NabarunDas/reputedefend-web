@@ -28,22 +28,25 @@ Step 11 does not treat those as ready. The database still accepts them from the 
 
 Add one predicate inside the existing `close` branch, before the `UPDATE`, in a new migration reviewed on its own. Return the existing `prerequisite` status when the predicate fails. Do not add a second close operation, a new status, or a Guard write.
 
-`service_orders.state` has no `ACCEPTED_PAID` value. Upfront settlement is an `UPFRONT` order with a non-void `UPFRONT` obligation in `PAID` and a row in `payment_receipts`. That is the same shape Step 10 already treats as settled.
+`service_orders.state` has no `ACCEPTED_PAID` value. Upfront settlement is an `UPFRONT` order with a non-void `UPFRONT` obligation in `PAID` and a row in `payment_receipts`. The order, obligation and receipt share the accepted quote version, and the amounts, currency and tax agree. That is the shape Step 10 already treats as settled. The accepted linked order is the only applicable order for the case and track.
 
 For `cases.service_track = 'GUIDED'`, require all of the following for the same case and customer:
 
 - exactly one `quotes` row in `ACCEPTED`
-- exactly one `service_orders` row for that quote, with `payment_model = 'UPFRONT'` and `case_id` equal to the case
-- exactly one non-void `payment_obligations` row of `kind = 'UPFRONT'` in `state = 'PAID'` for that order
-- one `payment_receipts` row for that obligation
+- exactly one `service_orders` row for that accepted version and acceptance, with `payment_model = 'UPFRONT'` and `case_id` equal to the case
+- exactly one non-void `payment_obligations` row of `kind = 'UPFRONT'` in `state = 'PAID'` for that quote version and order
+- one `payment_receipts` row for that obligation, with the same amount, currency and tax
 - no `SUCCESS_FEE` or `RECURRING_MONTHLY` order for the case
 
-For `MANAGED`, use `admin_private.qualifying_success_outcome_v1(c)`:
+For `MANAGED`, use `admin_private.qualifying_success_outcome_v1` on the outcome being written:
 
-- qualifying: exactly one `SUCCESS_FEE` order for the case, one non-void `SUCCESS_FEE` obligation in `PAID`, and a receipt for that obligation
-- not qualifying: no non-void `SUCCESS_FEE` obligation for the case
+- qualifying: exactly one `SUCCESS_FEE` order for the case, one non-void `SUCCESS_FEE` obligation in `PAID`, an approval for that quote version and outcome, and a matching receipt
+- not qualifying at `OUTCOME_REVIEW`: exactly one accepted linked `SUCCESS_FEE` order, and no non-void `SUCCESS_FEE` obligation. No fee is created
+- `WITHDRAWN` before `OUTCOME_REVIEW`: allowed when there is no non-void success-fee obligation. A later decision at `OUTCOME_REVIEW` still needs the accepted order
 
-`WITHDRAWN` keeps `status = 'CANCELLED'`. The commercial predicate still applies, so a Guided withdrawal is not a way around the upfront receipt. A non-qualifying Managed withdrawal still must not carry a success-fee obligation.
+A void success-fee obligation is historical. It is not an active charge, and Step 10 does not treat it as a fee on an unsuccessful outcome.
+
+`WITHDRAWN` keeps `status = 'CANCELLED'`. The commercial predicate still applies, so a Guided withdrawal is not a way around the upfront receipt. A non-qualifying Managed withdrawal still must not carry an active success-fee obligation.
 
 Refusal uses `prerequisite`. It does not change the outcome, the summary, the status, or any payment row. It does not enrol Guard or send email.
 

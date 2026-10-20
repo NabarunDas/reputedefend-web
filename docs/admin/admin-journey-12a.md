@@ -10,28 +10,30 @@ Agreement PS-2026-10-14.2 is unchanged. Prices, contractual terms, Guard billing
 
 Before the close update, the command calls the predicate with the case row and the outcome being written. A failure returns the existing `prerequisite` status. It does not write a work event, an audit row, an outcome, a summary, a status change, or any payment row.
 
-`service_orders.state` has no `ACCEPTED_PAID` value. An upfront order stays `ACCEPTED_AWAITING_PAYMENT`. Settlement is a non-void `UPFRONT` obligation in `PAID` plus one `payment_receipts` row for that obligation, order and customer. Checkout attempts, saved cards and unconfirmed payments are not read.
+`service_orders.state` has no `ACCEPTED_PAID` value. An upfront order stays `ACCEPTED_AWAITING_PAYMENT`. Settlement is a non-void `UPFRONT` obligation in `PAID` plus one `payment_receipts` row for that obligation, order and customer. The receipt amount, currency and tax match the obligation. The obligation amount, currency and tax match the order. The order amount, currency and tax match the accepted quote version. Checkout attempts, saved cards and unconfirmed payments are not read.
+
+The accepted quote, its current accepted version, the quote acceptance, the order and, where a payment exists, the obligation all name one another. A success-fee approval names that same quote version, order, case and outcome. One applicable order for the case and track is required. A second order on the same track is not ignored, including an order that has no paid obligation.
 
 Guided closure, including `WITHDRAWN`, requires:
 
 - exactly one `ACCEPTED` quote for the same case and customer
-- exactly one `UPFRONT` order in `ACCEPTED_AWAITING_PAYMENT` for that quote, with the same case and customer
+- exactly one `UPFRONT` order in `ACCEPTED_AWAITING_PAYMENT` for that accepted version and acceptance, with the same case and customer
 - no `SUCCESS_FEE` or `RECURRING_MONTHLY` order on the case
-- exactly one `PAID` `UPFRONT` obligation with matching case and customer, and a receipt for that obligation
+- exactly one `PAID` `UPFRONT` obligation for that quote version, case and customer, and a receipt whose amount, currency and tax match that obligation
 
-Managed qualifying success (`PROFILE_RECOVERY` + `RESTORED`, or `REVIEW_PROTECTION` + `REMOVED`, using the outcome being written) requires the accepted quote, one `SUCCESS_FEE` order in `ACCEPTED_SUCCESS_FEE`, no upfront or recurring order, and one `PAID` success-fee obligation linked to an approval for that case, order and outcome, plus a receipt.
+Managed qualifying success (`PROFILE_RECOVERY` + `RESTORED`, or `REVIEW_PROTECTION` + `REMOVED`, using the outcome being written) requires the accepted quote, one `SUCCESS_FEE` order in `ACCEPTED_SUCCESS_FEE`, no upfront or recurring order, and one `PAID` success-fee obligation linked to an approval for that case, order, quote version and outcome, plus a matching receipt.
 
-A Managed outcome that is not qualifying, including `WITHDRAWN`, does not require a success fee. It is refused when any non-void success-fee obligation is already linked to the case. A void obligation does not count. Closing does not create a charge.
+A Managed decision at `OUTCOME_REVIEW` that is not qualifying needs that one accepted linked order. It does not need a success fee, and closing does not create a charge. It is refused when any non-void success-fee obligation is already linked to the case, or when the accepted order is missing, mismatched or not unique. A void obligation does not count as an active charge. Step 10 treats that voided fee as not billable. `WITHDRAWN` before `OUTCOME_REVIEW` can still cancel a Managed case that has no active success fee. A Guided withdrawal is not a payment bypass.
 
 `UNDECIDED` does not pass the predicate. Staff authorisation, idempotency, optimistic concurrency, outcome-summary integrity, open-work checks, reopening and every other case command stay as they are. A withdrawal that passes the commercial rule is still stored as `CANCELLED`.
 
 The helper is not granted to `PUBLIC`, `anon`, `authenticated` or `service_role`. `CREATE OR REPLACE` keeps the existing `service_role` execute grant on `admin_case_command_v1`.
 
-Both Admin closure screens post `operation: "close"` to `/api/cases/command`. The guided Step 11 form and the original case cockpit form show the same settlement sentence. A `close` prerequisite is returned as HTTP 409 with: “Closure needs the recorded settlement for this service. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close.” Other prerequisite refusals keep the previous generic message. A 409 does not mark the form completed.
+Both Admin closure screens post `operation: "close"` to `/api/cases/command`. The guided Step 11 form and the original case cockpit form show the same settlement sentence. A `close` prerequisite is returned as HTTP 409 with: “Closure needs the accepted service for this case and the recorded settlement that service requires. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close.” Other prerequisite refusals keep the previous generic message. A 409 does not mark the form completed.
 
 ## Impact
 
-Until this file is applied, the DEV function from Step 10B still accepts a close that has no recorded settlement. After it is applied, the cockpit can no longer close an unpaid Guided case, a qualifying Managed case without a confirmed success-fee receipt, or an unsuccessful Managed case that still has an active success-fee obligation. Guided withdrawal is not a payment bypass. An unsuccessful customer is not charged in order to close.
+Until this file is applied, the DEV function from Step 10B still accepts a close that has no recorded settlement. After it is applied, the cockpit can no longer close an unpaid Guided case, a qualifying Managed case without a confirmed success-fee receipt, a post-service Managed decision that has no unique accepted order, or an unsuccessful Managed case that still has an active success-fee obligation. A voided uncollected success fee does not block that unsuccessful close. Guided withdrawal is not a payment bypass. An unsuccessful customer is not charged in order to close.
 
 `record_outcome`, `reopen`, notes, tasks, submissions and stage transitions are unchanged. The Step 11 screen can still withhold the button; the database is the rule both screens have to pass.
 

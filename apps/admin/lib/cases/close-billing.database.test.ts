@@ -135,6 +135,31 @@ async function prepare(track: "GUIDED" | "MANAGED", stage = "OUTCOME_REVIEW", id
   await db.query("update public.cases set service_track=$2, work_stage=$3 where id=$1", [id, track, stage])
 }
 
+async function openAgain(id = caseId, stage = "OUTCOME_REVIEW") {
+  await db.query("update public.cases set status='UNDER_REVIEW', work_stage=$2, outcome=null, closure_summary='', closed_at=null where id=$1", [id, stage])
+}
+
+async function acceptVersion(quote: string, version: string, owner: string, id: string) {
+  const action = crypto.randomUUID()
+  const acceptance = crypto.randomUUID()
+  serial += 1
+  await db.query(
+    `insert into public.customer_actions(
+      id, customer_id, business_id, location_id, case_id, quote_version_id, kind, status, secret_hash,
+      expected_email_snapshot, expires_at, created_by, completed_at
+    ) values ($1,$2,$3,$4,$5,$6,'QUOTE_ACCEPTANCE','COMPLETED',$7,'alex@example.com', now() + interval '2 days', $8, now())`,
+    [action, owner, business, location, id, version, serial.toString(16).padStart(64, "b"), uid],
+  )
+  await db.query(
+    `insert into public.quote_acceptances(
+      id, quote_id, quote_version_id, customer_action_id, accepted_by_auth_user_id, accepted_email_snapshot,
+      accepted_at, total_amount_minor, currency, tax_behaviour, tax_amount_minor
+    ) values ($1,$2,$3,$4,$5,'alex@example.com',now(),9900,'GBP','NOT_APPLICABLE',0)`,
+    [acceptance, quote, version, action, uid],
+  )
+  return acceptance
+}
+
 async function commercial(options: {
   track: "GUIDED" | "MANAGED"
   caseId?: string
@@ -147,6 +172,17 @@ async function commercial(options: {
   receipt?: boolean
   attempt?: boolean
   approvalOutcome?: string
+  /** Leave the quote OFFERED so a second order is not a second accepted quote. */
+  accepted?: boolean
+  orderAmountMinor?: number
+  orderCurrency?: string
+  orderTaxAmountMinor?: number
+  obligationAmountMinor?: number
+  receiptAmountMinor?: number
+  obligationQuoteMismatch?: boolean
+  obligationVersionMismatch?: boolean
+  approvalVersionMismatch?: boolean
+  acceptanceMismatch?: boolean
 }) {
   const id = options.caseId ?? caseId
   const owner = options.customerId ?? customer
@@ -195,31 +231,42 @@ async function commercial(options: {
   )
   expect(versionInserted.rows).toHaveLength(1)
   await db.query("update public.quotes set current_version_id = $1 where id = $2", [version, quote])
-  const action = crypto.randomUUID()
-  const acceptance = crypto.randomUUID()
   const order = crypto.randomUUID()
-  await db.query(
-    `insert into public.customer_actions(
-      id, customer_id, business_id, location_id, case_id, quote_version_id, kind, status, secret_hash,
-      expected_email_snapshot, expires_at, created_by, completed_at
-    ) values ($1,$2,$3,$4,$5,$6,'QUOTE_ACCEPTANCE','COMPLETED',$7,'alex@example.com', now() + interval '2 days', $8, now())`,
-    [action, owner, business, location, id, version, serial.toString(16).padStart(64, "b"), uid],
-  )
-  await db.query(
-    `insert into public.quote_acceptances(
-      id, quote_id, quote_version_id, customer_action_id, accepted_by_auth_user_id, accepted_email_snapshot,
-      accepted_at, total_amount_minor, currency, tax_behaviour, tax_amount_minor
-    ) values ($1,$2,$3,$4,$5,'alex@example.com',now(),9900,'GBP','NOT_APPLICABLE',0)`,
-    [acceptance, quote, version, action, uid],
-  )
+  const needsSecondVersion = options.obligationVersionMismatch || options.approvalVersionMismatch || options.acceptanceMismatch
+  const secondVersion = needsSecondVersion ? crypto.randomUUID() : null
+  if (secondVersion) {
+    const secondInserted = await db.query(
+      `insert into public.quote_versions(
+        id, quote_id, version_number, status, customer_id, business_id, location_id, case_id, service_code, price_version_id,
+        service_name, payment_model, scope_text, exclusions_text, success_definition, standard_amount_minor, discount_policy_id,
+        discount_bps, discount_amount_minor, quoted_subtotal_minor, tax_behaviour, tax_amount_minor, total_amount_minor, currency,
+        discount_snapshot_id, valid_until, payment_timing_text, terms_reference, created_by, offered_at, offered_by
+      )
+      select $1,$2,2,'OFFERED',$3,$4,$5,$6,$7, p.id, $7, $8,
+        'Synthetic scope text for this closure test.', 'Synthetic exclusions text for this closure test.', 'Synthetic success definition for this closure test.',
+        9900, 'NONE', 0, 0, 9900, 'NOT_APPLICABLE', 0, 9900, 'GBP', $9, now() + interval '30 days',
+        'Synthetic payment timing statement.', 'Synthetic terms reference for closure.', $10, now(), $10
+      from public.price_versions p
+      where p.service_code = $7 and p.status = 'APPROVED'
+      order by p.effective_from limit 1
+      returning id`,
+      [secondVersion, quote, owner, business, location, id, service, model, snapshot, uid],
+    )
+    expect(secondInserted.rows).toHaveLength(1)
+  }
+  const acceptance = await acceptVersion(quote, version, owner, id)
+  const mismatchedAcceptance = options.acceptanceMismatch && secondVersion ? await acceptVersion(quote, secondVersion, owner, id) : null
   await db.query("update public.quote_versions set status = 'ACCEPTED' where id = $1", [version])
-  await db.query("update public.quotes set status = 'ACCEPTED' where id = $1", [quote])
+  if (options.accepted !== false) await db.query("update public.quotes set status = 'ACCEPTED' where id = $1", [quote])
+  const orderAmount = options.orderAmountMinor ?? 9900
+  const orderCurrency = options.orderCurrency ?? "GBP"
+  const orderTax = options.orderTaxAmountMinor ?? 0
   await db.query(
     `insert into public.service_orders(
       id, public_ref, quote_id, quote_version_id, quote_acceptance_id, customer_id, business_id, location_id, case_id,
       service_code, amount_minor, currency, payment_model, tax_behaviour, tax_amount_minor, state, accepted_at
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,9900,'GBP',$11,'NOT_APPLICABLE',0,$12,now())`,
-    [order, orderRef, quote, version, acceptance, orderOwner, business, location, orderCase, service, model, state],
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'NOT_APPLICABLE',$14,$15,now())`,
+    [order, orderRef, quote, version, mismatchedAcceptance ?? acceptance, orderOwner, business, location, orderCase, service, orderAmount, orderCurrency, model, orderTax, state],
   )
   if (options.obligation === "none" || (options.obligation === undefined && !options.receipt)) return { quote, order }
   const obligationState = options.obligation ?? "PAID"
@@ -245,15 +292,26 @@ async function commercial(options: {
         evidence_note, approval_reason, amount_minor, currency, discount_amount_minor, tax_behaviour, tax_amount_minor,
         payment_method_ready, approved_by
       ) values ($1,$2,$3,$4,$5,'Restored the listed profile.',$6,'Outcome evidence accepted after review.','Approved after the restored outcome evidence was checked.',9900,'GBP',0,'NOT_APPLICABLE',0,false,$7)`,
-      [approval, order, id, version, options.approvalOutcome ?? "RESTORED", evidence, uid],
+      [approval, order, id, options.approvalVersionMismatch && secondVersion ? secondVersion : version, options.approvalOutcome ?? "RESTORED", evidence, uid],
     )
   }
+  let obligationQuote = quote
+  if (options.obligationQuoteMismatch) {
+    const otherQuote = crypto.randomUUID()
+    await db.query(
+      `insert into public.quotes(id, public_ref, customer_id, business_id, location_id, case_id, status, created_by)
+       values ($1,$2,$3,$4,$5,$6,'OFFERED',$7)`,
+      [otherQuote, `QT-26-${ref()}`, owner, business, location, id, uid],
+    )
+    obligationQuote = otherQuote
+  }
+  const obligationAmount = options.obligationAmountMinor ?? 9900
   await db.query(
     `insert into public.payment_obligations(
       id, service_order_id, quote_id, quote_version_id, customer_id, case_id, kind, state, amount_minor, currency,
       tax_behaviour, tax_amount_minor, success_fee_approval_id
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,9900,'GBP','NOT_APPLICABLE',0,$9)`,
-    [obligation, order, quote, version, obligationOwner, obligationCase, managed ? "SUCCESS_FEE" : "UPFRONT", obligationState, approval],
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'GBP','NOT_APPLICABLE',0,$10)`,
+    [obligation, order, obligationQuote, options.obligationVersionMismatch && secondVersion ? secondVersion : version, obligationOwner, obligationCase, managed ? "SUCCESS_FEE" : "UPFRONT", obligationState, obligationAmount, approval],
   )
   if (options.attempt) {
     const operation = crypto.randomUUID()
@@ -286,8 +344,8 @@ async function commercial(options: {
     await db.query(
       `insert into public.payment_receipts(
         id, obligation_id, service_order_id, customer_id, payment_attempt_id, amount_minor, currency, tax_behaviour, tax_amount_minor, paid_at
-      ) values ($1,$2,$3,$4,$5,9900,'GBP','NOT_APPLICABLE',0,now())`,
-      [crypto.randomUUID(), obligation, order, obligationOwner, attempt],
+      ) values ($1,$2,$3,$4,$5,$6,'GBP','NOT_APPLICABLE',0,now())`,
+      [crypto.randomUUID(), obligation, order, obligationOwner, attempt, options.receiptAmountMinor ?? obligationAmount],
     )
   }
   return { quote, order, obligation }
@@ -340,21 +398,37 @@ describe("close billing prerequisites", () => {
     expect((await row()).status).toBe("CLOSED")
 
     await prepare("MANAGED", "OUTCOME_REVIEW", reviewCase)
+    expect((await command("close", { outcome: "NOT_REMOVED", summary }, undefined, key(), reviewCase)).status).toBe("prerequisite")
+    expect((await row(reviewCase)).status).not.toBe("CLOSED")
+    expect(await events(reviewCase)).toHaveLength(0)
+    await commercial({ track: "MANAGED", caseId: reviewCase, obligation: "none" })
     expect((await command("close", { outcome: "NOT_REMOVED", summary }, undefined, key(), reviewCase)).status).toBe("success")
     expect((await row(reviewCase)).status).toBe("CLOSED")
 
-    await db.exec(`update public.cases set status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW', outcome=null, closure_summary='', closed_at=null where id='${caseId}'`)
+    await openAgain()
     await wipeCommercial()
     await prepare("MANAGED")
+    expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("prerequisite")
+    expect((await row()).status).not.toBe("CLOSED")
+    await commercial({ track: "MANAGED", obligation: "none", orderCustomerId: otherCustomer })
+    expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "none", orderCaseId: reviewCase })
+    expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "none" })
     expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("success")
     expect((await row()).status).toBe("CLOSED")
 
-    await db.exec(`update public.cases set status='UNDER_REVIEW', work_stage='OUTCOME_REVIEW', outcome=null, closure_summary='', closed_at=null where id='${caseId}'`)
+    await openAgain()
+    await wipeCommercial()
+    await prepare("MANAGED")
     await commercial({ track: "MANAGED", obligation: "DUE", receipt: false })
     expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("prerequisite")
     expect((await row()).status).not.toBe("CLOSED")
     await db.exec("update public.payment_obligations set state='VOID'")
     expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("success")
+    expect((await row()).outcome).toBe("NOT_RESTORED")
   })
 
   it("refuses the wrong customer, the wrong case and a second order", async () => {
@@ -388,6 +462,84 @@ describe("close billing prerequisites", () => {
     await commercial({ track: "MANAGED", caseId: reviewCase, obligation: "PAID", receipt: true })
     expect((await command("close", { outcome: "WITHDRAWN", summary }, undefined, key(), reviewCase)).status).toBe("prerequisite")
     expect((await row(reviewCase)).status).not.toBe("CANCELLED")
+
+    await openAgain(reviewCase, "OUTCOME_REVIEW")
+    await wipeCommercial()
+    await prepare("MANAGED", "OUTCOME_REVIEW", reviewCase)
+    expect((await command("close", { outcome: "WITHDRAWN", summary }, undefined, key(), reviewCase)).status).toBe("prerequisite")
+    expect((await row(reviewCase)).status).not.toBe("CANCELLED")
+    await commercial({ track: "MANAGED", caseId: reviewCase, obligation: "none" })
+    expect((await command("close", { outcome: "WITHDRAWN", summary }, undefined, key(), reviewCase)).status).toBe("success")
+    expect((await row(reviewCase)).status).toBe("CANCELLED")
+  })
+
+  it("refuses a broken quote, order, approval or receipt link and an extra order on the same track", async () => {
+    await prepare("GUIDED")
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, obligationQuoteMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, obligationVersionMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, acceptanceMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, receiptAmountMinor: 1 })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, obligationAmountMinor: 1 })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, orderAmountMinor: 1 })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, orderCurrency: "USD" })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true, orderTaxAmountMinor: 1 })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true })
+    await commercial({ track: "GUIDED", obligation: "none", accepted: false })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    expect((await row()).status).not.toBe("CLOSED")
+    expect(await events()).toHaveLength(0)
+    await wipeCommercial()
+    await commercial({ track: "GUIDED", obligation: "PAID", receipt: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("success")
+
+    await openAgain()
+    await wipeCommercial()
+    await prepare("MANAGED")
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true, obligationQuoteMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true, approvalVersionMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true, acceptanceMismatch: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true, receiptAmountMinor: 1 })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true })
+    await commercial({ track: "MANAGED", obligation: "none", accepted: false })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "PAID", receipt: true })
+    expect((await command("close", { outcome: "RESTORED", summary })).status).toBe("success")
+
+    await openAgain()
+    await wipeCommercial()
+    await prepare("MANAGED")
+    await commercial({ track: "MANAGED", obligation: "none" })
+    await commercial({ track: "MANAGED", obligation: "none", accepted: false })
+    expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("prerequisite")
+    await wipeCommercial()
+    await commercial({ track: "MANAGED", obligation: "none" })
+    expect((await command("close", { outcome: "NOT_RESTORED", summary })).status).toBe("success")
+    expect((await row()).status).toBe("CLOSED")
   })
 
   it("preserves a stale version, an unauthorised operator, a repeated close and the other commands", async () => {

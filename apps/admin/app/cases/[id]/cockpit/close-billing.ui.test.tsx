@@ -8,7 +8,7 @@ import { caseDetail } from "./fixtures"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 
-const settlement = "Closure needs the recorded settlement for this service. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close."
+const settlement = "Closure needs the accepted service for this case and the recorded settlement that service requires. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close."
 
 afterEach(() => {
   cleanup()

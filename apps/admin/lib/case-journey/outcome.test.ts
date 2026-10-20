@@ -284,6 +284,28 @@ describe("outcome verification and billing", () => {
     expect(presented.panel.notices.join(" ")).toMatch(/not invoiced/)
     expect(judgeOutcomeBilling(source, NOW).proof).toBe("complete")
     expect(step?.state).toBe("COMPLETED")
+
+    const voidedSource = facts({
+      outcome: "NOT_RESTORED",
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [success({ obligationKind: "SUCCESS_FEE", obligationState: "VOID" })] },
+    })
+    const voided = shown(voidedSource, [money({
+      serviceCode: "MANAGED_RELAUNCH",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      obligationKind: "SUCCESS_FEE",
+      obligationState: "VOID",
+      setupReady: true,
+      consentId: "consent-1",
+      receiptId: null,
+    })], [submission({ actor: "ADMIN", track: "MANAGED" })])
+    expect(voided.presented.panel.headline).toBe("Not billable")
+    expect(voided.presented.panel.commands).toBeNull()
+    expect(judgeOutcomeBilling(voidedSource, NOW).proof).toBe("complete")
+    expect(voided.step?.state).toBe("COMPLETED")
+    expect(voided.closure?.state).not.toBe("NEEDS_ATTENTION")
   })
 
   it("distinguishes an approved fee, an issued invoice, a failed collection and provider settlement", () => {

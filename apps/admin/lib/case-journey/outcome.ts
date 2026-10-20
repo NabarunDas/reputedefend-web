@@ -189,7 +189,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
     (track === "GUIDED" && !guidedOrderAgrees(order))
     || (track === "MANAGED" && order.orderState !== "ACCEPTED_SUCCESS_FEE")
   )
-  const feeOnUnsuccessful = track === "MANAGED" && !!facts.outcome && !qualifying && order?.obligationKind === "SUCCESS_FEE"
+  const feeOnUnsuccessful = track === "MANAGED" && !!facts.outcome && !qualifying && order?.obligationKind === "SUCCESS_FEE" && order.obligationState !== "VOID"
   const outcomeConflict = outcomeShape === "conflict"
   const undecidedOutcome = !!facts.outcome && track !== "GUIDED" && track !== "MANAGED"
   const partyConflict = facts.submissions.some(item => !submissionPartyMatches(track, item.actor))

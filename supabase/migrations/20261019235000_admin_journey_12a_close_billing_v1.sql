@@ -7,7 +7,15 @@ BEGIN;
 -- service_orders.state has no ACCEPTED_PAID value. An upfront order stays
 -- ACCEPTED_AWAITING_PAYMENT. Settlement is a non-void UPFRONT obligation in PAID
 -- plus a payment_receipts row for that obligation, the case and the customer.
+-- The receipt and obligation must match the accepted order amount, currency and tax.
+-- The obligation, approval and order must name the accepted quote version.
+-- One applicable order for the case and track is required. A second order is not ignored.
 -- A checkout attempt, a saved card and an unconfirmed payment are not read.
+-- A Managed decision at OUTCOME_REVIEW needs that accepted order. It does not need a
+-- success fee when the outcome is not qualifying. A non-void success fee still blocks it.
+-- A voided success fee is historical and is not an active charge.
+-- WITHDRAWN before OUTCOME_REVIEW can cancel a Managed case that has no active success fee.
+-- Guided withdrawal still needs the upfront receipt.
 -- CREATE OR REPLACE keeps the existing service_role EXECUTE grant on the command.
 -- The predicate is not granted to PUBLIC, anon, authenticated or service_role.
 
@@ -21,6 +29,7 @@ DECLARE
   projected public.cases := p_case;
   qualifying boolean;
   accepted_quotes integer;
+  applicable_orders integer;
   matched_orders integer;
   foreign_orders integer;
   settled integer;
@@ -34,17 +43,10 @@ BEGIN
 
   IF p_case.service_track = 'GUIDED' THEN
     IF accepted_quotes <> 1 THEN RETURN false; END IF;
-    SELECT count(*)::int INTO matched_orders
+    SELECT count(*)::int INTO applicable_orders
       FROM public.service_orders o
-      JOIN public.quotes q ON q.id = o.quote_id
-     WHERE o.case_id = p_case.id
-       AND o.customer_id = p_case.customer_id
-       AND q.case_id = p_case.id
-       AND q.customer_id = p_case.customer_id
-       AND q.status = 'ACCEPTED'
-       AND o.payment_model = 'UPFRONT'
-       AND o.state = 'ACCEPTED_AWAITING_PAYMENT';
-    IF matched_orders <> 1 THEN RETURN false; END IF;
+     WHERE o.case_id = p_case.id AND o.payment_model = 'UPFRONT';
+    IF applicable_orders <> 1 THEN RETURN false; END IF;
     SELECT count(*)::int INTO foreign_orders
       FROM public.service_orders o
      WHERE o.case_id = p_case.id AND o.payment_model IN ('SUCCESS_FEE','RECURRING_MONTHLY');
@@ -52,23 +54,41 @@ BEGIN
     SELECT count(*)::int INTO settled
       FROM public.payment_obligations b
       JOIN public.service_orders o ON o.id = b.service_order_id
-      JOIN public.quotes q ON q.id = o.quote_id
+      JOIN public.quotes q ON q.id = o.quote_id AND q.current_version_id = o.quote_version_id
+      JOIN public.quote_versions v ON v.id = o.quote_version_id AND v.quote_id = q.id
+      JOIN public.quote_acceptances acc ON acc.id = o.quote_acceptance_id
+        AND acc.quote_id = q.id AND acc.quote_version_id = o.quote_version_id
      WHERE o.case_id = p_case.id
        AND o.customer_id = p_case.customer_id
        AND b.case_id = p_case.id
        AND b.customer_id = p_case.customer_id
+       AND b.quote_id = q.id
+       AND b.quote_version_id = o.quote_version_id
        AND q.case_id = p_case.id
        AND q.customer_id = p_case.customer_id
        AND q.status = 'ACCEPTED'
+       AND v.status = 'ACCEPTED'
        AND o.payment_model = 'UPFRONT'
        AND o.state = 'ACCEPTED_AWAITING_PAYMENT'
+       AND o.amount_minor = v.total_amount_minor
+       AND o.currency = v.currency
+       AND o.tax_behaviour = v.tax_behaviour
+       AND o.tax_amount_minor = v.tax_amount_minor
        AND b.kind = 'UPFRONT'
        AND b.state = 'PAID'
+       AND b.amount_minor = o.amount_minor
+       AND b.currency = o.currency
+       AND b.tax_behaviour = o.tax_behaviour
+       AND b.tax_amount_minor = o.tax_amount_minor
        AND EXISTS (
          SELECT 1 FROM public.payment_receipts r
           WHERE r.obligation_id = b.id
             AND r.service_order_id = o.id
             AND r.customer_id = p_case.customer_id
+            AND r.amount_minor = b.amount_minor
+            AND r.currency = b.currency
+            AND r.tax_behaviour = b.tax_behaviour
+            AND r.tax_amount_minor = b.tax_amount_minor
        );
     RETURN settled = 1;
   END IF;
@@ -81,20 +101,44 @@ BEGIN
        AND b.state <> 'VOID'
        AND (b.case_id = p_case.id OR o.case_id = p_case.id);
     IF NOT qualifying THEN
-      RETURN active_success = 0;
+      IF active_success <> 0 THEN RETURN false; END IF;
+      IF p_outcome = 'WITHDRAWN' AND p_case.work_stage IS DISTINCT FROM 'OUTCOME_REVIEW' THEN
+        RETURN true;
+      END IF;
+      IF accepted_quotes <> 1 THEN RETURN false; END IF;
+      SELECT count(*)::int INTO applicable_orders
+        FROM public.service_orders o
+       WHERE o.case_id = p_case.id AND o.payment_model = 'SUCCESS_FEE';
+      IF applicable_orders <> 1 THEN RETURN false; END IF;
+      SELECT count(*)::int INTO foreign_orders
+        FROM public.service_orders o
+       WHERE o.case_id = p_case.id AND o.payment_model IN ('UPFRONT','RECURRING_MONTHLY');
+      IF foreign_orders <> 0 THEN RETURN false; END IF;
+      SELECT count(*)::int INTO matched_orders
+        FROM public.service_orders o
+        JOIN public.quotes q ON q.id = o.quote_id AND q.current_version_id = o.quote_version_id
+        JOIN public.quote_versions v ON v.id = o.quote_version_id AND v.quote_id = q.id
+        JOIN public.quote_acceptances acc ON acc.id = o.quote_acceptance_id
+          AND acc.quote_id = q.id AND acc.quote_version_id = o.quote_version_id
+       WHERE o.case_id = p_case.id
+         AND o.customer_id = p_case.customer_id
+         AND q.case_id = p_case.id
+         AND q.customer_id = p_case.customer_id
+         AND q.status = 'ACCEPTED'
+         AND v.status = 'ACCEPTED'
+         AND o.payment_model = 'SUCCESS_FEE'
+         AND o.state = 'ACCEPTED_SUCCESS_FEE'
+         AND o.amount_minor = v.total_amount_minor
+         AND o.currency = v.currency
+         AND o.tax_behaviour = v.tax_behaviour
+         AND o.tax_amount_minor = v.tax_amount_minor;
+      RETURN matched_orders = 1;
     END IF;
     IF accepted_quotes <> 1 OR active_success <> 1 THEN RETURN false; END IF;
-    SELECT count(*)::int INTO matched_orders
+    SELECT count(*)::int INTO applicable_orders
       FROM public.service_orders o
-      JOIN public.quotes q ON q.id = o.quote_id
-     WHERE o.case_id = p_case.id
-       AND o.customer_id = p_case.customer_id
-       AND q.case_id = p_case.id
-       AND q.customer_id = p_case.customer_id
-       AND q.status = 'ACCEPTED'
-       AND o.payment_model = 'SUCCESS_FEE'
-       AND o.state = 'ACCEPTED_SUCCESS_FEE';
-    IF matched_orders <> 1 THEN RETURN false; END IF;
+     WHERE o.case_id = p_case.id AND o.payment_model = 'SUCCESS_FEE';
+    IF applicable_orders <> 1 THEN RETURN false; END IF;
     SELECT count(*)::int INTO foreign_orders
       FROM public.service_orders o
      WHERE o.case_id = p_case.id AND o.payment_model IN ('UPFRONT','RECURRING_MONTHLY');
@@ -102,27 +146,46 @@ BEGIN
     SELECT count(*)::int INTO settled
       FROM public.payment_obligations b
       JOIN public.service_orders o ON o.id = b.service_order_id
-      JOIN public.quotes q ON q.id = o.quote_id
+      JOIN public.quotes q ON q.id = o.quote_id AND q.current_version_id = o.quote_version_id
+      JOIN public.quote_versions v ON v.id = o.quote_version_id AND v.quote_id = q.id
+      JOIN public.quote_acceptances acc ON acc.id = o.quote_acceptance_id
+        AND acc.quote_id = q.id AND acc.quote_version_id = o.quote_version_id
       JOIN public.success_fee_approvals a ON a.id = b.success_fee_approval_id
      WHERE o.case_id = p_case.id
        AND o.customer_id = p_case.customer_id
        AND b.case_id = p_case.id
        AND b.customer_id = p_case.customer_id
+       AND b.quote_id = q.id
+       AND b.quote_version_id = o.quote_version_id
        AND q.case_id = p_case.id
        AND q.customer_id = p_case.customer_id
        AND q.status = 'ACCEPTED'
+       AND v.status = 'ACCEPTED'
        AND o.payment_model = 'SUCCESS_FEE'
        AND o.state = 'ACCEPTED_SUCCESS_FEE'
+       AND o.amount_minor = v.total_amount_minor
+       AND o.currency = v.currency
+       AND o.tax_behaviour = v.tax_behaviour
+       AND o.tax_amount_minor = v.tax_amount_minor
        AND b.kind = 'SUCCESS_FEE'
        AND b.state = 'PAID'
+       AND b.amount_minor = o.amount_minor
+       AND b.currency = o.currency
+       AND b.tax_behaviour = o.tax_behaviour
+       AND b.tax_amount_minor = o.tax_amount_minor
        AND a.case_id = p_case.id
        AND a.service_order_id = o.id
+       AND a.quote_version_id = o.quote_version_id
        AND a.outcome = p_outcome
        AND EXISTS (
          SELECT 1 FROM public.payment_receipts r
           WHERE r.obligation_id = b.id
             AND r.service_order_id = o.id
             AND r.customer_id = p_case.customer_id
+            AND r.amount_minor = b.amount_minor
+            AND r.currency = b.currency
+            AND r.tax_behaviour = b.tax_behaviour
+            AND r.tax_amount_minor = b.tax_amount_minor
        );
     RETURN settled = 1;
   END IF;

@@ -28,7 +28,7 @@ export function CloseForm({ c, locked }: { c: CaseDetail; locked?: { outcome: st
         <label>Customer summary<textarea name="summary" required minLength={10} maxLength={2000} /></label>
       </>}
     <p>Resolve every open task and submission attempt first. A successful outcome requires the outcome-review stage. If an outcome is already recorded, repeat that outcome and its summary exactly. A different value is refused. Reopen the case before recording a different outcome. Closing does not collect a fee or activate Guard.</p>
-    <p>The database also requires the recorded settlement for this service. An unpaid fee, a checkout return or a saved card does not close the case. An unsuccessful case is not charged in order to close.</p>
+    <p>The database also requires the accepted service for this case and the recorded settlement that service requires. An unpaid fee, a checkout return or a saved card does not close the case. An unsuccessful case is not charged in order to close.</p>
     <label className="checkbox"><input type="checkbox" required />I checked the outcome evidence and reviewed the customer summary.</label>
   </CaseForm>
 }

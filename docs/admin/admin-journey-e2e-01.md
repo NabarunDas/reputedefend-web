@@ -4,7 +4,7 @@ Status: acceptance record for the disposable Managed walks. The stage correction
 
 Environment used: PGlite, loading the repository migration chain, including the E2E-02 file, before its separate live DEV application. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. The pending migration was not applied to DEV or Production.
 
-The repository now records `20261020120000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
+The repository now records `20261020150000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
 
 ## How to read a result
 
@@ -191,7 +191,7 @@ Existing slice files were not rewritten. Portal SQL and customer copy were not c
 2. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
 3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
 4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
-5. Live DEV still raises a not-null constraint if `approve_success_fee` runs before a stored outcome. Disposable walks on pending `20261020150000` return `denied` and store nothing. That migration is not applied. See `docs/admin/admin-journey-e2e-03.md`.
+5. DEV fix integrated: early `approve_success_fee` now fails closed with `denied` after DEV migration `20261020150000`; disposable walks confirm no financial rows. Signed-in browser acceptance remains pending. See `docs/admin/admin-journey-e2e-03.md`.
 6. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
 7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
 8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

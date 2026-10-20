@@ -10,8 +10,8 @@
  * to DEV only. Both remain unapplied to Production. ADMIN-JOURNEY-E2E-02
  * `20261020120000` was applied to DEV only on 20 October 2026 and is not
  * applied to Production. Do not replay it. ADMIN-JOURNEY-E2E-03
- * `20261020150000` is pending. It is not applied to DEV or Production.
- * Do not apply it from the pull request. See
+ * `20261020150000` was independently applied to DEV on 20 October 2026;
+ * it is not applied to Production. Do not replay. See
  * `docs/admin/dev-history-01.md`, `docs/admin/admin-journey-12a.md`,
  * `docs/admin/admin-journey-e2e-02.md` and
  * `docs/admin/admin-journey-e2e-03.md`.
@@ -708,13 +708,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "managed stage readiness", probe: "admin_private.case_stage_ready_v1" },
   },
   {
-    // Proposed ADMIN-JOURNEY-E2E-03 statement. Not applied to DEV or Production.
-    // Do not apply it from the pull request and do not replay 20261020120000.
+    // Reviewed ADMIN-JOURNEY-E2E-03 statement. Applied to DEV only on 2026-10-20;
+    // stored SQL matched exact source and the canonical ledger version was aligned.
+    // Not applied to Production. Do not replay.
     version: "20261020150000",
     filename: "20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql",
     step: "ADMIN-JOURNEY-E2E-03 success-fee outcome guard",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "success-fee outcome guard", probe: "admin_private.admin_payment_command_core_v1" },
@@ -729,10 +730,9 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest repository migration marked `appliedToDev`. After E2E-02,
- * this is the verified DEV ledger head `20261020120000`. It is behind
- * `migrationHead` while ADMIN-JOURNEY-E2E-03 `20261020150000` awaits DEV
- * application. It is not the Production head.
+ * The newest repository migration marked `appliedToDev`. After E2E-03,
+ * this is the verified DEV ledger head `20261020150000`. No DEV
+ * migrations are pending. This is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

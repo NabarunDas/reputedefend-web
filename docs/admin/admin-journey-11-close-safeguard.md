@@ -1,6 +1,6 @@
 # Close safeguard — reviewable migration, not applied
 
-Status: the check proposed here is implemented in `supabase/migrations/20261019235000_admin_journey_12a_close_billing_v1.sql`. That file is in the recovery manifest as pending (`appliedToDev: false`). It has not been applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request. Independent review applies it to DEV only.
+Status: the check proposed here is implemented in `supabase/migrations/20261019235000_admin_journey_12a_close_billing_v1.sql`. That file is in the recovery manifest as applied to DEV (`appliedToDev: true`). It was installed in DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 and is not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay it.
 
 ## Gap
 

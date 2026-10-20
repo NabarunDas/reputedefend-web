@@ -1,6 +1,6 @@
 # ADMIN-JOURNEY-12A — close billing prerequisite
 
-Status: reviewable DEV migration. Not applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from this pull request. Independent review applies it to DEV only.
+Status: reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20, at canonical migration version `20261019235000`, after independent SQL and permission verification. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay.
 
 Agreement PS-2026-10-14.2 is unchanged. Prices, contractual terms, Guard billing, Stripe collection, invoices, refunds, Google submission and outbound customer email are unchanged.
 
@@ -33,7 +33,7 @@ Both Admin closure screens post `operation: "close"` to `/api/cases/command`. Th
 
 ## Impact
 
-Until this file is applied, the DEV function from Step 10B still accepts a close that has no recorded settlement. After it is applied, the cockpit can no longer close an unpaid Guided case, a qualifying Managed case without a confirmed success-fee receipt, a post-service Managed decision that has no unique accepted order, or an unsuccessful Managed case that still has an active success-fee obligation. A voided uncollected success fee does not block that unsuccessful close. Guided withdrawal is not a payment bypass. An unsuccessful customer is not charged in order to close.
+The DEV function now enforces the commercial prerequisite for all Admin closure entry points. The cockpit can no longer close an unpaid Guided case, a qualifying Managed case without a confirmed success-fee receipt, a post-service Managed decision that has no unique accepted order, or an unsuccessful Managed case that still has an active success-fee obligation. A voided uncollected success fee does not block that unsuccessful close. Guided withdrawal is not a payment bypass. An unsuccessful customer is not charged in order to close.
 
 `record_outcome`, `reopen`, notes, tasks, submissions and stage transitions are unchanged. The Step 11 screen can still withhold the button; the database is the rule both screens have to pass.
 
@@ -41,8 +41,8 @@ Until this file is applied, the DEV function from Step 10B still accepts a close
 
 | Item | Position |
 | --- | --- |
-| DEV applied head | Remains `20261019183000`. This file is `appliedToDev: false`. |
-| Repository head | `20261019235000`, pending. |
+| DEV applied head | `20261019235000`. This file is `appliedToDev: true` after verification. |
+| Repository head | `20261019235000`, matching DEV; no pending migration. |
 | Production and AWS ApprovedMigrationHead | Remain `20261014170000`. |
 | Step 10B and the seven DEV-HISTORY-01 files | Not edited and not replayed. |
 | `record-outcome` PGlite suite | Still loads the chain through Step 10B only, so it keeps proving the previous close behaviour. |

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { caseDetailsHref, caseWorkflowHref, caseWorkspaceChoice, devCaseJourneyPreviewEnabled } from "./gate"
 
 const open = {
@@ -22,17 +22,27 @@ describe("the case journey preview gate", () => {
   })
 
   it("chooses the workflow only for the plain DEV case URL", () => {
-    expect(caseWorkspaceChoice({}, open)).toBe("workflow")
-    expect(caseWorkspaceChoice({ view: "details" }, open)).toBe("details")
-    expect(caseWorkspaceChoice({ before: "event-1" }, open)).toBe("details")
-    expect(caseWorkspaceChoice({ view: "details", before: "event-1" }, open)).toBe("details")
-    expect(caseWorkspaceChoice({}, { ...open, VERCEL_ENV: "production" })).toBe("details")
-    expect(caseWorkspaceChoice({}, { ...open, VERCEL_GIT_COMMIT_REF: "feature/other" })).toBe("details")
-    expect(caseWorkspaceChoice({}, { ...open, SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" })).toBe("details")
-    expect(caseDetailsHref("case-1", undefined, open)).toBe("/cases/case-1?view=details")
-    expect(caseDetailsHref("case-1", "event-1", open)).toBe("/cases/case-1?view=details&before=event-1")
-    expect(caseDetailsHref("case-1", "event-1", { ...open, VERCEL_ENV: "production" })).toBe("/cases/case-1?before=event-1")
-    expect(caseDetailsHref("case-1", undefined, {})).toBe("/cases/case-1")
+    vi.stubEnv("VERCEL_ENV", open.VERCEL_ENV)
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", open.VERCEL_GIT_COMMIT_REF)
+    vi.stubEnv("SUPABASE_URL", open.SUPABASE_URL)
+    expect(caseWorkspaceChoice({})).toBe("workflow")
+    expect(caseWorkspaceChoice({ view: "details" })).toBe("details")
+    expect(caseWorkspaceChoice({ before: "event-1" })).toBe("details")
+    expect(caseWorkspaceChoice({ view: "details", before: "event-1" })).toBe("details")
+    expect(caseDetailsHref("case-1")).toBe("/cases/case-1?view=details")
+    expect(caseDetailsHref("case-1", "event-1")).toBe("/cases/case-1?view=details&before=event-1")
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect(caseWorkspaceChoice({})).toBe("details")
+    expect(caseDetailsHref("case-1", "event-1")).toBe("/cases/case-1?before=event-1")
+    vi.stubEnv("VERCEL_ENV", open.VERCEL_ENV)
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "feature/other")
+    expect(caseWorkspaceChoice({})).toBe("details")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", open.VERCEL_GIT_COMMIT_REF)
+    vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
+    expect(caseWorkspaceChoice({})).toBe("details")
+    expect(caseDetailsHref("case-1")).toBe("/cases/case-1")
     expect(caseWorkflowHref("case-1")).toBe("/cases/case-1/journey")
   })
 })
+
+afterEach(() => { vi.unstubAllEnvs() })

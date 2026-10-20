@@ -27,16 +27,15 @@ export type CaseWorkspaceChoice = "workflow" | "details"
  */
 export function caseWorkspaceChoice(
   query: { view?: string | string[]; before?: string | string[] },
-  env: Record<string, string | undefined> = process.env,
 ): CaseWorkspaceChoice {
-  if (!devCaseJourneyPreviewEnabled(env)) return "details"
+  if (!devCaseJourneyPreviewEnabled()) return "details"
   if (query.view === "details" || typeof query.before === "string") return "details"
   return "workflow"
 }
 
 /** Cockpit URL. On the DEV lane it keeps `view=details` so it does not bounce back to the workflow. */
-export function caseDetailsHref(caseId: string, before?: string, env: Record<string, string | undefined> = process.env): string {
-  if (!devCaseJourneyPreviewEnabled(env)) {
+export function caseDetailsHref(caseId: string, before?: string): string {
+  if (!devCaseJourneyPreviewEnabled()) {
     return before ? `/cases/${caseId}?before=${before}` : `/cases/${caseId}`
   }
   return before ? `/cases/${caseId}?view=details&before=${before}` : `/cases/${caseId}?view=details`

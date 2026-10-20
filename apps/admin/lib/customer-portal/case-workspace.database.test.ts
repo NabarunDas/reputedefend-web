@@ -32,6 +32,7 @@ const upgradedFiles = [
   "20261019235000_admin_journey_12a_close_billing_v1.sql",
   "20261020120000_admin_journey_e2e_02_managed_stage_v1.sql",
   "20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql",
+  "20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -477,6 +478,65 @@ describe("safe outcome", () => {
     expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-WRGDD2"])).case.outcomeCode).toBeNull()
     expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "RV-26-WRGEE2"])).case.outcomeCode).toBeNull()
     expect(JSON.stringify(unexpected)).not.toContain("LEAK-FREE-OUTCOME")
+    expect(JSON.stringify(unexpected)).not.toContain("LEAK-CLOSURE-SUMMARY")
+  })
+
+  it("shows each coherent terminal outcome and hides every other stored result", async () => {
+    const closed = "2026-05-02T12:00:00Z"
+    await insertCase({ reference: "PR-26-PARTL2", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "PARTIALLY_RESTORED" })
+    await insertCase({ reference: "PR-26-NTRES2", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "NOT_RESTORED" })
+    await insertCase({ reference: "PR-26-WDRWN2", submittedAt: "2026-05-01T12:00:00Z", status: "CANCELLED", workStage: "FINISHED", closedAt: closed, outcome: "WITHDRAWN" })
+    await insertCase({ reference: "RV-26-NTRMV2", caseType: "REVIEW_PROTECTION", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "NOT_REMOVED" })
+    await insertCase({ reference: "RV-26-RESPN2", caseType: "REVIEW_PROTECTION", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "RESPONSE_RECOMMENDED" })
+    await insertCase({ reference: "RV-26-WDRWV2", caseType: "REVIEW_PROTECTION", submittedAt: "2026-05-01T12:00:00Z", status: "CANCELLED", workStage: "FINISHED", closedAt: closed, outcome: "WITHDRAWN" })
+    await insertCase({ reference: "PR-26-PNREC2", submittedAt: "2026-05-01T12:00:00Z", status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW", outcome: "NOT_RESTORED" })
+    await insertCase({ reference: "PR-26-REPNW2", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "NOT_RESTORED" })
+    await insertCase({ reference: "PR-26-BADCL2", submittedAt: "2026-05-01T12:00:00Z", status: "CANCELLED", workStage: "FINISHED", closedAt: closed, outcome: "RESTORED" })
+    await insertCase({ reference: "PR-26-BADWD2", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "WITHDRAWN" })
+    await insertCase({ reference: "PR-26-NTFNS2", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "OUTCOME_REVIEW", closedAt: closed, outcome: "RESTORED" })
+    await insertCase({ reference: "RV-26-BADTP2", caseType: "REVIEW_PROTECTION", submittedAt: "2026-05-01T12:00:00Z", status: "CLOSED", workStage: "FINISHED", closedAt: closed, outcome: "NOT_RESTORED" })
+
+    const partial = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-PARTL2"])
+    const missed = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-NTRES2"])
+    const withdrawn = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-WDRWN2"])
+    const kept = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "RV-26-NTRMV2"])
+    const response = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "RV-26-RESPN2"])
+    const reviewWithdrawn = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "RV-26-WDRWV2"])
+    expect(partial.case.outcomeCode).toBe("PARTIALLY_RESTORED")
+    expect(missed.case.outcomeCode).toBe("NOT_RESTORED")
+    expect(withdrawn.case).toMatchObject({ status: "CANCELLED", workStage: "FINISHED", outcomeCode: "WITHDRAWN" })
+    expect(kept.case.outcomeCode).toBe("NOT_REMOVED")
+    expect(response.case.outcomeCode).toBe("RESPONSE_RECOMMENDED")
+    expect(reviewWithdrawn.case.outcomeCode).toBe("WITHDRAWN")
+    for (const detail of [partial, missed, kept, response]) {
+      expect(detail.timeline.map(event => event.code)).toContain("CASE_COMPLETED")
+      expect(JSON.stringify(detail)).not.toContain("LEAK-CLOSURE-SUMMARY")
+    }
+    expect(withdrawn.timeline.map(event => event.code)).toContain("CASE_CANCELLED")
+    expect(JSON.stringify(withdrawn)).not.toContain("LEAK-CLOSURE-SUMMARY")
+
+    const open = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-PNREC2"])
+    expect(open.case).toMatchObject({ status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW", outcomeCode: null })
+    expect(open.timeline.map(event => event.code)).not.toContain("CASE_COMPLETED")
+    expect(JSON.stringify(open)).not.toContain("NOT_RESTORED")
+
+    const beforeReopen = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-REPNW2"])
+    expect(beforeReopen.case.outcomeCode).toBe("NOT_RESTORED")
+    await db.query(
+      "update public.cases set status = 'UNDER_REVIEW', work_stage = 'FURTHER_REVIEW', closed_at = null where public_ref = 'PR-26-REPNW2'",
+    )
+    const reopened = await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-REPNW2"])
+    expect(reopened.case).toMatchObject({ status: "UNDER_REVIEW", workStage: "FURTHER_REVIEW", outcomeCode: null })
+    expect(JSON.stringify(reopened)).not.toContain("NOT_RESTORED")
+
+    expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-BADCL2"])).case.outcomeCode).toBeNull()
+    expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-BADWD2"])).case.outcomeCode).toBeNull()
+    expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "PR-26-NTFNS2"])).case.outcomeCode).toBeNull()
+    expect((await rpc<CaseDetail>("customer_portal_case_v1", [alexSession, "RV-26-BADTP2"])).case.outcomeCode).toBeNull()
+    expect(JSON.stringify(await rpc("customer_portal_case_v1", [alexSession, "PR-26-BADCL2"]))).not.toContain("RESTORED")
+    expect(await rpc("customer_portal_case_v1", [samSession, "PR-26-NTRES2"])).toEqual({ found: false })
+    expect(await rpc("customer_portal_case_v1", [hash(token()), "PR-26-NTRES2"])).toBeNull()
+    expect(await rpc("customer_portal_case_v1", ["not-a-token", "PR-26-NTRES2"])).toBeNull()
   })
 })
 

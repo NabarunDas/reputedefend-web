@@ -114,6 +114,14 @@ describe("customer case detail parsing", () => {
     expect(parseCaseDetail(detail({}, { outcomeCode: "RESTORED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))).toBeNull()
     expect(parseCaseDetail(detail({}, { outcomeCode: "REMOVED" }))).toBeNull()
     expect(parseCaseDetail(detail({}, { outcomeCode: "CUSTOM_TEXT" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "PARTIALLY_RESTORED", caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))).toBeNull()
+    expect(parseCaseDetail(detail({}, { outcomeCode: "NOT_REMOVED" }))).toBeNull()
+    for (const outcomeCode of ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"]) {
+      expect(parseCaseDetail(detail({}, { outcomeCode }))?.found).toBe(true)
+    }
+    for (const outcomeCode of ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED", "WITHDRAWN"]) {
+      expect(parseCaseDetail(detail({}, { outcomeCode, caseType: "REVIEW_PROTECTION", reference: "RV-26-ABCDEF" }))?.found).toBe(true)
+    }
     expect(parseCaseDetail(detail({}, { id: "secret" }))).toBeNull()
     expect(parseCaseDetail(detail({
       timeline: [{ code: "CASE_NOTE_ADDED", occurredAt: submittedAt }],

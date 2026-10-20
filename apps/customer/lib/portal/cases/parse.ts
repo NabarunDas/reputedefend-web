@@ -252,7 +252,17 @@ export const TIMELINE_CODES = [
 ] as const
 
 export type CustomerTimelineCode = (typeof TIMELINE_CODES)[number]
-export type OutcomeCode = "RESTORED" | "REMOVED"
+export type OutcomeCode =
+  | "RESTORED"
+  | "PARTIALLY_RESTORED"
+  | "NOT_RESTORED"
+  | "REMOVED"
+  | "NOT_REMOVED"
+  | "RESPONSE_RECOMMENDED"
+  | "WITHDRAWN"
+
+const PROFILE_OUTCOMES = ["RESTORED", "PARTIALLY_RESTORED", "NOT_RESTORED", "WITHDRAWN"] as const
+const REVIEW_OUTCOMES = ["REMOVED", "NOT_REMOVED", "RESPONSE_RECOMMENDED", "WITHDRAWN"] as const
 
 const WORKSPACE_KEYS = [...CASE_KEYS, "outcomeCode"] as const
 const DETAIL_KEYS = ["found", "case", "timeline", "timelineTruncated"] as const
@@ -276,8 +286,9 @@ export type CustomerCaseDetail = {
 
 function outcomeCode(caseType: CaseType, value: unknown): OutcomeCode | null | undefined {
   if (value === null) return null
-  if (caseType === "PROFILE_RECOVERY" && value === "RESTORED") return "RESTORED"
-  if (caseType === "REVIEW_PROTECTION" && value === "REMOVED") return "REMOVED"
+  if (typeof value !== "string") return undefined
+  const allowed = caseType === "PROFILE_RECOVERY" ? PROFILE_OUTCOMES : REVIEW_OUTCOMES
+  if ((allowed as readonly string[]).includes(value)) return value as OutcomeCode
   return undefined
 }
 

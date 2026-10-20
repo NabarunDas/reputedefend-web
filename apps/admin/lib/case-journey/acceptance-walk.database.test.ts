@@ -506,8 +506,8 @@ describe("eleven-step Guided acceptance walk", () => {
     expect(preserved.rows.filter(row => row.event === "close").length).toBeGreaterThan(1)
     const replacedView = await rpc<{ case: { status: string; outcomeCode: string | null } }>("customer_portal_case_v1", [alexSession, reference])
     expect(replacedView.case.status).toBe("CLOSED")
-    // The portal names RESTORED. It does not surface NOT_RESTORED; the stored outcome stays on the case row.
-    expect(replacedView.case.outcomeCode).toBeNull()
+    expect(replacedView.case.outcomeCode).toBe("NOT_RESTORED")
+    expect(JSON.stringify(replacedView)).not.toContain(secondSummary)
 
     for (const role of ["anon", "authenticated", "service_role"]) {
       const privilege = await db.query<{ ok: boolean }>(

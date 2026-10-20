@@ -133,6 +133,14 @@ describe("what happens next", () => {
       title: "Your profile was restored",
       body: "This case is complete.",
     })
+    expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", outcomeCode: "PARTIALLY_RESTORED" })).toMatchObject({
+      title: "Your profile was partly restored",
+      body: "Part of the profile was restored. The profile was not fully restored.",
+    })
+    expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", outcomeCode: "NOT_RESTORED" })).toMatchObject({
+      title: "Your profile was not restored",
+      body: "The profile was not restored. This case is complete.",
+    })
     expect(presentNextStep({
       ...base,
       caseType: "REVIEW_PROTECTION",
@@ -142,6 +150,43 @@ describe("what happens next", () => {
     })).toMatchObject({
       title: "The review was removed",
       body: "This case is complete.",
+    })
+    expect(presentNextStep({
+      ...base,
+      caseType: "REVIEW_PROTECTION",
+      status: "CLOSED",
+      workStage: "FINISHED",
+      outcomeCode: "NOT_REMOVED",
+    })).toMatchObject({
+      title: "The review was not removed",
+      body: "The review was not removed. This case is complete.",
+    })
+    expect(presentNextStep({
+      ...base,
+      caseType: "REVIEW_PROTECTION",
+      status: "CLOSED",
+      workStage: "FINISHED",
+      outcomeCode: "RESPONSE_RECOMMENDED",
+    })).toMatchObject({
+      title: "A response was recommended",
+      body: "A response to the review was recommended. The review was not removed.",
+    })
+    expect(presentNextStep({ ...base, status: "CANCELLED", workStage: "FINISHED", outcomeCode: "WITHDRAWN" })).toMatchObject({
+      title: "This case was withdrawn",
+      body: "No Google result is recorded for this case.",
+    })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "OUTCOME_REVIEW", outcomeCode: "NOT_RESTORED" })).toMatchObject({
+      title: "We're working on your case",
+    })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "FURTHER_REVIEW", outcomeCode: "NOT_RESTORED" }).title).toBe("We're working on your case")
+    expect(presentNextStep({ ...base, status: "CLOSED", workStage: "OUTCOME_REVIEW", outcomeCode: "RESTORED" })).toMatchObject({
+      title: "Your case is complete",
+    })
+    expect(presentNextStep({ ...base, status: "CANCELLED", workStage: "FINISHED", outcomeCode: "RESTORED" })).toMatchObject({
+      title: "This case was cancelled",
+    })
+    expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", outcomeCode: "WITHDRAWN" })).toMatchObject({
+      title: "Your case is complete",
     })
     expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED" })).toMatchObject({
       title: "Your case is complete",
@@ -170,7 +215,12 @@ describe("timeline wording", () => {
     expect(timelineMessage("GOOGLE_DECISION_RECORDED", null)).toBe("A Google decision was recorded for your case.")
     expect(timelineMessage("CASE_COMPLETED", null)).toBe("This ProfileRelaunch case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "RESTORED")).toBe("Your profile was restored and the case was completed.")
+    expect(timelineMessage("CASE_COMPLETED", "PARTIALLY_RESTORED")).toBe("Your profile was partly restored. The profile was not fully restored, and the case was completed.")
+    expect(timelineMessage("CASE_COMPLETED", "NOT_RESTORED")).toBe("Your profile was not restored and the case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "REMOVED")).toBe("The review was removed and the case was completed.")
+    expect(timelineMessage("CASE_COMPLETED", "NOT_REMOVED")).toBe("The review was not removed and the case was completed.")
+    expect(timelineMessage("CASE_COMPLETED", "RESPONSE_RECOMMENDED")).toBe("A response was recommended. The review was not removed, and the case was completed.")
+    expect(timelineMessage("CASE_CANCELLED", "WITHDRAWN")).toBe("This case was withdrawn. No Google result is recorded.")
     expect(timelineMessage("CASE_CANCELLED", null)).toBe("This ProfileRelaunch case was cancelled.")
     const presented = presentTimeline(detail({ outcomeCode: "RESTORED" }, [
       { code: "CASE_COMPLETED", occurredAt: closedAt },

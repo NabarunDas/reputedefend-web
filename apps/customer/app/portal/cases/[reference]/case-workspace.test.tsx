@@ -143,6 +143,29 @@ describe("customer case workspace", () => {
     expect(screen.getByText("Decision — current step")).toBeTruthy()
     expect(screen.getByText("The review was removed and the case was completed.")).toBeTruthy()
     expect(screen.queryByText("Complete history")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+      attentionItems: [],
+      outcomeCode: "NOT_RESTORED",
+    }, { timeline: [{ code: "CASE_COMPLETED", occurredAt: closedAt }] })} />)
+    expect(screen.getByRole("heading", { name: "Your profile was not restored" })).toBeTruthy()
+    expect(screen.getByText("The profile was not restored. This case is complete.")).toBeTruthy()
+    expect(screen.getByText("Your profile was not restored and the case was completed.")).toBeTruthy()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      status: "CANCELLED",
+      workStage: "FINISHED",
+      closedAt,
+      attentionItems: [],
+      outcomeCode: "WITHDRAWN",
+    }, { timeline: [{ code: "CASE_CANCELLED", occurredAt: closedAt }] })} />)
+    expect(screen.getByRole("heading", { name: "This case was withdrawn" })).toBeTruthy()
+    expect(screen.getByText("No Google result is recorded for this case.")).toBeTruthy()
+    expect(screen.getByText("This case was withdrawn. No Google result is recorded.")).toBeTruthy()
   })
 
   it("says when the timeline is only the latest 20 updates", () => {

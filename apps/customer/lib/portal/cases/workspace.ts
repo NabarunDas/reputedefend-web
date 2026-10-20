@@ -88,6 +88,57 @@ export function presentProgress(status: CaseStatus, workStage: WorkStage): Prese
   })
 }
 
+const TERMINAL_OUTCOME_COPY: Record<OutcomeCode, { title: string; body: string; completed: string; cancelled: string }> = {
+  RESTORED: {
+    title: "Your profile was restored",
+    body: "This case is complete.",
+    completed: "Your profile was restored and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  PARTIALLY_RESTORED: {
+    title: "Your profile was partly restored",
+    body: "Part of the profile was restored. The profile was not fully restored.",
+    completed: "Your profile was partly restored. The profile was not fully restored, and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  NOT_RESTORED: {
+    title: "Your profile was not restored",
+    body: "The profile was not restored. This case is complete.",
+    completed: "Your profile was not restored and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  REMOVED: {
+    title: "The review was removed",
+    body: "This case is complete.",
+    completed: "The review was removed and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  NOT_REMOVED: {
+    title: "The review was not removed",
+    body: "The review was not removed. This case is complete.",
+    completed: "The review was not removed and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  RESPONSE_RECOMMENDED: {
+    title: "A response was recommended",
+    body: "A response to the review was recommended. The review was not removed.",
+    completed: "A response was recommended. The review was not removed, and the case was completed.",
+    cancelled: "This ProfileRelaunch case was cancelled.",
+  },
+  WITHDRAWN: {
+    title: "This case was withdrawn",
+    body: "No Google result is recorded for this case.",
+    completed: "This case was withdrawn. No Google result is recorded.",
+    cancelled: "This case was withdrawn. No Google result is recorded.",
+  },
+}
+
+function terminalOutcome(status: CaseStatus, workStage: WorkStage, outcomeCode: OutcomeCode | null) {
+  if (outcomeCode === null || workStage !== "FINISHED") return null
+  if (outcomeCode === "WITHDRAWN") return status === "CANCELLED" ? TERMINAL_OUTCOME_COPY.WITHDRAWN : null
+  return status === "CLOSED" ? TERMINAL_OUTCOME_COPY[outcomeCode] : null
+}
+
 export type PresentedNextStep = {
   title: string
   body: string | null
@@ -175,6 +226,10 @@ export function presentNextStep(input: {
       remaining: [],
     }
   }
+  const outcome = terminalOutcome(input.status, input.workStage, input.outcomeCode)
+  if (outcome) {
+    return { title: outcome.title, body: outcome.body, timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
+  }
   if (state === "CANCELLED") {
     return {
       title: "This case was cancelled",
@@ -186,12 +241,6 @@ export function presentNextStep(input: {
       alsoWaiting: null,
       remaining: [],
     }
-  }
-  if (input.caseType === "PROFILE_RECOVERY" && input.outcomeCode === "RESTORED") {
-    return { title: "Your profile was restored", body: "This case is complete.", timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
-  }
-  if (input.caseType === "REVIEW_PROTECTION" && input.outcomeCode === "REMOVED") {
-    return { title: "The review was removed", body: "This case is complete.", timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
   }
   return {
     title: "Your case is complete",
@@ -206,12 +255,9 @@ export function presentNextStep(input: {
 }
 
 export function timelineMessage(code: CustomerTimelineCode, outcomeCode: OutcomeCode | null): string {
-  if (code === "CASE_COMPLETED" && outcomeCode === "RESTORED") {
-    return "Your profile was restored and the case was completed."
-  }
-  if (code === "CASE_COMPLETED" && outcomeCode === "REMOVED") {
-    return "The review was removed and the case was completed."
-  }
+  const outcome = outcomeCode ? TERMINAL_OUTCOME_COPY[outcomeCode] : null
+  if (code === "CASE_COMPLETED" && outcome) return outcome.completed
+  if (code === "CASE_CANCELLED" && outcomeCode === "WITHDRAWN" && outcome) return outcome.cancelled
   return TIMELINE_MESSAGES[code]
 }
 

@@ -19,8 +19,8 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261019163645_admin_journey_05_assessment_dev_v1.sql")?.appliedToDev).toBe(true)
@@ -33,7 +33,11 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql",
+    ])
+    expect(findMigration("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql")?.appliedToDev).toBe(false)
+    expect(findMigration("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261020120000_admin_journey_e2e_02_managed_stage_v1.sql")?.appliedToDev).toBe(true)

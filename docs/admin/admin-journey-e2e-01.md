@@ -87,29 +87,27 @@ The second case repeats the same command sequence: authority without a saved car
 
 `record_outcome` stores `NOT_RESTORED` and leaves the case open. `approve_success_fee` returns `denied`. Obligations, invoices, and receipts stay zero. Step 10 is `COMPLETED` with headline “Not billable” before close. `close` stores `CLOSED` / `FINISHED` with that outcome and still creates no fee. All eleven steps are `COMPLETED` after close. No `PAYMENT_RECEIVED` timeline event is created.
 
-The case row remains `NOT_RESTORED`. See the customer visibility FAIL below. This walk does not change portal wording.
+The case row remains `NOT_RESTORED`. The disposable portal returns that code after closure. See the customer visibility section below. Signed-in browser acceptance is NOT TESTED.
 
 ### D — Reopen on the Guided case
 
-After the successful Guided close, the same walk reopens the case, keeps the original intake and close events, refuses another `RESTORED` record at `FURTHER_REVIEW`, records `NOT_RESTORED` at `OUTCOME_REVIEW`, refuses a second record, and closes on that new outcome. The upfront receipt is still the settlement. The portal then returns `outcomeCode: null` for that `NOT_RESTORED` row. That null is the visibility FAIL below, not a passing customer-copy result.
+After the successful Guided close, the same walk reopens the case, keeps the original intake and close events, refuses another `RESTORED` record at `FURTHER_REVIEW`, records `NOT_RESTORED` at `OUTCOME_REVIEW`, refuses a second record, and closes on that new outcome. The upfront receipt is still the settlement. The disposable portal then returns `outcomeCode: NOT_RESTORED`. Signed-in browser acceptance of that screen remains NOT TESTED.
 
 Early withdrawal and a Managed cancellation from intake were not composed.
 
-## Customer-facing unsuccessful outcome visibility — FAIL
+## Customer-facing unsuccessful outcome visibility — PASS on the disposable chain
 
-This is an acceptance result. This pull request does not change the portal.
+Pending migration `20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql` is not applied to DEV or Production. Live DEV still hides `NOT_RESTORED` until independent review applies it. Signed-in browser acceptance is NOT TESTED.
 
-Both composed walks that store `NOT_RESTORED` show the same customer payload:
+Both composed walks that store a closed `NOT_RESTORED` now show:
 
 - `public.cases.outcome` is `NOT_RESTORED`.
-- `customer_portal_case_v1` returns `status: CLOSED` and `outcomeCode: null`.
+- `customer_portal_case_v1` returns `status: CLOSED` and `outcomeCode: NOT_RESTORED`.
 - The timeline code for the closed case is `CASE_COMPLETED`.
-- The portal JSON does not contain `NOT_RESTORED` or the closure-summary sentence.
-- Admin `customerPreview.summary` does contain the summary. The staff intake note stays out of `customerPreview.notes` and out of the portal payload.
+- The portal JSON does not contain the closure-summary sentence or the staff intake note.
+- Admin `customerPreview.summary` does contain the summary. The staff intake note stays out of `customerPreview.notes`.
 
-`customer_portal_case_v1` sets `outcomeCode` only for `PROFILE_RECOVERY` + `RESTORED` and `REVIEW_PROTECTION` + `REMOVED`. Every other stored outcome, including `NOT_RESTORED`, becomes SQL `NULL`. A successful Managed `RESTORED` close in walk B returns `outcomeCode: RESTORED`, so the null is specific to the unsuccessful outcome, not to closure itself.
-
-Whether the customer should see the unsuccessful outcome is a product copy decision. It is not resolved here.
+An open or reopened case still returns `outcomeCode: null`. The customer case workspace states that the profile was not restored. See `docs/admin/admin-journey-e2e-04.md`.
 
 ## Composed branches that do not finish
 
@@ -147,7 +145,7 @@ These PASS or FAIL on their own. None of them is the composed PASS in the table 
 | Early and outcome-review withdrawal | PASS as a slice | `close-billing.database.test.ts`. Not a composed cancellation walk. |
 | Repeated outcome recording on the pre-`20261019235000` chain | PASS on that chain only | `apps/admin/lib/cases/record-outcome.database.test.ts` does not load `20261019235000`. |
 | Billing headlines for approved, invoiced, void, and not billable | PASS as a pure test | `apps/admin/lib/case-journey/outcome.test.ts` feeds fixtures. Walks B and C read the same presenter from command rows. |
-| Portal returns `RESTORED` and `REMOVED` only | PASS as a slice of current SQL | `apps/admin/lib/customer-portal/case-workspace.database.test.ts`. The unsuccessful customer visibility row above is still FAIL. |
+| Portal returns a coherent finished outcome | PASS as a database slice on the disposable chain | `apps/admin/lib/customer-portal/case-workspace.database.test.ts`. Open, reopened, wrong-type and inconsistent rows stay `outcomeCode: null`. Signed-in browser acceptance is NOT TESTED. |
 
 ## UI unit
 
@@ -155,6 +153,7 @@ These PASS or FAIL on their own. None of them is the composed PASS in the table 
 | --- | --- | --- |
 | Both Admin close screens post `operation: "close"` and show a settlement refusal | PASS as mocked UI | `closure.ui.test.tsx` and `cockpit/close-billing.ui.test.tsx` |
 | DEV preview gate | PASS as a unit test | `gate.test.ts` |
+| Customer terminal outcome copy | PASS as a component test | `apps/customer/lib/portal/cases/workspace.test.ts`, `case-workspace.test.tsx` and `page.test.tsx`. These render the component. They are not a signed-in browser journey. |
 | Signed-in journey | NOT TESTED | No browser session was opened. |
 
 ## Negative and security checks
@@ -183,7 +182,7 @@ These PASS or FAIL on their own. None of them is the composed PASS in the table 
 - `apps/admin/lib/case-journey/acceptance-walk.database.test.ts` — Guided walk, reopen, and the close security checks.
 - `apps/admin/lib/case-journey/managed-acceptance-walk.database.test.ts` — Managed qualifying settlement and Managed unsuccessful close.
 
-Existing slice files were not rewritten. Portal SQL and customer copy were not changed.
+The original walks did not change portal SQL. Pending E2E-04 now does, on the disposable chain only. See `docs/admin/admin-journey-e2e-04.md`.
 
 ## Unresolved blockers
 
@@ -192,6 +191,6 @@ Existing slice files were not rewritten. Portal SQL and customer copy were not c
 3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
 4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
 5. DEV fix integrated: early `approve_success_fee` now fails closed with `denied` after DEV migration `20261020150000`; disposable walks confirm no financial rows. Signed-in browser acceptance remains pending. See `docs/admin/admin-journey-e2e-03.md`.
-6. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
+6. Disposable walks and portal tests show a closed `NOT_RESTORED` outcome. Pending `20261020210000` is not applied to DEV or Production. Signed-in browser acceptance is NOT TESTED. See `docs/admin/admin-journey-e2e-04.md`.
 7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
 8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

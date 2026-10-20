@@ -119,7 +119,7 @@ Whether the customer should see the unsuccessful outcome is a product copy decis
 | Close while a qualifying success fee is `DUE` | PASS | Walk B. `close` returns `prerequisite`. The headline is “Approved fee”. Step 10 is not complete. |
 | Close while that fee’s hosted invoice is `ISSUED` and unpaid | PASS | Walk B. `close` returns `prerequisite`. The headline is “Invoiced” and says this is not payment. |
 | `approve_success_fee` after `NOT_RESTORED` | PASS | Walk C. Status `denied`. No obligation, invoice, or receipt. |
-| `approve_success_fee` before any stored outcome | FAIL | Walks B and C. `qualifying_success_outcome_v1` returns null when `cases.outcome` is null, so `IF NOT` does not deny. The approval insert raises `null value in column "outcome" of relation "success_fee_approvals"`. The statement writes nothing. |
+| `approve_success_fee` before any stored outcome | PASS on the disposable chain | Walks B and C. A missing outcome returns `denied`. No approval, obligation, invoice, or receipt is stored. Live DEV still has the previous guard until pending `20261020150000` is independently applied. |
 | Close of a non-qualifying case that already has a non-void success fee | FAIL | No command can create that fee. `approve_success_fee` is denied for `NOT_RESTORED`. The walk does not insert an obligation. |
 | Close of a non-qualifying case whose success fee is `VOID` | FAIL | No `public` or `admin_private` function updates `payment_obligations.state` to `VOID`. The walk does not insert a `VOID` row. |
 
@@ -191,7 +191,7 @@ Existing slice files were not rewritten. Portal SQL and customer copy were not c
 2. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
 3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
 4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
-5. `approve_success_fee` before a stored outcome raises a not-null constraint instead of returning `denied`.
+5. Live DEV still raises a not-null constraint if `approve_success_fee` runs before a stored outcome. Disposable walks on pending `20261020150000` return `denied` and store nothing. That migration is not applied. See `docs/admin/admin-journey-e2e-03.md`.
 6. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
 7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
 8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

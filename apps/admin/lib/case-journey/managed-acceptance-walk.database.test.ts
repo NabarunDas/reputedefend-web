@@ -17,6 +17,10 @@
  * submission from FURTHER_REVIEW still requires current authorisation.
  * Revoked permission or revoked manager access refuses that retry.
  *
+ * `approve_success_fee` before a stored outcome, and after a non-qualifying
+ * outcome, returns denied. Those refusals store no approval, obligation,
+ * invoice, or receipt.
+ *
  * No function updates `payment_obligations.state` to VOID, so a composed
  * voided-fee close is not reachable. The inserted-row case stays in
  * `close-billing.database.test.ts`.
@@ -140,6 +144,20 @@ async function orderRow(caseId: string) {
     "select id, public_ref, amount_minor, record_version, state from public.service_orders where case_id = $1",
     [caseId],
   )).rows[0]
+}
+
+async function approvalCount(orderId: string) {
+  return (await db.query<{ n: number }>(
+    "select count(*)::int as n from public.success_fee_approvals where service_order_id = $1",
+    [orderId],
+  )).rows[0].n
+}
+
+async function commandReceiptCount(requestId: string) {
+  return (await db.query<{ n: number }>(
+    "select count(*)::int as n from admin_private.payment_command_receipts where request_id = $1",
+    [requestId],
+  )).rows[0].n
 }
 
 async function chargeCounts(caseId: string) {
@@ -310,9 +328,9 @@ async function deliverRequest(caseId: string, requestId: string, marker: string)
   expect(await rpc("communication_apply_provider_event_v1", ["resend", `evt_${marker}`, "email.delivered", `msg_${marker}`, "2026-02-02T12:00:00.000Z"])).toMatchObject({ status: "success", applied: true })
 }
 
-async function approveFee(orderId: string, evidenceVersionId: string, recordVersion: number) {
+async function approveFee(orderId: string, evidenceVersionId: string, recordVersion: number, requestId = key(), sessionToken = token) {
   await freshSession()
-  return rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", {
+  return rpc("admin_payment_command_v1", [sessionToken, requestId, "approve_success_fee", {
     serviceOrderId: orderId,
     outcomeEvidenceVersionId: evidenceVersionId,
     evidenceNote: feeNote,
@@ -682,9 +700,15 @@ describe("composed Managed acceptance walks", () => {
     })
     const beforeFee = await orderRow(successCase)
     expect((await caseCommand(successCase, "close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
-    // A null stored outcome makes qualifying_success_outcome_v1 return null.
-    // `IF NOT null` does not deny, and the approval insert aborts. No fee is stored.
-    await expect(approveFee(beforeFee.id, walked.evidenceVersionId, beforeFee.record_version)).rejects.toThrow(/null value in column "outcome"/)
+    const guard = await db.query<{ src: string }>(
+      "select prosrc as src from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'admin_private' and p.proname = 'admin_payment_command_core_v1'",
+    )
+    expect(guard.rows[0].src).toContain("qualifying_success_outcome_v1(cs) IS NOT TRUE")
+    const missingRequest = key()
+    expect((await approveFee(beforeFee.id, walked.evidenceVersionId, beforeFee.record_version, missingRequest)).status).toBe("denied")
+    expect((await approveFee(beforeFee.id, walked.evidenceVersionId, beforeFee.record_version, missingRequest)).status).toBe("denied")
+    expect(await commandReceiptCount(missingRequest)).toBe(0)
+    expect(await approvalCount(beforeFee.id)).toBe(0)
     expect(await chargeCounts(successCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
 
     expectOk(await caseCommand(successCase, "record_outcome", { outcome: "RESTORED", summary }), "record outcome")
@@ -693,13 +717,35 @@ describe("composed Managed acceptance walks", () => {
       [successCase],
     )).rows[0]).toMatchObject({ status: "UNDER_REVIEW", work_stage: "OUTCOME_REVIEW", outcome: "RESTORED" })
     const recordedOrder = await orderRow(successCase)
-    const approved = await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version)
+    const unauthorizedRequest = key()
+    expect((await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, unauthorizedRequest, "c".repeat(64))).status).toBe("unauthorized")
+    const staleRequest = key()
+    expect((await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version + 99, staleRequest)).status).toBe("conflict")
+    const invalidEvidenceRequest = key()
+    expect((await approveFee(recordedOrder.id, key(), recordedOrder.record_version, invalidEvidenceRequest)).status).toBe("denied")
+    for (const requestId of [unauthorizedRequest, staleRequest, invalidEvidenceRequest]) {
+      expect(await commandReceiptCount(requestId)).toBe(0)
+    }
+    expect(await approvalCount(recordedOrder.id)).toBe(0)
+    expect(await chargeCounts(successCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
+    const approvalRequest = key()
+    const approved = await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, approvalRequest)
     expectOk(approved, "success fee")
     expect((await db.query<{ kind: string; state: string; amount_minor: number }>(
       "select kind, state, amount_minor from public.payment_obligations where id = $1",
       [approved.obligationId],
     )).rows[0]).toEqual({ kind: "SUCCESS_FEE", state: "DUE", amount_minor: recordedOrder.amount_minor })
     expect(recordedOrder.amount_minor).toBe(29900)
+    expect(await approvalCount(recordedOrder.id)).toBe(1)
+    expect(await chargeCounts(successCase)).toEqual({ obligations: 1, invoices: 0, receipts: 0 })
+    expect(await commandReceiptCount(approvalRequest)).toBe(1)
+    const sameRequest = await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, approvalRequest)
+    expect(sameRequest).toMatchObject({ status: "success", id: approved.id, obligationId: approved.obligationId })
+    expect(await commandReceiptCount(approvalRequest)).toBe(1)
+    const replayed = await approveFee(recordedOrder.id, walked.evidenceVersionId, (await orderRow(successCase)).record_version)
+    expect(replayed).toMatchObject({ status: "success", replay: true, id: approved.id, obligationId: approved.obligationId })
+    expect(await approvalCount(recordedOrder.id)).toBe(1)
+    expect(await chargeCounts(successCase)).toEqual({ obligations: 1, invoices: 0, receipts: 0 })
     expect((await caseCommand(successCase, "close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
     expect((await outcomePanel(successCase)).panel.headline).toBe("Approved fee")
     expect((await journeyFor(successCase)).steps.find(step => step.id === "OUTCOME_BILLING")?.state).not.toBe("COMPLETED")
@@ -807,7 +853,11 @@ describe("composed Managed acceptance walks", () => {
       caseId: unsuccessfulCase, locationId: unsuccessfulLocation, marker: "managedno", closeOutcome: "NOT_RESTORED",
     })
     const before = await orderRow(unsuccessfulCase)
-    await expect(approveFee(before.id, walked.evidenceVersionId, before.record_version)).rejects.toThrow(/null value in column "outcome"/)
+    const missingRequest = key()
+    expect((await approveFee(before.id, walked.evidenceVersionId, before.record_version, missingRequest)).status).toBe("denied")
+    expect((await approveFee(before.id, walked.evidenceVersionId, before.record_version, missingRequest)).status).toBe("denied")
+    expect(await commandReceiptCount(missingRequest)).toBe(0)
+    expect(await approvalCount(before.id)).toBe(0)
     expect(await chargeCounts(unsuccessfulCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
 
     expectOk(await caseCommand(unsuccessfulCase, "record_outcome", { outcome: "NOT_RESTORED", summary }), "record outcome")
@@ -816,7 +866,11 @@ describe("composed Managed acceptance walks", () => {
       [unsuccessfulCase],
     )).rows[0]).toMatchObject({ status: "UNDER_REVIEW", work_stage: "OUTCOME_REVIEW", outcome: "NOT_RESTORED" })
     const after = await orderRow(unsuccessfulCase)
-    expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version)).status).toBe("denied")
+    const refusedRequest = key()
+    expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
+    expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
+    expect(await commandReceiptCount(refusedRequest)).toBe(0)
+    expect(await approvalCount(after.id)).toBe(0)
     expect(await chargeCounts(unsuccessfulCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
     const panel = await outcomePanel(unsuccessfulCase)
     expect(panel.panel.headline).toBe("Not billable")
@@ -827,6 +881,7 @@ describe("composed Managed acceptance walks", () => {
     expect(beforeClose.steps.find(step => step.id === "CLOSURE")?.state).not.toBe("COMPLETED")
 
     expectOk(await caseCommand(unsuccessfulCase, "close", { outcome: "NOT_RESTORED", summary }), "close")
+    expect(await approvalCount(after.id)).toBe(0)
     expect(await chargeCounts(unsuccessfulCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
     const closed = (await db.query<{ status: string; work_stage: string; outcome: string; closure_summary: string }>(
       "select status, work_stage, outcome, closure_summary from public.cases where id = $1",

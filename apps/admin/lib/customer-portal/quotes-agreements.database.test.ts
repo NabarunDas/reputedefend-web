@@ -32,6 +32,7 @@ const upgradedFiles = [
   "20261019183000_admin_journey_10b_record_outcome_v1.sql",
   "20261019235000_admin_journey_12a_close_billing_v1.sql",
   "20261020120000_admin_journey_e2e_02_managed_stage_v1.sql",
+  "20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql",
 ].join(",")
 const db = new PGlite()
 

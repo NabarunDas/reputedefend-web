@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadCaseFlow } from "@/lib/case-flow/load"
@@ -17,7 +17,8 @@ import { CaseAttention, CaseBlockers } from "./cockpit/notices"
 import { CasePrerequisites } from "./cockpit/prerequisites"
 import { CaseSnapshot } from "./cockpit/snapshot"
 import { actionTarget } from "./cockpit/presentation"
-import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
+import { caseDetailsHref, caseWorkflowHref, caseWorkspaceChoice, devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
+import { requireStaff } from "@/lib/require-staff"
 
 export const metadata = { title: "Case" }
 
@@ -36,9 +37,18 @@ export const metadata = { title: "Case" }
  * Every command is the command it was before, with the checks it had before.
  * The cockpit recommends and navigates; it never acts.
  */
-export default async function CasePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ before?: string | string[] }> }) {
-  const { id } = await params, { before } = await searchParams
-  if (Array.isArray(before)) notFound()
+export default async function CasePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ before?: string | string[]; view?: string | string[] }> }) {
+  const { id } = await params
+  const query = await searchParams
+  if (Array.isArray(query.before) || Array.isArray(query.view)) notFound()
+  // On the develop DEV Preview the workflow is the case an operator opens.
+  // Details and history stay on this page. Staff auth runs before the hop.
+  if (caseWorkspaceChoice(query) === "workflow") {
+    await requireStaff()
+    redirect(caseWorkflowHref(id))
+  }
+  const before = query.before
+  const devWorkflow = devCaseJourneyPreviewEnabled()
   // `getCase` validates the identifier and the history cursor and is the read
   // that decides whether this page exists at all, so it goes first. The
   // authorisation read and the flow projection are independent of each other.
@@ -75,12 +85,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
 
   return <section className="page">
     <Link className="back-link" href="/cases">Back to cases</Link>
+    {devWorkflow && <p><Link href={caseWorkflowHref(c.id)}>Case workflow</Link></p>}
     <CaseHeader c={c} flow={flow} />
-    {devCaseJourneyPreviewEnabled() && <p className="notice">
-      Development preview for the develop branch. This does not replace the case cockpit or change the case.
-      {" "}
-      <Link href={`/cases/${c.id}/journey`}>Open the eleven-step workflow preview</Link>
-    </p>}
     {flow.reopened && <p className="notice">This case was previously closed and has been reopened for further work.</p>}
     <CaseJourney phases={flow.phases} phase={flow.phase} progress={flow.progressSummary} />
     <div className="cockpit-split">
@@ -230,8 +236,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         <h3>Case history</h3>
         <p className="muted">Workflow events are shown newest first. The original request remains above.</p>
         <ol className="history-list">{events.map(e => <li key={e.id}><strong>{e.event.replaceAll("_", " ")}</strong> · {ukDate(e.createdAt)} · {e.visibility === "CUSTOMER" ? "Approved for customer" : "Internal"}<p className="preserve-lines">{e.note}</p>{typeof e.details.summary === "string" && <p>Closure summary: {e.details.summary}</p>}{typeof e.details.previousSummary === "string" && <p>Previous closure: {e.details.previousSummary}</p>}</li>)}</ol>
-        {c.events.length > 50 && last && <Link href={`/cases/${c.id}?before=${last.id}`}>Older history</Link>}
-        {before && <p><Link href={`/cases/${c.id}`}>Latest history</Link></p>}
+        {c.events.length > 50 && last && <Link href={caseDetailsHref(c.id, last.id)}>Older history</Link>}
+        {before && <p><Link href={caseDetailsHref(c.id)}>Latest history</Link></p>}
       </section>
     </section>
   </section>

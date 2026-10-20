@@ -2,7 +2,7 @@ import Link from "next/link"
 import type { CaseDestination } from "@/lib/case-flow/destinations"
 import type { CaseBlocker, CaseNextAction } from "@/lib/case-flow/model"
 import { actionStatePresentation, actionTarget, caseStatusLabel, ownerSentence, serviceTrackLabels } from "../../presentation"
-import { Badge, Notice } from "../../../ui"
+import { Badge } from "../../../ui"
 import { journeyStep, type JourneyStepId } from "@/lib/case-journey/catalogue"
 import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import {
@@ -73,7 +73,7 @@ export type JourneyEvidenceReview = {
 }
 
 /**
- * The eleven-step preview. Steps 1 and 2 record a staff decision.
+ * The eleven-step case workflow. Steps 1 and 2 record a staff decision.
  * Steps 3 and 4 reuse the existing document and evidence commands.
  * Step 5 records an assessment. Step 6 reuses the existing quote commands.
  * Step 7 reuses the existing payment-link and authorisation commands.
@@ -130,13 +130,10 @@ export function CaseJourneyView({
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
   return <section className="page guided-workflow">
-    <Link className="back-link" href={`/cases/${caseId}`}>Back to the case cockpit</Link>
-    <Notice tone="warning">
-      Development preview. This page does not replace the case cockpit, send email, or take a payment.
-    </Notice>
+    <Link className="back-link" href={`/cases/${caseId}?view=details`}>Case details</Link>
     <header className="page-header cockpit-header">
       <div>
-        <p className="eyebrow">Guided workflow</p>
+        <p className="eyebrow">Case workflow</p>
         <h1>{reference}</h1>
         <p className="cockpit-parties">{customer} — {business}</p>
         <p className="badge-row">
@@ -299,7 +296,7 @@ function StepWorkspace({
       <p>{step.unlock}</p>
       <h3>Completion evidence</h3>
       <p>{journeyStep(step.id).completionEvidence}</p>
-      <h3>{step.decision ? "What this form does not do" : guidedCommand ? "What this step does not do" : "Not available in this preview"}</h3>
+      <h3>{step.decision ? "What this form does not do" : "What this step does not do"}</h3>
       <p>{step.unsupported}</p>
       {step.decision
         ? <p>This form records the staff decision for {step.laterWork}. It does not send email, take a payment, or change the technical stage.</p>
@@ -431,7 +428,7 @@ function terminalSentence(journey: CaseJourneyPresentation): string {
 
 function Recommended({ action, caseId }: { action: CaseNextAction; caseId: string }) {
   const state = actionStatePresentation[action.state]
-  const target = actionTarget(action, `/cases/${caseId}`)
+  const target = actionTarget(action, `/cases/${caseId}?view=details`)
   return <>
     <h3>{action.label}</h3>
     <p className="badge-row"><Badge tone={state.tone}>{state.word}</Badge></p>

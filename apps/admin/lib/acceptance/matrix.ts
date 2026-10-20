@@ -166,20 +166,21 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     status: "PASS",
   },
   {
-    area: "Guided case workflow preview",
+    area: "Guided case workflow",
     routes: ["/cases/[id]/journey"],
     surfaces: ["/api/cases/journey"],
-    action: "Read the eleven-step operator preview and record the intake review or the preliminary screening.",
+    action: "Work a case through the eleven-step workflow on the develop DEV preview, with the case cockpit kept as details.",
     expected:
-      "Automated tests show all eleven steps. Steps 1 and 2 complete only from their staff decision events. This PASS is not an authenticated browser test on the deployed develop Preview.",
+      "On that lane, /cases/[id] opens the eleven-step workflow and /cases/[id]?view=details keeps the nine-phase cockpit. Automated tests show all eleven steps. Steps 1 and 2 complete only from their staff decision events. This PASS is not a signed-in browser acceptance.",
     authorization:
-      "The develop Preview gate runs before any case read and again on the decision command. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for any other Preview.",
+      "The develop Preview gate runs before any case read and again on the decision command. On that lane, requireStaff() is the same staff session the rest of Admin uses. The gate is not relaxed for Production or any other Preview.",
     persistence:
       "A decision is an INTERNAL case_work_events row plus a CASE_CHANGED audit row, written by admin_case_journey_decision_v1. That function is applied on DEV only as 20261016175917 and is not applied to Production. The command does not change the technical stage.",
     negative:
       "Production and any other Preview branch, including this pull request's own preview, are not found before a case is read. An incomplete review, a discrepancy, a duplicate, or a revoked membership cannot show the step complete. The other nine steps have no control that marks them done.",
     evidence: [
       "app/cases/[id]/journey/page.test.tsx",
+      "app/cases/[id]/page.test.tsx",
       "lib/case-journey/present.test.ts",
       "lib/case-journey/gate.test.ts",
       "lib/case-journey/command.test.ts",

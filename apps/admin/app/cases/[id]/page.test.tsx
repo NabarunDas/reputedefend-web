@@ -24,6 +24,16 @@ vi.mock("../forms", () => ({
 vi.mock("./authorization-forms", () => ({
   AuthorizationPanel: () => <section><h3>Agreements &amp; permissions</h3></section>,
 }))
+const redirectTo = vi.hoisted(() => vi.fn())
+const requireStaff = vi.hoisted(() => vi.fn())
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw new Error("NEXT_NOT_FOUND") },
+  redirect: (url: string) => {
+    redirectTo(url)
+    throw new Error(`REDIRECT ${url}`)
+  },
+}))
+vi.mock("@/lib/require-staff", () => ({ requireStaff: () => requireStaff() }))
 
 import CasePage from "./page"
 import { CASE_ID, caseDetail, cockpitScenarios, componentScenarios, flowFrom, type CockpitScenarioName } from "./cockpit/fixtures"
@@ -336,10 +346,13 @@ describe("the case workspace below the cockpit", () => {
     expect(within(preview).getByText(/^This is a preview\./)).toBeInTheDocument()
   })
 
-  it("hides the eleven-step preview unless this is the develop Preview", async () => {
+  it("keeps the cockpit as the case page outside the develop DEV preview", async () => {
     await show("newCase")
-    expect(screen.queryByRole("link", { name: "Open the eleven-step workflow preview" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Case workflow" })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Development preview/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/does not replace the case cockpit/)).not.toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Case journey" }).closest("section")!.querySelectorAll("li")).toHaveLength(9)
+    expect(redirectTo).not.toHaveBeenCalled()
   })
 
   it("keeps the history newest first with its pagination unchanged", async () => {
@@ -350,5 +363,119 @@ describe("the case workspace below the cockpit", () => {
     await show("newCase", { events })
     expect(screen.getByRole("heading", { name: "Case history" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Older history" })).toHaveAttribute("href", `/cases/${CASE_ID}?before=event-49`)
+  })
+})
+
+const devPreview = {
+  VERCEL_ENV: "preview",
+  VERCEL_GIT_COMMIT_REF: "develop",
+  SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+}
+
+function useEnv(env: Record<string, string>) {
+  vi.stubEnv("VERCEL_ENV", env.VERCEL_ENV)
+  vi.stubEnv("VERCEL_GIT_COMMIT_REF", env.VERCEL_GIT_COMMIT_REF)
+  vi.stubEnv("SUPABASE_URL", env.SUPABASE_URL)
+}
+
+describe("DEV case navigation", () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllEnvs()
+    redirectTo.mockReset()
+    requireStaff.mockReset()
+  })
+
+  it("opens the workflow for a signed-in operator and does not read the case first", async () => {
+    useEnv(devPreview)
+    requireStaff.mockResolvedValue({ id: "staff" })
+    getCase.mockClear()
+    const otherCase = "66666666-6666-4666-8666-666666666666"
+    await expect(CasePage({
+      params: Promise.resolve({ id: otherCase }),
+      searchParams: Promise.resolve({}),
+    })).rejects.toThrow(`REDIRECT /cases/${otherCase}/journey`)
+    expect(requireStaff).toHaveBeenCalledTimes(1)
+    expect(getCase).not.toHaveBeenCalled()
+    expect(loadCaseFlow).not.toHaveBeenCalled()
+    expect(redirectTo).toHaveBeenCalledTimes(1)
+    expect(redirectTo).toHaveBeenCalledWith(`/cases/${otherCase}/journey`)
+  })
+
+  it("sends a signed-out operator to sign in before the workflow hop", async () => {
+    useEnv(devPreview)
+    requireStaff.mockImplementation(() => {
+      redirectTo("/login")
+      throw new Error("REDIRECT /login")
+    })
+    getCase.mockClear()
+    await expect(CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({}),
+    })).rejects.toThrow("REDIRECT /login")
+    expect(getCase).not.toHaveBeenCalled()
+    expect(redirectTo.mock.calls.map(call => call[0])).toEqual(["/login"])
+  })
+
+  it("keeps the nine-phase details view and a route back to the workflow", async () => {
+    useEnv(devPreview)
+    arrange(cockpitScenarios.newCase)
+    render(await CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ view: "details" }),
+    }))
+    expect(redirectTo).not.toHaveBeenCalled()
+    expect(requireStaff).not.toHaveBeenCalled()
+    expect(getCase).toHaveBeenCalledWith(CASE_ID, undefined)
+    expect(screen.getByRole("link", { name: "Case workflow" })).toHaveAttribute("href", `/cases/${CASE_ID}/journey`)
+    expect(screen.queryByText(/Development preview/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/does not replace the case cockpit/)).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Case journey" }).closest("section")!.querySelectorAll("li")).toHaveLength(9)
+    expect(screen.getByText("Customer-visible preview")).toBeInTheDocument()
+  })
+
+  it("keeps history pagination on the details page", async () => {
+    useEnv(devPreview)
+    const events = Array.from({ length: 51 }, (_, index) => ({
+      id: `event-${index}`, event: "CASE_NOTE", note: `note ${index}`, visibility: "INTERNAL",
+      createdAt: "2026-05-20T09:00:00.000Z", details: {},
+    }))
+    arrange(cockpitScenarios.newCase, { events })
+    render(await CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ before: "event-49" }),
+    }))
+    expect(redirectTo).not.toHaveBeenCalled()
+    expect(screen.getByRole("link", { name: "Older history" })).toHaveAttribute("href", `/cases/${CASE_ID}?view=details&before=event-49`)
+    expect(screen.getByRole("link", { name: "Latest history" })).toHaveAttribute("href", `/cases/${CASE_ID}?view=details`)
+  })
+
+  it.each([
+    ["Production", { ...devPreview, VERCEL_ENV: "production" }],
+    ["an unrelated Preview", { ...devPreview, VERCEL_GIT_COMMIT_REF: "feature/other" }],
+    ["the wrong Supabase project", { ...devPreview, SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" }],
+  ])("does not redirect %s away from the cockpit", async (_label, env) => {
+    useEnv(env)
+    arrange(cockpitScenarios.newCase)
+    render(await CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({}),
+    }))
+    expect(redirectTo).not.toHaveBeenCalled()
+    expect(requireStaff).not.toHaveBeenCalled()
+    expect(getCase).toHaveBeenCalledWith(CASE_ID, undefined)
+    expect(screen.queryByRole("link", { name: "Case workflow" })).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Case journey" }).closest("section")!.querySelectorAll("li")).toHaveLength(9)
+  })
+
+  it("rejects a repeated view parameter before reading the case", async () => {
+    useEnv(devPreview)
+    getCase.mockClear()
+    await expect(CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ view: ["details", "workflow"] }),
+    })).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(getCase).not.toHaveBeenCalled()
+    expect(redirectTo).not.toHaveBeenCalled()
   })
 })

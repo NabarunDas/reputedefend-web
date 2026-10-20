@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { persistGetHelpCase, type CaseIntakeRpcArgs, type CaseIntakeRpcResult } from "@/lib/cases/intake"
 import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
 import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
@@ -492,5 +492,198 @@ describe("persistGetHelpCase", () => {
     const source = readFileSync(fileURLToPath(new URL("./intake.ts", import.meta.url)), "utf8")
     expect(source).toMatch(/^import "server-only"/m)
     expect(source).not.toContain("NEXT_PUBLIC_")
+  })
+})
+
+const DEV_URL = "https://rmzozuiamjcclvtgutgd.supabase.co"
+
+function stubPreview(overrides: Record<string, string> = {}) {
+  const values: Record<string, string> = {
+    VERCEL_ENV: "preview",
+    VERCEL_GIT_COMMIT_REF: "develop",
+    SUPABASE_URL: DEV_URL,
+    DEV_MAIL_ENABLED: "true",
+    DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com,owner@example.com",
+    ...overrides,
+  }
+  for (const [key, value] of Object.entries(values)) vi.stubEnv(key, value)
+}
+
+describe("persistGetHelpCase DEV mail gate", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("sends the branded acknowledgement and internal notice only when both recipients are approved", async () => {
+    stubPreview()
+    const send = vi.fn(async (message: EnquiryEmailMessage) => ({ ok: true as const, id: `email_${message.kind}` }))
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    const createIntake = mockCreateIntake()
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake,
+      updateCommunication: async (_id, values) => { updates.push(values) },
+      provider: mockProvider(send),
+      emailConfig: { ...readyConfig, extraReplyTo: "reply@example.com" },
+      nodeEnv: "production",
+    })
+    expect(result).toMatchObject({ ok: true, persisted: true, caseRef: "PR-26-7K4M2Q", receiptEmailSent: true, receiptEmailStatus: "sent" })
+    expect(createIntake).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledTimes(2)
+    const customer = send.mock.calls[0]?.[0]
+    const internal = send.mock.calls[1]?.[0]
+    expect(customer?.kind).toBe("customer-ack")
+    expect(customer?.to).toBe("alex@example.com")
+    expect(customer?.replyTo).toBe(readyConfig.fromEmail)
+    expect(customer?.text).toContain("PR-26-7K4M2Q")
+    expect(customer?.html).toContain("PR-26-7K4M2Q")
+    expect(internal?.kind).toBe("internal")
+    expect(internal?.to).toBe("owner@example.com")
+    expect(internal?.replyTo).toEqual(["alex@example.com", "reply@example.com"])
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "SENT", provider_message_id: "email_customer-ack", error_message: null }),
+      expect.objectContaining({ status: "SENT", provider_message_id: "email_internal", error_message: null }),
+    ]))
+    expect(JSON.stringify(updates)).not.toMatch(/DELIVERED|re_test_key/)
+  })
+
+  it("keeps Production sending to a recipient that is not on the DEV allowlist", async () => {
+    stubPreview({ VERCEL_ENV: "production", DEV_MAIL_ALLOWED_RECIPIENTS: "somebody-else@example.com" })
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_production" }))
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result.receiptEmailStatus).toBe("sent")
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not send on another Preview branch or another Supabase project", async () => {
+    const overridesList: Array<Record<string, string>> = [
+      { VERCEL_GIT_COMMIT_REF: "feature/pr" },
+      { SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" },
+    ]
+    for (const overrides of overridesList) {
+      vi.unstubAllEnvs()
+      stubPreview(overrides)
+      const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+      const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake: mockCreateIntake(),
+        updateCommunication: async () => {},
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.receiptEmailStatus).toBe("suppressed")
+      expect(send).not.toHaveBeenCalled()
+    }
+  })
+
+  it("persists one case and sends nothing when configuration or the recipient is not approved", async () => {
+    const cases: Array<{ env: Record<string, string>; row?: Partial<CaseIntakeRpcResult> }> = [
+      { env: { DEV_MAIL_ENABLED: "" } },
+      { env: { DEV_MAIL_ALLOWED_RECIPIENTS: "" } },
+      { env: { DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com," } },
+      { env: {}, row: { customer_communication_recipient: "alex@example.com,attacker@example.com" } },
+    ]
+    for (const item of cases) {
+      vi.unstubAllEnvs()
+      stubPreview(item.env)
+      const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+      const createIntake = mockCreateIntake(intakeRow(item.row))
+      const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+      const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake,
+        updateCommunication: async (_id, values) => { updates.push(values) },
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.ok).toBe(true)
+      expect(result.persisted).toBe(true)
+      expect(result.receiptEmailStatus).toBe("suppressed")
+      expect(createIntake).toHaveBeenCalledTimes(1)
+      expect(send).not.toHaveBeenCalled()
+      expect(updates.every((value) => value.status === "FAILED" && value.error_message === "Not sent. DEV mail is closed for this recipient.")).toBe(true)
+      expect(JSON.stringify(result)).not.toMatch(/attacker@example.com|DEV_MAIL_ALLOWED/)
+    }
+  })
+
+  it("does not send either message when only one recipient is allowlisted", async () => {
+    stubPreview({ DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com" })
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result.receiptEmailStatus).toBe("suppressed")
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it("records a provider failure without calling it delivered, and does not send a second copy after acceptance", async () => {
+    stubPreview()
+    const send = vi.fn(async (message: EnquiryEmailMessage) => {
+      if (message.kind === "customer-ack") return { ok: false as const, reason: "rejected" as const }
+      throw new Error("provider network failed")
+    })
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    const failed = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async (_id, values) => { updates.push(values) },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(failed.ok).toBe(true)
+    expect(failed.receiptEmailStatus).toBe("unavailable")
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(updates.some((value) => value.status === "FAILED" && value.error_message === "Delivery failed.")).toBe(true)
+    expect(JSON.stringify(updates)).not.toMatch(/DELIVERED|provider network/)
+
+    vi.unstubAllEnvs()
+    stubPreview()
+    const accepted = vi.fn(async (message: EnquiryEmailMessage) => ({ ok: true as const, id: `email_${message.kind}` }))
+    let existing = false
+    const createIntake = vi.fn<(args: CaseIntakeRpcArgs) => Promise<CaseIntakeRpcResult>>(async () => intakeRow(existing ? {
+      was_existing: true,
+      customer_communication_status: "SENT",
+      internal_communication_status: "SENT",
+    } : {}))
+    await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake,
+      updateCommunication: async () => {},
+      provider: mockProvider(accepted),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    existing = true
+    const retry = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake,
+      updateCommunication: async () => {},
+      provider: mockProvider(accepted),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(retry.receiptEmailStatus).toBe("sent")
+    expect(createIntake).toHaveBeenCalledTimes(2)
+    expect(createIntake.mock.calls[0]?.[0].p_submission_key).toBe(SUBMISSION_KEY)
+    expect(createIntake.mock.calls[1]?.[0].p_submission_key).toBe(SUBMISSION_KEY)
+    expect(accepted).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not construct a live provider during a test run when the gate is open", async () => {
+    stubPreview()
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      emailConfig: readyConfig,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.receiptEmailStatus).toBe("unavailable")
   })
 })

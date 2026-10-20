@@ -32,14 +32,15 @@ import { getMembership, recordDetail } from "@/lib/records/queries"
 import { requireStaff } from "@/lib/require-staff"
 import { CaseJourneyView } from "./view"
 
-export const metadata = { title: "Case workflow preview" }
+export const metadata = { title: "Case workflow" }
 
 /**
- * DEV/develop preview of the eleven-step workflow.
+ * Eleven-step case workflow.
  *
  * The environment check runs before any case read, so Production and other
  * Preview branches never resolve a case through this route. Staff auth is
- * the same check the rest of Admin already uses.
+ * the same check the rest of Admin already uses. On the develop DEV Preview
+ * this is the primary case page. It does not change a command or a case rule.
  */
 export default async function CaseJourneyPage({
   params,

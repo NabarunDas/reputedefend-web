@@ -52,7 +52,7 @@ vi.mock("@/lib/payments/queries", () => ({ loadMoney: (...args: unknown[]) => lo
 vi.mock("@/lib/authorization/queries", () => ({ getCaseAuthorization: (...args: unknown[]) => getCaseAuthorization(...args) }))
 vi.mock("@/lib/packs/queries", () => ({ getPreparedPackCase: (...args: unknown[]) => getPreparedPackCase(...args) }))
 
-import CaseJourneyPage from "./page"
+import CaseJourneyPage, { metadata } from "./page"
 
 const open = {
   VERCEL_ENV: "preview",
@@ -146,6 +146,7 @@ describe("the case journey route", () => {
     for (const env of [
       { VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "develop", SUPABASE_URL: open.SUPABASE_URL },
       { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "feature/other", SUPABASE_URL: open.SUPABASE_URL },
+      { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "develop", SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" },
     ]) {
       vi.stubEnv("VERCEL_ENV", env.VERCEL_ENV)
       vi.stubEnv("VERCEL_GIT_COMMIT_REF", env.VERCEL_GIT_COMMIT_REF)
@@ -180,8 +181,14 @@ describe("the case journey route", () => {
       params: Promise.resolve({ id: CASE_ID }),
       searchParams: Promise.resolve({}),
     }))
+    expect(metadata.title).toBe("Case workflow")
     expect(requireStaff).toHaveBeenCalled()
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("PR-1042")
+    expect(screen.getByText("Case workflow")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Case details" })).toHaveAttribute("href", `/cases/${CASE_ID}?view=details`)
+    expect(screen.queryByText(/Development preview/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/does not replace the case cockpit/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Case workflow preview/)).not.toBeInTheDocument()
     expect(screen.getByText("Alex Mercer — Mercer Bakery")).toBeInTheDocument()
     expect(screen.getByText("Service: Not chosen")).toBeInTheDocument()
     const nav = screen.getByRole("navigation", { name: "Eleven-step case workflow" })

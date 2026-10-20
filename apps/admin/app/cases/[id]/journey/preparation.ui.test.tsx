@@ -75,7 +75,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
     },
     customerActions: [],
     commercial: { complete: true, quotes: [] },
-    payment: { complete: true, orders: [{ orderId: "88888888-8888-4888-8888-888888888888", paymentModel: "UPFRONT", orderState: "ACCEPTED_PAID", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
+    payment: { complete: true, orders: [{ orderId: "88888888-8888-4888-8888-888888888888", paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
     evidence: { requests: [], versions: [{ documentId: "77777777-7777-4777-8777-777777777777", versionId: VERSION_ID, evidenceRequestId: "request-1", uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", reviewStatus: "ACCEPTED" }] },
     packs: { packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 1 }], eligibleCount: 0 },
     communications: [],

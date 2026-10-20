@@ -453,7 +453,7 @@ describe("journey status from authoritative records", () => {
       technicalStage: "PREPARATION",
       serviceTrack: "GUIDED",
       commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
-      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
       evidence: reviewedEvidence,
       communications: [delivered()],
     })
@@ -1139,7 +1139,7 @@ describe("service activation", () => {
     technicalStage: "PREPARATION" as const,
     serviceTrack: "GUIDED" as const,
     commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
-    payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+    payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
   }
 
   it("settles Guided activation only from a paid accepted order with a receipt", () => {
@@ -1148,7 +1148,7 @@ describe("service activation", () => {
     expect(step(settled, "SERVICE_ACTIVATION").known.join(" ")).toMatch(/receipt/)
     const noReceipt = show({
       ...guidedPaid,
-      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_PAID" })] },
+      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT" })] },
     })
     const failed = show({
       ...guidedPaid,
@@ -1225,7 +1225,7 @@ describe("service activation", () => {
     const guidedSeveral = show({
       ...guidedPaid,
       payment: { complete: true, orders: [
-        order({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true }),
+        order({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true }),
         order({ orderId: "order-2", obligationState: "DUE" }),
       ] },
     })

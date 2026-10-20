@@ -27,7 +27,7 @@ export async function caseCommand(request:NextRequest) {
    case "unauthorized":return reply("Your session has ended. Please sign in again.",401)
    case "conflict":return reply("This case has changed. Reload it before trying again.",409)
    case "denied":return reply("This action is not available at the current case stage. Reload and check the case.",403)
-   case "prerequisite":return reply("This step needs the payment, permission or document approval workflow. It is not available yet.",409)
+   case "prerequisite":return reply(args.p_operation==="close"?"Closure needs the accepted service for this case and the recorded settlement that service requires. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close.":"This step needs the payment, permission or document approval workflow. It is not available yet.",409)
    case "open_work":return reply("Resolve open tasks and outstanding submission attempts before continuing.",409)
    case "invalid":return reply("Check the form, dates and required supporting information.",400)
    default:return reply("We couldn’t confirm the change. Reload the case before trying again.",503)

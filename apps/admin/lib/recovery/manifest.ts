@@ -6,9 +6,9 @@
  * applied, so the observed DEV ledger head is `20261019163645`. That is not
  * an instruction to replay those statements, and it does not authorise
  * Production. Production and AWS ApprovedMigrationHead stay at
- * `20261014170000`. Step 10B `20261019183000` is now applied to DEV only; no migrations
- * remain pending on the DEV chain. See
- * `docs/admin/dev-history-01.md`.
+ * `20261014170000`. Step 10B `20261019183000` and Step 12A `20261019235000` are applied
+ * to DEV only. Both remain unapplied to Production. See
+ * `docs/admin/dev-history-01.md` and `docs/admin/admin-journey-12a.md`.
  *
  * This manifest never contains migration SQL. It records the facts a recovery
  * operator needs when a database has to be rebuilt or compared against remote
@@ -676,6 +676,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "pre-closure outcome", probe: "public.admin_case_command_v1" },
   },
+  {
+    // Reviewed Step 12A statement. Applied to DEV only on 2026-10-20,
+    // canonical ledger version 20261019235000. Not applied to Production.
+    version: "20261019235000",
+    filename: "20261019235000_admin_journey_12a_close_billing_v1.sql",
+    step: "ADMIN-JOURNEY-12A close billing prerequisite",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "close billing prerequisite", probe: "public.admin_case_command_v1" },
+  },
 ]
 
 /**
@@ -686,9 +698,9 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest repository migration marked `appliedToDev`. After Step 10B,
- * this is the verified DEV ledger head `20261019183000`. It is behind
- * `migrationHead` only when a future reviewed file awaits DEV application.
+ * The newest repository migration marked `appliedToDev`. After Step 12A,
+ * this is the verified DEV ledger head `20261019235000`. It is behind
+ * `migrationHead` only when a future reviewed migration awaits application.
  * It is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

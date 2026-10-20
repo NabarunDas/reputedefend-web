@@ -192,7 +192,7 @@ describe("guided service activation", () => {
     expect(disabled.notices.join(" ")).toMatch(/switched off/)
     expect(disabled.notices.join(" ")).not.toMatch(/live charge/)
 
-    const incomplete = panel({ payment: { complete: false, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] } })
+    const incomplete = panel({ payment: { complete: false, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] } })
     expect(incomplete.headline).toBe("Activation records incomplete")
     expect(incomplete.issueUpfront).toBeNull()
 
@@ -215,11 +215,17 @@ describe("guided service activation", () => {
     expect(unpaid.requirements.find(item => item.label === "Receipt recorded")?.state).toBe("Not met")
     expect(unpaid.headline).not.toBe("Guided payment settled")
     const settled = panel({
-      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
-    }, { moneyOrders: [money({ orderState: "ACCEPTED_PAID", obligationState: "PAID", receiptId: "receipt-1" })] })
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
+    }, { moneyOrders: [money({ orderState: "ACCEPTED_AWAITING_PAYMENT", obligationState: "PAID", receiptId: "receipt-1" })] })
     expect(settled.headline).toBe("Guided payment settled")
     expect(settled.issueUpfront).toBeNull()
-    expect(settled.order?.orderState).toBe("ACCEPTED_PAID")
+    expect(settled.order?.orderState).toBe("ACCEPTED_AWAITING_PAYMENT")
+    expect(settled.requirements.find(item => item.label === "Accepted upfront order")?.state).toBe("Met")
+    const synthetic = panel({
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+    }, { moneyOrders: [money({ orderState: "ACCEPTED_PAID", obligationState: "PAID", receiptId: "receipt-1" })] })
+    expect(synthetic.headline).not.toBe("Guided payment settled")
+    expect(synthetic.requirements.find(item => item.label === "Accepted upfront order")?.state).toBe("Not met")
   })
 
   it("shows Managed requirements without a saved card or an upfront link", () => {
@@ -242,8 +248,8 @@ describe("guided service activation", () => {
   it("does not activate or issue a link when the accepted quote names a different order", () => {
     const mismatched = panel({
       commercial: { complete: true, quotes: [quote({ orderId: OTHER_ORDER_ID })] },
-      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
-    }, { moneyOrders: [money({ orderState: "ACCEPTED_PAID", obligationState: "PAID", receiptId: "receipt-1" })] })
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
+    }, { moneyOrders: [money({ orderState: "ACCEPTED_AWAITING_PAYMENT", obligationState: "PAID", receiptId: "receipt-1" })] })
     expect(mismatched.headline).toBe("Activation records disagree")
     expect(mismatched.issueUpfront).toBeNull()
     expect(mismatched.who).toMatch(/reconciles the quote and the service order/)
@@ -252,7 +258,7 @@ describe("guided service activation", () => {
 
     const missingQuoteOrder = panel({
       commercial: { complete: true, quotes: [quote({ orderId: null })] },
-      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_PAID", receiptRecorded: true })] },
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
     })
     expect(missingQuoteOrder.headline).toBe("Activation records disagree")
     expect(missingQuoteOrder.issueUpfront).toBeNull()

@@ -81,7 +81,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
     },
     customerActions: [],
     commercial: { complete: true, quotes: [{ id: "quote-1", status: "ACCEPTED", taxBehaviour: "NOT_APPLICABLE", validUntil: "2026-12-01T00:00:00.000Z", actionStatus: null, actionExpiresAt: null, orderId: ORDER_ID }] },
-    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_PAID", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
+    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
     evidence: { requests: [], versions: [] },
     packs: { packs: [], eligibleCount: 0 },
     communications: [],
@@ -116,7 +116,7 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
     amountMinor: 14900,
     currency: "GBP",
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     version: 2,
     obligationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     obligationKind: "UPFRONT",
@@ -234,6 +234,30 @@ describe("the closure step", () => {
     fireEvent.change(screen.getByLabelText(/Supporting note/), { target: { value: "Checked the restored listing before closing." } })
     fireEvent.submit(screen.getByRole("button", { name: "Close the case" }).closest("form")!)
     expect(await screen.findByText(/not available at the current case stage/)).toBeTruthy()
+  })
+
+  it("shows the settlement refusal and does not claim the case is closed", async () => {
+    const detail = caseDetail()
+    const panel = panelFor(facts(), detail)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ message: "Closure needs the accepted service for this case and the recorded settlement that service requires. A checkout return, a saved card or an unpaid fee is not enough, and an unsuccessful case is not charged in order to close." }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(<ClosurePanel caseDetail={detail} panel={panel} />)
+    fireEvent.click(screen.getByText("Close with the recorded outcome"))
+    expect(screen.getByText(/An unpaid fee, a checkout return or a saved card does not close the case/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.change(screen.getByLabelText(/Supporting note/), { target: { value: "Checked the restored listing before closing." } })
+    fireEvent.submit(screen.getByRole("button", { name: "Close the case" }).closest("form")!)
+    expect(await screen.findByText(/is not enough/)).toBeTruthy()
+    expect(screen.queryByText("Closed.")).toBeNull()
+    expect(screen.queryByText(/The case is closed/)).toBeNull()
+    expect(screen.queryByText(/case history has been updated/)).toBeNull()
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/cases/command")
+    expect(payload.operation).toBe("close")
   })
 
   it("reopens with the existing command and does not offer close again", async () => {

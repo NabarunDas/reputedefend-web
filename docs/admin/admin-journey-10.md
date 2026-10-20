@@ -19,7 +19,7 @@ The comparison runs only when Step 10 is open. A locked step does not load the m
 
 ## Completion
 
-Guided Step 10 follows the same settled order Step 7 uses. It is complete only when the case outcome is recorded, the accepted quote is linked to the only upfront order, that order is `ACCEPTED_PAID`, the upfront obligation is `PAID`, and a receipt is recorded. `ACCEPTED_AWAITING_PAYMENT` together with a paid obligation or a receipt is a conflict. A paid obligation without a receipt is a conflict. An awaiting order that is due or collecting stays pending and does not create a second charge. A failed collection is not settlement. A void obligation needs attention and is not collected from this step.
+Guided Step 10 follows the same settled order Step 7 uses. It is complete only when the case outcome is recorded, the accepted quote is linked to the only upfront order, that order is `ACCEPTED_AWAITING_PAYMENT`, the upfront obligation is `PAID`, and a receipt is recorded. The database has no `ACCEPTED_PAID` order state. A paid obligation without a receipt is a conflict, and a receipt without a paid obligation is a conflict. An awaiting order that is due, collecting, or waiting for authentication stays unsettled and does not create a second charge. A failed collection is not settlement. A void obligation needs attention and is not collected from this step.
 
 Managed Step 10 is complete when either:
 

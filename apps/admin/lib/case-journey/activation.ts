@@ -203,10 +203,13 @@ export function buildJourneyActivationPanel(input: {
   } : null
 
   const acceptedQuote = link.linked
+  const guidedOrder = link.trackOrder
   const guidedSettled = acceptedQuote
-    && link.trackOrder?.orderState === "ACCEPTED_PAID"
+    && guidedOrder?.paymentModel === "UPFRONT"
+    && guidedOrder.orderState === "ACCEPTED_AWAITING_PAYMENT"
+    && guidedOrder.obligationKind === "UPFRONT"
     && payment.upfrontPaid
-    && !!link.trackOrder?.receiptRecorded
+    && guidedOrder.receiptRecorded
     && !input.recordsConflict
   const managedReady = facts.serviceTrack === "MANAGED"
     && acceptedQuote
@@ -233,7 +236,7 @@ export function buildJourneyActivationPanel(input: {
     : facts.serviceTrack === "GUIDED"
       ? [
         requirement("Accepted quote", acceptedQuote, linkProblem ? "The accepted quote does not name the service order for this track." : "One accepted quote on a complete list. The quote alone is not activation."),
-        requirement("Accepted paid order", link.linked && link.trackOrder?.orderState === "ACCEPTED_PAID", "The service order named by the accepted quote has to be the accepted paid order."),
+        requirement("Accepted upfront order", link.linked && link.trackOrder?.orderState === "ACCEPTED_AWAITING_PAYMENT" && link.trackOrder.paymentModel === "UPFRONT", "The service order named by the accepted quote stays ACCEPTED_AWAITING_PAYMENT. Settlement is the paid obligation and the receipt."),
         requirement("Upfront obligation PAID", link.linked && payment.upfrontPaid, "Returning from Checkout is not payment."),
         requirement("Receipt recorded", link.linked && !!link.trackOrder?.receiptRecorded && payment.upfrontPaid, "A paid mark without a receipt is not settlement."),
       ]

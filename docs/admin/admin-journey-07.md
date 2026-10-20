@@ -15,7 +15,7 @@ The commercial workspace is unchanged. Saved-card setup and success-fee approval
 
 ## Guided
 
-The selected track is shown with the service order named by the accepted quote. Activation is complete only when the quote list and the payment list are complete, one quote is accepted, that quote's order id is the only upfront order, the order state is `ACCEPTED_PAID`, the upfront obligation is `PAID`, and a receipt is recorded. A quote with no order id, or an order id that is not that upfront order, is a disagreement. It is not activation, and it does not receive a payment link.
+The selected track is shown with the service order named by the accepted quote. Activation is complete only when the quote list and the payment list are complete, one quote is accepted, that quote's order id is the only upfront order, the order state is `ACCEPTED_AWAITING_PAYMENT`, the upfront obligation is `PAID`, and a receipt is recorded. The database has no `ACCEPTED_PAID` order state. A quote with no order id, or an order id that is not that upfront order, is a disagreement. It is not activation, and it does not receive a payment link.
 
 A due or collecting obligation is waiting. A failed payment, a void obligation, a paid mark without a receipt, and an order that does not agree with the obligation need attention. Returning from Checkout is not payment. An accepted quote alone is not activation. The selected track alone is not activation.
 

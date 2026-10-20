@@ -79,7 +79,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
     },
     customerActions: [],
     commercial: { complete: true, quotes: [{ id: "quote-1", status: "ACCEPTED", taxBehaviour: "NOT_APPLICABLE", validUntil: "2026-12-01T00:00:00.000Z", actionStatus: null, actionExpiresAt: null, orderId: ORDER_ID }] },
-    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_PAID", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
+    payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
     evidence: { requests: [], versions: [] },
     packs: { packs: [], eligibleCount: 0 },
     communications: [],
@@ -114,7 +114,7 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
     amountMinor: 14900,
     currency: "GBP",
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     version: 2,
     obligationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     obligationKind: "UPFRONT",
@@ -319,16 +319,24 @@ describe("guided outcome verification", () => {
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
   })
 
-  it("does not treat an awaiting Guided order with a paid obligation as settled", () => {
+  it("settles an awaiting Guided order when the obligation is paid and a receipt is recorded", () => {
     const source = facts({
       payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: true }] },
     })
     show(source, [money({ orderState: "ACCEPTED_AWAITING_PAYMENT" })], [attempt()])
-    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Billing records disagree")
-    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Settled")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "COMPLETED")
     expect(screen.queryByText("Approve the success fee")).toBeNull()
     expect(screen.queryByText("Issue a TEST-MODE hosted invoice")).toBeNull()
     expect(screen.queryByText("Record outcome")).toBeNull()
+
+    cleanup()
+    const unpaidReceipt = facts({
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "UPFRONT", orderState: "ACCEPTED_AWAITING_PAYMENT", obligationKind: "UPFRONT", obligationState: "PAID", setupReady: false, consentRecorded: false, receiptRecorded: false }] },
+    })
+    show(unpaidReceipt, [money({ orderState: "ACCEPTED_AWAITING_PAYMENT", receiptId: null })], [attempt()])
+    expect(document.querySelector("[data-outcome]")).toHaveAttribute("data-outcome", "Billing records disagree")
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
   })
 
   it("offers approval for one valid proof among extra accepted files, and withholds a rejected or mismatched record", () => {

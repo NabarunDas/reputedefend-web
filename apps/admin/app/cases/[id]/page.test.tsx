@@ -26,9 +26,14 @@ vi.mock("./authorization-forms", () => ({
 }))
 const redirectTo = vi.hoisted(() => vi.fn())
 const requireStaff = vi.hoisted(() => vi.fn())
-const loadIntakeMailRetryOffer = vi.hoisted(() => vi.fn(async () => null))
+const loadIntakeMailRetryOffer = vi.hoisted(() => vi.fn(async (): Promise<{
+  destinations: [
+    { role: "Customer acknowledgement" | "Internal notification"; recipient: string; willSend: boolean },
+    { role: "Customer acknowledgement" | "Internal notification"; recipient: string; willSend: boolean },
+  ]
+} | null> => null))
 vi.mock("@/lib/case-intake-mail/load", () => ({
-  loadIntakeMailRetryOffer: (...args: unknown[]) => loadIntakeMailRetryOffer(...args),
+  loadIntakeMailRetryOffer: () => loadIntakeMailRetryOffer(),
 }))
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND") },

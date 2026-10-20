@@ -3,15 +3,16 @@ import React from "react"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import type { IntakeMailRetryDestination } from "@/lib/case-intake-mail/offer"
 import { IntakeMailRetryPanel } from "./intake-mail-retry"
 
 const refresh = vi.fn()
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }))
 
 const CASE_ID = "11111111-1111-4111-8111-111111111111"
-const destinations = [
-  { role: "Customer acknowledgement" as const, recipient: "alex@example.com", willSend: true },
-  { role: "Internal notification" as const, recipient: "owner@example.com", willSend: true },
+const destinations: [IntakeMailRetryDestination, IntakeMailRetryDestination] = [
+  { role: "Customer acknowledgement", recipient: "alex@example.com", willSend: true },
+  { role: "Internal notification", recipient: "owner@example.com", willSend: true },
 ]
 
 afterEach(() => {
@@ -26,7 +27,7 @@ function show() {
 
 describe("intake mail retry panel", () => {
   it("shows both destinations and waits for confirmation before posting", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       message: "The stored messages were accepted by the email provider.",
       receiptEmailStatus: "sent",
     }), { status: 200 }))
@@ -45,7 +46,8 @@ describe("intake mail retry panel", () => {
     fireEvent.click(button)
     await screen.findByText("The stored messages were accepted by the email provider.")
     expect(fetchMock).toHaveBeenCalledOnce()
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    if (!init) throw new Error("missing request")
     expect(url).toBe("/api/cases/intake-mail")
     expect(init.method).toBe("POST")
     const headers = init.headers as Record<string, string>

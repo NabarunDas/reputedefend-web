@@ -15,7 +15,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { retryStoredIntakeMail, type CaseIntakeRpcResult, type PersistGetHelpCaseOptions } from "@/lib/cases/intake"
+import { retryStoredIntakeMail, type CaseIntakeRpcResult } from "@/lib/cases/intake"
 import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
 import type { EnquiryInput } from "@/lib/enquiry"
 import type { EnquiryProvider } from "@/lib/enquiry-provider"
@@ -217,7 +217,7 @@ function intake(id: string): CaseIntakeRpcResult {
   }
 }
 
-function deliveryOptions(supabase: Client, send: EnquiryProvider["send"]): PersistGetHelpCaseOptions {
+function deliveryOptions(supabase: Client, send: EnquiryProvider["send"]): Parameters<typeof retryStoredIntakeMail>[1] {
   return {
     supabaseClient: supabase,
     loadIntake: async () => intake(communicationId),

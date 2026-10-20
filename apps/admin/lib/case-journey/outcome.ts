@@ -144,13 +144,11 @@ function sameId(value: string | null | undefined, expected: string | null | unde
   return left.length > 0 && left === right
 }
 
-/** Settled Guided billing is the Step 7 accepted-paid order, not the awaiting state. */
+/** The upfront order stays ACCEPTED_AWAITING_PAYMENT. Settlement is the obligation and the receipt. */
 function guidedOrderAgrees(order: CaseFlowOrderFact): boolean {
+  if (order.orderState !== "ACCEPTED_AWAITING_PAYMENT" || order.obligationKind !== "UPFRONT") return false
   const paid = order.obligationState === "PAID"
-  const receipt = order.receiptRecorded
-  if (order.orderState === "ACCEPTED_PAID") return paid && receipt
-  if (order.orderState === "ACCEPTED_AWAITING_PAYMENT") return !paid && !receipt
-  return false
+  return paid === order.receiptRecorded
 }
 
 function qualifyingEvidence(facts: CaseFlowFacts, versionId: string): boolean {
@@ -205,7 +203,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
   else if (incomplete) position = "incomplete"
   else if (!facts.outcome) position = "none"
   else if (track === "GUIDED") {
-    position = order?.orderState === "ACCEPTED_PAID" && order.obligationState === "PAID" && order.receiptRecorded
+    position = order?.orderState === "ACCEPTED_AWAITING_PAYMENT" && order.obligationKind === "UPFRONT" && order.obligationState === "PAID" && order.receiptRecorded
       ? "settled"
       : order?.obligationState === "FAILED"
         ? "failed"
@@ -238,7 +236,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
   if (outcomeShape === "pre_closure" && !conflict) known.push("The stored outcome is on an open case. Recording it did not close the case.")
   if (position === "disagree") known.push("The outcome and billing records do not agree, so no billing command is offered from here.")
   else if (position === "incomplete") known.push("The quote or payment list is incomplete, so billing cannot be confirmed from here.")
-  else if (position === "settled" && track === "GUIDED") known.push("The Guided order is ACCEPTED_PAID, the upfront obligation is PAID, and a receipt is recorded. No second charge is inferred.")
+  else if (position === "settled" && track === "GUIDED") known.push("The Guided order stays ACCEPTED_AWAITING_PAYMENT. The upfront obligation is PAID and a receipt is recorded. No second charge is inferred.")
   else if (position === "settled") known.push("The provider has confirmed the success-fee payment. Approval and an invoice link were not that confirmation.")
   else if (position === "not_billable") known.push("This outcome does not qualify for a success fee. An unsuccessful case is not invoiced to finish this step.")
   else if (position === "none") known.push("No case outcome is recorded yet. Recording one does not close the case, approve a success fee, or take a payment.")
@@ -256,7 +254,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
         : order?.obligationState === "VOID" || order?.obligationState === "AUTHENTICATION_REQUIRED"
           ? ["A settled obligation. A void obligation or unfinished authentication is not settlement."]
           : track === "GUIDED"
-            ? ["An upfront obligation that is PAID, on an ACCEPTED_PAID order, with a receipt. A second charge is not created from this step."]
+            ? ["An upfront obligation that is PAID, on the accepted ACCEPTED_AWAITING_PAYMENT order, with a receipt. A second charge is not created from this step."]
             : ["Provider-confirmed settlement of a qualifying success fee. An approval or an invoice link is not that settlement."]
 
   const who = position === "disagree" || position === "incomplete"
@@ -509,7 +507,7 @@ export function presentJourneyOutcome(input: {
           label: "Billing position",
           state: position === "settled" || position === "not_billable" ? "Met" : "Not met",
           detail: input.facts.serviceTrack === "GUIDED"
-            ? "Guided billing is an ACCEPTED_PAID order, a PAID upfront obligation, and a receipt. A second charge is not created."
+            ? "Guided billing is an ACCEPTED_AWAITING_PAYMENT order, a PAID upfront obligation, and a receipt. A second charge is not created."
             : "Managed billing is provider-confirmed settlement after a qualifying outcome, or no fee when the outcome does not qualify.",
         },
       ],

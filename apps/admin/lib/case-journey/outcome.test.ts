@@ -59,7 +59,7 @@ function upfront(overrides: Partial<CaseFlowFacts["payment"]["orders"][number]> 
   return {
     orderId: ORDER_ID,
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     obligationKind: "UPFRONT",
     obligationState: "PAID",
     setupReady: false,
@@ -108,7 +108,7 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
     amountMinor: 14900,
     currency: "GBP",
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     version: 2,
     obligationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     obligationKind: "UPFRONT",
@@ -457,8 +457,8 @@ describe("outcome verification and billing", () => {
       technicalStage: "OUTCOME_REVIEW",
       outcome: null,
       outcomeSummary: "",
-      payment: { complete: true, orders: [upfront({ orderState: "ACCEPTED_AWAITING_PAYMENT", obligationState: "PAID", receiptRecorded: true })] },
-    }))
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", receiptRecorded: false })] },
+    }), [money({ obligationState: "PAID", receiptId: null })])
     expect(disagree.presented.panel.headline).toBe("Billing records disagree")
     expect(disagree.presented.panel.commands).toBeNull()
 
@@ -658,8 +658,10 @@ describe("outcome verification and billing", () => {
       })
       return shown(source, [money({ orderState, obligationState, receiptId: receipt ? "receipt-1" : null })])
     }
-    const settled = pair("ACCEPTED_PAID", "PAID", true)
+    const settled = pair("ACCEPTED_AWAITING_PAYMENT", "PAID", true)
     expect(settled.presented.panel.headline).toBe("Settled")
+    expect(settled.step?.known.join(" ")).toMatch(/ACCEPTED_AWAITING_PAYMENT/)
+    expect(settled.step?.known.join(" ")).toMatch(/No second charge/)
     expect(settled.presented.panel.commands).toBeNull()
     expect(settled.step?.state).toBe("COMPLETED")
 
@@ -687,12 +689,16 @@ describe("outcome verification and billing", () => {
     expect(judgeOutcomeBilling(voidSource, NOW).proof).toBe("attention")
     expect(voided.step?.state).toBe("NEEDS_ATTENTION")
 
+    const authenticating = pair("ACCEPTED_AWAITING_PAYMENT", "AUTHENTICATION_REQUIRED", false)
+    expect(authenticating.presented.panel.headline).not.toBe("Settled")
+    expect(authenticating.step?.state).toBe("NEEDS_ATTENTION")
+
     for (const [orderState, obligationState, receipt] of [
+      ["ACCEPTED_PAID", "PAID", true],
       ["ACCEPTED_PAID", "PAID", false],
       ["ACCEPTED_PAID", "DUE", false],
       ["ACCEPTED_PAID", "FAILED", false],
       ["ACCEPTED_PAID", "COLLECTING", false],
-      ["ACCEPTED_AWAITING_PAYMENT", "PAID", true],
       ["ACCEPTED_AWAITING_PAYMENT", "PAID", false],
       ["ACCEPTED_AWAITING_PAYMENT", "DUE", true],
     ] as const) {

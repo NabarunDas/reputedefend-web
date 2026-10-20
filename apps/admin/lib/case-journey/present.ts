@@ -897,7 +897,7 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string, options: Journe
     order ? `The service order state is ${order.orderState}.` : "No upfront service order is on file.",
     ...reopenNote(facts),
   ]
-  const settled = "An upfront obligation recorded as PAID, on an accepted order, with a receipt."
+  const settled = "An upfront obligation recorded as PAID, on an ACCEPTED_AWAITING_PAYMENT order, with a receipt."
   if (!facts.payment.complete || !facts.commercial.complete) {
     return {
       proof: "unproven",
@@ -924,6 +924,14 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string, options: Journe
       who: ACTIVATION_ORDER_DISAGREE_WHO,
     }
   }
+  if (order?.receiptRecorded && !payment.upfrontPaid) {
+    return {
+      proof: "attention",
+      known: [...known, "A receipt is recorded, but the upfront obligation is not PAID. This step does not treat that as settlement."],
+      missing: [settled],
+      who: "ProfileRelaunch reconciles the receipt and the obligation.",
+    }
+  }
   if (payment.upfrontPaid && order && !order.receiptRecorded) {
     return {
       proof: "attention",
@@ -932,15 +940,15 @@ function readGuidedActivation(facts: CaseFlowFacts, now: string, options: Journe
       who: "The payment record has to show a receipt before the upfront fee is settled.",
     }
   }
-  if (payment.upfrontPaid && order && order.orderState !== "ACCEPTED_PAID") {
+  if (payment.upfrontPaid && order && order.orderState !== "ACCEPTED_AWAITING_PAYMENT") {
     return {
       proof: "attention",
-      known: [...known, "The obligation and the service order do not show the same accepted paid position."],
+      known: [...known, "The upfront obligation is PAID, but the service order is not ACCEPTED_AWAITING_PAYMENT. Settlement is not read from another order state."],
       missing: [settled],
       who: "ProfileRelaunch has to reconcile the order and the obligation.",
     }
   }
-  if (link.linked && payment.upfrontPaid && commercial.state === "ACCEPTED" && order?.orderState === "ACCEPTED_PAID" && order.orderId === link.quoteOrderId && order.receiptRecorded) {
+  if (link.linked && payment.upfrontPaid && commercial.state === "ACCEPTED" && order?.orderState === "ACCEPTED_AWAITING_PAYMENT" && order.obligationKind === "UPFRONT" && order.orderId === link.quoteOrderId && order.receiptRecorded) {
     if (recordsConflict(options)) {
       return {
         proof: "attention",

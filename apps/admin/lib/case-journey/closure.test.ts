@@ -29,7 +29,7 @@ function upfront(overrides: Partial<CaseFlowOrderFact> = {}): CaseFlowOrderFact 
   return {
     orderId: ORDER_ID,
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     obligationKind: "UPFRONT",
     obligationState: "PAID",
     setupReady: false,
@@ -121,7 +121,7 @@ function money(overrides: Partial<MoneyOrder> = {}): MoneyOrder {
     amountMinor: 14900,
     currency: "GBP",
     paymentModel: "UPFRONT",
-    orderState: "ACCEPTED_PAID",
+    orderState: "ACCEPTED_AWAITING_PAYMENT",
     version: 2,
     obligationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     obligationKind: "UPFRONT",

@@ -1,0 +1,197 @@
+# ADMIN-JOURNEY-E2E-01 — eleven-step acceptance
+
+Status: acceptance record for `develop` at `3d35e3c` and the disposable regressions added with this note. This is not a Production-readiness decision.
+
+Environment used: PGlite, loading the repository migration chain. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. No migration was added or applied.
+
+The repository records `20261019235000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
+
+## How to read a result
+
+These four categories are separate. A database slice or a mocked screen is not a full-journey PASS.
+
+| Category | Meaning |
+| --- | --- |
+| Composed case walk | One synthetic case moved through that step by existing commands in disposable PGlite. |
+| Database slice | A focused SQL test of one rule. Some of those tests insert rows the product command does not write. |
+| UI unit | A mocked component test. It does not sign in. |
+| Signed-in browser | An Admin or customer session in a browser. |
+
+- **PASS** — that category executed the rule and the product matched it.
+- **FAIL** — that category executed the rule and the product disagreed, or the composed command path cannot finish the branch.
+- **NOT TESTED** — this exercise did not run that scenario.
+
+Signed-in browser is **NOT TESTED** for every scenario. This environment has no Admin OTP session and no DEV service credentials. Mocked component tests are UI unit coverage only.
+
+## Composed case walks
+
+| Step | A Guided recovery | B Managed qualifying | C Managed unsuccessful | D Reopen after the Guided close |
+| --- | --- | --- | --- | --- |
+| 1 Intake reviewed | PASS | PASS | PASS | NOT TESTED |
+| 2 Customer and business screened | PASS | PASS | PASS | NOT TESTED |
+| 3 Documents requested | PASS | PASS | PASS | NOT TESTED |
+| 4 Evidence reviewed and accepted | PASS | PASS | PASS | NOT TESTED |
+| 5 Assessment approved | PASS | PASS | PASS | NOT TESTED |
+| 6 Quote accepted | PASS | PASS | PASS | NOT TESTED |
+| 7 Activation / settlement or authority | PASS | PASS | PASS | NOT TESTED |
+| 8 Preparation approved / entered | PASS | **FAIL** — pack publishes, but entry to `PREPARATION` is refused | **FAIL** — pack publishes, but entry to `PREPARATION` is refused | NOT TESTED |
+| 9 Submission recorded from ready stage | PASS | **FAIL** — submission command succeeds from `AUTHORIZATION_REQUIRED`, without reaching `READY_TO_SUBMIT` | **FAIL** — submission command succeeds from `AUTHORIZATION_REQUIRED`, without reaching `READY_TO_SUBMIT` | NOT TESTED |
+| 10 Outcome and billing | PASS | PASS | PASS | PASS |
+| 11 Closure | PASS | PASS | PASS | PASS |
+| Managed `AUTHORIZATION_REQUIRED → PREPARATION` work-stage transition | NOT APPLICABLE | **FAIL** — `prerequisite`, despite `authorizationReady: true` | **FAIL** — `prerequisite`, despite `authorizationReady: true` | NOT TESTED |
+| Signed-in browser, all steps | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+
+**Managed B and C are NOT accepted as complete stage-by-stage journeys.** Their pack, submission, outcome and closure commands execute, but the required Managed work-stage transition fails and both cases proceed from an earlier stage. A successful standalone RPC is not proof of the authorised sequence. D is the same Guided case after its successful close. The walk reopens it, records `NOT_RESTORED`, and closes again. It does not start a new cancellation case from intake, so steps 1–9 are not a D walk.
+
+### A — Guided successful profile recovery
+
+`apps/admin/lib/case-journey/acceptance-walk.database.test.ts` walks one synthetic profile-recovery case:
+
+1. `admin_case_journey_decision_v1` records `INTAKE_REVIEW` / `REVIEWED`.
+2. The same command records `BUSINESS_VERIFICATION` / `PRELIMINARY_COMPLETE`. It does not verify email or grant authority.
+3. An evidence request is drafted, reviewed, and queued. Delivery is a local provider event (`communication_apply_provider_event_v1`). The `SEND_EMAIL` job is not completed. No message leaves the database.
+4. The ownership letter is finalised, scanned clean, accepted, marked customer-visible, and the request is fulfilled.
+5. The assessment is drafted, reviewed, and approved as Guided.
+6. The customer accepts `GUIDED_RELAUNCH` through the quote-acceptance OTP command. The order is `ACCEPTED_AWAITING_PAYMENT`.
+7. Settlement is `payment_apply_provider_event_v1` with `livemode: false`. The obligation becomes `PAID`, one receipt is stored, and the order state stays `ACCEPTED_AWAITING_PAYMENT`.
+8. The pack is approved and published from that visible file.
+9. The submission actor is `CUSTOMER`. It is resolved `DECIDED`. The command does not call Google.
+10. `record_outcome` stores `RESTORED` and leaves the case `UNDER_REVIEW` at `OUTCOME_REVIEW`.
+11. `close` with the same outcome and summary stores `CLOSED` / `FINISHED`.
+
+`presentCaseJourney` then reports steps 1–10 `COMPLETED` and focuses step 11. After close, all eleven steps are `COMPLETED`.
+
+### B — Managed qualifying success
+
+`apps/admin/lib/case-journey/managed-acceptance-walk.database.test.ts` walks one synthetic Managed profile-recovery case on its own location. The same file’s second case is scenario C. They share a customer and a business. Manager access is stored per location, so the two cases do not share that record.
+
+Membership and email verification have no RPC. Those two rows are inserted. The service agreement, the case-management permission, and Google manager access are command results. `authorizationReady` is read from `admin_case_authorization_readiness_v1`. It is not a fixture flag.
+
+1. Intake `REVIEWED`.
+2. Screening `PRELIMINARY_COMPLETE`.
+3. The evidence request is drafted, reviewed, queued, and marked delivered by a local provider event. No `SEND_EMAIL` job succeeds.
+4. The letter is accepted, made customer-visible, and the request is fulfilled.
+5. The assessment is approved as Managed.
+6. The customer accepts `MANAGED_RELAUNCH`. The order is `ACCEPTED_SUCCESS_FEE`. Obligations, invoices, and receipts are zero.
+7. The customer accepts the service agreement and the case-management permission. Manager access is verified. Readiness reports the agreement, the permission, business authority, manager access, and `authorizationReady`. Step 7 is `COMPLETED` with no saved card. Moving to `PREPARATION` **FAILS** with `prerequisite` and the stage stays `AUTHORIZATION_REQUIRED`. Live DEV's `admin_private.case_stage_ready_v1` calls `managed_setup_ready_v1`, which demands a usable saved payment method and linked consent in addition to authorised Managed access. That payment-method requirement contradicts the agreed Managed activation rules and Step 7.
+8. **Sequential stage acceptance FAIL:** the pack RPC approves and publishes the evidence, and its evidence-only check reads `COMPLETED`, but the work stage remains `AUTHORIZATION_REQUIRED` rather than `PREPARATION`.
+9. **Sequential stage acceptance FAIL:** the submission command permits actor `ADMIN` from `AUTHORIZATION_REQUIRED`, without a successful transition through `PREPARATION` and `READY_TO_SUBMIT`. It is resolved `DECIDED`; no Google call occurs. Close while the attempt or authorisation follow-up is open returns `open_work`.
+10. `record_outcome` stores `RESTORED` and leaves the case open. `approve_success_fee` then creates one `DUE` `SUCCESS_FEE` obligation for £299.00. Close returns `prerequisite`. The hosted invoice is recorded `ISSUED` and close still returns `prerequisite`. The step headline is “Invoiced” and says an issued invoice is not payment. Step 10 stays incomplete. `payment_apply_provider_event_v1` type `invoice.paid` (test mode, no `livemode: true`) marks the obligation and the invoice `PAID`, writes one receipt, and writes ledger events `OBLIGATION_CREATED`, `INVOICE_ISSUED`, `PROVIDER_PAYMENT_SUCCEEDED`, and `RECEIPT_RECORDED`. A second `invoice.paid` is `duplicate: true` and does not add a receipt. The order stays `ACCEPTED_SUCCESS_FEE`. The headline is “Settled”. No Guard order is created.
+11. `close` stores `CLOSED` / `FINISHED`. All eleven steps are `COMPLETED`.
+
+The owning customer portal returns `CLOSED`, `outcomeCode: RESTORED`, and timeline codes including `QUOTE_ACCEPTED`, `PAYMENT_RECEIVED`, `SUBMITTED_TO_GOOGLE`, and `CASE_COMPLETED`. A second customer receives `{ found: false }`. Staff work events and the case and payment audits name the staff actor.
+
+### C — Managed unsuccessful outcome
+
+The second case in the same file repeats the **same blocked transition** from `AUTHORIZATION_REQUIRED` to `PREPARATION`. Pack and `ADMIN` submission RPCs still succeed from the earlier stage; this is **not complete sequential acceptance**. Both paths reach `OUTCOME_REVIEW` and closure through a bypass of the intended preparation stage.
+
+`record_outcome` stores `NOT_RESTORED` and leaves the case open. `approve_success_fee` returns `denied`. Obligations, invoices, and receipts stay zero. Step 10 is `COMPLETED` with headline “Not billable” before close. `close` stores `CLOSED` / `FINISHED` with that outcome and still creates no fee. All eleven steps are `COMPLETED` after close. No `PAYMENT_RECEIVED` timeline event is created.
+
+The case row remains `NOT_RESTORED`. See the customer visibility FAIL below. This walk does not change portal wording.
+
+### D — Reopen on the Guided case
+
+After the successful Guided close, the same walk reopens the case, keeps the original intake and close events, refuses another `RESTORED` record at `FURTHER_REVIEW`, records `NOT_RESTORED` at `OUTCOME_REVIEW`, refuses a second record, and closes on that new outcome. The upfront receipt is still the settlement. The portal then returns `outcomeCode: null` for that `NOT_RESTORED` row. That null is the visibility FAIL below, not a passing customer-copy result.
+
+Early withdrawal and a Managed cancellation from intake were not composed.
+
+## Customer-facing unsuccessful outcome visibility — FAIL
+
+This is an acceptance result. This pull request does not change the portal.
+
+Both composed walks that store `NOT_RESTORED` show the same customer payload:
+
+- `public.cases.outcome` is `NOT_RESTORED`.
+- `customer_portal_case_v1` returns `status: CLOSED` and `outcomeCode: null`.
+- The timeline code for the closed case is `CASE_COMPLETED`.
+- The portal JSON does not contain `NOT_RESTORED` or the closure-summary sentence.
+- Admin `customerPreview.summary` does contain the summary. The staff intake note stays out of `customerPreview.notes` and out of the portal payload.
+
+`customer_portal_case_v1` sets `outcomeCode` only for `PROFILE_RECOVERY` + `RESTORED` and `REVIEW_PROTECTION` + `REMOVED`. Every other stored outcome, including `NOT_RESTORED`, becomes SQL `NULL`. A successful Managed `RESTORED` close in walk B returns `outcomeCode: RESTORED`, so the null is specific to the unsuccessful outcome, not to closure itself.
+
+Whether the customer should see the unsuccessful outcome is a product copy decision. It is not resolved here.
+
+## Composed branches that do not finish
+
+| Branch | Composed result | What the command did |
+| --- | --- | --- |
+| Managed work-stage progression into `PREPARATION` with completed authority and no saved card | **FAIL** | `transition` returns `prerequisite`: the database's `managed_setup_ready_v1` requires a usable saved payment method and linked consent. The case remains at `AUTHORIZATION_REQUIRED` even though Step 7 says `COMPLETED`. Pack and submission commands subsequently execute from that earlier stage. |
+| Close while a qualifying success fee is `DUE` | PASS | Walk B. `close` returns `prerequisite`. The headline is “Approved fee”. Step 10 is not complete. |
+| Close while that fee’s hosted invoice is `ISSUED` and unpaid | PASS | Walk B. `close` returns `prerequisite`. The headline is “Invoiced” and says this is not payment. |
+| `approve_success_fee` after `NOT_RESTORED` | PASS | Walk C. Status `denied`. No obligation, invoice, or receipt. |
+| `approve_success_fee` before any stored outcome | FAIL | Walks B and C. `qualifying_success_outcome_v1` returns null when `cases.outcome` is null, so `IF NOT` does not deny. The approval insert raises `null value in column "outcome" of relation "success_fee_approvals"`. The statement writes nothing. |
+| Close of a non-qualifying case that already has a non-void success fee | FAIL | No command can create that fee. `approve_success_fee` is denied for `NOT_RESTORED`. The walk does not insert an obligation. |
+| Close of a non-qualifying case whose success fee is `VOID` | FAIL | No `public` or `admin_private` function updates `payment_obligations.state` to `VOID`. The walk does not insert a `VOID` row. |
+
+The last two rows are blockers for a composed walk. They are not repaired by inserting the row in this test.
+
+## Database slices
+
+These PASS or FAIL on their own. None of them is the composed PASS in the table above.
+
+| Rule | Slice result | Evidence |
+| --- | --- | --- |
+| Unpaid, failed, or unconfirmed Guided close | PASS | `apps/admin/lib/cases/close-billing.database.test.ts` |
+| Missing receipt | PASS | `close-billing.database.test.ts` |
+| Wrong customer, wrong order, second order, extra same-track order | PASS | `close-billing.database.test.ts` |
+| Broken quote, acceptance, approval, amount, currency, or tax link | PASS | `close-billing.database.test.ts` |
+| Inserted contradictory active success fee blocks a non-qualifying close | PASS as a slice | `close-billing.database.test.ts` inserts the obligation. Not walk C. |
+| Inserted `VOID` success fee allows a non-qualifying close | PASS as a slice | `close-billing.database.test.ts` updates the row to `VOID`. Not walk C. |
+| Qualifying Managed close after an inserted settled fee | PASS as a slice | `close-billing.database.test.ts`. Walk B now covers the same rule with commands. |
+| Success fee is not created before approval of a qualifying outcome | PASS | `apps/admin/lib/payments/database.test.ts`. That file sets the outcome with SQL. Walk B uses `record_outcome`. |
+| Hosted invoice and duplicate `invoice.paid` | PASS | `payments/database.test.ts`, and walk B. |
+| Live-mode provider event is ignored | PASS | `payments/database.test.ts`. The walks send test-mode events only. |
+| Incomplete Managed authority does not unlock `PREPARATION` | PASS | `apps/admin/lib/authorization/database.test.ts`, and walk B with authority complete and no saved card. |
+| Assessment approval without ready evidence | PASS | `apps/admin/lib/case-journey/assessment.database.test.ts` |
+| Invalid outcome evidence for a success fee | PASS | `payments/database.test.ts` |
+| Early and outcome-review withdrawal | PASS as a slice | `close-billing.database.test.ts`. Not a composed cancellation walk. |
+| Repeated outcome recording on the pre-`20261019235000` chain | PASS on that chain only | `apps/admin/lib/cases/record-outcome.database.test.ts` does not load `20261019235000`. |
+| Billing headlines for approved, invoiced, void, and not billable | PASS as a pure test | `apps/admin/lib/case-journey/outcome.test.ts` feeds fixtures. Walks B and C read the same presenter from command rows. |
+| Portal returns `RESTORED` and `REMOVED` only | PASS as a slice of current SQL | `apps/admin/lib/customer-portal/case-workspace.database.test.ts`. The unsuccessful customer visibility row above is still FAIL. |
+
+## UI unit
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Both Admin close screens post `operation: "close"` and show a settlement refusal | PASS as mocked UI | `closure.ui.test.tsx` and `cockpit/close-billing.ui.test.tsx` |
+| DEV preview gate | PASS as a unit test | `gate.test.ts` |
+| Signed-in journey | NOT TESTED | No browser session was opened. |
+
+## Negative and security checks
+
+| Check | Composed walk | Database slice |
+| --- | --- | --- |
+| Unpaid Guided close | PASS. Walk A denies close before settlement. | PASS. `close-billing.database.test.ts` |
+| Missing receipt | PASS. Walk A stores one receipt. | PASS. `close-billing.database.test.ts` |
+| Wrong customer | PASS. The other customer receives `{ found: false }` on A, B, and C. | PASS. `close-billing.database.test.ts` |
+| Duplicate or extra order | Not run as a second order on these walks. | PASS. `close-billing.database.test.ts` |
+| Broken commercial link | Not run on these walks. | PASS. `close-billing.database.test.ts` |
+| Incorrect evidence | Not run on these walks. | PASS. Assessment and success-fee evidence slices above. |
+| Incomplete authority | Walk B reaches readiness only after the three authority commands. It does not also remove one of them. | PASS. `authorization/database.test.ts` |
+| Open task | PASS. Walks A, B, and C return `open_work`. | Covered by the same close command. |
+| Unresolved submission | PASS. Walks A, B, and C return `open_work`. | Covered by the same close command. |
+| Stale version | PASS. Walk A returns `conflict`. | PASS. `close-billing.database.test.ts` |
+| Outcome that does not match the stored record | PASS. Walk A denies the mismatched close and a second record. | PASS. `close-billing.database.test.ts` |
+| Unauthorised token | PASS. Walk A returns `unauthorized`. | PASS. `close-billing.database.test.ts` |
+| Replay of the same close | PASS. Walk A keeps one close event for that request. | PASS. `close-billing.database.test.ts` |
+| Direct table update and helper execute | PASS. Walk A: `anon` cannot update `public.cases`. `case_close_billing_ready_v1` is not executable by `anon`, `authenticated`, or `service_role`. | Same command privileges. |
+| Duplicate success-fee settlement | PASS. Walk B keeps one obligation, one invoice, and one receipt. | PASS. `payments/database.test.ts` |
+| Approved fee or issued invoice treated as settlement | PASS. Walk B. Close stays `prerequisite` for both. | Presenter fixtures in `outcome.test.ts` |
+
+## Automated coverage added
+
+- `apps/admin/lib/case-journey/acceptance-walk.database.test.ts` — Guided walk, reopen, and the close security checks.
+- `apps/admin/lib/case-journey/managed-acceptance-walk.database.test.ts` — Managed qualifying settlement and Managed unsuccessful close.
+
+Existing slice files were not rewritten. Portal SQL and customer copy were not changed.
+
+## Unresolved blockers
+
+1. **Managed work-stage blocker:** `admin_private.managed_setup_ready_v1` requires a usable saved card and linked consent even after Managed agreement, business authority, case permission and Google manager access are complete. The natural transition into `PREPARATION` is refused; downstream pack and submission commands execute from `AUTHORIZATION_REQUIRED`. This conflicts with PS-2026-10-14.2 and prevents composed B/C end-to-end acceptance. Requires a separately reviewed database rule correction and new Managed walks.
+2. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
+3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
+4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
+5. `approve_success_fee` before a stored outcome raises a not-null constraint instead of returning `denied`.
+6. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
+7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
+8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

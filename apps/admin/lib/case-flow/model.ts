@@ -205,8 +205,10 @@ export type CasePrerequisiteGroup = {
   label: string
   /**
    * Whether every item in the group is satisfied. This is the model's
-   * reading of component facts; the database gate — `guided_payment_ready_v1`
-   * or `managed_setup_ready_v1` — remains what actually permits a transition.
+   * reading of component facts. The database command permits a transition.
+   * Managed stage entry uses authorisation readiness. `managed_setup_ready_v1`
+   * remains the saved-card helper and is not that stage gate. This projection
+   * can still recommend a saved-card step.
    */
   satisfied: boolean
   items: CasePrerequisite[]

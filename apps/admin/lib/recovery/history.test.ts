@@ -29,7 +29,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.version)).toEqual([])
+    expect(pending.map(entry => entry.version)).toEqual(["20261020120000"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261019235000",
       name: "admin_journey_12a_close_billing_v1",

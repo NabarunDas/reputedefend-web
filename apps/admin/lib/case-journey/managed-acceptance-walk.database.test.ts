@@ -11,6 +11,12 @@
  * inserted authority facts. Agreement, case permission, manager access, and
  * `authorizationReady` come from their commands.
  *
+ * Both cases move AUTHORIZATION_REQUIRED → PREPARATION → READY_TO_SUBMIT
+ * before the first submission. No saved card or payment consent is inserted.
+ * A first submission from any earlier Managed stage is denied. A later
+ * submission from FURTHER_REVIEW still requires current authorisation.
+ * Revoked permission or revoked manager access refuses that retry.
+ *
  * No function updates `payment_obligations.state` to VOID, so a composed
  * voided-fee close is not reachable. The inserted-row case stays in
  * `close-billing.database.test.ts`.
@@ -64,6 +70,7 @@ type Json = Record<string, unknown> & {
   id?: string
   version?: number
   recordVersion?: number
+  authorizationId?: string
   versionId?: string
   documentId?: string
   orderId?: string
@@ -91,6 +98,28 @@ function expectOk(value: { status?: string }, label: string) {
 
 async function versionOf(caseId: string) {
   return (await db.query<{ workflow_version: number }>("select workflow_version from public.cases where id = $1", [caseId])).rows[0].workflow_version
+}
+
+async function stageOf(caseId: string) {
+  return (await db.query<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId])).rows[0].work_stage
+}
+
+async function submissionCount(caseId: string) {
+  return (await db.query<{ n: number }>("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).rows[0].n
+}
+
+async function stepState(caseId: string, id: string) {
+  return (await journeyFor(caseId)).steps.find(step => step.id === id)?.state
+}
+
+function submissionData(reference: string, submittedAt = "2026-02-01T12:00:00.000Z") {
+  return {
+    submittedAt,
+    reference,
+    channel: "Google appeals tool",
+    evidence: "Submission receipt reviewed and referenced",
+    confirmed: true,
+  }
 }
 
 async function caseCommand(caseId: string, operation: string, data: Record<string, unknown>, request = key()) {
@@ -250,10 +279,12 @@ async function acceptAgreement(caseId: string, kind: "SERVICE_AGREEMENT" | "CASE
   }])
   expectOk(created, kind)
   const session = await acceptLink(created.id, hash(raw))
-  expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toMatchObject({
+  const accepted = await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])
+  expect(accepted).toMatchObject({
     status: "success",
     authorizationStatus: "ACTIVE",
   })
+  return accepted
 }
 
 async function deliverRequest(caseId: string, requestId: string, marker: string) {
@@ -389,12 +420,37 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expect(accepted).toMatchObject({ orderState: "ACCEPTED_SUCCESS_FEE" })
   expect(await chargeCounts(caseId)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
 
+  const premature = await caseCommand(caseId, "submission", submissionData(`GOOGLE-${marker}`))
+  expect(premature.status, JSON.stringify(premature)).toBe("denied")
+  expect(await stageOf(caseId)).toBe("SERVICE_SELECTION")
+
+  await move(caseId, "AUTHORIZATION_REQUIRED", ahead(24 * 40))
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  const absentAgreement = await caseCommand(caseId, "transition", { target: "PREPARATION", nextAction: "", due: null })
+  expect(absentAgreement.status, JSON.stringify(absentAgreement)).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("AUTHORIZATION_REQUIRED")
+  const earlySubmission = await caseCommand(caseId, "submission", submissionData(`GOOGLE-${marker}`))
+  expect(earlySubmission.status, JSON.stringify(earlySubmission)).toBe("denied")
+  expect(await stageOf(caseId)).toBe("AUTHORIZATION_REQUIRED")
+
   await acceptAgreement(caseId, "SERVICE_AGREEMENT")
-  await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  expect((await caseCommand(caseId, "transition", { target: "PREPARATION", nextAction: "", due: null })).status).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("AUTHORIZATION_REQUIRED")
+
+  const permission = await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(permission.authorizationId).toBeTruthy()
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect((await caseCommand(caseId, "transition", { target: "PREPARATION", nextAction: "", due: null })).status).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("AUTHORIZATION_REQUIRED")
+
   await freshSession()
-  expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
+  const verified = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
     accessLevel: "MANAGER", evidence: managerEvidence, confirmed: true, recordVersion: 0,
-  }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+  }])
+  expect(verified).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
   const readiness = await rpc("admin_case_authorization_readiness_v1", [token, caseId])
   expect(readiness).toMatchObject({
     serviceAgreementAccepted: true,
@@ -403,13 +459,36 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
     businessAuthorityVerified: true,
     authorizationReady: true,
   })
-  expect((await journeyFor(caseId)).steps.find(step => step.id === "SERVICE_ACTIVATION")?.state).toBe("COMPLETED")
-  expect((await db.query<{ n: number }>("select count(*)::int as n from public.saved_payment_methods where service_order_id = $1", [(await orderRow(caseId)).id])).rows[0].n).toBe(0)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+  const order = await orderRow(caseId)
+  expect((await db.query<{ n: number }>("select count(*)::int as n from public.saved_payment_methods where service_order_id = $1", [order.id])).rows[0].n).toBe(0)
+  expect((await db.query<{ n: number }>(
+    "select count(*)::int as n from public.payment_consents where service_order_id = $1",
+    [order.id],
+  )).rows[0].n).toBe(0)
+  expect((await db.query<{ ready: boolean }>("select admin_private.managed_setup_ready_v1($1) as ready", [caseId])).rows[0].ready).toBe(false)
 
-  await move(caseId, "AUTHORIZATION_REQUIRED", ahead(24 * 40))
-  const blocked = await caseCommand(caseId, "transition", { target: "PREPARATION", nextAction: "Follow up with the customer", due: ahead(24 * 40) })
-  expect(blocked.status, JSON.stringify(blocked)).toBe("prerequisite")
-  expect((await db.query<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId])).rows[0].work_stage).toBe("AUTHORIZATION_REQUIRED")
+  const version = await versionOf(caseId)
+  const preparation = { note, target: "PREPARATION", nextAction: "", due: null }
+  expect((await rpc("admin_case_command_v1", [token, key(), caseId, version - 1, "transition", preparation])).status).toBe("conflict")
+  expect((await rpc("admin_case_command_v1", ["c".repeat(64), key(), caseId, version, "transition", preparation])).status).toBe("unauthorized")
+  const preparationRequest = key()
+  const entered = await rpc("admin_case_command_v1", [token, preparationRequest, caseId, version, "transition", preparation])
+  expectOk(entered, "preparation")
+  expect(await rpc("admin_case_command_v1", [token, preparationRequest, caseId, version, "transition", preparation])).toEqual(entered)
+  expect((await db.query<{ n: number }>(
+    "select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'to' = 'PREPARATION'",
+    [caseId],
+  )).rows[0].n).toBe(1)
+  expect(await stageOf(caseId)).toBe("PREPARATION")
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+
+  const duringPreparation = await caseCommand(caseId, "submission", submissionData(`GOOGLE-${marker}`))
+  expect(duringPreparation.status, JSON.stringify(duringPreparation)).toBe("denied")
+  expect(await stageOf(caseId)).toBe("PREPARATION")
+  expect((await caseCommand(caseId, "transition", { target: "READY_TO_SUBMIT", nextAction: "", due: null })).status).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("PREPARATION")
+  expect(await stepState(caseId, "PREPARATION")).not.toBe("COMPLETED")
 
   const pack = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, null, null, "create", {}])
   expectOk(pack, "pack")
@@ -420,25 +499,128 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expectOk(await rpc("admin_prepared_pack_command_v1", [
     token, key(), caseId, pack.id, approvedPack.recordVersion, "publish", { note: publishNote, confirmed: true },
   ]), "pack publication")
-  expect((await journeyFor(caseId)).steps.find(step => step.id === "PREPARATION")?.state).toBe("COMPLETED")
+  expect(await stepState(caseId, "PREPARATION")).toBe("COMPLETED")
+  expect(await stageOf(caseId)).toBe("PREPARATION")
 
-  const filed = await caseCommand(caseId, "submission", {
-    submittedAt: "2026-02-01T12:00:00.000Z",
-    reference: `GOOGLE-${marker}`,
-    channel: "Google appeals tool",
-    evidence: "Submission receipt reviewed and referenced",
+  await freshSession()
+  const revokedAccess = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", {
+    reason: "Access removed after a live Google check.", confirmed: true, recordVersion: verified.recordVersion,
+  }])
+  expect(revokedAccess).toMatchObject({ status: "success", managerStatus: "REVOKED" })
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect((await caseCommand(caseId, "transition", { target: "READY_TO_SUBMIT", nextAction: "", due: null })).status).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("PREPARATION")
+  await freshSession()
+  const restoredAccess = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
+    accessLevel: "MANAGER", evidence: managerEvidence, confirmed: true, recordVersion: revokedAccess.recordVersion,
+  }])
+  expect(restoredAccess).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+
+  await freshSession()
+  expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", {
+    authorizationId: permission.authorizationId,
+    reason: "Customer asked for an emergency stop after a live call.",
     confirmed: true,
-  })
+    recordVersion: 1,
+  }])).toMatchObject({ status: "success", authorizationStatus: "REVOKED" })
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect((await caseCommand(caseId, "transition", { target: "READY_TO_SUBMIT", nextAction: "", due: null })).status).toBe("prerequisite")
+  expect(await stageOf(caseId)).toBe("PREPARATION")
+  const restoredPermission = await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(restoredPermission.authorizationId).toBeTruthy()
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+  expect((await db.query<{ ready: boolean }>("select admin_private.managed_setup_ready_v1($1) as ready", [caseId])).rows[0].ready).toBe(false)
+
+  await move(caseId, "READY_TO_SUBMIT")
+  expect(await stageOf(caseId)).toBe("READY_TO_SUBMIT")
+  expect(await stepState(caseId, "PREPARATION")).toBe("COMPLETED")
+  const filed = await caseCommand(caseId, "submission", submissionData(`GOOGLE-${marker}`))
   expectOk(filed, "submission")
+  expect(await stageOf(caseId)).toBe("SUBMITTED")
+  expect(await stepState(caseId, "SUBMISSION")).not.toBe("COMPLETED")
   const detail = await rpc<CaseDetail>("admin_case_detail_v1", [token, caseId, null])
   expect(detail.submissions[0]?.actor).toBe("ADMIN")
   await move(caseId, "OUTCOME_REVIEW")
+  expect(await stageOf(caseId)).toBe("OUTCOME_REVIEW")
   expect((await caseCommand(caseId, "close", { outcome: closeOutcome, summary: "Probe while the submission is still open." })).status).toBe("open_work")
   expectOk(await caseCommand(caseId, "resolve_submission", { submissionId: detail.submissions[0].id, result: "DECIDED" }), "submission result")
+  expect(await stepState(caseId, "SUBMISSION")).toBe("COMPLETED")
   const openTasks = await db.query<{ id: string }>("select id from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])
   expect(openTasks.rows.length).toBeGreaterThan(0)
   expect((await caseCommand(caseId, "close", { outcome: closeOutcome, summary: "Probe while a follow-up task is still open." })).status).toBe("open_work")
   for (const task of openTasks.rows) expectOk(await caseCommand(caseId, "resolve_task", { taskId: task.id, status: "DONE" }), "resolve task")
+
+  await move(caseId, "FURTHER_REVIEW")
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+  expect(await submissionCount(caseId)).toBe(1)
+  const retry = { note, ...submissionData(`GOOGLE-${marker}-2`, "2026-02-02T12:00:00.000Z") }
+  await freshSession()
+  expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", {
+    authorizationId: restoredPermission.authorizationId,
+    reason: "Customer withdrew case-management permission before another submission.",
+    confirmed: true,
+    recordVersion: 1,
+  }])).toMatchObject({ status: "success", authorizationStatus: "REVOKED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  const blockedPermissionVersion = await versionOf(caseId)
+  const blockedPermissionRequest = key()
+  const blockedPermission = await rpc("admin_case_command_v1", [token, blockedPermissionRequest, caseId, blockedPermissionVersion, "submission", retry])
+  expect(blockedPermission.status, JSON.stringify(blockedPermission)).toBe("prerequisite")
+  expect(await rpc("admin_case_command_v1", [token, blockedPermissionRequest, caseId, blockedPermissionVersion, "submission", retry])).toEqual(blockedPermission)
+  expect(await submissionCount(caseId)).toBe(1)
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+
+  const currentPermission = await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(currentPermission.authorizationId).toBeTruthy()
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
+  await freshSession()
+  const revokedRetryAccess = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", {
+    reason: "Access removed after a live Google check.", confirmed: true, recordVersion: restoredAccess.recordVersion,
+  }])
+  expect(revokedRetryAccess).toMatchObject({ status: "success", managerStatus: "REVOKED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  const blockedAccessVersion = await versionOf(caseId)
+  const blockedAccessRequest = key()
+  const blockedAccess = await rpc("admin_case_command_v1", [token, blockedAccessRequest, caseId, blockedAccessVersion, "submission", retry])
+  expect(blockedAccess.status, JSON.stringify(blockedAccess)).toBe("prerequisite")
+  expect(await rpc("admin_case_command_v1", [token, blockedAccessRequest, caseId, blockedAccessVersion, "submission", retry])).toEqual(blockedAccess)
+  expect(await submissionCount(caseId)).toBe(1)
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+
+  await freshSession()
+  expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
+    accessLevel: "MANAGER", evidence: managerEvidence, confirmed: true, recordVersion: revokedRetryAccess.recordVersion,
+  }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+  const retryVersion = await versionOf(caseId)
+  const retryRequest = key()
+  const repeated = await rpc("admin_case_command_v1", [token, retryRequest, caseId, retryVersion, "submission", retry])
+  expectOk(repeated, "later submission")
+  expect(await rpc("admin_case_command_v1", [token, retryRequest, caseId, retryVersion, "submission", retry])).toEqual(repeated)
+  expect(await submissionCount(caseId)).toBe(2)
+  expect(await stageOf(caseId)).toBe("SUBMITTED")
+  const attempts = await db.query<{ actor: string; recorded_by: string; google_reference: string }>(
+    "select actor, recorded_by::text, google_reference from public.case_submissions where case_id = $1",
+    [caseId],
+  )
+  expect(attempts.rows).toHaveLength(2)
+  expect(attempts.rows.every(row => row.actor === "ADMIN" && row.recorded_by === admin)).toBe(true)
+  expect(attempts.rows.filter(row => row.google_reference === `GOOGLE-${marker}-2`)).toHaveLength(1)
+  const later = await rpc<CaseDetail>("admin_case_detail_v1", [token, caseId, null])
+  const openAttempt = later.submissions.find(item => item.result === null)
+  expect(openAttempt?.id).toBeTruthy()
+  expect(openAttempt?.actor).toBe("ADMIN")
+  expectOk(await caseCommand(caseId, "resolve_submission", { submissionId: openAttempt?.id, result: "DECIDED" }), "later result")
+  await move(caseId, "OUTCOME_REVIEW")
+  expect(await stageOf(caseId)).toBe("OUTCOME_REVIEW")
+  expect(await stepState(caseId, "SUBMISSION")).toBe("COMPLETED")
   expect((await db.query<{ status: string }>("select status from public.cases where id = $1", [caseId])).rows[0].status).not.toBe("CLOSED")
   return { evidenceVersionId: begun.versionId!, orderId: (await orderRow(caseId)).id }
 }
@@ -688,5 +870,45 @@ describe("composed Managed acceptance walks", () => {
         and p.prosrc ~* 'update[[:space:]]+(public\\.)?payment_obligations[[:space:]]+set[[:space:]]+state[[:space:]]*=[[:space:]]*''void'''
     `)
     expect(writers.rows, "a composed voided-fee close needs a command that writes VOID").toEqual([])
+  }, 120000)
+
+  it("refuses a first Managed submission from FURTHER_REVIEW when none has been recorded", async () => {
+    const caseId = "d1000000-0000-4000-8000-0000000000d1"
+    const locationId = "d2000000-0000-4000-8000-0000000000d2"
+    await db.exec(`
+      insert into public.locations(id, business_id, country) values ('${locationId}', '${business}', 'United Kingdom');
+      insert into public.cases(
+        id, case_type, customer_id, business_id, location_id, issue_description, intake_snapshot, created_at,
+        information_accurate_at, privacy_accepted_at
+      ) values (
+        '${caseId}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${locationId}', 'The profile disappeared.',
+        '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"The profile disappeared."}'::jsonb,
+        '2026-01-01', now(), now()
+      );
+    `)
+    expectOk(await caseCommand(caseId, "plan", {
+      track: "MANAGED", priority: "NORMAL", assigned: true, nextAction: "Record the withdrawal before preparation.", due: null, firstResponseDue: null,
+    }), "plan")
+    expectOk(await caseCommand(caseId, "close", {
+      outcome: "WITHDRAWN", summary: "The customer withdrew before any submission was recorded.",
+    }), "withdraw")
+    expect(await stageOf(caseId)).toBe("FINISHED")
+    expectOk(await caseCommand(caseId, "reopen", {
+      title: "Review the withdrawn case again",
+      owner: "ADMIN",
+      kind: "FOLLOW_UP",
+      due: ahead(48),
+      source: "Customer asked to continue this case.",
+      timezone: "UTC",
+    }), "reopen")
+    expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).rows[0].n).toBe(0)
+    const filed = await caseCommand(caseId, "submission", submissionData("GOOGLE-withdrawn"))
+    expect(filed.status, JSON.stringify(filed)).toBe("denied")
+    expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+    expect((await caseCommand(caseId, "transition", { target: "PREPARATION", nextAction: "", due: null })).status).toBe("prerequisite")
+    expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+    expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+    expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
   }, 120000)
 })

@@ -42,7 +42,7 @@ The DEV function now enforces the commercial prerequisite for all Admin closure 
 | Item | Position |
 | --- | --- |
 | DEV applied head | `20261019235000`. This file is `appliedToDev: true` after verification. |
-| Repository head | `20261019235000`, matching DEV; no pending migration. |
+| Repository head | `20261020120000` is applied to DEV under E2E-02; Step 12A is still applied and immutable. No DEV migrations are pending. |
 | Production and AWS ApprovedMigrationHead | Remain `20261014170000`. |
 | Step 10B and the seven DEV-HISTORY-01 files | Not edited and not replayed. |
 | `record-outcome` PGlite suite | Still loads the chain through Step 10B only, so it keeps proving the previous close behaviour. |

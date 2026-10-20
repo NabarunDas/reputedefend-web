@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import "@testing-library/jest-dom/vitest"
 
 const load = vi.hoisted(() => vi.fn())
 const gate = vi.hoisted(() => vi.fn(() => true))
@@ -34,11 +37,17 @@ const ready = {
   },
 }
 
+const closedAt = "2026-10-08T09:00:00.000Z"
+
 describe("customer case page", () => {
   beforeEach(() => {
     load.mockReset()
     gate.mockReset()
     gate.mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    cleanup()
   })
 
   it("checks the public reference before calling the case RPC", async () => {
@@ -66,5 +75,28 @@ describe("customer case page", () => {
     const shown = await CustomerCasePage({ params: Promise.resolve({ reference: "PR-26-ABCDEF" }) })
     expect(shown).toBeTruthy()
     expect(load).toHaveBeenLastCalledWith("PR-26-ABCDEF")
+  })
+
+  it("shows the closed unsuccessful outcome returned by the case loader", async () => {
+    const { default: CustomerCasePage } = await import("./page")
+    load.mockResolvedValueOnce({
+      status: "ready",
+      detail: {
+        ...ready.detail,
+        case: {
+          ...ready.detail.case,
+          status: "CLOSED",
+          workStage: "FINISHED",
+          closedAt,
+          outcomeCode: "NOT_RESTORED",
+        },
+        timeline: [{ code: "CASE_COMPLETED", occurredAt: closedAt }],
+      },
+    })
+    render(await CustomerCasePage({ params: Promise.resolve({ reference: "PR-26-ABCDEF" }) }))
+    expect(screen.getByRole("heading", { name: "Your profile was not restored" })).toBeTruthy()
+    expect(screen.getByText("Your profile was not restored and the case was completed.")).toBeTruthy()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+    expect(document.body.textContent).not.toMatch(/closure summary|staff note|LEAK-/i)
   })
 })

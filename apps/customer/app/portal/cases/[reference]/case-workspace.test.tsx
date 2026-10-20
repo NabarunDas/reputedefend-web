@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import PortalLayout from "../../layout"
 import { CaseUnavailable, CaseWorkspace } from "./case-workspace"
-import type { CustomerCaseDetail } from "@/lib/portal/cases/parse"
+import { parseCaseDetail, type CustomerCaseDetail } from "@/lib/portal/cases/parse"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/cases/PR-26-ABCDEF" }))
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname, useRouter: () => ({ push: vi.fn() }) }))
@@ -143,6 +143,78 @@ describe("customer case workspace", () => {
     expect(screen.getByText("Decision — current step")).toBeTruthy()
     expect(screen.getByText("The review was removed and the case was completed.")).toBeTruthy()
     expect(screen.queryByText("Complete history")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+      attentionItems: [],
+      outcomeCode: "NOT_RESTORED",
+    }, { timeline: [{ code: "CASE_COMPLETED", occurredAt: closedAt }] })} />)
+    expect(screen.getByRole("heading", { name: "Your profile was not restored" })).toBeTruthy()
+    expect(screen.getByText("The profile was not restored. This case is complete.")).toBeTruthy()
+    expect(screen.getByText("Your profile was not restored and the case was completed.")).toBeTruthy()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      status: "CANCELLED",
+      workStage: "FINISHED",
+      closedAt,
+      attentionItems: [],
+      outcomeCode: "WITHDRAWN",
+    }, { timeline: [{ code: "CASE_CANCELLED", occurredAt: closedAt }] })} />)
+    expect(screen.getByRole("heading", { name: "This case was withdrawn" })).toBeTruthy()
+    expect(screen.getAllByText("This case was withdrawn and is now closed. This closure does not report a restoration or removal result.")).toHaveLength(2)
+    expect(screen.queryByText(/No Google result/)).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      status: "CANCELLED",
+      workStage: "FINISHED",
+      closedAt,
+      attentionItems: [],
+      outcomeCode: "WITHDRAWN",
+    }, { timeline: [
+      { code: "CASE_CANCELLED", occurredAt: closedAt },
+      { code: "GOOGLE_DECISION_RECORDED", occurredAt: "2026-10-06T09:00:00.000Z" },
+      { code: "SUBMITTED_TO_GOOGLE", occurredAt: "2026-10-04T09:00:00.000Z" },
+    ] })} />)
+    expect(screen.getByText("A Google decision was recorded for your case.")).toBeTruthy()
+    expect(screen.getByText("Your case was submitted to Google.")).toBeTruthy()
+    expect(screen.getAllByText("This case was withdrawn and is now closed. This closure does not report a restoration or removal result.").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/No Google result/)).toBeNull()
+  })
+
+  it("does not show a terminal decision when the parser rejects the payload", () => {
+    const malformed = {
+      found: true,
+      case: {
+        reference: "PR-26-ABCDEF",
+        caseType: "PROFILE_RECOVERY",
+        serviceTrack: "GUIDED",
+        businessName: "Harbour Bakery",
+        locationName: "High Street",
+        status: "UNDER_REVIEW",
+        workStage: "OUTCOME_REVIEW",
+        submittedAt,
+        closedAt: null,
+        attentionItems: [],
+        outcomeCode: "RESTORED",
+      },
+      timeline: [{ code: "CASE_COMPLETED", occurredAt: closedAt }],
+      timelineTruncated: false,
+    }
+    expect(parseCaseDetail(malformed)).toBeNull()
+    expect(parseCaseDetail({
+      ...malformed,
+      case: { ...malformed.case, outcomeCode: "NOT_RESTORED", status: "UNDER_REVIEW", workStage: "FURTHER_REVIEW" },
+    })).toBeNull()
+    render(<CaseUnavailable />)
+    expect(screen.queryByRole("heading", { name: "Your profile was restored" })).toBeNull()
+    expect(screen.queryByText("Your profile was restored and the case was completed.")).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Your profile was not restored" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "The review was removed" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "The review was not removed" })).toBeNull()
+    expect(screen.getByRole("heading", { name: "We couldn't load this case" })).toBeTruthy()
   })
 
   it("says when the timeline is only the latest 20 updates", () => {

@@ -903,13 +903,11 @@ describe("composed Managed acceptance walks", () => {
       "customer_portal_case_v1",
       [alexSession, reference],
     )
-    expect(owned.case).toMatchObject({ status: "CLOSED", serviceTrack: "MANAGED" })
-    // Current portal SQL maps only RESTORED and REMOVED. NOT_RESTORED stays on the case row and the portal returns null.
-    expect(owned.case.outcomeCode).toBeNull()
+    expect(owned.case).toMatchObject({ status: "CLOSED", serviceTrack: "MANAGED", outcomeCode: "NOT_RESTORED" })
     expect(owned.timeline.map(item => item.code)).toContain("CASE_COMPLETED")
     expect(owned.timeline.map(item => item.code)).not.toContain("PAYMENT_RECEIVED")
-    expect(JSON.stringify(owned)).not.toContain("NOT_RESTORED")
     expect(JSON.stringify(owned)).not.toContain(summary)
+    expect(JSON.stringify(owned)).not.toContain(staffNote)
     const detail = await rpc<CaseDetail>("admin_case_detail_v1", [token, unsuccessfulCase, null])
     expect(detail.customerPreview.summary).toBe(summary)
     expect(detail.customerPreview.notes).not.toContain(staffNote)

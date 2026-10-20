@@ -53,16 +53,17 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(41)
+    expect(chainAfter(checkpoint)).toHaveLength(42)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is DEV-applied ADMIN-JOURNEY-E2E-02. Step 12A stays applied.
+    // The tail is DEV-applied ADMIN-JOURNEY-E2E-03. E2E-02 stays applied.
     // Production remains at SEC-08. This disposable rebuild is not a live apply.
-    expect(pending.at(-1)?.version).toBe("20261020120000")
+    expect(pending.at(-1)?.version).toBe("20261020150000")
     expect(pending.at(-1)?.appliedToDev).toBe(true)
+    expect(pending.some(entry => entry.version === "20261020120000" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261019235000" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261019183000" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261019163645" && entry.appliedToDev)).toBe(true)

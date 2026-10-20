@@ -68,4 +68,4 @@ These files are in `supabase/migrations` so a disposable rebuild can reproduce t
 - Disposable PGlite rehearsals apply the chain to a throwaway database. That is not a live apply.
 - Draft template rows do not become the live approved template and do not turn sending on.
 
-`pendingMigrations()` is empty after DEV-only E2E-02 migration `20261020120000_admin_journey_e2e_02_managed_stage_v1.sql`. This is the verified applied DEV head and is not applied to Production. Step 12A and the seven recovered statements remain applied without replay.
+`pendingMigrations()` is empty after independently reviewed DEV-only E2E-03 `20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql`. Canonical DEV head is `20261020150000`, unapplied to Production. E2E-02, Step 12A and the seven recovered statements remain applied without replay.

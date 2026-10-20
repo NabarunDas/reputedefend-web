@@ -42,7 +42,7 @@ Qualifying settlement and the unsuccessful close are unchanged. Guided payment r
 
 ## Not in this change
 
-- `approve_success_fee` before a stored outcome still raises `null value in column "outcome"` instead of `denied`.
+- A missing outcome returns `denied` after E2E-03 migration `20261020150000`, applied to DEV only. The fix is not in Production. See `docs/admin/admin-journey-e2e-03.md`.
 - The customer portal still maps `NOT_RESTORED` to `outcomeCode: null`.
 - No command writes `payment_obligations.state = 'VOID'`.
 - No signed-in browser journey was run.

@@ -68,4 +68,4 @@ These files are in `supabase/migrations` so a disposable rebuild can reproduce t
 - Disposable PGlite rehearsals apply the chain to a throwaway database. That is not a live apply.
 - Draft template rows do not become the live approved template and do not turn sending on.
 
-`pendingMigrations()` is now empty following the separately reviewed DEV-only Step 10B application. The seven recovered statements stay `appliedToDev` and are not replayed.
+`pendingMigrations()` contains only the unapplied Step 12A file `20261019235000`. Step 10B remains the applied DEV head. The seven recovered statements stay `appliedToDev` and are not replayed.

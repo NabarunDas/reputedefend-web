@@ -94,8 +94,8 @@ function normalized(sql: string): string {
 
 describe("DEV-HISTORY-01 recovered statements", () => {
   it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual([])
-    expect(manifestVersions().at(-1)).toBe("20261019183000")
+    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261019235000"])
+    expect(manifestVersions().at(-1)).toBe("20261019235000")
     for (const item of recovered) {
       const sql = read(`supabase/migrations/${item.filename}`)
       const bytes = Buffer.byteLength(sql)

@@ -1,6 +1,6 @@
-# Proposed close safeguard — not applied
+# Close safeguard — reviewable migration, not applied
 
-Status: proposal for a separate review. This file is not a migration. It is not in `supabase/migrations` and it is not in the recovery manifest. Do not apply it to DEV or Production from this change.
+Status: the check proposed here is implemented in `supabase/migrations/20261019235000_admin_journey_12a_close_billing_v1.sql`. That file is in the recovery manifest as pending (`appliedToDev: false`). It has not been applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request. Independent review applies it to DEV only.
 
 ## Gap
 

@@ -6,6 +6,8 @@ export type EnquiryEmailMessage = {
   text: string
   html: string
   kind: "internal" | "customer-ack"
+  /** Stable provider key. The same communication id must reuse the same key. */
+  idempotencyKey?: string
 }
 
 export type EnquiryProviderResult =

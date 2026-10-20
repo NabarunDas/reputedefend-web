@@ -1,38 +1,43 @@
-# DEV-MAIL-01 Phase A — Marketing develop Preview email
+# Develop DEV Get Help email
 
-Phase A opens real Resend delivery for Get Help on one lane only: the Marketing Preview whose git ref is `develop` and whose `SUPABASE_URL` is the DEV project `rmzozuiamjcclvtgutgd`. Production is unchanged. Other Preview branches stay closed. This change does not set any Vercel variable, send a message, or start Phase B.
+The Marketing develop Preview and Production use the same customer acknowledgement and the same internal notice. Each environment keeps its own database, storage, payment provider, credentials, and Resend configuration. This change does not set a Vercel variable, send a message, or run a migration.
 
-## Flags
+## What is sent
 
-Set these only on the Marketing project, and only for the Preview environment of `develop`. Do not copy them to Production, to other Preview branches, or to a `NEXT_PUBLIC_` name.
+On Production, and on the Preview whose git ref is `develop` and whose `SUPABASE_URL` hostname is the DEV project `rmzozuiamjcclvtgutgd`, Get Help sends when the normal enquiry configuration is ready:
 
-| Variable | Required value |
-| --- | --- |
-| `DEV_MAIL_ENABLED` | The word `true`. Surrounding whitespace, including a trailing newline, is ignored. `TRUE`, `1` and `yes` leave the gate closed. |
-| `DEV_MAIL_ALLOWED_RECIPIENTS` | A comma-separated list of exact mailboxes. The whole list is rejected when any token is empty, a display name, a wildcard, or more than one address. Comparison is case-insensitive and exact. |
-| `DEV_MAIL_INTERNAL_RECIPIENT` | Optional. One exact mailbox that may receive only the internal notice, and only when it is different from the customer recipient. It never authorises the customer acknowledgement. A malformed value closes the gate. |
-| `DEV_CASE_INTAKE_NO_EMAIL` | Existing kill switch. The word `true`, after surrounding whitespace is removed, suppresses every case-intake send on this lane, including when `DEV_MAIL_ENABLED` is also true. |
+- `RESEND_API_KEY`
+- `ENQUIRY_FROM_EMAIL`
+- `ENQUIRY_TO_EMAIL`
 
-The customer acknowledgement and the internal notice are sent together or not at all. A recipient that is not approved suppresses both. The case is still saved once, keyed by the existing submission id, and a later retry does not create another case or send again after the provider has accepted the message.
+The customer acknowledgement goes to the address stored with the case. The internal notice goes to that environment's `ENQUIRY_TO_EMAIL`. No separate recipient allowlist and no second on/off switch is consulted. A valid customer address entered on the develop Preview receives the same confirmation Production would send.
 
-Provider acceptance is recorded as `communications.status = SENT` with the provider message id. That status is not inbox delivery. Nothing in this path writes `DELIVERED`. The customer confirmation says the reference was passed to the email provider and that this does not confirm it reached the inbox. A closed gate says the confirmation email is not sent in this development environment.
+Every other Vercel Preview persists the case and does not call Resend. The customer sees that confirmation email is not sent in that preview. Production and the develop DEV Preview do not use that sentence.
 
-`NEXT_PUBLIC_GA_MEASUREMENT_ID` is not set or read by this change. Preview analytics stay off.
+Provider acceptance is `communications.status = SENT` with the provider message id. That status is not inbox delivery. This path does not write `DELIVERED`.
 
-When this lane still closes, the server logs one line, `[case-intake] dev mail closed reason=<code>`, with an optional `detail` from a fixed list. The codes are `git-ref`, `database`, `kill-switch`, `mail-disabled`, `allowlist-missing`, `allowlist-malformed`, `internal-approval-malformed`, `no-pending`, `customer-rejected` and `internal-rejected`. The line does not contain an address, the allowlist, a token or a secret. Feature-branch previews and Production do not write it. The HTTP response stays the existing suppressed or unavailable copy and does not include the reason.
+The public Get Help route keeps its existing rate limit. One submission key still creates one case. A repeated key returns the stored case and does not insert another.
 
-## Retry of a case that already exists
+## Idempotency
 
-`POST /api/dev/case-intake-mail` with `{ "publicRef": "<existing reference>" }` is available only on this lane. It loads the stored submission and the stored communication rows, then uses the same gate. It does not insert a case and it does not accept a recipient in the request. A row already marked `SENT` is not sent again. A recipient that is still not approved stays suppressed. Production and every other Preview answer 404 before reading a case. This repository does not call that route.
+Each communication is claimed by one worker before Resend is called. The claim is stored on the communication row. A second worker that loses the claim does not call Resend. The provider call uses the idempotency key `case-intake:<communication id>`.
 
-## Rollback
+A definite provider rejection may be tried again, up to three attempts. A provider error, or a successful provider response whose acceptance row cannot be saved, is treated as unknown. That row is not sent again. There is no force-resend flag.
 
-On the Marketing develop Preview, set `DEV_MAIL_ENABLED` to any value other than `true`, or set `DEV_CASE_INTAKE_NO_EMAIL=true`, or clear `DEV_MAIL_ALLOWED_RECIPIENTS`. The next request persists the case and does not call Resend. No deployment of Production is required.
+## Staff retry for a case that already exists
+
+`PR-26-RZYCE4` stays as it is. This repository does not call the retry during tests or in this pull request.
+
+After the develop Preview is deployed, a signed-in Admin on that same Preview can replay the stored unsent messages without creating another case:
+
+`POST /api/cases/intake-mail` on the Admin develop Preview, with the Admin session cookie, an `Idempotency-Key` UUID, and a JSON body of exactly `{ "caseId", "publicRef" }`. Both values must identify the same stored row. The body cannot contain an address or a URL.
+
+Admin checks the session, then calls Marketing at the develop host derived from its own `VERCEL_BRANCH_URL` (`profilerelaunch-admin-git-develop-<team>.vercel.app` becomes `reputedefend-web-git-develop-<team>.vercel.app`). Any other host is refused. Marketing checks the same session again and only then sends. Production and every other Preview answer 404 before reading a case.
+
+A public reference on its own does not authorise a send. The removed public route is not registered.
+
+The retry writes a `case_events` row with actor `ADMIN` and the outcome words only. It does not record an address, a token, or a recipient.
 
 ## What this pull request does not do
 
-It does not change Admin outgoing mail, the production-only worker, or the customer one-time-code path. It does not add a migration, a webhook, or a Vercel value. Automated tests inject a fake provider. A test run does not construct the live Resend client, because the live client is refused when `NODE_ENV` is `test`.
-
-## Later operator check
-
-After review, an operator chooses the test mailboxes and sets the three flags on the Marketing develop Preview only. One synthetic Get Help submission should then show one case, one accepted customer acknowledgement, and one accepted internal notice, both to approved mailboxes only. A second submit of the same submission must not create a second case or a second accepted send. An address that is not on the list must persist a case and send nothing. Preview must still load no GA4 tag.
+It does not change Production email configuration, Stripe, or applied migrations. It does not send a live message. Automated tests inject a fake provider. A test run does not construct the live Resend client, because that client is refused when `NODE_ENV` is `test`.

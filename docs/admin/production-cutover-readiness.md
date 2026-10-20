@@ -164,12 +164,10 @@ capability gate is expected to be missing.
 | `ENQUIRY_TO_EMAIL` | marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | PRESENT | Enquiry email config is not ready. |
 | `ENQUIRY_REPLY_TO_EMAIL` | marketing | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | Only the customer's own address is used as Reply-To. |
 | `ENQUIRY_SEND_CUSTOMER_ACK` | marketing | FEATURE_GATE | non-secret | OPTIONAL | No acknowledgement is sent; internal delivery only. |
-| `DEV_CASE_INTAKE_NO_EMAIL` | marketing | FEATURE_GATE | non-secret | ABSENT | The develop DEV Preview can send only through the separate DEV_MAIL_ENABLED allowlist gate. Production is unchanged. |
-| `DEV_MAIL_ENABLED` | marketing | FEATURE_GATE | non-secret | ABSENT | The develop DEV Preview persists the case and does not send. Production keeps its existing delivery behaviour. Other Preview branches are not opened by this variable. |
-| `DEV_MAIL_ALLOWED_RECIPIENTS` | marketing | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The develop DEV mail gate stays closed, so no case-intake message is sent. |
-| `DEV_MAIL_INTERNAL_RECIPIENT` | marketing | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The internal notice is sent only when its recipient is on DEV_MAIL_ALLOWED_RECIPIENTS. A malformed value closes the gate. |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | marketing | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | No analytics script is loaded and no consent banner is rendered. |
 | `VITEST` | admin | TEST_ONLY | non-secret | ABSENT | The intended state in every deployment. |
+
+Develop DEV Get Help uses the same customer acknowledgement and internal notice as Production. It reads `ENQUIRY_FROM_EMAIL`, `ENQUIRY_TO_EMAIL` and `RESEND_API_KEY`. It does not read a separate enable flag, recipient allowlist, or no-email switch. Other Preview branches do not send. Production configuration is unchanged.
 
 One family cannot be found by scanning, because it is read by a computed name:
 `COMMUNICATIONS_LINK_SECRET_V{n}` holds a superseded evidence-link HMAC key so

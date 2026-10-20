@@ -1,11 +1,15 @@
 import "server-only"
 import {
-  devCaseIntakeEmailSuppressed,
-  devMailCloseLogLine,
-  devMailDiagnosticsEnabled,
-  devMarketingMailLane,
-  devMarketingMailReport,
+  developDevIntakeMailLane,
+  featurePreviewMailLogLine,
+  intakeMailLane,
+  observeIntakeMailRuntime,
 } from "@/lib/cases/persistence-config"
+import {
+  createMemoryIntakeMailLedger,
+  planIntakeMailClaim,
+  type IntakeMailLedger,
+} from "@/lib/cases/intake-mail-ledger"
 
 import {
   isCasePublicRef,
@@ -26,7 +30,7 @@ import {
 } from "@/lib/enquiry-config"
 import { type EnquiryResult } from "@/lib/enquiry"
 import type { EnquiryInput } from "@/lib/enquiry"
-import type { EnquiryProvider } from "@/lib/enquiry-provider"
+import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
 import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import { createResendEnquiryProvider } from "@/lib/providers/resend-enquiry-provider"
 import { readSupabaseConfig } from "@/lib/supabase/config"
@@ -62,11 +66,14 @@ export type PersistGetHelpCaseOptions = {
   emailConfig?: EnquiryEmailConfig
   now?: Date
   nodeEnv?: string
+  mailLedger?: IntakeMailLedger
 }
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
 const GENERIC_UNAVAILABLE_ERROR = "Delivery unavailable."
-const DEV_MAIL_CLOSED = "Not sent. DEV mail is closed for this recipient."
+const FEATURE_PREVIEW_UNAVAILABLE = "Not sent. This preview does not send case email."
+
+export type IntakeDeliveryOutcome = "sent" | "failed" | "unknown" | "skipped"
 
 function needsDelivery(status: string | null | undefined) {
   return status !== "SENT"
@@ -113,6 +120,10 @@ function liveProvider(config: EnquiryEmailConfig, nodeEnv: string | undefined, i
   return createResendEnquiryProvider(config.apiKey)
 }
 
+function messageWithIdempotency(message: EnquiryEmailMessage, id: string): EnquiryEmailMessage {
+  return { ...message, idempotencyKey: `case-intake:${id}` }
+}
+
 async function deliverCommunication(options: {
   id: string | null
   status: string | null
@@ -122,9 +133,10 @@ async function deliverCommunication(options: {
   unavailableError: string
   now: Date
   updateCommunication: NonNullable<PersistGetHelpCaseOptions["updateCommunication"]>
-}) {
-  if (!options.id) return false
-  if (options.status === "SENT") return true
+  mailLedger: IntakeMailLedger
+}): Promise<IntakeDeliveryOutcome> {
+  if (!options.id) return "skipped"
+  if (options.status === "SENT") return "sent"
 
   const subject = options.message.subject
   if (!options.provider || !options.configReady) {
@@ -134,34 +146,36 @@ async function deliverCommunication(options: {
       status: "FAILED",
       error_message: options.unavailableError,
     })
-    return false
+    return "failed"
   }
 
-  await options.updateCommunication(options.id, {
-    subject,
-    provider: "resend",
-  })
+  const claimed = await options.mailLedger.claim(options.id)
+  if (claimed.outcome === "accepted") return "sent"
+  if (claimed.outcome !== "claimed") return claimed.outcome === "exhausted" ? "failed" : "unknown"
 
+  let result: Awaited<ReturnType<EnquiryProvider["send"]>>
   try {
-    const result = await options.provider.send(options.message)
-    if (result.ok) {
-      await options.updateCommunication(options.id, {
-        status: "SENT",
-        provider_message_id: result.id,
-        sent_at: options.now.toISOString(),
-        error_message: null,
-      })
-      return true
-    }
+    result = await options.provider.send(messageWithIdempotency(options.message, options.id))
   } catch {
     console.error("[case-intake] email threw")
+    await options.mailLedger.recordUnknown(options.id, claimed.claim, { subject })
+    return "unknown"
   }
 
-  await options.updateCommunication(options.id, {
-    status: "FAILED",
-    error_message: GENERIC_DELIVERY_ERROR,
-  })
-  return false
+  if (result.ok) {
+    const wrote = await options.mailLedger.recordAccepted(options.id, claimed.claim, {
+      subject,
+      providerMessageId: result.id,
+      sentAt: options.now.toISOString(),
+    })
+    return wrote ? "sent" : "unknown"
+  }
+  if (result.reason === "rejected") {
+    await options.mailLedger.recordRejected(options.id, claimed.claim, { subject })
+    return "failed"
+  }
+  await options.mailLedger.recordUnknown(options.id, claimed.claim, { subject })
+  return "unknown"
 }
 
 export async function persistGetHelpCase(
@@ -207,13 +221,19 @@ export async function persistGetHelpCase(
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
 
-  return deliverPersistedIntake(intake, options)
+  return (await deliverPersistedIntake(intake, options)).result
+}
+
+type PersistedIntakeDelivery = {
+  result: EnquiryResult
+  customer: IntakeDeliveryOutcome
+  internal: IntakeDeliveryOutcome
 }
 
 async function deliverPersistedIntake(
   intake: CaseIntakeRpcResult,
   options: PersistGetHelpCaseOptions,
-): Promise<EnquiryResult> {
+): Promise<PersistedIntakeDelivery> {
   const emailConfig = options.emailConfig ?? readEnquiryEmailConfig()
   const supabaseReady = readSupabaseConfig().ready
   const now = options.now ?? new Date()
@@ -228,17 +248,14 @@ async function deliverPersistedIntake(
   const internalRecipient = intake.internal_communication_recipient?.trim() || ""
   const customerNeedsDelivery = Boolean(intake.customer_communication_id) && needsDelivery(intake.customer_communication_status)
   const internalNeedsDelivery = Boolean(intake.internal_communication_id) && needsDelivery(intake.internal_communication_status)
-  const mailReport = devMarketingMailReport(
-    customerNeedsDelivery ? customerRecipient : null,
-    internalNeedsDelivery ? internalRecipient : null,
-  )
-  const devClosed = (customerNeedsDelivery || internalNeedsDelivery) && mailReport.decision === "closed"
-  if (devClosed && devMailDiagnosticsEnabled()) {
-    const line = devMailCloseLogLine(mailReport)
-    if (line) console.error(line)
+  const featurePreview = intakeMailLane() === "feature-preview"
+  const devClosed = (customerNeedsDelivery || internalNeedsDelivery) && featurePreview
+  if (devClosed) {
+    console.error(featurePreviewMailLogLine(observeIntakeMailRuntime()))
   }
   const provider = devClosed ? undefined : liveProvider(emailConfig, nodeEnv, options.provider)
-  const unavailableError = devClosed && !devCaseIntakeEmailSuppressed() ? DEV_MAIL_CLOSED : GENERIC_UNAVAILABLE_ERROR
+  const unavailableError = devClosed ? FEATURE_PREVIEW_UNAVAILABLE : GENERIC_UNAVAILABLE_ERROR
+  const mailLedger = resolveMailLedger(intake, options, client, updateCommunication)
 
   const success = {
     ok: true as const,
@@ -254,11 +271,17 @@ async function deliverPersistedIntake(
     return { receiptEmailSent: false as const, receiptEmailStatus: "unavailable" as const }
   }
 
+  const report = (
+    result: EnquiryResult,
+    customer: IntakeDeliveryOutcome,
+    internal: IntakeDeliveryOutcome,
+  ): PersistedIntakeDelivery => ({ result, customer, internal })
+
   if (!customerNeedsDelivery && !internalNeedsDelivery) {
-    return {
+    return report({
       ...success,
       ...customerReceipt(intake.customer_communication_status === "SENT"),
-    }
+    }, intake.customer_communication_status === "SENT" ? "sent" : "skipped", intake.internal_communication_status === "SENT" ? "sent" : "skipped")
   }
 
   if (!canonicalType || !snapshot) {
@@ -274,16 +297,16 @@ async function deliverPersistedIntake(
         error_message: unavailableError,
       })
     }
-    return {
+    return report({
       ...success,
       ...customerReceipt(intake.customer_communication_status === "SENT"),
-    }
+    }, customerNeedsDelivery ? "failed" : "skipped", internalNeedsDelivery ? "failed" : "skipped")
   }
 
   const canonicalData = enquiryInputFromSnapshot(snapshot)
   const fromEmail = emailConfig.fromEmail || "undelivered"
 
-  const customerSent = customerRecipient
+  let customerOutcome: IntakeDeliveryOutcome = customerRecipient
     ? await deliverCommunication({
       id: intake.customer_communication_id,
       status: intake.customer_communication_status,
@@ -299,18 +322,20 @@ async function deliverPersistedIntake(
       unavailableError,
       now,
       updateCommunication,
+      mailLedger,
     })
-    : false
+    : "skipped" as const
 
   if (!customerRecipient && customerNeedsDelivery && intake.customer_communication_id) {
     await updateCommunication(intake.customer_communication_id, {
       status: "FAILED",
       error_message: unavailableError,
     })
+    customerOutcome = "failed"
   }
 
-  if (internalRecipient) {
-    await deliverCommunication({
+  let internalOutcome: IntakeDeliveryOutcome = internalRecipient
+    ? await deliverCommunication({
       id: intake.internal_communication_id,
       status: intake.internal_communication_status,
       message: buildCaseReceivedInternalMessage(
@@ -327,33 +352,154 @@ async function deliverPersistedIntake(
       unavailableError,
       now,
       updateCommunication,
+      mailLedger,
     })
-  } else if (internalNeedsDelivery && intake.internal_communication_id) {
+    : "skipped" as const
+
+  if (!internalRecipient && internalNeedsDelivery && intake.internal_communication_id) {
     await updateCommunication(intake.internal_communication_id, {
       status: "FAILED",
       error_message: unavailableError,
     })
+    internalOutcome = "failed"
   }
 
-  return {
+  return report({
     ...success,
-    ...customerReceipt(customerSent || intake.customer_communication_status === "SENT"),
+    ...customerReceipt(customerOutcome === "sent" || intake.customer_communication_status === "SENT"),
+  }, customerOutcome, internalOutcome)
+}
+
+const CASE_ID_PATTERN = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+export type IntakeMailIdentity = { caseId: string; publicRef: string }
+
+export type IntakeMailAudit = {
+  caseId: string
+  customer: IntakeDeliveryOutcome
+  internal: IntakeDeliveryOutcome
+}
+
+function validIntakeIdentity(identity: IntakeMailIdentity) {
+  return CASE_ID_PATTERN.test(identity.caseId) && isCasePublicRef(identity.publicRef)
+}
+
+function resolveMailLedger(
+  intake: CaseIntakeRpcResult,
+  options: PersistGetHelpCaseOptions,
+  client: SupabaseServerClient | null,
+  updateCommunication: NonNullable<PersistGetHelpCaseOptions["updateCommunication"]>,
+): IntakeMailLedger {
+  if (options.mailLedger) return options.mailLedger
+  if (client && !options.updateCommunication) return createSupabaseIntakeMailLedger(client)
+  const memory = createMemoryIntakeMailLedger(updateCommunication)
+  if (intake.customer_communication_id) {
+    memory.seed(intake.customer_communication_id, {
+      status: intake.customer_communication_status,
+      providerMessageId: null,
+      metadata: {},
+    })
+  }
+  if (intake.internal_communication_id) {
+    memory.seed(intake.internal_communication_id, {
+      status: intake.internal_communication_status,
+      providerMessageId: null,
+      metadata: {},
+    })
+  }
+  return memory
+}
+
+function createSupabaseIntakeMailLedger(client: SupabaseServerClient): IntakeMailLedger {
+  const held = new Map<string, Json>()
+
+  const updateClaim = (id: string, claim: string, values: Database["public"]["Tables"]["communications"]["Update"]) =>
+    client.from("communications").update(values).eq("id", id).filter("metadata->>intakeClaim", "eq", claim).select("id").maybeSingle()
+
+  return {
+    async claim(id) {
+      const { data, error } = await client.from("communications")
+        .select("status, provider_message_id, metadata")
+        .eq("id", id)
+        .maybeSingle()
+      if (error || !data) return { outcome: "held" }
+      const decision = planIntakeMailClaim({
+        status: data.status,
+        providerMessageId: data.provider_message_id,
+        metadata: data.metadata,
+      }, crypto.randomUUID())
+      if (decision.outcome !== "claimed" || !decision.metadata) {
+        return decision.outcome === "claimed" ? { outcome: "held" } : { outcome: decision.outcome }
+      }
+      const updated = await client.from("communications")
+        .update({ metadata: decision.metadata, provider: "resend" })
+        .eq("id", id)
+        .in("status", ["PENDING", "FAILED"])
+        .is("provider_message_id", null)
+        .filter("metadata->>intakeClaim", "is", null)
+        .select("id")
+        .maybeSingle()
+      if (updated.error || !updated.data) return { outcome: "held" }
+      held.set(id, decision.metadata)
+      return { outcome: "claimed", claim: decision.claim }
+    },
+    async recordAccepted(id, claim, write) {
+      const metadata = { ...(held.get(id) as { [key: string]: Json | undefined } ?? {}), intakeState: "accepted" }
+      const updated = await updateClaim(id, claim, {
+        subject: write.subject,
+        provider: "resend",
+        status: "SENT",
+        provider_message_id: write.providerMessageId,
+        sent_at: write.sentAt,
+        error_message: null,
+        metadata,
+      })
+      if (!updated.error && updated.data) return true
+      await updateClaim(id, claim, {
+        subject: write.subject,
+        provider: "resend",
+        status: "FAILED",
+        error_message: GENERIC_DELIVERY_ERROR,
+        metadata: { ...(held.get(id) as { [key: string]: Json | undefined } ?? {}), intakeState: "unknown" },
+      })
+      return false
+    },
+    async recordRejected(id, claim, write) {
+      await updateClaim(id, claim, {
+        subject: write.subject,
+        provider: "resend",
+        status: "FAILED",
+        error_message: GENERIC_DELIVERY_ERROR,
+        metadata: { ...(held.get(id) as { [key: string]: Json | undefined } ?? {}), intakeClaim: null, intakeState: "rejected" },
+      })
+    },
+    async recordUnknown(id, claim, write) {
+      await updateClaim(id, claim, {
+        subject: write.subject,
+        provider: "resend",
+        status: "FAILED",
+        error_message: GENERIC_DELIVERY_ERROR,
+        metadata: { ...(held.get(id) as { [key: string]: Json | undefined } ?? {}), intakeState: "unknown" },
+      })
+    },
   }
 }
 
-async function defaultLoadIntake(publicRef: string): Promise<CaseIntakeRpcResult | null> {
+async function defaultLoadIntake(identity: IntakeMailIdentity): Promise<CaseIntakeRpcResult | null> {
   if (!readSupabaseConfig().ready) return null
   const client = createSupabaseServerClient()
   const { data: caseRow, error } = await client
     .from("cases")
     .select("id, public_ref, case_type, intake_snapshot")
-    .eq("public_ref", publicRef)
+    .eq("id", identity.caseId)
     .maybeSingle()
   if (error) {
     console.error("[case-intake] retry load failed")
     return null
   }
-  if (!caseRow || !isCasePublicRef(caseRow.public_ref) || !isCaseType(caseRow.case_type)) return null
+  if (!caseRow || caseRow.public_ref !== identity.publicRef || !isCasePublicRef(caseRow.public_ref) || !isCaseType(caseRow.case_type)) {
+    return null
+  }
 
   const { data: comms, error: commError } = await client
     .from("communications")
@@ -385,25 +531,49 @@ async function defaultLoadIntake(publicRef: string): Promise<CaseIntakeRpcResult
   }
 }
 
+async function defaultAudit(event: IntakeMailAudit) {
+  if (!readSupabaseConfig().ready) return
+  const client = createSupabaseServerClient()
+  const { error } = await client.from("case_events").insert({
+    case_id: event.caseId,
+    event_type: "CASE_INTAKE_MAIL_RETRY",
+    actor_type: "ADMIN",
+    event_data: { customer: event.customer, internal: event.internal },
+  })
+  if (error) console.error("[case-intake] retry audit failed")
+}
+
 /**
- * Sends the stored customer acknowledgement and internal notice for a case
- * that already exists. It does not insert a case. A communication already
- * marked SENT is not sent again. The request cannot choose the recipients.
+ * Sends the stored customer acknowledgement and internal notice for one
+ * existing case. The case id and the public reference must both match the
+ * stored row. A public reference on its own is not enough. This does not
+ * insert a case, and it does not accept a recipient.
  */
-export async function retryPersistedGetHelpMail(
-  publicRef: string,
+export async function retryStoredIntakeMail(
+  identity: IntakeMailIdentity,
   options: PersistGetHelpCaseOptions & {
-    loadIntake?: (publicRef: string) => Promise<CaseIntakeRpcResult | null>
+    loadIntake?: (identity: IntakeMailIdentity) => Promise<CaseIntakeRpcResult | null>
+    audit?: (event: IntakeMailAudit) => Promise<void>
   } = {},
 ): Promise<EnquiryResult> {
-  if (!isCasePublicRef(publicRef) || !devMarketingMailLane()) {
+  if (!developDevIntakeMailLane() || !validIntakeIdentity(identity)) {
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
-  const intake = await (options.loadIntake ?? defaultLoadIntake)(publicRef)
-  if (!intake || intake.public_ref !== publicRef) {
+  const intake = await (options.loadIntake ?? defaultLoadIntake)(identity)
+  if (!intake || intake.case_id !== identity.caseId || intake.public_ref !== identity.publicRef) {
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
-  return deliverPersistedIntake(intake, options)
+  const delivery = await deliverPersistedIntake(intake, options)
+  try {
+    await (options.audit ?? defaultAudit)({
+      caseId: identity.caseId,
+      customer: delivery.customer,
+      internal: delivery.internal,
+    })
+  } catch {
+    console.error("[case-intake] retry audit failed")
+  }
+  return delivery.result
 }
 
 export type { CaseType }

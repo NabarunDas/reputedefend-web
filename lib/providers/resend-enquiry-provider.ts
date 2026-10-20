@@ -10,13 +10,20 @@ export type ResendEmailPayload = {
   html: string
 }
 
+export type ResendEmailOptions = {
+  idempotencyKey?: string
+}
+
 export type ResendEmailClient = {
   emails: {
-    send: (payload: ResendEmailPayload) => Promise<{ data: { id: string } | null; error: { message?: string } | null }>
+    send: (
+      payload: ResendEmailPayload,
+      options?: ResendEmailOptions,
+    ) => Promise<{ data: { id: string } | null; error: { message?: string } | null }>
   }
 }
 
-async function sendWithResend(apiKey: string, payload: ResendEmailPayload) {
+async function sendWithResend(apiKey: string, payload: ResendEmailPayload, options?: ResendEmailOptions) {
   return new Resend(apiKey).emails.send({
     from: payload.from,
     to: payload.to,
@@ -24,7 +31,7 @@ async function sendWithResend(apiKey: string, payload: ResendEmailPayload) {
     subject: payload.subject,
     text: payload.text,
     html: payload.html,
-  })
+  }, options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : undefined)
 }
 
 export function createResendEnquiryProvider(
@@ -42,9 +49,11 @@ export function createResendEnquiryProvider(
           text: message.text,
           html: message.html,
         }
-        const { data, error } = client
-          ? await client.emails.send(payload)
-          : await sendWithResend(apiKey, payload)
+        const options = message.idempotencyKey ? { idempotencyKey: message.idempotencyKey } : undefined
+        const sent = client
+          ? (options ? await client.emails.send(payload, options) : await client.emails.send(payload))
+          : await sendWithResend(apiKey, payload, options)
+        const { data, error } = sent
 
         if (error || !data?.id) {
           console.error("[enquiry] provider rejected delivery", {

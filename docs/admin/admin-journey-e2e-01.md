@@ -34,13 +34,14 @@ Signed-in browser is **NOT TESTED** for every scenario. This environment has no 
 | 5 Assessment approved | PASS | PASS | PASS | NOT TESTED |
 | 6 Quote accepted | PASS | PASS | PASS | NOT TESTED |
 | 7 Activation / settlement or authority | PASS | PASS | PASS | NOT TESTED |
-| 8 Preparation approved | PASS | PASS | PASS | NOT TESTED |
-| 9 Submission recorded and resolved | PASS | PASS | PASS | NOT TESTED |
+| 8 Preparation approved / entered | PASS | **FAIL** — pack publishes, but entry to `PREPARATION` is refused | **FAIL** — pack publishes, but entry to `PREPARATION` is refused | NOT TESTED |
+| 9 Submission recorded from ready stage | PASS | **FAIL** — submission command succeeds from `AUTHORIZATION_REQUIRED`, without reaching `READY_TO_SUBMIT` | **FAIL** — submission command succeeds from `AUTHORIZATION_REQUIRED`, without reaching `READY_TO_SUBMIT` | NOT TESTED |
 | 10 Outcome and billing | PASS | PASS | PASS | PASS |
 | 11 Closure | PASS | PASS | PASS | PASS |
+| Managed `AUTHORIZATION_REQUIRED → PREPARATION` work-stage transition | NOT APPLICABLE | **FAIL** — `prerequisite`, despite `authorizationReady: true` | **FAIL** — `prerequisite`, despite `authorizationReady: true` | NOT TESTED |
 | Signed-in browser, all steps | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
 
-D is the same Guided case after its successful close. The walk reopens it, records `NOT_RESTORED`, and closes again. It does not start a new cancellation case from intake, so steps 1–9 are not a D walk.
+**Managed B and C are NOT accepted as complete stage-by-stage journeys.** Their pack, submission, outcome and closure commands execute, but the required Managed work-stage transition fails and both cases proceed from an earlier stage. A successful standalone RPC is not proof of the authorised sequence. D is the same Guided case after its successful close. The walk reopens it, records `NOT_RESTORED`, and closes again. It does not start a new cancellation case from intake, so steps 1–9 are not a D walk.
 
 ### A — Guided successful profile recovery
 
@@ -72,9 +73,9 @@ Membership and email verification have no RPC. Those two rows are inserted. The 
 4. The letter is accepted, made customer-visible, and the request is fulfilled.
 5. The assessment is approved as Managed.
 6. The customer accepts `MANAGED_RELAUNCH`. The order is `ACCEPTED_SUCCESS_FEE`. Obligations, invoices, and receipts are zero.
-7. The customer accepts the service agreement and the case-management permission. Manager access is verified. Readiness reports the agreement, the permission, business authority, manager access, and `authorizationReady`. Step 7 is `COMPLETED` with no saved card. Moving to `PREPARATION` returns `prerequisite` and the stage stays `AUTHORIZATION_REQUIRED`.
-8. The pack is approved and published. Step 8 is `COMPLETED` from that pack. The work stage is not `PREPARATION`.
-9. The submission actor is `ADMIN`. It is resolved `DECIDED`. The command does not call Google. Close while the attempt or the authorisation follow-up is open returns `open_work`.
+7. The customer accepts the service agreement and the case-management permission. Manager access is verified. Readiness reports the agreement, the permission, business authority, manager access, and `authorizationReady`. Step 7 is `COMPLETED` with no saved card. Moving to `PREPARATION` **FAILS** with `prerequisite` and the stage stays `AUTHORIZATION_REQUIRED`. Live DEV's `admin_private.case_stage_ready_v1` calls `managed_setup_ready_v1`, which demands a usable saved payment method and linked consent in addition to authorised Managed access. That payment-method requirement contradicts the agreed Managed activation rules and Step 7.
+8. **Sequential stage acceptance FAIL:** the pack RPC approves and publishes the evidence, and its evidence-only check reads `COMPLETED`, but the work stage remains `AUTHORIZATION_REQUIRED` rather than `PREPARATION`.
+9. **Sequential stage acceptance FAIL:** the submission command permits actor `ADMIN` from `AUTHORIZATION_REQUIRED`, without a successful transition through `PREPARATION` and `READY_TO_SUBMIT`. It is resolved `DECIDED`; no Google call occurs. Close while the attempt or authorisation follow-up is open returns `open_work`.
 10. `record_outcome` stores `RESTORED` and leaves the case open. `approve_success_fee` then creates one `DUE` `SUCCESS_FEE` obligation for £299.00. Close returns `prerequisite`. The hosted invoice is recorded `ISSUED` and close still returns `prerequisite`. The step headline is “Invoiced” and says an issued invoice is not payment. Step 10 stays incomplete. `payment_apply_provider_event_v1` type `invoice.paid` (test mode, no `livemode: true`) marks the obligation and the invoice `PAID`, writes one receipt, and writes ledger events `OBLIGATION_CREATED`, `INVOICE_ISSUED`, `PROVIDER_PAYMENT_SUCCEEDED`, and `RECEIPT_RECORDED`. A second `invoice.paid` is `duplicate: true` and does not add a receipt. The order stays `ACCEPTED_SUCCESS_FEE`. The headline is “Settled”. No Guard order is created.
 11. `close` stores `CLOSED` / `FINISHED`. All eleven steps are `COMPLETED`.
 
@@ -82,7 +83,7 @@ The owning customer portal returns `CLOSED`, `outcomeCode: RESTORED`, and timeli
 
 ### C — Managed unsuccessful outcome
 
-The second case in the same file uses the same command sequence through authority, the published pack, the `ADMIN` submission, and `OUTCOME_REVIEW`.
+The second case in the same file repeats the **same blocked transition** from `AUTHORIZATION_REQUIRED` to `PREPARATION`. Pack and `ADMIN` submission RPCs still succeed from the earlier stage; this is **not complete sequential acceptance**. Both paths reach `OUTCOME_REVIEW` and closure through a bypass of the intended preparation stage.
 
 `record_outcome` stores `NOT_RESTORED` and leaves the case open. `approve_success_fee` returns `denied`. Obligations, invoices, and receipts stay zero. Step 10 is `COMPLETED` with headline “Not billable” before close. `close` stores `CLOSED` / `FINISHED` with that outcome and still creates no fee. All eleven steps are `COMPLETED` after close. No `PAYMENT_RECEIVED` timeline event is created.
 
@@ -114,6 +115,7 @@ Whether the customer should see the unsuccessful outcome is a product copy decis
 
 | Branch | Composed result | What the command did |
 | --- | --- | --- |
+| Managed work-stage progression into `PREPARATION` with completed authority and no saved card | **FAIL** | `transition` returns `prerequisite`: the database's `managed_setup_ready_v1` requires a usable saved payment method and linked consent. The case remains at `AUTHORIZATION_REQUIRED` even though Step 7 says `COMPLETED`. Pack and submission commands subsequently execute from that earlier stage. |
 | Close while a qualifying success fee is `DUE` | PASS | Walk B. `close` returns `prerequisite`. The headline is “Approved fee”. Step 10 is not complete. |
 | Close while that fee’s hosted invoice is `ISSUED` and unpaid | PASS | Walk B. `close` returns `prerequisite`. The headline is “Invoiced” and says this is not payment. |
 | `approve_success_fee` after `NOT_RESTORED` | PASS | Walk C. Status `denied`. No obligation, invoice, or receipt. |
@@ -185,10 +187,11 @@ Existing slice files were not rewritten. Portal SQL and customer copy were not c
 
 ## Unresolved blockers
 
-1. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
-2. A composed close against a `VOID` success fee cannot be run. No function writes that state.
-3. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
-4. `approve_success_fee` before a stored outcome raises a not-null constraint instead of returning `denied`.
-5. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
-6. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
-7. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.
+1. **Managed work-stage blocker:** `admin_private.managed_setup_ready_v1` requires a usable saved card and linked consent even after Managed agreement, business authority, case permission and Google manager access are complete. The natural transition into `PREPARATION` is refused; downstream pack and submission commands execute from `AUTHORIZATION_REQUIRED`. This conflicts with PS-2026-10-14.2 and prevents composed B/C end-to-end acceptance. Requires a separately reviewed database rule correction and new Managed walks.
+2. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
+3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
+4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.
+5. `approve_success_fee` before a stored outcome raises a not-null constraint instead of returning `denied`.
+6. The customer portal does not show `NOT_RESTORED`. The case row keeps it. Customer copy was not changed.
+7. `record-outcome.database.test.ts` still proves close on the pre-`20261019235000` chain. The current predicate is the full chain used by the walks and by `close-billing.database.test.ts`.
+8. Production remains at `20261014170000`. Nothing in this exercise authorises a Production deploy, a live charge, a Google submission, or an outbound customer email.

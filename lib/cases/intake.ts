@@ -1,5 +1,11 @@
 import "server-only"
-import { devCaseIntakeEmailSuppressed, devMarketingMailDecision } from "@/lib/cases/persistence-config"
+import {
+  devCaseIntakeEmailSuppressed,
+  devMailCloseLogLine,
+  devMailDiagnosticsEnabled,
+  devMarketingMailLane,
+  devMarketingMailReport,
+} from "@/lib/cases/persistence-config"
 
 import {
   isCasePublicRef,
@@ -201,6 +207,15 @@ export async function persistGetHelpCase(
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
 
+  return deliverPersistedIntake(intake, options)
+}
+
+async function deliverPersistedIntake(
+  intake: CaseIntakeRpcResult,
+  options: PersistGetHelpCaseOptions,
+): Promise<EnquiryResult> {
+  const emailConfig = options.emailConfig ?? readEnquiryEmailConfig()
+  const supabaseReady = readSupabaseConfig().ready
   const now = options.now ?? new Date()
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
   const client = options.updateCommunication ? null : (supabaseReady ? createSupabaseServerClient() : null)
@@ -213,10 +228,15 @@ export async function persistGetHelpCase(
   const internalRecipient = intake.internal_communication_recipient?.trim() || ""
   const customerNeedsDelivery = Boolean(intake.customer_communication_id) && needsDelivery(intake.customer_communication_status)
   const internalNeedsDelivery = Boolean(intake.internal_communication_id) && needsDelivery(intake.internal_communication_status)
-  const devClosed = (customerNeedsDelivery || internalNeedsDelivery) && devMarketingMailDecision(
+  const mailReport = devMarketingMailReport(
     customerNeedsDelivery ? customerRecipient : null,
     internalNeedsDelivery ? internalRecipient : null,
-  ) === "closed"
+  )
+  const devClosed = (customerNeedsDelivery || internalNeedsDelivery) && mailReport.decision === "closed"
+  if (devClosed && devMailDiagnosticsEnabled()) {
+    const line = devMailCloseLogLine(mailReport)
+    if (line) console.error(line)
+  }
   const provider = devClosed ? undefined : liveProvider(emailConfig, nodeEnv, options.provider)
   const unavailableError = devClosed && !devCaseIntakeEmailSuppressed() ? DEV_MAIL_CLOSED : GENERIC_UNAVAILABLE_ERROR
 
@@ -319,6 +339,71 @@ export async function persistGetHelpCase(
     ...success,
     ...customerReceipt(customerSent || intake.customer_communication_status === "SENT"),
   }
+}
+
+async function defaultLoadIntake(publicRef: string): Promise<CaseIntakeRpcResult | null> {
+  if (!readSupabaseConfig().ready) return null
+  const client = createSupabaseServerClient()
+  const { data: caseRow, error } = await client
+    .from("cases")
+    .select("id, public_ref, case_type, intake_snapshot")
+    .eq("public_ref", publicRef)
+    .maybeSingle()
+  if (error) {
+    console.error("[case-intake] retry load failed")
+    return null
+  }
+  if (!caseRow || !isCasePublicRef(caseRow.public_ref) || !isCaseType(caseRow.case_type)) return null
+
+  const { data: comms, error: commError } = await client
+    .from("communications")
+    .select("id, status, recipient, communication_type, created_at")
+    .eq("case_id", caseRow.id)
+    .in("communication_type", ["CASE_RECEIVED_CUSTOMER", "CASE_RECEIVED_INTERNAL"])
+    .order("created_at", { ascending: true })
+  if (commError || !comms) {
+    console.error("[case-intake] retry load failed")
+    return null
+  }
+  const customer = comms.find((row) => row.communication_type === "CASE_RECEIVED_CUSTOMER")
+  const internal = comms.find((row) => row.communication_type === "CASE_RECEIVED_INTERNAL")
+  return {
+    case_id: caseRow.id,
+    public_ref: caseRow.public_ref,
+    case_type: caseRow.case_type,
+    customer_id: caseRow.id,
+    business_id: caseRow.id,
+    location_id: caseRow.id,
+    customer_communication_id: customer?.id ?? null,
+    internal_communication_id: internal?.id ?? null,
+    was_existing: true,
+    customer_communication_status: customer?.status ?? null,
+    internal_communication_status: internal?.status ?? null,
+    intake_snapshot: caseRow.intake_snapshot,
+    customer_communication_recipient: customer?.recipient ?? null,
+    internal_communication_recipient: internal?.recipient ?? null,
+  }
+}
+
+/**
+ * Sends the stored customer acknowledgement and internal notice for a case
+ * that already exists. It does not insert a case. A communication already
+ * marked SENT is not sent again. The request cannot choose the recipients.
+ */
+export async function retryPersistedGetHelpMail(
+  publicRef: string,
+  options: PersistGetHelpCaseOptions & {
+    loadIntake?: (publicRef: string) => Promise<CaseIntakeRpcResult | null>
+  } = {},
+): Promise<EnquiryResult> {
+  if (!isCasePublicRef(publicRef) || !devMarketingMailLane()) {
+    return { ok: false, message: ENQUIRY_UNAVAILABLE }
+  }
+  const intake = await (options.loadIntake ?? defaultLoadIntake)(publicRef)
+  if (!intake || intake.public_ref !== publicRef) {
+    return { ok: false, message: ENQUIRY_UNAVAILABLE }
+  }
+  return deliverPersistedIntake(intake, options)
 }
 
 export type { CaseType }

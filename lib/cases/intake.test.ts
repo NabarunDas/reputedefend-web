@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { persistGetHelpCase, type CaseIntakeRpcArgs, type CaseIntakeRpcResult } from "@/lib/cases/intake"
+import { persistGetHelpCase, retryPersistedGetHelpMail, type CaseIntakeRpcArgs, type CaseIntakeRpcResult } from "@/lib/cases/intake"
 import { buildIntakeSnapshot } from "@/lib/cases/snapshot"
 import { ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import type { EnquiryInput } from "@/lib/enquiry"
@@ -685,5 +685,157 @@ describe("persistGetHelpCase DEV mail gate", () => {
     })
     expect(result.ok).toBe(true)
     expect(result.receiptEmailStatus).toBe("unavailable")
+  })
+
+  it("sends when the enable flag is the word true with a trailing newline", async () => {
+    stubPreview({ DEV_MAIL_ENABLED: "true\n" })
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_padded" }))
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(result.receiptEmailStatus).toBe("sent")
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it("logs the rejected condition on the develop DEV lane and not the recipient", async () => {
+    stubPreview({ DEV_MAIL_ALLOWED_RECIPIENTS: "owner@example.com" })
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+      const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake: mockCreateIntake(),
+        updateCommunication: async () => {},
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.receiptEmailStatus).toBe("suppressed")
+      expect(send).not.toHaveBeenCalled()
+      const lines = error.mock.calls.map((call) => String(call[0]))
+      expect(lines).toContain("[case-intake] dev mail closed reason=customer-rejected detail=unlisted")
+      expect(lines.join("\n")).not.toMatch(/alex@example.com|owner@example.com|DEV_MAIL_ALLOWED/)
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it("does not log a closed reason for another Preview branch", async () => {
+    stubPreview({ VERCEL_GIT_COMMIT_REF: "feature/pr" })
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+        createIntake: mockCreateIntake(),
+        updateCommunication: async () => {},
+        provider: mockProvider(vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(error.mock.calls.map((call) => String(call[0])).join("\n")).not.toMatch(/dev mail closed/)
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it("retries stored communications once and does not create another case", async () => {
+    stubPreview()
+    const send = vi.fn(async (message: EnquiryEmailMessage) => ({ ok: true as const, id: `email_${message.kind}` }))
+    const loadIntake = vi.fn(async () => intakeRow({
+      was_existing: true,
+      customer_communication_status: "FAILED",
+      internal_communication_status: "FAILED",
+    }))
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    const first = await retryPersistedGetHelpMail("PR-26-7K4M2Q", {
+      loadIntake,
+      updateCommunication: async (_id, values) => { updates.push(values) },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(first).toMatchObject({ ok: true, persisted: true, caseRef: "PR-26-7K4M2Q", receiptEmailStatus: "sent" })
+    expect(loadIntake).toHaveBeenCalledTimes(1)
+    expect(loadIntake).toHaveBeenCalledWith("PR-26-7K4M2Q")
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "SENT", provider_message_id: "email_customer-ack" }),
+      expect.objectContaining({ status: "SENT", provider_message_id: "email_internal" }),
+    ]))
+
+    loadIntake.mockResolvedValue(intakeRow({
+      was_existing: true,
+      customer_communication_status: "SENT",
+      internal_communication_status: "SENT",
+    }))
+    const second = await retryPersistedGetHelpMail("PR-26-7K4M2Q", {
+      loadIntake,
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(second.receiptEmailStatus).toBe("sent")
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not load or send a retry outside the develop DEV lane", async () => {
+    const loadIntake = vi.fn(async () => intakeRow())
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+    const overridesList: Array<Record<string, string>> = [
+      { VERCEL_ENV: "production" },
+      { VERCEL_GIT_COMMIT_REF: "feature/pr" },
+      { SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" },
+    ]
+    for (const overrides of overridesList) {
+      vi.unstubAllEnvs()
+      stubPreview(overrides)
+      const result = await retryPersistedGetHelpMail("PR-26-7K4M2Q", {
+        loadIntake,
+        updateCommunication: async () => {},
+        provider: mockProvider(send),
+        emailConfig: readyConfig,
+        nodeEnv: "production",
+      })
+      expect(result.ok).toBe(false)
+    }
+    expect(loadIntake).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    const missing = await retryPersistedGetHelpMail("not-a-case", {
+      loadIntake,
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(missing.ok).toBe(false)
+    expect(loadIntake).not.toHaveBeenCalled()
+  })
+
+  it("does not send a retry when the stored recipient is not approved", async () => {
+    stubPreview({ DEV_MAIL_ALLOWED_RECIPIENTS: "owner@example.com" })
+    const send = vi.fn(async () => ({ ok: true as const, id: "email_should_not_send" }))
+    const loadIntake = vi.fn(async () => intakeRow({ public_ref: "PR-26-OTHER1" }))
+    const refused = await retryPersistedGetHelpMail("PR-26-7K4M2Q", {
+      loadIntake,
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(refused.ok).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+
+    loadIntake.mockResolvedValue(intakeRow())
+    const closed = await retryPersistedGetHelpMail("PR-26-7K4M2Q", {
+      loadIntake,
+      updateCommunication: async () => {},
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+    })
+    expect(closed.receiptEmailStatus).toBe("suppressed")
+    expect(send).not.toHaveBeenCalled()
   })
 })

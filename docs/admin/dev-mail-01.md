@@ -8,16 +8,22 @@ Set these only on the Marketing project, and only for the Preview environment of
 
 | Variable | Required value |
 | --- | --- |
-| `DEV_MAIL_ENABLED` | Exactly `true`. Any other value, including `TRUE` or surrounding spaces, leaves the gate closed. |
+| `DEV_MAIL_ENABLED` | The word `true`. Surrounding whitespace, including a trailing newline, is ignored. `TRUE`, `1` and `yes` leave the gate closed. |
 | `DEV_MAIL_ALLOWED_RECIPIENTS` | A comma-separated list of exact mailboxes. The whole list is rejected when any token is empty, a display name, a wildcard, or more than one address. Comparison is case-insensitive and exact. |
 | `DEV_MAIL_INTERNAL_RECIPIENT` | Optional. One exact mailbox that may receive only the internal notice, and only when it is different from the customer recipient. It never authorises the customer acknowledgement. A malformed value closes the gate. |
-| `DEV_CASE_INTAKE_NO_EMAIL` | Existing kill switch. Exactly `true` suppresses every case-intake send on this lane, including when `DEV_MAIL_ENABLED` is also `true`. |
+| `DEV_CASE_INTAKE_NO_EMAIL` | Existing kill switch. The word `true`, after surrounding whitespace is removed, suppresses every case-intake send on this lane, including when `DEV_MAIL_ENABLED` is also true. |
 
 The customer acknowledgement and the internal notice are sent together or not at all. A recipient that is not approved suppresses both. The case is still saved once, keyed by the existing submission id, and a later retry does not create another case or send again after the provider has accepted the message.
 
 Provider acceptance is recorded as `communications.status = SENT` with the provider message id. That status is not inbox delivery. Nothing in this path writes `DELIVERED`. The customer confirmation says the reference was passed to the email provider and that this does not confirm it reached the inbox. A closed gate says the confirmation email is not sent in this development environment.
 
 `NEXT_PUBLIC_GA_MEASUREMENT_ID` is not set or read by this change. Preview analytics stay off.
+
+When this lane still closes, the server logs one line, `[case-intake] dev mail closed reason=<code>`, with an optional `detail` from a fixed list. The codes are `git-ref`, `database`, `kill-switch`, `mail-disabled`, `allowlist-missing`, `allowlist-malformed`, `internal-approval-malformed`, `no-pending`, `customer-rejected` and `internal-rejected`. The line does not contain an address, the allowlist, a token or a secret. Feature-branch previews and Production do not write it. The HTTP response stays the existing suppressed or unavailable copy and does not include the reason.
+
+## Retry of a case that already exists
+
+`POST /api/dev/case-intake-mail` with `{ "publicRef": "<existing reference>" }` is available only on this lane. It loads the stored submission and the stored communication rows, then uses the same gate. It does not insert a case and it does not accept a recipient in the request. A row already marked `SENT` is not sent again. A recipient that is still not approved stays suppressed. Production and every other Preview answer 404 before reading a case. This repository does not call that route.
 
 ## Rollback
 

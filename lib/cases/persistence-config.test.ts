@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest"
-import { devCaseIntakeEmailSuppressed, devMarketingMailDecision, parseDevMailAllowlist } from "./persistence-config"
+import {
+  devCaseIntakeEmailSuppressed,
+  devMailCloseLogLine,
+  devMailDiagnosticsEnabled,
+  devMarketingMailLane,
+  devMarketingMailReport,
+  parseDevMailAllowlist,
+} from "./persistence-config"
+
+function devMarketingMailDecision(
+  customer: string | null,
+  internal: string | null,
+  env: Record<string, string | undefined>,
+) {
+  return devMarketingMailReport(customer, internal, env).decision
+}
 
 const DEV_URL = "https://rmzozuiamjcclvtgutgd.supabase.co"
 const PROD_URL = "https://cxwwekdzkkjjbiyofrov.supabase.co"
@@ -10,6 +25,8 @@ describe("DEV Get Help no-outbound-email gate", () => {
   it("suppresses only deliberately opted-in develop intake", () => {
     expect(devCaseIntakeEmailSuppressed(valid)).toBe(true)
     expect(devCaseIntakeEmailSuppressed({...valid, SUPABASE_URL: valid.SUPABASE_URL + "/"})).toBe(true)
+    expect(devCaseIntakeEmailSuppressed({...valid, DEV_CASE_INTAKE_NO_EMAIL: "true\n"})).toBe(true)
+    expect(devCaseIntakeEmailSuppressed({...valid, DEV_CASE_INTAKE_NO_EMAIL: " false "})).toBe(false)
   })
   it("retains previous behavior everywhere else", () => {
     for (const changes of [{VERCEL_ENV:"production"},{VERCEL_ENV:"development"},
@@ -68,10 +85,15 @@ describe("develop DEV mail allowlist", () => {
     expect(devMarketingMailDecision("owner@example.com", "cases@example.com", {
       ...lane, DEV_MAIL_ENABLED: undefined,
     })).toBe("closed")
-    for (const enabled of ["TRUE", "1", "yes", " true", "true "]) {
+    for (const enabled of ["TRUE", "1", "yes", "true\nfalse", "true true"]) {
       expect(devMarketingMailDecision("owner@example.com", "cases@example.com", {
         ...lane, DEV_MAIL_ENABLED: enabled,
       })).toBe("closed")
+    }
+    for (const enabled of [" true", "true ", "true\n", "true\r\n", "\ttrue"]) {
+      expect(devMarketingMailDecision("owner@example.com", "cases@example.com", {
+        ...lane, DEV_MAIL_ENABLED: enabled,
+      })).toBe("open")
     }
     for (const list of [undefined, "", "   ", ",", "owner@example.com,", "owner@example.com,,cases@example.com",
       "*@example.com", "owner@example.com, *@example.com", "not-an-email", "owner@example.com\ncases@example.com",
@@ -133,5 +155,60 @@ describe("develop DEV mail allowlist", () => {
     expect(devMarketingMailDecision("owner@example.com", "cases@example.com", {
       ...dedicated, DEV_MAIL_INTERNAL_RECIPIENT: "not-an-email",
     })).toBe("closed")
+  })
+
+  it("names the closed condition without the address or the allowlist", () => {
+    const customer = "stranger@example.com"
+    const internal = "cases@example.com"
+    const report = devMarketingMailReport("owner@example.com", "cases@example.com", {
+      ...lane,
+      DEV_MAIL_ENABLED: "true\n",
+    })
+    expect(report).toEqual({ decision: "open", reason: null, detail: null })
+
+    const disabled = devMarketingMailReport(customer, internal, { ...lane, DEV_MAIL_ENABLED: "TRUE" })
+    expect(disabled).toEqual({ decision: "closed", reason: "mail-disabled", detail: "other" })
+    expect(devMarketingMailReport(customer, internal, { ...lane, DEV_MAIL_ENABLED: undefined })).toEqual({
+      decision: "closed", reason: "mail-disabled", detail: "absent",
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, DEV_CASE_INTAKE_NO_EMAIL: "true" })).toEqual({
+      decision: "closed", reason: "kill-switch", detail: null,
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, VERCEL_GIT_COMMIT_REF: "" })).toEqual({
+      decision: "closed", reason: "git-ref", detail: "absent",
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, VERCEL_GIT_COMMIT_REF: "feature/pr" })).toEqual({
+      decision: "closed", reason: "git-ref", detail: "other",
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, SUPABASE_URL: PROD_URL })).toEqual({
+      decision: "closed", reason: "database", detail: null,
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, DEV_MAIL_ALLOWED_RECIPIENTS: "owner@example.com\ncases@example.com" })).toEqual({
+      decision: "closed", reason: "allowlist-malformed", detail: "control",
+    })
+    expect(devMarketingMailReport(customer, internal, { ...lane, DEV_MAIL_ALLOWED_RECIPIENTS: "owner@example.com," })).toEqual({
+      decision: "closed", reason: "allowlist-malformed", detail: "empty-token",
+    })
+    expect(devMarketingMailReport(customer, internal, lane)).toEqual({
+      decision: "closed", reason: "customer-rejected", detail: "unlisted",
+    })
+    expect(devMarketingMailReport("owner@example.com", "not-an-email", lane)).toEqual({
+      decision: "closed", reason: "internal-rejected", detail: "invalid",
+    })
+    expect(devMarketingMailReport("owner@example.com", "stranger@example.com", lane)).toEqual({
+      decision: "closed", reason: "internal-rejected", detail: "unlisted",
+    })
+
+    const line = devMailCloseLogLine(disabled)
+    expect(line).toBe("[case-intake] dev mail closed reason=mail-disabled detail=other")
+    expect(line).not.toMatch(/@|DEV_MAIL|true|TRUE/)
+    expect(JSON.stringify(disabled)).not.toMatch(/stranger@example.com|owner@example.com|cases@example.com/)
+    expect(devMailDiagnosticsEnabled(lane)).toBe(true)
+    expect(devMailDiagnosticsEnabled({ ...lane, VERCEL_GIT_COMMIT_REF: "feature/pr" })).toBe(false)
+    expect(devMailDiagnosticsEnabled({ ...lane, VERCEL_ENV: "production" })).toBe(false)
+    expect(devMailDiagnosticsEnabled({ ...lane, VERCEL_GIT_COMMIT_REF: "", SUPABASE_URL: DEV_URL })).toBe(true)
+    expect(devMarketingMailLane(lane)).toBe(true)
+    expect(devMarketingMailLane({ ...lane, VERCEL_ENV: "production" })).toBe(false)
+    expect(devMailCloseLogLine({ decision: "outside", reason: null, detail: null })).toBeNull()
   })
 })

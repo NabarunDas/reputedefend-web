@@ -17,7 +17,7 @@ The observed DEV applied head stays `20261019235000`. Production and AWS Approve
 
 - A first Managed submission is allowed only at `READY_TO_SUBMIT`, and only while that stage is still ready. If readiness no longer holds, the status is `prerequisite`.
 - Any other Managed stage, including `AUTHORIZATION_REQUIRED`, `PREPARATION`, and `FURTHER_REVIEW` with no existing submission, returns `denied`.
-- A later Managed submission may be recorded from `FURTHER_REVIEW` when that case already has a `case_submissions` row. That is the existing second-attempt path. A withdrawal that is reopened with no submission must still go `FURTHER_REVIEW` → `PREPARATION` → `READY_TO_SUBMIT`.
+- A later Managed submission from `FURTHER_REVIEW` is allowed only when a submission already exists and `authorizationReady` is still true. Revoked case-management permission or revoked Google manager access returns `prerequisite` and writes no submission. Restoring that authorisation permits one retry. A withdrawal that is reopened with no submission must still go `FURTHER_REVIEW` → `PREPARATION` → `READY_TO_SUBMIT`.
 - Guided submissions keep the previous stage list and the `invalid` status.
 - The `close` branch is the Step 12A predicate, unchanged.
 
@@ -35,7 +35,7 @@ Each walk shows:
 - Submission from `SERVICE_SELECTION`, `AUTHORIZATION_REQUIRED`, and `PREPARATION` is `denied`.
 - `READY_TO_SUBMIT` is `prerequisite` before the pack is published, and again after manager access or the case permission is revoked. Step 7 leaves `COMPLETED` on those revoked records and returns when the command restores them.
 - The first submission is actor `ADMIN` from `READY_TO_SUBMIT`. The stage becomes `SUBMITTED`. Step 9 is complete only after the attempt is resolved.
-- A second submission from `FURTHER_REVIEW` succeeds because a submission already exists, and it is resolved before outcome review.
+- After the first submission is resolved, a retry from `FURTHER_REVIEW` is `prerequisite` while the case permission is revoked, and again while manager access is revoked. Each refusal leaves the submission count at one. Restoring the permission and verified manager access records one `ADMIN` retry. Repeating that request does not add another row. The retry is resolved before outcome review.
 - A separate withdrawn case, reopened at `FURTHER_REVIEW` with no submission, is denied a submission and refused `PREPARATION` without authorisation.
 
 Qualifying settlement and the unsuccessful close are unchanged. Guided payment rules are unchanged.

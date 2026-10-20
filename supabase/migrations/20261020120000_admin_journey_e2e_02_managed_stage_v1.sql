@@ -9,8 +9,10 @@ BEGIN;
 -- READY_TO_SUBMIT also requires a current published pack.
 -- Guided payment readiness is unchanged. The close branch is unchanged.
 -- A first Managed submission is allowed only at READY_TO_SUBMIT while that readiness still holds.
--- A later Managed submission is allowed from FURTHER_REVIEW only when a submission already exists.
--- Any other Managed stage is denied. Guided submissions keep the previous stage list.
+-- A later Managed submission from FURTHER_REVIEW also requires a prior submission row
+-- and current authorizationReady. Revoked permission or manager access returns prerequisite.
+-- A first submission from FURTHER_REVIEW, or from any other Managed stage, is denied.
+-- Guided submissions keep the previous stage list.
 -- CREATE OR REPLACE keeps the existing service_role EXECUTE grant on the command.
 -- The replaced private function is not granted to PUBLIC, anon, authenticated or service_role.
 
@@ -95,8 +97,9 @@ BEGIN
  ELSIF p_operation='submission' THEN
   IF p_data - ARRAY['note','submittedAt','reference','channel','evidence','confirmed'] <> '{}'::jsonb OR p_data->'confirmed' IS DISTINCT FROM 'true'::jsonb OR c.service_track='UNDECIDED' OR coalesce(length(btrim(p_data->>'reference')),0) NOT BETWEEN 1 AND 200 OR coalesce(length(btrim(p_data->>'channel')),0) NOT BETWEEN 3 AND 200 OR coalesce(length(btrim(p_data->>'evidence')),0) NOT BETWEEN 10 AND 2000 THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF c.service_track='GUIDED' AND c.work_stage NOT IN ('SERVICE_SELECTION','PAYMENT_REQUIRED','AUTHORIZATION_REQUIRED','READY_TO_SUBMIT','FURTHER_REVIEW') THEN RETURN jsonb_build_object('status','invalid'); END IF;
-  IF c.service_track='MANAGED' AND c.work_stage='READY_TO_SUBMIT' AND NOT admin_private.case_stage_ready_v1(c, 'READY_TO_SUBMIT') THEN RETURN jsonb_build_object('status','prerequisite'); END IF;
   IF c.service_track='MANAGED' AND NOT (c.work_stage='READY_TO_SUBMIT' OR (c.work_stage='FURTHER_REVIEW' AND EXISTS (SELECT 1 FROM public.case_submissions s WHERE s.case_id=c.id))) THEN RETURN jsonb_build_object('status','denied'); END IF;
+  IF c.service_track='MANAGED' AND c.work_stage='READY_TO_SUBMIT' AND NOT admin_private.case_stage_ready_v1(c, 'READY_TO_SUBMIT') THEN RETURN jsonb_build_object('status','prerequisite'); END IF;
+  IF c.service_track='MANAGED' AND NOT coalesce((admin_private.case_authorization_readiness_v1(c.id)->>'authorizationReady')::boolean, false) THEN RETURN jsonb_build_object('status','prerequisite'); END IF;
   due:=(p_data->>'submittedAt')::timestamptz;
   IF due IS NULL OR due>now_time OR due<c.created_at THEN RETURN jsonb_build_object('status','invalid'); END IF;
   IF EXISTS(SELECT 1 FROM public.case_submissions a WHERE a.case_id=c.id AND NOT EXISTS(SELECT 1 FROM public.case_submission_results b WHERE b.submission_id=a.id)) THEN RETURN jsonb_build_object('status','open_work'); END IF;

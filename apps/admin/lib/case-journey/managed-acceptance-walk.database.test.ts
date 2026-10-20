@@ -14,7 +14,8 @@
  * Both cases move AUTHORIZATION_REQUIRED → PREPARATION → READY_TO_SUBMIT
  * before the first submission. No saved card or payment consent is inserted.
  * A first submission from any earlier Managed stage is denied. A later
- * submission from FURTHER_REVIEW is allowed only after a real submission exists.
+ * submission from FURTHER_REVIEW still requires current authorisation.
+ * Revoked permission or revoked manager access refuses that retry.
  *
  * No function updates `payment_obligations.state` to VOID, so a composed
  * voided-fee close is not reachable. The inserted-row case stays in
@@ -101,6 +102,10 @@ async function versionOf(caseId: string) {
 
 async function stageOf(caseId: string) {
   return (await db.query<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId])).rows[0].work_stage
+}
+
+async function submissionCount(caseId: string) {
+  return (await db.query<{ n: number }>("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).rows[0].n
 }
 
 async function stepState(caseId: string, id: string) {
@@ -507,9 +512,10 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expect((await caseCommand(caseId, "transition", { target: "READY_TO_SUBMIT", nextAction: "", due: null })).status).toBe("prerequisite")
   expect(await stageOf(caseId)).toBe("PREPARATION")
   await freshSession()
-  expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
+  const restoredAccess = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
     accessLevel: "MANAGER", evidence: managerEvidence, confirmed: true, recordVersion: revokedAccess.recordVersion,
-  }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+  }])
+  expect(restoredAccess).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
   expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
 
   await freshSession()
@@ -523,7 +529,8 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
   expect((await caseCommand(caseId, "transition", { target: "READY_TO_SUBMIT", nextAction: "", due: null })).status).toBe("prerequisite")
   expect(await stageOf(caseId)).toBe("PREPARATION")
-  await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  const restoredPermission = await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(restoredPermission.authorizationId).toBeTruthy()
   expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
   expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
   expect((await db.query<{ ready: boolean }>("select admin_private.managed_setup_ready_v1($1) as ready", [caseId])).rows[0].ready).toBe(false)
@@ -548,9 +555,64 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   for (const task of openTasks.rows) expectOk(await caseCommand(caseId, "resolve_task", { taskId: task.id, status: "DONE" }), "resolve task")
 
   await move(caseId, "FURTHER_REVIEW")
-  const repeated = await caseCommand(caseId, "submission", submissionData(`GOOGLE-${marker}-2`, "2026-02-02T12:00:00.000Z"))
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+  expect(await submissionCount(caseId)).toBe(1)
+  const retry = { note, ...submissionData(`GOOGLE-${marker}-2`, "2026-02-02T12:00:00.000Z") }
+  await freshSession()
+  expect(await rpc("admin_authorization_command_v1", [token, key(), caseId, "admin_revoke_authorization", {
+    authorizationId: restoredPermission.authorizationId,
+    reason: "Customer withdrew case-management permission before another submission.",
+    confirmed: true,
+    recordVersion: 1,
+  }])).toMatchObject({ status: "success", authorizationStatus: "REVOKED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  const blockedPermissionVersion = await versionOf(caseId)
+  const blockedPermissionRequest = key()
+  const blockedPermission = await rpc("admin_case_command_v1", [token, blockedPermissionRequest, caseId, blockedPermissionVersion, "submission", retry])
+  expect(blockedPermission.status, JSON.stringify(blockedPermission)).toBe("prerequisite")
+  expect(await rpc("admin_case_command_v1", [token, blockedPermissionRequest, caseId, blockedPermissionVersion, "submission", retry])).toEqual(blockedPermission)
+  expect(await submissionCount(caseId)).toBe(1)
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+
+  const currentPermission = await acceptAgreement(caseId, "CASE_MANAGEMENT_PERMISSION")
+  expect(currentPermission.authorizationId).toBeTruthy()
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
+  await freshSession()
+  const revokedRetryAccess = await rpc("admin_manager_access_command_v1", [token, key(), caseId, "revoke", {
+    reason: "Access removed after a live Google check.", confirmed: true, recordVersion: restoredAccess.recordVersion,
+  }])
+  expect(revokedRetryAccess).toMatchObject({ status: "success", managerStatus: "REVOKED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(false)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).not.toBe("COMPLETED")
+  const blockedAccessVersion = await versionOf(caseId)
+  const blockedAccessRequest = key()
+  const blockedAccess = await rpc("admin_case_command_v1", [token, blockedAccessRequest, caseId, blockedAccessVersion, "submission", retry])
+  expect(blockedAccess.status, JSON.stringify(blockedAccess)).toBe("prerequisite")
+  expect(await rpc("admin_case_command_v1", [token, blockedAccessRequest, caseId, blockedAccessVersion, "submission", retry])).toEqual(blockedAccess)
+  expect(await submissionCount(caseId)).toBe(1)
+  expect(await stageOf(caseId)).toBe("FURTHER_REVIEW")
+
+  await freshSession()
+  expect(await rpc("admin_manager_access_command_v1", [token, key(), caseId, "verify", {
+    accessLevel: "MANAGER", evidence: managerEvidence, confirmed: true, recordVersion: revokedRetryAccess.recordVersion,
+  }])).toMatchObject({ status: "success", managerStatus: "VERIFIED" })
+  expect((await rpc("admin_case_authorization_readiness_v1", [token, caseId])).authorizationReady).toBe(true)
+  expect(await stepState(caseId, "SERVICE_ACTIVATION")).toBe("COMPLETED")
+  const retryVersion = await versionOf(caseId)
+  const retryRequest = key()
+  const repeated = await rpc("admin_case_command_v1", [token, retryRequest, caseId, retryVersion, "submission", retry])
   expectOk(repeated, "later submission")
+  expect(await rpc("admin_case_command_v1", [token, retryRequest, caseId, retryVersion, "submission", retry])).toEqual(repeated)
+  expect(await submissionCount(caseId)).toBe(2)
   expect(await stageOf(caseId)).toBe("SUBMITTED")
+  const attempts = await db.query<{ actor: string; recorded_by: string; google_reference: string }>(
+    "select actor, recorded_by::text, google_reference from public.case_submissions where case_id = $1",
+    [caseId],
+  )
+  expect(attempts.rows).toHaveLength(2)
+  expect(attempts.rows.every(row => row.actor === "ADMIN" && row.recorded_by === admin)).toBe(true)
+  expect(attempts.rows.filter(row => row.google_reference === `GOOGLE-${marker}-2`)).toHaveLength(1)
   const later = await rpc<CaseDetail>("admin_case_detail_v1", [token, caseId, null])
   const openAttempt = later.submissions.find(item => item.result === null)
   expect(openAttempt?.id).toBeTruthy()

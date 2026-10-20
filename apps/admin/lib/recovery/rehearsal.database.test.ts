@@ -50,13 +50,13 @@ describe("rebuilding the whole schema from zero", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
     expect(migrationChain).toHaveLength(56)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
-    // Step 12A, and the pending ADMIN-JOURNEY-E2E-02 file.
-    // It does not replay applied statements on a live database and does not
-    // apply the pending file to DEV or Production.
+    // Step 12A, and DEV-applied ADMIN-JOURNEY-E2E-02.
+    // It does not replay applied statements on a live database or
+    // apply the DEV-only migration to Production.
     // Production and AWS approved backup heads remain at SEC-08.
     expect(migrationHead.version).toBe("20261020120000")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261019235000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261020120000")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

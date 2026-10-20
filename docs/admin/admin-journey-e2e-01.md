@@ -1,10 +1,10 @@
 # ADMIN-JOURNEY-E2E-01 — eleven-step acceptance
 
-Status: acceptance record for the disposable Managed walks. The stage correction itself is pending migration `20261020120000` and is described in `docs/admin/admin-journey-e2e-02.md`. This is not a Production-readiness decision.
+Status: acceptance record for the disposable Managed walks. The stage correction was applied to DEV only as migration `20261020120000` and is described in `docs/admin/admin-journey-e2e-02.md`. This is not a Production-readiness decision.
 
-Environment used: PGlite, loading the repository migration chain, including that pending file. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. The pending migration was not applied to DEV or Production.
+Environment used: PGlite, loading the repository migration chain, including the E2E-02 file, before its separate live DEV application. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. The pending migration was not applied to DEV or Production.
 
-The repository records `20261019235000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
+The repository now records `20261020120000` as the applied DEV head and `20261014170000` as the Production head. This exercise did not re-read either live ledger.
 
 ## How to read a result
 
@@ -115,7 +115,7 @@ Whether the customer should see the unsuccessful outcome is a product copy decis
 
 | Branch | Composed result | What the command did |
 | --- | --- | --- |
-| Managed work-stage progression into `PREPARATION` with completed authority and no saved card | PASS on the disposable chain | Walks B and C. `managed_setup_ready_v1` is false. Step 7 is `COMPLETED` and `transition` to `PREPARATION` succeeds. Live DEV still has the previous function until `20261020120000` is independently applied. |
+| Managed work-stage progression into `PREPARATION` with completed authority and no saved card | PASS on the disposable chain | Walks B and C. `managed_setup_ready_v1` is false. Step 7 is `COMPLETED` and `transition` to `PREPARATION` succeeds. DEV now has independently applied `20261020120000`; signed-in browser acceptance remains untested. |
 | Close while a qualifying success fee is `DUE` | PASS | Walk B. `close` returns `prerequisite`. The headline is “Approved fee”. Step 10 is not complete. |
 | Close while that fee’s hosted invoice is `ISSUED` and unpaid | PASS | Walk B. `close` returns `prerequisite`. The headline is “Invoiced” and says this is not payment. |
 | `approve_success_fee` after `NOT_RESTORED` | PASS | Walk C. Status `denied`. No obligation, invoice, or receipt. |
@@ -187,7 +187,7 @@ Existing slice files were not rewritten. Portal SQL and customer copy were not c
 
 ## Unresolved blockers
 
-1. **Live DEV still has the saved-card stage rule.** The disposable walks pass `AUTHORIZATION_REQUIRED` → `PREPARATION` → `READY_TO_SUBMIT` only because they load pending `20261020120000_admin_journey_e2e_02_managed_stage_v1.sql`. That file is not applied to DEV or Production. Until an independent review applies it to DEV, live `case_stage_ready_v1` still calls `managed_setup_ready_v1`. Do not apply it from the pull request.
+1. **DEV migration integrated; signed-in behaviour still to be tested.** The disposable Managed walks pass `AUTHORIZATION_REQUIRED` → `PREPARATION` → `READY_TO_SUBMIT`, and reviewed migration `20261020120000_admin_journey_e2e_02_managed_stage_v1.sql` was applied to DEV only. Its functions and grants were verified; signed-in Admin and Customer browser acceptance remains pending.
 2. Signed-in Admin and customer browser journeys for A, B, C, and D were not run. No DEV OTP or service credential was available here.
 3. A composed close against a `VOID` success fee cannot be run. No function writes that state.
 4. A composed close against an active success fee on a non-qualifying outcome cannot be run. The approval command refuses to create the fee.

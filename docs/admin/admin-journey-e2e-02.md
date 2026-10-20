@@ -1,8 +1,8 @@
 # ADMIN-JOURNEY-E2E-02 — Managed stage readiness
 
-Status: proposed. `supabase/migrations/20261020120000_admin_journey_e2e_02_managed_stage_v1.sql` is in the repository with `appliedToDev: false`. It is not applied to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). Do not apply it from the pull request. Do not replay `20261019235000` or any earlier applied migration.
+Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 at canonical version `20261020120000`, after exact source-to-ledger SQL and privilege verification. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay this or any earlier migration.
 
-The observed DEV applied head stays `20261019235000`. Production and AWS ApprovedMigrationHead stay `20261014170000`.
+The verified DEV applied head is `20261020120000`. Production and AWS ApprovedMigrationHead stay `20261014170000`.
 
 ## What changes
 

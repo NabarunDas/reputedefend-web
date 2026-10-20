@@ -67,6 +67,8 @@ export type PersistGetHelpCaseOptions = {
   now?: Date
   nodeEnv?: string
   mailLedger?: IntakeMailLedger
+  /** A caller-supplied database client. Production creates its own. */
+  supabaseClient?: SupabaseServerClient
 }
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
@@ -238,7 +240,9 @@ async function deliverPersistedIntake(
   const supabaseReady = readSupabaseConfig().ready
   const now = options.now ?? new Date()
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
-  const client = options.updateCommunication ? null : (supabaseReady ? createSupabaseServerClient() : null)
+  const client = options.updateCommunication
+    ? null
+    : (options.supabaseClient ?? (supabaseReady ? createSupabaseServerClient() : null))
   const updateCommunication = options.updateCommunication
     ?? (client ? defaultUpdateCommunication(client) : async () => {})
 

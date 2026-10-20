@@ -167,7 +167,7 @@ capability gate is expected to be missing.
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | marketing | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | No analytics script is loaded and no consent banner is rendered. |
 | `VITEST` | admin | TEST_ONLY | non-secret | ABSENT | The intended state in every deployment. |
 
-Develop DEV Get Help uses the same customer acknowledgement and internal notice as Production. It reads `ENQUIRY_FROM_EMAIL`, `ENQUIRY_TO_EMAIL` and `RESEND_API_KEY`. It does not read a separate enable flag, recipient allowlist, or no-email switch. Other Preview branches do not send. Production configuration is unchanged.
+Develop DEV Get Help uses the same customer acknowledgement and internal notice as Production. It reads `ENQUIRY_FROM_EMAIL`, `ENQUIRY_TO_EMAIL` and `RESEND_API_KEY`. It does not read a separate enable flag, recipient allowlist, or no-email switch. The exact original suppression check is undetermined; those DEV-only gates are no longer read. Other Preview branches do not send, including when case persistence is off and the request would otherwise use the legacy enquiry sender. Production configuration is unchanged.
 
 One family cannot be found by scanning, because it is read by a computed name:
 `COMMUNICATIONS_LINK_SECRET_V{n}` holds a superseded evidence-link HMAC key so

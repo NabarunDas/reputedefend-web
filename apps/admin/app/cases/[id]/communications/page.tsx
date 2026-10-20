@@ -9,8 +9,11 @@ import { communicationsSendEnabled } from "@/lib/communications/gate"
 import { loadCaseConversations, loadConversation } from "@/lib/conversations/queries"
 import { getEvidenceCase } from "@/lib/evidence/queries"
 import { isUuid } from "@/lib/records/model"
+import { isIntakeMailPublicRef } from "@/lib/case-intake-mail/offer"
+import { loadIntakeMailRetryOffer } from "@/lib/case-intake-mail/load"
 import { PageHeader } from "../../../ui"
 import { CommunicationsWorkspace } from "./workspace-view"
+import { IntakeMailRetryPanel } from "./intake-mail-retry"
 
 export const metadata = { title: "Communications" }
 
@@ -29,12 +32,13 @@ export default async function CaseCommunicationsPage({
   const { id } = await params
   const query = await searchParams
   const selectedId = typeof query.conversation === "string" && isUuid(query.conversation) ? query.conversation : null
-  const [caseDetail, facts, evidence, history, conversations] = await Promise.all([
+  const [caseDetail, facts, evidence, history, conversations, intakeMailRetry] = await Promise.all([
     getCase(id),
     loadCaseFlowFacts(id),
     getEvidenceCase(id),
     loadCaseCommunications(id),
     loadCaseConversations(id),
+    loadIntakeMailRetryOffer(id),
   ])
   const flow = resolveCaseFlow(facts, new Date().toISOString())
   const selectedConversation = selectedId ? await loadConversation(selectedId) : null
@@ -61,6 +65,9 @@ export default async function CaseCommunicationsPage({
       title="Communications"
       description={<>{caseDetail.reference} · {caseDetail.client} — {caseDetail.business}. Outbound messages, delivery and conversations for this case.</>}
     />
+    {intakeMailRetry && isIntakeMailPublicRef(caseDetail.reference) && (
+      <IntakeMailRetryPanel caseId={caseDetail.id} publicRef={caseDetail.reference} destinations={intakeMailRetry.destinations} />
+    )}
     <CommunicationsWorkspace caseDetail={caseDetail} model={model} />
   </section>
 }

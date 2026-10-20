@@ -1,7 +1,12 @@
 import { persistGeneralEnquiry } from "@/lib/enquiries/intake"
 import { NextResponse } from "next/server"
 import { persistGetHelpCase } from "@/lib/cases/intake"
-import { isCasePersistenceEnabled } from "@/lib/cases/persistence-config"
+import {
+  featurePreviewMailLogLine,
+  intakeMailLane,
+  isCasePersistenceEnabled,
+  observeIntakeMailRuntime,
+} from "@/lib/cases/persistence-config"
 import { readSubmissionKey } from "@/lib/cases/submission-key"
 import { validateEnquiry } from "@/lib/enquiry"
 import { ENQUIRY_UNAVAILABLE, deliverEnquiry } from "@/lib/enquiry-delivery"
@@ -32,6 +37,18 @@ export async function POST(request: Request) {
     const limit = await consumePublicRateLimit(request)
     if (!limit.ok) {
       return NextResponse.json({ ok: false, message: ENQUIRY_UNAVAILABLE }, { status: limit.status })
+    }
+
+    if (
+      checked.data.source === "get-help"
+      && intakeMailLane() === "feature-preview"
+      && !isCasePersistenceEnabled()
+    ) {
+      console.error(featurePreviewMailLogLine(observeIntakeMailRuntime()))
+      return NextResponse.json(
+        { ok: false, message: ENQUIRY_UNAVAILABLE, receiptEmailStatus: "suppressed" },
+        { status: 503 },
+      )
     }
 
     if (checked.data.source === "get-help" && isCasePersistenceEnabled()) {

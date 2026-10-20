@@ -3,8 +3,11 @@ import { supabaseUrlMatchesEnvironment } from "@/lib/supabase/config"
 
 /**
  * The decision that was deployed for PR-26-RZYCE4, copied from merge 22f4b1c.
- * It is not the live send path. It exists so the close can be reproduced with
- * the flag bytes Vercel reported.
+ * It is not the live send path. The reported flag bytes leave the enable and
+ * kill-switch branches open. Several later checks can still close this old
+ * function. Which of those checks ran for that case is undetermined: the
+ * allowlist and the stored recipients were not readable. The live path no
+ * longer consults this gate.
  */
 const DEV_SUPABASE_URLS = [
   "https://rmzozuiamjcclvtgutgd.supabase.co",
@@ -97,7 +100,7 @@ const lane = {
   DEV_MAIL_ALLOWED_RECIPIENTS: "owner@example.com,cases@example.com",
 }
 
-describe("deployed DEV mail gate reproduced with the reported flag bytes", () => {
+describe("deployed DEV mail gate, with the exact cause left undetermined", () => {
   it("uses the four bytes Vercel reported for the enable flag", () => {
     expect([...EXACT_TRUE].map((char) => char.charCodeAt(0))).toEqual([116, 114, 117, 101])
     expect(EXACT_TRUE).toBe("true")
@@ -110,7 +113,7 @@ describe("deployed DEV mail gate reproduced with the reported flag bytes", () =>
     expect(deployedCloseReason("owner@example.com", "cases@example.com", lane)).toBe("open")
   })
 
-  it("still closes on those same bytes when a later check fails", () => {
+  it("can still close on those same bytes when a later check fails", () => {
     expect(deployedCloseReason("owner@example.com", "cases@example.com", {
       ...lane,
       DEV_MAIL_ALLOWED_RECIPIENTS: undefined,

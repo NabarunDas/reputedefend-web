@@ -26,12 +26,17 @@ vi.mock("./authorization-forms", () => ({
 }))
 const redirectTo = vi.hoisted(() => vi.fn())
 const requireStaff = vi.hoisted(() => vi.fn())
+const loadIntakeMailRetryOffer = vi.hoisted(() => vi.fn(async () => null))
+vi.mock("@/lib/case-intake-mail/load", () => ({
+  loadIntakeMailRetryOffer: (...args: unknown[]) => loadIntakeMailRetryOffer(...args),
+}))
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND") },
   redirect: (url: string) => {
     redirectTo(url)
     throw new Error(`REDIRECT ${url}`)
   },
+  useRouter: () => ({ refresh: () => undefined }),
 }))
 vi.mock("@/lib/require-staff", () => ({ requireStaff: () => requireStaff() }))
 
@@ -384,6 +389,8 @@ describe("DEV case navigation", () => {
     vi.unstubAllEnvs()
     redirectTo.mockReset()
     requireStaff.mockReset()
+    loadIntakeMailRetryOffer.mockReset()
+    loadIntakeMailRetryOffer.mockResolvedValue(null)
   })
 
   it("opens the workflow for a signed-in operator and does not read the case first", async () => {
@@ -466,6 +473,27 @@ describe("DEV case navigation", () => {
     expect(getCase).toHaveBeenCalledWith(CASE_ID, undefined)
     expect(screen.queryByRole("link", { name: "Case workflow" })).not.toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Case journey" }).closest("section")!.querySelectorAll("li")).toHaveLength(9)
+  })
+
+  it("shows the unsent intake email retry on the case communications section", async () => {
+    useEnv(devPreview)
+    loadIntakeMailRetryOffer.mockResolvedValue({
+      destinations: [
+        { role: "Customer acknowledgement", recipient: "alex@example.com", willSend: true },
+        { role: "Internal notification", recipient: "owner@example.com", willSend: true },
+      ],
+    })
+    arrange(cockpitScenarios.newCase, { reference: "PR-26-RZYCE4" })
+    render(await CasePage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ view: "details" }),
+    }))
+    const section = screen.getByRole("heading", { name: "Retry unsent intake emails" }).closest("section")
+    expect(section).toBeTruthy()
+    expect(within(section as HTMLElement).getByText(/Customer acknowledgement: alex@example.com/)).toBeInTheDocument()
+    expect(within(section as HTMLElement).getByText(/Internal notification: owner@example.com/)).toBeInTheDocument()
+    expect(within(section as HTMLElement).getByRole("button", { name: "Send the unsent intake emails" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: /Review the draft|Queue the reviewed message/ })).not.toBeInTheDocument()
   })
 
   it("rejects a repeated view parameter before reading the case", async () => {

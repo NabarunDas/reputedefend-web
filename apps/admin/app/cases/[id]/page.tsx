@@ -18,6 +18,9 @@ import { CasePrerequisites } from "./cockpit/prerequisites"
 import { CaseSnapshot } from "./cockpit/snapshot"
 import { actionTarget } from "./cockpit/presentation"
 import { caseDetailsHref, caseWorkflowHref, caseWorkspaceChoice, devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
+import { isIntakeMailPublicRef } from "@/lib/case-intake-mail/offer"
+import { loadIntakeMailRetryOffer } from "@/lib/case-intake-mail/load"
+import { IntakeMailRetryPanel } from "./communications/intake-mail-retry"
 import { requireStaff } from "@/lib/require-staff"
 
 export const metadata = { title: "Case" }
@@ -55,7 +58,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   // A failure in either is left to propagate: a projection that cannot be
   // built is a problem to see, not one to paper over with the old layout.
   const c = await getCase(id, before)
-  const [authz, flow] = await Promise.all([getCaseAuthorization(id), loadCaseFlow(id)])
+  const [authz, flow, intakeMailRetry] = await Promise.all([
+    getCaseAuthorization(id),
+    loadCaseFlow(id),
+    loadIntakeMailRetryOffer(id),
+  ])
 
   const closed = ["CLOSED", "CANCELLED"].includes(c.status)
   const events = c.events.slice(0, 50), last = events.at(-1), url = safeWebUrl(c.reviewUrl)
@@ -184,6 +191,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       <section className="panel">
         <h3>Communications</h3>
         <p className="muted">Draft, review and queue customer email. Provider acceptance is not delivery, and live sending stays blocked on the current daily scheduler.</p>
+        {intakeMailRetry && isIntakeMailPublicRef(c.reference) && <IntakeMailRetryPanel caseId={c.id} publicRef={c.reference} destinations={intakeMailRetry.destinations} />}
         {caseDestination("CASE_COMMUNICATIONS", c.id) && <p><Link className="button-link secondary" href={caseDestination("CASE_COMMUNICATIONS", c.id)!.href}>Open case communications</Link></p>}
       </section>
       <section className="panel">

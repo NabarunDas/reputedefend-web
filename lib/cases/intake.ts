@@ -1,5 +1,5 @@
 import "server-only"
-import { devCaseIntakeEmailSuppressed } from "@/lib/cases/persistence-config"
+import { devCaseIntakeEmailSuppressed, devMarketingMailDecision } from "@/lib/cases/persistence-config"
 
 import {
   isCasePublicRef,
@@ -60,6 +60,7 @@ export type PersistGetHelpCaseOptions = {
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
 const GENERIC_UNAVAILABLE_ERROR = "Delivery unavailable."
+const DEV_MAIL_CLOSED = "Not sent. DEV mail is closed for this recipient."
 
 function needsDelivery(status: string | null | undefined) {
   return status !== "SENT"
@@ -112,6 +113,7 @@ async function deliverCommunication(options: {
   message: ReturnType<typeof buildCaseReceivedCustomerMessage>
   provider: EnquiryProvider | undefined
   configReady: boolean
+  unavailableError: string
   now: Date
   updateCommunication: NonNullable<PersistGetHelpCaseOptions["updateCommunication"]>
 }) {
@@ -124,7 +126,7 @@ async function deliverCommunication(options: {
       subject,
       provider: "resend",
       status: "FAILED",
-      error_message: GENERIC_UNAVAILABLE_ERROR,
+      error_message: options.unavailableError,
     })
     return false
   }
@@ -201,8 +203,6 @@ export async function persistGetHelpCase(
 
   const now = options.now ?? new Date()
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
-  const noDevEmail = devCaseIntakeEmailSuppressed()
-  const provider = noDevEmail ? undefined : liveProvider(emailConfig, nodeEnv, options.provider)
   const client = options.updateCommunication ? null : (supabaseReady ? createSupabaseServerClient() : null)
   const updateCommunication = options.updateCommunication
     ?? (client ? defaultUpdateCommunication(client) : async () => {})
@@ -213,6 +213,12 @@ export async function persistGetHelpCase(
   const internalRecipient = intake.internal_communication_recipient?.trim() || ""
   const customerNeedsDelivery = Boolean(intake.customer_communication_id) && needsDelivery(intake.customer_communication_status)
   const internalNeedsDelivery = Boolean(intake.internal_communication_id) && needsDelivery(intake.internal_communication_status)
+  const devClosed = (customerNeedsDelivery || internalNeedsDelivery) && devMarketingMailDecision(
+    customerNeedsDelivery ? customerRecipient : null,
+    internalNeedsDelivery ? internalRecipient : null,
+  ) === "closed"
+  const provider = devClosed ? undefined : liveProvider(emailConfig, nodeEnv, options.provider)
+  const unavailableError = devClosed && !devCaseIntakeEmailSuppressed() ? DEV_MAIL_CLOSED : GENERIC_UNAVAILABLE_ERROR
 
   const success = {
     ok: true as const,
@@ -224,7 +230,7 @@ export async function persistGetHelpCase(
 
   const customerReceipt = (sent: boolean) => {
     if (sent) return { receiptEmailSent: true as const, receiptEmailStatus: "sent" as const }
-    if (noDevEmail) return { receiptEmailSent: false as const, receiptEmailStatus: "suppressed" as const }
+    if (devClosed) return { receiptEmailSent: false as const, receiptEmailStatus: "suppressed" as const }
     return { receiptEmailSent: false as const, receiptEmailStatus: "unavailable" as const }
   }
 
@@ -239,13 +245,13 @@ export async function persistGetHelpCase(
     if (customerNeedsDelivery && intake.customer_communication_id) {
       await updateCommunication(intake.customer_communication_id, {
         status: "FAILED",
-        error_message: GENERIC_UNAVAILABLE_ERROR,
+        error_message: unavailableError,
       })
     }
     if (internalNeedsDelivery && intake.internal_communication_id) {
       await updateCommunication(intake.internal_communication_id, {
         status: "FAILED",
-        error_message: GENERIC_UNAVAILABLE_ERROR,
+        error_message: unavailableError,
       })
     }
     return {
@@ -269,7 +275,8 @@ export async function persistGetHelpCase(
         customerRecipient,
       ),
       provider,
-      configReady: emailConfig.ready && !noDevEmail,
+      configReady: emailConfig.ready && !devClosed,
+      unavailableError,
       now,
       updateCommunication,
     })
@@ -278,7 +285,7 @@ export async function persistGetHelpCase(
   if (!customerRecipient && customerNeedsDelivery && intake.customer_communication_id) {
     await updateCommunication(intake.customer_communication_id, {
       status: "FAILED",
-      error_message: GENERIC_UNAVAILABLE_ERROR,
+      error_message: unavailableError,
     })
   }
 
@@ -296,14 +303,15 @@ export async function persistGetHelpCase(
         now,
       ),
       provider,
-      configReady: emailConfig.ready && !noDevEmail,
+      configReady: emailConfig.ready && !devClosed,
+      unavailableError,
       now,
       updateCommunication,
     })
   } else if (internalNeedsDelivery && intake.internal_communication_id) {
     await updateCommunication(intake.internal_communication_id, {
       status: "FAILED",
-      error_message: GENERIC_UNAVAILABLE_ERROR,
+      error_message: unavailableError,
     })
   }
 

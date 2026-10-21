@@ -11,7 +11,7 @@ The repository applied-file head is the same version. Production and AWS
 
 The repository source and DEV applied head later moved to Step 10B canonical version
 `20261019183000`. It was applied separately after this historical reconciliation. Its statement is separate
-from these seven recovered files, which stay unchanged. E2E-04 `20261020210000` remains applied to DEV only and is not applied to Production. The later DEV applied head is `20261021155147`. `pendingMigrations()` is `20261021210000`. It has not been applied.
+from these seven recovered files, which stay unchanged. E2E-04 `20261020210000` remains applied to DEV only and is not applied to Production. The later DEV applied head is `20261021214813`. `pendingMigrations()` is empty. `20261021155147` remains applied and must not be replayed.
 
 ## How the statements were recovered
 
@@ -68,4 +68,4 @@ These files are in `supabase/migrations` so a disposable rebuild can reproduce t
 - Disposable PGlite rehearsals apply the chain to a throwaway database. That is not a live apply.
 - Draft template rows do not become the live approved template and do not turn sending on.
 
-The verified applied DEV head is `20261021155147_communication_access_preliminary_evidence_v1.sql`, applied to DEV only and not to Production. The repository filename was aligned to that ledger version and the SQL was not replayed. Do not replay it. The DEV mail claim `20261021132018` remains applied. E2E-04, E2E-03, E2E-02, Step 12A and the seven recovered statements remain applied without replay. `20261021210000` has not been applied. Production and AWS ApprovedMigrationHead stay `20261014170000`.
+The verified applied DEV head is `20261021214813_gross_customer_price_v1.sql`, applied to DEV only and not to Production. The repository filename was aligned to that ledger version and the SQL was not replayed. Do not replay it. `20261021155147_communication_access_preliminary_evidence_v1.sql` remains applied to DEV only. The DEV mail claim `20261021132018` remains applied. E2E-04, E2E-03, E2E-02, Step 12A and the seven recovered statements remain applied without replay. Production and AWS ApprovedMigrationHead stay `20261014170000`.

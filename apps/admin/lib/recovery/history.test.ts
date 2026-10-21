@@ -7,7 +7,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
-// synthetic chain ends at the observed DEV ledger head 20261021155147.
+// synthetic chain ends at the observed DEV ledger head 20261021214813.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -29,12 +29,10 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261021210000_gross_customer_price_v1.sql",
-    ])
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261021155147",
-      name: "communication_access_preliminary_evidence_v1",
+      version: "20261021214813",
+      name: "gross_customer_price_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
@@ -60,6 +58,16 @@ describe("the migration history validator", () => {
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261021132018_dev_send_email_claim_v1.sql"],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("refuses to replay the gross-price migration after the filename was aligned", () => {
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261021214813_gross_customer_price_v1.sql"],
     })
     expect(codes(result)).toContain("replay_of_applied_migration")
     expect(mayApplyMigrations(result)).toBe(false)

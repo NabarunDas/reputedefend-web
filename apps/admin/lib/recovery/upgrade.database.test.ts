@@ -59,11 +59,12 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the unapplied gross-price migration.
+    // The tail is the DEV-applied gross-price migration. Its filename matches
+    // ledger version 20261021214813. This disposable rebuild is not a live apply.
     // Preliminary evidence 20261021155147 and the DEV mail claim are already applied.
-    // Production remains at SEC-08. This disposable rebuild is not a live apply.
-    expect(pending.at(-1)?.version).toBe("20261021210000")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    // Production remains at SEC-08.
+    expect(pending.at(-1)?.version).toBe("20261021214813")
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.some(entry => entry.version === "20261021155147" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261021132018" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261020210000" && entry.appliedToDev)).toBe(true)

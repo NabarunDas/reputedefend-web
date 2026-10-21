@@ -2,6 +2,7 @@ import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
 import { isUuid } from "@/lib/records/model"
 import { customerFacingTaxNote } from "../../../../../../lib/pricing"
 import { CaseQuoteForm } from "../commercial/forms"
+import { PurchaserForm } from "../../../commercial/purchaser-form"
 import {
   OfferQuoteActionForm,
   QuoteActionForm,
@@ -22,6 +23,7 @@ export function QuotePanel({
   locationId,
   customerName,
   businessName,
+  listingCountry = null,
 }: {
   panel: JourneyQuotePanel
   caseId: string
@@ -30,6 +32,7 @@ export function QuotePanel({
   locationId: string | null
   customerName: string
   businessName: string
+  listingCountry?: string | null
 }) {
   const quote = panel.quote
   const businessHref = isUuid(businessId) ? `/records/business/${businessId}` : null
@@ -60,6 +63,12 @@ export function QuotePanel({
         {relationshipHref ? <> <a href={relationshipHref}>Review the customer and business relationship</a></> : null}
       </p>
     </section>}
+    {isUuid(businessId) && <PurchaserForm
+      businessId={businessId}
+      businessName={businessName}
+      customerName={customerName}
+      listingCountry={listingCountry}
+    />}
     {panel.commands.draft && panel.priceChoice && <CaseQuoteForm
       caseId={caseId}
       customerId={customerId}

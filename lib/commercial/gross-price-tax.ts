@@ -3,10 +3,11 @@
  *
  * The catalogue seed stays `UNCONFIRMED`. Offering still stops until the
  * existing purchasing-establishment and tax eligibility checks pass. The
- * database rule is source-only in
- * `20261021210000_gross_customer_price_v1.sql`. This module does not set a
- * tax rate, record a customer tax identifier, change a price, or apply that
- * migration to DEV or Production.
+ * database rule is `20261021214813_gross_customer_price_v1.sql`. DEV already
+ * applied that SQL as this ledger version. This module does not replay it,
+ * set a tax rate, record a customer tax identifier, change a price, or apply
+ * it to Production. The SQL file header still says source-only because an
+ * applied file is not edited.
  */
 import { catalogueSeed } from "../catalogue-seed"
 import type { TaxBehaviour } from "../money"
@@ -28,10 +29,10 @@ export const grossAdvertisedPrices = {
  * catalogue seed and still blocks an offer.
  */
 export const grossPriceTaxProposal = {
-  status: "source_only",
+  status: "dev_ledger_aligned",
   applied: false,
-  migration: "20261021210000_gross_customer_price_v1.sql",
-  appliedToDev: false,
+  migration: "20261021214813_gross_customer_price_v1.sql",
+  appliedToDev: true,
   appliedToProduction: false,
   productionChange: false,
   stripeCharge: false,

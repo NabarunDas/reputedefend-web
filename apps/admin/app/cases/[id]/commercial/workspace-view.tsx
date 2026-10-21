@@ -11,6 +11,7 @@ import {
 } from "../../../commercial/forms"
 import { ApproveSuccessFeeForm, IssuePaymentActionForm } from "../../../money/forms"
 import { Notice } from "../../../ui"
+import { PurchaserForm } from "../../../commercial/purchaser-form"
 import { CaseQuoteForm } from "./forms"
 
 /**
@@ -70,6 +71,7 @@ export function CommercialWorkspace({ model, caseDetail }: { model: CommercialWo
         choice={model.priceChoices[0]}
       />}
       {quote && model.commands.setTax && <SetDraftTaxForm quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} />}
+      {isUuid(caseDetail.businessId) && <PurchaserForm businessId={caseDetail.businessId} businessName={caseDetail.business} customerName={caseDetail.client} />}
       {quote && model.commands.offer && <QuoteActionForm operation="offer" quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} label="Offer quote" />}
       {quote && model.commands.newVersion && <CreateVersionForm quoteId={quote.quoteId} version={quote.version} />}
       {quote && model.commands.issueAcceptance && <OfferQuoteActionForm quoteId={quote.quoteId} />}

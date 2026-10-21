@@ -7,6 +7,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
+import { purchaserCommandMessage, type PurchaserPayload } from "./purchaser"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "./paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE } from "./paid-service-approval.fixture"
@@ -816,5 +817,144 @@ describe("COM-14A commercial eligibility gate", () => {
       "update public.quote_versions set total_amount_minor = total_amount_minor + 1 where id = $1",
       [accepted.id],
     )).rejects.toThrow(/immutable|gross_price/)
+  })
+
+  it("keeps an existing verified establishment when a later submission matches the country", async () => {
+    const keptBusiness = "c14a0000-0000-4000-8000-000000000042"
+    const noteBusiness = "c14a0000-0000-4000-8000-000000000043"
+    await db.query("insert into public.businesses(id, display_name) values ($1, 'Current Bakery'), ($2, 'Noted Bakery')", [keptBusiness, noteBusiness])
+    const originalEvidence = "Operator checked the genuine registered office for this disposable database."
+    const original = {
+      businessId: keptBusiness,
+      countryCode: "GB",
+      legalName: "Current Bakery Ltd",
+      evidenceType: "OTHER",
+      evidenceReference: originalEvidence,
+      verificationStatus: "VERIFIED",
+    }
+    const request = key()
+    const created = await rpc("admin_record_business_establishment_v1", [adminToken, request, original])
+    expect(created).toMatchObject({ status: "success", verificationStatus: "VERIFIED", countryCode: "GB" })
+    const createdId = created?.id
+    expect(createdId).toBeTruthy()
+
+    async function rows(businessId: string) {
+      return db.query<{ legal_name: string; evidence_reference: string; verification_status: string }>(
+        "select legal_name, evidence_reference, verification_status from public.business_establishments where business_id = $1 order by recorded_at",
+        [businessId],
+      )
+    }
+    const before = await rows(keptBusiness)
+    expect(before.rows).toEqual([{ legal_name: "Current Bakery Ltd", evidence_reference: originalEvidence, verification_status: "VERIFIED" }])
+    const eventsBefore = await count("select count(*)::int as n from public.commercial_eligibility_events where establishment_id = $1", [createdId])
+
+    const submissions: PurchaserPayload[] = [
+      {
+        businessId: keptBusiness,
+        countryCode: "GB",
+        legalName: "Pending Trading Name",
+        evidenceType: "OTHER",
+        evidenceReference: "Purchaser is a sole trader. The customer described the trading name and no independent check has been recorded yet.",
+        verificationStatus: "PENDING",
+      },
+      {
+        businessId: keptBusiness,
+        countryCode: "GB",
+        legalName: "Rejected Trading Name",
+        evidenceType: "OTHER",
+        evidenceReference: "Purchaser is a sole trader. The documents supplied do not show the purchasing establishment and are not sufficient.",
+        verificationStatus: "REJECTED",
+      },
+      {
+        businessId: keptBusiness,
+        countryCode: "GB",
+        legalName: "Replacement Name Ltd",
+        evidenceType: "REGISTRY_EXTRACT",
+        evidenceReference: "Purchaser is a limited company. A later check names a different office and must not replace the verified record.",
+        verificationStatus: "VERIFIED",
+      },
+    ]
+    for (const payload of submissions) {
+      const returned = await rpc("admin_record_business_establishment_v1", [adminToken, key(), payload])
+      expect(returned).toMatchObject({ status: "success", id: createdId, verificationStatus: "VERIFIED", countryCode: "GB" })
+      const outcome = purchaserCommandMessage(payload, returned ?? {})
+      expect(outcome.message).not.toContain(payload.legalName)
+      expect(outcome.message).not.toMatch(/new purchasing-establishment note/)
+      if (payload.verificationStatus === "VERIFIED") {
+        expect(outcome.httpStatus).toBe(200)
+        expect(outcome.message).toMatch(/does not confirm that the name or evidence/)
+      } else {
+        expect(outcome.httpStatus).toBe(409)
+        expect(outcome.message).toMatch(/was not saved/)
+        expect(outcome.message).not.toMatch(/Saved as not yet verified|Recorded as not sufficient/)
+      }
+    }
+    expect((await rows(keptBusiness)).rows).toEqual(before.rows)
+    expect(await count("select count(*)::int as n from public.commercial_eligibility_events where establishment_id = $1", [createdId])).toBe(eventsBefore)
+
+    const replay = await rpc("admin_record_business_establishment_v1", [adminToken, request, original])
+    expect(replay).toMatchObject({ status: "replay", id: createdId, countryCode: "GB" })
+    const replayOutcome = purchaserCommandMessage({
+      businessId: keptBusiness,
+      countryCode: "GB",
+      legalName: original.legalName,
+      evidenceType: "OTHER",
+      evidenceReference: originalEvidence,
+      verificationStatus: "VERIFIED",
+    }, replay ?? {})
+    expect(replayOutcome.httpStatus).toBe(200)
+    expect(replayOutcome.message).toMatch(/already recorded/)
+    expect(replayOutcome.message).toMatch(/not overwritten/)
+    expect((await rows(keptBusiness)).rows).toEqual(before.rows)
+
+    const conflict = await rpc("admin_record_business_establishment_v1", [adminToken, key(), {
+      ...original,
+      countryCode: "IE",
+      legalName: "Current Bakery Ireland Ltd",
+      evidenceReference: "A different purchasing country needs review and must not replace the verified record.",
+      verificationStatus: "PENDING",
+    }])
+    expect(conflict).toMatchObject({ status: "conflict", reason: "conflicting_establishment" })
+    const conflictOutcome = purchaserCommandMessage({
+      businessId: keptBusiness,
+      countryCode: "IE",
+      legalName: "Current Bakery Ireland Ltd",
+      evidenceType: "OTHER",
+      evidenceReference: "A different purchasing country needs review and must not replace the verified record.",
+      verificationStatus: "PENDING",
+    }, conflict ?? {})
+    expect(conflictOutcome.httpStatus).toBe(409)
+    expect(conflictOutcome.message).toMatch(/different verified purchasing establishment/)
+    expect((await rows(keptBusiness)).rows).toEqual(before.rows)
+
+    const pendingRequest = key()
+    const pendingPayload: PurchaserPayload = {
+      businessId: noteBusiness,
+      countryCode: "GB",
+      legalName: "Noted Bakery",
+      evidenceType: "OTHER",
+      evidenceReference: "Purchaser is a sole trader. The customer described the trading name and no independent check has been recorded yet.",
+      verificationStatus: "PENDING",
+    }
+    const pending = await rpc("admin_record_business_establishment_v1", [adminToken, pendingRequest, pendingPayload])
+    expect(pending).toMatchObject({ status: "success", verificationStatus: "PENDING", countryCode: "GB" })
+    expect(purchaserCommandMessage(pendingPayload, pending ?? {}).message).toMatch(/new purchasing-establishment note/)
+    const pendingReplay = await rpc("admin_record_business_establishment_v1", [adminToken, pendingRequest, pendingPayload])
+    expect(pendingReplay).toMatchObject({ status: "replay", id: pending?.id })
+    expect(purchaserCommandMessage(pendingPayload, pendingReplay ?? {}).message).toMatch(/already recorded/)
+    expect(purchaserCommandMessage(pendingPayload, pendingReplay ?? {}).message).not.toMatch(/new purchasing-establishment note/)
+    const rejectedPayload: PurchaserPayload = {
+      ...pendingPayload,
+      legalName: "Noted Bakery Rejected",
+      evidenceReference: "Purchaser is a sole trader. The documents supplied do not show the purchasing establishment and are not sufficient.",
+      verificationStatus: "REJECTED",
+    }
+    const rejected = await rpc("admin_record_business_establishment_v1", [adminToken, key(), rejectedPayload])
+    expect(rejected).toMatchObject({ status: "success", verificationStatus: "REJECTED" })
+    expect(purchaserCommandMessage(rejectedPayload, rejected ?? {}).message).toMatch(/Recorded as not sufficient/)
+    expect((await rows(noteBusiness)).rows).toEqual([
+      { legal_name: "Noted Bakery", evidence_reference: pendingPayload.evidenceReference, verification_status: "PENDING" },
+      { legal_name: "Noted Bakery Rejected", evidence_reference: rejectedPayload.evidenceReference, verification_status: "REJECTED" },
+    ])
   })
 })

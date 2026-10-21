@@ -276,6 +276,7 @@ function StepWorkspace({
       locationId={locationId}
       customerName={customer}
       businessName={business}
+      listingCountry={brief.country}
     />}
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}

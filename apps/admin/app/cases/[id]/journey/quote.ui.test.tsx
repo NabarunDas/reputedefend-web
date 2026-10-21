@@ -259,6 +259,10 @@ describe("guided quote acceptance", () => {
     expect(screen.getAllByText(/not clearance to offer/).length).toBeGreaterThan(1)
     expect(screen.getByRole("heading", { name: "What remains before offering" })).toBeTruthy()
     expect(screen.getByText(/Google listing country is not that record/)).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Purchasing establishment" })).toBeTruthy()
+    expect(screen.getAllByText(/Companies House is optional/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Google listing country on this case is United Kingdom/)).toBeTruthy()
+    expect(screen.getByText(/It is not the purchasing establishment/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "Open the business record" })).toHaveAttribute("href", `/records/business/${BUSINESS_ID}`)
     expect(screen.getByRole("link", { name: "Review the customer and business relationship" })).toHaveAttribute("href", `/records/client/${CUSTOMER_ID}/link?business=${BUSINESS_ID}`)
     expect(screen.getByText(/The button does not mean this draft is eligible/)).toBeTruthy()
@@ -335,6 +339,7 @@ describe("guided quote acceptance", () => {
       businessName="Bakery"
     />)
     expect(journey.steps.some(step => step.id === "QUOTE_ACCEPTANCE")).toBe(true)
+    expect(screen.queryByRole("heading", { name: "Purchasing establishment" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Open the business record" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Review the customer and business relationship" })).toBeNull()
     expect(screen.getByText("This case has no business record to open from here.")).toBeTruthy()

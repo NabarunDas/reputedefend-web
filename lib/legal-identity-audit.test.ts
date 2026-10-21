@@ -46,16 +46,29 @@ describe("legacy legal identity", () => {
 
   it("keeps sole trader only as a negative test or a generic business-type example", () => {
     const matches = trackedMatches("sole[- ]trader")
+    const customerPurchaser = (text: string) => /sole trader/i.test(text) && !/ProfileRelaunch is a sole trader/i.test(text)
     expectRetained(matches, {
       "lib/legal-identity-audit.test.ts": () => true,
       "app/about/content.test.ts": text => text.includes("not.toMatch"),
       "components/legal-page.test.tsx": text => text.includes("not.toBeInTheDocument"),
       "lib/resource-articles/google-business-profile-appeal-evidence-checklist.tsx": text =>
         text.includes("A sole trader, regulated company"),
+      "apps/admin/app/commercial/purchaser-form.tsx": customerPurchaser,
+      "apps/admin/lib/commercial/eligibility-gate.database.test.ts": text => customerPurchaser(text) && text.includes("Purchaser is a sole trader"),
+      "apps/admin/lib/commercial/establishment-command.test.ts": customerPurchaser,
+      "apps/admin/lib/commercial/purchaser.test.ts": customerPurchaser,
+      "apps/admin/lib/commercial/purchaser.ts": customerPurchaser,
+      "docs/admin/com-prod-01.md": text => customerPurchaser(text) && text.includes("permitted customer"),
     })
     expect([...new Set(matches.map(match => match.file))].sort()).toEqual([
       "app/about/content.test.ts",
+      "apps/admin/app/commercial/purchaser-form.tsx",
+      "apps/admin/lib/commercial/eligibility-gate.database.test.ts",
+      "apps/admin/lib/commercial/establishment-command.test.ts",
+      "apps/admin/lib/commercial/purchaser.test.ts",
+      "apps/admin/lib/commercial/purchaser.ts",
       "components/legal-page.test.tsx",
+      "docs/admin/com-prod-01.md",
       "lib/legal-identity-audit.test.ts",
       "lib/resource-articles/google-business-profile-appeal-evidence-checklist.tsx",
     ])

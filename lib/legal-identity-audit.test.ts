@@ -54,6 +54,7 @@ describe("legacy legal identity", () => {
       "lib/resource-articles/google-business-profile-appeal-evidence-checklist.tsx": text =>
         text.includes("A sole trader, regulated company"),
       "apps/admin/app/commercial/purchaser-form.tsx": customerPurchaser,
+      "apps/admin/lib/commercial/eligibility-gate.database.test.ts": text => customerPurchaser(text) && text.includes("Purchaser is a sole trader"),
       "apps/admin/lib/commercial/establishment-command.test.ts": customerPurchaser,
       "apps/admin/lib/commercial/purchaser.test.ts": customerPurchaser,
       "apps/admin/lib/commercial/purchaser.ts": customerPurchaser,
@@ -62,6 +63,7 @@ describe("legacy legal identity", () => {
     expect([...new Set(matches.map(match => match.file))].sort()).toEqual([
       "app/about/content.test.ts",
       "apps/admin/app/commercial/purchaser-form.tsx",
+      "apps/admin/lib/commercial/eligibility-gate.database.test.ts",
       "apps/admin/lib/commercial/establishment-command.test.ts",
       "apps/admin/lib/commercial/purchaser.test.ts",
       "apps/admin/lib/commercial/purchaser.ts",

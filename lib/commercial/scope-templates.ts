@@ -8,7 +8,7 @@
  */
 import { pricingGroups, pricingNote } from "../pricing"
 
-export const SCOPE_EXCLUSIONS_TEMPLATE_VERSION = "SCOPE-2026-10-21.1"
+export const SCOPE_EXCLUSIONS_TEMPLATE_VERSION = "SCOPE-2026-10-21.2"
 
 export const scopeServiceCodes = [
   "GUIDED_RELAUNCH",
@@ -52,6 +52,50 @@ const guidedDelivery = "ProfileRelaunch prepares the work and the customer submi
 const managedDelivery =
   "ProfileRelaunch carries out the authorised permitted work, subject to the applicable success-fee terms."
 
+/** Paid-service agreement, section 12. VAT is not added, and the price is not described as a VAT charge. */
+export const agreementTaxBoundary =
+  "We are not registered for VAT. We do not add VAT while that remains the case. This is not a statement that a supply is zero-rated or exempt."
+
+export const finalCustomerPrice = "The price on this quote is the final customer price. No tax is added on top."
+
+/**
+ * Server-owned quote text. These sentences are copied so the standard wording
+ * matches them. This module does not replace `success_definition_v1` or
+ * `payment_timing_text_v1`.
+ */
+export const preservedSuccessDefinition = {
+  GUIDED_RELAUNCH:
+    "This is an upfront guided recovery service. Payment collection is a later step and is not taken by accepting this quote.",
+  GUIDED_REVIEW:
+    "This is an upfront guided review service. Payment collection is a later step and is not taken by accepting this quote.",
+  MANAGED_RELAUNCH:
+    "Success relates to the agreed successful restoration outcome. Google makes the final platform decision. Accepting this quote is not evidence that restoration has occurred and does not create a collectible fee today.",
+  MANAGED_REVIEW:
+    "Success relates to the agreed successful removal outcome. Google makes the final platform decision. Accepting this quote is not evidence that removal has occurred and does not create a collectible fee today.",
+  RELAUNCH_GUARD:
+    "This is a recurring monthly monitoring subscription quote. Accepting this quote does not start monitoring and does not take payment.",
+} as const
+
+export const preservedPaymentTiming = {
+  UPFRONT:
+    "The quoted amount is payable later through the payment workflow. Accepting this quote does not charge a card and is not payment authorisation.",
+  SUCCESS_FEE:
+    "No service fee is charged today. The quoted success fee becomes collectible only after the defined successful outcome and the later payment/consent workflow. Accepting this quote is not payment authorisation for future card charging.",
+  RECURRING_MONTHLY:
+    "Accepting this quote does not start monitoring and does not take payment. Recurring collection is a later step.",
+} as const
+
+const guidedFee =
+  "A Guided fee is payable upfront only after you have accepted a valid quotation and this agreement."
+const managedRestoration =
+  "The fee is earned only when the original restriction is absent at an initial check and again at a second check at least 48 hours later, and the original restriction is not known to have returned between those checks."
+const managedRemoval =
+  "The fee is earned only when that specified review is absent at two checks at least 48 hours apart. Evidence that the same review returned during that period means that verification attempt has not succeeded. Reporting, hiding, a rating change, or an acknowledgement is not by itself a successful removal."
+const managedNoAdvance =
+  "There is no automatic card charge for a Managed success fee and no collection of that fee in advance."
+const guardStart =
+  "Monitoring for a location starts only after you have accepted the Guard order for that location, we have confirmed the access we asked for, and we have completed the initial check. Sending a setup form does not start monitoring and does not take payment."
+
 const VERSION_MARKER = "Standard wording version "
 
 export function standardWordingVersionLine(version = SCOPE_EXCLUSIONS_TEMPLATE_VERSION): string {
@@ -84,33 +128,33 @@ const guard = priced("relaunch-guard", "Profile + Review monitoring")
 const templates: Record<ScopeServiceCode, { scope: string; exclusions: string }> = {
   GUIDED_RELAUNCH: {
     scope: withVersion(
-      `${guidedRelaunch} ${publishedGuidedLine} ${guidedDelivery} ${publishedGuidedCopy}`,
+      `${guidedRelaunch} The final customer price is £99 upfront. ${guidedDelivery} ${publishedGuidedLine} ${publishedGuidedCopy} ${guidedFee} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared profile work to Google. This quote does not include Managed case work, a success fee, or Relaunch Guard monitoring. Accepting this quote does not charge a card and is not payment authorisation.`,
+    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared profile work to Google. This quote does not include Managed case work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_RELAUNCH} ${preservedPaymentTiming.UPFRONT} ${agreementTaxBoundary}`,
   },
   MANAGED_RELAUNCH: {
     scope: withVersion(
-      `${managedRelaunch} ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery}`,
+      `${managedRelaunch} The final customer price is £299, payable only upon the contractually defined and verified successful restoration outcome, with no upfront service fee. ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery} ${managedRestoration} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} This quote does not charge a fee today. Accepting it is not evidence that restoration has occurred and does not create a collectible fee today. It does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring.`,
+    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_RELAUNCH} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring. ${agreementTaxBoundary}`,
   },
   GUIDED_REVIEW: {
     scope: withVersion(
-      `${guidedReview} ${publishedGuidedLine} ${guidedDelivery} ${publishedGuidedCopy}`,
+      `${guidedReview} The final customer price is £59 upfront. ${guidedDelivery} ${publishedGuidedLine} ${publishedGuidedCopy} ${guidedFee} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared review work to Google. This quote does not include Managed removal work, a success fee, or Relaunch Guard monitoring. Accepting this quote does not charge a card and is not payment authorisation.`,
+    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared review work to Google. This quote does not include Managed removal work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_REVIEW} ${preservedPaymentTiming.UPFRONT} ${agreementTaxBoundary}`,
   },
   MANAGED_REVIEW: {
     scope: withVersion(
-      `${managedReview} ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery}`,
+      `${managedReview} The final customer price is £149, payable only on the contractually defined and verified successful removal, with no upfront service fee. ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery} ${managedRemoval} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} This quote does not charge a fee today. Accepting it is not evidence that removal has occurred and does not create a collectible fee today. It does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring.`,
+    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_REVIEW} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring. ${agreementTaxBoundary}`,
   },
   RELAUNCH_GUARD: {
     scope: withVersion(
-      `Relaunch Guard. ${guard.name} (${guard.price} ${guard.cadence}). ${publishedGuardLead} ${publishedGuardPoints.join(". ")}.`,
+      `Relaunch Guard. The final customer price is ${guard.price} per month per location. ${guard.name}. ${publishedGuardLead} ${publishedGuardPoints.join(". ")}. ${guardStart} ${finalCustomerPrice}`,
     ),
-    exclusions: `${publishedGuardBoundary} ${pricingNote} Accepting this quote does not start monitoring and does not take payment.`,
+    exclusions: `${publishedGuardBoundary} ${pricingNote} ${preservedSuccessDefinition.RELAUNCH_GUARD} ${preservedPaymentTiming.RECURRING_MONTHLY} ${agreementTaxBoundary}`,
   },
 }
 

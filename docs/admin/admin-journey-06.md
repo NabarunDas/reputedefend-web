@@ -16,11 +16,23 @@ The commercial workspace still uses the same draft, tax, offer and acceptance co
 
 ## Scope and exclusions
 
-Standard wording for the five existing service codes lives in `lib/commercial/scope-templates.ts`, version `SCOPE-2026-10-21.1`. The prices and the Guided, Managed and Relaunch Guard descriptions are the published website copy. Guided means ProfileRelaunch prepares the work and the customer submits it. Managed means ProfileRelaunch carries out authorised permitted work, subject to the applicable success-fee terms.
+Standard wording for the five existing service codes lives in `lib/commercial/scope-templates.ts`, version `SCOPE-2026-10-21.2`. Each service has its own scope and exclusions. The default comes from the published prices, the website service descriptions, and paid-service agreement PS-2026-10-14.2. Guided means ProfileRelaunch prepares the work and the customer submits it. Managed means ProfileRelaunch carries out authorised permitted work, subject to the applicable success-fee terms. The Managed success definition and payment-timing sentences stay the existing database functions. The template repeats them. It does not replace them.
 
-The Create draft quote form fills Scope and Exclusions from the selected service. Admin can edit that wording for the case. Restore standard wording puts the current template back into the form and does not call the quote command. A saved quote keeps the exact `scope_text` and `exclusions_text` that were submitted, including the template version line when that wording used one. Changing the template later does not rewrite an existing quote or an accepted agreement. No new table or column is added. Catalogue prices, payment timing, tax eligibility, quote acceptance and Stripe are unchanged.
+The prices in the template are the final customer prices: Guided Relaunch £99 upfront, Managed Relaunch £299 only after the contractually defined and verified restoration with no upfront service fee, Guided Review £59 upfront, Managed Review £149 on verified removal with no upfront service fee, and Relaunch Guard £9.99 per month per location. No tax is added on top. The wording uses the agreement's statement that ProfileRelaunch is not registered for VAT and does not add VAT. It does not describe the price as a VAT charge.
+
+The Create draft quote form fills Scope and Exclusions from the selected service. Admin does not need to write the standard wording. Admin can edit one quote for the case. Restore standard wording puts the current approved template back into the form and does not call the quote command. A saved quote keeps the exact `scope_text` and `exclusions_text` that were submitted, including the template version line when that wording used one. Changing the template later does not rewrite an existing quote or an accepted agreement. No new table or column is added.
 
 The Step 6 preview shows that stored scope, those exclusions and the template version recorded on them before the offer control.
+
+## Gross price and tax proposal
+
+This step does not change the catalogue, the tax eligibility gate, Stripe, or Production, and it does not add a migration.
+
+The seeded catalogue tax behaviour remains `UNCONFIRMED`. `UNCONFIRMED` still blocks an offer and an acceptance. The purchasing-establishment and country checks in `evaluate_commercial_eligibility_v1` stay required. No tax rate and no customer tax identifier are invented.
+
+The advertised amounts are already the contract totals in `lib/catalogue-seed.ts` and `lib/pricing.ts` (9900, 29900, 5900, 14900 and 999 pence). `EXCLUSIVE` would add tax on top of those amounts, so it is not the treatment for these prices. `INCLUSIVE` cannot be stored without a rate, and this proposal does not create one.
+
+The minimum later change, which still needs separate approval before any database write, is to leave the seed at `UNCONFIRMED` and, only after a verified GB purchasing establishment while the seller position is `NOT_VAT_REGISTERED`, set that quote's tax behaviour to `NOT_APPLICABLE` with determination `UK_DOMESTIC_NOT_VAT_REGISTERED`. The existing money rules then keep tax at 0 and the customer total equal to the advertised amount. An overseas or later-registration sale still waits for its own eligibility decision. A future taxable decision that must keep the same customer total would use `INCLUSIVE` with a rate supplied by that decision, not by this template.
 
 ## Completion
 

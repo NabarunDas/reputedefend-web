@@ -33,7 +33,7 @@ export function ScopeExclusionsFields({ serviceCode }: { serviceCode: string }) 
   }
 
   return <>
-    <p>Standard wording for the selected service is filled in below. Edit it for this case. Restore standard wording puts the current template back into these fields. It does not change a saved quote or an accepted agreement.</p>
+    <p>Approved standard wording for the selected service is filled in below. You do not need to write that wording. Edit it only for this case. Restore standard wording puts the current approved template back into these fields. It does not change a saved quote or an accepted agreement. The price in the template is the final customer price. This form does not add tax and does not change the catalogue tax behaviour.</p>
     <label>Scope<textarea name="scope" required minLength={10} maxLength={5000} rows={6} value={scope} onChange={event => setScope(event.target.value)} /></label>
     <label>Exclusions<textarea name="exclusions" required minLength={10} maxLength={5000} rows={5} value={exclusions} onChange={event => setExclusions(event.target.value)} /></label>
     <button type="button" onClick={restore}>Restore standard wording</button>

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { CaseClient } from "./case-client"
-import type { CustomerCasePack } from "@/lib/case/model"
+import { DOCX_MIME, MAX_EVIDENCE_BYTES, allowedFileAccept, evidenceFormatSummary, evidenceSizeSummary, type CustomerCasePack, type CustomerEvidenceRequest } from "@/lib/case/model"
 
 const fetchMock = vi.fn()
 const open = vi.fn()
@@ -31,6 +31,23 @@ const empty: CustomerCasePack = {
   maskedEmail: "a***@example.com",
   pack: null,
   evidenceRequests: [],
+}
+
+const openRequest: CustomerEvidenceRequest = {
+  requestId: "88888888-8888-4888-8888-888888888888",
+  title: "Utility bill",
+  requestText: "Please upload a recent utility bill.",
+  dueAt: "2026-10-01T00:00:00.000Z",
+  createdAt: "2026-09-28T12:00:00.000Z",
+  submissionStatus: "NOT_SUBMITTED",
+  filename: null,
+  submittedAt: null,
+}
+
+function fileWithSize(name: string, type: string, size: number) {
+  const file = new File(["x"], name, { type })
+  Object.defineProperty(file, "size", { value: size })
+  return file
 }
 
 const published: CustomerCasePack = {
@@ -110,8 +127,12 @@ describe("customer case documents", () => {
     expect(screen.queryByRole("button", { name: "Refresh scan" })).toBeNull()
     const file = new File(["%PDF-1.4"], "bill.pdf", { type: "application/pdf" })
     fireEvent.change(screen.getByLabelText("Upload evidence"), { target: { files: [file] } })
-    await waitFor(() => expect(screen.getByText("Uploaded — awaiting security review")).toBeTruthy())
-    expect(screen.getByText(/bill\.pdf/)).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByRole("status").map(node => node.textContent)).toEqual(["Uploaded — awaiting security review"]))
+    expect(screen.getAllByText("Uploaded — awaiting security review")).toHaveLength(1)
+    expect(screen.getByText("Your document has been received. Our team will review it and contact you by email if we need anything else. No further action is required at the moment. You can close this window.")).toBeTruthy()
+    expect(screen.getByText("bill.pdf").closest("[role='status']")).toBeNull()
+    expect(screen.queryByLabelText("Upload evidence")).toBeNull()
+    expect(screen.queryByRole("button", { name: /close/i })).toBeNull()
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       operation: "begin",
       evidenceRequestId: request.requestId,
@@ -142,10 +163,85 @@ describe("customer case documents", () => {
         submittedAt: "2026-09-28T13:00:00.000Z",
       }],
     }} />)
-    expect(screen.getByText("Uploaded — awaiting security review · bill.pdf")).toBeTruthy()
+    expect(screen.getAllByRole("status").map(node => node.textContent)).toEqual(["Uploaded — awaiting security review"])
+    expect(screen.getAllByText("Uploaded — awaiting security review")).toHaveLength(1)
+    expect(screen.getByText("Your document has been received. Our team will review it and contact you by email if we need anything else. No further action is required at the moment. You can close this window.")).toBeTruthy()
+    expect(screen.getByText("bill.pdf").closest("[role='status']")).toBeNull()
     expect(screen.queryByLabelText("Upload evidence")).toBeNull()
+    expect(screen.queryByRole("button", { name: /close/i })).toBeNull()
+    expect(screen.queryByText("No case documents are currently published.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "View" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Download" })).toBeNull()
+  })
+
+  it("shows accepted formats and the 10 MB limit from the upload policy", () => {
+    render(<CaseClient data={{ ...empty, evidenceRequests: [openRequest] }} />)
+    expect(evidenceFormatSummary()).toBe("PDF, JPG/JPEG, PNG, WebP, DOCX")
+    expect(evidenceSizeSummary()).toBe("Maximum 10 MB per file")
+    expect(screen.getByText(`Accepted formats: ${evidenceFormatSummary()}. ${evidenceSizeSummary()}.`)).toBeTruthy()
+    expect(screen.getByLabelText("Upload evidence")).toHaveAttribute("accept", allowedFileAccept)
+    expect(screen.getByLabelText("Upload evidence")).toHaveAttribute("aria-describedby")
+  })
+
+  it("rejects an empty file, a disallowed type and an oversized file before the upload API", () => {
+    render(<CaseClient data={{ ...empty, evidenceRequests: [openRequest] }} />)
+    const input = screen.getByLabelText("Upload evidence")
+    fireEvent.change(input, { target: { files: [new File([], "empty.pdf", { type: "application/pdf" })] } })
+    expect(screen.getByRole("alert").textContent).toMatch(/This file is empty/)
+    expect(input).toHaveAttribute("aria-invalid", "true")
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] } })
+    expect(screen.getByRole("alert").textContent).toBe("This file type is not accepted. Use PDF, JPG/JPEG, PNG, WebP or DOCX.")
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { files: [fileWithSize("big.pdf", "application/pdf", MAX_EVIDENCE_BYTES + 1)] } })
+    expect(screen.getByRole("alert").textContent).toBe("This file is too large. Maximum 10 MB per file.")
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText("Upload evidence")).toBeTruthy()
+  })
+
+  it("accepts every format in the upload policy and still asks the server to validate it", async () => {
+    const samples = [
+      ["bill.pdf", "application/pdf"],
+      ["photo.jpg", "image/jpeg"],
+      ["photo.jpeg", "image/jpeg"],
+      ["scan.png", "image/png"],
+      ["scan.webp", "image/webp"],
+      ["letter.docx", DOCX_MIME],
+    ] as const
+    for (const [name, type] of samples) {
+      cleanup()
+      fetchMock.mockReset()
+      fetchMock.mockResolvedValue({ ok: false, json: async () => ({ message: "That file cannot be uploaded." }) })
+      render(<CaseClient data={{ ...empty, evidenceRequests: [openRequest] }} />)
+      fireEvent.change(screen.getByLabelText("Upload evidence"), { target: { files: [new File(["x"], name, { type })] } })
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({
+        operation: "begin",
+        filename: name,
+        contentType: type,
+      })
+      expect(screen.queryByText(/not accepted/)).toBeNull()
+      expect(screen.queryByText(/too large/)).toBeNull()
+      expect(screen.queryByText(/file is empty/)).toBeNull()
+    }
+  })
+
+  it("hides published-document copy on an evidence-only link", () => {
+    render(<CaseClient data={{
+      ...empty,
+      kind: "COMMUNICATION_ACCESS",
+      pack: published.pack,
+      evidenceRequests: [{ ...openRequest, submissionStatus: "AWAITING_REVIEW", filename: "bill.pdf", submittedAt: "2026-09-28T13:00:00.000Z" }],
+    }} />)
+    expect(screen.queryByText("No case documents are currently published.")).toBeNull()
+    expect(screen.queryByText("Published pack #2")).toBeNull()
+    expect(screen.queryByText("Supporting invoice")).toBeNull()
+    expect(screen.getByText("Utility bill")).toBeTruthy()
+    expect(screen.getAllByRole("status").map(node => node.textContent)).toEqual(["Uploaded — awaiting security review"])
+    expect(screen.queryByLabelText("Upload evidence")).toBeNull()
+    expect(screen.queryByRole("button", { name: /close/i })).toBeNull()
   })
 
   it("lets a pending upload choose the same file again or another file", () => {

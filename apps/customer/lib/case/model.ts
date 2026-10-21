@@ -107,6 +107,28 @@ export function formatBytes(size: number): string {
   return `${(size / 1_048_576).toFixed(size < 10_485_760 ? 1 : 0)} MB`
 }
 
+function extensionLabel(extension: string): string {
+  if (extension === ".pdf") return "PDF"
+  if (extension === ".jpg") return "JPG"
+  if (extension === ".jpeg") return "JPEG"
+  if (extension === ".png") return "PNG"
+  if (extension === ".webp") return "WebP"
+  if (extension === ".docx") return "DOCX"
+  return (extension.startsWith(".") ? extension.slice(1) : extension).toUpperCase()
+}
+
+/** Customer-facing formats, in the same order as `mimeExtensions`. */
+export function evidenceFormatSummary(style: "comma" | "or" = "comma"): string {
+  const groups = Object.values(mimeExtensions).map(extensions => extensions.map(extensionLabel).join("/"))
+  if (style === "comma" || groups.length < 2) return groups.join(", ")
+  return `${groups.slice(0, -1).join(", ")} or ${groups[groups.length - 1]}`
+}
+
+/** Customer-facing size limit, from `MAX_EVIDENCE_BYTES`. */
+export function evidenceSizeSummary(): string {
+  return `Maximum ${formatBytes(MAX_EVIDENCE_BYTES)} per file`
+}
+
 export function fileTypeLabel(contentType: string): string {
   if (contentType === "application/pdf") return "PDF"
   if (contentType === "image/jpeg") return "JPEG"

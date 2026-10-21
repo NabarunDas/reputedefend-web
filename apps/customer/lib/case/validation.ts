@@ -1,6 +1,6 @@
 import { isUuid } from "@/lib/uuid"
 import {
-  MAX_EVIDENCE_BYTES, fileExtension, isAllowedMime, mimeExtensions, rejectedExtensions,
+  MAX_EVIDENCE_BYTES, evidenceFormatSummary, evidenceSizeSummary, fileExtension, isAllowedMime, mimeExtensions, rejectedExtensions,
   type AllowedMime, type CustomerUploadOperation,
 } from "./model"
 
@@ -14,6 +14,18 @@ function asRecord(raw: unknown): Record<string, unknown> | null {
 
 function onlyKeys(body: Record<string, unknown>, allowed: string[]): boolean {
   return Object.keys(body).length === allowed.length && allowed.every(key => Object.hasOwn(body, key))
+}
+
+export function evidenceFileChoiceError(filename: string, contentType: string, size: number): string | null {
+  if (!Number.isSafeInteger(size) || size < 1) return "This file is empty. Choose a file that contains the document."
+  const extension = fileExtension(filename)
+  const typeAllowed = isAllowedMime(contentType)
+    && mimeExtensions[contentType].includes(extension)
+    && !(rejectedExtensions as readonly string[]).includes(extension)
+  if (!typeAllowed) return `This file type is not accepted. Use ${evidenceFormatSummary("or")}.`
+  if (size > MAX_EVIDENCE_BYTES) return `This file is too large. ${evidenceSizeSummary()}.`
+  if (!declaredUpload(filename, contentType, size)) return `This file type is not accepted. Use ${evidenceFormatSummary("or")}.`
+  return null
 }
 
 export function declaredUpload(filename: string, contentType: string, size: number): { filename: string; contentType: AllowedMime; size: number } | null {

@@ -382,6 +382,42 @@ describe("the step 3 document request", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("does not call a provider-accepted email both queued and waiting", () => {
+    const history = (deliveryStatus: "PROVIDER_ACCEPTED" | "NONE") => ({
+      status: "success" as const,
+      complete: true,
+      total: 1,
+      returned: 1,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: false,
+      communications: [communication({
+        lifecycle: "QUEUED",
+        deliveryStatus,
+        contentLocked: true,
+        queuedAt: "2026-02-03T00:00:00.000Z",
+        evidenceRequestId: REQUEST_ID,
+      })],
+    })
+    const { unmount } = render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      history: history("PROVIDER_ACCEPTED"),
+    })} />)
+    expect(screen.getByText("Accepted by email provider. Delivery is not confirmed.")).toBeInTheDocument()
+    expect(screen.getByText(/The email provider accepted the message. That does not confirm the customer received it. This page does not send another copy./)).toBeInTheDocument()
+    expect(screen.queryByText("Queued. Accepted by email provider.")).toBeNull()
+    expect(screen.queryByText("This email is waiting. This page does not send another copy.")).toBeNull()
+    expect(screen.getByText(/Issuing it is not the same as confirmed delivery./)).toBeInTheDocument()
+    unmount()
+
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      history: history("NONE"),
+    })} />)
+    expect(screen.getByText("Queued. Not sent.")).toBeInTheDocument()
+    expect(screen.getByText("This email is waiting. This page does not send another copy.")).toBeInTheDocument()
+    expect(screen.queryByText(/Accepted by email provider. Delivery is not confirmed./)).toBeNull()
+  })
+
   it("keeps the public logo inside sandboxed previews for a new draft and an approved email", () => {
     const upload = "https://customer.profilerelaunch.com/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     const rendered = renderEvidenceRequest({

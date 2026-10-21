@@ -14,7 +14,7 @@ import {
   recordDestination,
   type CaseDestination,
 } from "../case-flow/destinations"
-import { summariseEvidence } from "../case-flow/evidence"
+import { linkedStoredUpload, summariseEvidence } from "../case-flow/evidence"
 import type {
   CaseBlocker,
   CaseFlowFacts,
@@ -304,8 +304,16 @@ function chooseFocus(
   if (closed) return null
   if (!isTechnicalStage(facts.technicalStage)) return null
   const fromAction = primary ? stepForAction[primary.id] : null
-  const seed = fromAction ?? (isTechnicalStage(facts.technicalStage) ? stageFocus(facts.technicalStage) : null)
+  let seed = fromAction ?? (isTechnicalStage(facts.technicalStage) ? stageFocus(facts.technicalStage) : null)
   if (!seed) return null
+  const requestProof = readings.REQUEST_DOCUMENTS.proof
+  if (
+    seed === "EVIDENCE_REVIEW"
+    && requestProof !== "complete"
+    && requestProof !== "not_applicable"
+  ) {
+    seed = "REQUEST_DOCUMENTS"
+  }
   let index = journeyStepIds.indexOf(seed)
   while (index < journeyStepIds.length) {
     const proof = readings[journeyStepIds[index]].proof
@@ -543,6 +551,17 @@ function readRequest(facts: CaseFlowFacts): Reading {
   ]
   const waiver =
     "A documented decision that no additional evidence is required is not in this projection. That decision is an ADMIN-JOURNEY-03 dependency and stays unknown, so an empty request list is not completion."
+  if (linkedStoredUpload(facts.evidence) && liveRequests.length > 0) {
+    const deliveryNote = contact === "DELIVERED"
+      ? "The message status is DELIVERED. Only that recorded status describes the message as delivered."
+      : "A customer file from the secure portal is linked to a live evidence request. That response opens evidence review. It does not record the email as delivered, and it does not accept the file."
+    return {
+      proof: "complete",
+      known: [...known, deliveryNote, "The file still has to pass its scan, its validation, and an Admin acceptance decision."],
+      missing: [],
+      who: "The customer has submitted a file through the secure portal. ProfileRelaunch reviews it on the next step.",
+    }
+  }
   if (contact === "DELIVERED" && liveRequests.length > 0) {
     return {
       proof: "complete",
@@ -665,6 +684,14 @@ function readEvidence(facts: CaseFlowFacts): Reading {
       known: [...known, "Submitting a document is not acceptance, and accepting a file does not close its request."],
       missing: ["An acceptance decision, and the request marked fulfilled."],
       who: "ProfileRelaunch reviews the evidence.",
+    }
+  }
+  if (summary.scanInProgress > 0 || summary.needsScanCheck > 0 || summary.uploadInProgress > 0) {
+    return {
+      proof: "unproven",
+      known: [...known, "A pending or unfinished scan can be checked. Checking it is not a clean result, and it is not acceptance."],
+      missing: ["A finished scan with no threat, a valid file, an acceptance decision, and the request marked fulfilled."],
+      who: "ProfileRelaunch checks the scan before the file can be accepted.",
     }
   }
   if (summary.anyRequest && summary.contact === "DELIVERED" && !summary.anyUpload) {

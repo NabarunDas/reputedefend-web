@@ -326,6 +326,11 @@ export type CaseFlowEvidenceVersionFact = {
   scanStatus: string
   validationStatus: string
   reviewStatus: string
+  /**
+   * `case_document_versions.submission_source` from the evidence case read.
+   * Absent or null is not a customer submission. Admin uploads stay `ADMIN`.
+   */
+  submissionSource?: "ADMIN" | "CUSTOMER" | null
 }
 
 export type CaseFlowEvidenceFact = {

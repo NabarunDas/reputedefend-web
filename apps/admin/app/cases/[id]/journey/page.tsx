@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { getCase } from "@/lib/cases/queries"
+import { attachSubmissionSources } from "@/lib/case-flow/evidence"
 import { loadCaseFlowFacts } from "@/lib/case-flow/load"
 import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
@@ -24,6 +25,8 @@ import { buildJourneyDocuments } from "@/lib/case-journey/documents"
 import { buildJourneyIntake } from "@/lib/case-journey/intake"
 import { loadJourneyExtension } from "@/lib/case-journey/read"
 import { presentCaseJourney, selectJourneyStep } from "@/lib/case-journey/present"
+import type { CaseFlowFacts } from "@/lib/case-flow/model"
+import type { EvidenceCase } from "@/lib/evidence/model"
 import { getEvidenceCase } from "@/lib/evidence/queries"
 import { buildEvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
@@ -86,6 +89,8 @@ export default async function CaseJourneyPage({
     openedAt: extension?.openedAt ?? detail.createdAt,
   })
   const now = new Date().toISOString()
+  const evidenceCase = facts.evidence.versions.length > 0 ? await getEvidenceCase(detail.id) : null
+  const journeyFacts = evidenceCase ? factsWithSubmissionSources(facts, evidenceCase) : facts
   const assessmentJudgement = assessment ? judgeAssessment(assessment) : null
   const journeyOptions = {
     recordConflict: brief.conflicts.length > 0,
@@ -94,7 +99,7 @@ export default async function CaseJourneyPage({
     assessment: assessmentJudgement,
     outcomeEvents,
   }
-  let journey = presentCaseJourney(facts, now, events, journeyOptions)
+  let journey = presentCaseJourney(journeyFacts, now, events, journeyOptions)
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
   const documentsOpen = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
@@ -111,7 +116,7 @@ export default async function CaseJourneyPage({
       caseType: detail.type,
       issue: brief.snapshot?.details || brief.message,
       businessName: detail.business,
-      requests: (await getEvidenceCase(detail.id)).requests,
+      requests: (evidenceCase ?? await getEvidenceCase(detail.id)).requests,
       history: communications,
       sendDisabledReason: sendDisabledReason(),
       drafting: {
@@ -121,7 +126,7 @@ export default async function CaseJourneyPage({
       },
     })
     : null
-  const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, facts, now) : null
+  const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, journeyFacts, now, evidenceCase) : null
   const quoteOpen = selected?.id === "QUOTE_ACCEPTANCE" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const quote = quoteOpen ? await loadJourneyQuote(facts, now, assessmentJudgement) : null
   const activationOpen = selected?.id === "SERVICE_ACTIVATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
@@ -133,24 +138,24 @@ export default async function CaseJourneyPage({
   const preparationOpen = selected?.id === "PREPARATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const preparation = preparationOpen ? await loadJourneyPreparation(facts, journeyOptions.recordConflict || journeyOptions.emailRecordsDisagree || journeyOptions.authorityRecordsDisagree) : null
   if (preparation?.disagreed) {
-    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, packRecordsDisagree: true })
+    journey = presentCaseJourney(journeyFacts, now, events, { ...journeyOptions, packRecordsDisagree: true })
   }
   const submissionOpen = selected?.id === "SUBMISSION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const submission = submissionOpen ? loadJourneySubmission(facts, detail) : null
   if (submission?.disagreed) {
-    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, submissionRecordsDisagree: true })
+    journey = presentCaseJourney(journeyFacts, now, events, { ...journeyOptions, submissionRecordsDisagree: true })
   }
   const outcomeOpen = journey.steps.find(step => step.id === "OUTCOME_BILLING")
   const outcomeSelected = selectedId === "OUTCOME_BILLING" && outcomeOpen?.state !== "LOCKED" && outcomeOpen?.state !== "NOT_APPLICABLE"
   const outcome = outcomeSelected ? await loadJourneyOutcome(facts, detail, now) : null
   if (outcome?.disagreed) {
-    journey = presentCaseJourney(facts, now, events, { ...journeyOptions, outcomeRecordsDisagree: true })
+    journey = presentCaseJourney(journeyFacts, now, events, { ...journeyOptions, outcomeRecordsDisagree: true })
   }
   const closureStep = journey.steps.find(step => step.id === "CLOSURE")
   const closureSelected = selectedId === "CLOSURE" && closureStep?.state !== "LOCKED" && closureStep?.state !== "NOT_APPLICABLE"
   const closure = closureSelected ? await loadJourneyClosure(facts, detail, now, journey) : null
   if (closure && (closure.disagreed || closure.closureRecordsDisagree)) {
-    journey = presentCaseJourney(facts, now, events, {
+    journey = presentCaseJourney(journeyFacts, now, events, {
       ...journeyOptions,
       ...(closure.disagreed ? { outcomeRecordsDisagree: true } : {}),
       ...(closure.closureRecordsDisagree ? { closureRecordsDisagree: true } : {}),
@@ -321,12 +326,27 @@ async function loadJourneyPreparation(
   }
 }
 
+function factsWithSubmissionSources(facts: CaseFlowFacts, evidence: EvidenceCase): CaseFlowFacts {
+  return {
+    ...facts,
+    evidence: attachSubmissionSources(
+      facts.evidence,
+      evidence.documents.flatMap(document => document.versions.map(version => ({
+        versionId: version.id,
+        submissionSource: version.submissionSource === "CUSTOMER" || version.submissionSource === "ADMIN" ? version.submissionSource : null,
+        evidenceRequestId: document.evidenceRequestId,
+      }))),
+    ),
+  }
+}
+
 async function loadEvidenceReview(
   detail: Awaited<ReturnType<typeof getCase>>,
-  facts: Awaited<ReturnType<typeof loadCaseFlowFacts>>,
+  facts: CaseFlowFacts,
   now: string,
+  evidenceCase: EvidenceCase | null,
 ) {
-  const evidence = await getEvidenceCase(detail.id)
+  const evidence = evidenceCase ?? await getEvidenceCase(detail.id)
   const packs: PreparedPackCase = { caseId: detail.id, packs: [], eligible: [] }
   const flow = resolveCaseFlow(facts, now)
   return {

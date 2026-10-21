@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { evidenceActions, reviewStatuses, scanStatuses, uploadStatuses, validationStatuses } from "../evidence/model"
 import {
+  attachSubmissionSources,
   contactAwaitingProvider,
   contactReachedCustomer,
   evidenceContactState,
+  linkedStoredUpload,
   evidenceContactStates,
   evidenceRequestViews,
   evidenceVersionState,
@@ -116,6 +118,61 @@ describe("evidence contact state", () => {
     for (const state of evidenceContactStates) {
       expect(contactReachedCustomer(state), state).toBe(state === "DELIVERED")
     }
+  })
+
+  it("treats only a stored customer-portal file on a live request as a response", () => {
+    const request = { id: "req", status: "OPEN", dueAt: null, createdAt: "2026-01-01T00:00:00.000Z" }
+    const customer = version({
+      submissionSource: "CUSTOMER",
+      scanStatus: "PENDING",
+      validationStatus: "PENDING",
+      reviewStatus: "UNREVIEWED",
+    })
+    expect(linkedStoredUpload({ requests: [request], versions: [customer] })).toBe(true)
+    expect(linkedStoredUpload({ requests: [request], versions: [] })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ submissionSource: "ADMIN", scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ submissionSource: "CUSTOMER", evidenceRequestId: null, scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ submissionSource: "CUSTOMER", uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [{ ...request, status: "CANCELLED" }],
+      versions: [customer],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ submissionSource: "CUSTOMER", evidenceRequestId: "other" })],
+    })).toBe(false)
+  })
+
+  it("copies the evidence-case submission source only when the request link agrees", () => {
+    const request = { id: "req", status: "OPEN", dueAt: null, createdAt: "2026-01-01T00:00:00.000Z" }
+    const evidence = {
+      requests: [request],
+      versions: [
+        version({ versionId: "customer", evidenceRequestId: "req" }),
+        version({ versionId: "staff", evidenceRequestId: "req" }),
+        version({ versionId: "disputed", evidenceRequestId: "req" }),
+      ],
+    }
+    const attached = attachSubmissionSources(evidence, [
+      { versionId: "customer", submissionSource: "CUSTOMER", evidenceRequestId: "req" },
+      { versionId: "staff", submissionSource: "ADMIN", evidenceRequestId: "req" },
+      { versionId: "disputed", submissionSource: "CUSTOMER", evidenceRequestId: "other" },
+    ])
+    expect(attached.versions.map(item => item.submissionSource)).toEqual(["CUSTOMER", "ADMIN", null])
+    expect(linkedStoredUpload(attached)).toBe(true)
   })
 
   it("treats queued and provider-accepted as a wait on the provider", () => {

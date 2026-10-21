@@ -6,6 +6,7 @@ import "@testing-library/jest-dom/vitest"
 import type { CaseFlowFacts, CaseFlowQuoteFact } from "@/lib/case-flow/model"
 import type { PriceVersion, QuoteListItem } from "@/lib/commerce/model"
 import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
+import { standardScopeExclusions } from "../../../../../../lib/commercial/scope-templates"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { CaseJourneyView } from "./view"
@@ -232,8 +233,11 @@ describe("guided quote acceptance", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(/does not take payment/)
     expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const standard = standardScopeExclusions("GUIDED_RELAUNCH")
     expect(payload.operation).toBe("create_draft")
     expect(payload.serviceCode).toBe("GUIDED_RELAUNCH")
+    expect(payload.scope).toBe(standard?.scope)
+    expect(payload.exclusions).toBe(standard?.exclusions)
     expect(payload).not.toHaveProperty("serviceTrack")
     expect(payload).not.toHaveProperty("applyDiscount")
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).not.toHaveAttribute("data-state", "COMPLETED")
@@ -241,7 +245,13 @@ describe("guided quote acceptance", () => {
 
   it("offers a configured draft and does not treat a declined quote as acceptance", () => {
     const { unmount } = show(facts({ commercial: { complete: true, quotes: [quoteFact()] } }), quoteItem())
-    expect(screen.getByRole("button", { name: "Offer quote" })).toBeTruthy()
+    const offer = screen.getByRole("button", { name: "Offer quote" })
+    const scope = screen.getByText("Recover the suspended profile.")
+    const exclusions = screen.getByText("No Google submission from this quote.")
+    expect(scope.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(exclusions.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText("Not recorded on this quote")).toBeTruthy()
+    expect(screen.getByText(/Review the scope and exclusions above before offering this quote/)).toBeTruthy()
     expect(screen.getByText(/does not add a country restriction/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()

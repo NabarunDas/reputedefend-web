@@ -12,7 +12,15 @@ This step does not take a payment, activate a service, send email, or submit any
 - `quoteCommand` posting to `/api/operations/quotes`, which calls `admin_quote_command_v1`
 - The existing offer trigger `quote_versions_commercial_eligibility` and `evaluate_commercial_eligibility_v1`
 
-The commercial workspace is unchanged. Its buttons still follow the case-flow primary action. Step 6 has its own panel so a quote can be drafted from an approved recommendation while `service_track` is still `UNDECIDED`. `create_draft` does not write `service_track`.
+The commercial workspace still uses the same draft, tax, offer and acceptance commands. Its buttons still follow the case-flow primary action. Step 6 has its own panel so a quote can be drafted from an approved recommendation while `service_track` is still `UNDECIDED`. `create_draft` does not write `service_track`.
+
+## Scope and exclusions
+
+Standard wording for the five existing service codes lives in `lib/commercial/scope-templates.ts`, version `SCOPE-2026-10-21.1`. The prices and the Guided, Managed and Relaunch Guard descriptions are the published website copy. Guided means ProfileRelaunch prepares the work and the customer submits it. Managed means ProfileRelaunch carries out authorised permitted work, subject to the applicable success-fee terms.
+
+The Create draft quote form fills Scope and Exclusions from the selected service. Admin can edit that wording for the case. Restore standard wording puts the current template back into the form and does not call the quote command. A saved quote keeps the exact `scope_text` and `exclusions_text` that were submitted, including the template version line when that wording used one. Changing the template later does not rewrite an existing quote or an accepted agreement. No new table or column is added. Catalogue prices, payment timing, tax eligibility, quote acceptance and Stripe are unchanged.
+
+The Step 6 preview shows that stored scope, those exclusions and the template version recorded on them before the offer control.
 
 ## Completion
 

@@ -39,6 +39,9 @@ export function QuotePanel({
       <div><dt>Amount</dt><dd>{quote.amountLabel}</dd></div>
       <div><dt>Tax</dt><dd>{quote.tax}</dd></div>
       <div><dt>Valid until</dt><dd>{quote.validUntilLabel}</dd></div>
+      <div><dt>Scope</dt><dd className="preserve-lines">{quote.scope}</dd></div>
+      <div><dt>Exclusions</dt><dd className="preserve-lines">{quote.exclusions}</dd></div>
+      <div><dt>Wording template</dt><dd>{quote.templateVersion ?? "Not recorded on this quote"}</dd></div>
     </dl>}
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     {panel.commands.draft && panel.priceChoice && <CaseQuoteForm
@@ -52,6 +55,7 @@ export function QuotePanel({
     />}
     {panel.commands.setTax && quote && <SetDraftTaxForm quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} />}
     {panel.commands.offer && quote && <>
+      <p>Review the scope and exclusions above before offering this quote. Those are the final words stored on this quote version.</p>
       <p>Offering this quote is the binding issuance. The purchasing establishment and the country and tax eligibility checks already on the quote command still apply. This step does not add a country restriction and does not waive those checks.</p>
       <QuoteActionForm operation="offer" quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} label="Offer quote" />
     </>}

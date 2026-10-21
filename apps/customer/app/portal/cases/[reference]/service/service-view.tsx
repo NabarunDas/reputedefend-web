@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatPortalDate } from "@/lib/portal/cases/model"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
+import { customerFacingScope } from "../../../../../../../lib/commercial/scope-templates"
 import { agreementStatusText, moneyLabel, paymentFollowUp, quoteStatusText, taxExplanation, trackLabel } from "@/lib/portal/service/model"
 import type { CustomerCaseService, ServiceAction, ServiceAgreement, ServiceQuote } from "@/lib/portal/service/parse"
 
@@ -213,7 +214,7 @@ function QuoteSection({
           </dl>
           {taxExplanation(quote.taxBehaviour) ? <p>{taxExplanation(quote.taxBehaviour)}</p> : null}
           <h3>What is included</h3>
-          <p className="service-prose">{quote.scope}</p>
+          <p className="service-prose">{customerFacingScope(quote.scope)}</p>
           <h3>What is not included</h3>
           <p className="service-prose">{quote.exclusions}</p>
           <h3>What counts as success</h3>

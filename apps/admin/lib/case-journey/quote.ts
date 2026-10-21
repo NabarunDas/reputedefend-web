@@ -44,12 +44,18 @@ export type JourneyQuoteRecord = {
   templateVersion: string | null
 }
 
+export type JourneyQuoteRemaining = {
+  title: string
+  items: string[]
+}
+
 export type JourneyQuotePanel = {
   pathway: "GUIDED" | "MANAGED" | null
   trackNote: string
   headline: string
   detail: string
   notices: string[]
+  remaining: JourneyQuoteRemaining | null
   priceChoice: CommercialPriceChoice | null
   quote: JourneyQuoteRecord | null
   commands: JourneyQuoteCommands
@@ -97,6 +103,19 @@ function trackNote(track: CaseServiceTrack, pathway: "GUIDED" | "MANAGED" | null
 
 function closedReplacement(status: string | undefined): boolean {
   return status === "EXPIRED" || status === "DECLINED" || status === "CANCELLED" || status === "SUPERSEDED"
+}
+
+function draftRemaining(trustReady: boolean): JourneyQuoteRemaining {
+  return {
+    title: "What remains before offering",
+    items: [
+      "A verified purchasing establishment, with genuine evidence of the legal payer, is required on the business record. The Google listing country is not that record. This page does not read that establishment, and a saved draft is not clearance to offer.",
+      "Country and tax eligibility for that payer still has to clear on the offer command. Setting or reviewing the draft tax record does not pass that check.",
+      trustReady
+        ? "Customer email and business authority are recorded. An acceptance link, after an offer, still checks them again."
+        : "An acceptance link, after an offer, still needs the customer's email and business authority verified. Those are separate from the purchasing establishment.",
+    ],
+  }
 }
 
 export function buildJourneyQuotePanel(input: {
@@ -222,7 +241,7 @@ export function buildJourneyQuotePanel(input: {
                 : commercial.state === "DRAFT_UNCONFIGURED"
                   ? "Tax treatment is not confirmed. Reviewing the draft does not offer it and does not finish this step."
                   : commercial.state === "DRAFT_READY"
-                    ? "The draft can be offered. Offering it is the binding issuance, and the existing purchasing-establishment and tax eligibility checks still have to pass."
+                    ? "This draft is saved. Saving it is not clearance to offer. Offering it is the binding issuance, and the purchasing establishment and country and tax eligibility checks still have to pass."
                     : named?.status === "SUPERSEDED"
                       ? "This quote was superseded. A superseded quote is not acceptance."
                       : named?.status === "CANCELLED"
@@ -235,6 +254,7 @@ export function buildJourneyQuotePanel(input: {
     headline,
     detail: summary,
     notices,
+    remaining: quote && liveDraft ? draftRemaining(trustReady) : null,
     priceChoice: commands.draft ? priceChoice : null,
     quote,
     commands,

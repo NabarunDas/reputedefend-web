@@ -205,6 +205,20 @@ describe("service and permissions", () => {
     expect(screen.getByRole("button", { name: "Decline this quote" })).toBeTruthy()
   })
 
+  it("shows stored scope without the trailing wording version line", () => {
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [],
+      quote: quote({
+        scope: "We prepare the profile relaunch for this location.\n\nStandard wording version SCOPE-2026-10-21.3.",
+        canAccept: false,
+      }),
+    })} />)
+    expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("Standard wording version")
+  })
+
   it("requires an explicit agreement acknowledgement before acceptance", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "success" }) })
     render(<ServiceView service={view()} />)

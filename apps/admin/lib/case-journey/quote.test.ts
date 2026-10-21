@@ -236,7 +236,15 @@ describe("guided quote preparation", () => {
     })
     expect(ready.view.commands.offer).toBe(true)
     expect(ready.view.commands.setTax).toBe(false)
-    expect(ready.view.detail).toMatch(/purchasing-establishment and tax eligibility/)
+    expect(ready.view.detail).toMatch(/not clearance to offer/)
+    expect(ready.view.detail).toMatch(/purchasing establishment/)
+    expect(ready.view.detail).toMatch(/tax eligibility/)
+    expect(ready.view.detail).not.toMatch(/can be offered/)
+    expect(ready.view.remaining?.title).toBe("What remains before offering")
+    expect(ready.view.remaining?.items.join(" ")).toMatch(/Google listing country is not that record/)
+    expect(ready.view.remaining?.items.join(" ")).toMatch(/business authority/)
+    expect(unconfirmed.view.remaining?.items.join(" ")).toMatch(/does not pass that check/)
+    expect(unconfirmed.view.commands.offer).toBe(false)
   })
 
   it("keeps an open link waiting and issues a replacement only after the existing trust checks", () => {
@@ -269,6 +277,18 @@ describe("guided quote preparation", () => {
     })
     expect(unverified.view.commands.issueAcceptance).toBe(false)
     expect(unverified.view.notices.join(" ")).toMatch(/email and business authority/)
+    expect(unverified.view.remaining).toBeNull()
+
+    const trustedDraft = panel({
+      facts: {
+        commercial: { complete: true, quotes: [quoteFact()] },
+        authorization: authorization({ customerEmailVerified: true, businessAuthorityVerified: true }),
+      },
+      quote: quoteDetail(),
+    })
+    expect(trustedDraft.view.commands.offer).toBe(true)
+    expect(trustedDraft.view.remaining?.items.join(" ")).toMatch(/still checks them again/)
+    expect(trustedDraft.view.remaining?.items.join(" ")).not.toMatch(/still needs the customer's email/)
   })
 
   it("allows a replacement draft after decline or expiry and does not call that acceptance", () => {

@@ -3,14 +3,16 @@ import { NextRequest } from "next/server"
 import { createHash } from "node:crypto"
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
+const oidc = vi.hoisted(() => ({ getVercelOidcToken: vi.fn(async () => "preview.oidc.token-value") }))
 vi.mock("@/lib/auth/backend", async (original) => ({
   ...(await original<typeof import("@/lib/auth/backend")>()),
   backend: () => mocks,
 }))
+vi.mock("@vercel/oidc", () => oidc)
 
 import { POST } from "@/app/api/cases/intake-mail/route"
 import { sessionCookie } from "@/lib/auth/config"
-import { marketingDevelopOrigin } from "./command"
+import { marketingDevelopOrigin, marketingIntakeUnauthorized } from "./command"
 
 const branchHost = "profilerelaunch-admin-git-develop-clientcove.vercel.app"
 const origin = `https://${branchHost}`
@@ -49,6 +51,7 @@ beforeEach(() => {
     createdAt: "2026-10-20T00:00:00.000Z",
     expiresAt: "2026-10-20T12:00:00.000Z",
   })
+  oidc.getVercelOidcToken.mockReset().mockResolvedValue("preview.oidc.token-value")
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true, receiptEmailStatus: "sent" }), {
     status: 200,
     headers: { "content-type": "application/json" },
@@ -95,6 +98,8 @@ describe("intake mail retry command", () => {
     expect(url).toBe("https://reputedefend-web-git-develop-clientcove.vercel.app/api/staff/case-intake-mail")
     const headers = new Headers(init?.headers)
     expect(headers.get("authorization")).toBe(`Bearer ${token}`)
+    expect(headers.get("x-vercel-trusted-oidc-idp-token")).toBe("preview.oidc.token-value")
+    expect(headers.get("x-vercel-oidc-token")).toBeNull()
     expect(headers.get("idempotency-key")).toBe(key)
     expect(init?.redirect).toBe("manual")
     expect(JSON.parse(String(init?.body))).toEqual(body)
@@ -102,6 +107,9 @@ describe("intake mail retry command", () => {
       p_token: createHash("sha256").update(token).digest("hex"),
     })
     expect(JSON.stringify(init)).not.toMatch(/person@example.com/)
+    const responseText = JSON.stringify(await response.json())
+    expect(responseText).not.toContain("preview.oidc.token-value")
+    expect(responseText).not.toContain(token)
   })
 
   it("does not call Marketing when the branch host cannot be derived", async () => {
@@ -109,5 +117,76 @@ describe("intake mail retry command", () => {
     vi.stubEnv("VERCEL_URL", branchHost)
     expect((await POST(req())).status).toBe(503)
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("does not call Marketing when the Trusted Sources token is missing", async () => {
+    oidc.getVercelOidcToken.mockRejectedValue(new Error("The 'x-vercel-oidc-token' header is missing from the request."))
+    const response = await POST(req())
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      message: "The marketing preview connection is not ready. Your Admin session is still signed in.",
+    })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("reports Vercel Deployment Protection separately from an expired Admin session", async () => {
+    const callback = "https://vercel.com/sso-api?url=https%3A%2F%2Fexample.com&nonce=not-a-real-nonce"
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      access: "denied",
+      error: { code: "forbidden" },
+      message: "Protected by Vercel Authentication",
+      protection: { vercel_auth_enabled: true, password_enabled: false, sso: callback },
+    }), { status: 401, headers: { "content-type": "application/json", "set-cookie": "_vercel_sso_nonce=secret-nonce" } })))
+    const response = await POST(req())
+    expect(response.status).toBe(503)
+    const payload = await response.json()
+    expect(payload).toEqual({
+      message: "The marketing preview refused the server connection. Your Admin session is still signed in.",
+    })
+    const text = JSON.stringify(payload)
+    expect(text).not.toContain("Please sign in again.")
+    expect(text).not.toContain("preview.oidc.token-value")
+    expect(text).not.toContain(token)
+    expect(text).not.toContain("sso-api")
+    expect(text).not.toContain("secret-nonce")
+    expect(response.headers.get("set-cookie")).toBeNull()
+    expect(marketingIntakeUnauthorized({ ok: false })).toBe("session")
+  })
+
+  it("does not describe an unrecognised downstream 401 as a signed-out Admin", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "nope" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    })))
+    const response = await POST(req())
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      message: "The marketing preview did not accept the server connection. Your Admin session is still signed in.",
+    })
+  })
+
+  it("keeps an application 401 as an Admin session failure and does not treat it as preview protection", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: false }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    })))
+    const response = await POST(req())
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ message: "Please sign in again." })
+  })
+
+  it("does not follow a protection redirect or repeat its location", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "https://vercel.com/sso-api?nonce=secret-nonce" },
+    })))
+    const response = await POST(req())
+    expect(response.status).toBe(503)
+    const payload = await response.json()
+    expect(payload.message).toBe("The marketing preview refused the server connection. Your Admin session is still signed in.")
+    expect(JSON.stringify(payload)).not.toContain("sso-api")
+    expect(JSON.stringify(payload)).not.toContain("secret-nonce")
+    const init = vi.mocked(fetch).mock.calls[0]?.[1]
+    expect(init?.redirect).toBe("manual")
   })
 })

@@ -36,6 +36,12 @@ That button posts to `POST /api/cases/intake-mail` on the Admin develop Preview,
 
 Admin checks the session, then calls Marketing at the develop host derived from its own `VERCEL_BRANCH_URL` (`profilerelaunch-admin-git-develop-<team>.vercel.app` becomes `reputedefend-web-git-develop-<team>.vercel.app`). Any other host is refused. Marketing checks the same session again and only then sends. Production and every other Preview answer 404 before reading a case.
 
+Both develop Previews keep Vercel Authentication. A POST that reaches Marketing without a Trusted Sources token is answered by Vercel before the application: HTTP 401, `protection.vercel_auth_enabled: true`, and the message "Protected by Vercel Authentication". That body has no `ok` field. The staff route's own session failure is a different 401 whose body is only `{ "ok": false }`.
+
+The Admin server call sends the short-lived Vercel OIDC token in `x-vercel-trusted-oidc-idp-token` and keeps the Admin session in `Authorization`. The session token is not reused as the Vercel credential, and neither token is written into the Admin response. If the OIDC token is missing, Admin does not call Marketing. A Vercel protection denial says the marketing preview refused the server connection and that the Admin session is still signed in. An application `{ "ok": false }` 401 still says "Please sign in again."
+
+Marketing must list the Admin project `profilerelaunch-admin` under Deployment Protection → Trusted Sources → Vercel Projects, with preview allowed to call preview. Secure Backend Access with OIDC Federation stays on for Admin. Deployment Protection stays enabled. This repository does not store a bypass secret.
+
 A public reference on its own does not authorise a send. The removed public route is not registered.
 
 The retry writes a `case_events` row with actor `ADMIN` and the outcome words only. It does not record an address, a token, or a recipient.

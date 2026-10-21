@@ -1,17 +1,20 @@
 "use client"
-import { useState } from "react"
+import { useId, useState } from "react"
 import {
-  allowedFileAccept, canDownloadItem, canViewItem, fileTypeLabel, formatBytes, submissionLabel,
+  allowedFileAccept, canDownloadItem, canViewItem, evidenceFormatSummary, evidenceSizeSummary, fileExtension, fileTypeLabel, formatBytes, mimeExtensions, submissionLabel,
   type CustomerCasePack, type CustomerEvidenceRequest, type CustomerSubmissionStatus,
 } from "@/lib/case/model"
+import { declaredUpload, evidenceFileChoiceError } from "@/lib/case/validation"
+
+const EVIDENCE_RECEIVED = "Your document has been received. Our team will review it and contact you by email if we need anything else. No further action is required at the moment. You can close this window."
 
 export function CaseClient({ data }: { data: CustomerCasePack }) {
-  const pack = data.pack
+  const pack = data.kind === "COMMUNICATION_ACCESS" ? null : data.pack
   return <section>
     <h1>Case documents</h1>
     <p>{data.caseReference} · {data.businessName}{data.locationName ? ` · ${data.locationName}` : ""}</p>
     <p className="muted">Signed in as {data.maskedEmail}. This session is short-lived and only covers this case.</p>
-    {!pack && <p>No case documents are currently published.</p>}
+    {!pack && data.kind !== "COMMUNICATION_ACCESS" && <p>No case documents are currently published.</p>}
     {pack && <>
       <p>Published pack #{pack.packNumber}</p>
       <ol className="document-list">
@@ -38,31 +41,45 @@ function EvidenceRequests({ requests }: { requests: CustomerEvidenceRequest[] })
 function EvidenceRequestRow({ request }: { request: CustomerEvidenceRequest }) {
   const [status, setStatus] = useState<CustomerSubmissionStatus>(request.submissionStatus)
   const [filename, setFilename] = useState(request.filename)
-  const [message, setMessage] = useState("")
   const submitted = status === "AWAITING_REVIEW"
   return <li>
     <strong>{request.title}</strong>
     <p className="preserve-lines">{request.requestText}</p>
     {request.dueAt && <p className="muted">Due {formatDue(request.dueAt)}</p>}
-    <p>{submissionLabel(status)}{filename ? ` · ${filename}` : ""}</p>
-    {status === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
-    {!submitted && <UploadEvidence requestId={request.requestId} onUploaded={(name) => { setStatus("AWAITING_REVIEW"); setFilename(name); setMessage("Uploaded — awaiting security review") }} onMessage={setMessage} />}
-    {message && <p role="status">{message}</p>}
+    {submitted && <>
+      <p role="status">{submissionLabel(status)}</p>
+      <p>{EVIDENCE_RECEIVED}</p>
+      {filename && <p className="muted">{filename}</p>}
+    </>}
+    {!submitted && <>
+      <p>{submissionLabel(status)}{filename ? ` · ${filename}` : ""}</p>
+      {status === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
+      <UploadEvidence requestId={request.requestId} onUploaded={(name) => { setStatus("AWAITING_REVIEW"); setFilename(name) }} />
+    </>}
   </li>
 }
 
 function UploadEvidence({
-  requestId, onUploaded, onMessage,
+  requestId, onUploaded,
 }: {
   requestId: string
   onUploaded: (filename: string) => void
-  onMessage: (message: string) => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const hintId = useId()
+  const errorId = useId()
   async function choose(file: File | undefined) {
     if (!file || busy) return
+    const contentType = contentTypeFor(file)
+    const problem = evidenceFileChoiceError(file.name, contentType, file.size)
+    const declared = problem ? null : declaredUpload(file.name, contentType, file.size)
+    if (problem || !declared) {
+      setError(problem || "That file cannot be uploaded.")
+      return
+    }
     setBusy(true)
-    onMessage("")
+    setError("")
     const beginKey = crypto.randomUUID()
     try {
       const begun = await fetch("/api/case/evidence/upload", {
@@ -71,14 +88,14 @@ function UploadEvidence({
         body: JSON.stringify({
           operation: "begin",
           evidenceRequestId: requestId,
-          filename: file.name,
-          contentType: file.type,
-          size: file.size,
+          filename: declared.filename,
+          contentType: declared.contentType,
+          size: declared.size,
         }),
       })
       const start = await begun.json() as { message?: string; versionId?: string; upload?: { url: string; fields: Record<string, string> } }
       if (!begun.ok || !start.versionId || !start.upload?.url || !start.upload.fields) {
-        onMessage(start.message || "That file cannot be uploaded.")
+        setError(start.message || "That file cannot be uploaded.")
         return
       }
       const body = new FormData()
@@ -86,7 +103,7 @@ function UploadEvidence({
       body.append("file", file)
       const stored = await fetch(start.upload.url, { method: "POST", body })
       if (!stored.ok) {
-        onMessage("The file could not be stored. Try again.")
+        setError("The file could not be stored. Try again.")
         return
       }
       const finished = await fetch("/api/case/evidence/upload", {
@@ -96,20 +113,38 @@ function UploadEvidence({
       })
       const result = await finished.json() as { message?: string }
       if (!finished.ok) {
-        onMessage(result.message || "That upload cannot be completed.")
+        setError(result.message || "That upload cannot be completed.")
         return
       }
-      onUploaded(file.name)
+      onUploaded(declared.filename)
     } catch {
-      onMessage("We couldn’t upload that file. Reload this page and try again.")
+      setError("We couldn’t upload that file. Reload this page and try again.")
     } finally {
       setBusy(false)
     }
   }
-  return <label>
-    Upload evidence
-    <input type="file" accept={allowedFileAccept} disabled={busy} onChange={event => { void choose(event.target.files?.[0]); event.target.value = "" }} />
-  </label>
+  return <>
+    <p id={hintId}>Accepted formats: {evidenceFormatSummary()}. {evidenceSizeSummary()}.</p>
+    <label>
+      Upload evidence
+      <input
+        type="file"
+        accept={allowedFileAccept}
+        aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+        aria-invalid={error ? true : undefined}
+        disabled={busy}
+        onChange={event => { void choose(event.target.files?.[0]); event.target.value = "" }}
+      />
+    </label>
+    {error && <p id={errorId} role="alert">{error}</p>}
+  </>
+}
+
+function contentTypeFor(file: File): string {
+  if (file.type) return file.type
+  const extension = fileExtension(file.name)
+  const match = Object.entries(mimeExtensions).find(([, extensions]) => extensions.includes(extension))
+  return match?.[0] ?? ""
 }
 
 function FileButtons({ versionId, view, download }: { versionId: string; view: boolean; download: boolean }) {

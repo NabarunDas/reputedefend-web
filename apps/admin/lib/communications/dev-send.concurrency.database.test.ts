@@ -152,7 +152,7 @@ describe.skipIf(!pgBin)("DEV SEND_EMAIL claim under two PostgreSQL sessions", ()
     ])
     await execFile(join(pgBin!, "psql"), [
       "-h", socketDir, "-p", port, "-U", "postgres", "-d", "devmail01", "-v", "ON_ERROR_STOP=1",
-      "-f", new URL("../../../../supabase/migrations/20261021120000_dev_send_email_claim_v1.sql", import.meta.url).pathname,
+      "-f", new URL("../../../../supabase/migrations/20261021132018_dev_send_email_claim_v1.sql", import.meta.url).pathname,
     ])
     await psql(`
       insert into auth.users values('${uid}','admin@profilerelaunch.com',now(),null,null);

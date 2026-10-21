@@ -8,11 +8,13 @@ The eleven-step guided route stays a develop preview. Opening every later step i
 
 The form reuses the business name as the legal name and shows the customer name when the case has one. It does not copy the Google listing country into the purchasing country. Staff choose United Kingdom, or another two-letter country for review.
 
-Purchaser types are a UK limited company, a sole trader, an individual, or another permitted customer. Companies House is optional evidence for a limited company. It is not offered for a sole trader or an individual. Registration number and tax identifier stay blank unless staff already hold them.
+Purchaser types are a limited company, a sole trader, an individual, or another permitted customer. The limited-company choice is not restricted to the United Kingdom. Companies House is optional evidence for a limited company. It is not offered for a sole trader or an individual. Registration number and tax identifier stay blank unless staff already hold them.
 
 A saved note is `PENDING`. `VERIFIED` requires the checkbox that the staff member checked the genuine purchasing establishment, and a fresh admin session from the last five minutes. `REJECTED` records that the evidence is not sufficient. A self-declared note is not promoted to verified. Synthetic text, including `DEV SYNTHETIC / NOT REAL`, is refused before the database command is called.
 
 The purchaser type is stored as the opening sentence of the existing evidence reference. The command does not send a new field and does not supersede an existing verified row.
+
+When the business, country and subdivision already have a current verified establishment, the existing command returns that record and does not insert the submission. Admin is told the verified record is already current. A pending or rejected submission in that situation is not described as saved, and a changed name or evidence is not described as stored. A different country remains a conflict for review. Repeating the same request says it was already recorded. A pending or rejected note is described as new only when the command returns that same status. Existing verified evidence is left unchanged.
 
 ## Tax and price
 

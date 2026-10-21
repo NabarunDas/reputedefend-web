@@ -4,7 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { isUuid } from "../records/model"
 import { privateResponseHeaders } from "../access"
-import { buildPurchaserRecord, establishmentFailureMessage, purchaserSavedMessage } from "./purchaser"
+import { buildPurchaserRecord, purchaserCommandMessage, type EstablishmentCommandResult } from "./purchaser"
 
 const reply = (message: string, status: number) => NextResponse.json({message}, {status, headers: privateResponseHeaders})
 
@@ -44,14 +44,10 @@ export async function recordBusinessEstablishment(request: NextRequest) {
     const start=session?.createdAt?Date.parse(session.createdAt):NaN
     if(!session?.userId||!Number.isFinite(start)||start>Date.now()+60000||Date.now()-start>300000)
       return reply("Sign out and sign in again, then record this within five minutes.",403)
-    const result=await store.rpc<{status?:string;reason?:unknown}>("admin_record_business_establishment_v1",{
+    const result=await store.rpc<EstablishmentCommandResult>("admin_record_business_establishment_v1",{
       p_token:hash,p_request:key,p_payload:payload
     })
-    if(result.status==="success"||result.status==="replay")return reply(purchaserSavedMessage(payload),200)
-    const message=establishmentFailureMessage(result.status,result.reason)
-    if(result.status==="unauthorised")return reply(message,401)
-    if(result.status==="conflict")return reply(message,409)
-    if(result.status==="invalid")return reply(message,400)
-    return reply(message,503)
+    const outcome=purchaserCommandMessage(payload,result??{})
+    return reply(outcome.message,outcome.httpStatus)
   }catch{return reply("Could not confirm the record. Reload before retrying.",503)}
 }

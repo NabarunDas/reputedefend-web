@@ -11,7 +11,7 @@ const purchaserTypes = ["LIMITED_COMPANY", "SOLE_TRADER", "INDIVIDUAL", "OTHER"]
 export type PurchaserType = (typeof purchaserTypes)[number]
 
 export const purchaserTypeChoices: { id: PurchaserType; label: string; sentence: string }[] = [
-  { id: "LIMITED_COMPANY", label: "UK limited company", sentence: "Purchaser is a UK limited company" },
+  { id: "LIMITED_COMPANY", label: "Limited company", sentence: "Purchaser is a limited company" },
   { id: "SOLE_TRADER", label: "Sole trader", sentence: "Purchaser is a sole trader" },
   { id: "INDIVIDUAL", label: "Individual", sentence: "Purchaser is an individual" },
   { id: "OTHER", label: "Other permitted purchaser", sentence: "Purchaser is another permitted customer" },
@@ -174,17 +174,76 @@ export function buildPurchaserRecord(raw: unknown): { ok: true; payload: Purchas
   }
 }
 
-export function purchaserSavedMessage(payload: PurchaserPayload): string {
-  if (payload.verificationStatus === "PENDING") {
-    return "Saved as not yet verified. The quote cannot be offered on this record until genuine purchasing-establishment evidence is verified."
+export type EstablishmentCommandResult = {
+  status?: string
+  reason?: unknown
+  verificationStatus?: unknown
+  countryCode?: unknown
+}
+
+const storedStatuses = ["PENDING", "VERIFIED", "REJECTED"] as const
+
+function storedStatus(value: unknown): (typeof storedStatuses)[number] | null {
+  return storedStatuses.find(status => status === value) ?? null
+}
+
+/**
+ * Describe what the existing establishment command actually returned.
+ * A matching current VERIFIED row is returned as success before the submitted
+ * name, evidence or status is stored. PENDING and REJECTED are new notes only
+ * when the command returns that same status.
+ */
+export function purchaserCommandMessage(payload: PurchaserPayload, result: EstablishmentCommandResult): { message: string; httpStatus: number } {
+  if (result.status === "replay") {
+    return {
+      httpStatus: 200,
+      message: "This request was already recorded. Nothing further was saved, and the existing evidence was not overwritten.",
+    }
   }
-  if (payload.verificationStatus === "REJECTED") {
-    return "Recorded as not sufficient. Offer stays closed until genuine purchasing-establishment evidence is verified."
+  if (result.status === "success") {
+    const stored = storedStatus(result.verificationStatus)
+    if (stored === "VERIFIED" && payload.verificationStatus !== "VERIFIED") {
+      return {
+        httpStatus: 409,
+        message: "A verified purchasing establishment is already current for this country. This submission was not saved. The existing record and its evidence were not changed. Review that record before offering.",
+      }
+    }
+    if (!stored || stored !== payload.verificationStatus) {
+      return {
+        httpStatus: 409,
+        message: "The purchasing establishment could not be confirmed from the saved record. Review the business record before offering.",
+      }
+    }
+    if (stored === "PENDING") {
+      return {
+        httpStatus: 200,
+        message: "Saved as not yet verified. A new purchasing-establishment note was recorded. The quote cannot be offered on this record until genuine purchasing-establishment evidence is verified.",
+      }
+    }
+    if (stored === "REJECTED") {
+      return {
+        httpStatus: 200,
+        message: "Recorded as not sufficient. A new purchasing-establishment note was recorded. Offer stays closed until genuine purchasing-establishment evidence is verified.",
+      }
+    }
+    const country = typeof result.countryCode === "string" ? result.countryCode : ""
+    const kept = "A verified purchasing establishment is already the current record for this country. This response does not confirm that the name or evidence on this form was stored. Review the business record before offering."
+    if (country === "GB") {
+      return {
+        httpStatus: 200,
+        message: `${kept} While ProfileRelaunch is not VAT-registered, set the internal tax record to Not applicable. The customer price stays the advertised total. The offer command still decides.`,
+      }
+    }
+    return {
+      httpStatus: 200,
+      message: `${kept} A country other than the United Kingdom does not by itself clear a binding quote.`,
+    }
   }
-  if (payload.countryCode === "GB") {
-    return "Verified UK purchasing establishment recorded. While ProfileRelaunch is not VAT-registered, set the internal tax record to Not applicable. The customer price stays the advertised total. The offer command still decides."
-  }
-  return "Purchasing establishment recorded for review. A country other than the United Kingdom does not by itself clear a binding quote."
+  const message = establishmentFailureMessage(result.status, result.reason)
+  if (result.status === "unauthorised") return { message, httpStatus: 401 }
+  if (result.status === "conflict") return { message, httpStatus: 409 }
+  if (result.status === "invalid") return { message, httpStatus: 400 }
+  return { message, httpStatus: 503 }
 }
 
 export function establishmentFailureMessage(status: string | undefined, reason: unknown): string {

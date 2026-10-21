@@ -48,9 +48,15 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_SECRET_KEY", "test")
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
   mocks.rpc.mockReset()
-  mocks.rpc.mockImplementation(async (name: string) => {
+  mocks.rpc.mockImplementation(async (name: string, args?: { p_payload?: { verificationStatus?: string; countryCode?: string } }) => {
     if (name === "admin_session_v1") return { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date().toISOString() }
-    if (name === "admin_record_business_establishment_v1") return { status: "success" }
+    if (name === "admin_record_business_establishment_v1") {
+      return {
+        status: "success",
+        verificationStatus: args?.p_payload?.verificationStatus,
+        countryCode: args?.p_payload?.countryCode,
+      }
+    }
     return null
   })
 })
@@ -129,9 +135,87 @@ describe("business establishment origin", () => {
     }))
     expect(response.status).toBe(200)
     const body = await response.json() as { message?: string }
-    expect(body.message).toMatch(/not yet verified/)
+    expect(body.message).toMatch(/Saved as not yet verified/)
+    expect(body.message).toMatch(/new purchasing-establishment note/)
     expect(mocks.rpc).toHaveBeenCalledWith("admin_record_business_establishment_v1", expect.objectContaining({
       p_payload: expect.objectContaining({ verificationStatus: "PENDING" }),
     }))
+  })
+
+  it("does not report a pending or rejected save when the verified record is reused", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_session_v1") return { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date().toISOString() }
+      if (name === "admin_record_business_establishment_v1") return { status: "success", verificationStatus: "VERIFIED", countryCode: "GB" }
+      return null
+    })
+    const pending = await recordBusinessEstablishment(req(deployment, {
+      ...payload,
+      outcome: "pending",
+      confirmed: false,
+      evidenceReference: "The customer described the trading name. No independent check yet.",
+    }))
+    expect(pending.status).toBe(409)
+    const pendingBody = await pending.json() as { message?: string }
+    expect(pendingBody.message).toMatch(/already current/)
+    expect(pendingBody.message).toMatch(/was not saved/)
+    expect(pendingBody.message).not.toMatch(/Saved as not yet verified|new purchasing-establishment note/)
+    const rejected = await recordBusinessEstablishment(req(deployment, {
+      ...payload,
+      outcome: "rejected",
+      confirmed: false,
+      evidenceReference: "The documents supplied do not show the purchasing establishment.",
+    }))
+    expect(rejected.status).toBe(409)
+    const rejectedBody = await rejected.json() as { message?: string }
+    expect(rejectedBody.message).not.toMatch(/Recorded as not sufficient|new purchasing-establishment note/)
+  })
+
+  it("does not claim changed verified details were stored", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_session_v1") return { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date().toISOString() }
+      if (name === "admin_record_business_establishment_v1") return { status: "success", verificationStatus: "VERIFIED", countryCode: "GB" }
+      return null
+    })
+    const response = await recordBusinessEstablishment(req(deployment, {
+      ...payload,
+      legalName: "Replacement Name Ltd",
+      evidenceReference: "A later check names a different office and must not replace the record.",
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { message?: string }
+    expect(body.message).toMatch(/already the current record/)
+    expect(body.message).toMatch(/does not confirm that the name or evidence/)
+    expect(body.message).not.toContain("Replacement Name Ltd")
+  })
+
+  it("reports an idempotent retry without describing a new save", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_session_v1") return { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date().toISOString() }
+      if (name === "admin_record_business_establishment_v1") return { status: "replay", countryCode: "GB" }
+      return null
+    })
+    const response = await recordBusinessEstablishment(req(deployment, {
+      ...payload,
+      outcome: "pending",
+      confirmed: false,
+      evidenceReference: "The customer described the trading name. No independent check yet.",
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { message?: string }
+    expect(body.message).toMatch(/already recorded/)
+    expect(body.message).toMatch(/not overwritten/)
+    expect(body.message).not.toMatch(/Saved as not yet verified|new purchasing-establishment note/)
+  })
+
+  it("reports a different verified country as a conflict to review", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_session_v1") return { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date().toISOString() }
+      if (name === "admin_record_business_establishment_v1") return { status: "conflict", reason: "conflicting_establishment" }
+      return null
+    })
+    const response = await recordBusinessEstablishment(req(deployment))
+    expect(response.status).toBe(409)
+    const body = await response.json() as { message?: string }
+    expect(body.message).toMatch(/different verified purchasing establishment/)
   })
 })

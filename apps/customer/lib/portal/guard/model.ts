@@ -1,4 +1,5 @@
 import { formatMoney } from "../../../../../lib/money"
+import { customerFacingTaxNote } from "../../../../../lib/pricing"
 import type { GuardTax } from "./parse"
 
 const ukDateTime = new Intl.DateTimeFormat("en-GB", {
@@ -19,7 +20,5 @@ export function guardMoney(minor: number, currency: string) {
 }
 
 export function guardTaxNote(behaviour: GuardTax) {
-  if (behaviour === "INCLUSIVE") return "Tax is included in this amount."
-  if (behaviour === "EXCLUSIVE") return "Tax is shown separately."
-  return "Tax does not apply."
+  return customerFacingTaxNote(behaviour)
 }

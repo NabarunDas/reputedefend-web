@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { homepageGuard, homepageProcess } from "../homepage-content"
-import { pricingGroups, pricingNote } from "../pricing"
+import { customerPriceBoundary, customerPriceLine, pricingGroups, pricingNote } from "../pricing"
 import { paidServiceAgreementBody } from "./paid-service-agreement"
 import {
   SCOPE_EXCLUSIONS_TEMPLATE_VERSION,
@@ -119,8 +119,10 @@ describe("standard scope and exclusions", () => {
       const wording = standardScopeExclusions(code)
       const text = `${wording?.scope}\n${wording?.exclusions}`
       expect(text).toContain(finalCustomerPrice)
-      expect(text).toContain(agreementTaxBoundary)
-      expect(text).not.toMatch(/including VAT|plus VAT|exclusive of VAT|VAT inclusive/i)
+      expect(text).toContain(customerPriceLine)
+      expect(text).toContain(customerPriceBoundary)
+      expect(text).not.toContain(agreementTaxBoundary)
+      expect(text).not.toMatch(/\bVAT\b|including VAT|plus VAT|VAT not charged/i)
     }
   })
 

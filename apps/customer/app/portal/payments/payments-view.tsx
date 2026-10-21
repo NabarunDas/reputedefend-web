@@ -171,8 +171,11 @@ function OrderSection({
           <dd>{order.currency}</dd>
         </div>
         <div>
-          <dt>Tax</dt>
-          <dd>{moneyLabel(order.taxAmountMinor, order.currency)}. {taxNote(order.taxBehaviour)}</dd>
+          <dt>Price</dt>
+          <dd>
+            {taxNote(order.taxBehaviour)}
+            {order.taxAmountMinor > 0 ? ` ${order.taxBehaviour === "EXCLUSIVE" ? "Recorded tax" : "Included in the total"} ${moneyLabel(order.taxAmountMinor, order.currency)}.` : ""}
+          </dd>
         </div>
       </dl>
       {order.paymentModel === "SUCCESS_FEE" ? (

@@ -35,16 +35,18 @@ export async function portalReceiptDownload(request: NextRequest) {
     if (resolved == null) return textReply("Sign in again to download this receipt.", 401)
     const receipt = parseReceiptDownload(resolved)
     if (receipt === "not_found" || !receipt) return textReply(UNAVAILABLE, 404)
-    const body = [
+    const lines = [
       "ProfileRelaunch receipt",
       `Case: ${receipt.reference}`,
       `Order: ${receipt.orderRef}`,
       `Amount: ${moneyLabel(receipt.amountMinor, receipt.currency)}`,
       `Currency: ${receipt.currency}`,
-      `Tax: ${moneyLabel(receipt.taxAmountMinor, receipt.currency)}`,
-      taxNote(receipt.taxBehaviour),
-      paidOn(receipt.paidAt),
-    ].join("\n")
+    ]
+    if (receipt.taxAmountMinor > 0) {
+      lines.push(`${receipt.taxBehaviour === "EXCLUSIVE" ? "Recorded tax" : "Included in the total"}: ${moneyLabel(receipt.taxAmountMinor, receipt.currency)}`)
+    }
+    lines.push(taxNote(receipt.taxBehaviour), paidOn(receipt.paidAt))
+    const body = lines.join("\n")
     return new NextResponse(body, {
       status: 200,
       headers: {

@@ -1,5 +1,6 @@
 import { formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
 import { formatMoney } from "../../../../../lib/money"
+import { customerFacingTaxNote } from "../../../../../lib/pricing"
 import type { AgreementStatus, PaymentNext, ServiceAgreement, ServiceQuote, TaxBehaviour } from "./parse"
 
 export function moneyLabel(minor: number, currency: string): string {
@@ -7,10 +8,7 @@ export function moneyLabel(minor: number, currency: string): string {
 }
 
 export function taxExplanation(behaviour: TaxBehaviour): string | null {
-  if (behaviour === "INCLUSIVE") return "Tax is included in the total."
-  if (behaviour === "EXCLUSIVE") return "Tax is added to the quoted amount."
-  if (behaviour === "NOT_APPLICABLE") return "Tax does not apply to this quote."
-  return "Tax on this quote is not confirmed, so it cannot be accepted yet."
+  return customerFacingTaxNote(behaviour)
 }
 
 export function quoteStatusText(quote: ServiceQuote): string {

@@ -1,6 +1,7 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
 import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
+import { customerPriceBoundary, customerPriceLine } from "../../../../lib/pricing"
 import { ScopeExclusionsFields } from "./scope-fields"
 
 function futureLocalMin(minutes = 5) {
@@ -78,7 +79,7 @@ export function CreatePriceForm() {
     <label>Amount (pence)<input name="amountMinor" type="number" min={0} step={1} required /></label>
     <label>Effective from<input name="effectiveFrom" type="datetime-local" required min={minFrom} suppressHydrationWarning /></label>
     <p className="muted">Must be in the future. Approval keeps this timestamp and does not rewrite it.</p>
-    <label>Tax behaviour
+    <label>Internal tax record
       <select name="taxBehaviour" defaultValue="UNCONFIRMED">
         <option value="UNCONFIRMED">Unconfirmed</option>
         <option value="NOT_APPLICABLE">Not applicable</option>
@@ -86,6 +87,7 @@ export function CreatePriceForm() {
         <option value="EXCLUSIVE">Exclusive</option>
       </select>
     </label>
+    <p className="muted">This is the catalogue record. A quote for one of the five published services cannot use Exclusive, because that would charge more than the published price.</p>
     <button type="submit" disabled={busy}>{busy ? "Saving…" : "Create draft price"}</button>
     {message && <p role="status">{message}</p>}
   </form>
@@ -272,11 +274,11 @@ export function SetDraftTaxForm({ quoteId, version, quoteVersionId }: { quoteId:
     })
   }
   return <form onSubmit={submit}>
-    <label>Tax behaviour
+    <p className="muted">{customerPriceLine} {customerPriceBoundary} Not applicable is the internal record for a verified GB purchasing establishment while the seller is not VAT-registered. Inclusive is only for a later approved rate calculated inside the same total. Exclusive is not available on a quote.</p>
+    <label>Internal tax record
       <select name="taxBehaviour" required>
         <option value="NOT_APPLICABLE">Not applicable</option>
         <option value="INCLUSIVE">Inclusive</option>
-        <option value="EXCLUSIVE">Exclusive</option>
         <option value="UNCONFIRMED">Unconfirmed</option>
       </select>
     </label>

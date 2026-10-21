@@ -19,7 +19,7 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261021132018_dev_send_email_claim_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261021180000_communication_access_preliminary_evidence_v1.sql")
+    expect(migrationHead.filename).toBe("20261021210000_gross_customer_price_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -33,7 +33,10 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261021180000_communication_access_preliminary_evidence_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261021180000_communication_access_preliminary_evidence_v1.sql",
+      "20261021210000_gross_customer_price_v1.sql",
+    ])
     expect(findMigration("20261021132018_dev_send_email_claim_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261021132018_dev_send_email_claim_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql")?.appliedToDev).toBe(true)

@@ -1,4 +1,5 @@
 import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
+import { customerFacingTaxNote } from "../../../../../../lib/pricing"
 import { CaseQuoteForm } from "../commercial/forms"
 import {
   OfferQuoteActionForm,
@@ -37,7 +38,8 @@ export function QuotePanel({
       <div><dt>Quote</dt><dd>{quote.publicRef}</dd></div>
       <div><dt>Service</dt><dd>{quote.serviceName}</dd></div>
       <div><dt>Amount</dt><dd>{quote.amountLabel}</dd></div>
-      <div><dt>Tax</dt><dd>{quote.tax}</dd></div>
+      <div><dt>Customer price</dt><dd>{customerFacingTaxNote(quote.taxBehaviour)}</dd></div>
+      <div><dt>Internal tax record</dt><dd>{quote.tax}</dd></div>
       <div><dt>Valid until</dt><dd>{quote.validUntilLabel}</dd></div>
       <div><dt>Scope</dt><dd className="preserve-lines">{quote.scope}</dd></div>
       <div><dt>Exclusions</dt><dd className="preserve-lines">{quote.exclusions}</dd></div>

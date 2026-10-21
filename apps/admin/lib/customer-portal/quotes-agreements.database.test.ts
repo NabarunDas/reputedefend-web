@@ -36,6 +36,7 @@ const upgradedFiles = [
   "20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql",
   "20261021132018_dev_send_email_claim_v1.sql",
   "20261021180000_communication_access_preliminary_evidence_v1.sql",
+  "20261021210000_gross_customer_price_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -129,9 +130,9 @@ async function quote(options: {
   const discount = Math.round(standard * discountBps / 10000)
   const subtotal = standard - discount
   const taxBehaviour = options.tax ?? "NOT_APPLICABLE"
-  const taxRate = taxBehaviour === "EXCLUSIVE" ? 2000 : null
-  const tax = taxBehaviour === "EXCLUSIVE" ? Math.round(subtotal * 2000 / 10000) : 0
-  const total = taxBehaviour === "EXCLUSIVE" ? subtotal + tax : subtotal
+  const taxRate = taxBehaviour === "INCLUSIVE" ? 2000 : null
+  const tax = taxBehaviour === "INCLUSIVE" ? Math.round((subtotal * 2000) / 12000) : 0
+  const total = subtotal
   const policy = discountBps === 2000 ? "PAID_GUARD_MANAGED_20" : "NONE"
   const snapshot = randomUUID()
   const quoteId = randomUUID()
@@ -328,7 +329,7 @@ describe("service projection ownership", () => {
     const caseId = await insertCase("PR-26-SVCDSC", alex, "UNDER_REVIEW", "MANAGED")
     const offered = await quote({
       caseId, quoteRef: "QT-26-SVCDSC", serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE",
-      standard: 29900, discountBps: 2000, serviceName: "Managed profile help", tax: "EXCLUSIVE",
+      standard: 29900, discountBps: 2000, serviceName: "Managed profile help", tax: "INCLUSIVE",
     })
     await action({ caseId, kind: "QUOTE_ACCEPTANCE", quoteVersionId: offered.version })
     const view = await rpc<ServiceView>("customer_portal_case_service_v1", [alexSession, "PR-26-SVCDSC"])
@@ -336,9 +337,9 @@ describe("service projection ownership", () => {
       standardAmountMinor: 29900,
       discountAmountMinor: 5980,
       quotedAmountMinor: 23920,
-      taxAmountMinor: 4784,
-      totalAmountMinor: 28704,
-      taxBehaviour: "EXCLUSIVE",
+      taxAmountMinor: 3987,
+      totalAmountMinor: 23920,
+      taxBehaviour: "INCLUSIVE",
       canAccept: true,
     })
   })

@@ -5,6 +5,7 @@ import { ACTION_UNAVAILABLE } from "@/lib/access"
 import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
+import { customerFacingTaxNote } from "../../../../../lib/pricing"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
@@ -140,10 +141,11 @@ function formatGbp(minor: number): string {
 }
 
 function taxTreatment(quote: Quote): string {
-  if (quote.taxBehaviour === "UNCONFIRMED") return "Tax treatment is unconfirmed. This quote cannot be accepted until tax is configured."
-  if (quote.taxBehaviour === "NOT_APPLICABLE") return "Tax is recorded as not applicable on this quote version."
-  if (quote.taxBehaviour === "INCLUSIVE") return `Tax is included in the quoted total${quote.taxRateBps !== null ? ` at ${quote.taxRateBps} basis points` : ""}.`
-  return `Tax is added on top of the quoted subtotal${quote.taxRateBps !== null ? ` at ${quote.taxRateBps} basis points` : ""}.`
+  const note = customerFacingTaxNote(quote.taxBehaviour)
+  if (quote.taxBehaviour === "INCLUSIVE" && quote.taxAmountMinor > 0) {
+    return `Tax of ${formatGbp(quote.taxAmountMinor)} is included in this total. ${note}`
+  }
+  return note
 }
 
 export function ActionClient({ actionId }: { actionId: string }) {
@@ -286,7 +288,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
     return <section>
       <h1>Pay this accepted order</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
-      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
+      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. {customerFacingTaxNote(paymentDetails.taxBehaviour)}</p>
       <p>Payment is due now for this Guided service. Stripe Checkout collects the accepted order amount only.</p>
       <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
         <button type="submit">Pay securely with Stripe</button>
@@ -309,7 +311,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
     return <section>
       <h1>Pay this earned amount by invoice</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
-      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. Tax amount {formatGbp(paymentDetails.taxAmountMinor)} ({paymentDetails.taxBehaviour}).</p>
+      <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. {customerFacingTaxNote(paymentDetails.taxBehaviour)}</p>
       <p>This is a TEST-MODE hosted invoice fallback for an already-earned unpaid obligation. Returning from the invoice page does not mark this paid.</p>
       {invoiceUrl
         ? <p><a href={invoiceUrl}>Open the secure Stripe hosted invoice</a></p>
@@ -334,7 +336,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <h1>Start Relaunch Guard for this location</h1>
       <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
       <p>Accepted monthly amount {formatGbp(sub.amountMinor)} {sub.currency}, billed {sub.frequency.toLowerCase()} for this exact location only.</p>
-      <p>Tax treatment: {sub.taxBehaviour}.</p>
+      <p>{customerFacingTaxNote(sub.taxBehaviour)}</p>
       <h2>Cancellation</h2>
       <p className="preserve-lines">{sub.cancellationTermsText}</p>
       <p>Opening this link or verifying the one-time code does not create a subscription or charge a card.</p>
@@ -427,9 +429,8 @@ export function ActionClient({ actionId }: { actionId: string }) {
       {quote.discountAmountMinor > 0
         ? <p>Discount {formatGbp(quote.discountAmountMinor)} ({quote.discountPolicyId}: {quote.discountReason}). Final {formatGbp(quote.totalAmountMinor)}.</p>
         : <p>No discount. Final {formatGbp(quote.totalAmountMinor)}.</p>}
-      <h2>Tax treatment</h2>
       <p>{taxTreatment(quote)}</p>
-      <p>Tax amount {formatGbp(quote.taxAmountMinor)}. Total {formatGbp(quote.totalAmountMinor)} {quote.currency}.</p>
+      <p>Total {formatGbp(quote.totalAmountMinor)} {quote.currency}.</p>
       <h2>Payment timing</h2>
       <p>{quote.paymentTiming}</p>
       <p>{quote.termsReference}</p>

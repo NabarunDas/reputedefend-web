@@ -37,6 +37,7 @@ export type JourneyQuoteRecord = {
   serviceName: string
   amountLabel: string
   tax: string
+  taxBehaviour: string
   validUntilLabel: string
   scope: string
   exclusions: string
@@ -155,6 +156,7 @@ export function buildJourneyQuotePanel(input: {
     serviceName: matched.currentVersion.serviceName || serviceLabel(matched.currentVersion.serviceCode),
     amountLabel: `${formatGbp(matched.currentVersion.totalAmountMinor)} ${matched.currentVersion.currency}`,
     tax: taxLabel(matched.currentVersion.taxBehaviour),
+    taxBehaviour: matched.currentVersion.taxBehaviour,
     validUntilLabel: ukDate(matched.currentVersion.validUntil),
     scope: storedWording.scope,
     exclusions: storedWording.exclusions,

@@ -1,6 +1,6 @@
 import { brandName, brandTagline } from "@/lib/brand"
 import { guardPrice } from "@/lib/guard-offer"
-import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
+import { customerPriceBoundary, customerPriceLine, pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const profileRecovery = pricingGroups[0]
 const reviewProtection = pricingGroups[1]
@@ -234,7 +234,7 @@ export const homepageFaqs = [
   },
   {
     q: "How much does support cost?",
-    a: `${pricingLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard costs ${guardPrice} per month, per location. Google makes final platform decisions.`,
+    a: `${pricingLabel}: Guided Profile Recovery is ${guidedRelaunch.price} ${guidedRelaunch.cadence}; Guided Review Protection is ${guidedReview.price} ${guidedReview.cadence}. Managed Profile Recovery is ${managedRelaunch.price} ${managedRelaunch.cadence} (${managedRelaunch.detail}); Managed Review Protection is ${managedReview.price} ${managedReview.cadence} (${managedReview.detail}). Relaunch Guard costs ${guardPrice} per month, per location. Google makes final platform decisions. ${customerPriceLine} ${customerPriceBoundary}`,
   },
   {
     q: "Can I use Relaunch Guard without a recovery case?",

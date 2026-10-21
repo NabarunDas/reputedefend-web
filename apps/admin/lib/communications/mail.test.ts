@@ -17,6 +17,24 @@ describe("outgoing mail adapters", () => {
     expect(resolveMailProvider({ JOB_PROVIDER_MODE: "disabled", VERCEL_ENV: "production" })).toBe("disabled")
   })
 
+  it("uses the Resend adapter on the develop DEV lane without calling it", () => {
+    const provider = resolveMailProvider({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      CUSTOMER_ORIGIN: "https://profilerelaunch-customer-git-develop-clientcove.vercel.app",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+      COMMUNICATIONS_SEND_ENABLED: "true",
+      JOB_PROVIDER_MODE: "production",
+      RESEND_API_KEY: "re_dev_placeholder",
+      COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+      JOB_WORKER_CADENCE_SECONDS: "86400",
+    })
+    expect(provider).not.toBe("disabled")
+    if (provider !== "disabled") expect(provider.send).toEqual(expect.any(Function))
+  })
+
   it("passes the stable idempotency key as the Resend SDK second argument", async () => {
     const calls: Array<{ payload: ResendEmailPayload; options?: ResendSendOptions }> = []
     const provider = createResendMailProvider("re_secret", "ops@example.com", {

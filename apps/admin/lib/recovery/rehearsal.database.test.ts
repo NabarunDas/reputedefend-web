@@ -48,14 +48,14 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(58)
+    expect(migrationChain).toHaveLength(59)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, and DEV-applied E2E-02, E2E-03 and E2E-04.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    expect(migrationHead.version).toBe("20261020210000")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.version).toBe("20261021120000")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261020210000")
   })
 

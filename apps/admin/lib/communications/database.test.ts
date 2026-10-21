@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { readFileSync, readdirSync } from "node:fs"
 import { createHash, randomBytes } from "node:crypto"
 import { sendEmailHandler } from "./handler"
+import { settleDevSendEmailClaim } from "./dev-send"
 import { createIdempotentMailProvider } from "./mail"
 import { deriveCommunicationAccessToken, communicationAccessTokenHash, deriveCommunicationActionId } from "./link"
 import { runJobWorker, WorkerCrash } from "../jobs/worker"
@@ -52,6 +53,13 @@ type RpcResult = {
   providerCallPermitted?: boolean
   kind?: string
   evidenceRequests?: Array<{ requestId: string; title: string }>
+  reason?: string
+  jobId?: string
+  jobType?: string
+  idempotencyKey?: string
+  payload?: Record<string, unknown>
+  leaseToken?: string
+  currentJobStatus?: string | null
 }
 
 async function rpc(name: string, args: unknown[] = []): Promise<RpcResult | null> {
@@ -108,6 +116,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
   await db.exec(readFileSync(new URL("../../../../docs/admin/20261016233000_admin_journey_evidence_draft_wording_v1.sql", import.meta.url), "utf8"))
+  await db.exec(read("20261021120000_dev_send_email_claim_v1.sql"))
 }, 45000)
 
 afterAll(async () => { await db.close() })
@@ -1268,5 +1277,133 @@ describe("evidence draft wording", () => {
     expect(replacementRow.body_text).not.toContain("#t=")
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.job_outbox")).rows[0].n).toBe(outboxBefore)
     expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.jobs where job_type='SEND_EMAIL'")).rows[0].n).toBe(0)
+  })
+})
+
+const devPortal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+
+async function queueReviewed(origin: string) {
+  const created = await draft({ customerOrigin: origin })
+  expect(created?.status).toBe("success")
+  const row = await rpc("admin_communication_command_v1", [token, key(), "review", {
+    communicationId: created!.id, fromAddress: "ops@example.com",
+  }, created!.version])
+  expect(row?.status).toBe("success")
+  const queued = await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row!.id), row!.version])
+  expect(queued?.status).toBe("success")
+  return queued!
+}
+
+describe("DEV SEND_EMAIL claim", () => {
+  it("leases one queued email, leaves every other outbox row alone, and sends once", async () => {
+    const row = await queueReviewed(devPortal)
+    await rpc("admin_enqueue_job_probe_v1", [token, key()])
+    const request = key()
+    const claimed = await rpc("admin_dev_send_email_claim_v1", [token, request, row.id, true, devPortal])
+    expect(claimed).toMatchObject({
+      status: "success",
+      replay: false,
+      jobType: "SEND_EMAIL",
+      idempotencyKey: `send-email:${row.id}:v1`,
+    })
+    expect(claimed?.payload).toEqual({ communicationId: row.id, contentVersion: 1 })
+    const outbox = await db.query<{ topic: string; promoted_at: string | null }>(
+      "select topic, promoted_at from admin_private.job_outbox order by topic",
+    )
+    expect(outbox.rows.map(row => row.topic)).toEqual(["SEND_EMAIL", "SYSTEM_HEALTH_PROBE"])
+    expect(outbox.rows[0].promoted_at).toBeTruthy()
+    expect(outbox.rows[1].promoted_at).toBeNull()
+    expect((await db.query<{ job_type: string }>("select job_type from admin_private.jobs")).rows).toEqual([{ job_type: "SEND_EMAIL" }])
+
+    const provider = createIdempotentMailProvider()
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", linkSecretValue)
+    try {
+      expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed!, provider })).toBe("succeeded")
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(provider.effects).toBe(1)
+    expect(provider.calls).toBe(1)
+    expect(provider.payloads[0].idempotencyKey).toBe(`send-email:${row.id}:v1`)
+    expect(provider.payloads[0].to).toBe("alex@example.com")
+    expect(provider.payloads[0].text).toContain(`${devPortal}/action/`)
+    expect(provider.payloads[0].text).toContain("#t=")
+    expect(provider.payloads[0].text).not.toContain("customer.profilerelaunch.com")
+    expect((await db.query<{ status: string; delivery_status: string }>(
+      "select status, delivery_status from public.communications where id=$1",
+      [row.id],
+    )).rows[0]).toEqual({ status: "SENT", delivery_status: "PROVIDER_ACCEPTED" })
+    expect((await db.query<{ status: string }>("select status from admin_private.jobs")).rows[0].status).toBe("SUCCEEDED")
+
+    const again = await rpc("admin_dev_send_email_claim_v1", [token, key(), row.id, true, devPortal])
+    expect(again).toMatchObject({ status: "denied", reason: "already_processed" })
+    const replay = await rpc("admin_dev_send_email_claim_v1", [token, request, row.id, true, devPortal])
+    expect(replay?.replay).toBe(true)
+    expect(replay?.currentJobStatus).toBe("SUCCEEDED")
+    expect(provider.effects).toBe(1)
+    expect((await db.query<{ promoted_at: string | null }>(
+      "select promoted_at from admin_private.job_outbox where topic='SYSTEM_HEALTH_PROBE'",
+    )).rows[0].promoted_at).toBeNull()
+  })
+
+  it("refuses a production upload host before leasing and does not rewrite the approved email", async () => {
+    const row = await queueReviewed("https://customer.profilerelaunch.com")
+    const before = (await db.query<{ lifecycle: string; body_text: string; first_provider_attempt_at: string | null }>(
+      "select lifecycle, body_text, first_provider_attempt_at from public.communications where id=$1",
+      [row.id],
+    )).rows[0]
+    const denied = await rpc("admin_dev_send_email_claim_v1", [token, key(), row.id, true, devPortal])
+    expect(denied).toEqual({ status: "denied", reason: "origin" })
+    const after = (await db.query<{ lifecycle: string; body_text: string; first_provider_attempt_at: string | null }>(
+      "select lifecycle, body_text, first_provider_attempt_at from public.communications where id=$1",
+      [row.id],
+    )).rows[0]
+    expect(after).toEqual(before)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.jobs")).rows[0].n).toBe(0)
+    expect((await db.query<{ promoted_at: string | null }>("select promoted_at from admin_private.job_outbox")).rows[0].promoted_at).toBeNull()
+    const audit = (await db.query<{ reason: string; details: unknown }>(
+      "select reason, details from public.admin_audit_events where action='OPERATIONS_CHANGED' and outcome='denied'",
+    )).rows
+    expect(JSON.stringify(audit)).not.toMatch(/https:\/\/|alex@example.com|#t=/)
+
+    const provider = createIdempotentMailProvider()
+    const devEnv = {
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      COMMUNICATIONS_LINK_SECRET: linkSecretValue,
+    }
+    const sent = await sendEmailHandler(devEnv, provider).execute({
+      idempotencyKey: `send-email:${row.id}:v1`,
+      payload: { communicationId: row.id, contentVersion: 1 },
+      rpc: namedRpc(),
+    })
+    expect(sent).toEqual({ ok: false, retryable: false, error: "Secure upload link cannot be materialised" })
+    expect(provider.calls).toBe(0)
+    expect((await db.query<{ first_provider_attempt_at: string | null }>(
+      "select first_provider_attempt_at from public.communications where id=$1",
+      [row.id],
+    )).rows[0].first_provider_attempt_at).toBeNull()
+  })
+
+  it("does nothing for a missing session or a stale sign-in", async () => {
+    const row = await queueReviewed(devPortal)
+    expect(await rpc("admin_dev_send_email_claim_v1", ["b".repeat(64), key(), row.id, true, devPortal])).toEqual({ status: "unauthorized" })
+    await db.query("update public.admin_sessions set created_at = now() - interval '6 minutes' where token_hash=$1", [token])
+    expect(await rpc("admin_dev_send_email_claim_v1", [token, key(), row.id, true, devPortal])).toEqual({ status: "reauth_required" })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from admin_private.jobs")).rows[0].n).toBe(0)
+    expect((await db.query<{ promoted_at: string | null }>("select promoted_at from admin_private.job_outbox")).rows[0].promoted_at).toBeNull()
+    expect((await db.query<{ lifecycle: string }>("select lifecycle from public.communications where id=$1", [row.id])).rows[0].lifecycle).toBe("QUEUED")
+    expect((await db.query<{ anon: boolean; authenticated: boolean; service_role: boolean }>(
+      `select
+        has_function_privilege('anon', 'public.admin_dev_send_email_claim_v1(text,uuid,uuid,boolean,text)', 'execute') as anon,
+        has_function_privilege('authenticated', 'public.admin_dev_send_email_claim_v1(text,uuid,uuid,boolean,text)', 'execute') as authenticated,
+        has_function_privilege('service_role', 'public.admin_dev_send_email_claim_v1(text,uuid,uuid,boolean,text)', 'execute') as service_role`,
+    )).rows[0]).toEqual({ anon: false, authenticated: false, service_role: true })
   })
 })

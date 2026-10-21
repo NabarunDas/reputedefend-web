@@ -38,7 +38,9 @@ Queueing requires `communicationsSendEnabled()`:
 - valid `RESEND_API_KEY` and `COMMUNICATIONS_FROM_EMAIL`
 - worker cadence of 300 seconds or faster
 
-No production worker schedule is configured, so Admin refuses Queue and does not insert a `SEND_EMAIL` outbox row. Do not configure `COMMUNICATIONS_SEND_ENABLED` in Vercel from this PR.
+No production worker schedule is configured, so a Production deployment refuses Queue and does not insert a `SEND_EMAIL` outbox row. Leave `COMMUNICATIONS_SEND_ENABLED` unset on Production.
+
+The Admin develop Preview uses that same review, queue, `SEND_EMAIL` outbox key and Resend adapter when it is pinned to the DEV Supabase project, the derived DEV customer portal origin and the DEV evidence bucket, and the same sender credentials are present. The scheduled worker stays disabled on that Preview. A signed-in Admin processes one queued email from the communications page. The claim migration is `supabase/migrations/20261021120000_dev_send_email_claim_v1.sql`. It has not been applied. See `docs/admin/dev-mail-01.md`.
 
 ## Legacy `public.communications`
 

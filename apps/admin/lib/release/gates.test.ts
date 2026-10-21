@@ -222,6 +222,28 @@ describe("release safety: each capability needs its own deliberate action", () =
     }
   })
 
+  it("opens outgoing mail on the develop DEV preview without enabling another capability", () => {
+    const dev: EnvMap = {
+      ...everyCredentialNoFlags,
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      CUSTOMER_ORIGIN: "https://profilerelaunch-customer-git-develop-clientcove.vercel.app",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+      COMMUNICATIONS_SEND_ENABLED: "true",
+      JOB_PROVIDER_MODE: "production",
+      JOB_WORKER_CADENCE_SECONDS: "86400",
+    }
+    expect(liveCapabilityIds(dev)).toEqual(["outgoing_mail"])
+    expect(liveCapabilityIds({ ...dev, JOB_WORKER_ENABLED: undefined })).toEqual(["outgoing_mail"])
+    expect(liveCapabilityIds({ ...dev, CUSTOMER_ORIGIN: "https://customer.profilerelaunch.com" })).toEqual([])
+    expect(liveCapabilityIds({ ...dev, AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-prod-euw2-337909767363" })).toEqual([])
+    expect(liveCapabilityIds({ ...dev, SUPABASE_URL: "https://cxwwekdzkkjjbiyofrov.supabase.co" })).toEqual([])
+    expect(liveCapabilityIds({ ...dev, VERCEL_GIT_COMMIT_REF: "main" })).toEqual([])
+    expect(liveCapabilityIds({ ...dev, VERCEL_ENV: "production" })).toEqual([])
+  })
+
   it("keeps outgoing mail off while the worker runs at the daily cadence", () => {
     const dailyCadence: EnvMap = {
       ...everyCredentialNoFlags,

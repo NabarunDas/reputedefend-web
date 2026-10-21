@@ -49,3 +49,29 @@ The retry writes a `case_events` row with actor `ADMIN` and the outcome words on
 ## What this pull request does not do
 
 It does not change Production email configuration, Stripe, or applied migrations. It does not send a live message. Automated tests inject a fake provider. A test run does not construct the live Resend client, because that client is refused when `NODE_ENV` is `test`.
+
+## Phase B: Admin outgoing email
+
+Reviewed Admin email uses the same draft, review, queue, `SEND_EMAIL` outbox row and Resend send on Production and on the Admin develop Preview. Each environment keeps its own database, storage, customer portal and Resend credentials. The scheduled worker remains a Production control. `jobWorkerConfig.enabled` stays false on Preview, including when `JOB_WORKER_ENABLED=true`, so a cron run cannot claim payment, Guard, inbound or Google jobs.
+
+The develop lane is open only when all of these hold:
+
+- `VERCEL_ENV=preview`
+- `VERCEL_GIT_COMMIT_REF=develop`
+- `SUPABASE_URL` is exactly `https://rmzozuiamjcclvtgutgd.supabase.co`
+- `VERCEL_BRANCH_URL` is `profilerelaunch-admin-git-develop-<team>.vercel.app`
+- `CUSTOMER_ORIGIN` is exactly `https://profilerelaunch-customer-git-develop-<team>.vercel.app`
+- `AWS_EVIDENCE_BUCKET=profilerelaunch-evidence-dev-01`
+- `COMMUNICATIONS_SEND_ENABLED=true`
+- `JOB_PROVIDER_MODE=production` (this selects Resend for that lane; it does not enable the scheduled worker)
+- `RESEND_API_KEY` is the DEV Resend key
+- `COMMUNICATIONS_FROM_EMAIL` is a sender verified on that DEV Resend account
+- `COMMUNICATIONS_LINK_SECRET` is at least 32 characters and `COMMUNICATIONS_LINK_KEY_VERSION` matches the version stored on the approved email (version 1 when unset)
+
+Set those on the Admin Preview environment for the develop branch. Leave them unset on Production. Do not set `JOB_WORKER_ENABLED` on Preview and do not change the daily Production schedule. The Customer develop Preview keeps the DEV Supabase project and the DEV evidence bucket so an upload link stores the file there.
+
+Queue still requires a reviewed, locked snapshot. The communications page shows **Process queued email** only after that queue exists. The button posts `{ "communicationId", "confirmed": true }` to `POST /api/operations/dev-send-email` with an idempotency UUID. The route checks the Admin session, requires a sign-in created within five minutes, and claims `send-email:<id>:v<content version>` through `admin_dev_send_email_claim_v1`. A second request with the same key returns the stored result and does not call Resend again. The provider idempotency key remains that outbox event key.
+
+The claim promotes and leases that one `SEND_EMAIL` row. It does not call `job_promote_outbox_v1` or `job_claim_batch_v1`. A probe, payment, Guard or Google outbox row stays where it is. An evidence-request snapshot whose upload host is not the DEV customer portal is refused before the outbox row is promoted. The stored subject, body and recipient stay as approved. If that host is `https://customer.profilerelaunch.com`, the operator sees that the stored upload link is not the development customer portal. Sending that row would require a new reviewed communication whose draft used the DEV portal. Case `PR-26-RZYCE4` and its approved Step 3 email are left in place. This change does not send them.
+
+`supabase/migrations/20261021120000_dev_send_email_claim_v1.sql` is repository source. It has not been applied to DEV or Production. The Process control cannot send until that function is applied to the DEV project and the Preview settings above are present. Production activation flags stay unset.

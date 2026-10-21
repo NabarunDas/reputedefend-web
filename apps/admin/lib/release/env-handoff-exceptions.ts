@@ -73,10 +73,26 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     files: [
       "apps/admin/lib/communications/gate.ts",
       "apps/admin/lib/communications/handler.ts",
+      "apps/admin/lib/communications/mail.ts",
       "apps/admin/lib/release/gates.ts",
       "apps/admin/lib/settings/system-status.ts",
     ],
-    reason: "The outgoing-mail capability gate. Reads seven variables and is the gate gates.test.ts drives with synthetic configurations.",
+    reason: "The outgoing-mail capability gate. Reads the production conditions and the develop DEV lane, and is the gate gates.test.ts drives with synthetic configurations.",
+  },
+  {
+    helper: "devPreviewMailConfigured",
+    files: ["apps/admin/lib/communications/gate.ts"],
+    reason: "The develop DEV mail lane reads the branch host, DEV database, customer portal origin and evidence bucket together. The synthetic gate tests must drive that whole check.",
+  },
+  {
+    helper: "devAdminOutgoingMailLane",
+    files: ["apps/admin/lib/communications/gate.ts"],
+    reason: "Selects the develop DEV preview so the disabled-mail message can name that lane. It reads the same identity values as the send gate.",
+  },
+  {
+    helper: "devEvidenceUploadOriginAllowed",
+    files: ["apps/admin/lib/communications/handler.ts"],
+    reason: "An evidence-request send on the develop DEV lane must keep the DEV customer portal origin already stored in the approved snapshot.",
   },
   {
     helper: "communicationsInboundEnabled",

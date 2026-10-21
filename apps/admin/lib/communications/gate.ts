@@ -1,3 +1,4 @@
+import { devAdminOutgoingMailLane, devPreviewMailConfigured } from "./dev-lane"
 import {
   parseWorkerCadenceSeconds,
   resolveProviderMode,
@@ -13,18 +14,24 @@ export const MAX_LIVE_MAIL_CADENCE_SECONDS = 300
 export const PROVIDER_IDEMPOTENCY_SAFETY_WINDOW_MS = 23 * 60 * 60 * 1000
 
 export function communicationsSendEnabled(env: EnvMap = process.env): boolean {
-  if (env.VERCEL_ENV !== "production") return false
   if (env.COMMUNICATIONS_SEND_ENABLED !== "true") return false
-  if (env.JOB_WORKER_ENABLED !== "true") return false
-  if (resolveProviderMode(env) !== "production") return false
+  if (env.JOB_PROVIDER_MODE !== "production") return false
   if (!env.RESEND_API_KEY || env.RESEND_API_KEY.length < 8) return false
   if (!configuredFromAddress(env.COMMUNICATIONS_FROM_EMAIL)) return false
-  if (parseWorkerCadenceSeconds(env) > MAX_LIVE_MAIL_CADENCE_SECONDS) return false
-  return true
+  if (env.VERCEL_ENV === "production") {
+    if (env.JOB_WORKER_ENABLED !== "true") return false
+    if (resolveProviderMode(env) !== "production") return false
+    if (parseWorkerCadenceSeconds(env) > MAX_LIVE_MAIL_CADENCE_SECONDS) return false
+    return true
+  }
+  return devPreviewMailConfigured(env)
 }
 
 export function sendDisabledReason(env: EnvMap = process.env): string {
   if (communicationsSendEnabled(env)) return ""
+  if (devAdminOutgoingMailLane(env)) {
+    return "Outgoing customer email is not enabled on this development preview. Reviewed drafts are preserved until the development sender, customer portal, and evidence bucket are configured."
+  }
   return "Outgoing customer email is not enabled yet. Reviewed drafts are preserved, but sending will be enabled only after the production worker runs at the required cadence."
 }
 

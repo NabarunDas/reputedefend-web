@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { devAdminOutgoingMailLane, devCustomerPortalOrigin } from "./dev-lane"
 import { communicationsSendEnabled, sendDisabledReason } from "./gate"
 import { deriveCommunicationActionId, prepareCommunicationAccessLink } from "./link"
 import { confirmedReplyMailbox } from "./brand-email"
@@ -134,6 +135,9 @@ export async function communicationsCommand(request: NextRequest) {
       payload.customerOrigin = config.customerOrigin
       if (operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && !config.customerOrigin) {
         return reply("The customer site origin is not configured.", 503)
+      }
+      if (operation === "draft" && payload.templateKey === "EVIDENCE_REQUEST" && devAdminOutgoingMailLane() && config.customerOrigin !== devCustomerPortalOrigin()) {
+        return reply("The customer site origin must be the development customer portal.", 503)
       }
       const mailbox = confirmedReplyMailbox()
       if (mailbox) payload.serverReplyTo = mailbox

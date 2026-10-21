@@ -121,7 +121,7 @@ describe("communications page", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Send this queued email" }))
     fireEvent.click(button)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe("/api/operations/dev-send-email")
     expect(JSON.parse(String(init.body))).toEqual({ communicationId, confirmed: true })
     expect(String(init.body)).not.toMatch(/alex@example.com/)

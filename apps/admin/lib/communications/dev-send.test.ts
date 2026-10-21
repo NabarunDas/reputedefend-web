@@ -163,9 +163,10 @@ describe("DEV queued email command", () => {
     expect(body).toEqual({ message: "The queued email was submitted to the email provider." })
     expect(JSON.stringify(body)).not.toMatch(new RegExp(`${resendKey}|${linkSecret}|${session}|alex@example.com`))
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send.mock.calls[0][0].idempotencyKey).toBe(`send-email:${communicationId}:v1`)
-    expect(send.mock.calls[0][0].text).toContain(`${portal}/action/${actionId}#t=`)
-    expect(send.mock.calls[0][0].text).not.toContain("customer.profilerelaunch.com")
+    const sent = send.mock.calls[0] as unknown as [{ idempotencyKey: string; text: string }]
+    expect(sent[0].idempotencyKey).toBe(`send-email:${communicationId}:v1`)
+    expect(sent[0].text).toContain(`${portal}/action/${actionId}#t=`)
+    expect(sent[0].text).not.toContain("customer.profilerelaunch.com")
     expect(mocks.rpc.mock.calls[0]).toEqual(["admin_dev_send_email_claim_v1", {
       p_token: createHash("sha256").update(session).digest("hex"),
       p_request: key,

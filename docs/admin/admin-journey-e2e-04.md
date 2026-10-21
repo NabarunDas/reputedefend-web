@@ -2,7 +2,7 @@
 
 Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 as canonical version `20261020210000`, after exact source-to-ledger SQL and privilege verification. Generated ledger version `20261020122920` was aligned to canonical. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay this file or any earlier applied migration.
 
-The verified DEV applied head is `20261020210000`. `pendingMigrations()` is empty. Production and AWS ApprovedMigrationHead stay `20261014170000`. Live DEV returns the finished terminal `outcomeCode`. The disposable evidence below is unchanged, and signed-in browser acceptance remains NOT TESTED.
+E2E-04 remains applied to DEV. The later DEV applied head is `20261021132018`. `pendingMigrations()` is `20261021180000` only. Production and AWS ApprovedMigrationHead stay `20261014170000`. Live DEV returns the finished terminal `outcomeCode`. The disposable evidence below is unchanged, and signed-in browser acceptance remains NOT TESTED.
 
 ## What changes
 

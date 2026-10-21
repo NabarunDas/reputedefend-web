@@ -116,7 +116,7 @@ beforeAll(async () => {
     readdirSync(dir).find(n => n.endsWith("_case_communications_workspace_v1.sql"))!,
   ]) await db.exec(read(name))
   await db.exec(readFileSync(new URL("../../../../docs/admin/20261016233000_admin_journey_evidence_draft_wording_v1.sql", import.meta.url), "utf8"))
-  await db.exec(read("20261021120000_dev_send_email_claim_v1.sql"))
+  await db.exec(read("20261021132018_dev_send_email_claim_v1.sql"))
 }, 45000)
 
 afterAll(async () => { await db.close() })

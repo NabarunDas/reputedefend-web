@@ -11,8 +11,7 @@ The repository applied-file head is the same version. Production and AWS
 
 The repository source and DEV applied head later moved to Step 10B canonical version
 `20261019183000`. It was applied separately after this historical reconciliation. Its statement is separate
-from these seven recovered files, which stay unchanged. The current canonical DEV head is E2E-04
-`20261020210000`. `pendingMigrations()` is empty. That migration is applied to DEV only and is not applied to Production.
+from these seven recovered files, which stay unchanged. E2E-04 `20261020210000` remains applied to DEV only and is not applied to Production. The later DEV applied head is `20261021132018`. `pendingMigrations()` is `20261021180000` only.
 
 ## How the statements were recovered
 
@@ -69,4 +68,4 @@ These files are in `supabase/migrations` so a disposable rebuild can reproduce t
 - Disposable PGlite rehearsals apply the chain to a throwaway database. That is not a live apply.
 - Draft template rows do not become the live approved template and do not turn sending on.
 
-`pendingMigrations()` is empty. The verified applied DEV head is E2E-04 `20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql`, applied to DEV only and not to Production. Do not replay it. E2E-03, E2E-02, Step 12A and the seven recovered statements remain applied without replay. Production and AWS ApprovedMigrationHead stay `20261014170000`.
+The verified applied DEV head is `20261021132018_dev_send_email_claim_v1.sql`, applied to DEV only and not to Production. Do not replay it. E2E-04, E2E-03, E2E-02, Step 12A and the seven recovered statements remain applied without replay. `20261021180000` has not been applied. Production and AWS ApprovedMigrationHead stay `20261014170000`.

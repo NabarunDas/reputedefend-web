@@ -32,7 +32,8 @@ const upgradedFiles = [
   "20261020120000_admin_journey_e2e_02_managed_stage_v1.sql",
   "20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql",
   "20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql",
-  "20261021120000_dev_send_email_claim_v1.sql",
+  "20261021132018_dev_send_email_claim_v1.sql",
+  "20261021180000_communication_access_preliminary_evidence_v1.sql",
 ].join(",")
 const db = new PGlite()
 
@@ -553,6 +554,217 @@ describe("portal document privileges", () => {
       await expect(db.query("select admin_private.customer_portal_case_evidence_v1($1)", [randomUUID()])).rejects.toThrow(/permission denied/)
     } finally {
       await db.exec("reset role")
+    }
+  })
+})
+
+type ActionPack = {
+  kind: string
+  caseReference: string
+  pack: { items: { versionId: string; originalFilename: string }[] } | null
+  evidenceRequests: { requestId: string; title: string }[]
+} | null
+
+async function person(email: string, name: string) {
+  const customerId = randomUUID()
+  const authId = randomUUID()
+  await db.query(
+    `insert into auth.users(id, email, email_confirmed_at) values ($1, $2, now())`,
+    [authId, email],
+  )
+  await db.query(
+    `insert into public.customers(id, full_name, email) values ($1, $2, $3)`,
+    [customerId, name, email],
+  )
+  return { customerId, authId, email }
+}
+
+async function verifyEmail(customerId: string, email: string) {
+  await db.query(
+    `insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
+     values ($1, 'email', $2, $3, 'Verified from a live call with the customer.')`,
+    [customerId, email, verifier],
+  )
+}
+
+async function communicationAction(customerId: string, email: string, caseId: string, requestId: string) {
+  const id = randomUUID()
+  const actionSecret = secret()
+  await db.query(
+    `insert into public.customer_actions(
+      id, customer_id, business_id, location_id, case_id, kind, evidence_request_id, link_key_version,
+      secret_hash, expected_email_snapshot, expires_at, created_by
+    ) values ($1,$2,$3,$4,$5,'COMMUNICATION_ACCESS',$6,1,$7,$8, now() + interval '14 days', $9)`,
+    [id, customerId, business, location, caseId, requestId, actionSecret, email, verifier],
+  )
+  return { id, actionSecret }
+}
+
+async function actionOtp(actionId: string, actionSecret: string, authId: string, email: string) {
+  const pending = secret()
+  const session = secret()
+  expect(await rpc("customer_action_exchange_v1", [actionId, actionSecret, pending])).toMatchObject({
+    status: "ok",
+    kind: "COMMUNICATION_ACCESS",
+  })
+  expect(await rpc("customer_action_begin_otp_v1", [pending])).toMatchObject({ status: "ok" })
+  expect(await rpc("customer_action_confirm_otp_sent_v1", [pending])).toMatchObject({ status: "ok" })
+  expect(await rpc("customer_action_attempt_otp_v1", [pending])).toMatchObject({ status: "ok" })
+  expect(await rpc("customer_action_finish_otp_v1", [pending, session, authId, email])).toMatchObject({
+    status: "ok",
+    kind: "COMMUNICATION_ACCESS",
+  })
+  return session
+}
+
+describe("preliminary COMMUNICATION_ACCESS evidence", () => {
+  it("exchanges, verifies OTP and uploads one request without a verified business membership", async () => {
+    const pat = await person("pat@example.com", "Pat")
+    await verifyEmail(pat.customerId, pat.email)
+    const ownCase = await insertCase({ reference: "PR-26-PRELM2", customer: pat.customerId })
+    const otherCase = await insertCase({ reference: "PR-26-XTHER2", customer: sam })
+    const ownRequest = await request(ownCase, "Owner photo", "2026-10-02T12:00:00Z")
+    const sibling = await request(ownCase, "Sibling proof", "2026-10-03T12:00:00Z")
+    const otherRequest = await request(otherCase, "Other case proof", "2026-10-04T12:00:00Z")
+    const published = await publish(ownCase, "prepared-letter.pdf")
+    const otherPublished = await publish(otherCase, "other-letter.pdf")
+    const action = await communicationAction(pat.customerId, pat.email, ownCase, ownRequest)
+    const session = await actionOtp(action.id, action.actionSecret, pat.authId, pat.email)
+
+    const pack = await rpc<ActionPack>("customer_case_pack_v1", [session])
+    expect(pack?.kind).toBe("COMMUNICATION_ACCESS")
+    expect(pack?.caseReference).toBe("PR-26-PRELM2")
+    expect(pack?.pack).toBeNull()
+    expect(pack?.evidenceRequests.map(item => item.requestId)).toEqual([ownRequest])
+    expect(JSON.stringify(pack)).not.toContain("Sibling proof")
+    expect(JSON.stringify(pack)).not.toContain("Other case proof")
+    expect(JSON.stringify(pack)).not.toContain("prepared-letter.pdf")
+    expect(JSON.stringify(pack)).not.toContain("other-letter.pdf")
+    expect(JSON.stringify(pack)).not.toContain(published.versionId)
+    expect(JSON.stringify(pack)).not.toContain(otherPublished.versionId)
+
+    expect(await rpc("customer_case_pack_version_v1", [session, published.versionId])).toBeNull()
+    expect(await rpc("customer_case_pack_version_v1", [session, otherPublished.versionId])).toBeNull()
+    expect(await rpc("customer_case_pack_access_v1", [session, randomUUID(), published.versionId, "view"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_case_pack_access_v1", [session, randomUUID(), otherPublished.versionId, "download"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_portal_documents_v1", [session])).toBeNull()
+    expect(await rpc("customer_portal_dashboard_v1", [session])).toBeNull()
+    expect(await rpc("customer_portal_cases_v1", [session, "active", null, null])).toBeNull()
+
+    expect(await rpc("customer_evidence_begin_v1", [session, randomUUID(), otherRequest, "other.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_evidence_begin_v1", [session, randomUUID(), sibling, "sibling.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_evidence_begin_v1", [session, randomUUID(), ownRequest, "owner.pdf", "application/pdf", 1024, "test-evidence"])).toMatchObject({ status: "success" })
+    expect(await rpc("customer_evidence_begin_v1", [session, randomUUID(), otherRequest, "other-again.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+
+    const samAction = await communicationAction(sam, "sam@example.com", otherCase, otherRequest)
+    const samSession = await actionOtp(samAction.id, samAction.actionSecret, samAuth, "sam@example.com")
+    const samPack = await rpc<ActionPack>("customer_case_pack_v1", [samSession])
+    expect(samPack?.pack).toBeNull()
+    expect(samPack?.evidenceRequests.map(item => item.requestId)).toEqual([otherRequest])
+    expect(JSON.stringify(samPack)).not.toContain("Owner photo")
+    expect(JSON.stringify(samPack)).not.toContain(published.versionId)
+    expect(await rpc("customer_evidence_begin_v1", [samSession, randomUUID(), ownRequest, "crossed.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+    expect(await rpc("customer_case_pack_version_v1", [samSession, published.versionId])).toBeNull()
+
+    await db.query(
+      `insert into public.business_memberships(customer_id, business_id, status, evidence)
+       values ($1, $2, 'revoked', 'Relationship withdrawn after a recorded review.')`,
+      [pat.customerId, business],
+    )
+    expect(await rpc("customer_action_exchange_v1", [action.id, action.actionSecret, secret()])).toEqual({ status: "unavailable" })
+    expect(await rpc<ActionPack>("customer_case_pack_v1", [session])).toBeNull()
+    expect(await rpc("customer_evidence_begin_v1", [session, randomUUID(), ownRequest, "after-revoke.pdf", "application/pdf", 1024, "test-evidence"])).toEqual({ status: "unavailable" })
+  })
+
+  it("keeps case access, agreements, quotes, payments and Guard behind verified authority", async () => {
+    const pat = await person("rio@example.com", "Rio")
+    await verifyEmail(pat.customerId, pat.email)
+    const caseId = await insertCase({ reference: "PR-26-RJAXX2", customer: pat.customerId })
+    const requestId = await request(caseId, "Rio photo", "2026-10-05T12:00:00Z")
+    const published = await publish(caseId, "rio-letter.pdf")
+    const pending = await communicationAction(pat.customerId, pat.email, caseId, requestId)
+    await db.query(
+      `insert into public.business_memberships(customer_id, business_id, status, evidence)
+       values ($1, $2, 'pending', 'Authority is still being checked.')`,
+      [pat.customerId, business],
+    )
+    expect(await rpc("customer_action_exchange_v1", [pending.id, pending.actionSecret, secret()])).toMatchObject({
+      status: "ok",
+      kind: "COMMUNICATION_ACCESS",
+    })
+
+    const caseSecret = secret()
+    const caseAction = randomUUID()
+    await db.query(
+      `insert into public.customer_actions(
+        id, customer_id, business_id, location_id, case_id, kind, secret_hash, expected_email_snapshot, expires_at, created_by
+      ) values ($1,$2,$3,$4,$5,'CASE_ACCESS',$6,$7, now() + interval '2 days', $8)`,
+      [caseAction, pat.customerId, business, location, caseId, caseSecret, pat.email, verifier],
+    )
+    expect(await rpc("customer_action_exchange_v1", [caseAction, caseSecret, secret()])).toEqual({ status: "unavailable" })
+
+    const agreementId = randomUUID()
+    await db.query(
+      `insert into public.agreement_versions(
+        id, case_id, customer_id, business_id, location_id, agreement_kind, version_number, title, body_text, scope_text, content_hash, created_by
+      ) values ($1,$2,$3,$4,$5,'SERVICE_AGREEMENT',1,'Service terms','These service terms are the agreement the customer would accept.',
+        'This permission covers only the case described here.', $6, $7)`,
+      [agreementId, caseId, pat.customerId, business, location, secret(), verifier],
+    )
+    const agreementSecret = secret()
+    const agreementAction = randomUUID()
+    await db.query(
+      `insert into public.customer_actions(
+        id, customer_id, business_id, location_id, case_id, kind, agreement_version_id, secret_hash, expected_email_snapshot, expires_at, created_by
+      ) values ($1,$2,$3,$4,$5,'AGREEMENT_ACCEPTANCE',$6,$7,$8, now() + interval '2 days', $9)`,
+      [agreementAction, pat.customerId, business, location, caseId, agreementId, agreementSecret, pat.email, verifier],
+    )
+    expect(await rpc("customer_action_exchange_v1", [agreementAction, agreementSecret, secret()])).toEqual({ status: "unavailable" })
+
+    const definition = (await rows<{ def: string }>(
+      "select pg_get_functiondef('admin_private.customer_action_eligible_v1(public.customer_actions)'::regprocedure) as def",
+    ))[0].def
+    expect(definition).toContain("p_action.kind = 'COMMUNICATION_ACCESS'")
+    expect(definition).toContain("m.status = 'revoked'")
+    expect(definition).toContain("m.status = 'verified'")
+    for (const kind of ["QUOTE_ACCEPTANCE", "GUIDED_PAYMENT", "INVOICE_PAYMENT", "GUARD_PERMISSION", "GUARD_SUBSCRIPTION_START", "GUARD_PRICE_CHANGE_ACCEPTANCE"]) {
+      expect(definition).toContain(kind)
+    }
+    const branchStart = definition.indexOf("p_action.kind = 'COMMUNICATION_ACCESS'")
+    const communicationBranch = definition.slice(branchStart, definition.indexOf("ELSE", branchStart))
+    expect(communicationBranch).toContain("revoked")
+    expect(communicationBranch).not.toContain("verified")
+
+    await db.query(
+      `update public.business_memberships
+       set status = 'verified', verified_at = now(), verified_by = $3, evidence = 'Companies House match discussed on a live call.'
+       where customer_id = $1 and business_id = $2`,
+      [pat.customerId, business, verifier],
+    )
+    const casePending = secret()
+    const caseSession = secret()
+    expect(await rpc("customer_action_exchange_v1", [caseAction, caseSecret, casePending])).toMatchObject({ status: "ok", kind: "CASE_ACCESS" })
+    expect(await rpc("customer_action_begin_otp_v1", [casePending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_confirm_otp_sent_v1", [casePending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_attempt_otp_v1", [casePending])).toMatchObject({ status: "ok" })
+    expect(await rpc("customer_action_finish_otp_v1", [casePending, caseSession, pat.authId, pat.email])).toMatchObject({ status: "ok", kind: "CASE_ACCESS" })
+    const wide = await rpc<ActionPack>("customer_case_pack_v1", [caseSession])
+    expect(wide?.pack?.items.map(item => item.originalFilename)).toEqual(["rio-letter.pdf"])
+    expect(await rpc("customer_case_pack_version_v1", [caseSession, published.versionId])).toMatchObject({ versionId: published.versionId })
+
+    for (const role of ["public", "anon", "authenticated", "service_role"]) {
+      expect((await rows<{ ok: boolean }>(
+        "select has_function_privilege($1, 'admin_private.customer_action_eligible_v1(public.customer_actions)', 'EXECUTE') as ok",
+        [role],
+      ))[0].ok).toBe(false)
+    }
+    for (const signature of [
+      "public.customer_case_pack_v1(text)",
+      "public.customer_case_pack_version_v1(text,uuid)",
+      "public.customer_case_pack_access_v1(text,uuid,uuid,text)",
+    ]) {
+      expect((await rows<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(false)
+      expect((await rows<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(true)
     }
   })
 })

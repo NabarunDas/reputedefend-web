@@ -85,7 +85,7 @@ beforeAll(async () => {
   const upgraded = await applyUpgrade(db, appliedHead)
   const upgradedNames = upgraded.applied.map(item => item.entry.filename)
   if (!upgradedNames.includes(migration)) throw new Error(`UX-10A migration missing from ${upgraded.head}`)
-  if (!upgradedNames.includes("20261019163645_admin_journey_05_assessment_dev_v1.sql") || !upgradedNames.includes("20261019183000_admin_journey_10b_record_outcome_v1.sql") || !upgradedNames.includes("20261019235000_admin_journey_12a_close_billing_v1.sql") || !upgradedNames.includes("20261020120000_admin_journey_e2e_02_managed_stage_v1.sql") || !upgradedNames.includes("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql") || !upgradedNames.includes("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql") || upgradedNames.at(-1) !== "20261021120000_dev_send_email_claim_v1.sql") {
+  if (!upgradedNames.includes("20261019163645_admin_journey_05_assessment_dev_v1.sql") || !upgradedNames.includes("20261019183000_admin_journey_10b_record_outcome_v1.sql") || !upgradedNames.includes("20261019235000_admin_journey_12a_close_billing_v1.sql") || !upgradedNames.includes("20261020120000_admin_journey_e2e_02_managed_stage_v1.sql") || !upgradedNames.includes("20261020150000_admin_journey_e2e_03_success_fee_guard_v1.sql") || !upgradedNames.includes("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql") || !upgradedNames.includes("20261021132018_dev_send_email_claim_v1.sql") || upgradedNames.at(-1) !== "20261021180000_communication_access_preliminary_evidence_v1.sql") {
     throw new Error(`upgrade stopped at ${upgraded.head}`)
   }
   await db.exec(`

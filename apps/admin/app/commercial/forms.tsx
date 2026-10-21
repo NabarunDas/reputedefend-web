@@ -1,6 +1,7 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
 import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
+import { ScopeExclusionsFields } from "./scope-fields"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -109,6 +110,7 @@ export function RetirePriceForm({ priceVersionId, version }: { priceVersionId: s
 
 export function CreateQuoteForm() {
   const { busy, message, run } = useCommand()
+  const [serviceCode, setServiceCode] = useState("GUIDED_RELAUNCH")
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -129,7 +131,7 @@ export function CreateQuoteForm() {
   }
   return <form onSubmit={submit}>
     <label>Service
-      <select name="serviceCode" required>
+      <select name="serviceCode" required value={serviceCode} onChange={event => setServiceCode(event.target.value)}>
         <option value="GUIDED_RELAUNCH">Guided Relaunch</option>
         <option value="MANAGED_RELAUNCH">Managed Relaunch</option>
         <option value="GUIDED_REVIEW">Guided Review</option>
@@ -144,8 +146,7 @@ export function CreateQuoteForm() {
     <label>Monitoring request ID<input name="monitoringRequestId" maxLength={36} /></label>
     <label>Price version ID<input name="priceVersionId" required maxLength={36} /></label>
     <p className="muted">Use the current approved price for this service. A future or retired version cannot be quoted yet.</p>
-    <label>Scope<textarea name="scope" required minLength={10} maxLength={5000} rows={3} /></label>
-    <label>Exclusions<textarea name="exclusions" required minLength={10} maxLength={5000} rows={3} /></label>
+    <ScopeExclusionsFields serviceCode={serviceCode} />
     <label>Valid until<input name="validUntil" type="datetime-local" required /></label>
     <label>Qualification snapshot ID<input name="qualificationId" maxLength={36} /></label>
     <label className="checkbox"><input type="checkbox" name="applyDiscount" value="true" />Apply recorded paid Guard discount</label>

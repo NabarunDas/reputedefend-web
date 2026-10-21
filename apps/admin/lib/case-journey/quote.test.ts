@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { AssessmentJudgement } from "./assessment"
 import type { CaseFlowAuthorizationFact, CaseFlowFacts, CaseFlowQuoteFact } from "../case-flow/model"
 import type { PriceVersion, QuoteListItem } from "../commerce/model"
+import { SCOPE_EXCLUSIONS_TEMPLATE_VERSION, standardScopeExclusions } from "../../../../lib/commercial/scope-templates"
 import { buildJourneyQuotePanel, quoteServiceForRecommendation } from "./quote"
 
 const NOW = "2026-06-01T12:00:00.000Z"
@@ -312,5 +313,30 @@ describe("guided quote preparation", () => {
     expect(ambiguous.view.commands.draft).toBe(false)
     expect(ambiguous.view.priceChoice).toBeNull()
     expect(ambiguous.view.notices.join(" ")).toMatch(/No price has been chosen|no price has been chosen/)
+  })
+
+  it("keeps the stored wording and template version when the current template differs", () => {
+    const scope = "Earlier final scope for this quote. Standard wording version SCOPE-2026-01-01.1."
+    const exclusions = "Earlier final exclusions for this accepted quote."
+    const accepted = panel({
+      facts: { commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED" })] } },
+      quote: quoteDetail({ status: "ACCEPTED" }, { scope, exclusions }),
+    })
+    expect(accepted.view.quote?.scope).toBe(scope)
+    expect(accepted.view.quote?.exclusions).toBe(exclusions)
+    expect(accepted.view.quote?.templateVersion).toBe("SCOPE-2026-01-01.1")
+    expect(accepted.view.quote?.scope).not.toContain(SCOPE_EXCLUSIONS_TEMPLATE_VERSION)
+    expect(accepted.view.quote?.scope).not.toBe(standardScopeExclusions("GUIDED_RELAUNCH")?.scope)
+    expect(accepted.view.commands.draft).toBe(false)
+    expect(accepted.view.commands.offer).toBe(false)
+
+    const ready = panel({
+      facts: { commercial: { complete: true, quotes: [quoteFact()] } },
+      quote: quoteDetail({}, { scope, exclusions }),
+    })
+    expect(ready.view.commands.offer).toBe(true)
+    expect(ready.view.quote?.scope).toBe(scope)
+    expect(ready.view.quote?.exclusions).toBe(exclusions)
+    expect(ready.view.quote?.templateVersion).toBe("SCOPE-2026-01-01.1")
   })
 })

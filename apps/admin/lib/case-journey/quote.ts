@@ -18,6 +18,7 @@ import {
 } from "../commercial-workspace/model"
 import { formatGbp, paymentModelLabel, serviceLabel, taxLabel, type PriceVersion, type QuoteListItem } from "../commerce/model"
 import { ukDate } from "../admin/activity"
+import { preservedQuoteWording } from "../../../../lib/commercial/scope-templates"
 
 export type JourneyQuoteCommands = {
   draft: boolean
@@ -37,6 +38,9 @@ export type JourneyQuoteRecord = {
   amountLabel: string
   tax: string
   validUntilLabel: string
+  scope: string
+  exclusions: string
+  templateVersion: string | null
 }
 
 export type JourneyQuotePanel = {
@@ -136,7 +140,13 @@ export function buildJourneyQuotePanel(input: {
     notices.push("More than one current price matches this service, so no price has been chosen.")
   }
 
-  const quote: JourneyQuoteRecord | null = matched ? {
+  const storedWording = matched
+    ? preservedQuoteWording({
+      scope: matched.currentVersion.scope,
+      exclusions: matched.currentVersion.exclusions,
+    })
+    : null
+  const quote: JourneyQuoteRecord | null = matched && storedWording ? {
     quoteId: matched.id,
     version: matched.version,
     quoteVersionId: matched.currentVersion.id,
@@ -146,6 +156,9 @@ export function buildJourneyQuotePanel(input: {
     amountLabel: `${formatGbp(matched.currentVersion.totalAmountMinor)} ${matched.currentVersion.currency}`,
     tax: taxLabel(matched.currentVersion.taxBehaviour),
     validUntilLabel: ukDate(matched.currentVersion.validUntil),
+    scope: storedWording.scope,
+    exclusions: storedWording.exclusions,
+    templateVersion: storedWording.templateVersion,
   } : null
 
   const liveDraft = commercial.state === "DRAFT_UNCONFIGURED" || commercial.state === "DRAFT_READY"

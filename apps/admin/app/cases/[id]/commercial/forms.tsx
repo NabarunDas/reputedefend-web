@@ -2,6 +2,7 @@
 import { useRef, useState, type FormEvent } from "react"
 import type { CommercialPriceChoice } from "@/lib/commercial-workspace/model"
 import { isUuid } from "@/lib/records/model"
+import { ScopeExclusionsFields } from "../../../commercial/scope-fields"
 
 async function post(path: string, operation: string, body: Record<string, unknown>, key: string) {
   const response = await fetch(path, {
@@ -72,8 +73,7 @@ export function CaseQuoteForm({
   return <form onSubmit={submit}>
     <p>Quoting <strong>{customerName}</strong> for <strong>{businessName}</strong>.</p>
     <p>{choice.serviceName} · {choice.amountLabel} · {choice.paymentLabel}. This is the current approved price. The server checks the case, the customer and the price again.</p>
-    <label>Scope<textarea name="scope" required minLength={10} maxLength={5000} rows={3} /></label>
-    <label>Exclusions<textarea name="exclusions" required minLength={10} maxLength={5000} rows={3} /></label>
+    <ScopeExclusionsFields serviceCode={choice.serviceCode} />
     <label>Valid until<input name="validUntil" type="datetime-local" required /></label>
     <button type="submit" disabled={busy}>{busy ? "Creating…" : "Create draft quote"}</button>
     <p role="status">{message}</p>

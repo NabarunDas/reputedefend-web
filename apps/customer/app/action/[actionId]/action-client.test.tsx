@@ -197,7 +197,7 @@ describe("customer action page", () => {
             serviceCode: "GUIDED_RELAUNCH",
             serviceName: "Guided Relaunch",
             paymentModel: "UPFRONT",
-            scope: "Guided help for this location only.",
+            scope: "Guided help for this location only.\n\nStandard wording version SCOPE-2026-10-21.3.",
             exclusions: "Work outside this quotation is excluded.",
             successDefinition: "The fee follows the 48-hour success definition in the agreement.",
             standardAmountMinor: 9900,
@@ -228,6 +228,7 @@ describe("customer action page", () => {
     const agreement = await screen.findByRole("article", { name: "Paid-service agreement" })
     expect(agreement).toHaveTextContent("48-hour success definition")
     expect(screen.getByText("Guided help for this location only.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("Standard wording version")
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getByText(/payable upfront after acceptance/)).toBeTruthy()
     const boxes = screen.getAllByRole("checkbox")

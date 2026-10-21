@@ -334,7 +334,7 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     state: "ACTION_REQUIRED",
     surface: "COMMERCIAL",
     label: "Offer the quote",
-    description: "The draft quote is configured and can be offered to the customer.",
+    description: "The draft quote has a tax record. Offering it still depends on the purchasing establishment and the country and tax eligibility checks. A saved draft is not clearance to offer.",
   },
   VERIFY_CUSTOMER_CONTACT: {
     band: "JOURNEY",

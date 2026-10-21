@@ -895,6 +895,25 @@ summary { cursor: pointer; }
 .guided-workspace { grid-area: workspace; }
 .guided-instruction { margin: .2rem 0 .85rem; font-size: 1.05rem; }
 .guided-facts dl { margin-bottom: .85rem; }
+.guided-facts dl.quote-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .85rem 0;
+}
+.guided-facts dl.quote-summary > div {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: .35rem 1rem;
+  align-items: start;
+  min-width: 0;
+}
+.guided-facts dl.quote-summary > .quote-summary-block {
+  grid-template-columns: minmax(0, 1fr);
+  gap: .25rem;
+  padding-top: .35rem;
+  border-top: 1px solid var(--line);
+}
+.guided-facts dl.quote-summary > .quote-summary-block dd { max-width: 46rem; }
 .guided-warning {
   margin: .75rem 0;
   padding: .75rem .85rem;
@@ -963,6 +982,11 @@ summary { cursor: pointer; }
   }
   .guided-step a { padding: .7rem .65rem; }
   .guided-facts dl, .guided-warning dl { grid-template-columns: minmax(0, 1fr); }
+  .guided-facts dl.quote-summary,
+  .guided-facts dl.quote-summary > div,
+  .guided-facts dl.quote-summary > .quote-summary-block {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .cockpit-blockers { border-left: 3px solid var(--danger); }

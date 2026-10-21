@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import React from "react"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -9,6 +11,7 @@ import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { standardScopeExclusions } from "../../../../../../lib/commercial/scope-templates"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
+import { QuotePanel } from "./quote"
 import { CaseJourneyView } from "./view"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
@@ -253,6 +256,12 @@ describe("guided quote acceptance", () => {
     expect(screen.getByText("Not recorded on this quote")).toBeTruthy()
     expect(screen.getByText(/Review the scope and exclusions above before offering this quote/)).toBeTruthy()
     expect(screen.getByText(/does not add a country restriction/)).toBeTruthy()
+    expect(screen.getAllByText(/not clearance to offer/).length).toBeGreaterThan(1)
+    expect(screen.getByRole("heading", { name: "What remains before offering" })).toBeTruthy()
+    expect(screen.getByText(/Google listing country is not that record/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open the business record" })).toHaveAttribute("href", `/records/business/${BUSINESS_ID}`)
+    expect(screen.getByRole("link", { name: "Review the customer and business relationship" })).toHaveAttribute("href", `/records/client/${CUSTOMER_ID}/link?business=${BUSINESS_ID}`)
+    expect(screen.getByText(/The button does not mean this draft is eligible/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe/i })).toBeNull()
@@ -264,5 +273,70 @@ describe("guided quote acceptance", () => {
     expect(screen.getByRole("button", { name: "Create draft quote" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Offer quote" })).toBeNull()
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
+  })
+
+  it("keeps scope and exclusions full width, with line breaks, and stacks on a narrow screen", () => {
+    const source = facts({ commercial: { complete: true, quotes: [quoteFact()] } })
+    const quote = quoteItem()
+    quote.currentVersion = {
+      ...quote.currentVersion,
+      scope: "First scope line.\n\nSecond scope line stays in the scope section.",
+      exclusions: "First exclusion.\nSecond exclusion stays in the exclusions section.",
+    }
+    show(source, quote)
+    const labels = [...document.querySelectorAll(".quote-summary dt")].map(node => node.textContent)
+    expect(labels).toEqual([
+      "Quote",
+      "Service",
+      "Amount",
+      "Customer price",
+      "Internal tax record",
+      "Valid until",
+      "Scope",
+      "Exclusions",
+      "Wording template",
+    ])
+    const scope = [...document.querySelectorAll(".quote-summary-block")].find(node => node.querySelector("dt")?.textContent === "Scope")
+    const exclusions = [...document.querySelectorAll(".quote-summary-block")].find(node => node.querySelector("dt")?.textContent === "Exclusions")
+    expect(scope?.querySelector("dd")).toHaveClass("preserve-lines")
+    expect(scope?.querySelector("dd")?.textContent).toBe("First scope line.\n\nSecond scope line stays in the scope section.")
+    expect(exclusions?.querySelector("dd")?.textContent).toBe("First exclusion.\nSecond exclusion stays in the exclusions section.")
+    const quoteRow = [...document.querySelectorAll(".quote-summary > div")].find(node => node.querySelector("dt")?.textContent === "Quote")
+    expect(quoteRow).not.toHaveClass("quote-summary-block")
+    expect(quoteRow?.parentElement).toHaveClass("quote-summary")
+    const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8")
+    expect(css).toContain(".guided-facts dl.quote-summary")
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr)")
+    expect(css).toContain(".guided-facts dl.quote-summary > .quote-summary-block")
+    expect(css).toMatch(/@media \(max-width: 800px\) \{[\s\S]*\.guided-facts dl\.quote-summary > div/)
+    expect(css).toMatch(/dl \{ display: grid; grid-template-columns: 10rem minmax\(0, 1fr\)/)
+  })
+
+  it("does not link a quote readiness record when the case has no ids", () => {
+    const source = facts({ commercial: { complete: true, quotes: [quoteFact()] } })
+    const journey = presentCaseJourney(source, NOW, [], {
+      assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
+    })
+    const panel = buildJourneyQuotePanel({
+      facts: source,
+      now: NOW,
+      assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
+      prices: [price()],
+      quote: quoteItem(),
+      quoteDetailMissing: false,
+    })
+    render(<QuotePanel
+      panel={panel}
+      caseId={CASE_ID}
+      customerId=""
+      businessId="not-a-business"
+      locationId={null}
+      customerName="Alex"
+      businessName="Bakery"
+    />)
+    expect(journey.steps.some(step => step.id === "QUOTE_ACCEPTANCE")).toBe(true)
+    expect(screen.queryByRole("link", { name: "Open the business record" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Review the customer and business relationship" })).toBeNull()
+    expect(screen.getByText("This case has no business record to open from here.")).toBeTruthy()
   })
 })

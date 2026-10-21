@@ -210,3 +210,16 @@ export function preservedQuoteWording(stored: { scope: string; exclusions: strin
     templateVersion: templateVersionUsed(stored.scope),
   }
 }
+
+/**
+ * Customer display of stored scope. A trailing standard wording version line
+ * is omitted. The stored snapshot is not changed.
+ */
+export function customerFacingScope(scope: string): string {
+  const version = templateVersionUsed(scope)
+  if (!version) return scope
+  const line = standardWordingVersionLine(version)
+  const markerAt = scope.lastIndexOf(line)
+  if (markerAt < 0 || markerAt + line.length !== scope.length) return scope
+  return scope.slice(0, markerAt).replace(/\s+$/, "")
+}

@@ -8,6 +8,7 @@ import {
   agreementTaxBoundary,
   finalCustomerPrice,
   preservedPaymentTiming,
+  customerFacingScope,
   preservedQuoteWording,
   preservedSuccessDefinition,
   publishedGuardBoundary,
@@ -81,6 +82,8 @@ describe("standard scope and exclusions", () => {
     expect(guidedRelaunch?.exclusions).toContain("does not submit the prepared profile work")
     expect(guidedRelaunch?.exclusions).toContain(preservedSuccessDefinition.GUIDED_RELAUNCH)
     expect(guidedRelaunch?.exclusions).toContain(preservedPaymentTiming.UPFRONT)
+    expect(guidedRelaunch?.exclusions).not.toContain(preservedSuccessDefinition.MANAGED_RELAUNCH)
+    expect(guidedRelaunch?.exclusions).not.toContain(preservedPaymentTiming.SUCCESS_FEE)
 
     expect(managedRelaunch?.scope).toContain(`${relaunch[1].name} (${relaunch[1].price} ${relaunch[1].cadence}).`)
     expect(managedRelaunch?.scope).toContain("The final customer price is £299, payable only upon the contractually defined and verified successful restoration outcome, with no upfront service fee.")
@@ -99,6 +102,8 @@ describe("standard scope and exclusions", () => {
     expect(guidedReview?.scope).toContain("ProfileRelaunch prepares the work and the customer submits it.")
     expect(guidedReview?.exclusions).toContain("does not submit the prepared review work")
     expect(guidedReview?.exclusions).toContain(preservedSuccessDefinition.GUIDED_REVIEW)
+    expect(guidedReview?.exclusions).not.toContain(preservedSuccessDefinition.MANAGED_REVIEW)
+    expect(guidedReview?.exclusions).not.toContain(preservedPaymentTiming.SUCCESS_FEE)
 
     expect(managedReview?.scope).toContain(`${review[1].name} (${review[1].price} ${review[1].cadence}).`)
     expect(managedReview?.scope).toContain("The final customer price is £149, payable only on the contractually defined and verified successful removal, with no upfront service fee.")
@@ -162,5 +167,13 @@ describe("standard scope and exclusions", () => {
     })
     expect(templateVersionUsed("Standard wording version SCOPE-2026-10-21.2. Extra note.")).toBe("SCOPE-2026-10-21.2")
     expect(templateVersionUsed("No version was stored.")).toBeNull()
+    const storedScope = "Earlier final scope for this quote.\n\nStandard wording version SCOPE-2026-01-01.1."
+    expect(customerFacingScope(storedScope)).toBe("Earlier final scope for this quote.")
+    expect(customerFacingScope(stored.scope)).toBe("Earlier final scope for this quote.")
+    expect(preservedQuoteWording(stored).scope).toBe(stored.scope)
+    expect(customerFacingScope("Standard wording version SCOPE-2026-10-21.2. Extra note.")).toBe("Standard wording version SCOPE-2026-10-21.2. Extra note.")
+    expect(customerFacingScope("No version was stored.")).toBe("No version was stored.")
+    expect(customerFacingScope(standardScopeExclusions("GUIDED_RELAUNCH")?.scope || "")).not.toContain("Standard wording version")
+    expect(standardScopeExclusions("GUIDED_RELAUNCH")?.scope).toContain("Standard wording version")
   })
 })

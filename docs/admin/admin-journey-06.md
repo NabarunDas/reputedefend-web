@@ -22,13 +22,15 @@ The prices in the template are the final customer prices: Guided Relaunch £99 u
 
 The Create draft quote form fills Scope and Exclusions from the selected service. Admin does not need to write the standard wording. Admin can edit one quote for the case. Restore standard wording puts the current approved template back into the form and does not call the quote command. A saved quote keeps the exact `scope_text` and `exclusions_text` that were submitted, including the template version line when that wording used one. Changing the template later does not rewrite an existing quote or an accepted agreement. No new table or column is added.
 
-The Step 6 preview shows that stored scope, those exclusions and the template version recorded on them before the offer control.
+The Step 6 preview shows that stored scope, those exclusions and the template version recorded on them before the offer control. Scope and Exclusions are full-width sections inside `.quote-summary`. Each other fact stays one label and value. Line breaks in the stored wording are kept. At a narrow width every row stacks. The global definition-list grid is unchanged.
+
+The customer quote view omits a trailing standard wording version line. The saved `scope_text` still contains it, and Step 6 still shows the stored text plus the wording version. Guided exclusions stay the Guided sentences. They do not carry the Managed success definition or the Managed success-fee payment timing. Template version stays `SCOPE-2026-10-21.3`. This change does not rewrite quote QT-26-H6JSMB or any other saved quote.
 
 ## Gross customer price
 
 The seeded catalogue tax behaviour remains `UNCONFIRMED`. `UNCONFIRMED` still blocks an offer and an acceptance. The purchasing-establishment and country checks in `evaluate_commercial_eligibility_v1` stay required. No tax rate and no customer tax identifier are invented. Catalogue amounts stay 9900, 29900, 5900, 14900 and 999 pence.
 
-`supabase/migrations/20261021210000_gross_customer_price_v1.sql` is source only. It has not been applied to DEV or Production, and this change does not apply it. Separate approval is still required before either database receives it. Production and AWS ApprovedMigrationHead stay `20261014170000`. The applied DEV head is `20261021155147`.
+`supabase/migrations/20261021210000_gross_customer_price_v1.sql` stays the repository source file. This change does not apply it, rename it, or replay it. Issue #258 records that DEV already has the gross-price rule under ledger version `20261021214813`, which is not this filename. This change does not query that database and does not edit the ledger. Production and AWS ApprovedMigrationHead stay `20261014170000`.
 
 On a database that has received that file, a new or repriced quote for one of the five services must keep `total_amount_minor` equal to `quoted_subtotal_minor`. Exclusive tax is rejected. Inclusive tax, when a real rate exists, is calculated inside that same total. Not applicable and unconfirmed keep zero tax and a null rate. A stored draft whose exclusive tax sits above the advertised amount cannot be newly offered or accepted. That check does not rewrite the stored row. Cancelling or superseding it leaves the money columns as they were. An already accepted contract stays unchanged. Starting a payment for an open over-gross order is refused and does not change the order or the quote. An update that does not enter `OFFERED` or `ACCEPTED`, and does not change the money fields, does not rewrite an accepted quote. The UK not-registered treatment stays the existing internal determination `UK_DOMESTIC_NOT_VAT_REGISTERED` with quote tax `NOT_APPLICABLE`. It is not the customer-facing sentence. Stripe still charges the order amount copied from that quote total.
 
@@ -48,9 +50,13 @@ The current approved Step 5 pathway is shown. It is not the customer's agreement
 
 ## Binding quote
 
-Offering a draft is the binding issuance. The purchasing establishment and the country and tax eligibility checks already on the quote command still apply. A blocked offer returns `eligibility_blocked` and the staff message names those existing checks. This step does not add a country list and does not waive the checks.
+Offering a draft is the binding issuance. A saved draft is not clearance to offer. Step 6 says what remains: a verified purchasing establishment with genuine payer evidence, country and tax eligibility on the offer command, and verified customer email and business authority before a later acceptance link. The Google listing country is not the purchasing establishment. When the case has those ids, Step 6 links to `/records/business/<businessId>` and `/records/client/<customerId>/link?business=<businessId>`. The purchasing-establishment form on the business record appears only on the develop preview while `DEV_BUSINESS_ESTABLISHMENT_EDITOR_ENABLED` is on. The offer button does not mean the draft is eligible. The quote command still decides.
+
+`admin_quote_command_v1` returns `status: denied` and a reason code, such as `unresolved_establishment`, when the commercial check refuses an offer. `eligibility_blocked` remains a separate status. Staff see a fixed next step for each known reason. An unknown denial stays “That commercial action is not allowed.” The database message is not shown. The route still calls the RPC, and a denial stays HTTP 403 or, for `eligibility_blocked`, HTTP 409. This step does not add a country list and does not waive the checks.
 
 An acceptance link still requires the existing verified customer email and verified business authority. The raw token stays out of the stored command. Payment collection and service activation stay on Step 7.
+
+A synthetic continuation for case PR-26-RZYCE4 is proposed in `docs/admin/admin-quote-ux-258-synthetic-dev.md`. This change does not write that evidence, does not offer QT-26-H6JSMB, and does not change the genuine-evidence forms.
 
 ## Assessment database
 

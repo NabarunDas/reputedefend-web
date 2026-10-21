@@ -46,6 +46,40 @@ function commandMessage(status: string | undefined): string {
   return "The commercial record could not be updated."
 }
 
+const ELIGIBILITY_BLOCKED = "This quote cannot be issued yet. The purchasing establishment and the country and tax eligibility checks have not cleared a binding paid quote."
+
+/** Staff next steps for reason codes the quote command already returns. Unknown text is never shown. */
+const quoteDenialByReason: Record<string, string> = {
+  unresolved_establishment: "This quote cannot be offered yet. Record a verified purchasing establishment on the business record. The Google listing country is not that record.",
+  conflicting_establishment: "This quote cannot be offered yet. More than one current verified purchasing establishment is on the business record. Review that record before offering.",
+  awaiting_confirmation: "This quote cannot be offered yet. Country and tax eligibility is not confirmed for this payer. The offer stays closed until that check clears.",
+  tax_determination_mismatch: "This quote cannot be offered yet. The quote tax record does not match the eligibility determination. Do not offer until they agree.",
+  vat_threshold: "This quote cannot be offered yet. The seller turnover check has not cleared a binding quote.",
+  tax_unconfirmed: "This quote cannot be offered yet. Set the draft tax record before offering. An unconfirmed tax record still blocks an offer.",
+  sanctions_blocked: "This quote cannot be offered yet. The purchasing establishment is in a place the commercial check does not allow. Review the business record before offering.",
+  subdivision_required: "This quote cannot be offered yet. The purchasing establishment needs a recorded state or province before country and tax eligibility can clear.",
+  blocked: "This quote cannot be offered yet. Country and tax eligibility is blocked for this payer. The offer stays closed.",
+  expired: "This quote cannot be offered yet. The country and tax eligibility decision has expired. The offer stays closed until a current decision is recorded.",
+  review_due: "This quote cannot be offered yet. The country and tax eligibility decision is due for review. The offer stays closed until that review is recorded.",
+  stripe_not_ready: "This quote cannot be offered yet. The payment flow for this payer is not ready. The offer stays closed.",
+  currency_not_contract: "This quote cannot be offered yet. The quote currency is not the contract currency. The offer stays closed.",
+  unknown_service: "This quote cannot be offered yet. The service on this quote is not one the commercial check recognises.",
+  pending_review: "This quote cannot be offered yet. The commercial record still needs review before a binding action.",
+  exclusive_adds_tax: "This quote cannot be offered yet. The quoted total is the final customer price. Tax cannot be added on top.",
+  total_above_gross: "This quote cannot be offered yet. The quoted total is the final customer price. Tax cannot be added on top.",
+  tax_not_zero: "This quote cannot be offered yet. The quoted total is the final customer price. Tax cannot be added on top.",
+  inclusive_breakdown: "This quote cannot be offered yet. The quoted total is the final customer price. Tax cannot be added on top.",
+  unsupported_tax: "This quote cannot be offered yet. The quoted total is the final customer price. Tax cannot be added on top.",
+}
+
+/** A known quote denial, or null when the status or reason must stay on the generic path. */
+export function quoteDenialMessage(status: string | undefined, reason: unknown): string | null {
+  if (status !== "denied" && status !== "eligibility_blocked") return null
+  if (typeof reason !== "string") return null
+  const message = quoteDenialByReason[reason]
+  return typeof message === "string" ? message : null
+}
+
 async function guard(request: NextRequest) {
   const config = authConfig()
   if (!config) return { error: reply("The workspace is unavailable. Please try again shortly.", 503) }
@@ -109,14 +143,13 @@ export async function quoteCommand(request: NextRequest): Promise<NextResponse> 
     delete payload.version
     if (issuesLink) payload.secretHash = tokenHash(secret)
     const result = await backend().rpc<{
-      status?: string; id?: string; version?: number; quoteVersionId?: string; expiresAt?: string; publicRef?: string; replay?: boolean
+      status?: string; reason?: unknown; id?: string; version?: number; quoteVersionId?: string; expiresAt?: string; publicRef?: string; replay?: boolean
     }>("admin_quote_command_v1", {
       p_token: tokenHash(gated.token), p_request: gated.key, p_operation: operation, p_payload: payload, p_version: version,
     })
-    if (result.status === "eligibility_blocked") {
-      return reply("This quote cannot be issued yet. The purchasing establishment and the country and tax eligibility checks have not cleared a binding paid quote.", 409)
-    }
-    if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
+    const denial = quoteDenialMessage(result.status, result.reason)
+    if (result.status === "eligibility_blocked") return reply(denial ?? ELIGIBILITY_BLOCKED, 409)
+    if (result.status !== "success") return reply(denial ?? commandMessage(result.status), mapStatus(result.status))
     const issued = issuesLink && result.replay !== true && result.id && gated.config.customerOrigin
     return reply(
       issued ? `The secure customer quote action is ready. ${LOST_QUOTE_LINK_NOTE}`

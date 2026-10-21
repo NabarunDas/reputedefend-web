@@ -5,6 +5,7 @@ import { ACTION_UNAVAILABLE } from "@/lib/access"
 import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
+import { customerFacingScope } from "../../../../../lib/commercial/scope-templates"
 import { customerFacingTaxNote } from "../../../../../lib/pricing"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
@@ -419,7 +420,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <h2>{quote.serviceName}</h2>
       <p>Version {quote.versionNumber}. Valid until {new Date(quote.validUntil).toLocaleString("en-GB", { timeZone: "Europe/London" })}.</p>
       <h2>Scope</h2>
-      <p className="preserve-lines">{quote.scope}</p>
+      <p className="preserve-lines">{customerFacingScope(quote.scope)}</p>
       <h2>Exclusions</h2>
       <p className="preserve-lines">{quote.exclusions}</p>
       <h2>Success definition</h2>

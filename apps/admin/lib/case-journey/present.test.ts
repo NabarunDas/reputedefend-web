@@ -320,7 +320,7 @@ describe("journey status from authoritative records", () => {
   it("lets a customer upload be reviewed before delivery is confirmed", () => {
     const journey = show({
       technicalStage: "EVIDENCE_COLLECTION",
-      evidence: { requests: [request()], versions: [upload()] },
+      evidence: { requests: [request()], versions: [upload({ submissionSource: "CUSTOMER" })] },
       communications: [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" }],
     })
     expect(step(journey, "REQUEST_DOCUMENTS").state).toBe("COMPLETED")
@@ -341,7 +341,7 @@ describe("journey status from authoritative records", () => {
         technicalStage,
         evidence: {
           requests: [request()],
-          versions: [upload({ scanStatus: "PENDING", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
+          versions: [upload({ submissionSource: "CUSTOMER", scanStatus: "PENDING", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
         },
         communications: providerAccepted,
       }, events)
@@ -353,6 +353,29 @@ describe("journey status from authoritative records", () => {
       expect(step(opened, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("COMPLETED")
       expect(step(opened, "EVIDENCE_REVIEW").known.join(" "), technicalStage).toMatch(/scan can be checked/)
       expect(step(opened, "EVIDENCE_REVIEW").known.join(" "), technicalStage).toMatch(/not acceptance/)
+
+      const deliveredOnly = show({
+        technicalStage,
+        evidence: { requests: [request()], versions: [] },
+        communications: [delivered()],
+      }, events)
+      expect(step(deliveredOnly, "REQUEST_DOCUMENTS").state, technicalStage).toBe("COMPLETED")
+      expect(step(deliveredOnly, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).toMatch(/recorded delivery status of DELIVERED/)
+      expect(step(deliveredOnly, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("LOCKED")
+      expect(step(deliveredOnly, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("COMPLETED")
+
+      const staff = show({
+        technicalStage,
+        evidence: {
+          requests: [request()],
+          versions: [upload({ submissionSource: "ADMIN", scanStatus: "PENDING", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
+        },
+        communications: providerAccepted,
+      }, events)
+      expect(step(staff, "REQUEST_DOCUMENTS").state, technicalStage).toBe("WAITING")
+      expect(step(staff, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).toMatch(/not delivery/)
+      expect(step(staff, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).not.toMatch(/secure portal/)
+      expect(step(staff, "EVIDENCE_REVIEW").state, technicalStage).toBe("LOCKED")
 
       const waiting = show({
         technicalStage,
@@ -368,7 +391,7 @@ describe("journey status from authoritative records", () => {
         technicalStage,
         evidence: {
           requests: [request()],
-          versions: [upload({ scanStatus: "THREATS_FOUND", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
+          versions: [upload({ submissionSource: "CUSTOMER", scanStatus: "THREATS_FOUND", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
         },
         communications: providerAccepted,
       }, events)
@@ -380,7 +403,7 @@ describe("journey status from authoritative records", () => {
         technicalStage,
         evidence: {
           requests: [request()],
-          versions: [upload({ scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID", reviewStatus: "UNREVIEWED" })],
+          versions: [upload({ submissionSource: "CUSTOMER", scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID", reviewStatus: "UNREVIEWED" })],
         },
         communications: providerAccepted,
       }, events)
@@ -396,7 +419,7 @@ describe("journey status from authoritative records", () => {
       technicalStage: "INITIAL_REVIEW",
       evidence: {
         requests: [request()],
-        versions: [upload({ evidenceRequestId: null, scanStatus: "PENDING", validationStatus: "PENDING" })],
+        versions: [upload({ submissionSource: "CUSTOMER", evidenceRequestId: null, scanStatus: "PENDING", validationStatus: "PENDING" })],
       },
       communications: providerAccepted,
     }, [intake("REVIEWED"), screening()])
@@ -407,7 +430,7 @@ describe("journey status from authoritative records", () => {
       technicalStage: "INITIAL_REVIEW",
       evidence: {
         requests: [request()],
-        versions: [upload({ uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING" })],
+        versions: [upload({ submissionSource: "CUSTOMER", uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING" })],
       },
       communications: providerAccepted,
     }, [intake("REVIEWED"), screening()])
@@ -418,7 +441,7 @@ describe("journey status from authoritative records", () => {
       technicalStage: "EVIDENCE_COLLECTION",
       evidence: {
         requests: [request()],
-        versions: [upload({ evidenceRequestId: "someone-else", scanStatus: "PENDING", validationStatus: "PENDING" })],
+        versions: [upload({ submissionSource: "CUSTOMER", evidenceRequestId: "someone-else", scanStatus: "PENDING", validationStatus: "PENDING" })],
       },
       communications: providerAccepted,
     })

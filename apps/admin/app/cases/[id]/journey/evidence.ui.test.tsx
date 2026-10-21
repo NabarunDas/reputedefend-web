@@ -151,6 +151,7 @@ function projectionFrom(
         scanStatus: file.scanStatus,
         validationStatus: file.validationStatus,
         reviewStatus: file.reviewStatus,
+        submissionSource: file.submissionSource ?? null,
       }))),
     },
     communications,
@@ -328,7 +329,7 @@ describe("guided evidence review", () => {
   it("withholds review when the scan itself needs refreshing", () => {
     show(evidenceCase(
       [request(OWNERSHIP)],
-      [doc(OWNERSHIP_DOC, [version(CLEAN, { scanStatus: "UNSUPPORTED", validationStatus: "PENDING", validatedAt: null })], OWNERSHIP, "Ownership letter")],
+      [doc(OWNERSHIP_DOC, [version(CLEAN, { scanStatus: "UNSUPPORTED", validationStatus: "PENDING", validatedAt: null, submissionSource: "CUSTOMER" })], OWNERSHIP, "Ownership letter")],
     ))
     expect(screen.getAllByText("Security scan needs refreshing.").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: /Refresh scan status/ })).toBeTruthy()
@@ -361,6 +362,7 @@ describe("guided evidence review", () => {
       scanStatus: file.scanStatus,
       validationStatus: file.validationStatus,
       reviewStatus: file.reviewStatus,
+      submissionSource: "CUSTOMER" as const,
     })))
     show(item, [message()], { versions: drifted })
     expect(screen.getByRole("heading", { name: "Evidence records disagree" })).toBeTruthy()

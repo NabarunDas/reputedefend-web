@@ -127,20 +127,54 @@ export function contactAwaitingProvider(state: EvidenceContactState): boolean {
   return state === "QUEUED" || state === "PROVIDER_ACCEPTED"
 }
 
+export type SubmissionSourceRecord = {
+  versionId: string
+  submissionSource: "ADMIN" | "CUSTOMER" | null
+  evidenceRequestId: string | null
+}
+
 /**
- * A stored file tied to a live evidence request.
+ * Copy submission source from the evidence case onto the case-flow versions.
  *
- * The upload is the response. Provider acceptance is not, and this does not
- * read or write a delivery status. A pending upload, a failed upload, a file
- * with no request, and a file whose request was cancelled are not a response.
- * Scan, validation and Admin acceptance stay on the evidence review.
+ * The evidence case is the authoritative record. A version it does not list,
+ * or whose request link disagrees, is not treated as a customer submission.
+ * This does not write a delivery status.
+ */
+export function attachSubmissionSources(
+  evidence: CaseFlowEvidenceFact,
+  records: readonly SubmissionSourceRecord[],
+): CaseFlowEvidenceFact {
+  const byVersion = new Map(records.map(record => [record.versionId, record]))
+  return {
+    ...evidence,
+    versions: evidence.versions.map(version => {
+      const recorded = byVersion.get(version.versionId)
+      const agrees = recorded !== undefined && recorded.evidenceRequestId === version.evidenceRequestId
+      const source = agrees ? recorded.submissionSource : null
+      return source === "ADMIN" || source === "CUSTOMER"
+        ? { ...version, submissionSource: source }
+        : { ...version, submissionSource: null }
+    }),
+  }
+}
+
+/**
+ * A stored customer-portal file tied to a live evidence request.
+ *
+ * Only `submission_source = CUSTOMER` counts. An Admin upload, a file with
+ * no recorded source, a pending or failed upload, a file with no request,
+ * and a file whose request was cancelled are not a customer response.
+ * Provider acceptance is not a response either, and this does not read or
+ * write a delivery status. Scan, validation and Admin acceptance stay on
+ * the evidence review.
  */
 export function linkedStoredUpload(evidence: CaseFlowEvidenceFact): boolean {
   const live = new Set(
     evidence.requests.filter(request => request.status !== "CANCELLED").map(request => request.id),
   )
   return evidence.versions.some(version =>
-    version.uploadStatus === "UPLOADED"
+    version.submissionSource === "CUSTOMER"
+    && version.uploadStatus === "UPLOADED"
     && version.evidenceRequestId !== null
     && live.has(version.evidenceRequestId),
   )

@@ -304,8 +304,16 @@ function chooseFocus(
   if (closed) return null
   if (!isTechnicalStage(facts.technicalStage)) return null
   const fromAction = primary ? stepForAction[primary.id] : null
-  const seed = fromAction ?? (isTechnicalStage(facts.technicalStage) ? stageFocus(facts.technicalStage) : null)
+  let seed = fromAction ?? (isTechnicalStage(facts.technicalStage) ? stageFocus(facts.technicalStage) : null)
   if (!seed) return null
+  const requestProof = readings.REQUEST_DOCUMENTS.proof
+  if (
+    seed === "EVIDENCE_REVIEW"
+    && requestProof !== "complete"
+    && requestProof !== "not_applicable"
+  ) {
+    seed = "REQUEST_DOCUMENTS"
+  }
   let index = journeyStepIds.indexOf(seed)
   while (index < journeyStepIds.length) {
     const proof = readings[journeyStepIds[index]].proof
@@ -546,12 +554,12 @@ function readRequest(facts: CaseFlowFacts): Reading {
   if (linkedStoredUpload(facts.evidence) && liveRequests.length > 0) {
     const deliveryNote = contact === "DELIVERED"
       ? "The message status is DELIVERED. Only that recorded status describes the message as delivered."
-      : "A stored file is linked to a live evidence request. That response opens evidence review. It does not record the email as delivered, and it does not accept the file."
+      : "A customer file from the secure portal is linked to a live evidence request. That response opens evidence review. It does not record the email as delivered, and it does not accept the file."
     return {
       proof: "complete",
       known: [...known, deliveryNote, "The file still has to pass its scan, its validation, and an Admin acceptance decision."],
       missing: [],
-      who: "The customer has a file on the request. ProfileRelaunch reviews it on the next step.",
+      who: "The customer has submitted a file through the secure portal. ProfileRelaunch reviews it on the next step.",
     }
   }
   if (contact === "DELIVERED" && liveRequests.length > 0) {

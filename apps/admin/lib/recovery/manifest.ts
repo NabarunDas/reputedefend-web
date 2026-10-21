@@ -18,8 +18,11 @@
  * `20261021132018` dev_send_email_claim_v1 was applied to DEV only. The
  * Supabase runner recorded that version, and the repository filename was
  * aligned to it. The SQL was not replayed and it is not applied to
- * Production. `20261021180000` communication_access_preliminary_evidence_v1
- * is repository source and has not been applied to DEV or Production. See
+ * Production. `20261021155147` communication_access_preliminary_evidence_v1
+ * was applied to DEV once. The repository filename was aligned to that
+ * ledger version. The SQL was not replayed and it is not applied to
+ * Production. `20261021210000` gross_customer_price_v1 is repository source
+ * and has not been applied to DEV or Production. See
  * `docs/admin/dev-history-01.md`, `docs/admin/admin-journey-12a.md`,
  * `docs/admin/admin-journey-e2e-02.md`,
  * `docs/admin/admin-journey-e2e-03.md` and
@@ -761,15 +764,31 @@ export const migrationChain: readonly MigrationEntry[] = [
     // Preliminary evidence upload. A verified email may open one
     // COMMUNICATION_ACCESS request without a verified business membership.
     // Revoked relationships stay blocked. Published packs stay hidden.
-    // Repository only. Do not apply to DEV or Production from this change.
-    version: "20261021180000",
-    filename: "20261021180000_communication_access_preliminary_evidence_v1.sql",
+    // Applied to DEV once as ledger version 20261021155147. The repository
+    // filename was aligned to that version. The SQL was not replayed.
+    // Not applied to Production. Do not replay it.
+    version: "20261021155147",
+    filename: "20261021155147_communication_access_preliminary_evidence_v1.sql",
     step: "Preliminary COMMUNICATION_ACCESS evidence upload",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "preliminary evidence upload", probe: "admin_private.customer_action_eligible_v1" },
+  },
+  {
+    // COM-GROSS-01. New and repriced quote versions for the five published
+    // services keep the customer total equal to the quoted subtotal.
+    // Exclusive tax is rejected. Existing rows are not rewritten.
+    // Repository only. Do not apply to DEV or Production from this change.
+    version: "20261021210000",
+    filename: "20261021210000_gross_customer_price_v1.sql",
+    step: "COM-GROSS-01 gross customer price",
     kind: "additive",
     appliedToDev: false,
     containsDataChange: false,
     safeToReplay: false,
-    verification: { category: "preliminary evidence upload", probe: "admin_private.customer_action_eligible_v1" },
+    verification: { category: "gross customer price", probe: "admin_private.enforce_gross_customer_price_v1" },
   },
 ]
 
@@ -781,10 +800,10 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest repository migration marked `appliedToDev`. After the DEV
- * mail claim was recorded, this is the verified DEV ledger head
- * `20261021132018`. `20261021180000` is newer in the repository and has not
- * been applied. This is not the Production head.
+ * The newest repository migration marked `appliedToDev`. After the
+ * preliminary evidence statement was aligned, this is the verified DEV
+ * ledger head `20261021155147`. `20261021210000` is newer in the repository
+ * and has not been applied. This is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

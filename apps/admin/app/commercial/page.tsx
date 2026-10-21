@@ -2,6 +2,7 @@ import Link from "next/link"
 import { ukDate } from "@/lib/admin/activity"
 import { loadCatalogue, loadOrders, loadQuotes } from "@/lib/commerce/queries"
 import { formatGbp, orderStateLabel, paymentModelLabel, quoteStatusLabel, serviceLabel, taxLabel } from "@/lib/commerce/model"
+import { customerFacingTaxNote } from "../../../../lib/pricing"
 import { isUuid } from "@/lib/records/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
 import {
@@ -40,7 +41,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
         <h2>Price versions</h2>
         {!catalogue.prices.length ? <EmptyState>No price versions recorded.</EmptyState> : <div className="table-scroll" role="region" aria-label="Catalogue" tabIndex={0}>
           <table>
-            <thead><tr><th>Service</th><th>Amount</th><th>Payment</th><th>Tax</th><th>Effective</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Service</th><th>Amount</th><th>Payment</th><th>Internal tax record</th><th>Effective</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>{catalogue.prices.map(row => <tr key={row.id}>
               <td>{row.displayName}<br /><span className="muted">{row.serviceCode} · {row.id}</span></td>
               <td>{formatGbp(row.amountMinor)} {row.currency}<br /><span className="muted">{row.amountMinor} pence</span></td>
@@ -84,7 +85,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
         </form>
         {!quotes.quotes.length ? <EmptyState>No quotes recorded yet.</EmptyState> : <div className="table-scroll" role="region" aria-label="Quotes" tabIndex={0}>
           <table>
-            <thead><tr><th>Quote</th><th>Service</th><th>Amounts</th><th>Tax</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr><th>Quote</th><th>Service</th><th>Amounts</th><th>Internal tax record</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>{quotes.quotes.map(row => <tr key={row.id}>
               <td>
                 {row.publicRef}<br />
@@ -99,7 +100,8 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
               <td>
                 Standard {formatGbp(row.currentVersion.standardAmountMinor)}<br />
                 Discount {formatGbp(row.currentVersion.discountAmountMinor)} {row.currentVersion.discountPolicyId !== "NONE" ? `(${row.currentVersion.discountPolicyId})` : ""}<br />
-                Total {formatGbp(row.currentVersion.totalAmountMinor)}
+                Total {formatGbp(row.currentVersion.totalAmountMinor)}<br />
+                <span className="muted">{customerFacingTaxNote(row.currentVersion.taxBehaviour)}</span>
               </td>
               <td><Badge tone={row.currentVersion.taxBehaviour === "UNCONFIRMED" ? "warning" : "neutral"}>{taxLabel(row.currentVersion.taxBehaviour)}</Badge></td>
               <td>
@@ -140,7 +142,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
             </td>
             <td>{row.customerName}<br /><span className="muted">{row.businessName}{row.caseReference ? ` · ${row.caseReference}` : ""}</span></td>
             <td>{serviceLabel(row.serviceCode)}<br /><span className="muted">{paymentModelLabel(row.paymentModel)}</span></td>
-            <td>{formatGbp(row.amountMinor)} {row.currency}<br /><span className="muted">{taxLabel(row.taxBehaviour)} tax {formatGbp(row.taxAmountMinor)}</span></td>
+            <td>{formatGbp(row.amountMinor)} {row.currency}<br /><span className="muted">{customerFacingTaxNote(row.taxBehaviour)}</span><br /><span className="muted">Internal tax record: {taxLabel(row.taxBehaviour)}</span></td>
             <td><Badge>{orderStateLabel(row.state)}</Badge><br /><span className="muted">{ukDate(row.acceptedAt)}</span></td>
           </tr>)}</tbody>
         </table>

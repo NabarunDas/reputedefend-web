@@ -201,8 +201,11 @@ function QuoteSection({
             <div><dt>Standard amount</dt><dd>{moneyLabel(quote.standardAmountMinor, quote.currency)}</dd></div>
             {quote.discountAmountMinor > 0 ? <div><dt>Discount</dt><dd>{moneyLabel(quote.discountAmountMinor, quote.currency)}</dd></div> : null}
             <div><dt>Quoted amount</dt><dd>{moneyLabel(quote.quotedAmountMinor, quote.currency)}</dd></div>
-            {quote.taxBehaviour === "INCLUSIVE" || quote.taxBehaviour === "EXCLUSIVE" ? (
-              <div><dt>Tax</dt><dd>{moneyLabel(quote.taxAmountMinor, quote.currency)}</dd></div>
+            {quote.taxAmountMinor > 0 ? (
+              <div>
+                <dt>{quote.taxBehaviour === "EXCLUSIVE" ? "Recorded tax" : "Included in the total"}</dt>
+                <dd>{moneyLabel(quote.taxAmountMinor, quote.currency)}</dd>
+              </div>
             ) : null}
             <div><dt>Total</dt><dd>{moneyLabel(quote.totalAmountMinor, quote.currency)}</dd></div>
             <div><dt>Valid until</dt><dd><time dateTime={quote.validUntil}>{formatPortalDate(quote.validUntil)}</time></dd></div>

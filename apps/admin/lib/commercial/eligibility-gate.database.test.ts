@@ -593,11 +593,27 @@ describe("COM-14A commercial eligibility gate", () => {
     )).rows[0]).toEqual({ tax_id: null, registration_id: null })
     expect(await count("select count(*)::int as n from public.commercial_eligibility_decisions where country_code = 'GB' and status = 'APPROVED'")).toBe(0)
     const exclusive = await createDraft()
+    const beforeExclusive = await db.query<{ total_amount_minor: number; tax_behaviour: string }>(
+      "select total_amount_minor, tax_behaviour from public.quote_versions where quote_id = $1",
+      [exclusive!.id],
+    )
+    expect(beforeExclusive.rows[0]).toEqual({ total_amount_minor: 9900, tax_behaviour: "UNCONFIRMED" })
     const exclusiveTax = await setTax(exclusive!.id!, exclusive!.version!, "EXCLUSIVE", { taxRateBps: 2000 })
-    expect(exclusiveTax?.status).toBe("success")
-    expect(await offer(exclusive!.id!, exclusiveTax!.version!)).toMatchObject({
-      status: "denied", reason: "tax_determination_mismatch", message: eligibilityEnquiryMessage,
+    expect(exclusiveTax).toMatchObject({
+      status: "denied",
+      reason: "exclusive_adds_tax",
+      message: "The quoted total is the final customer price. Tax cannot be added on top.",
     })
+    expect((await db.query<{ total_amount_minor: number; tax_behaviour: string }>(
+      "select total_amount_minor, tax_behaviour from public.quote_versions where quote_id = $1",
+      [exclusive!.id],
+    )).rows[0]).toEqual({ total_amount_minor: 9900, tax_behaviour: "UNCONFIRMED" })
+    await expect(db.query(
+      `update public.quote_versions
+       set tax_behaviour = 'EXCLUSIVE', tax_rate_bps = 2000, tax_amount_minor = 1980, total_amount_minor = 11880
+       where quote_id = $1`,
+      [exclusive!.id],
+    )).rejects.toThrow(/gross_price:exclusive_adds_tax/)
     const confirmed = await rpc("admin_confirm_paid_service_agreement_v1", [adminToken, key(), SYNTHETIC_APPROVAL_EVIDENCE])
     expect(["confirmed", "already_confirmed"]).toContain(confirmed.status)
 
@@ -626,10 +642,18 @@ describe("COM-14A commercial eligibility gate", () => {
       "select count(*)::int as n from public.commercial_tax_log where event = 'ACCEPTED' and source_id = $1 and country_code = 'GB' and currency = 'GBP'",
       [acceptance.rows[0].id],
     )).toBe(1)
-    const order = (await db.query<{ id: string; record_version: number }>(
-      "select id, record_version from public.service_orders where quote_version_id = $1",
+    const order = (await db.query<{ id: string; record_version: number; amount_minor: number; tax_amount_minor: number }>(
+      "select id, record_version, amount_minor, tax_amount_minor from public.service_orders where quote_version_id = $1",
       [ready.draft.quoteVersionId],
     )).rows[0]
+    const quoted = (await db.query<{ quoted_subtotal_minor: number; total_amount_minor: number; tax_amount_minor: number }>(
+      "select quoted_subtotal_minor, total_amount_minor, tax_amount_minor from public.quote_versions where id = $1",
+      [ready.draft.quoteVersionId],
+    )).rows[0]
+    expect(quoted).toEqual({ quoted_subtotal_minor: 9900, total_amount_minor: 9900, tax_amount_minor: 0 })
+    expect(order.amount_minor).toBe(9900)
+    expect(order.tax_amount_minor).toBe(0)
+    expect(acceptance.rows[0] && quoted.total_amount_minor).toBe(order.amount_minor)
     const secret = hash(randomBytes(32).toString("hex"))
     const issued = await rpc("admin_payment_command_v1", [adminToken, key(), "issue_guided_payment_action", {
       serviceOrderId: order.id, expiresAt: actionExpiry(), secretHash: secret,
@@ -646,6 +670,10 @@ describe("COM-14A commercial eligibility gate", () => {
     const first = await rpc("customer_payment_command_v1", [session, request, "start_checkout", { idempotencyKey: request }])
     expect(first.status).toBe("success")
     expect(first.providerOperationId).toBeTruthy()
+    expect((await db.query<{ amount_minor: number }>(
+      "select amount_minor from public.payment_attempts where service_order_id = $1",
+      [order.id],
+    )).rows[0]?.amount_minor).toBe(9900)
     expect(await count(
       "select count(*)::int as n from public.provider_operations where service_order_id = $1 and kind = 'CREATE_CHECKOUT_SESSION'",
       [order.id],
@@ -745,5 +773,48 @@ describe("COM-14A commercial eligibility gate", () => {
       status: "denied", reason: "vat_threshold", message: eligibilityEnquiryMessage,
     })
     expect(await count("select count(*)::int as n from public.quote_versions where id = $1 and status = 'OFFERED'", [held.draft.quoteVersionId])).toBe(0)
+  })
+
+  it("keeps published totals and an inside-gross inclusive rate, and does not rewrite an accepted quote", async () => {
+    const seeded = await db.query<{ service_code: string; amount_minor: number; tax_behaviour: string }>(
+      "select service_code, amount_minor, tax_behaviour from public.price_versions where status = 'APPROVED' and seed_key like 'SEED_%' order by service_code",
+    )
+    expect(seeded.rows).toEqual([
+      { service_code: "GUIDED_RELAUNCH", amount_minor: 9900, tax_behaviour: "UNCONFIRMED" },
+      { service_code: "GUIDED_REVIEW", amount_minor: 5900, tax_behaviour: "UNCONFIRMED" },
+      { service_code: "MANAGED_RELAUNCH", amount_minor: 29900, tax_behaviour: "UNCONFIRMED" },
+      { service_code: "MANAGED_REVIEW", amount_minor: 14900, tax_behaviour: "UNCONFIRMED" },
+      { service_code: "RELAUNCH_GUARD", amount_minor: 999, tax_behaviour: "UNCONFIRMED" },
+    ])
+    for (const serviceCode of ["GUIDED_RELAUNCH", "MANAGED_RELAUNCH", "RELAUNCH_GUARD"]) {
+      const draft = await createDraft(serviceCode)
+      expect(draft?.status).toBe("success")
+      const row = (await db.query<{ total_amount_minor: number; quoted_subtotal_minor: number; tax_amount_minor: number }>(
+        "select total_amount_minor, quoted_subtotal_minor, tax_amount_minor from public.quote_versions where id = $1",
+        [draft!.quoteVersionId],
+      )).rows[0]
+      const amount = seeded.rows.find(item => item.service_code === serviceCode)?.amount_minor
+      expect(row).toEqual({ total_amount_minor: amount, quoted_subtotal_minor: amount, tax_amount_minor: 0 })
+    }
+    const inclusiveDraft = await createDraft()
+    const inclusive = await setTax(inclusiveDraft!.id!, inclusiveDraft!.version!, "INCLUSIVE", { taxRateBps: 2000 })
+    expect(inclusive?.status).toBe("success")
+    expect((await db.query<{ total_amount_minor: number; tax_amount_minor: number; tax_behaviour: string }>(
+      "select total_amount_minor, tax_amount_minor, tax_behaviour from public.quote_versions where id = $1",
+      [inclusive!.quoteVersionId],
+    )).rows[0]).toEqual({ total_amount_minor: 9900, tax_amount_minor: 1650, tax_behaviour: "INCLUSIVE" })
+    expect((await offer(inclusiveDraft!.id!, inclusive!.version!))?.status).toBe("denied")
+    expect((await db.query<{ total_amount_minor: number }>(
+      "select total_amount_minor from public.quote_versions where id = $1",
+      [inclusive!.quoteVersionId],
+    )).rows[0].total_amount_minor).toBe(9900)
+
+    const accepted = (await db.query<{ id: string }>(
+      "select id from public.quote_versions where status = 'ACCEPTED' order by created_at desc limit 1",
+    )).rows[0]
+    await expect(db.query(
+      "update public.quote_versions set total_amount_minor = total_amount_minor + 1 where id = $1",
+      [accepted.id],
+    )).rejects.toThrow(/immutable|gross_price/)
   })
 })

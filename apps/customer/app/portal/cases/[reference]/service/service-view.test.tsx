@@ -117,7 +117,7 @@ describe("service and permissions", () => {
     expect(screen.getByText("Guided service")).toBeTruthy()
     expect(screen.getByText("QT-26-ABCDEF")).toBeTruthy()
     expect(screen.getAllByText("£299.00").length).toBeGreaterThan(0)
-    expect(screen.getByText("Tax does not apply to this quote.")).toBeTruthy()
+    expect(screen.getByText("Total price, inclusive of any applicable taxes. No additional taxes or mandatory fees charged by ProfileRelaunch.")).toBeTruthy()
     expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
     expect(screen.getByText("Directory listings outside this location are excluded.")).toBeTruthy()
     expect(screen.getByText("Success means the profile is submitted for reinstatement.")).toBeTruthy()
@@ -157,7 +157,8 @@ describe("service and permissions", () => {
     expect(screen.getByText("£239.20")).toBeTruthy()
     expect(screen.getByText("£47.84")).toBeTruthy()
     expect(screen.getByText("£287.04")).toBeTruthy()
-    expect(screen.getByText("Tax is added to the quoted amount.")).toBeTruthy()
+    expect(screen.getByText("The total shown is the amount recorded on this quote.")).toBeTruthy()
+    expect(screen.getByText("Recorded tax")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/EXCLUSIVE|UNCONFIRMED|tax_behaviour/)
   })
 
@@ -199,7 +200,7 @@ describe("service and permissions", () => {
       quote: quote({ taxBehaviour: "UNCONFIRMED", canAccept: false }),
       actions: [action("quote", selector)],
     })} />)
-    expect(screen.getByText("Tax on this quote is not confirmed, so it cannot be accepted yet.")).toBeTruthy()
+    expect(screen.getByText("This quote is not ready to accept.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Accept this quote" })).toBeNull()
     expect(screen.getByRole("button", { name: "Decline this quote" })).toBeTruthy()
   })

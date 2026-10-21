@@ -181,7 +181,7 @@ describe("Pricing page copy", () => {
     expect(faq("Can my monthly price change?").a).toContain("subscription ends before that renewal")
 
     expect(faq("Are prices shown in GBP?").a).toBe(
-      "Yes. All prices on this page are shown in pounds sterling (GBP). We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.",
+      "Yes. All prices on this page are shown in pounds sterling (GBP). Total price, inclusive of any applicable taxes. No additional taxes or mandatory fees charged by ProfileRelaunch. We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.",
     )
   })
 

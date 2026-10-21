@@ -1,6 +1,6 @@
 import { guardFaqs } from "@/app/relaunch-guard/content"
 import { guardOffer, guardPrice } from "@/lib/guard-offer"
-import { pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
+import { customerPriceBoundary, customerPriceLine, pricingGroups, pricingLabel, pricingNote } from "@/lib/pricing"
 
 const recovery = pricingGroups[0]
 const review = pricingGroups[1]
@@ -360,7 +360,7 @@ export const pricingFaqs = [
   },
   {
     q: "Are prices shown in GBP?",
-    a: "Yes. All prices on this page are shown in pounds sterling (GBP). We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.",
+    a: `Yes. All prices on this page are shown in pounds sterling (GBP). ${customerPriceLine} ${customerPriceBoundary} We confirm the total before you agree to paid work. If you pay from an account in another currency, your payment provider may apply its own conversion rate or fees.`,
   },
   {
     q: "Is ProfileRelaunch available outside the UK?",

@@ -1,10 +1,12 @@
 /**
- * Proposal for keeping the five advertised prices as final customer amounts.
+ * The five advertised prices are the final customer amounts.
  *
  * The catalogue seed stays `UNCONFIRMED`. Offering still stops until the
- * existing purchasing-establishment and tax eligibility checks pass. This
- * module does not set a tax rate, record a customer tax identifier, change a
- * price, or apply a migration.
+ * existing purchasing-establishment and tax eligibility checks pass. The
+ * database rule is source-only in
+ * `20261021210000_gross_customer_price_v1.sql`. This module does not set a
+ * tax rate, record a customer tax identifier, change a price, or apply that
+ * migration to DEV or Production.
  */
 import { catalogueSeed } from "../catalogue-seed"
 import type { TaxBehaviour } from "../money"
@@ -26,9 +28,11 @@ export const grossAdvertisedPrices = {
  * catalogue seed and still blocks an offer.
  */
 export const grossPriceTaxProposal = {
-  status: "proposal",
+  status: "source_only",
   applied: false,
-  migration: false,
+  migration: "20261021210000_gross_customer_price_v1.sql",
+  appliedToDev: false,
+  appliedToProduction: false,
   productionChange: false,
   stripeCharge: false,
   priceChange: false,

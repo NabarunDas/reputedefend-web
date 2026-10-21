@@ -4,6 +4,7 @@
  */
 import { formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
 import { formatMoney } from "../../../../../lib/money"
+import { customerFacingTaxNote } from "../../../../../lib/pricing"
 import type { ObligationState, PaymentAction, PaymentObligation, PaymentOrder, PaymentTax } from "./parse"
 
 export function moneyLabel(minor: number, currency: string): string {
@@ -11,9 +12,7 @@ export function moneyLabel(minor: number, currency: string): string {
 }
 
 export function taxNote(behaviour: PaymentTax): string {
-  if (behaviour === "INCLUSIVE") return "Tax is included in this amount."
-  if (behaviour === "EXCLUSIVE") return "Tax is shown separately."
-  return "Tax does not apply."
+  return customerFacingTaxNote(behaviour)
 }
 
 export function obligationHeadline(kind: PaymentObligation["kind"], state: ObligationState): string {

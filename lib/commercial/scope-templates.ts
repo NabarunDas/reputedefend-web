@@ -6,9 +6,9 @@
  * `quote_versions.scope_text` and `quote_versions.exclusions_text`. A later
  * edit to this module does not rewrite a quote that has already been saved.
  */
-import { pricingGroups, pricingNote } from "../pricing"
+import { customerPriceBoundary, customerPriceLine, pricingGroups, pricingNote } from "../pricing"
 
-export const SCOPE_EXCLUSIONS_TEMPLATE_VERSION = "SCOPE-2026-10-21.2"
+export const SCOPE_EXCLUSIONS_TEMPLATE_VERSION = "SCOPE-2026-10-21.3"
 
 export const scopeServiceCodes = [
   "GUIDED_RELAUNCH",
@@ -52,11 +52,14 @@ const guidedDelivery = "ProfileRelaunch prepares the work and the customer submi
 const managedDelivery =
   "ProfileRelaunch carries out the authorised permitted work, subject to the applicable success-fee terms."
 
-/** Paid-service agreement, section 12. VAT is not added, and the price is not described as a VAT charge. */
+/**
+ * Paid-service agreement, section 12. This stays in the frozen agreement.
+ * It is not copied into marketing or into the standard quote wording.
+ */
 export const agreementTaxBoundary =
   "We are not registered for VAT. We do not add VAT while that remains the case. This is not a statement that a supply is zero-rated or exempt."
 
-export const finalCustomerPrice = "The price on this quote is the final customer price. No tax is added on top."
+export const finalCustomerPrice = `${customerPriceLine} ${customerPriceBoundary}`
 
 /**
  * Server-owned quote text. These sentences are copied so the standard wording
@@ -130,31 +133,31 @@ const templates: Record<ScopeServiceCode, { scope: string; exclusions: string }>
     scope: withVersion(
       `${guidedRelaunch} The final customer price is £99 upfront. ${guidedDelivery} ${publishedGuidedLine} ${publishedGuidedCopy} ${guidedFee} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared profile work to Google. This quote does not include Managed case work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_RELAUNCH} ${preservedPaymentTiming.UPFRONT} ${agreementTaxBoundary}`,
+    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared profile work to Google. This quote does not include Managed case work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_RELAUNCH} ${preservedPaymentTiming.UPFRONT}`,
   },
   MANAGED_RELAUNCH: {
     scope: withVersion(
       `${managedRelaunch} The final customer price is £299, payable only upon the contractually defined and verified successful restoration outcome, with no upfront service fee. ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery} ${managedRestoration} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_RELAUNCH} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring. ${agreementTaxBoundary}`,
+    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_RELAUNCH} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring.`,
   },
   GUIDED_REVIEW: {
     scope: withVersion(
       `${guidedReview} The final customer price is £59 upfront. ${guidedDelivery} ${publishedGuidedLine} ${publishedGuidedCopy} ${guidedFee} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared review work to Google. This quote does not include Managed removal work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_REVIEW} ${preservedPaymentTiming.UPFRONT} ${agreementTaxBoundary}`,
+    exclusions: `${pricingNote} ProfileRelaunch does not submit the prepared review work to Google. This quote does not include Managed removal work, a success fee, or Relaunch Guard monitoring. ${preservedSuccessDefinition.GUIDED_REVIEW} ${preservedPaymentTiming.UPFRONT}`,
   },
   MANAGED_REVIEW: {
     scope: withVersion(
       `${managedReview} The final customer price is £149, payable only on the contractually defined and verified successful removal, with no upfront service fee. ${publishedManagedLine} ${publishedManagedCopy} ${managedDelivery} ${managedRemoval} ${finalCustomerPrice}`,
     ),
-    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_REVIEW} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring. ${agreementTaxBoundary}`,
+    exclusions: `${pricingNote} ${preservedSuccessDefinition.MANAGED_REVIEW} ${preservedPaymentTiming.SUCCESS_FEE} ${managedNoAdvance} A pending outcome is not invoiced as success. This quote does not include Guided preparation for the customer to submit, or Relaunch Guard monitoring.`,
   },
   RELAUNCH_GUARD: {
     scope: withVersion(
       `Relaunch Guard. The final customer price is ${guard.price} per month per location. ${guard.name}. ${publishedGuardLead} ${publishedGuardPoints.join(". ")}. ${guardStart} ${finalCustomerPrice}`,
     ),
-    exclusions: `${publishedGuardBoundary} ${pricingNote} ${preservedSuccessDefinition.RELAUNCH_GUARD} ${preservedPaymentTiming.RECURRING_MONTHLY} ${agreementTaxBoundary}`,
+    exclusions: `${publishedGuardBoundary} ${pricingNote} ${preservedSuccessDefinition.RELAUNCH_GUARD} ${preservedPaymentTiming.RECURRING_MONTHLY}`,
   },
 }
 

@@ -1,9 +1,17 @@
 BEGIN;
 
 -- DEV-MAIL-01 Phase B. Claims one SEND_EMAIL job for an authenticated Admin.
--- It does not alter job_promote_outbox_v1 or job_claim_batch_v1, and it does
--- not update any communication row. Source only until it is applied to the
--- DEV database. Do not apply it to Production.
+-- This function belongs to the shared canonical chain so DEV and Production
+-- can later carry the same schema. Applying the chain to Production creates
+-- the function and does not enable mail, the scheduled worker, a route, or a
+-- communication change. EXECUTE is limited to service_role. The Admin route
+-- calls it only on the develop Preview pinned to the DEV Supabase project.
+-- A same-key replay returns the stored result without a lease. An evidence
+-- request is claimed only when plain text and HTML each contain exactly one
+-- upload URL for the supplied customer portal and the stored action id.
+-- It does not alter the batch promote or batch claim functions.
+-- Source only until an independent review applies it to DEV. Do not apply it
+-- to Production as part of this change.
 
 CREATE FUNCTION public.admin_dev_send_email_claim_v1(
   p_token text,
@@ -24,8 +32,11 @@ DECLARE
   current_status text;
   v_key text;
   comm public.communications;
-  upload text;
-  origin text;
+  expected text;
+  text_upload text;
+  html_upload text;
+  text_urls integer;
+  html_urls integer;
   outbox admin_private.job_outbox;
   row admin_private.jobs;
   token uuid;
@@ -60,13 +71,24 @@ BEGIN
     IF cached ? 'jobId' THEN
       SELECT j.status INTO current_status FROM admin_private.jobs j WHERE j.id = (cached->>'jobId')::uuid;
     END IF;
-    RETURN cached || jsonb_build_object('replay', true, 'currentJobStatus', current_status);
+    RETURN (cached - 'leaseToken')
+      || jsonb_build_object('replay', true, 'currentJobStatus', current_status)
+      || '{"leaseToken":null}'::jsonb;
   END IF;
 
   IF comm.template_key = 'EVIDENCE_REQUEST' THEN
-    upload := substring(comm.body_text from 'https://[A-Za-z0-9.-]+/action/[0-9a-f-]{36}');
-    origin := CASE WHEN upload IS NULL THEN NULL ELSE regexp_replace(upload, '/action/.*$', '') END;
-    IF origin IS NULL OR origin IS DISTINCT FROM coalesce(p_customer_origin, '')
+    expected := coalesce(p_customer_origin, '') || '/action/' || coalesce(comm.customer_action_id::text, '');
+    text_upload := substring(comm.body_text from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    html_upload := substring(coalesce(comm.body_html, '') from 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    SELECT count(*)::integer INTO text_urls
+      FROM regexp_matches(comm.body_text, 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    SELECT count(*)::integer INTO html_urls
+      FROM regexp_matches(coalesce(comm.body_html, ''), 'https://[A-Za-z0-9.-]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    IF comm.body_html IS NULL
+      OR text_urls IS DISTINCT FROM 1
+      OR html_urls IS DISTINCT FROM 1
+      OR text_upload IS DISTINCT FROM expected
+      OR html_upload IS DISTINCT FROM expected
       OR position('#t=' in comm.body_text) > 0
       OR position('#t=' in coalesce(comm.body_html, '')) > 0
     THEN
@@ -133,6 +155,16 @@ BEGIN
   END IF;
   IF row.status = 'RUNNING' AND row.lease_expires_at IS NOT NULL AND row.lease_expires_at >= now() THEN
     RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased', 'jobId', row.id);
+  END IF;
+  IF comm.delivery_status IN ('PROVIDER_ACCEPTED', 'DELIVERED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN
+    result := jsonb_build_object('status', 'denied', 'reason', 'already_processed', 'jobId', row.id, 'jobStatus', row.status);
+    INSERT INTO admin_private.job_command_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' OR comm.first_provider_attempt_at IS NOT NULL THEN
+    result := jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown', 'jobId', row.id, 'jobStatus', row.status);
+    INSERT INTO admin_private.job_command_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
   END IF;
   IF row.status IN ('PENDING', 'RETRY') AND row.scheduled_at > now() THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_ready', 'jobId', row.id);

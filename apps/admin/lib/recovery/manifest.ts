@@ -740,8 +740,10 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "customer terminal outcome", probe: "public.customer_portal_case_v1" },
   },
   {
-    // DEV-MAIL-01 Phase B. Repository only. Apply to the DEV project after
-    // review. Do not apply it to Production and do not replay it.
+    // DEV-MAIL-01 Phase B. Additive function on the shared canonical chain.
+    // Repository only. Apply to the DEV project after review. A later apply
+    // to Production creates the function and does not enable mail, the
+    // scheduled worker, or the develop route. Do not replay it.
     version: "20261021120000",
     filename: "20261021120000_dev_send_email_claim_v1.sql",
     step: "DEV-MAIL-01 Phase B DEV send email claim",

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { sessionCookie } from "@/lib/auth/config"
-import { devSendEmailCommand, fenceDevSendRpc, type DevSendClaim } from "./dev-send"
+import { devSendEmailCommand, fenceDevSendRpc, settleDevSendEmailClaim, type DevSendClaim } from "./dev-send"
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({
@@ -53,7 +53,7 @@ function req(body: unknown, headers: Record<string, string> = {}, url = `${origi
   })
 }
 
-function loaded(customerOrigin: string) {
+function loaded(customerOrigin: string, htmlOrigin = customerOrigin) {
   return {
     status: "success",
     lifecycle: "QUEUED",
@@ -63,7 +63,7 @@ function loaded(customerOrigin: string) {
     recipient: "alex@example.com",
     subject: "Evidence needed",
     bodyText: `Please upload at ${customerOrigin}/action/${actionId}`,
-    bodyHtml: null,
+    bodyHtml: `<p>Please upload at ${htmlOrigin}/action/${actionId}</p>`,
     templateKey: "EVIDENCE_REQUEST",
     customerActionId: actionId,
     customerOrigin,
@@ -163,10 +163,12 @@ describe("DEV queued email command", () => {
     expect(body).toEqual({ message: "The queued email was submitted to the email provider." })
     expect(JSON.stringify(body)).not.toMatch(new RegExp(`${resendKey}|${linkSecret}|${session}|alex@example.com`))
     expect(send).toHaveBeenCalledTimes(1)
-    const sent = send.mock.calls[0] as unknown as [{ idempotencyKey: string; text: string }]
+    const sent = send.mock.calls[0] as unknown as [{ idempotencyKey: string; text: string; html: string }]
     expect(sent[0].idempotencyKey).toBe(`send-email:${communicationId}:v1`)
     expect(sent[0].text).toContain(`${portal}/action/${actionId}#t=`)
+    expect(sent[0].html).toContain(`${portal}/action/${actionId}#t=`)
     expect(sent[0].text).not.toContain("customer.profilerelaunch.com")
+    expect(sent[0].html).not.toContain("customer.profilerelaunch.com")
     expect(mocks.rpc.mock.calls[0]).toEqual(["admin_dev_send_email_claim_v1", {
       p_token: createHash("sha256").update(session).digest("hex"),
       p_request: key,
@@ -179,6 +181,50 @@ describe("DEV queued email command", () => {
       "job_claim_batch_v1",
       "guard_enqueue_daily_reconcile_v1",
     ]))
+  })
+
+  it("does not send when the HTML upload host differs from the plain-text DEV portal", async () => {
+    const calls: string[] = []
+    const send = vi.fn()
+    mocks.rpc.mockImplementation(async (name: string) => {
+      calls.push(name)
+      if (name === "admin_dev_send_email_claim_v1") return claim()
+      if (name === "communication_load_send_v1") return {
+        ...loaded(portal, "https://customer.profilerelaunch.com"),
+        bodyHtml: `<p>Please upload at ${portal}/action/${actionId}</p><p>https://customer.profilerelaunch.com/action/${actionId}</p>`,
+      }
+      if (name === "job_fail_v1") return { status: "success" }
+      throw new Error(`unexpected ${name}`)
+    })
+    const response = await devSendEmailCommand(req({ communicationId, confirmed: true }), { provider: { send } })
+    expect(response.status).toBe(409)
+    expect(send).not.toHaveBeenCalled()
+    expect(calls).toEqual(["admin_dev_send_email_claim_v1", "communication_load_send_v1", "job_fail_v1"])
+  })
+
+  it("does not send again when the same request is still running", async () => {
+    const send = vi.fn()
+    mocks.rpc.mockResolvedValue(claim({ replay: true, currentJobStatus: "RUNNING" }))
+    const running = await devSendEmailCommand(req({ communicationId, confirmed: true }), { provider: { send } })
+    expect(running.status).toBe(409)
+    expect(await running.json()).toEqual({ message: "That email is already being processed. This request will not send it again." })
+    expect(send).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(await settleDevSendEmailClaim({
+      rpc: { async rpc() { throw new Error("replay must not settle") } },
+      claim: claim({ replay: true, currentJobStatus: "RUNNING" }),
+      provider: { send },
+    })).toBe("unavailable")
+  })
+
+  it("does not send again when provider acceptance is already unknown", async () => {
+    const send = vi.fn()
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "acceptance_unknown" })
+    const unknown = await devSendEmailCommand(req({ communicationId, confirmed: true }), { provider: { send } })
+    expect(unknown.status).toBe(409)
+    expect(await unknown.json()).toEqual({ message: "Provider acceptance is unknown. The email was not sent again." })
+    expect(send).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 
   it("does not send again when the same request is replayed", async () => {

@@ -3,6 +3,7 @@ import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/mode
 import { devEvidenceUploadOriginAllowed } from "./dev-lane"
 import { acceptanceWindowExpired, communicationsSendEnabled } from "./gate"
 import { linkSecretForVersion, materializeUploadUrl, prepareCommunicationAccessLink } from "./link"
+import { evidenceBodiesSharePortal } from "./snapshot"
 import { resolveMailProvider, type OutgoingMailProvider } from "./mail"
 
 type LoadedSend = {
@@ -74,7 +75,7 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
       if (loaded.templateKey === "EVIDENCE_REQUEST") {
         const actionId = loaded.customerActionId
         const origin = loaded.customerOrigin
-        if (!devEvidenceUploadOriginAllowed(env, origin)) {
+        if (!devEvidenceUploadOriginAllowed(env, origin) || !evidenceBodiesSharePortal(text, html, origin, actionId)) {
           return { ok: false, retryable: false, error: "Secure upload link cannot be materialised" }
         }
         const version = integerVersion(loaded.linkKeyVersion)

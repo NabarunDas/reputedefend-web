@@ -58,6 +58,7 @@ export async function settleDevSendEmailClaim(input: {
   provider?: OutgoingMailProvider
 }): Promise<DevSendSettlement> {
   const claim = input.claim
+  if (claim.replay === true) return "unavailable"
   if (claim.jobType !== "SEND_EMAIL" || !claim.jobId || !claim.leaseToken || !claim.idempotencyKey || !claim.payload) {
     return "unavailable"
   }
@@ -103,6 +104,7 @@ function claimMessage(result: DevSendClaim): { message: string; status: number }
   if (result.status === "reauth_required") return { message: "Sign out and sign in with a new email code, then try again within five minutes.", status: 403 }
   if (result.status === "conflict") return { message: "That email is already being processed. Wait for the lease to end, then submit a new idempotency key.", status: 409 }
   if (result.reason === "origin") return { message: "The stored upload link is not the development customer portal. The email was not sent.", status: 403 }
+  if (result.reason === "acceptance_unknown") return { message: "Provider acceptance is unknown. The email was not sent again.", status: 409 }
   if (result.reason === "not_queued") return { message: "That communication is not a queued email.", status: 404 }
   if (result.reason === "already_processed") return { message: "That queued email was already processed.", status: 200 }
   if (result.reason === "dead_letter") return { message: "That email job is dead-lettered. It was not sent again.", status: 403 }
@@ -172,19 +174,17 @@ export async function devSendEmailCommand(
       p_confirmed: true,
       p_customer_origin: portal,
     })
-    const sameRequestStillRunning = claimed.replay === true
-      && claimed.status === "success"
-      && claimed.currentJobStatus === "RUNNING"
-    if (sameRequestStillRunning) {
-      const settled = await settleDevSendEmailClaim({ rpc: backend(), claim: claimed, provider })
-      if (settled === "succeeded") return reply("The queued email was submitted to the email provider.")
-      if (settled === "isolated") return reply("That job is not an approved email and was left unchanged.", 403)
-      return reply("The queued email was not accepted. It was not submitted again.", settled === "retry" ? 503 : 409)
-    }
-    if (claimed.status !== "success" || claimed.replay === true) {
-      if (claimed.replay === true && (claimed.currentJobStatus === "SUCCEEDED" || claimed.reason === "already_processed")) {
+    if (claimed.replay === true) {
+      if (claimed.currentJobStatus === "SUCCEEDED" || claimed.reason === "already_processed") {
         return reply("That queued email was already processed.")
       }
+      if (claimed.status === "success" && claimed.currentJobStatus === "RUNNING") {
+        return reply("That email is already being processed. This request will not send it again.", 409)
+      }
+      const mapped = claimMessage(claimed)
+      return reply(mapped.message, mapped.status)
+    }
+    if (claimed.status !== "success") {
       const mapped = claimMessage(claimed)
       return reply(mapped.message, mapped.status)
     }

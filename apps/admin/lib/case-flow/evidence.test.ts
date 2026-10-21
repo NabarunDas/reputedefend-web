@@ -4,6 +4,7 @@ import {
   contactAwaitingProvider,
   contactReachedCustomer,
   evidenceContactState,
+  linkedStoredUpload,
   evidenceContactStates,
   evidenceRequestViews,
   evidenceVersionState,
@@ -116,6 +117,29 @@ describe("evidence contact state", () => {
     for (const state of evidenceContactStates) {
       expect(contactReachedCustomer(state), state).toBe(state === "DELIVERED")
     }
+  })
+
+  it("treats a stored file on a live request as a response and ignores the rest", () => {
+    const request = { id: "req", status: "OPEN", dueAt: null, createdAt: "2026-01-01T00:00:00.000Z" }
+    const pending = version({ scanStatus: "PENDING", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })
+    expect(linkedStoredUpload({ requests: [request], versions: [pending] })).toBe(true)
+    expect(linkedStoredUpload({ requests: [request], versions: [] })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ evidenceRequestId: null, scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING" })],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [{ ...request, status: "CANCELLED" }],
+      versions: [pending],
+    })).toBe(false)
+    expect(linkedStoredUpload({
+      requests: [request],
+      versions: [version({ evidenceRequestId: "other" })],
+    })).toBe(false)
   })
 
   it("treats queued and provider-accepted as a wait on the provider", () => {

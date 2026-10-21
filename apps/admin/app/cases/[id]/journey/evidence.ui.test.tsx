@@ -163,13 +163,14 @@ function show(item: EvidenceCase, communications: CaseFlowCommunicationFact[] = 
   versions?: ReturnType<typeof projectionFrom>["evidence"]["versions"]
   packs?: PreparedPackCase
   stage?: CaseFlowFacts["technicalStage"]
+  events?: Parameters<typeof presentCaseJourney>[2]
 } = {}) {
   const projected = projectionFrom(item, communications, options.versions)
   if (options.stage) {
     projected.technicalStage = options.stage
     projected.allowedTransitions = transitions[options.stage] ?? []
   }
-  const journey = presentCaseJourney(projected, NOW)
+  const journey = presentCaseJourney(projected, NOW, options.events ?? [])
   const model = buildEvidenceWorkspaceModel({
     evidence: item,
     evidenceFacts: options.versions
@@ -203,7 +204,7 @@ function stepState(id: string): string | null {
 }
 
 describe("guided evidence review", () => {
-  it("reviews several requests before delivery is confirmed and leaves the document request unfinished", () => {
+  it("reviews several requests before delivery is confirmed once a linked file is on the request", () => {
     show(evidenceCase([
       request(OWNERSHIP),
       request(UTILITY),
@@ -212,7 +213,7 @@ describe("guided evidence review", () => {
       doc(UTILITY_DOC, [version(PENDING, { scanStatus: "PENDING", validationStatus: "PENDING", validatedAt: null, originalFilename: "utility-bill.pdf" })], UTILITY, "Premises bill"),
     ]))
     expect(screen.getByRole("heading", { name: "Evidence Review" })).toBeTruthy()
-    expect(stepState("REQUEST_DOCUMENTS")).not.toBe("COMPLETED")
+    expect(stepState("REQUEST_DOCUMENTS")).toBe("COMPLETED")
     expect(stepState("EVIDENCE_REVIEW")).not.toBe("LOCKED")
     expect(stepState("EVIDENCE_REVIEW")).not.toBe("COMPLETED")
     expect(screen.getByRole("heading", { name: "Proof of ownership" })).toBeTruthy()
@@ -229,6 +230,43 @@ describe("guided evidence review", () => {
     expect(screen.queryByRole("heading", { name: "Prepared submission pack" })).toBeNull()
     expect(screen.queryByRole("heading", { name: "Create request" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull()
+  })
+
+  it("checks a pending scan during initial review and does not accept it", () => {
+    show(evidenceCase(
+      [request(OWNERSHIP)],
+      [doc(OWNERSHIP_DOC, [version(PENDING, {
+        scanStatus: "PENDING",
+        validationStatus: "PENDING",
+        validatedAt: null,
+        originalFilename: "form.pdf",
+        submissionSource: "CUSTOMER",
+      })], OWNERSHIP, "Ownership letter")],
+    ), [message()], {
+      stage: "INITIAL_REVIEW",
+      events: [
+        { event: "INTAKE_REVIEW", createdAt: PAST, details: { outcome: "REVIEWED", nextAction: "" } },
+        {
+          event: "BUSINESS_VERIFICATION",
+          createdAt: PAST,
+          details: {
+            outcome: "PRELIMINARY_COMPLETE",
+            source: "Public listing and the enquiry",
+            listing: "ACCESSIBLE",
+            website: "PRESENT",
+            discrepancy: false,
+            reason: "Name, country and the public listing were compared.",
+          },
+        },
+      ],
+    })
+    expect(stepState("REQUEST_DOCUMENTS")).toBe("COMPLETED")
+    expect(stepState("EVIDENCE_REVIEW")).not.toBe("LOCKED")
+    expect(stepState("EVIDENCE_REVIEW")).not.toBe("COMPLETED")
+    expect(screen.getByRole("button", { name: "Refresh scan status for Ownership letter, version 1" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
+    expect(screen.getByRole("button", { name: "View Ownership letter, version 1" })).toBeDisabled()
+    expect(document.body.textContent).not.toMatch(/recorded delivery status of DELIVERED/)
   })
 
   it("keeps an accepted file short of fulfilment", () => {

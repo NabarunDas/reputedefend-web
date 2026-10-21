@@ -127,6 +127,25 @@ export function contactAwaitingProvider(state: EvidenceContactState): boolean {
   return state === "QUEUED" || state === "PROVIDER_ACCEPTED"
 }
 
+/**
+ * A stored file tied to a live evidence request.
+ *
+ * The upload is the response. Provider acceptance is not, and this does not
+ * read or write a delivery status. A pending upload, a failed upload, a file
+ * with no request, and a file whose request was cancelled are not a response.
+ * Scan, validation and Admin acceptance stay on the evidence review.
+ */
+export function linkedStoredUpload(evidence: CaseFlowEvidenceFact): boolean {
+  const live = new Set(
+    evidence.requests.filter(request => request.status !== "CANCELLED").map(request => request.id),
+  )
+  return evidence.versions.some(version =>
+    version.uploadStatus === "UPLOADED"
+    && version.evidenceRequestId !== null
+    && live.has(version.evidenceRequestId),
+  )
+}
+
 export const evidenceRequestStates = [
   "OPEN_NOT_STARTED",
   "OPEN_IN_PROGRESS",

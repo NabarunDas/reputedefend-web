@@ -323,12 +323,107 @@ describe("journey status from authoritative records", () => {
       evidence: { requests: [request()], versions: [upload()] },
       communications: [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" }],
     })
-    expect(step(journey, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(journey, "REQUEST_DOCUMENTS").state).toBe("COMPLETED")
+    expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).toMatch(/does not record the email as delivered/)
+    expect(step(journey, "REQUEST_DOCUMENTS").known.join(" ")).not.toMatch(/recorded delivery status of DELIVERED/)
     expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("LOCKED")
     expect(step(journey, "EVIDENCE_REVIEW").state).not.toBe("COMPLETED")
     expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).toMatch(/reviewed before email delivery is confirmed/)
     expect(step(journey, "EVIDENCE_REVIEW").known.join(" ")).not.toMatch(/recorded delivery status of DELIVERED/)
-    expect(completed(journey)).toEqual([])
+    expect(completed(journey)).toEqual(["REQUEST_DOCUMENTS"])
+  })
+
+  it("opens evidence review from a linked upload during initial review and evidence collection", () => {
+    for (const technicalStage of ["INITIAL_REVIEW", "EVIDENCE_COLLECTION"] as const) {
+      const events = technicalStage === "INITIAL_REVIEW" ? [intake("REVIEWED"), screening()] : []
+      const providerAccepted = [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" as const }]
+      const opened = show({
+        technicalStage,
+        evidence: {
+          requests: [request()],
+          versions: [upload({ scanStatus: "PENDING", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
+        },
+        communications: providerAccepted,
+      }, events)
+      expect(step(opened, "REQUEST_DOCUMENTS").state, technicalStage).toBe("COMPLETED")
+      expect(step(opened, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).toMatch(/does not record the email as delivered/)
+      expect(step(opened, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).toMatch(/does not accept the file/)
+      expect(step(opened, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).not.toMatch(/recorded delivery status of DELIVERED/)
+      expect(step(opened, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("LOCKED")
+      expect(step(opened, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("COMPLETED")
+      expect(step(opened, "EVIDENCE_REVIEW").known.join(" "), technicalStage).toMatch(/scan can be checked/)
+      expect(step(opened, "EVIDENCE_REVIEW").known.join(" "), technicalStage).toMatch(/not acceptance/)
+
+      const waiting = show({
+        technicalStage,
+        evidence: { requests: [request()], versions: [] },
+        communications: providerAccepted,
+      }, events)
+      expect(step(waiting, "REQUEST_DOCUMENTS").state, technicalStage).toBe("WAITING")
+      expect(step(waiting, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).toMatch(/not delivery/)
+      expect(step(waiting, "REQUEST_DOCUMENTS").known.join(" "), technicalStage).not.toMatch(/recorded delivery status of DELIVERED/)
+      expect(step(waiting, "EVIDENCE_REVIEW").state, technicalStage).toBe("LOCKED")
+
+      const threatened = show({
+        technicalStage,
+        evidence: {
+          requests: [request()],
+          versions: [upload({ scanStatus: "THREATS_FOUND", validationStatus: "PENDING", reviewStatus: "UNREVIEWED" })],
+        },
+        communications: providerAccepted,
+      }, events)
+      expect(step(threatened, "EVIDENCE_REVIEW").state, technicalStage).toBe("NEEDS_ATTENTION")
+      expect(step(threatened, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("COMPLETED")
+      expect(step(threatened, "EVIDENCE_REVIEW").known.join(" "), technicalStage).toMatch(/blocks use of the affected file/)
+
+      const invalid = show({
+        technicalStage,
+        evidence: {
+          requests: [request()],
+          versions: [upload({ scanStatus: "NO_THREATS_FOUND", validationStatus: "INVALID", reviewStatus: "UNREVIEWED" })],
+        },
+        communications: providerAccepted,
+      }, events)
+      expect(step(invalid, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("LOCKED")
+      expect(step(invalid, "EVIDENCE_REVIEW").state, technicalStage).not.toBe("COMPLETED")
+      expect(step(invalid, "EVIDENCE_REVIEW").state, technicalStage).toBe("NEEDS_ATTENTION")
+    }
+  })
+
+  it("does not treat an unlinked or unfinished upload as the customer's response", () => {
+    const providerAccepted = [{ ...delivered(), deliveryStatus: "PROVIDER_ACCEPTED" as const }]
+    const unlinked = show({
+      technicalStage: "INITIAL_REVIEW",
+      evidence: {
+        requests: [request()],
+        versions: [upload({ evidenceRequestId: null, scanStatus: "PENDING", validationStatus: "PENDING" })],
+      },
+      communications: providerAccepted,
+    }, [intake("REVIEWED"), screening()])
+    expect(step(unlinked, "REQUEST_DOCUMENTS").state).toBe("WAITING")
+    expect(step(unlinked, "EVIDENCE_REVIEW").state).toBe("LOCKED")
+
+    const unfinished = show({
+      technicalStage: "INITIAL_REVIEW",
+      evidence: {
+        requests: [request()],
+        versions: [upload({ uploadStatus: "PENDING_UPLOAD", scanStatus: "PENDING", validationStatus: "PENDING" })],
+      },
+      communications: providerAccepted,
+    }, [intake("REVIEWED"), screening()])
+    expect(step(unfinished, "REQUEST_DOCUMENTS").state).toBe("WAITING")
+    expect(step(unfinished, "EVIDENCE_REVIEW").state).toBe("LOCKED")
+
+    const collected = show({
+      technicalStage: "EVIDENCE_COLLECTION",
+      evidence: {
+        requests: [request()],
+        versions: [upload({ evidenceRequestId: "someone-else", scanStatus: "PENDING", validationStatus: "PENDING" })],
+      },
+      communications: providerAccepted,
+    })
+    expect(step(collected, "REQUEST_DOCUMENTS").state).not.toBe("COMPLETED")
+    expect(step(collected, "EVIDENCE_REVIEW").state).toBe("LOCKED")
   })
 
   it("returns a rejected file to the evidence loop and keeps an outstanding threat blocked", () => {

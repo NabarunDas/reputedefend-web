@@ -100,13 +100,13 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
       "queued, provider-accepted and delivered statuses",
     ],
     completionEvidence:
-      "An evidence request exists and the newest evidence-request message is recorded as DELIVERED. A request record, a draft, a reviewed draft, a queued message, or provider acceptance is not delivery. A future decision that no documents are required is not in this projection, so an empty request list is not completion.",
+      "An evidence request exists and either the newest evidence-request message is recorded as DELIVERED, or a stored file is linked to a live evidence request. A request record, a draft, a reviewed draft, a queued message, or provider acceptance is not delivery and is not that file. The linked file does not record a DELIVERED status and does not accept the file. A future decision that no documents are required is not in this projection, so an empty request list is not completion.",
     applicability: "UNIVERSAL",
     unsupported:
       "This step can save an evidence requirement and draft or review the evidence-request message through the existing commands. It does not send email, queue a worker, or record that no documents are required. An empty checklist is not that decision.",
     laterWork: "ADMIN-JOURNEY-03",
     unlocksNext:
-      "Confirmed delivery shows the customer was reached. It does not finish evidence review, and a customer upload can be reviewed before that confirmation arrives. Provider acceptance does not count as delivery. A no-documents decision stays unknown until ADMIN-JOURNEY-03 records it.",
+      "Confirmed delivery shows the customer was reached. A stored file linked to a live request also shows a response is on file, so evidence review can open while delivery is still unconfirmed. Neither one finishes evidence review. Provider acceptance does not count as delivery and does not invent a DELIVERED status. A no-documents decision stays unknown until ADMIN-JOURNEY-03 records it.",
   },
   {
     id: "EVIDENCE_REVIEW",

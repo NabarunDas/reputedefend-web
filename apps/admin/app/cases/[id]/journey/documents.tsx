@@ -129,7 +129,8 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   const dirty = nextSubject.trim() !== savedSubject.trim() || nextMessage.trim() !== savedProse.trim()
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const documentTitle = requirementCoverage(documents).included?.title ?? null
-  const approvedUnsent = reviewed && message.delivery !== "Delivered" && message.delivery !== "Accepted by email provider"
+  const providerAccepted = message.delivery.startsWith("Accepted by email provider")
+  const approvedUnsent = reviewed && message.delivery !== "Delivered" && !providerAccepted
   const editingPreview = (message?.templateVersion ?? 0) >= 3 && parts.uploadUrl
     ? brandStoredEvidenceEmail({
       subject: nextSubject,
@@ -166,11 +167,11 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   }
   return <section aria-labelledby="journey-email-heading">
     <h3 id="journey-email-heading">{approvedUnsent ? "Approved — Not sent" : draft ? "Email draft" : reviewed ? "Approved email" : "Evidence-request email"}</h3>
-    <p>{draft ? "This is a draft. It has not been approved, and it has not been sent." : approvedUnsent ? "The customer has not been sent this email." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
+    <p>{draft ? "This is a draft. It has not been approved, and it has not been sent." : approvedUnsent ? "The customer has not been sent this email." : providerAccepted ? "Accepted by email provider. Delivery is not confirmed." : `${lifecycleLabel(message.lifecycle)}. ${message.delivery}.`}</p>
     {failed && <p>This email was not delivered. This page does not send it again.</p>}
-    {message.lifecycle === "QUEUED" && <p>This email is waiting. This page does not send another copy.</p>}
+    {message.lifecycle === "QUEUED" && !providerAccepted && <p>This email is waiting. This page does not send another copy.</p>}
     {message.delivery === "Delivered" && <p>Delivery is recorded.</p>}
-    {message.delivery === "Accepted by email provider" && <p>The email provider accepted the message. That does not confirm the customer received it.</p>}
+    {providerAccepted && <p>The email provider accepted the message. That does not confirm the customer received it. This page does not send another copy.</p>}
     <EmailCoverage documents={documents} />
     {notice.text && <p className="notice">{notice.text}</p>}
     {command.done && <p className="notice">Reload this step to view the saved email. Approval remains blocked until the new version is read back.</p>}

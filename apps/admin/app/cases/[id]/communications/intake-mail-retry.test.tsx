@@ -60,6 +60,20 @@ describe("intake mail retry panel", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it("shows a preview-protection refusal without asking for another sign-in", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      message: "The marketing preview refused the server connection. Your Admin session is still signed in.",
+    }), { status: 503 }))
+    vi.stubGlobal("fetch", fetchMock)
+    show()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Send only these stored messages" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send the unsent intake emails" }))
+    await screen.findByText("The marketing preview refused the server connection. Your Admin session is still signed in.")
+    expect(screen.queryByText("Please sign in again.")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Send the unsent intake emails" })).toBeDisabled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it("does not leave the control ready after an acceptance-unknown result", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       message: "The stored messages were not accepted. A second send was not started.",

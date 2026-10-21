@@ -77,6 +77,20 @@ describe("POST /api/staff/case-intake-mail", () => {
     expect(retry).toHaveBeenCalledWith({ caseId, publicRef })
   })
 
+  it("does not accept a Vercel OIDC header in place of the Admin session", async () => {
+    const retry = vi.fn(async () => ({ ok: true, receiptEmailStatus: "sent" }))
+    const verifySession = vi.fn(async () => true)
+    const POST = createStaffCaseIntakeMailHandler({ lane: () => true, verifySession, retry })
+    const denied = await POST(request({ caseId, publicRef }, {
+      authorization: "",
+      "x-vercel-trusted-oidc-idp-token": "preview.oidc.token-value",
+    }))
+    expect(denied.status).toBe(401)
+    await expect(denied.json()).resolves.toEqual({ ok: false })
+    expect(verifySession).not.toHaveBeenCalled()
+    expect(retry).not.toHaveBeenCalled()
+  })
+
   it("does not register the removed public route and does not use the public rate limiter", () => {
     const source = readFileSync(fileURLToPath(new URL("./route.ts", import.meta.url)), "utf8")
     expect(source).not.toContain("consumePublicRateLimit")

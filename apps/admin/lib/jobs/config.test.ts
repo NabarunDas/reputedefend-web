@@ -30,6 +30,24 @@ describe("job worker environment safety", () => {
     })).toMatchObject({ enabled: false, environment: "production" })
   })
 
+  it("keeps the scheduled worker off on the develop DEV mail lane", () => {
+    expect(jobWorkerConfig({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      CUSTOMER_ORIGIN: "https://profilerelaunch-customer-git-develop-clientcove.vercel.app",
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+      COMMUNICATIONS_SEND_ENABLED: "true",
+      JOB_PROVIDER_MODE: "production",
+      RESEND_API_KEY: "re_dev_placeholder",
+      COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+      JOB_WORKER_ENABLED: "true",
+      CRON_SECRET: "a".repeat(32),
+      JOB_WORKER_CADENCE_SECONDS: "86400",
+    })).toMatchObject({ enabled: false, environment: "preview", providerMode: "disabled" })
+  })
+
   it("never enables the worker outside production even when JOB_WORKER_ENABLED is true", () => {
     expect(jobWorkerConfig({
       JOB_WORKER_ENABLED: "true",

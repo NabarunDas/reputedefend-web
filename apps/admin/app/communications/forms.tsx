@@ -70,6 +70,45 @@ export function QueueCommunicationForm({ communicationId, version }: { communica
   return <SimpleCommandForm operation="queue" communicationId={communicationId} version={version} label="Queue for sending" busyLabel="Queuing…" confirm="Queue this reviewed communication. It will not send from this page." />
 }
 
+export function DevSendQueuedEmailForm({ communicationId }: { communicationId: string }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState("")
+  const [confirmed, setConfirmed] = useState(false)
+  const commandKey = useRef<string | null>(null)
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy || !confirmed) return
+    commandKey.current ||= crypto.randomUUID()
+    setBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/operations/dev-send-email", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": commandKey.current },
+        body: JSON.stringify({ communicationId, confirmed: true }),
+      })
+      const result = await response.json() as { message?: string }
+      setMessage(result.message || "")
+      if (response.ok) window.location.reload()
+      else commandKey.current = null
+    } catch {
+      setMessage("The queued email could not be processed. Reload the page before trying again.")
+      commandKey.current = null
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <form onSubmit={submit}>
+    <p className="muted">Processes this one queued email through the durable SEND_EMAIL job. It does not run payments, Guard, or Google jobs.</p>
+    <label className="checkbox">
+      <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+      {" "}Send this queued email
+    </label>
+    <button type="submit" disabled={busy || !confirmed}>{busy ? "Sending…" : "Process queued email"}</button>
+    {message && <p role="status">{message}</p>}
+  </form>
+}
+
 export function ResendDraftForm({ communicationId, caseId }: { communicationId: string; caseId: string }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")

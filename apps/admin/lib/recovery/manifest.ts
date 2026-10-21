@@ -15,7 +15,8 @@
  * `20261020210000` was independently applied to DEV on 20 October 2026.
  * Generated ledger version `20261020122920` was aligned to canonical
  * `20261020210000`. It is not applied to Production. Do not replay.
- * `pendingMigrations()` is empty. See
+ * `20261021120000` dev_send_email_claim_v1 is in the repository and has not
+ * been applied to DEV or Production. See
  * `docs/admin/dev-history-01.md`, `docs/admin/admin-journey-12a.md`,
  * `docs/admin/admin-journey-e2e-02.md`,
  * `docs/admin/admin-journey-e2e-03.md` and
@@ -738,6 +739,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "customer terminal outcome", probe: "public.customer_portal_case_v1" },
   },
+  {
+    // DEV-MAIL-01 Phase B. Additive function on the shared canonical chain.
+    // Repository only. Apply to the DEV project after review. A later apply
+    // to Production creates the function and does not enable mail, the
+    // scheduled worker, or the develop route. Do not replay it.
+    version: "20261021120000",
+    filename: "20261021120000_dev_send_email_claim_v1.sql",
+    step: "DEV-MAIL-01 Phase B DEV send email claim",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "DEV send email claim", probe: "public.admin_dev_send_email_claim_v1" },
+  },
 ]
 
 /**
@@ -749,8 +764,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * The newest repository migration marked `appliedToDev`. After E2E-04,
- * this is the verified DEV ledger head `20261020210000`. It matches
- * `migrationHead`. This is not the Production head.
+ * this is the verified DEV ledger head `20261020210000`.
+ * `20261021120000` is newer in the repository and has not been applied.
+ * This is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

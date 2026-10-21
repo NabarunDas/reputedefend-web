@@ -4,8 +4,9 @@ import { caseCommunicationsHref } from "@/lib/communications-workspace/model"
 import { loadCommunications } from "@/lib/communications/queries"
 import { deliveryLabel, lifecycleLabel, templateLabel } from "@/lib/communications/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
+import { devAdminOutgoingMailLane } from "@/lib/communications/dev-lane"
 import { communicationsSendEnabled, sendDisabledReason } from "@/lib/communications/gate"
-import { DraftCommunicationForm, QueueCommunicationForm, ResendDraftForm, ReviewCommunicationForm } from "./forms"
+import { DevSendQueuedEmailForm, DraftCommunicationForm, QueueCommunicationForm, ResendDraftForm, ReviewCommunicationForm } from "./forms"
 
 export const metadata = { title: "Communications" }
 
@@ -22,8 +23,12 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
   const caseId = typeof params.case === "string" ? params.case : null
   const data = await loadCommunications(caseId)
   const sendEnabled = communicationsSendEnabled()
+  const devMail = devAdminOutgoingMailLane()
+  const description = devMail
+    ? "Reviewed outbound customer email on the development preview. Queue keeps the approval record. Processing one queued email uses the durable SEND_EMAIL job and does not run payments, Guard, or Google jobs."
+    : "Reviewed outbound customer email. Provider acceptance is not delivery. Live sending is blocked until the production worker can run at an operationally acceptable cadence."
   return <section className="page">
-    <PageHeader title="Communications" description="Reviewed outbound customer email. Provider acceptance is not delivery. Live sending is blocked until the production worker can run at an operationally acceptable cadence." />
+    <PageHeader title="Communications" description={description} />
     <section className="panel">
       <h2>Draft</h2>
       <p className="muted">{sendDisabledReason()}</p>
@@ -62,6 +67,7 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
               {row.lifecycle === "DRAFT" && <ReviewCommunicationForm communicationId={row.id} version={row.version} />}
               {row.lifecycle === "REVIEWED" && sendEnabled && <QueueCommunicationForm communicationId={row.id} version={row.version} />}
               {row.lifecycle === "REVIEWED" && !sendEnabled && <p className="muted">Queueing is closed until live customer mail is enabled.</p>}
+              {row.lifecycle === "QUEUED" && devMail && sendEnabled && <DevSendQueuedEmailForm communicationId={row.id} />}
               {(row.deliveryStatus === "BOUNCED" || row.deliveryStatus === "COMPLAINED" || row.deliveryStatus === "SUPPRESSED" || row.deliveryStatus === "FAILED") && row.caseId && (
                 <ResendDraftForm communicationId={row.id} caseId={row.caseId} />
               )}

@@ -92,7 +92,7 @@ export const liveCapabilities: readonly LiveCapability[] = [
     enableFlags: ["COMMUNICATIONS_SEND_ENABLED"],
     credentials: ["RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "COMMUNICATIONS_LINK_SECRET", "COMMUNICATIONS_FROM_EMAIL"],
     codeLevelBlock:
-      "The gate also requires VERCEL_ENV=production, JOB_WORKER_ENABLED=true, provider mode production and a worker cadence of 300 seconds or less, so the current daily 0 4 * * * schedule cannot carry live mail.",
+      "On Production the gate also requires VERCEL_ENV=production, JOB_WORKER_ENABLED=true, provider mode production and a worker cadence of 300 seconds or less, so the current daily schedule cannot carry Production mail. A develop Preview pointed at the DEV Supabase project can open the same queue only when the DEV customer portal origin and DEV evidence bucket are configured. That lane does not enable the scheduled worker.",
     whyOff: "COMMUNICATIONS_SEND_ENABLED and JOB_WORKER_ENABLED are unset and the worker cadence is daily.",
   },
   {

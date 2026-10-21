@@ -1,4 +1,5 @@
 import "server-only"
+import { communicationsSendEnabled } from "./gate"
 import { canRegisterLiveProvider, resolveProviderMode, type EnvMap } from "../jobs/config"
 
 export type OutgoingMailMessage = {
@@ -89,9 +90,15 @@ export function mailFromAddress(env: EnvMap = process.env): string | null {
 export function resolveMailProvider(env: EnvMap = process.env): OutgoingMailProvider | "disabled" {
   const mode = resolveProviderMode(env)
   if (mode === "mock") return createIdempotentMailProvider()
+  const from = mailFromAddress(env)
+  const apiKey = env.RESEND_API_KEY
   if (mode === "production" && canRegisterLiveProvider(mode, env)) {
-    const from = mailFromAddress(env)
-    const apiKey = env.RESEND_API_KEY
+    if (!from || !apiKey) return "disabled"
+    return createResendMailProvider(apiKey, from)
+  }
+  // The scheduled provider mode stays disabled on Preview. The develop DEV
+  // lane still uses the same Resend adapter once its own gate is open.
+  if (mode !== "production" && communicationsSendEnabled(env)) {
     if (!from || !apiKey) return "disabled"
     return createResendMailProvider(apiKey, from)
   }

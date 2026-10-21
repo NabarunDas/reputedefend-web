@@ -93,6 +93,21 @@ describe("communications admin commands", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 
+  it("requires the development customer portal before drafting an evidence request on the DEV lane", async () => {
+    const branch = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", new URL(branch).hostname)
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com")
+    const response = await communicationsCommand(req({
+      operation: "draft", templateKey: "EVIDENCE_REQUEST", caseId, evidenceRequestId: key,
+    }, {}, branch))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ message: "The customer site origin must be the development customer portal." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("refuses a draft or a review when the preview settings are missing and does not send", async () => {
     vi.stubEnv("CUSTOMER_ORIGIN", "")
     const missingOrigin = await communicationsCommand(req({

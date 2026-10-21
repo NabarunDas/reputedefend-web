@@ -109,7 +109,7 @@ function draftRemaining(trustReady: boolean): JourneyQuoteRemaining {
   return {
     title: "What remains before offering",
     items: [
-      "A verified purchasing establishment, with genuine evidence of the legal payer, is required on the business record. The Google listing country is not that record. This page does not read that establishment, and a saved draft is not clearance to offer.",
+      "Record the purchasing establishment on this step. A verified record needs genuine payer evidence. The Google listing country is not that record. This page does not treat a saved note as verified, and a saved draft is not clearance to offer.",
       "Country and tax eligibility for that payer still has to clear on the offer command. Setting or reviewing the draft tax record does not pass that check.",
       trustReady
         ? "Customer email and business authority are recorded. An acceptance link, after an offer, still checks them again."

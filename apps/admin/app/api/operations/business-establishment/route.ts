@@ -1,3 +1,3 @@
-import { recordDevBusinessEstablishment } from "@/lib/commercial/establishment-command"
+import { recordBusinessEstablishment } from "@/lib/commercial/establishment-command"
 export const runtime="nodejs"
-export const POST=recordDevBusinessEstablishment
+export const POST=recordBusinessEstablishment

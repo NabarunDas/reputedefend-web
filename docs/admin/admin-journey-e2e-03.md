@@ -2,7 +2,7 @@
 
 Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 as canonical version `20261020150000`, after exact source-to-ledger SQL and ACL verification. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay.
 
-This file was applied to DEV as `20261020150000`. The current canonical DEV head is `20261021155147`. `20261020210000` remains applied. Production and AWS ApprovedMigrationHead stay `20261014170000`. DEV denies an early `approve_success_fee` without a not-null SQL exception.
+This file was applied to DEV as `20261020150000`. The current canonical DEV head is `20261021214813`. `20261021155147` remains applied. `20261020210000` remains applied. Production and AWS ApprovedMigrationHead stay `20261014170000`. DEV denies an early `approve_success_fee` without a not-null SQL exception.
 
 ## What changes
 

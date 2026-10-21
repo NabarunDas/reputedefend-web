@@ -21,8 +21,9 @@
  * Production. `20261021155147` communication_access_preliminary_evidence_v1
  * was applied to DEV once. The repository filename was aligned to that
  * ledger version. The SQL was not replayed and it is not applied to
- * Production. `20261021210000` gross_customer_price_v1 is repository source
- * and has not been applied to DEV or Production. See
+ * Production. `20261021214813` gross_customer_price_v1 was applied to DEV.
+ * The repository filename was aligned to that ledger version. The SQL was
+ * not replayed and it is not applied to Production. See
  * `docs/admin/dev-history-01.md`, `docs/admin/admin-journey-12a.md`,
  * `docs/admin/admin-journey-e2e-02.md`,
  * `docs/admin/admin-journey-e2e-03.md` and
@@ -780,12 +781,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     // COM-GROSS-01. New and repriced quote versions for the five published
     // services keep the customer total equal to the quoted subtotal.
     // Exclusive tax is rejected. Existing rows are not rewritten.
-    // Repository only. Do not apply to DEV or Production from this change.
-    version: "20261021210000",
-    filename: "20261021210000_gross_customer_price_v1.sql",
+    // Applied to DEV as ledger version 20261021214813. The repository
+    // filename was aligned to that version. The SQL was not replayed.
+    // Not applied to Production. Do not replay it.
+    version: "20261021214813",
+    filename: "20261021214813_gross_customer_price_v1.sql",
     step: "COM-GROSS-01 gross customer price",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "gross customer price", probe: "admin_private.enforce_gross_customer_price_v1" },
@@ -801,9 +804,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * The newest repository migration marked `appliedToDev`. After the
- * preliminary evidence statement was aligned, this is the verified DEV
- * ledger head `20261021155147`. `20261021210000` is newer in the repository
- * and has not been applied. This is not the Production head.
+ * gross-price filename was aligned, this is the verified DEV ledger head
+ * `20261021214813`. The SQL was not replayed. This is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

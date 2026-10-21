@@ -4,7 +4,7 @@ Status: acceptance record for the disposable Managed walks. The stage correction
 
 Environment used: PGlite, loading the repository migration chain, including the E2E-02 file, before its separate live DEV application. No connection was made to DEV (`rmzozuiamjcclvtgutgd`) or Production (`cxwwekdzkkjjbiyofrov`). No live Stripe charge, refund, invoice, Google submission, or outbound customer email was sent. Agreement PS-2026-10-14.2 was not edited. This exercise did not apply a migration to DEV or Production.
 
-The repository now records `20261021132018` as the applied DEV head and `20261014170000` as the Production head. `20261020210000` remains applied. This exercise did not re-read either live ledger.
+The repository now records `20261021155147` as the applied DEV head and `20261014170000` as the Production head. `20261020210000` remains applied. This exercise did not re-read either live ledger.
 
 ## How to read a result
 

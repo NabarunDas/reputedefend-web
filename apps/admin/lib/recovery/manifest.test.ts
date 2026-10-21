@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { readdirSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { readFileSync, readdirSync } from "node:fs"
 import { appliedMigrationHead, chainAfter, chainThrough, findMigration, manifestFilenames, manifestVersions, migrationChain, migrationHead, pendingMigrations } from "./manifest"
 import { logicalName, migrationVersion } from "./history"
 
@@ -17,7 +18,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261021132018_dev_send_email_claim_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261021155147_communication_access_preliminary_evidence_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(migrationHead.filename).toBe("20261021210000_gross_customer_price_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
@@ -34,9 +35,13 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261021180000_communication_access_preliminary_evidence_v1.sql",
       "20261021210000_gross_customer_price_v1.sql",
     ])
+    expect(findMigration("20261021155147_communication_access_preliminary_evidence_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261021155147_communication_access_preliminary_evidence_v1.sql")?.safeToReplay).toBe(false)
+    const evidenceSql = readFileSync(new URL("20261021155147_communication_access_preliminary_evidence_v1.sql", directory), "utf8")
+    expect(evidenceSql.length).toBe(14558)
+    expect(createHash("sha256").update(evidenceSql).digest("hex")).toBe("59b3a4aad059be2c488f51c0f9276f602993f70b0f8c36c9d387ed5f0573dbf9")
     expect(findMigration("20261021132018_dev_send_email_claim_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261021132018_dev_send_email_claim_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261020210000_admin_journey_e2e_04_customer_outcome_v1.sql")?.appliedToDev).toBe(true)

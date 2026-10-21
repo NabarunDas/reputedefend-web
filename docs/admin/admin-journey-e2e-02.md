@@ -2,7 +2,7 @@
 
 Status: independently reviewed and applied to DEV (`rmzozuiamjcclvtgutgd`) on 2026-10-20 at canonical version `20261020120000`, after exact source-to-ledger SQL and privilege verification. `appliedToDev: true`. Not applied to Production (`cxwwekdzkkjjbiyofrov`). Do not replay this or any earlier migration.
 
-This file was applied to DEV as `20261020120000`. The current canonical DEV head is `20261021132018`. `20261020210000` remains applied. Production and AWS ApprovedMigrationHead stay `20261014170000`.
+This file was applied to DEV as `20261020120000`. The current canonical DEV head is `20261021155147`. `20261020210000` remains applied. Production and AWS ApprovedMigrationHead stay `20261014170000`.
 
 ## What changes
 

@@ -56,7 +56,7 @@ describe("rebuilding the whole schema from zero", () => {
     // Production and AWS approved backup heads remain at SEC-08.
     expect(migrationHead.version).toBe("20261021210000")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261021132018")
+    expect(appliedMigrationHead.version).toBe("20261021155147")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

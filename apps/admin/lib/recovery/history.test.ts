@@ -7,7 +7,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
-// synthetic chain ends at the observed DEV ledger head 20261021214813.
+// synthetic chain ends at the observed DEV ledger head 20261022172455.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -29,12 +29,10 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261022124813_service_specific_agreements_v1.sql",
-    ])
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261021214813",
-      name: "gross_customer_price_v1",
+      version: "20261022172455",
+      name: "quote_offer_email_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })

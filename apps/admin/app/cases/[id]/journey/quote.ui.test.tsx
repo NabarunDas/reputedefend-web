@@ -14,7 +14,8 @@ import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { QuotePanel } from "./quote"
 import { CaseJourneyView } from "./view"
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
+const navigation = vi.hoisted(() => ({ refresh: vi.fn(), push: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }))
 vi.mock("next/link", () => ({
   default({ href, children, ...props }: { href: string; children: React.ReactNode } & Record<string, unknown>) {
     return <a href={href} {...props}>{children}</a>
@@ -178,7 +179,7 @@ function quoteItem(status = "DRAFT"): QuoteListItem {
   }
 }
 
-function show(source: CaseFlowFacts, quote: QuoteListItem | null) {
+function show(source: CaseFlowFacts, quote: QuoteListItem | null, developmentQuotationMail = false) {
   const journey = presentCaseJourney(source, NOW, [], {
     assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
   })
@@ -204,12 +205,14 @@ function show(source: CaseFlowFacts, quote: QuoteListItem | null) {
     version={3}
     documents={null}
     quote={journey.steps.find(step => step.id === "QUOTE_ACCEPTANCE")?.state === "LOCKED" ? null : panel}
+    developmentQuotationMail={developmentQuotationMail}
   />)
 }
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  navigation.refresh.mockClear()
 })
 
 describe("guided quote acceptance", () => {
@@ -343,5 +346,58 @@ describe("guided quote acceptance", () => {
     expect(screen.queryByRole("link", { name: "Open the business record" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Review the customer and business relationship" })).toBeNull()
     expect(screen.getByText("This case has no business record to open from here.")).toBeTruthy()
+  })
+
+  it("previews the quotation email and queues it only from the send button", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        message: "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered.",
+        lifecycle: "QUEUED",
+        deliveryStatus: "NONE",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: {
+        ...facts().authorization,
+        customerEmailVerified: true,
+        businessAuthorityVerified: true,
+      },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    const quote = quoteItem("OFFERED")
+    quote.currentVersion = { ...quote.currentVersion, taxBehaviour: "NOT_APPLICABLE" }
+    show(source, quote, true)
+    expect(screen.getByRole("button", { name: "Send quotation to customer" })).toBeTruthy()
+    expect(screen.getByText(/DEV_MAIL_ALLOWED_RECIPIENTS/)).toBeTruthy()
+    const frame = document.querySelector("iframe[title='Quotation email']")
+    expect(frame?.getAttribute("sandbox")).toBe("")
+    expect(frame?.getAttribute("srcdoc")).toContain("Review and accept quotation")
+    expect(frame?.getAttribute("srcdoc")).toContain("ProfileRelaunch")
+    expect(frame?.getAttribute("srcdoc")).not.toContain("#t=")
+    expect(frame?.getAttribute("srcdoc")).not.toContain("<script")
+    expect(frame?.getAttribute("srcdoc")).not.toContain("https://customer.example/action/")
+    expect(screen.getByRole("button", { name: "Review and accept quotation" })).toBeDisabled()
+    expect(screen.getByText("Copy a one-time link instead")).toBeTruthy()
+    expect(screen.getByText("Your ProfileRelaunch quotation Q-100")).toBeTruthy()
+    expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Recover the suspended profile/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/No Google submission from this quote/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/For your security, please never share passwords/)).toBeTruthy()
+    expect(screen.getByText(/Secure link added when you send/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Edit subject and introduction" }))
+    expect(screen.getByRole("textbox", { name: "Subject" })).toBeTruthy()
+    expect(screen.getByRole("textbox", { name: "Introduction" })).toBeTruthy()
+    fireEvent.submit(screen.getByRole("button", { name: "Send quotation to customer" }).closest("form")!)
+    expect(await screen.findByRole("status")).toHaveTextContent(/queued is not delivered/)
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(payload.operation).toBe("queue_quote_offer_email")
+    expect(payload.quoteId).toBe(QUOTE_ID)
+    expect(JSON.stringify(payload)).not.toContain("#t=")
+    expect(payload).not.toHaveProperty("secretHash")
+    expect(payload).not.toHaveProperty("recipient")
+    expect(navigation.refresh).not.toHaveBeenCalled()
   })
 })

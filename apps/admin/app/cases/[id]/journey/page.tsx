@@ -21,6 +21,7 @@ import { loadCaseCommunications } from "@/lib/communications/queries"
 import { judgeAssessment } from "@/lib/case-journey/assessment"
 import { loadCaseAssessment } from "@/lib/case-journey/assessment-command"
 import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
+import { devAdminOutgoingMailLane } from "@/lib/communications/dev-lane"
 import { buildJourneyDocuments } from "@/lib/case-journey/documents"
 import { buildJourneyIntake } from "@/lib/case-journey/intake"
 import { loadJourneyExtension } from "@/lib/case-journey/read"
@@ -190,6 +191,7 @@ export default async function CaseJourneyPage({
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
+    developmentQuotationMail={devAdminOutgoingMailLane()}
   />
 }
 

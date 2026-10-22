@@ -3,8 +3,11 @@ import type { EnvMap } from "../jobs/config"
 
 export const COMMUNICATION_ACCESS_KIND = "COMMUNICATION_ACCESS"
 const TOKEN_CONTEXT = "communication-access"
+const QUOTE_TOKEN_CONTEXT = "quote-acceptance"
 const ACTION_ID_NAMESPACE = "9c1e0a11-c0ff-5ee1-8a11-000000000011"
+const QUOTE_ACTION_ID_NAMESPACE = "9c1e0a11-c0ff-5ee1-8a11-000000000276"
 const ACTION_ID_NAME = "communication-access-action"
+const QUOTE_ACTION_ID_NAME = "quote-acceptance-action"
 
 export function linkSecret(env: EnvMap = process.env): string | null {
   const raw = env.COMMUNICATIONS_LINK_SECRET
@@ -36,14 +39,37 @@ export function communicationAccessTokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex")
 }
 
-export function deriveCommunicationActionId(requestId: string): string {
-  const hex = ACTION_ID_NAMESPACE.replace(/-/g, "")
-  const namespace = Buffer.from(hex, "hex")
-  const hash = createHash("sha1").update(namespace).update(`${ACTION_ID_NAME}:${requestId}`).digest()
+function actionIdFrom(namespaceHex: string, name: string, requestId: string): string {
+  const namespace = Buffer.from(namespaceHex.split("-").join(""), "hex")
+  const hash = createHash("sha1").update(namespace).update(`${name}:${requestId}`).digest()
   hash[6] = (hash[6] & 0x0f) | 0x50
   hash[8] = (hash[8] & 0x3f) | 0x80
   const id = hash.subarray(0, 16).toString("hex")
   return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`
+}
+
+export function deriveCommunicationActionId(requestId: string): string {
+  return actionIdFrom(ACTION_ID_NAMESPACE, ACTION_ID_NAME, requestId)
+}
+
+/** Deterministic quote-acceptance action. A different domain from communication access. */
+export function deriveQuoteAcceptanceActionId(requestId: string): string {
+  return actionIdFrom(QUOTE_ACTION_ID_NAMESPACE, QUOTE_ACTION_ID_NAME, requestId)
+}
+
+export function deriveQuoteAcceptanceToken(actionId: string, secret: string, version = 1): string {
+  return createHmac("sha256", secret).update(`${QUOTE_TOKEN_CONTEXT}:${actionId}:v${version}`).digest("hex")
+}
+
+export function prepareQuoteAcceptanceLink(
+  actionId: string,
+  env: EnvMap = process.env,
+  version = currentLinkKeyVersion(env),
+): { token: string; tokenHash: string; version: number } | null {
+  const secret = linkSecretForVersion(version, env)
+  if (!secret || !actionId) return null
+  const token = deriveQuoteAcceptanceToken(actionId, secret, version)
+  return { token, tokenHash: communicationAccessTokenHash(token), version }
 }
 
 export function prepareCommunicationAccessLink(

@@ -798,15 +798,30 @@ export const migrationChain: readonly MigrationEntry[] = [
     // as unapproved catalogue rows and adds the owner-approval function.
     // A new offer binds a service agreement only after that function runs.
     // The omnibus row and issued quotations are not rewritten.
-    // Not applied to DEV or Production. Do not apply it from this change.
+    // DEV-applied 22 October 2026 at ledger version 20261022124813.
+    // Production is not changed; never replay this version.
     version: "20261022124813",
     filename: "20261022124813_service_specific_agreements_v1.sql",
     step: "CUSTOMER-QUOTE-04 service-specific agreements",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "service-specific agreement approval", probe: "public.admin_record_owner_paid_service_agreement_approval_v1" },
+  },
+  {
+    // COMM-QUOTE-01. Queues a quotation email on the existing communications
+    // row and SEND_EMAIL outbox. The acceptance bearer is not stored.
+    // DEV-applied on 22 October 2026 at the canonical ledger version.
+    // Production is not changed; never replay this version.
+    version: "20261022172455",
+    filename: "20261022172455_quote_offer_email_v1.sql",
+    step: "COMM-QUOTE-01 quotation email",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "quotation email", probe: "public.admin_queue_quote_offer_email_v1" },
   },
 ]
 
@@ -818,10 +833,9 @@ export const migrationChain: readonly MigrationEntry[] = [
 export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
- * The newest repository migration marked `appliedToDev`. After the
- * gross-price filename was aligned, this is the verified DEV ledger head
- * `20261021214813`. The service-agreement migration after it is source only.
- * The SQL was not replayed. This is not the Production head.
+ * Newest DEV-applied migration is the verified DEV ledger head
+ * `20261022172455`. SQL is byte-for-byte identical to the reviewed source.
+ * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

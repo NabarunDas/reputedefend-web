@@ -34,7 +34,11 @@ export type JourneyQuoteRecord = {
   quoteVersionId: string
   actionId: string | null
   publicRef: string
+  caseReference: string | null
   serviceName: string
+  amountMinor: number
+  currency: string
+  paymentModel: string
   amountLabel: string
   tax: string
   taxBehaviour: string
@@ -173,7 +177,11 @@ export function buildJourneyQuotePanel(input: {
     quoteVersionId: matched.currentVersion.id,
     actionId: matched.action?.status === "OPEN" ? matched.action.id : null,
     publicRef: matched.publicRef,
+    caseReference: matched.caseReference,
     serviceName: matched.currentVersion.serviceName || serviceLabel(matched.currentVersion.serviceCode),
+    amountMinor: matched.currentVersion.totalAmountMinor,
+    currency: matched.currentVersion.currency,
+    paymentModel: matched.currentVersion.paymentModel,
     amountLabel: `${formatGbp(matched.currentVersion.totalAmountMinor)} ${matched.currentVersion.currency}`,
     tax: taxLabel(matched.currentVersion.taxBehaviour),
     taxBehaviour: matched.currentVersion.taxBehaviour,

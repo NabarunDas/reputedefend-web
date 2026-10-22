@@ -6,6 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import type { JobHandlerResult, JobRpc } from "../jobs/model"
 import { devAdminOutgoingMailLane, devCustomerPortalOrigin } from "./dev-lane"
+import type { EnvMap } from "../jobs/config"
 import { communicationsSendEnabled, sendDisabledReason } from "./gate"
 import { sendEmailHandler } from "./handler"
 import { resolveMailProvider, type OutgoingMailProvider } from "./mail"
@@ -56,6 +57,7 @@ export async function settleDevSendEmailClaim(input: {
   rpc: JobRpc
   claim: DevSendClaim
   provider?: OutgoingMailProvider
+  env?: EnvMap
 }): Promise<DevSendSettlement> {
   const claim = input.claim
   if (claim.replay === true) return "unavailable"
@@ -70,7 +72,7 @@ export async function settleDevSendEmailClaim(input: {
   })
   let result: JobHandlerResult
   try {
-    result = await sendEmailHandler(undefined, input.provider).execute({
+    result = await sendEmailHandler(input.env, input.provider).execute({
       idempotencyKey: claim.idempotencyKey,
       payload: claim.payload,
       rpc: fenceDevSendRpc(input.rpc),

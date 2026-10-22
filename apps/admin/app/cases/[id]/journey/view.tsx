@@ -104,6 +104,7 @@ export function CaseJourneyView({
   customerId = "",
   businessId = "",
   locationId = null,
+  developmentQuotationMail = false,
 }: {
   reference: string
   customer: string
@@ -126,6 +127,7 @@ export function CaseJourneyView({
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
   outcome?: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
   closure?: { caseDetail: CaseDetail; panel: JourneyClosurePanel } | null
+  developmentQuotationMail?: boolean
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -156,7 +158,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} developmentQuotationMail={developmentQuotationMail} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -205,6 +207,7 @@ function StepWorkspace({
   submission,
   outcome,
   closure,
+  developmentQuotationMail,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -227,6 +230,7 @@ function StepWorkspace({
   submission: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
   outcome: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
   closure: { caseDetail: CaseDetail; panel: JourneyClosurePanel } | null
+  developmentQuotationMail: boolean
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -277,6 +281,7 @@ function StepWorkspace({
       customerName={customer}
       businessName={business}
       listingCountry={brief.country}
+      developmentQuotationMail={developmentQuotationMail}
     />}
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}

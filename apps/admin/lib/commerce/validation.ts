@@ -79,6 +79,14 @@ export function quoteArgs(operation: QuoteOperation, body: Record<string, unknow
     if (!isUuid(body.quoteId) || typeof body.expiresAt !== "string") return null
     return { quoteId: body.quoteId, expiresAt: body.expiresAt }
   }
+  if (operation === "queue_quote_offer_email") {
+    if (!isUuid(body.quoteId)) return null
+    const subject = body.subject == null || body.subject === "" ? undefined : text(body.subject, 10, 200)
+    const introduction = body.introduction == null || body.introduction === "" ? undefined : text(body.introduction, 20, 4000)
+    if (body.subject != null && body.subject !== "" && !subject) return null
+    if (body.introduction != null && body.introduction !== "" && !introduction) return null
+    return { quoteId: body.quoteId, subject, introduction }
+  }
   if (operation === "revoke_action") {
     if (!isUuid(body.quoteId) || !isUuid(body.actionId) || !text(body.reason, 10, 2000)) return null
     return { quoteId: body.quoteId, actionId: body.actionId, reason: text(body.reason, 10, 2000) }

@@ -5,6 +5,7 @@ import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { LOST_QUOTE_LINK_NOTE } from "./model"
+import { queueQuoteOfferEmail } from "./quote-offer-email"
 import { catalogueArgs, isCatalogueOperation, isQuoteOperation, quoteArgs } from "./validation"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -142,6 +143,16 @@ export async function quoteCommand(request: NextRequest): Promise<NextResponse> 
     }
     const args = quoteArgs(operation, body as Record<string, unknown>)
     if (!args) return reply("Check the fields before saving.", 400)
+    if (operation === "queue_quote_offer_email" && "quoteId" in args && typeof args.quoteId === "string") {
+      return queueQuoteOfferEmail({
+        token: gated.token,
+        key: gated.key,
+        customerOrigin: gated.config.customerOrigin,
+        quoteId: args.quoteId,
+        subject: "subject" in args && typeof args.subject === "string" ? args.subject : undefined,
+        introduction: "introduction" in args && typeof args.introduction === "string" ? args.introduction : undefined,
+      })
+    }
     const issuesLink = operation === "create_quote_acceptance_action"
     if (issuesLink && !gated.config.customerOrigin) return reply("The customer site origin is not configured.", 503)
     const secret = issuesLink ? newToken() : ""

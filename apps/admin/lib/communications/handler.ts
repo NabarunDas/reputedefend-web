@@ -1,8 +1,8 @@
 import type { EnvMap } from "../jobs/config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
-import { devEvidenceUploadOriginAllowed } from "./dev-lane"
+import { devEvidenceUploadOriginAllowed, devQuoteRecipientAllowed } from "./dev-lane"
 import { acceptanceWindowExpired, communicationsSendEnabled } from "./gate"
-import { linkSecretForVersion, materializeUploadUrl, prepareCommunicationAccessLink } from "./link"
+import { linkSecretForVersion, materializeUploadUrl, prepareCommunicationAccessLink, prepareQuoteAcceptanceLink } from "./link"
 import { evidenceBodiesSharePortal } from "./snapshot"
 import { resolveMailProvider, type OutgoingMailProvider } from "./mail"
 
@@ -72,20 +72,27 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
       }
       let text = loaded.bodyText
       let html = loaded.bodyHtml
-      if (loaded.templateKey === "EVIDENCE_REQUEST") {
+      if (loaded.templateKey === "EVIDENCE_REQUEST" || loaded.templateKey === "QUOTE_OFFER") {
         const actionId = loaded.customerActionId
         const origin = loaded.customerOrigin
+        const quote = loaded.templateKey === "QUOTE_OFFER"
+        const linkError = quote ? "Secure acceptance link cannot be materialised" : "Secure upload link cannot be materialised"
         if (!devEvidenceUploadOriginAllowed(env, origin) || !evidenceBodiesSharePortal(text, html, origin, actionId)) {
-          return { ok: false, retryable: false, error: "Secure upload link cannot be materialised" }
+          return { ok: false, retryable: false, error: linkError }
+        }
+        if (quote && !devQuoteRecipientAllowed(env, loaded.recipient)) {
+          return { ok: false, retryable: false, error: "Recipient is not a development test mailbox" }
         }
         const version = integerVersion(loaded.linkKeyVersion)
-        const prepared = actionId && version !== null ? prepareCommunicationAccessLink(actionId, env, version) : null
+        const prepared = actionId && version !== null
+          ? (quote ? prepareQuoteAcceptanceLink(actionId, env, version) : prepareCommunicationAccessLink(actionId, env, version))
+          : null
         if (!actionId || !origin || version === null || !prepared || !linkSecretForVersion(version, env)) {
-          return { ok: false, retryable: false, error: "Secure upload link cannot be materialised" }
+          return { ok: false, retryable: false, error: linkError }
         }
         const nextText = materializeUploadUrl(text, actionId, origin, prepared.token)
         const nextHtml = html ? materializeUploadUrl(html, actionId, origin, prepared.token) : html
-        if (!nextText || (html && !nextHtml)) return { ok: false, retryable: false, error: "Secure upload link cannot be materialised" }
+        if (!nextText || (html && !nextHtml)) return { ok: false, retryable: false, error: linkError }
         text = nextText
         html = nextHtml
       }

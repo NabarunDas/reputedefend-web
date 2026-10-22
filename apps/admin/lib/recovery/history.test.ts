@@ -31,6 +31,7 @@ describe("the migration history validator", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261022124813_service_specific_agreements_v1.sql",
+      "20261022170000_quote_offer_email_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261021214813",

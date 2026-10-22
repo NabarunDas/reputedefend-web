@@ -20,7 +20,7 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261021214813_gross_customer_price_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261022124813_service_specific_agreements_v1.sql")
+    expect(migrationHead.filename).toBe("20261022170000_quote_offer_email_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -36,6 +36,7 @@ describe("the migration chain manifest", () => {
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261022124813_service_specific_agreements_v1.sql",
+      "20261022170000_quote_offer_email_v1.sql",
     ])
     const grossSql = readFileSync(new URL("20261021214813_gross_customer_price_v1.sql", directory), "utf8")
     expect(Buffer.byteLength(grossSql)).toBe(13652)
@@ -99,6 +100,7 @@ describe("the migration chain manifest", () => {
       "20261017145801",
       "20261017210826",
       "20261022124813",
+      "20261022170000",
     ])
   })
 

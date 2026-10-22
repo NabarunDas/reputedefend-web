@@ -7,6 +7,9 @@ import {
   linkSecretForVersion,
   materializeUploadUrl,
   prepareCommunicationAccessLink,
+  deriveQuoteAcceptanceActionId,
+  deriveQuoteAcceptanceToken,
+  prepareQuoteAcceptanceLink,
   snapshotUploadUrl,
 } from "./link"
 
@@ -54,5 +57,25 @@ describe("secure communication access links", () => {
       COMMUNICATIONS_LINK_SECRET: v2,
       COMMUNICATIONS_LINK_KEY_VERSION: "2",
     }, 1)).toBeNull()
+  })
+
+  it("keeps quotation acceptance in a separate domain from communication access", () => {
+    const requestId = "33333333-3333-4333-8333-333333333333"
+    const quoteAction = deriveQuoteAcceptanceActionId(requestId)
+    expect(quoteAction).toBe(deriveQuoteAcceptanceActionId(requestId))
+    expect(quoteAction).not.toBe(deriveCommunicationActionId(requestId))
+    const quoteToken = deriveQuoteAcceptanceToken(actionId, secret)
+    const evidenceToken = deriveCommunicationAccessToken(actionId, secret)
+    expect(quoteToken).not.toBe(evidenceToken)
+    expect(prepareQuoteAcceptanceLink(actionId, {})).toBeNull()
+    const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: secret })
+    expect(prepared?.token).toBe(quoteToken)
+    expect(prepared?.tokenHash).toBe(communicationAccessTokenHash(quoteToken))
+    const rotated = prepareQuoteAcceptanceLink(actionId, {
+      COMMUNICATIONS_LINK_SECRET: "rotated-link-secret-for-version-two-32b",
+      COMMUNICATIONS_LINK_KEY_VERSION: "2",
+      COMMUNICATIONS_LINK_SECRET_V1: secret,
+    }, 1)
+    expect(rotated?.token).toBe(quoteToken)
   })
 })

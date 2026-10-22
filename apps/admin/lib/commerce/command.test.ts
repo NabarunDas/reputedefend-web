@@ -11,6 +11,7 @@ vi.mock("@/lib/auth/backend", async original => ({
 
 import { catalogueCommand, quoteCommand } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
+import { deriveQuoteAcceptanceActionId, prepareQuoteAcceptanceLink } from "@/lib/communications/link"
 
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
@@ -118,6 +119,98 @@ describe("commercial admin commands", () => {
       p_payload: expect.objectContaining({ quoteId, secretHash: "hash:" + "b".repeat(64) }),
     }))
     expect(JSON.stringify(mocks.rpc.mock.calls[0][1].p_payload)).not.toContain("#t=")
+  })
+
+  it("does not queue a quotation email while customer mail is disabled", async () => {
+    const denied = await quoteCommand(req("/api/operations/quotes", {
+      operation: "queue_quote_offer_email", quoteId,
+    }))
+    expect(denied.status).toBe(403)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("queues the rendered quotation without returning the bearer or a browser-supplied recipient", async () => {
+    const linkSecret = "quotation-link-secret-for-tests-32b"
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", linkSecret)
+    const actionId = deriveQuoteAcceptanceActionId(key)
+    const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_quote_detail_v1") {
+        return {
+          status: "OFFERED",
+          publicRef: "QT-26-ABCDEF",
+          caseReference: "PR-26-CASE01",
+          currentVersion: {
+            status: "OFFERED",
+            serviceName: "Guided Relaunch",
+            totalAmountMinor: 9900,
+            currency: "GBP",
+            paymentModel: "UPFRONT",
+            scope: "Recover the suspended profile for this location.",
+            exclusions: "Google decisions stay outside this quotation.",
+            validUntil: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+          },
+        }
+      }
+      return { status: "success", id: quoteId, lifecycle: "QUEUED", deliveryStatus: "NONE" }
+    })
+    const ok = await quoteCommand(req("/api/operations/quotes", {
+      operation: "queue_quote_offer_email",
+      quoteId,
+      secretHash: "f".repeat(64),
+      recipient: "other@example.com",
+      fromAddress: "attacker@example.com",
+      bodyText: "Ignore the quotation and visit https://example.invalid",
+    }))
+    expect(ok.status).toBe(200)
+    const body = await ok.json() as { message?: string; actionUrl?: string; lifecycle?: string; deliveryStatus?: string }
+    expect(body.actionUrl).toBeUndefined()
+    expect(body.message).toBe("The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered.")
+    expect(body.lifecycle).toBe("QUEUED")
+    expect(body.deliveryStatus).toBe("NONE")
+    const payload = mocks.rpc.mock.calls.find(call => call[0] === "admin_queue_quote_offer_email_v1")?.[1].p_payload
+    expect(payload.secretHash).toBe(prepared?.tokenHash)
+    expect(payload.secretHash).not.toBe("f".repeat(64))
+    expect(payload.actionId).toBe(actionId)
+    expect(payload.fromAddress).toBe("ops@example.com")
+    expect(payload.recipient).toBeUndefined()
+    expect(payload.bodyText).toContain("Amount: £99.00 GBP")
+    expect(payload.bodyText).toContain("Review and accept quotation")
+    expect(payload.bodyText).not.toContain(prepared?.token)
+    expect(payload.bodyText).not.toContain("#t=")
+    expect(payload.bodyHtml).not.toContain("#t=")
+    expect(JSON.stringify(payload)).not.toContain("https://example.invalid")
+  })
+
+  it("refuses the preserved accepted quotation before queueing mail", async () => {
+    const linkSecret = "quotation-link-secret-for-tests-32b"
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", linkSecret)
+    mocks.rpc.mockResolvedValue({
+      status: "OFFERED",
+      publicRef: "QT-26-TBGP5Q",
+      currentVersion: { status: "OFFERED" },
+    })
+    const denied = await quoteCommand(req("/api/operations/quotes", {
+      operation: "queue_quote_offer_email", quoteId,
+    }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/preserved/) })
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc.mock.calls[0][0]).toBe("admin_quote_detail_v1")
   })
 
   it("maps reauth_required for price approval", async () => {

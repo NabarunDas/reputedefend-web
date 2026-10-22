@@ -808,6 +808,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "service-specific agreement approval", probe: "public.admin_record_owner_paid_service_agreement_approval_v1" },
   },
+  {
+    // COMM-QUOTE-01. Queues a quotation email on the existing communications
+    // row and SEND_EMAIL outbox. The acceptance bearer is not stored.
+    // Not applied to DEV or Production. Do not apply it from this change.
+    version: "20261022170000",
+    filename: "20261022170000_quote_offer_email_v1.sql",
+    step: "COMM-QUOTE-01 quotation email",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "quotation email", probe: "public.admin_queue_quote_offer_email_v1" },
+  },
 ]
 
 /**

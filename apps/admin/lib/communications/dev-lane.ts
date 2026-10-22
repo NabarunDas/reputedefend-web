@@ -43,9 +43,15 @@ export function devPreviewMailConfigured(env: EnvMap = process.env): boolean {
 }
 
 /**
- * On the develop DEV lane an evidence-request snapshot may only carry the
- * DEV customer portal. Every other lane keeps the origin already stored.
+ * On the develop DEV lane a quotation email may go only to a reserved test
+ * mailbox. Every other lane keeps the verified customer address.
  */
+export function devQuoteRecipientAllowed(env: EnvMap, recipient: string | null | undefined): boolean {
+  if (!devAdminOutgoingMailLane(env)) return true
+  const address = (recipient ?? "").trim().toLowerCase()
+  return address.endsWith("@example.com") && address.length >= 3 && address.length <= 254 && !address.includes(" ")
+}
+
 export function devEvidenceUploadOriginAllowed(env: EnvMap, origin: string | null | undefined): boolean {
   const url = (env.SUPABASE_URL ?? "").trim().replace(/\/$/, "")
   const team = branchTeam(env.VERCEL_BRANCH_URL)

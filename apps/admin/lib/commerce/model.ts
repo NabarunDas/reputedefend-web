@@ -7,6 +7,7 @@ export const catalogueOperations = ["create_price_version", "approve_price_versi
 export const quoteOperations = [
   "create_draft", "create_version", "set_draft_tax", "offer", "supersede", "cancel",
   "record_qualification", "create_quote_acceptance_action", "revoke_action",
+  "queue_quote_offer_email",
 ] as const
 export type CatalogueOperation = (typeof catalogueOperations)[number]
 export type QuoteOperation = (typeof quoteOperations)[number]

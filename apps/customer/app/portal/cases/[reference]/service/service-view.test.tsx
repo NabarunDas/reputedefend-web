@@ -401,8 +401,14 @@ describe("service and permissions", () => {
       }),
     })} />)
     const summary = document.querySelector(".quotation-summary")
-    expect(summary?.textContent).toContain("£99.00 is due after you accept this quotation and before work begins.")
+    expect(summary?.textContent).toContain("Payable after acceptance, before work starts")
+    expect(summary?.textContent).toContain("The quoted amount is payable later through the payment workflow. Accepting this quote does not charge a card and is not payment authorisation.")
+    expect(summary?.textContent?.split("The quoted amount is payable later through the payment workflow.").length).toBe(2)
+    expect(summary?.textContent).not.toContain("£99.00 is due after you accept this quotation")
     expect(summary?.textContent).toContain("We prepare the profile work.")
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Your part" })).toBeNull()
+    expect(screen.getAllByRole("heading", { name: "When you pay" })).toHaveLength(1)
     expect(summary?.textContent).not.toContain("£9.99")
     expect(summary?.textContent).not.toContain("£299")
     expect(summary?.textContent).not.toContain("No discount")
@@ -428,7 +434,7 @@ describe("service and permissions", () => {
         paymentTiming: "Pay £99.00 before work. A holding amount of £25 is not collected.",
       }),
     })} />)
-    expect(screen.getByText(/not a substitute for the scope and exclusions/)).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull()
     expect(screen.getByText(scope)).toBeTruthy()
     expect(screen.getByText(exclusions)).toBeTruthy()
     expect(screen.getByText(/holding amount of £25/)).toBeTruthy()

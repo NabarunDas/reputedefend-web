@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { agreementBlocks } from "../../../../lib/commercial/agreement-render"
-import { AgreementPdfError, buildAgreementPdf } from "../../../../lib/commercial/agreement-pdf"
+import { AGREEMENT_PDF_UNAVAILABLE, AgreementPdfError, buildAgreementPdf } from "../../../../lib/commercial/agreement-pdf"
 
 type Heading = "h2" | "h3"
 
@@ -47,7 +47,8 @@ export function PaidServiceAgreementDocument({
           setPdfError(null)
         } catch (error) {
           if (error instanceof AgreementPdfError) {
-            setPdfError(error.message)
+            console.error("Agreement PDF was not created.", error.codePoint)
+            setPdfError(AGREEMENT_PDF_UNAVAILABLE)
             return
           }
           throw error

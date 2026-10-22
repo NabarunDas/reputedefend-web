@@ -100,13 +100,16 @@ describe("proposed service agreements", () => {
     expect(guard).not.toMatch(/£99|£59|£299|£149/)
   })
 
-  it("documents a later Guided reissue that leaves QT-26-H6JSMB offered", () => {
+  it("documents a later Guided reissue that ends QT-26-H6JSMB before the new offer", () => {
     const doc = readFileSync(new URL("../../docs/customer/customer-quote-01.md", import.meta.url), "utf8")
     const offer = readFileSync(new URL("20261001220255_quote_surface_fixes_v1.sql", migrations), "utf8")
     const gate = readFileSync(new URL("20261015013000_paid_service_acceptance_gate_v1.sql", migrations), "utf8")
     expect(doc).toContain("QT-26-H6JSMB")
     expect(doc).toContain("create_draft")
     expect(doc).toContain("Do not call `create_version` and then `offer` on QT-26-H6JSMB")
+    expect(doc).toContain("Do not leave QT-26-H6JSMB offered while the new quotation is also offered")
+    expect(doc).toContain("`cancel`")
+    expect(doc).not.toContain("Leave QT-26-H6JSMB offered")
     expect(offer).toContain("UPDATE public.quote_versions SET status = 'SUPERSEDED' WHERE id = qu.current_version_id AND status = 'OFFERED'")
     expect(gate).toContain("Offered or accepted quote versions are immutable")
     expect(gate).toContain("OLD.status = 'DRAFT' AND NEW.status = 'OFFERED'")

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { presentCustomerQuotation, QUOTATION_ACCEPTANCE, QUOTATION_OVERVIEW_NOTE } from "./quotation-presentation"
-import { customerFacingScope, preservedPaymentTiming, preservedSuccessDefinition, standardScopeExclusions } from "./scope-templates"
+import { presentCustomerQuotation, QUOTATION_ACCEPTANCE } from "./quotation-presentation"
+import { customerFacingScope, preservedPaymentTiming, preservedSuccessDefinition, publishedGuidedCopy, publishedGuidedLine, standardScopeExclusions } from "./scope-templates"
 
 const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
 
@@ -37,13 +37,23 @@ describe("customer quotation presentation", () => {
     expect(guided.total).toBe("£99.00")
     expect(guided.priceRows).toEqual([])
     expect(guided.successDefinition).toBeNull()
-    expect(guided.paymentSummary).toBe("£99.00 is due after you accept this quotation and before work begins. Accepting this quotation does not take payment.")
+    expect(guided.paymentBasis).toBe("Payable after acceptance, before work starts")
     expect(guided.paymentWording).toBe(preservedPaymentTiming.UPFRONT)
     expect(guided.scope).toContain("The final customer price is £99 upfront.")
     expect(guided.exclusions).toContain("This quote does not include Managed case work, a success fee, or Relaunch Guard monitoring.")
-    expect(guided.overviewNote).toBe(QUOTATION_OVERVIEW_NOTE)
-    expect(guided.responsibilities).toContain("We prepare it. You submit it.")
-    expect(guided.responsibilities).not.toContain("Manager")
+    expect(guided.scope).toContain(publishedGuidedLine)
+    expect(guided.scope).toContain(publishedGuidedCopy)
+    expect(guided.providerWork).not.toContain(publishedGuidedLine)
+    expect(guided.customerWork).not.toContain(publishedGuidedLine)
+    expect(guided.scope).not.toContain(guided.providerWork)
+    expect(guided.scope).not.toContain(guided.customerWork)
+    expect(guided.exclusions).not.toContain(guided.providerWork)
+    expect(guided.exclusions).not.toContain(guided.customerWork)
+    expect(guided.providerWork).not.toContain("Manager")
+    expect(guided.customerWork).not.toContain("Manager")
+    expect(text.split(publishedGuidedLine).length - 1).toBe(1)
+    expect(text.split(preservedPaymentTiming.UPFRONT).length - 1).toBe(2)
+    expect(guided.paymentWording).not.toBe(guided.paymentBasis)
     expect(guided.terms).toBe("The service terms sent with this quote apply.")
     expect(text).not.toContain("No discount")
     expect(text).not.toContain("£9.99")
@@ -68,6 +78,7 @@ describe("customer quotation presentation", () => {
     expect(managed.total).toBe("£299.00")
     expect(managed.successDefinition).toContain("successful restoration outcome")
     expect(managed.scope).toContain("48 hours")
+    expect(managed.paymentBasis).toBe("Payable only after the agreed outcome")
     expect(managed.paymentWording).toBe(preservedPaymentTiming.SUCCESS_FEE)
     expect(managed.assurance).toContain("does not create an invoice")
     expect(JSON.stringify(managed)).not.toContain("£9.99")
@@ -83,9 +94,10 @@ describe("customer quotation presentation", () => {
     const guard = quote("RELAUNCH_GUARD", 999, "RECURRING_MONTHLY")
     expect(guard.total).toBe("£9.99")
     expect(guard.successDefinition).toBeNull()
-    expect(guard.paymentSummary).toContain("does not start monitoring and does not take payment")
+    expect(guard.paymentBasis).toBe("Billed monthly after monitoring starts")
     expect(guard.paymentWording).toBe(preservedPaymentTiming.RECURRING_MONTHLY)
-    expect(guard.responsibilities).toContain("Manager")
+    expect(guard.scope).not.toContain(guard.providerWork)
+    expect(guard.customerWork).not.toContain("Manager")
     expect(JSON.stringify(guard)).not.toContain("£99")
     expect(JSON.stringify(guard)).not.toContain("£299")
   })
@@ -112,7 +124,7 @@ describe("customer quotation presentation", () => {
     expect(discounted.priceRows.map(row => row.label)).toContain("Recorded tax")
     expect(discounted.total).toBe("£287.04")
     expect(discounted.successDefinition).toBeNull()
-    expect(discounted.paymentSummary).toBeNull()
+    expect(discounted.paymentBasis).toBeNull()
     expect(discounted.paymentWording).toBe("You pay the quoted amount before work starts.")
     expect(discounted.scope).toBe("We prepare the profile relaunch for this location.")
     expect(discounted.exclusions).toBe("Directory listings outside this location are excluded.")

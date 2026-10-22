@@ -26,6 +26,7 @@ export function CustomerQuotation({
 }) {
   const quotation = presentCustomerQuotation(input)
   const HeadingTag = sectionHeading
+  const DetailTag = sectionHeading === "h2" ? "h3" : "h4"
   return (
     <div className="quotation">
       <div className="quotation-summary">
@@ -47,33 +48,29 @@ export function CustomerQuotation({
         ) : null}
         <p className="quotation-price">{quotation.total}</p>
         <p>{quotation.taxNote}</p>
-        <p className="quotation-note">{quotation.overviewNote}</p>
-        <HeadingTag>Overview</HeadingTag>
-        <p className="quotation-prose">{quotation.overview}</p>
-        <HeadingTag>Your part</HeadingTag>
-        <p className="quotation-prose">{quotation.responsibilities}</p>
-        {quotation.paymentSummary ? (
-          <>
-            <HeadingTag>When you pay</HeadingTag>
-            <p className="quotation-prose">{quotation.paymentSummary}</p>
-          </>
-        ) : null}
-        <HeadingTag>Scope</HeadingTag>
-        <p className="quotation-prose quotation-record">{quotation.scope || "No scope is recorded on this quotation."}</p>
-        <HeadingTag>Exclusions</HeadingTag>
+        {quotation.paymentBasis ? <p className="quotation-note">Payment basis: {quotation.paymentBasis}</p> : null}
+        <HeadingTag>What ProfileRelaunch will do</HeadingTag>
+        <p className="quotation-prose">{quotation.providerWork}</p>
+        <HeadingTag>What you need to do</HeadingTag>
+        <p className="quotation-prose">{quotation.customerWork}</p>
+        <HeadingTag>What is not included</HeadingTag>
         <p className="quotation-prose quotation-record">{quotation.exclusions || "No exclusions are recorded on this quotation."}</p>
+        <HeadingTag>Quotation wording</HeadingTag>
+        <p className="quotation-prose">The scope and payment wording below are the terms recorded on this quotation.</p>
+        <DetailTag>Scope</DetailTag>
+        <p className="quotation-prose quotation-record">{quotation.scope || "No scope is recorded on this quotation."}</p>
+        <DetailTag>When you pay</DetailTag>
+        <p className="quotation-prose quotation-record">{quotation.paymentWording || "No payment wording is recorded on this quotation."}</p>
         {quotation.successDefinition ? (
           <>
-            <HeadingTag>What counts as success</HeadingTag>
+            <DetailTag>What counts as success</DetailTag>
             <p className="quotation-prose quotation-record">{quotation.successDefinition}</p>
           </>
         ) : null}
-        <HeadingTag>{quotation.paymentSummary ? "Payment wording on this quotation" : "When you pay"}</HeadingTag>
-        <p className="quotation-prose quotation-record">{quotation.paymentWording || "No payment wording is recorded on this quotation."}</p>
         {quotation.assurance ? <p>{quotation.assurance}</p> : null}
         {quotation.terms ? (
           <>
-            <HeadingTag>Terms</HeadingTag>
+            <DetailTag>Terms</DetailTag>
             <p className="quotation-prose">{quotation.terms}</p>
           </>
         ) : null}

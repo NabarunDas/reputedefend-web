@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { agreementBlocks } from "./agreement-render"
-import { AgreementPdfError, buildAgreementPdf, pdfPlainText } from "./agreement-pdf"
+import { AGREEMENT_PDF_UNAVAILABLE, AgreementPdfError, buildAgreementPdf, pdfPlainText } from "./agreement-pdf"
 import { paidServiceAgreementBody, paidServiceAgreementContentHash } from "./paid-service-agreement"
 import { proposedServiceAgreement } from "./service-agreements"
 
@@ -115,7 +115,9 @@ describe("branded agreement PDF", () => {
       buildAgreementPdf("The name is \u4f60.")
     } catch (error) {
       expect(error).toBeInstanceOf(AgreementPdfError)
-      expect((error as Error).message).toContain("U+4F60")
+      expect((error as AgreementPdfError).codePoint).toBe(0x4f60)
+      expect((error as Error).message).toBe(AGREEMENT_PDF_UNAVAILABLE)
+      expect((error as Error).message).not.toMatch(/U\+/)
       expect((error as Error).message).not.toContain("?")
     }
   })

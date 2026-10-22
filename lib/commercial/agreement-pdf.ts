@@ -47,12 +47,13 @@ const FROM_WIN_ANSI: Record<number, string> = {
   0xa0: "\u00a0",
 }
 
+export const AGREEMENT_PDF_UNAVAILABLE = "We could not create the agreement PDF. The agreement on this page is the copy to read. Contact us if you need help saving it."
+
 export class AgreementPdfError extends Error {
   readonly codePoint: number
 
   constructor(codePoint: number) {
-    const hex = codePoint.toString(16).toUpperCase().padStart(4, "0")
-    super(`The agreement PDF cannot represent U+${hex}. The download was not created.`)
+    super(AGREEMENT_PDF_UNAVAILABLE)
     this.name = "AgreementPdfError"
     this.codePoint = codePoint
   }

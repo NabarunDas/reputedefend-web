@@ -14,7 +14,7 @@ BEGIN
   ) THEN RAISE EXCEPTION 'Old operative agreement does not match approved baseline'; END IF;
   IF EXISTS (SELECT 1 FROM public.paid_service_agreement_catalogue WHERE version_id LIKE 'PS-2026-10-22.%')
   THEN RAISE EXCEPTION 'New agreement versions already exist; refuse replay'; END IF;
-END $precheck$;
+END; $precheck$;
 
 ALTER TABLE public.paid_service_agreement_catalogue
   ADD COLUMN owner_approved_at timestamptz,
@@ -733,7 +733,7 @@ BEGIN
     );
   END IF;
   RETURN NEW;
-END $bind$;
+END; $bind$;
 
 CREATE OR REPLACE FUNCTION admin_private.paid_service_quote_disclosure_v1(p_version text,p_hash text)
 RETURNS TABLE(ready boolean,body text) LANGUAGE sql STABLE SET search_path='' AS $disclose$
@@ -955,5 +955,5 @@ BEGIN
     JOIN public.paid_service_agreement_catalogue c ON c.version_id=o.version_id
     WHERE c.content_hash<>o.content_hash OR c.solicitor_statement IS NOT NULL OR c.solicitor_confirmed_at IS NOT NULL
   ) THEN RAISE EXCEPTION 'Owner and solicitor approval evidence mixed'; END IF;
-END $verify$;
+END; $verify$;
 COMMIT;

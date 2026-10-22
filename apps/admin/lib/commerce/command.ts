@@ -83,7 +83,14 @@ export function quoteDenialMessage(status: string | undefined, reason: unknown):
 async function guard(request: NextRequest) {
   const config = authConfig()
   if (!config) return { error: reply("The workspace is unavailable. Please try again shortly.", 503) }
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return { error: reply("Reload this page and try again.", 403) }
+  // Vercel Preview has both branch and immutable deployment hosts. authConfig()
+  // already restricts these to the exact Vercel-provided https://*.vercel.app
+  // origins. Accept either, but require the Origin header to match the request
+  // host to prevent cross-origin writes (do not trust a user-provided host).
+  const requestOrigin = request.nextUrl.origin
+  if (request.headers.get("origin") !== requestOrigin || !config.allowedOrigins.includes(requestOrigin)) {
+    return { error: reply("Reload this page and try again.", 403) }
+  }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return { error: reply("Reload this page and try again.", 415) }
   const token = request.cookies.get(sessionCookie)?.value, key = request.headers.get("idempotency-key")
   if (!validToken(token)) return { error: reply("Please sign in again.", 401) }

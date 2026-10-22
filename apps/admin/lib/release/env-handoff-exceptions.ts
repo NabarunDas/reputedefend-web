@@ -86,8 +86,13 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "devAdminOutgoingMailLane",
-    files: ["apps/admin/lib/communications/gate.ts"],
+    files: ["apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/communications/gate.ts"],
     reason: "Selects the develop DEV preview so the disabled-mail message can name that lane. It reads the same identity values as the send gate.",
+  },
+  {
+    helper: "devQuoteRecipientAllowed",
+    files: ["apps/admin/lib/communications/handler.ts"],
+    reason: "A quotation send on the develop DEV lane may use only a reserved test mailbox. The check has to see the same injected lane as the send gate.",
   },
   {
     helper: "devEvidenceUploadOriginAllowed",
@@ -173,6 +178,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     helper: "prepareCommunicationAccessLink",
     files: ["apps/admin/lib/communications/handler.ts"],
     reason: "Issues an access link under the current key version, so it carries the environment the secret family lives in.",
+  },
+  {
+    helper: "prepareQuoteAcceptanceLink",
+    files: ["apps/admin/lib/communications/handler.ts"],
+    reason: "Issues the quotation acceptance link under the same versioned secret family, with a distinct purpose from communication access.",
   },
 
   // Payments.

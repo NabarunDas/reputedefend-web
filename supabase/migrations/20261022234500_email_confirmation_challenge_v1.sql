@@ -586,6 +586,17 @@ BEGIN
       AND challenge.consumed_at IS NULL
       AND challenge.superseded_at IS NULL
       AND challenge.expires_at > clock_timestamp()
+      -- A prepared challenge does not mean the customer received an email.
+      -- The receipt must actually have been accepted by the email provider.
+      AND EXISTS (
+        SELECT 1 FROM public.communications AS receipt
+        WHERE receipt.case_id = v_case.id
+          AND receipt.communication_type = 'CASE_RECEIVED_CUSTOMER'
+          AND receipt.channel = 'EMAIL'
+          AND receipt.direction = 'OUTBOUND'
+          AND receipt.status = 'SENT'
+          AND lower(btrim(receipt.recipient)) = challenge.email_normalized
+      )
   ) THEN
     RETURN jsonb_build_object(
       'state', 'pending',

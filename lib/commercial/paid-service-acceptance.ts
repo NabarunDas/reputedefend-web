@@ -15,6 +15,7 @@ import {
   paidServiceAgreementContentHash,
 } from "@/lib/commercial/paid-service-agreement"
 import { GUARD_RECURRING_CONSENT_VERSION, SUCCESS_FEE_CONSENT_VERSION } from "@/lib/payments/model"
+import { proposedServiceAgreements } from "./service-agreements"
 
 export const PAID_SERVICE_ACCEPTANCE_VERSION = PAID_SERVICE_AGREEMENT_VERSION
 export const PAID_SERVICE_ACCEPTANCE_HASH = paidServiceAgreementContentHash
@@ -191,7 +192,14 @@ export function assessPaidServiceAcceptance(input: AcceptanceAssessmentInput): {
   }
   if (!input.actionOpen) return { status: "unauthorised", feeBasisKind: null, payment: null }
   if (!input.catalogueOperative) return { status: "not_operative", feeBasisKind: null, payment: null }
-  if (input.catalogueVersion !== PAID_SERVICE_AGREEMENT_VERSION || input.catalogueHash !== paidServiceAgreementContentHash) {
+  const legacyAgreement = input.catalogueVersion === PAID_SERVICE_AGREEMENT_VERSION
+    && input.catalogueHash === paidServiceAgreementContentHash
+  const matchingSpecificAgreement = proposedServiceAgreements.some(agreement =>
+    agreement.serviceCode === input.serviceCode
+    && agreement.version === input.catalogueVersion
+    && agreement.contentHash === input.catalogueHash
+  )
+  if (!legacyAgreement && !matchingSpecificAgreement) {
     return { status: "stale_version", feeBasisKind: null, payment: null }
   }
   if (!input.quoteOpen || input.quoteStatus !== "OFFERED" || input.currentQuoteVersionId !== input.quoteVersionId) {
@@ -200,7 +208,7 @@ export function assessPaidServiceAcceptance(input: AcceptanceAssessmentInput): {
   if (input.taxBehaviour === "UNCONFIRMED") return { status: "tax_unconfirmed", feeBasisKind: null, payment: null }
   if (!input.businessPurposeAccepted) return { status: "missing_business_purpose", feeBasisKind: null, payment: null }
   if (!input.termsAccepted) return { status: "missing_terms", feeBasisKind: null, payment: null }
-  if (input.termsVersion !== PAID_SERVICE_AGREEMENT_VERSION || input.termsHash !== paidServiceAgreementContentHash) {
+  if (input.termsVersion !== input.catalogueVersion || input.termsHash !== input.catalogueHash) {
     return { status: "stale_version", feeBasisKind: null, payment: null }
   }
 

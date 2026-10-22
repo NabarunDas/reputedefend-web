@@ -117,7 +117,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
                 </>}
                 {row.status === "OFFERED" && <>
                   <CreateVersionForm quoteId={row.id} version={row.version} />
-                  <OfferQuoteActionForm quoteId={row.id} />
+                  <OfferQuoteActionForm quoteId={row.id} quoteValidUntil={row.currentVersion.validUntil} />
                   <QuoteActionForm operation="supersede" quoteId={row.id} version={row.version} label="Supersede" />
                   <QuoteActionForm operation="cancel" quoteId={row.id} version={row.version} label="Cancel" />
                   {row.action?.status === "OPEN" && <RevokeQuoteActionForm quoteId={row.id} actionId={row.action.id} />}

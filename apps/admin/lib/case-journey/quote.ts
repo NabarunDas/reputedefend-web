@@ -39,6 +39,7 @@ export type JourneyQuoteRecord = {
   tax: string
   taxBehaviour: string
   validUntilLabel: string
+  validUntil: string
   scope: string
   exclusions: string
   templateVersion: string | null
@@ -177,6 +178,7 @@ export function buildJourneyQuotePanel(input: {
     tax: taxLabel(matched.currentVersion.taxBehaviour),
     taxBehaviour: matched.currentVersion.taxBehaviour,
     validUntilLabel: ukDate(matched.currentVersion.validUntil),
+    validUntil: matched.currentVersion.validUntil,
     scope: storedWording.scope,
     exclusions: storedWording.exclusions,
     templateVersion: storedWording.templateVersion,

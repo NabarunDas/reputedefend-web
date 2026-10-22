@@ -55,6 +55,56 @@ describe("commercial admin commands", () => {
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/charge|STRIPE|PaymentIntent/i)
   })
 
+  it("accepts the exact approved Vercel deployment Preview origin as well as its branch alias", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-gkbxz1iw1-clientcove.vercel.app")
+    mocks.rpc.mockResolvedValue({ status: "success", id: quoteId, expiresAt })
+    for (const host of [
+      "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      "profilerelaunch-admin-gkbxz1iw1-clientcove.vercel.app",
+    ]) {
+      const url = `https://${host}/api/operations/quotes`
+      const ok = await quoteCommand(new NextRequest(url, {
+        method: "POST",
+        headers: {
+          origin: `https://${host}`, "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+          cookie: `${sessionCookie}=${"a".repeat(64)}`,
+        },
+        body: JSON.stringify({ operation: "create_quote_acceptance_action", quoteId, expiresAt }),
+      }))
+      expect(ok.status).toBe(200)
+    }
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("rejects origins outside the Preview allowlist and mismatched Origin headers", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-gkbxz1iw1-clientcove.vercel.app")
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    const unauthorizedOrigin = "https://other-project.vercel.app"
+    const deploymentUrl = "https://profilerelaunch-admin-gkbxz1iw1-clientcove.vercel.app/api/operations/quotes"
+    for (const [url, headerOrigin] of [
+      [`${unauthorizedOrigin}/api/operations/quotes`, unauthorizedOrigin],
+      [deploymentUrl, unauthorizedOrigin],
+      [deploymentUrl, "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"],
+    ]) {
+      const res = await quoteCommand(new NextRequest(url, {
+        method: "POST",
+        headers: {
+          origin: headerOrigin, "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+          cookie: `${sessionCookie}=${"a".repeat(64)}`,
+        },
+        body: JSON.stringify({ operation: "create_quote_acceptance_action", quoteId, expiresAt }),
+      }))
+      expect(res.status).toBe(403)
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("issues a quote acceptance link without persisting the raw secret", async () => {
     mocks.rpc.mockResolvedValue({ status: "success", id: quoteId, expiresAt })
     const ok = await quoteCommand(req("/api/operations/quotes", {

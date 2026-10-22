@@ -84,7 +84,7 @@ export function QuotePanel({
       <p>Offering this quote is the binding issuance. The button does not mean this draft is eligible. The purchasing establishment and the country and tax eligibility checks on the quote command still decide. This step does not add a country restriction and does not waive those checks.</p>
       <QuoteActionForm operation="offer" quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} label="Offer quote" />
     </>}
-    {panel.commands.issueAcceptance && quote && <OfferQuoteActionForm quoteId={quote.quoteId} />}
+    {panel.commands.issueAcceptance && quote && <OfferQuoteActionForm quoteId={quote.quoteId} quoteValidUntil={quote.validUntil} />}
     {panel.commands.revokeAcceptance && quote?.actionId && <RevokeQuoteActionForm quoteId={quote.quoteId} actionId={quote.actionId} />}
     <p>Saving, reviewing, offering or issuing a link does not accept the quote, take a payment, or activate the service.</p>
   </div>

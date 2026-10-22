@@ -149,7 +149,7 @@ export type CommercialWorkspaceModel = {
   commands: CommercialCommands
   priceChoices: CommercialPriceChoice[]
   priceGap: { message: string; href: string; hrefLabel: string } | null
-  quoteContext: { quoteId: string; version: number; quoteVersionId: string; actionId: string | null } | null
+  quoteContext: { quoteId: string; version: number; quoteVersionId: string; actionId: string | null; validUntil: string } | null
   orderContext: {
     orderId: string
     version: number
@@ -496,6 +496,7 @@ export function buildCommercialWorkspaceModel(input: {
       quoteId: detail.id,
       version: detail.version,
       quoteVersionId: detail.currentVersion.id,
+      validUntil: detail.currentVersion.validUntil,
       actionId: detail.action?.status === "OPEN" ? detail.action.id : null,
     } : null,
     orderContext: moneyOrder && !failClosed ? {

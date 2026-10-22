@@ -3,6 +3,7 @@ import { useRef, useState, type FormEvent } from "react"
 import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
 import { customerPriceBoundary, customerPriceLine } from "../../../../lib/pricing"
 import { ScopeExclusionsFields } from "./scope-fields"
+import { localDateTime, quoteActionExpiryWindow } from "@/lib/commerce/action-expiry"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -311,19 +312,41 @@ export function CreateVersionForm({ quoteId, version }: { quoteId: string; versi
   </form>
 }
 
-export function OfferQuoteActionForm({ quoteId, expiresAt }: { quoteId: string; expiresAt?: string }) {
-  const { busy, message, actionUrl, run } = useCommand()
+export function OfferQuoteActionForm({
+  quoteId, expiresAt, quoteValidUntil,
+}: { quoteId: string; expiresAt?: string; quoteValidUntil?: string }) {
+  const { busy, message, actionUrl, run, setMessage } = useCommand()
+  const window = quoteActionExpiryWindow(quoteValidUntil)
+  const original = expiresAt ? Date.parse(expiresAt) : NaN
+  const initial = Number.isFinite(original) && original >= window.earliest && original <= window.latest
+    ? original : window.suggested
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const chosen = String(form.get("expiresAt") ?? "")
+    const timestamp = Date.parse(chosen)
+    const currentWindow = quoteActionExpiryWindow(quoteValidUntil)
+    if (!currentWindow.ready || !Number.isFinite(timestamp)
+      || timestamp <= currentWindow.earliest || timestamp > currentWindow.latest) {
+      setMessage("Choose a link expiry after the next 15 minutes, within seven days, and no later than this quotation expires.")
+      return
+    }
     await run("/api/operations/quotes", "create_quote_acceptance_action", {
-      quoteId,
-      expiresAt: form.get("expiresAt") ? new Date(String(form.get("expiresAt"))).toISOString() : "",
+      quoteId, expiresAt: new Date(timestamp).toISOString(),
     })
   }
   return <form onSubmit={submit}>
-    <label>Action expires<input name="expiresAt" type="datetime-local" required defaultValue={expiresAt} /></label>
-    <button type="submit" disabled={busy}>{busy ? "Creating…" : "Issue customer acceptance link"}</button>
+    <label>Action expires
+      <input name="expiresAt" type="datetime-local" required
+        defaultValue={localDateTime(initial)}
+        min={localDateTime(window.earliest)}
+        max={localDateTime(window.latest)}
+        disabled={!window.ready || busy}
+        suppressHydrationWarning />
+    </label>
+    <p className="muted">The link must expire before the quotation expires, and within seven days. The suggested time is one day from now.</p>
+    {!window.ready && <p role="alert">This quote expires too soon to issue a secure acceptance link. Review the quotation validity first.</p>}
+    <button type="submit" disabled={busy || !window.ready}>{busy ? "Creating…" : "Issue customer acceptance link"}</button>
     {message && <p role="status">{message}</p>}
     {actionUrl && <p role="status">This is a one-time customer link. Copy it now. It cannot be shown again. {LOST_QUOTE_LINK_NOTE}<label>Customer link<input readOnly value={actionUrl} /></label></p>}
   </form>

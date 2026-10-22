@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation"
 import { ACTION_UNAVAILABLE } from "@/lib/access"
 import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
+import { CustomerQuotation } from "@/lib/commercial/quotation"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
-import { customerFacingScope } from "../../../../../lib/commercial/scope-templates"
+import { QUOTATION_ACCEPTANCE } from "../../../../../lib/commercial/quotation-presentation"
 import { customerFacingTaxNote } from "../../../../../lib/pricing"
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
@@ -139,14 +140,6 @@ type Session = {
 function formatGbp(minor: number): string {
   const absolute = Math.abs(minor)
   return `${minor < 0 ? "-" : ""}£${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`
-}
-
-function taxTreatment(quote: Quote): string {
-  const note = customerFacingTaxNote(quote.taxBehaviour)
-  if (quote.taxBehaviour === "INCLUSIVE" && quote.taxAmountMinor > 0) {
-    return `Tax of ${formatGbp(quote.taxAmountMinor)} is included in this total. ${note}`
-  }
-  return note
 }
 
 export function ActionClient({ actionId }: { actionId: string }) {
@@ -414,27 +407,32 @@ export function ActionClient({ actionId }: { actionId: string }) {
       && typeof quote.commercialAgreementBody === "string"
       && quote.commercialAgreementBody.trim().length > 0
     const bound = Boolean(quote.commercialAgreementVersion && quote.commercialAgreementHash)
-    return <section>
-      <h1>Review this quote</h1>
-      <p>{session.caseReference} · {session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
-      <h2>{quote.serviceName}</h2>
-      <p>Version {quote.versionNumber}. Valid until {new Date(quote.validUntil).toLocaleString("en-GB", { timeZone: "Europe/London" })}.</p>
-      <h2>Scope</h2>
-      <p className="preserve-lines">{customerFacingScope(quote.scope)}</p>
-      <h2>Exclusions</h2>
-      <p className="preserve-lines">{quote.exclusions}</p>
-      <h2>Success definition</h2>
-      <p className="preserve-lines">{quote.successDefinition}</p>
-      <h2>Price</h2>
-      <p>Standard {formatGbp(quote.standardAmountMinor)}</p>
-      {quote.discountAmountMinor > 0
-        ? <p>Discount {formatGbp(quote.discountAmountMinor)} ({quote.discountPolicyId}: {quote.discountReason}). Final {formatGbp(quote.totalAmountMinor)}.</p>
-        : <p>No discount. Final {formatGbp(quote.totalAmountMinor)}.</p>}
-      <p>{taxTreatment(quote)}</p>
-      <p>Total {formatGbp(quote.totalAmountMinor)} {quote.currency}.</p>
-      <h2>Payment timing</h2>
-      <p>{quote.paymentTiming}</p>
-      <p>{quote.termsReference}</p>
+    const validUntilLabel = new Date(quote.validUntil).toLocaleString("en-GB", { timeZone: "Europe/London" })
+    return <section className="quotation-page">
+      <h1>Your quotation</h1>
+      <CustomerQuotation
+        businessName={session.businessName}
+        locationName={session.locationName}
+        caseReference={session.caseReference}
+        serviceName={quote.serviceName}
+        serviceCode={quote.serviceCode}
+        paymentModel={quote.paymentModel}
+        scope={quote.scope}
+        exclusions={quote.exclusions}
+        successDefinition={quote.successDefinition}
+        paymentTiming={quote.paymentTiming}
+        termsReference={quote.termsReference}
+        standardAmountMinor={quote.standardAmountMinor}
+        discountAmountMinor={quote.discountAmountMinor}
+        quotedAmountMinor={quote.quotedSubtotalMinor}
+        taxBehaviour={quote.taxBehaviour}
+        taxAmountMinor={quote.taxAmountMinor}
+        totalAmountMinor={quote.totalAmountMinor}
+        currency={quote.currency}
+        validUntilLabel={validUntilLabel}
+        validUntilIso={quote.validUntil}
+        sectionHeading="h2"
+      />
       {agreementReady ? (
         <PaidServiceAgreementDocument
           version={quote.commercialAgreementVersion!}
@@ -442,13 +440,11 @@ export function ActionClient({ actionId }: { actionId: string }) {
           body={quote.commercialAgreementBody!}
         />
       ) : null}
-      {quote.serviceCode === "RELAUNCH_GUARD" && <p>Accepting this quote does not start monitoring.</p>}
-      {quote.paymentModel === "SUCCESS_FEE" && <p>Accepting this quote does not create an invoice or outstanding debt.</p>}
-      <div className="button-row">
+      <div className="button-row quotation-actions">
         {agreementReady ? (
           <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void decide("accept", paidQuoteDecision(quote, form)) }}>
             <label className="checkbox"><input type="checkbox" name="purpose" value="true" required />{BUSINESS_PURPOSE}</label>
-            <label className="checkbox"><input type="checkbox" name="terms" value="true" required />I accept this quotation under agreement {quote.commercialAgreementVersion} with SHA-256 {quote.commercialAgreementHash}.</label>
+            <label className="checkbox"><input type="checkbox" name="terms" value="true" required />{QUOTATION_ACCEPTANCE}</label>
             {quoteFeeLabel(quote) ? <label className="checkbox"><input type="checkbox" name="fee" value="true" required />{quoteFeeLabel(quote)}</label> : null}
             <button type="submit">Accept quote</button>
           </form>

@@ -3,6 +3,7 @@ import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import { pdfPlainText } from "../../../../../../../lib/commercial/agreement-pdf"
 import PortalLayout from "../../../layout"
 import { ServiceUnavailable, ServiceView } from "./service-view"
 import type { CustomerCaseService, ServiceAction, ServiceAgreement, ServiceQuote } from "@/lib/portal/service/parse"
@@ -112,15 +113,17 @@ describe("service and permissions", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
     expect(screen.getByRole("heading", { level: 1, name: "Service and permissions" })).toBeTruthy()
     expect(screen.getAllByText("PR-26-ABCDEF").length).toBeGreaterThan(0)
-    expect(screen.getByText("Harbour Bakery")).toBeTruthy()
-    expect(screen.getByText("High Street")).toBeTruthy()
+    expect(screen.getAllByText("Harbour Bakery").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("High Street").length).toBeGreaterThan(0)
     expect(screen.getByText("Guided service")).toBeTruthy()
     expect(screen.getByText("QT-26-ABCDEF")).toBeTruthy()
     expect(screen.getAllByText("£299.00").length).toBeGreaterThan(0)
     expect(screen.getByText("Total price, inclusive of any applicable taxes. No additional taxes or mandatory fees charged by ProfileRelaunch.")).toBeTruthy()
     expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
     expect(screen.getByText("Directory listings outside this location are excluded.")).toBeTruthy()
-    expect(screen.getByText("Success means the profile is submitted for reinstatement.")).toBeTruthy()
+    expect(screen.queryByText("Success means the profile is submitted for reinstatement.")).toBeNull()
+    expect(screen.queryByRole("heading", { name: "What counts as success" })).toBeNull()
+    expect(screen.queryByText("No discount")).toBeNull()
     expect(screen.getByText("You pay the quoted amount before work starts.")).toBeTruthy()
     expect(screen.getByText("The service terms sent with this quote apply.")).toBeTruthy()
     expect(screen.getByText("The complete agreement body the customer must read before agreeing.")).toBeTruthy()
@@ -316,21 +319,26 @@ describe("service and permissions", () => {
       }),
     })} />)
     expect(screen.getByRole("article", { name: "Paid-service agreement" })).toHaveTextContent("48-hour success definition")
-    expect(screen.getByText(/What is included/)).toBeTruthy()
+    expect(document.body.textContent).not.toContain(hash)
+    expect(document.body.textContent).not.toContain("SHA-256")
+    expect(screen.getByRole("heading", { name: "Scope" })).toBeTruthy()
     expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
     expect(screen.queryByRole("link", { name: /terms/i })).toBeNull()
     expect(document.body.innerHTML).not.toContain('href="/terms"')
     const purposeBefore = screen.queryByRole("checkbox", { name: /acting for the business named on this quotation/ })
     expect(purposeBefore).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Download the paid-service agreement" }))
+    fireEvent.click(screen.getByRole("button", { name: "Download the agreement as a PDF" }))
     expect(createObjectURL).toHaveBeenCalledTimes(1)
-    expect(await (createObjectURL.mock.calls[0][0] as Blob).text()).toBe(body)
+    const downloaded = new Uint8Array(await (createObjectURL.mock.calls[0][0] as Blob).arrayBuffer())
+    expect(pdfPlainText(downloaded)).toContain("48-hour success definition")
+    expect(pdfPlainText(downloaded)).not.toContain("SHA-256")
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:agreement")
     createObjectURL.mockRestore()
     revokeObjectURL.mockRestore()
     fireEvent.click(screen.getByRole("button", { name: "Accept this quote" }))
     const purpose = screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ })
-    const terms = screen.getByRole("checkbox", { name: /PS-2026-10-14.2/ })
+    const terms = screen.getByRole("checkbox", { name: /agreement shown above/ })
+    expect(terms).not.toHaveAccessibleName(/SHA-256|PS-2026-10-14\.2/)
     const confirm = screen.getByRole("button", { name: "Confirm acceptance" })
     expect(purpose).not.toBeChecked()
     expect(terms).not.toBeChecked()
@@ -367,8 +375,139 @@ describe("service and permissions", () => {
     })} />)
     expect(screen.getByText(/commercial agreement bound to it is not available/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Accept this quote" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Download the paid-service agreement" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download the agreement as a PDF" })).toBeNull()
     expect(document.body.innerHTML).not.toContain('href="/terms"')
+  })
+
+  it("keeps a Guided summary on the purchased service and still shows the full bound agreement", () => {
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [],
+      quote: quote({
+        serviceName: "Guided Relaunch",
+        scope: "Guided Relaunch (£99 upfront). The final customer price is £99 upfront. We prepare the profile work.",
+        exclusions: "Managed success fees are payable only when the defined successful outcome is achieved under the service terms. This quote does not include Relaunch Guard.",
+        successDefinition: "This is an upfront guided recovery service.",
+        paymentTiming: "The quoted amount is payable later through the payment workflow. Accepting this quote does not charge a card and is not payment authorisation.",
+        standardAmountMinor: 9900,
+        quotedAmountMinor: 9900,
+        totalAmountMinor: 9900,
+        commercialAgreementBody: "ProfileRelaunch Ltd — Paid-service agreement\n\n## 13. Relaunch Guard\n\nRelaunch Guard is £9.99 per month per location.\n\n## 4. Prices and currency\n\nManaged Profile Recovery is a success fee of £299.",
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4",
+        commercialAgreementReady: true,
+        canAccept: false,
+      }),
+    })} />)
+    const summary = document.querySelector(".quotation-summary")
+    expect(summary?.textContent).toContain("Payable after acceptance, before work starts")
+    expect(summary?.textContent).toContain("The quoted amount is payable later through the payment workflow. Accepting this quote does not charge a card and is not payment authorisation.")
+    expect(summary?.textContent?.split("The quoted amount is payable later through the payment workflow.").length).toBe(2)
+    expect(summary?.textContent).not.toContain("£99.00 is due after you accept this quotation")
+    expect(summary?.textContent).toContain("We prepare the profile work.")
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Your part" })).toBeNull()
+    expect(screen.getAllByRole("heading", { name: "When you pay" })).toHaveLength(1)
+    expect(summary?.textContent).not.toContain("£9.99")
+    expect(summary?.textContent).not.toContain("£299")
+    expect(summary?.textContent).not.toContain("No discount")
+    expect(summary?.textContent).not.toContain("SHA-256")
+    expect(screen.queryByRole("heading", { name: "What counts as success" })).toBeNull()
+    const agreement = screen.getByRole("article", { name: "Paid-service agreement" })
+    expect(agreement.textContent).toContain("Relaunch Guard is £9.99 per month per location.")
+    expect(agreement.textContent).toContain("Managed Profile Recovery is a success fee of £299.")
+    expect(agreement.textContent).not.toContain("## ")
+    expect(screen.getByRole("heading", { name: "13. Relaunch Guard" })).toBeTruthy()
+  })
+
+  it("shows a negotiated scope and exclusion, including amounts", () => {
+    const scope = "Includes specialist preparation budget capped at £50. Ask Mr. Smith — clause 4(a)."
+    const exclusions = "Does not include related appeal work charged at £75."
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [],
+      quote: quote({
+        scope,
+        exclusions,
+        paymentTiming: "Pay £99.00 before work. A holding amount of £25 is not collected.",
+      }),
+    })} />)
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull()
+    expect(screen.getByText(scope)).toBeTruthy()
+    expect(screen.getByText(exclusions)).toBeTruthy()
+    expect(screen.getByText(/holding amount of £25/)).toBeTruthy()
+  })
+
+  it("keeps the Managed fee acknowledgement and the Guard recurring acknowledgement", async () => {
+    const hash = "0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4"
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: "success" }) })
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [action("quote", selector)],
+      quote: quote({
+        serviceCode: "MANAGED_RELAUNCH",
+        serviceName: "Managed Relaunch",
+        paymentModel: "SUCCESS_FEE",
+        successDefinition: "Success relates to the agreed successful restoration outcome.",
+        paymentTiming: "No service fee is charged today.",
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+        commercialAgreementBody: "Managed recovery agreement.",
+        commercialAgreementReady: true,
+      }),
+    })} />)
+    expect(screen.getByRole("heading", { name: "What counts as success" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Accept this quote" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /agreement shown above/ }))
+    const fee = screen.getByRole("checkbox", { name: /Managed success fee is payable only after documented success/ })
+    expect(fee).not.toHaveAccessibleName(/SHA-256/)
+    fireEvent.click(fee)
+    fireEvent.click(screen.getByRole("button", { name: "Confirm acceptance" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toMatchObject({
+      confirmation: {
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: { accepted: true, kind: "MANAGED_CONTINGENT_SUCCESS_FEE_V1" },
+      },
+    })
+    fetchMock.mockClear()
+    cleanup()
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [action("quote", selector)],
+      quote: quote({
+        serviceCode: "RELAUNCH_GUARD",
+        serviceName: "Relaunch Guard",
+        paymentModel: "RECURRING_MONTHLY",
+        successDefinition: "Accepting this quote does not start monitoring and does not take payment.",
+        paymentTiming: "Accepting this quote does not start monitoring and does not take payment.",
+        standardAmountMinor: 999,
+        quotedAmountMinor: 999,
+        totalAmountMinor: 999,
+        commercialAgreementVersion: "PS-2026-10-14.2",
+        commercialAgreementHash: hash,
+        commercialAgreementBody: "Guard monitoring agreement.",
+        commercialAgreementReady: true,
+      }),
+    })} />)
+    expect(screen.queryByRole("heading", { name: "What counts as success" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Accept this quote" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /agreement shown above/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /monthly billing for Relaunch Guard/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm acceptance" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toMatchObject({
+      confirmation: {
+        terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+        feeBasis: { accepted: true, kind: "GUARD_RECURRING_CONSENT_V1", amountMinor: 999 },
+      },
+    })
   })
 
   it("uses a calm unavailable state", () => {

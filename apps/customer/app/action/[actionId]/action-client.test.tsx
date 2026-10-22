@@ -3,6 +3,7 @@ import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import { pdfPlainText } from "../../../../../lib/commercial/agreement-pdf"
 import { ActionClient } from "./action-client"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
@@ -231,13 +232,31 @@ describe("customer action page", () => {
     expect(document.body.textContent).not.toContain("Standard wording version")
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getByText(/payable upfront after acceptance/)).toBeTruthy()
+    expect(screen.queryByText("No discount")).toBeNull()
+    expect(screen.queryByRole("heading", { name: "What counts as success" })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/SHA-256/)
+    expect(document.body.textContent).not.toContain("PS-2026-10-14.2")
     const boxes = screen.getAllByRole("checkbox")
     expect(boxes).toHaveLength(2)
     for (const box of boxes) expect(box).not.toBeChecked()
     expect(document.body.innerHTML).not.toContain('href="/terms"')
-    fireEvent.click(screen.getByRole("button", { name: "Download the paid-service agreement" }))
-    expect(await (createObjectURL.mock.calls[0][0] as Blob).text()).toBe(body)
+    fireEvent.click(screen.getByRole("button", { name: "Download the agreement as a PDF" }))
+    const downloaded = new Uint8Array(await (createObjectURL.mock.calls[0][0] as Blob).arrayBuffer())
+    expect(pdfPlainText(downloaded)).toContain("48-hour success definition")
+    expect(pdfPlainText(downloaded)).not.toContain("SHA-256")
     expect(revokeObjectURL).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("checkbox", { name: /acting for the business named on this quotation/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /agreement shown above/ }))
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok" }) })
+    fireEvent.click(screen.getByRole("button", { name: "Accept quote" }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(call => call[0] === "/api/action/command")).toBe(true))
+    const command = fetchMock.mock.calls.find(call => call[0] === "/api/action/command") as [string, RequestInit]
+    expect(JSON.parse(String(command[1].body))).toMatchObject({
+      operation: "accept",
+      businessPurpose: { accepted: true },
+      terms: { accepted: true, version: "PS-2026-10-14.2", hash },
+      feeBasis: null,
+    })
     createObjectURL.mockRestore()
     revokeObjectURL.mockRestore()
   })
@@ -289,7 +308,7 @@ describe("customer action page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByText(/commercial agreement bound to it is not available/)).toBeTruthy())
     expect(screen.queryByRole("button", { name: "Accept quote" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Download the paid-service agreement" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Download the agreement as a PDF" })).toBeNull()
     expect(document.body.innerHTML).not.toContain('href="/terms"')
   })
 

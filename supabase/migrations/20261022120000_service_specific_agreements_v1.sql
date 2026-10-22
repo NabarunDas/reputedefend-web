@@ -871,7 +871,7 @@ BEGIN
     NEW.terms_reference := left(
       btrim(regexp_replace(
         coalesce(NEW.terms_reference, ''),
-        ' Agreement PS-[0-9]{4}-[0-9]{2}-[0-9]{2}[^ ]* SHA-256 [0-9a-f]{64}\\.',
+        ' Agreement PS-[0-9]{4}-[0-9]{2}-[0-9]{2}[^ ]* SHA-256 [0-9a-f]{64}\.',
         '',
         'g'
       )) || ' Agreement ' || ver || ' SHA-256 ' || hash || '.',

@@ -60,9 +60,9 @@ describe("proposed service agreements", () => {
     for (const file of readdirSync(migrations)) {
       const sql = readFileSync(new URL(file, migrations), "utf8")
       expect(sql).not.toContain("PS-2026-10-21")
-      if (file !== "20261022120000_service_specific_agreements_v1.sql") expect(sql).not.toContain("PS-2026-10-22")
+      if (file !== "20261022124813_service_specific_agreements_v1.sql") expect(sql).not.toContain("PS-2026-10-22")
     }
-    const activation = readFileSync(new URL("20261022120000_service_specific_agreements_v1.sql", migrations), "utf8")
+    const activation = readFileSync(new URL("20261022124813_service_specific_agreements_v1.sql", migrations), "utf8")
     for (const item of proposedServiceAgreements) {
       expect(activation).toContain(item.version)
       expect(activation).toContain(item.contentHash)

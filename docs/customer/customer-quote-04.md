@@ -1,6 +1,6 @@
 # CUSTOMER-QUOTE-04 — Source activation for the five service agreements
 
-This change adds `supabase/migrations/20261022120000_service_specific_agreements_v1.sql`. The file is in source only. It is not applied to the DEV project or to Production. It does not cancel quote `QT-26-H6JSMB`, send email, create a customer acceptance link, or take a payment. Production and AWS ApprovedMigrationHead stay at `20261014170000`. The DEV ledger head recorded in this repository stays `20261021214813`.
+This change adds `supabase/migrations/20261022124813_service_specific_agreements_v1.sql`. The file is in source only. It is not applied to the DEV project or to Production. It does not cancel quote `QT-26-H6JSMB`, send email, create a customer acceptance link, or take a payment. Production and AWS ApprovedMigrationHead stay at `20261014170000`. The DEV ledger head recorded in this repository stays `20261021214813`.
 
 The business owner approved the five exact bodies on 22 October 2026. That is owner approval of wording. It is not external solicitor sign-off, and this change does not invent a solicitor, a certificate, or a legal opinion. Decision D14 in `docs/customer/customer-quote-02.md` stays open.
 

@@ -799,8 +799,8 @@ export const migrationChain: readonly MigrationEntry[] = [
     // A new offer binds a service agreement only after that function runs.
     // The omnibus row and issued quotations are not rewritten.
     // Not applied to DEV or Production. Do not apply it from this change.
-    version: "20261022120000",
-    filename: "20261022120000_service_specific_agreements_v1.sql",
+    version: "20261022124813",
+    filename: "20261022124813_service_specific_agreements_v1.sql",
     step: "CUSTOMER-QUOTE-04 service-specific agreements",
     kind: "additive",
     appliedToDev: false,

@@ -38,7 +38,7 @@ const upgradedFiles = [
   "20261021132018_dev_send_email_claim_v1.sql",
   "20261021155147_communication_access_preliminary_evidence_v1.sql",
   "20261021214813_gross_customer_price_v1.sql",
-  "20261022120000_service_specific_agreements_v1.sql",
+  "20261022124813_service_specific_agreements_v1.sql",
 ].join(",")
 const db = new PGlite()
 

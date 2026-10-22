@@ -74,7 +74,7 @@ export function CommercialWorkspace({ model, caseDetail }: { model: CommercialWo
       {isUuid(caseDetail.businessId) && <PurchaserForm businessId={caseDetail.businessId} businessName={caseDetail.business} customerName={caseDetail.client} />}
       {quote && model.commands.offer && <QuoteActionForm operation="offer" quoteId={quote.quoteId} version={quote.version} quoteVersionId={quote.quoteVersionId} label="Offer quote" />}
       {quote && model.commands.newVersion && <CreateVersionForm quoteId={quote.quoteId} version={quote.version} />}
-      {quote && model.commands.issueAcceptance && <OfferQuoteActionForm quoteId={quote.quoteId} />}
+      {quote && model.commands.issueAcceptance && <OfferQuoteActionForm quoteId={quote.quoteId} quoteValidUntil={quote.validUntil} />}
       {quote && model.commands.revokeAcceptance && quote.actionId && <RevokeQuoteActionForm quoteId={quote.quoteId} actionId={quote.actionId} />}
       {quote && model.commands.supersede && <QuoteActionForm operation="supersede" quoteId={quote.quoteId} version={quote.version} label="Supersede quote" />}
       {quote && model.commands.cancel && <QuoteActionForm operation="cancel" quoteId={quote.quoteId} version={quote.version} label="Cancel quote" />}

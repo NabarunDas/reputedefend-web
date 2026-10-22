@@ -1,7 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import styles from "../confirm-email.module.css"
+
+/** Client-only fragment store. The server snapshot is deliberately empty.
+ * useSyncExternalStore safely reconciles the emailed bearer after hydration,
+ * without synchronous setState inside an effect or reflecting it in SSR HTML.
+ */
+function useConfirmationToken() {
+  const cached = useRef("")
+  return useSyncExternalStore(
+    () => () => {},
+    () => {
+      if (cached.current) return cached.current
+      const hash = window.location.hash
+      if (hash.startsWith("#t=") && /^[0-9a-f]{64}$/.test(hash.slice(3))) {
+        cached.current = hash.slice(3)
+      }
+      return cached.current
+    },
+    () => "",
+  )
+}
 
 type Props = {
   challengeId: string
@@ -10,7 +30,7 @@ type Props = {
 }
 
 export function ConfirmEmailForm({ challengeId, canConfirm, canResend }: Props) {
-  const [token, setToken] = useState("")
+  const token = useConfirmationToken()
   const [csrf, setCsrf] = useState("")
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
@@ -20,9 +40,6 @@ export function ConfirmEmailForm({ challengeId, canConfirm, canResend }: Props) 
     // Fragment tokens never reach the server during GET or appear in a
     // query string. Capture before clearing the fragment from the URL.
     const hash = window.location.hash
-    if (hash.startsWith("#t=") && /^[0-9a-f]{64}$/.test(hash.slice(3))) {
-      setToken(hash.slice(3))
-    }
     if (hash) window.history.replaceState(null, "", window.location.pathname + window.location.search)
 
     // API GET merely sets a same-origin anti-CSRF cookie. It does not

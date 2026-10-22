@@ -554,7 +554,7 @@ describe("persistGetHelpCase DEV mail gate", () => {
 
   it("keeps Production sending to a recipient that is not on the DEV allowlist", async () => {
     stubPreview({ VERCEL_ENV: "production", DEV_MAIL_ALLOWED_RECIPIENTS: "somebody-else@example.com" })
-    const send = vi.fn(async () => ({ ok: true as const, id: "email_production" }))
+    const send = vi.fn(async (_message: EnquiryEmailMessage) => ({ ok: true as const, id: "email_production" }))
     const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
       createIntake: mockCreateIntake(),
       updateCommunication: async () => {},
@@ -564,8 +564,8 @@ describe("persistGetHelpCase DEV mail gate", () => {
     })
     expect(result.receiptEmailStatus).toBe("sent")
     expect(result.emailConfirmation).toBe("omitted")
-    expect(send.mock.calls[0]?.[0].text).not.toContain("Confirm my email address")
-    expect(send.mock.calls[1]?.[0].text).not.toContain("Confirm my email address")
+    expect(send.mock.calls[0]?.[0]?.text).not.toContain("Confirm my email address")
+    expect(send.mock.calls[1]?.[0]?.text).not.toContain("Confirm my email address")
     expect(send).toHaveBeenCalledTimes(2)
   })
 

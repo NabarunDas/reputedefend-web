@@ -93,7 +93,7 @@ describe("email confirmation commands", () => {
       }
       return { status: "abandoned" }
     })
-    const provider: EnquiryProvider = { send: async () => ({ ok: false }) }
+    const provider: EnquiryProvider = { send: async () => ({ ok: false, reason: "rejected" }) }
     const result = await resendEmailConfirmation({
       client: rpc,
       provider,

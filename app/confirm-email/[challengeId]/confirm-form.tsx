@@ -1,7 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import styles from "../confirm-email.module.css"
+
+function useConfirmationToken() {
+  const cache = useRef("")
+  return useSyncExternalStore(
+    () => () => {},
+    () => {
+      if (cache.current) return cache.current
+      const hash = window.location.hash
+      const marker = "#t="
+      if (hash.startsWith(marker)) cache.current = hash.slice(marker.length)
+      return cache.current
+    },
+    () => "",
+  )
+}
 
 type Props = {
   challengeId: string
@@ -11,17 +26,15 @@ type Props = {
 }
 
 export function ConfirmEmailForm({ challengeId, csrf, canConfirm, canResend }: Props) {
-  const [token, setToken] = useState("")
+  const token = useConfirmationToken()
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
-    const hash = window.location.hash
-    const marker = "#t="
-    const value = hash.startsWith(marker) ? hash.slice(marker.length) : ""
-    if (value) setToken(value)
-    if (hash) window.history.replaceState(null, "", window.location.pathname + window.location.search)
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search)
+    }
   }, [])
 
   async function submit(action: "confirm" | "resend") {

@@ -1,85 +1,92 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useState } from "react"
 import styles from "../confirm-email.module.css"
-
-function useConfirmationToken() {
-  const cache = useRef("")
-  return useSyncExternalStore(
-    () => () => {},
-    () => {
-      if (cache.current) return cache.current
-      const hash = window.location.hash
-      const marker = "#t="
-      if (hash.startsWith(marker)) cache.current = hash.slice(marker.length)
-      return cache.current
-    },
-    () => "",
-  )
-}
 
 type Props = {
   challengeId: string
-  csrf: string
   canConfirm: boolean
   canResend: boolean
 }
 
-export function ConfirmEmailForm({ challengeId, csrf, canConfirm, canResend }: Props) {
-  const token = useConfirmationToken()
+export function ConfirmEmailForm({ challengeId, canConfirm, canResend }: Props) {
+  const [token, setToken] = useState("")
+  const [csrf, setCsrf] = useState("")
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
-    if (window.location.hash) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search)
+    // Fragment tokens never reach the server during GET or appear in a
+    // query string. Capture before clearing the fragment from the URL.
+    const hash = window.location.hash
+    if (hash.startsWith("#t=") && /^[0-9a-f]{64}$/.test(hash.slice(3))) {
+      setToken(hash.slice(3))
     }
+    if (hash) window.history.replaceState(null, "", window.location.pathname + window.location.search)
+
+    // API GET merely sets a same-origin anti-CSRF cookie. It does not
+    // verify the email. This API endpoint is also the subsequent POST path.
+    let active = true
+    void (async () => {
+      try {
+        const response = await fetch("/api/confirm-email", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "same-origin",
+        })
+        const data = await response.json() as { csrf?: unknown }
+        if (active && response.ok && typeof data.csrf === "string" && /^[0-9a-f]{64}$/.test(data.csrf)) {
+          setCsrf(data.csrf)
+        } else if (active) {
+          setMessage("We couldn't prepare your secure confirmation. Please reload this page.")
+        }
+      } catch {
+        if (active) setMessage("We couldn't prepare your secure confirmation. Please reload this page.")
+      }
+    })()
+    return () => { active = false }
   }, [])
 
   async function submit(action: "confirm" | "resend") {
-    if (busy || done || !token) return
+    if (busy || done || !token || !csrf) return
     setBusy(true)
     setMessage("")
     try {
       const response = await fetch("/api/confirm-email", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ challengeId, csrf, token, action }),
       })
-      const body = await response.json() as { message?: string }
-      setMessage(typeof body.message === "string" ? body.message : "Your assessment is already saved.")
+      const data = await response.json() as { message?: string }
+      setMessage(typeof data.message === "string" ? data.message : "Your assessment is already saved.")
       if (response.ok && action === "confirm") setDone(true)
+      if (response.ok && action === "resend") setDone(true)
     } catch {
-      setMessage("Your assessment is already saved. You do not need to submit it again.")
+      setMessage("We couldn't complete that action. Your assessment is still saved. Please try again.")
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        void submit("confirm")
-      }}
-    >
+    <form onSubmit={(event) => {
+      event.preventDefault()
+      void submit("confirm")
+    }}>
       <div className={styles.actions}>
-        {canConfirm && (
-          <button className={styles.button} type="submit" disabled={busy || done || !token}>
-            {busy ? "Confirming…" : "Confirm email"}
-          </button>
-        )}
-        {canResend && (
-          <button
-            className={`${styles.button} ${styles.secondary}`}
-            type="button"
-            disabled={busy || !token}
-            onClick={() => void submit("resend")}
-          >
-            Resend confirmation
-          </button>
-        )}
+        {canConfirm && <button className={styles.button} type="submit" disabled={busy || done || !token || !csrf}>
+          {busy ? "Confirming…" : "Confirm email"}
+        </button>}
+        {canResend && <button
+          className={`${styles.button} ${styles.secondary}`}
+          type="button"
+          disabled={busy || done || !token || !csrf}
+          onClick={() => void submit("resend")}
+        >
+          Resend confirmation
+        </button>}
       </div>
       {!token && <p className={styles.note}>Open the confirmation button in your email to continue. This page does not confirm an address on its own.</p>}
       {message && <p className={styles.note} role="status">{message}</p>}

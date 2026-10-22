@@ -38,7 +38,7 @@ export function DocumentRequestPanel({ caseId, documents, replyMailbox = null }:
     </dl>
     <h3>Original request</h3>
     <p className="preserve-lines">{documents.issue}</p>
-    <p>Nothing on this step sends an email.</p>
+    <p>Saving evidence requirements does not contact the customer. You can review the email and send it separately when the contact checks are complete.</p>
     {documents.history === "unavailable" && <p className="notice">The communication history could not be loaded. That is not the same as no email having been prepared.</p>}
     {documents.history === "incomplete" && <p className="notice">Older communications exist and are not shown, so a draft is not offered from this page.</p>}
     {documents.history === "ambiguous" && <p className="notice">The evidence-request messages disagree, so this page will not draft or review one.</p>}

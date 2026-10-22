@@ -56,4 +56,4 @@ After a solicitor has approved one exact proposed version and hash, and after a 
 3. Set the draft tax through the existing command, then offer that new quote. The offer trigger binds the approved Guided Relaunch agreement to the new version only.
 4. The customer accepts the new quotation. An acceptance already recorded stays on the quote version it accepted.
 
-No such quote is created by this change.
+No such quote is created by this change. The reading copies, the approval register, and the DEV rehearsal for a later replacement are in `docs/customer/customer-quote-02.md`. That pack does not approve an agreement or create the quote.

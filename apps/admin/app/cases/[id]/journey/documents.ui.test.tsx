@@ -150,7 +150,7 @@ describe("the step 3 document request", () => {
     })} />)
     expect(screen.getByRole("checkbox", { name: /Website or business contact details/ })).not.toBeChecked()
     expect(screen.getByRole("button", { name: "Save evidence requirements" })).toBeDisabled()
-    expect(screen.getByText(/empty list is not a decision/i)).toBeInTheDocument()
+    expect(screen.getByText(/Save the documents together as one requirement/i)).toBeInTheDocument()
   })
 
   it("does not save an empty checklist or a requirement that is already open", async () => {
@@ -409,7 +409,7 @@ describe("the step 3 document request", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Include other evidence" }))
     fireEvent.change(screen.getByLabelText("Other evidence description"), { target: { value: "Something we might need later on." } })
     fireEvent.click(screen.getByRole("button", { name: "Save evidence requirements" }))
-    expect(await screen.findByText(/not specific enough for the customer email/)).toBeInTheDocument()
+    expect(await screen.findByText(/Give each additional document a specific name/)).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
 
     cleanup()

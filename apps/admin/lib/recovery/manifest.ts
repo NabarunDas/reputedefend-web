@@ -793,6 +793,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "gross customer price", probe: "admin_private.enforce_gross_customer_price_v1" },
   },
+  {
+    // DEV-AGREEMENT-04 additive schema support only. Defaults LEGACY:
+    // no new agreement is inserted or operative by running this migration.
+    // Separate script in supabase/dev-activation/ requires owner-approved DEV rollout.
+    version: "20261022105500",
+    filename: "20261022105500_service_specific_agreement_schema_v1.sql",
+    step: "DEV-AGREEMENT-04 service-specific owner approval schema (legacy mode)",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "owner agreement routing schema", probe: "admin_private.paid_service_expected_version_v2" },
+  },
 ]
 
 /**

@@ -184,7 +184,7 @@ describe("readiness model", () => {
     expect(supabase?.externalAction).toContain("genuine new-head SEC-08 archive 20261014T213909Z")
     expect(supabase?.verification).toContain("COM-13A/COM-13B/COM-14A/PAY-ENV-01/PAY-ENV-04 each appears once in DEV only")
     expect(supabase?.verification).toContain("SEC-08 appears once in both migration ledgers")
-    expect(supabase?.stopCondition).toContain("If DEV head differs from canonical 20261021214813")
+    expect(supabase?.stopCondition).toContain("If DEV head differs from canonical 20261022172455")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021155147")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021214813 or apply it to Production")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261020210000 or apply it to Production")

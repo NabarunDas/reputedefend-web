@@ -414,7 +414,9 @@ async function deliverPersistedIntake(
 
   return report({
     ...success,
-    emailConfirmation: confirmationUrl ? "pending" : "omitted",
+    // Creating a challenge does not mean an email has gone out.
+    // Only the provider-accepted customer receipt can be presented as sent.
+    emailConfirmation: confirmationUrl && customerOutcome === "sent" ? "pending" : "omitted",
     ...customerReceipt(customerOutcome === "sent" || intake.customer_communication_status === "SENT"),
   }, customerOutcome, internalOutcome)
 }

@@ -4,8 +4,9 @@ import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatPortalDate } from "@/lib/portal/cases/model"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
-import { customerFacingScope } from "../../../../../../../lib/commercial/scope-templates"
-import { agreementStatusText, moneyLabel, paymentFollowUp, quoteStatusText, taxExplanation, trackLabel } from "@/lib/portal/service/model"
+import { CustomerQuotation } from "@/lib/commercial/quotation"
+import { QUOTATION_ACCEPTANCE } from "../../../../../../../lib/commercial/quotation-presentation"
+import { agreementStatusText, paymentFollowUp, quoteStatusText, trackLabel } from "@/lib/portal/service/model"
 import type { CustomerCaseService, ServiceAction, ServiceAgreement, ServiceQuote } from "@/lib/portal/service/parse"
 
 type Operation = "accept_quote" | "decline_quote" | "accept_agreement" | "decline_agreement" | "revoke_authorization"
@@ -117,6 +118,8 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
 
       <QuoteSection
         reference={item.reference}
+        businessName={item.businessName}
+        locationName={item.locationName}
         quote={service.quote}
         action={quoteAction}
         busy={busy}
@@ -173,10 +176,12 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
 }
 
 function QuoteSection({
-  reference, quote, action, busy, open, setOpen, purposeAgreed, termsAgreed, feeAgreed,
+  reference, businessName, locationName, quote, action, busy, open, setOpen, purposeAgreed, termsAgreed, feeAgreed,
   setPurposeAgreed, setTermsAgreed, setFeeAgreed, onSubmit,
 }: {
   reference: string
+  businessName: string
+  locationName: string | null
   quote: ServiceQuote | null
   action: ServiceAction | null
   busy: Operation | null
@@ -192,37 +197,35 @@ function QuoteSection({
 }) {
   return (
     <section className="service-section" aria-labelledby="quote-heading">
-      <h2 id="quote-heading">Your quote</h2>
+      <h2 id="quote-heading">Your quotation</h2>
       {!quote ? <p>There isn&apos;t a quote for this case yet.</p> : (
         <>
           <p>{quoteStatusText(quote)}</p>
-          <dl className="service-facts">
-            <div><dt>Quote reference</dt><dd>{quote.reference}</dd></div>
-            <div><dt>Service</dt><dd>{quote.serviceName}</dd></div>
-            <div><dt>Standard amount</dt><dd>{moneyLabel(quote.standardAmountMinor, quote.currency)}</dd></div>
-            {quote.discountAmountMinor > 0 ? <div><dt>Discount</dt><dd>{moneyLabel(quote.discountAmountMinor, quote.currency)}</dd></div> : null}
-            <div><dt>Quoted amount</dt><dd>{moneyLabel(quote.quotedAmountMinor, quote.currency)}</dd></div>
-            {quote.taxAmountMinor > 0 ? (
-              <div>
-                <dt>{quote.taxBehaviour === "EXCLUSIVE" ? "Recorded tax" : "Included in the total"}</dt>
-                <dd>{moneyLabel(quote.taxAmountMinor, quote.currency)}</dd>
-              </div>
-            ) : null}
-            <div><dt>Total</dt><dd>{moneyLabel(quote.totalAmountMinor, quote.currency)}</dd></div>
-            <div><dt>Valid until</dt><dd><time dateTime={quote.validUntil}>{formatPortalDate(quote.validUntil)}</time></dd></div>
-            {quote.orderReference ? <div><dt>Service order</dt><dd>{quote.orderReference}</dd></div> : null}
-          </dl>
-          {taxExplanation(quote.taxBehaviour) ? <p>{taxExplanation(quote.taxBehaviour)}</p> : null}
-          <h3>What is included</h3>
-          <p className="service-prose">{customerFacingScope(quote.scope)}</p>
-          <h3>What is not included</h3>
-          <p className="service-prose">{quote.exclusions}</p>
-          <h3>What counts as success</h3>
-          <p className="service-prose">{quote.successDefinition}</p>
-          <h3>When you pay</h3>
-          <p className="service-prose">{quote.paymentTiming}</p>
-          <h3>Terms</h3>
-          <p className="service-prose">{quote.termsReference}</p>
+          <CustomerQuotation
+            businessName={businessName}
+            locationName={locationName}
+            caseReference={reference}
+            quoteReference={quote.reference}
+            orderReference={quote.orderReference}
+            serviceName={quote.serviceName}
+            serviceCode={quote.serviceCode}
+            paymentModel={quote.paymentModel}
+            scope={quote.scope}
+            exclusions={quote.exclusions}
+            successDefinition={quote.successDefinition}
+            paymentTiming={quote.paymentTiming}
+            termsReference={quote.termsReference}
+            standardAmountMinor={quote.standardAmountMinor}
+            discountAmountMinor={quote.discountAmountMinor}
+            quotedAmountMinor={quote.quotedAmountMinor}
+            taxBehaviour={quote.taxBehaviour}
+            taxAmountMinor={quote.taxAmountMinor}
+            totalAmountMinor={quote.totalAmountMinor}
+            currency={quote.currency}
+            validUntilLabel={formatPortalDate(quote.validUntil)}
+            validUntilIso={quote.validUntil}
+            sectionHeading="h3"
+          />
           {agreementReady(quote) ? (
             <PaidServiceAgreementDocument
               version={quote.commercialAgreementVersion}
@@ -436,14 +439,14 @@ function BoundQuoteAcceptance({
   const ready = purposeAgreed && termsAgreed && (feeLabel === null || feeAgreed)
   return (
     <>
-      <p>Each acknowledgement starts unchecked. Accepting records this quotation together with agreement {quote.commercialAgreementVersion}.</p>
+      <p>Each acknowledgement starts unchecked. Accepting records this quotation together with the agreement shown above.</p>
       <label className="checkbox">
         <input type="checkbox" checked={purposeAgreed} onChange={event => onPurpose(event.target.checked)} />
         {BUSINESS_PURPOSE}
       </label>
       <label className="checkbox">
         <input type="checkbox" checked={termsAgreed} onChange={event => onTerms(event.target.checked)} />
-        I accept this quotation under agreement {quote.commercialAgreementVersion} with SHA-256 {quote.commercialAgreementHash}.
+        {QUOTATION_ACCEPTANCE}
       </label>
       {feeLabel ? (
         <label className="checkbox">

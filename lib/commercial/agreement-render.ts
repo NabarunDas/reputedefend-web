@@ -13,14 +13,14 @@ export type AgreementBlock =
 export function agreementBlocks(body: string): AgreementBlock[] {
   const normalized = body.replace(/\r\n/g, "\n").trim()
   if (!normalized) return []
-  return normalized.split(/\n\n+/).flatMap(chunk => {
+  return normalized.split(/\n\n+/).flatMap((chunk): AgreementBlock[] => {
     const text = chunk.trim()
     if (!text) return []
     if (text.startsWith("## ")) {
       const heading = text.slice(3).trim()
-      return heading ? [{ kind: "heading" as const, text: heading }] : []
+      return heading ? [{ kind: "heading", text: heading }] : []
     }
-    return [{ kind: "paragraph" as const, text }]
+    return [{ kind: "paragraph", text }]
   })
 }
 

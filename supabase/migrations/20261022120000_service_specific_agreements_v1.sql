@@ -43,6 +43,11 @@ BEGIN
 END $dropcat$;
 
 ALTER TABLE public.paid_service_agreement_catalogue
+  ADD CONSTRAINT paid_service_agreement_body_sha256_v1 CHECK (
+    encode(sha256(convert_to(body_text, 'UTF8')), 'hex') = content_hash
+  );
+
+ALTER TABLE public.paid_service_agreement_catalogue
   ADD CONSTRAINT paid_service_agreement_catalogue_identity_v1 CHECK (
     (version_id = 'PS-2026-10-14.2' AND content_hash = '0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4' AND service_code IS NULL)
     OR (version_id = 'PS-2026-10-22.GR' AND content_hash = '705a8fe4aa51242ed3d01102a920a2ca22391fa4aa6f60e2c449d14b437f8eb3' AND service_code = 'GUIDED_RELAUNCH')
@@ -859,9 +864,19 @@ BEGIN
     END IF;
     NEW.commercial_agreement_version := ver;
     NEW.commercial_agreement_hash := hash;
-    IF position(ver IN NEW.terms_reference) = 0 THEN
-      NEW.terms_reference := left(btrim(NEW.terms_reference) || ' Agreement ' || ver || ' SHA-256 ' || hash || '.', 1000);
-    END IF;
+    -- An unoffered draft can carry a frozen older agreement reference.
+    -- Replace that metadata on this newly offered version only; never alter
+    -- the stored terms of an existing OFFERED or ACCEPTED quotation.
+    -- This keeps exactly one bound version/hash in the offer snapshot.
+    NEW.terms_reference := left(
+      btrim(regexp_replace(
+        coalesce(NEW.terms_reference, ''),
+        ' Agreement PS-[0-9]{4}-[0-9]{2}-[0-9]{2}[^ ]* SHA-256 [0-9a-f]{64}\\.',
+        '',
+        'g'
+      )) || ' Agreement ' || ver || ' SHA-256 ' || hash || '.',
+      1000
+    );
   END IF;
   RETURN NEW;
 END; $$;

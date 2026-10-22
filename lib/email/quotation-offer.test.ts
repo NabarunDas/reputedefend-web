@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { customerEmailSecurityNote } from "./customer-message"
 import {
-  preservedAcceptedQuoteRef,
   publishedCustomerPriceLabels,
   quotationButtonLabel,
   quotationIndependenceSentence,
@@ -81,7 +80,6 @@ describe("quotation offer email", () => {
     })
     expect(rendered?.text).toContain("Recover the suspended profile for this location.")
     expect(rendered?.text).not.toContain(quotationWordingMarker)
-    expect(offer({ publicRef: preservedAcceptedQuoteRef })).toBeNull()
     expect(offer({ introduction: "Please open https://example.com before you accept." })).toBeNull()
     expect(offer({ subject: "A quotation without the reference" })).toBeNull()
     expect(offer({ scope: "This quote also costs £59.00." })).toBeNull()

@@ -13,7 +13,6 @@ export const quotationLinkExpirySentence = "This secure link expires before that
 export const quotationReplySentence = "If you have a question about this quotation, reply to this email."
 export const quotationWebsiteSentence = "If you have a question about this quotation, contact us through the ProfileRelaunch website."
 export const quotationWordingMarker = "Standard wording version "
-export const preservedAcceptedQuoteRef = "QT-26-TBGP5Q"
 export const publishedCustomerPriceLabels = ["£99.00", "£59.00", "£299.00", "£149.00", "£9.99"] as const
 
 const defaultIntroduction = [
@@ -92,7 +91,6 @@ export function renderQuotationOffer(input: {
   const publicRef = input.publicRef.trim()
   const serviceName = input.serviceName.trim()
   if (!publicRef || publicRef.length > 40 || unsafeCopy(publicRef)) return null
-  if (publicRef === preservedAcceptedQuoteRef) return null
   if (!serviceName || serviceName.length > 120 || unsafeCopy(serviceName)) return null
   if (!trustedActionUrl(input.actionUrl) || input.actionUrl.includes("#t=")) return null
   const amountLabel = quoteMoneyLabel(input.amountMinor, input.currency)

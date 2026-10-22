@@ -25,6 +25,7 @@ export function QuotePanel({
   customerName,
   businessName,
   listingCountry = null,
+  developmentQuotationMail = false,
 }: {
   panel: JourneyQuotePanel
   caseId: string
@@ -34,6 +35,7 @@ export function QuotePanel({
   customerName: string
   businessName: string
   listingCountry?: string | null
+  developmentQuotationMail?: boolean
 }) {
   const quote = panel.quote
   const businessHref = isUuid(businessId) ? `/records/business/${businessId}` : null
@@ -97,6 +99,7 @@ export function QuotePanel({
         scope={quote.scope}
         exclusions={quote.exclusions}
         validUntil={quote.validUntil}
+        developmentQuotationMail={developmentQuotationMail}
       />
       <details>
         <summary>Copy a one-time link instead</summary>

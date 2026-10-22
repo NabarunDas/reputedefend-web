@@ -186,10 +186,11 @@ describe("commercial admin commands", () => {
     expect(payload.bodyText).not.toContain(prepared?.token)
     expect(payload.bodyText).not.toContain("#t=")
     expect(payload.bodyHtml).not.toContain("#t=")
+    expect(payload.devAllowlistedRecipient).toBeUndefined()
     expect(JSON.stringify(payload)).not.toContain("https://example.invalid")
   })
 
-  it("refuses the preserved accepted quotation before queueing mail", async () => {
+  it("refuses an accepted quotation without a reference exception, and does not let the browser choose the development mailbox", async () => {
     const linkSecret = "quotation-link-secret-for-tests-32b"
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
@@ -200,17 +201,70 @@ describe("commercial admin commands", () => {
     vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", linkSecret)
     mocks.rpc.mockResolvedValue({
-      status: "OFFERED",
-      publicRef: "QT-26-TBGP5Q",
-      currentVersion: { status: "OFFERED" },
+      status: "ACCEPTED",
+      publicRef: "QT-26-ABCDEF",
+      currentVersion: { status: "ACCEPTED" },
     })
-    const denied = await quoteCommand(req("/api/operations/quotes", {
+    const accepted = await quoteCommand(req("/api/operations/quotes", {
       operation: "queue_quote_offer_email", quoteId,
     }))
-    expect(denied.status).toBe(403)
-    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/preserved/) })
+    expect(accepted.status).toBe(403)
+    expect(await accepted.json()).toMatchObject({ message: expect.stringMatching(/current offered quotation/) })
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
     expect(mocks.rpc.mock.calls[0][0]).toBe("admin_quote_detail_v1")
+
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://profilerelaunch-customer-git-develop-clientcove.vercel.app")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "quotation-test@profilerelaunch.test")
+    mocks.rpc.mockReset()
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_quote_detail_v1") {
+        return {
+          status: "OFFERED",
+          publicRef: "QT-26-ABCDEF",
+          caseReference: "PR-26-CASE01",
+          currentVersion: {
+            status: "OFFERED",
+            serviceName: "Guided Relaunch",
+            totalAmountMinor: 9900,
+            currency: "GBP",
+            paymentModel: "UPFRONT",
+            scope: "Recover the suspended profile for this location.",
+            exclusions: "Google decisions stay outside this quotation.",
+            validUntil: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+          },
+        }
+      }
+      if (name === "admin_queue_quote_offer_email_v1") return { status: "success", id: quoteId, lifecycle: "QUEUED", deliveryStatus: "NONE" }
+      if (name === "admin_dev_send_email_claim_v1") return { status: "reauth_required" }
+      return { status: "success" }
+    })
+    const devOrigin = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const dev = await quoteCommand(new NextRequest(`${devOrigin}/api/operations/quotes`, {
+      method: "POST",
+      headers: {
+        origin: devOrigin, "content-type": "application/json", "idempotency-key": key,
+        cookie: `${sessionCookie}=${"a".repeat(64)}`,
+      },
+      body: JSON.stringify({
+        operation: "queue_quote_offer_email",
+        quoteId,
+        recipient: "other@example.com",
+        devAllowlistedRecipient: "attacker@example.com",
+      }),
+    }))
+    expect(dev.status).toBe(403)
+    expect(await dev.json()).toMatchObject({ message: expect.stringMatching(/Queued is not delivered/) })
+    const payload = mocks.rpc.mock.calls.find(call => call[0] === "admin_queue_quote_offer_email_v1")?.[1].p_payload
+    expect(payload.devAllowlistedRecipient).toBe("quotation-test@profilerelaunch.test")
+    expect(payload.recipient).toBeUndefined()
+    expect(payload.devLane).toBe(true)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_dev_send_email_claim_v1")).toBe(true)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "communication_load_send_v1")).toBe(false)
   })
 
   it("maps reauth_required for price approval", async () => {

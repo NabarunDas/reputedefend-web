@@ -81,7 +81,7 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
           return { ok: false, retryable: false, error: linkError }
         }
         if (quote && !devQuoteRecipientAllowed(env, loaded.recipient)) {
-          return { ok: false, retryable: false, error: "Recipient is not a development test mailbox" }
+          return { ok: false, retryable: false, error: "Recipient is not the development mailbox named for this preview" }
         }
         const version = integerVersion(loaded.linkKeyVersion)
         const prepared = actionId && version !== null

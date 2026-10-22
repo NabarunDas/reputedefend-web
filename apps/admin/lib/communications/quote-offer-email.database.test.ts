@@ -11,6 +11,7 @@ import { standardScopeExclusions } from "../../../../lib/commercial/scope-templa
 import { publishedCustomerPriceLabels, renderQuotationOffer } from "../../../../lib/email/quotation-offer"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
+import { settleDevSendEmailClaim, type DevSendClaim } from "./dev-send"
 import { sendEmailHandler } from "./handler"
 import {
   deriveQuoteAcceptanceActionId,
@@ -64,6 +65,8 @@ const signatures: Record<string, string[]> = {
   communication_mark_acceptance_unknown_v1: ["p_communication", "p_idempotency_key"],
   communication_mark_provider_rejected_v1: ["p_communication", "p_error", "p_retryable", "p_idempotency_key"],
   communication_apply_provider_event_v1: ["p_provider", "p_provider_event_id", "p_event_type", "p_provider_message_id", "p_occurred_at", "p_bounce_class"],
+  job_complete_v1: ["p_job", "p_lease"],
+  job_fail_v1: ["p_job", "p_lease", "p_error", "p_retryable"],
 }
 
 function namedRpc() {
@@ -347,9 +350,18 @@ describe("quotation email queue", () => {
     expect((await queue(expired.id)).result).toMatchObject({ status: "denied", reason: "quote_expired" })
   })
 
-  it("keeps the development lane on example.com and leaves other lanes unchanged in SQL", async () => {
+  it("requires one exact development mailbox and leaves other lanes unchanged in SQL", async () => {
     const allowed = await offerService("GUIDED_RELAUNCH")
-    expect((await queue(allowed.id, { devLane: true })).result.status).toBe("success")
+    expect((await queue(allowed.id, { devLane: true })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: " alex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com,other@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "*@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "notalex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com.invalid" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com" })).result.status).toBe("success")
     await db.query("update public.customers set email = 'synthetic.customer@example.net' where id = $1", [customer])
     await db.query(
       "insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values ($1,'email','synthetic.customer@example.net',$2,'Verified the replacement address on a live call.')",
@@ -360,8 +372,10 @@ describe("quotation email queue", () => {
       [customer, admin],
     )
     const denied = await offerService("GUIDED_RELAUNCH")
-    expect((await queue(denied.id, { devLane: true })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(denied.id, { devLane: false })).result.status).toBe("success")
+    expect((await queue(denied.id, { devLane: true, devAllowlistedRecipient: "alex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
+    expect((await queue(denied.id, { devLane: true, devAllowlistedRecipient: "synthetic.customer@example.net" })).result.status).toBe("success")
+    const production = await offerService("GUIDED_RELAUNCH")
+    expect((await queue(production.id, { devLane: false })).result.status).toBe("success")
     await db.query("update public.customers set email = 'alex@example.com' where id = $1", [customer])
     await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
     await db.query(
@@ -441,20 +455,22 @@ describe("quotation email queue", () => {
     expect((await queue(guard.id)).result).toMatchObject({ status: "denied", reason: "case_required" })
   })
 
-  it("hard-refuses the preserved accepted quotation and a burned action id", async () => {
+  it("does not special-case a quotation reference and does not email an accepted one", async () => {
     const definition = await db.query<{ def: string }>("select pg_get_functiondef('public.admin_queue_quote_offer_email_v1(text,uuid,jsonb)'::regprocedure) as def")
-    expect(definition.rows[0].def).toContain("QT-26-TBGP5Q")
+    expect(definition.rows[0].def).not.toContain("QT-26-TBGP5Q")
     const offered = await offerService("GUIDED_RELAUNCH")
-    const original = offered.publicRef
+    const before = await count("select count(*)::int as n from public.communications")
     await db.exec("alter table public.quotes disable trigger user")
-    await db.query("update public.quotes set public_ref = 'QT-26-TBGP5Q' where id = $1", [offered.id])
+    await db.exec("alter table public.quote_versions disable trigger user")
+    await db.query("update public.quotes set public_ref = 'QT-26-TBGP5Q', status = 'ACCEPTED' where id = $1", [offered.id])
+    await db.query("update public.quote_versions set status = 'ACCEPTED' where quote_id = $1", [offered.id])
+    await db.exec("alter table public.quote_versions enable trigger user")
+    await db.exec("alter table public.quotes enable trigger user")
     const preserved = await queue(offered.id)
     const after = await db.query<{ public_ref: string; status: string }>("select public_ref, status from public.quotes where id = $1", [offered.id])
-    await db.query("update public.quotes set public_ref = $2 where id = $1", [offered.id, original])
-    await db.exec("alter table public.quotes enable trigger user")
-    expect(preserved.result).toMatchObject({ status: "denied", reason: "preserved_quote" })
-    expect(after.rows[0]).toEqual({ public_ref: "QT-26-TBGP5Q", status: "OFFERED" })
-    expect(preserved.rendered).toBeNull()
+    expect(preserved.result).toMatchObject({ status: "denied", reason: "quote_not_offered" })
+    expect(after.rows[0]).toEqual({ public_ref: "QT-26-TBGP5Q", status: "ACCEPTED" })
+    expect(await count("select count(*)::int as n from public.communications")).toBe(before)
 
     const burned = await offerService("GUIDED_RELAUNCH")
     const request = key()
@@ -467,6 +483,79 @@ describe("quotation email queue", () => {
       [actionId, customer, business, location, burned.caseId, burned.versionId, sha256(randomUUID()), admin],
     )
     expect((await queue(burned.id, {}, request)).result.status).toBe("conflict")
+  })
+
+  it("claims the development send once and records delivered only from the webhook", async () => {
+    const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    const offered = await offerService("GUIDED_RELAUNCH")
+    const request = key()
+    const actionId = deriveQuoteAcceptanceActionId(request)
+    const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
+    const row = await detail(offered.id)
+    const rendered = row.currentVersion ? renderQuotationOffer({
+      publicRef: row.publicRef,
+      caseRef: row.caseReference,
+      serviceName: row.currentVersion.serviceName,
+      amountMinor: row.currentVersion.totalAmountMinor,
+      currency: row.currentVersion.currency,
+      paymentModel: row.currentVersion.paymentModel,
+      scope: row.currentVersion.scope,
+      exclusions: row.currentVersion.exclusions,
+      validUntil: row.currentVersion.validUntil,
+      actionUrl: `${portal}/action/${actionId}`,
+    }) : null
+    expect(rendered).not.toBeNull()
+    const queued = await queue(offered.id, {
+      devLane: true,
+      devAllowlistedRecipient: "alex@example.com",
+      customerOrigin: portal,
+      subject: rendered!.subject,
+      bodyText: rendered!.text,
+      bodyHtml: rendered!.html,
+      actionId,
+      secretHash: prepared.tokenHash,
+      linkKeyVersion: prepared.version,
+    }, request)
+    expect(queued.result.status).toBe("success")
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [adminToken])
+    const claimRequest = key()
+    const claimed = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, claimRequest, queued.result.id, true, portal])
+    expect(claimed.status).toBe("success")
+    const provider = createIdempotentMailProvider()
+    const settled = await settleDevSendEmailClaim({
+      rpc: namedRpc(),
+      claim: claimed,
+      provider,
+      env: {
+        VERCEL_ENV: "preview",
+        VERCEL_GIT_COMMIT_REF: "develop",
+        VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+        SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+        DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com",
+        COMMUNICATIONS_LINK_SECRET: linkSecret,
+      },
+    })
+    expect(settled).toBe("succeeded")
+    expect(provider.effects).toBe(1)
+    expect(provider.payloads[0]?.to).toBe("alex@example.com")
+    expect(provider.payloads[0]?.text).toContain("#t=")
+    expect(await containsToken(prepared.token)).toBe(0)
+    const accepted = await db.query<{ delivery_status: string; provider_message_id: string }>(
+      "select delivery_status, provider_message_id from public.communications where id = $1",
+      [queued.result.id],
+    )
+    expect(accepted.rows[0].delivery_status).toBe("PROVIDER_ACCEPTED")
+    const deliveredAt = "2026-10-22T16:00:00.000Z"
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_quote_dev_delivered", "email.delivered", accepted.rows[0].provider_message_id, deliveredAt,
+    ])).toMatchObject({ status: "success", applied: true, duplicate: false })
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_quote_dev_delivered", "email.delivered", accepted.rows[0].provider_message_id, deliveredAt,
+    ])).toMatchObject({ duplicate: true })
+    expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id = $1", [queued.result.id])).rows[0].delivery_status).toBe("DELIVERED")
+    const replay = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, claimRequest, queued.result.id, true, portal])
+    expect(replay.replay).toBe(true)
+    expect(provider.effects).toBe(1)
   })
 
   it("records provider rejection without storing the bearer", async () => {

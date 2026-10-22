@@ -5,7 +5,7 @@ BEGIN;
 -- of a distinct quote-acceptance domain. Only its SHA-256 is stored. The raw
 -- bearer is not written to SQL, the job payload, the audit row or the receipt.
 -- Source only. Do not apply this file to DEV or Production from this change.
--- It does not send mail, enable Resend, enable Stripe, or alter QT-26-TBGP5Q.
+-- It does not send mail, enable Resend, enable Stripe, or update an existing quotation.
 
 ALTER TABLE public.communications DROP CONSTRAINT communications_template_check;
 ALTER TABLE public.communications ADD CONSTRAINT communications_template_check CHECK (
@@ -256,6 +256,7 @@ DECLARE
   from_address text;
   reply_to text;
   dev_lane boolean;
+  raw_allow text;
   fp text;
   cached jsonb;
   qu public.quotes;
@@ -292,6 +293,7 @@ BEGIN
   body_html := p_payload->>'bodyHtml';
   from_address := lower(btrim(coalesce(p_payload->>'fromAddress', '')));
   dev_lane := coalesce(p_payload->>'devLane', 'false') = 'true';
+  raw_allow := coalesce(p_payload->>'devAllowlistedRecipient', '');
   IF quote_id IS NULL OR action_id IS NULL OR link_version IS NULL OR link_version < 1 OR link_version > 100
     OR secret IS NULL OR secret !~ '^[a-f0-9]{64}$'
     OR origin !~ '^https://[A-Za-z0-9.-]+$'
@@ -309,7 +311,7 @@ BEGIN
   END IF;
   fp := md5(jsonb_build_array(
     'queue_quote_offer_email', quote_id, action_id, link_version, origin, subject,
-    md5(body_text), md5(body_html), from_address, coalesce(reply_to, ''), dev_lane
+    md5(body_text), md5(body_html), from_address, coalesce(reply_to, ''), dev_lane, raw_allow
   )::text);
   cached := admin_private.communication_receipt_v1(actor, p_request, fp);
   IF cached IS NOT NULL THEN RETURN cached; END IF;
@@ -319,9 +321,6 @@ BEGIN
 
   SELECT * INTO qu FROM public.quotes WHERE id = quote_id FOR UPDATE;
   IF qu.id IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-  IF qu.public_ref = 'QT-26-TBGP5Q' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'preserved_quote');
-  END IF;
   SELECT * INTO qv FROM public.quote_versions WHERE id = qu.current_version_id FOR UPDATE;
   IF qv.id IS NULL OR qv.quote_id IS DISTINCT FROM qu.id THEN
     RETURN jsonb_build_object('status', 'invalid');
@@ -369,10 +368,11 @@ BEGIN
   THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_mismatch');
   END IF;
-  IF dev_lane AND NOT (
-    length(admin_private.normalize_email_v1(c.email)) BETWEEN 3 AND 254
-    AND position(' ' IN admin_private.normalize_email_v1(c.email)) = 0
-    AND right(admin_private.normalize_email_v1(c.email), 12) = '@example.com'
+  IF dev_lane AND (
+    raw_allow = ''
+    OR raw_allow ~ '[[:space:],*]'
+    OR lower(raw_allow) !~ '^[a-z0-9.!#$%&''*+=?^_`{|}~-]+@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
+    OR admin_private.normalize_email_v1(lower(raw_allow)) IS DISTINCT FROM admin_private.normalize_email_v1(c.email)
   ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'dev_recipient');
   END IF;

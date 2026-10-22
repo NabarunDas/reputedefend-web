@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { renderQuotationOffer } from "../../../../lib/email/quotation-offer"
 import { deliveryLabel } from "./model"
+import { devQuoteAllowlistedRecipient, devQuoteRecipientAllowed } from "./dev-lane"
 import { sendEmailHandler } from "./handler"
 import {
   communicationAccessTokenHash,
@@ -144,7 +145,31 @@ describe("quotation email materialisation", () => {
         bodyHtml: devRendered.html,
       })),
     })
-    expect(denied).toMatchObject({ ok: false, error: "Recipient is not a development test mailbox" })
+    expect(denied).toMatchObject({ ok: false, error: "Recipient is not the development mailbox named for this preview" })
+    expect(devQuoteAllowlistedRecipient(devEnv)).toBeNull()
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com,other@example.com" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "*@example.com" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "@example.com" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "notalex@example.com" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: " alex@example.com" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com.invalid" }, "alex@example.com")).toBe(false)
+    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "Alex@Example.com" }, "ALEX@example.com")).toBe(true)
+    const named = { ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com", COMMUNICATIONS_LINK_SECRET: secret }
+    expect(devQuoteAllowlistedRecipient(named)).toBe("alex@example.com")
+    const delivered = await sendEmailHandler(named, {
+      async send() { return { ok: true, providerMessageId: "msg_dev", replay: false } },
+    }).execute({
+      idempotencyKey: "send-email:comm:v1",
+      payload: { communicationId: "comm", contentVersion: 1 },
+      rpc: rpcFor(loaded({
+        recipient: "alex@example.com",
+        customerOrigin: devOrigin,
+        bodyText: devRendered.text,
+        bodyHtml: devRendered.html,
+      })),
+    })
+    expect(delivered.ok).toBe(true)
     const allowed = await sendEmailHandler({ COMMUNICATIONS_LINK_SECRET: secret }, {
       async send() { return { ok: true, providerMessageId: "msg_prod", replay: false } },
     }).execute({

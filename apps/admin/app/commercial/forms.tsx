@@ -313,8 +313,15 @@ export function CreateVersionForm({ quoteId, version }: { quoteId: string; versi
   </form>
 }
 
+const previewActionUrl = "https://customer.example/action/00000000-0000-4000-8000-000000000001"
+
+function previewHtmlDocument(html: string): string {
+  return html.split(previewActionUrl).join("#").split("<script").join("").split("</script").join("")
+}
+
 export function SendQuotationForm({
   quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, scope, exclusions, validUntil,
+  developmentQuotationMail = false,
 }: {
   quoteId: string
   publicRef: string
@@ -326,6 +333,7 @@ export function SendQuotationForm({
   scope: string
   exclusions: string
   validUntil: string
+  developmentQuotationMail?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
@@ -343,11 +351,12 @@ export function SendQuotationForm({
     scope,
     exclusions,
     validUntil,
-    actionUrl: "https://customer.example/action/00000000-0000-4000-8000-000000000001",
+    actionUrl: previewActionUrl,
     subject: editing && subject.trim() ? subject : undefined,
     introduction: editing && introduction.trim() ? introduction : undefined,
   })
-  const previewText = preview?.text.split("https://customer.example/action/00000000-0000-4000-8000-000000000001").join("[Secure link added when you send]")
+  const previewText = preview?.text.split(previewActionUrl).join("[Secure link added when you send]")
+  const previewHtml = preview ? previewHtmlDocument(preview.html) : ""
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy) return
@@ -376,8 +385,13 @@ export function SendQuotationForm({
   return <form onSubmit={submit} data-quotation-email="preview">
     <h3>Quotation email</h3>
     <p>Review the email below, then send it. Queuing does not mean the email provider has accepted it, and it does not mean the customer has received it.</p>
+    {developmentQuotationMail && <p>On this development preview, set the sensitive variable DEV_MAIL_ALLOWED_RECIPIENTS on Admin Preview/develop to one exact owner-controlled test mailbox before sending. It must be the verified customer address. This page cannot set it, and a list, a suffix, or a wildcard is not accepted.</p>}
     {preview && previewText ? <>
       <p><strong>Subject:</strong> {preview.subject}</p>
+      <div className="email-preview">
+        <iframe className="email-preview-frame email-preview-frame-branded" title="Quotation email" sandbox="" srcDoc={previewHtml} />
+      </div>
+      <h4>Plain text</h4>
       <pre className="preserve-lines">{previewText}</pre>
       <p><button type="button" disabled>{quotationButtonLabel}</button></p>
       <p>The secure link is created when you send. It is not shown in this preview and it is not stored in the email record.</p>

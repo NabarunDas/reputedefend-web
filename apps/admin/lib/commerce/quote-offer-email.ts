@@ -2,12 +2,13 @@ import "server-only"
 import { NextResponse } from "next/server"
 import { backend, tokenHash } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
-import { devAdminOutgoingMailLane, devCustomerPortalOrigin } from "../communications/dev-lane"
+import { devAdminOutgoingMailLane, devCustomerPortalOrigin, devQuoteAllowlistedRecipient } from "../communications/dev-lane"
+import { settleDevSendEmailClaim, type DevSendClaim } from "../communications/dev-send"
 import { communicationsSendEnabled, sendDisabledReason } from "../communications/gate"
 import { deriveQuoteAcceptanceActionId, prepareQuoteAcceptanceLink, snapshotUploadUrl } from "../communications/link"
 import { confirmedReplyMailbox } from "../communications/brand-email"
-import { mailFromAddress } from "../communications/mail"
-import { preservedAcceptedQuoteRef, renderQuotationOffer } from "../../../../lib/email/quotation-offer"
+import { mailFromAddress, resolveMailProvider, type OutgoingMailProvider } from "../communications/mail"
+import { renderQuotationOffer } from "../../../../lib/email/quotation-offer"
 import type { QuoteListItem } from "./model"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
@@ -42,10 +43,6 @@ const reasons: Record<string, { message: string; status: number }> = {
     message: "This quotation has expired, so the email was not queued.",
     status: 403,
   },
-  preserved_quote: {
-    message: "This accepted test quotation is preserved. No quotation email was queued.",
-    status: 403,
-  },
   case_required: {
     message: "This quotation has no case or monitoring record the email system can attach to, so it was not queued.",
     status: 403,
@@ -55,7 +52,7 @@ const reasons: Record<string, { message: string; status: number }> = {
     status: 403,
   },
   dev_recipient: {
-    message: "Development email can only be queued to an example.com test mailbox.",
+    message: "Development quotation email can be sent only when the verified customer address is the single mailbox named by DEV_MAIL_ALLOWED_RECIPIENTS.",
     status: 403,
   },
   link_window: {
@@ -84,6 +81,54 @@ type QueueResult = {
   deliveryStatus?: string
 }
 
+const queuedOnly = "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered."
+const submitted = "The quotation email was submitted to the email provider. Accepted by the provider is not delivered."
+const stillQueued = "The quotation email is queued. It was not submitted to the email provider. Use Process queued email on Communications. Queued is not delivered."
+
+function devSendRequestId(queueKey: string): string {
+  return deriveQuoteAcceptanceActionId(`dev-send:${queueKey}`)
+}
+
+async function submitDevelopmentQuotation(input: {
+  token: string
+  key: string
+  communicationId: string
+  provider?: OutgoingMailProvider
+}): Promise<NextResponse> {
+  const portal = devCustomerPortalOrigin()
+  const queued = { id: input.communicationId, lifecycle: "QUEUED", deliveryStatus: "NONE" }
+  if (!portal) return reply(`${stillQueued} The development customer portal is not configured.`, 503, queued)
+  const provider = input.provider ?? resolveMailProvider()
+  if (provider === "disabled") return reply(`${stillQueued} Outgoing mail is not enabled.`, 403, queued)
+  let claimed: DevSendClaim
+  try {
+    claimed = await backend().rpc<DevSendClaim>("admin_dev_send_email_claim_v1", {
+      p_token: tokenHash(input.token),
+      p_request: devSendRequestId(input.key),
+      p_communication: input.communicationId,
+      p_confirmed: true,
+      p_customer_origin: portal,
+    })
+  } catch {
+    return reply(stillQueued, 503, queued)
+  }
+  if (claimed.replay === true) {
+    if (claimed.currentJobStatus === "SUCCEEDED" || claimed.reason === "already_processed") {
+      return reply(submitted, 200, { ...queued, deliveryStatus: "PROVIDER_ACCEPTED" })
+    }
+    return reply(stillQueued, 409, queued)
+  }
+  if (claimed.status === "reauth_required") {
+    return reply("The quotation email is queued. Sign out and sign in with a new email code, then use Process queued email on Communications. Queued is not delivered.", 403, queued)
+  }
+  if (claimed.status !== "success" || !claimed.leaseToken) {
+    return reply(stillQueued, claimed.status === "conflict" ? 409 : 503, queued)
+  }
+  const settled = await settleDevSendEmailClaim({ rpc: backend(), claim: claimed, provider })
+  if (settled === "succeeded") return reply(submitted, 200, { ...queued, deliveryStatus: "PROVIDER_ACCEPTED" })
+  return reply("The quotation email is queued. The email provider did not accept it, and it was not submitted again. Queued is not delivered.", settled === "retry" ? 503 : 409, queued)
+}
+
 export async function queueQuoteOfferEmail(input: {
   token: string
   key: string
@@ -91,11 +136,16 @@ export async function queueQuoteOfferEmail(input: {
   quoteId: string
   subject?: string
   introduction?: string
-}): Promise<NextResponse> {
+}, deps: { provider?: OutgoingMailProvider } = {}): Promise<NextResponse> {
   if (!communicationsSendEnabled()) return reply(sendDisabledReason(), 403)
   if (!input.customerOrigin) return reply("The customer site origin is not configured.", 503)
-  if (devAdminOutgoingMailLane() && input.customerOrigin !== devCustomerPortalOrigin()) {
+  const devLane = devAdminOutgoingMailLane()
+  const allowlisted = devLane ? devQuoteAllowlistedRecipient() : null
+  if (devLane && input.customerOrigin !== devCustomerPortalOrigin()) {
     return reply("The customer site origin must be the development customer portal.", 503)
+  }
+  if (devLane && !allowlisted) {
+    return reply("Development quotation email is closed. Set the sensitive Admin Preview/develop variable DEV_MAIL_ALLOWED_RECIPIENTS to one exact owner-controlled test mailbox. A list, a suffix, or a wildcard is not accepted, and this page cannot set it.", 403)
   }
   const fromAddress = mailFromAddress()
   if (!fromAddress) return reply("The outbound sender address is not configured.", 503)
@@ -114,7 +164,6 @@ export async function queueQuoteOfferEmail(input: {
   }
   if (detail == null) return reply("Your session has ended. Please sign in again.", 401)
   if (detail.status === "conflict" || !detail.currentVersion) return reply("That commercial record changed. Reload the page and try again.", 409)
-  if (detail.publicRef === preservedAcceptedQuoteRef) return reply(reasons.preserved_quote.message, reasons.preserved_quote.status)
   if (detail.status !== "OFFERED" || detail.currentVersion.status !== "OFFERED") {
     return reply(reasons.quote_not_offered.message, reasons.quote_not_offered.status)
   }
@@ -154,18 +203,23 @@ export async function queueQuoteOfferEmail(input: {
         fromAddress,
         replyTo: confirmedReplyMailbox(),
         sendEnabled: true,
-        devLane: devAdminOutgoingMailLane(),
+        devLane,
+        ...(allowlisted ? { devAllowlistedRecipient: allowlisted } : {}),
       },
     })
   } catch {
     return reply("We couldn’t confirm the quotation email. Reload the page before trying again.", 503)
   }
+  if (result?.status === "success" && result.id && devLane) {
+    return submitDevelopmentQuotation({
+      token: input.token,
+      key: input.key,
+      communicationId: result.id,
+      provider: deps.provider,
+    })
+  }
   if (result?.status === "success") {
-    return reply(
-      "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered.",
-      200,
-      { id: result.id, lifecycle: result.lifecycle ?? "QUEUED", deliveryStatus: result.deliveryStatus ?? "NONE" },
-    )
+    return reply(queuedOnly, 200, { id: result.id, lifecycle: result.lifecycle ?? "QUEUED", deliveryStatus: result.deliveryStatus ?? "NONE" })
   }
   if (result?.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
   if (result?.status === "conflict") return reply("That commercial record changed. Reload the page and try again.", 409)

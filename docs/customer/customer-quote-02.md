@@ -115,3 +115,24 @@ When, and only when, the Guided Relaunch version and hash above are operative on
 Do not call `create_version` and then `offer` on `QT-26-H6JSMB`. Offering another version of that same quote marks the current offer superseded and revokes its acceptance link. That is a different operation from cancelling the quote and creating a new one.
 
 A customer acceptance link, an email, and any payment are separate approvals. This rehearsal does not send them. It does not run on Production and it does not call Stripe.
+
+
+## Owner's recorded approval — 22 October 2026
+
+On 22 October 2026, the ProfileRelaunch owner confirmed in the project conversation that they had checked and given **legal approval for all five service-specific agreements**, and authorised proceeding through DEV activation and creation of a fresh £99 Guided Relaunch test quotation.
+
+This records **owner approval only**. It is not a representation that an independent solicitor reviewed or signed the documents. The technical contract catalogue continues to mark the drafts as \`SOLICITOR_REVIEW\` and non-operative until a separately tested, auditable owner-approval mechanism and DEV-only activation migration are delivered. In particular, the existing database's literal statement \`Solicitor reviewed paid-service agreement...\` must not be fabricated to make a row operative.
+
+Approved for the owner-controlled DEV rollout are the **exact source bodies**, versions and SHA-256 hashes below, not the old omnibus or superseded 21 October drafts:
+
+| Service | Version | SHA-256 (UTF-8 contract body) |
+| --- | --- | --- |
+| Guided Relaunch | PS-2026-10-22.GR | \`705a8fe4aa51242ed3d01102a920a2ca22391fa4aa6f60e2c449d14b437f8eb3\` |
+| Guided Review | PS-2026-10-22.GV | \`56334ee14bb3c31b4144e339738cefbd28039c5a163785cc9aa7c9f8b85bbbe9\` |
+| Managed Profile Recovery | PS-2026-10-22.MR | \`725e0d769943852cef1ffe9dc12a0282bdd6c9ac7a7b2ef4c0fa16cbf637a269\` |
+| Managed Review Protection | PS-2026-10-22.MV | \`62a1ee6fbd1cc196103c1ae281592ed857c84df4e13a5158aa7334794ebbc784\` |
+| Relaunch Guard | PS-2026-10-22.GD | \`51da445b47ea6f2cc4671b3192c068c78ce81548a7f36a38e6ccc92607905f23\` |
+
+The owner authorises D13's **fail-closed** rule: a new offer may bind a service-specific agreement only if that exact service version/hash is approved and operative; never fall back silently to a wrong agreement. Existing offered or accepted quotes are immutable. The implementation must leave \`QT-26-H6JSMB\` and \`PS-2026-10-14.2\` untouched until a controlled DEV replacement is performed. The approval itself authorises no email, money movement, or Production change.
+
+Any future changes to the body text require another version ID, SHA-256 hash and fresh owner approval. Legal obligations, consumer rights and privacy law remain applicable notwithstanding this owner approval.

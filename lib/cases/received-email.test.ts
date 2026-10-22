@@ -50,6 +50,7 @@ function expectCustomerReceiptContent(
     expect(body).toContain(publicRef)
     expect(body).toContain("What happens next")
     expect(body).toContain("Security reminder")
+    expect(body).not.toMatch(/human review|email provider|automated workflow|processed by a bot/i)
     expect(body).toContain("simply reply to this email")
     expect(body).toContain("keep your case reference in the subject")
     expect(body).toContain(brandTagline)
@@ -147,7 +148,7 @@ describe("case received customer email", () => {
       "enquiries@reputedefend.com",
     )
     expect(message.text).toContain("Hi Nabarun,")
-    expect(message.text).toContain("details about abc")
+    expect(message.text).toContain("telling us about abc")
     expect(message.text).toMatch(/Your case reference\n\nPR-26-EQMVKZ\n\n/)
     expect(message.html).toContain("PR-26-EQMVKZ")
     expect(message.html).not.toContain("pr-26-eqmvkz")

@@ -61,18 +61,18 @@ export const EVIDENCE_NOTE =
 export const SUBMIT_NOTE = "No payment is taken when you submit the assessment."
 
 export const SUCCESS_COPY = {
-  title: "Assessment received.",
-  body: "A human will review it. We may ask for clarification if something important is missing. You will then receive a recommended next step. If paid execution support is appropriate, Guided or Managed options and the applicable fee will be explained before you decide.",
+  title: "Thank you — we have received your assessment.",
+  body: "Our team will review what you have shared and get in touch if we need anything else. We will explain the next steps and any optional paid support before you make a decision."
 } as const
 
 export const PERSISTED_SUCCESS_COPY = {
-  title: "Assessment received.",
-  referenceLabel: "Case reference",
-  review: "A ProfileRelaunch specialist will review the information you submitted. We may contact you if clarification is needed.",
-  keep: "Keep this reference for future correspondence.",
-  emailSent: "We've passed this reference to the email provider. That does not confirm it has reached your inbox.",
-  emailSuppressed: "Your case has been safely recorded. Confirmation email is not sent in this development environment. Please keep the reference above.",
-  emailFailed: "We couldn't send the confirmation email right now, but your case has been safely recorded. Please keep the reference above.",
+  title: "Thank you — we have received your assessment.",
+  referenceLabel: "Your case reference",
+  review: "Your request is safely recorded. Our team will review the details and get in touch if we need anything else.",
+  keep: "Please keep this reference handy so we can find your case quickly if you contact us.",
+  emailSent: "A confirmation email is on its way. Please check your inbox and, if needed, your spam folder.",
+  emailSuppressed: "You do not need to submit your assessment again. Please keep this case reference for your records.",
+  emailFailed: "We could not send a confirmation email just now, but your request is safely recorded. Please keep this case reference.",
 } as const
 
 export const SIMULATED_COPY = {

@@ -23,7 +23,7 @@ describe("proposed service agreements", () => {
     expect(gate).toContain("WHERE version_id = 'PS-2026-10-14.2'")
   })
 
-  it("proposes five closed versions with distinct hashes and does not migrate them", () => {
+  it("preserves five hashed source bodies and records a distinct migration for DEV activation", () => {
     expect(proposedServiceAgreements).toHaveLength(5)
     expect(new Set(proposedServiceAgreements.map(item => item.version)).size).toBe(5)
     expect(new Set(proposedServiceAgreements.map(item => item.contentHash)).size).toBe(5)
@@ -57,10 +57,23 @@ describe("proposed service agreements", () => {
       expect(item.body).not.toMatch(/SHA-256|SOLICITOR_REVIEW|UNCONFIRMED|NOT_APPLICABLE/)
       expect(proposedAgreementAcceptanceClosed(item.version, item.contentHash)).toBe(true)
     }
-    for (const file of readdirSync(migrations)) {
-      const sql = readFileSync(new URL(file, migrations), "utf8")
-      expect(sql).not.toContain("PS-2026-10-21")
-      expect(sql).not.toContain("PS-2026-10-22")
+    const activation = "20261022105500_service_specific_owner_activation_v1.sql"
+    const sql = readFileSync(new URL(activation, migrations), "utf8")
+    for (const item of proposedServiceAgreements) {
+      expect(sql).toContain(item.version)
+      expect(sql).toContain(item.contentHash)
+      expect(sql).toContain(item.body)
+    }
+    expect(sql).toContain("OWNER_DECLARATION_IN_PROJECT_CONVERSATION")
+    expect(sql).toContain("owner_approved_at")
+    expect(sql).toContain("paid_service_expected_version_v2")
+    expect(sql).toContain("paid_service_acceptances_exact_agreement_v2")
+    expect(sql).toContain("Old operative agreement does not match approved baseline")
+    expect(sql).not.toContain("UPDATE public.quotes")
+    expect(sql).not.toContain("UPDATE public.quote_versions")
+    for (const file of readdirSync(migrations).filter(file => file !== activation)) {
+      const otherSql = readFileSync(new URL(file, migrations), "utf8")
+      expect(otherSql).not.toContain("PS-2026-10-22")
     }
   })
 
@@ -167,7 +180,7 @@ describe("proposed service agreements", () => {
     expect(gate).toContain("commercial_agreement_version = 'PS-2026-10-14.2'")
   })
 
-  it("does not let a proposed version pass the current acceptance gate", () => {
+  it("requires an operative catalogue row even for a matching service-specific version", () => {
     const proposed = proposedServiceAgreements[0]
     const status = assessPaidServiceAcceptance({
       sessionCustomerId: "customer",
@@ -186,7 +199,7 @@ describe("proposed service agreements", () => {
       paymentModel: "UPFRONT",
       locationId: "location",
       amountMinor: 9900,
-      catalogueOperative: true,
+      catalogueOperative: false,
       catalogueVersion: proposed.version,
       catalogueHash: proposed.contentHash,
       businessPurposeAccepted: true,
@@ -200,7 +213,7 @@ describe("proposed service agreements", () => {
       existingFingerprint: null,
       fingerprint: "fingerprint",
     }).status
-    expect(status).toBe("stale_version")
+    expect(status).toBe("not_operative")
     expect(PAID_SERVICE_AGREEMENT_VERSION).not.toBe(proposed.version)
   })
 })

@@ -57,8 +57,10 @@ describe("proposed service agreements", () => {
       expect(item.body).not.toMatch(/SHA-256|SOLICITOR_REVIEW|UNCONFIRMED|NOT_APPLICABLE/)
       expect(proposedAgreementAcceptanceClosed(item.version, item.contentHash)).toBe(true)
     }
-    const activation = "20261022105500_service_specific_owner_activation_v1.sql"
-    const sql = readFileSync(new URL(activation, migrations), "utf8")
+    const schema = "20261022105500_service_specific_agreement_schema_v1.sql"
+    const activation = new URL("../../supabase/dev-activation/20261022_five_owner_approved_agreements.sql", import.meta.url)
+    const sql = readFileSync(activation, "utf8")
+    const schemaSql = readFileSync(new URL(schema, migrations), "utf8")
     for (const item of proposedServiceAgreements) {
       expect(sql).toContain(item.version)
       expect(sql).toContain(item.contentHash)
@@ -66,12 +68,14 @@ describe("proposed service agreements", () => {
     }
     expect(sql).toContain("OWNER_DECLARATION_IN_PROJECT_CONVERSATION")
     expect(sql).toContain("owner_approved_at")
-    expect(sql).toContain("paid_service_expected_version_v2")
-    expect(sql).toContain("paid_service_acceptances_exact_agreement_v2")
+    expect(schemaSql).toContain("paid_service_expected_version_v2")
+    expect(schemaSql).toContain("paid_service_acceptances_exact_agreement_v2")
+    expect(schemaSql).toContain("'LEGACY'")
+    expect(sql).toContain("SET mode='SERVICE_SPECIFIC'")
     expect(sql).toContain("Old operative agreement does not match approved baseline")
     expect(sql).not.toContain("UPDATE public.quotes")
     expect(sql).not.toContain("UPDATE public.quote_versions")
-    for (const file of readdirSync(migrations).filter(file => file !== activation)) {
+    for (const file of readdirSync(migrations).filter(file => file !== schema)) {
       const otherSql = readFileSync(new URL(file, migrations), "utf8")
       expect(otherSql).not.toContain("PS-2026-10-22")
     }

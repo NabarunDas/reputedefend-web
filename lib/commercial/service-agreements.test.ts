@@ -15,6 +15,7 @@ describe("proposed service agreements", () => {
   it("leaves PS-2026-10-14.2 and its hash unchanged", () => {
     expect(PAID_SERVICE_AGREEMENT_VERSION).toBe("PS-2026-10-14.2")
     expect(paidServiceAgreementContentHash).toBe("0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4")
+    expect(paidServiceAgreementBody).toContain("Version PS-2026-10-14.2")
     expect(createHash("sha256").update(paidServiceAgreementBody, "utf8").digest("hex")).toBe(paidServiceAgreementContentHash)
     const gate = readFileSync(new URL("20261015013000_paid_service_acceptance_gate_v1.sql", migrations), "utf8")
     expect(gate).toContain("commercial_agreement_version = 'PS-2026-10-14.2'")
@@ -27,11 +28,11 @@ describe("proposed service agreements", () => {
     expect(new Set(proposedServiceAgreements.map(item => item.version)).size).toBe(5)
     expect(new Set(proposedServiceAgreements.map(item => item.contentHash)).size).toBe(5)
     expect(Object.fromEntries(proposedServiceAgreements.map(item => [item.version, item.contentHash]))).toEqual({
-      "PS-2026-10-21.GR": "e08731b8138122a692a69e704a79ba0dfee4c9edd05138548e7b0f1e7f9bd76a",
-      "PS-2026-10-21.GV": "9249604f97b6fb1a599636b3eb3d18f3da9db2eae56b8e9021e69ab252a68bb7",
-      "PS-2026-10-21.MR": "97ad2d9685735791d8b60f2f1304c7d78f6d82e11406b3c8c63c1fab0c532f54",
-      "PS-2026-10-21.MV": "db5f0b66042bfa811c9b79f3e72e9027fa0caf785cbac7fabbc50b6fd77d427d",
-      "PS-2026-10-21.GD": "e48450fed19cb3e5c77f82666c586cf4f09ece0dd5fe2fc51fa4d695da5124fa",
+      "PS-2026-10-21.GR": "e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88",
+      "PS-2026-10-21.GV": "6b4c26493e4e3450cfca9a5c41908ec44c22b329f85228a536c8192d1803a2ff",
+      "PS-2026-10-21.MR": "1a7188c9d9f1b054cf3bf6627a66a9206f042dbf5684c5615c870be72f4699ee",
+      "PS-2026-10-21.MV": "6dded927728a4cec7226712eccbf1d3243645602f58a56f94275b76235549214",
+      "PS-2026-10-21.GD": "b48fdffe3ff8ec15543fec0e0717fdabba73c4ffe128fc1b2600b8d2ca61c9e6",
     })
     for (const item of proposedServiceAgreements) {
       expect(item.version).toBe(proposedServiceAgreementVersions[item.serviceCode])
@@ -49,6 +50,10 @@ describe("proposed service agreements", () => {
       expect(item.body).toContain("law of England and Wales")
       expect(item.body).toContain("contact@profilerelaunch.com")
       expect(item.body).toContain("Contracts (Rights of Third Parties) Act 1999")
+      expect(item.body.startsWith("ProfileRelaunch Ltd — Paid-service agreement for ")).toBe(true)
+      expect(item.body).toContain("22 October 2026")
+      expect(item.body).not.toContain(item.version)
+      expect(item.body).not.toContain("Version ")
       expect(item.body).not.toMatch(/SHA-256|SOLICITOR_REVIEW|UNCONFIRMED|NOT_APPLICABLE/)
       expect(proposedAgreementAcceptanceClosed(item.version, item.contentHash)).toBe(true)
     }
@@ -93,6 +98,19 @@ describe("proposed service agreements", () => {
     expect(guard).toContain("return the unused portion of that month")
     expect(guard).toContain("you add us as a Manager")
     expect(guard).not.toMatch(/£99|£59|£299|£149/)
+  })
+
+  it("documents a later Guided reissue that leaves QT-26-H6JSMB offered", () => {
+    const doc = readFileSync(new URL("../../docs/customer/customer-quote-01.md", import.meta.url), "utf8")
+    const offer = readFileSync(new URL("20261001220255_quote_surface_fixes_v1.sql", migrations), "utf8")
+    const gate = readFileSync(new URL("20261015013000_paid_service_acceptance_gate_v1.sql", migrations), "utf8")
+    expect(doc).toContain("QT-26-H6JSMB")
+    expect(doc).toContain("create_draft")
+    expect(doc).toContain("Do not call `create_version` and then `offer` on QT-26-H6JSMB")
+    expect(offer).toContain("UPDATE public.quote_versions SET status = 'SUPERSEDED' WHERE id = qu.current_version_id AND status = 'OFFERED'")
+    expect(gate).toContain("Offered or accepted quote versions are immutable")
+    expect(gate).toContain("OLD.status = 'DRAFT' AND NEW.status = 'OFFERED'")
+    expect(gate).toContain("commercial_agreement_version = 'PS-2026-10-14.2'")
   })
 
   it("does not let a proposed version pass the current acceptance gate", () => {

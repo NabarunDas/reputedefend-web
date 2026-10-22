@@ -7,6 +7,11 @@
  * acceptance-actionable. A later solicitor approval and a separate migration
  * are required before a new quotation may bind one. An issued quotation keeps
  * the agreement version already stored on it.
+ *
+ * The customer-visible text carries the service title and the date below.
+ * The version id and SHA-256 stay on the proposal metadata. They are not
+ * printed in the body. A wording change before approval replaces the hash
+ * for the same unapproved version id. It does not edit PS-2026-10-14.2.
  */
 import { createHash } from "node:crypto"
 
@@ -20,16 +25,16 @@ export const proposedServiceAgreementVersions = {
   RELAUNCH_GUARD: "PS-2026-10-21.GD",
 } as const
 
-const parties = `This agreement is between ProfileRelaunch Ltd (company number 17520826), a company registered in England and Wales and incorporated on 14 October 2026, whose registered office is 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom, trading as ProfileRelaunch ("we", "us"), and the business named in the quotation that accepts this version ("you"). Notices to us under this agreement go to contact@profilerelaunch.com.`
+const parties = `This agreement is between ProfileRelaunch Ltd (company number 17520826), a company registered in England and Wales and incorporated on 14 October 2026, whose registered office is 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom, trading as ProfileRelaunch ("we", "us"), and the business named in the quotation that accepts this agreement ("you"). Notices to us under this agreement go to contact@profilerelaunch.com.`
 
 function section(title: string, paragraphs: string[]) {
   return [`## ${title}`, ...paragraphs].join("\n\n")
 }
 
 const formation = section("1. Formation", [
-  "A contract for the service named in this agreement is formed only when we have given you a quotation that names that service, the Business Profile or review, the price and this version, and you have accepted that quotation and this version.",
+  "A contract for the service named in this agreement is formed only when we have given you a quotation that names that service, the Business Profile or review, and the price, and you have accepted that quotation and this agreement.",
   "Using the website, sending an enquiry, or reading a published price does not accept this agreement and does not create a contract. The website terms govern use of the website. They are not this agreement. For this service, this agreement and the accepted quotation prevail if they conflict with the website terms.",
-  "This version applies only to a quotation you accept under it. It does not change an agreement you have already accepted under another version. We may withdraw a quotation that you have not yet accepted.",
+  "This agreement applies only to a quotation you accept with it. It does not change an agreement you have already accepted. We may withdraw a quotation that you have not yet accepted.",
 ])
 
 const authority = section("2. Authority", [
@@ -64,7 +69,7 @@ const governingLaw = section("13. Governing law", [
 ])
 
 const otherTerms = section("14. Other terms", [
-  "We will change this agreement for an order you have already accepted only by agreeing a new version with you. A change of our published prices or website wording does not change a version you have already accepted.",
+  "We will change this agreement for an order you have already accepted only by agreeing a replacement of this agreement with you. A change of our published prices or website wording does not change an agreement you have already accepted.",
   "If a court holds that part of this agreement cannot be enforced, the rest of it still applies. If we delay in using a right, that delay is not a waiver of the right.",
   "This agreement and the accepted quotation are the whole agreement between us for the service they describe. They replace earlier discussions about that service. They do not limit liability for fraud or fraudulent misrepresentation.",
   "A person who is not a party has no right under the Contracts (Rights of Third Parties) Act 1999 to enforce this agreement.",
@@ -142,10 +147,20 @@ const guardEnding = section("12. Ending the service", [
   "Ending monitoring does not end a different service order. Clauses that should continue after the service ends, including clauses on sums already earned, confidentiality, intellectual property, liability and governing law, continue to apply.",
 ])
 
-function compile(version: string, parts: string[], ending: string) {
+export const PROPOSED_SERVICE_AGREEMENT_DATE = "22 October 2026"
+
+const agreementTitles = {
+  GUIDED_RELAUNCH: "ProfileRelaunch Ltd — Paid-service agreement for Guided Relaunch",
+  GUIDED_REVIEW: "ProfileRelaunch Ltd — Paid-service agreement for Guided Review",
+  MANAGED_RELAUNCH: "ProfileRelaunch Ltd — Paid-service agreement for Managed Profile Recovery",
+  MANAGED_REVIEW: "ProfileRelaunch Ltd — Paid-service agreement for Managed Review Protection",
+  RELAUNCH_GUARD: "ProfileRelaunch Ltd — Paid-service agreement for Relaunch Guard",
+} as const
+
+function compile(serviceCode: keyof typeof agreementTitles, parts: string[], ending: string) {
   return [
-    "ProfileRelaunch Ltd — Paid-service agreement",
-    `Version ${version}`,
+    agreementTitles[serviceCode],
+    PROPOSED_SERVICE_AGREEMENT_DATE,
     parties,
     formation,
     authority,
@@ -160,7 +175,7 @@ function compile(version: string, parts: string[], ending: string) {
   ].join("\n\n")
 }
 
-const guidedRelaunchBody = compile(proposedServiceAgreementVersions.GUIDED_RELAUNCH, [
+const guidedRelaunchBody = compile("GUIDED_RELAUNCH", [
   guidedService(
     "Guided Relaunch",
     "We organise the evidence and prepare the profile relaunch work for the location named in the quotation. You remain the person who files it with Google. We do not submit that work for you.",
@@ -170,7 +185,7 @@ const guidedRelaunchBody = compile(proposedServiceAgreementVersions.GUIDED_RELAU
   ...guidedDuties("We prepare the profile relaunch work. We do not submit it to Google for you."),
 ], guidedEnding)
 
-const guidedReviewBody = compile(proposedServiceAgreementVersions.GUIDED_REVIEW, [
+const guidedReviewBody = compile("GUIDED_REVIEW", [
   guidedService(
     "Guided Review",
     "We organise the evidence and prepare the review work named in the quotation. You remain the person who files it with Google. We do not submit that work for you.",
@@ -180,7 +195,7 @@ const guidedReviewBody = compile(proposedServiceAgreementVersions.GUIDED_REVIEW,
   ...guidedDuties("We prepare the review work. We do not submit it to Google for you."),
 ], guidedEnding)
 
-const managedRelaunchBody = compile(proposedServiceAgreementVersions.MANAGED_RELAUNCH, [
+const managedRelaunchBody = compile("MANAGED_RELAUNCH", [
   section("3. The service", [
     "The service under this agreement is Managed Profile Recovery for the Business Profile and incident named in the accepted quotation. We provide only that service.",
     "We carry out the authorised work. You are not left to assemble and submit it alone.",
@@ -207,7 +222,7 @@ const managedRelaunchBody = compile(proposedServiceAgreementVersions.MANAGED_REL
   ]),
 ], managedEnding)
 
-const managedReviewBody = compile(proposedServiceAgreementVersions.MANAGED_REVIEW, [
+const managedReviewBody = compile("MANAGED_REVIEW", [
   section("3. The service", [
     "The service under this agreement is Managed Review Protection for the original review named in the accepted quotation. We provide only that service.",
     "The quotation identifies that review through the stable identifiers and baseline evidence then available. We carry out the authorised work. You are not left to assemble and submit it alone.",
@@ -234,7 +249,7 @@ const managedReviewBody = compile(proposedServiceAgreementVersions.MANAGED_REVIE
   ]),
 ], managedEnding)
 
-const guardBody = compile(proposedServiceAgreementVersions.RELAUNCH_GUARD, [
+const guardBody = compile("RELAUNCH_GUARD", [
   section("3. The service", [
     "The service under this agreement is Relaunch Guard for each location named in the accepted quotation. We provide only that monitoring service.",
     "Our team carries out the checks manually, twice each day, including weekends and bank holidays, using a Europe/London schedule, and we email you if a check needs your attention.",

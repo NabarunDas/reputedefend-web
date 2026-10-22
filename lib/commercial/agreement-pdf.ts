@@ -2,11 +2,13 @@
  * Branded PDF of the exact agreement wording supplied by the caller.
  *
  * The file adds a ProfileRelaunch header and page numbers around that wording.
- * It does not rewrite clauses. WinAnsi covers the pound sign and the dashes
- * used in the registered office and the agreement title. No Node built-in is
- * imported, so a customer page can build the file in the browser.
+ * It does not rewrite clauses. Characters that Helvetica WinAnsi cannot draw
+ * stop the download. They are not replaced. Widths are the Helvetica AFM
+ * advances, so a line stays inside the margins, including a word with no spaces.
+ * No Node built-in is imported, so a customer page can build the file in the browser.
  */
 import { agreementBlocks } from "./agreement-render"
+import { helveticaBoldWidths, helveticaWidths } from "./helvetica-widths"
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -15,41 +17,92 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
 const TOP = 730
 const BOTTOM = 64
 
-const WIN_ANSI: Record<number, number> = {
-  0x2013: 0x96,
-  0x2014: 0x97,
-  0x2018: 0x91,
-  0x2019: 0x92,
-  0x201c: 0x93,
-  0x201d: 0x94,
-  0x2022: 0x95,
-  0x00a3: 0xa3,
-  0x00a0: 0xa0,
-}
-
 const FROM_WIN_ANSI: Record<number, string> = {
-  0x96: "\u2013",
-  0x97: "\u2014",
+  0x82: "\u201a",
+  0x83: "\u0192",
+  0x84: "\u201e",
+  0x85: "\u2026",
+  0x86: "\u2020",
+  0x87: "\u2021",
+  0x88: "\u02c6",
+  0x89: "\u2030",
+  0x8a: "\u0160",
+  0x8b: "\u2039",
+  0x8c: "\u0152",
+  0x8e: "\u017d",
   0x91: "\u2018",
   0x92: "\u2019",
   0x93: "\u201c",
   0x94: "\u201d",
   0x95: "\u2022",
-  0xa3: "\u00a3",
+  0x96: "\u2013",
+  0x97: "\u2014",
+  0x98: "\u02dc",
+  0x99: "\u2122",
+  0x9a: "\u0161",
+  0x9b: "\u203a",
+  0x9c: "\u0153",
+  0x9e: "\u017e",
+  0x9f: "\u0178",
   0xa0: "\u00a0",
 }
 
-type PdfLine = { font: "F1" | "F2"; size: number; text: string; leading: number }
+export class AgreementPdfError extends Error {
+  readonly codePoint: number
+
+  constructor(codePoint: number) {
+    const hex = codePoint.toString(16).toUpperCase().padStart(4, "0")
+    super(`The agreement PDF cannot represent U+${hex}. The download was not created.`)
+    this.name = "AgreementPdfError"
+    this.codePoint = codePoint
+  }
+}
+
+type PdfLine = { font: "F1" | "F2"; size: number; text: string; leading: number; blockStart: boolean }
+
+function winAnsiByte(code: number): number | null {
+  if (code === 0x20 || (code >= 0x21 && code <= 0x7e)) return code
+  if (code >= 0xa0 && code <= 0xff) return code
+  switch (code) {
+    case 0x201a: return 0x82
+    case 0x0192: return 0x83
+    case 0x201e: return 0x84
+    case 0x2026: return 0x85
+    case 0x2020: return 0x86
+    case 0x2021: return 0x87
+    case 0x02c6: return 0x88
+    case 0x2030: return 0x89
+    case 0x0160: return 0x8a
+    case 0x2039: return 0x8b
+    case 0x0152: return 0x8c
+    case 0x017d: return 0x8e
+    case 0x2018: return 0x91
+    case 0x2019: return 0x92
+    case 0x201c: return 0x93
+    case 0x201d: return 0x94
+    case 0x2022: return 0x95
+    case 0x2013: return 0x96
+    case 0x2014: return 0x97
+    case 0x02dc: return 0x98
+    case 0x2122: return 0x99
+    case 0x0161: return 0x9a
+    case 0x203a: return 0x9b
+    case 0x0153: return 0x9c
+    case 0x017e: return 0x9e
+    case 0x0178: return 0x9f
+    default: return null
+  }
+}
+
+function requireByte(code: number): number {
+  const byte = winAnsiByte(code)
+  if (byte === null || helveticaWidths[byte] <= 0 || helveticaBoldWidths[byte] <= 0) throw new AgreementPdfError(code)
+  return byte
+}
 
 function encodeWinAnsi(text: string): number[] {
   const bytes: number[] = []
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0x3f
-    if (code >= 0x20 && code <= 0x7e) bytes.push(code)
-    else if (WIN_ANSI[code] !== undefined) bytes.push(WIN_ANSI[code])
-    else if (code >= 0xa0 && code <= 0xff) bytes.push(code)
-    else bytes.push(0x3f)
-  }
+  for (const char of text) bytes.push(requireByte(char.codePointAt(0) ?? 0))
   return bytes
 }
 
@@ -63,35 +116,69 @@ function pdfString(text: string): string {
   return `${out})`
 }
 
-function wrap(text: string, size: number): string[] {
-  const width = size * 0.52
+function measure(text: string, size: number, widths: readonly number[]): number {
+  let width = 0
+  for (const char of text) width += (widths[requireByte(char.codePointAt(0) ?? 0)] * size) / 1000
+  return width
+}
+
+function wrap(text: string, size: number, widths: readonly number[]): string[] {
   const words = text.split(" ")
   const lines: string[] = []
   let current = ""
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word
-    if (current && next.length * width > CONTENT_WIDTH) {
-      lines.push(current)
-      current = word
-    } else {
-      current = next
+  const place = (word: string) => {
+    if (measure(word, size, widths) <= CONTENT_WIDTH) {
+      const next = current ? `${current} ${word}` : word
+      if (current && measure(next, size, widths) > CONTENT_WIDTH) {
+        lines.push(current)
+        current = word
+      } else {
+        current = next
+      }
+      return
     }
+    if (current) {
+      lines.push(current)
+      current = ""
+    }
+    let chunk = ""
+    for (const char of word) {
+      const next = `${chunk}${char}`
+      if (chunk && measure(next, size, widths) > CONTENT_WIDTH) {
+        lines.push(chunk)
+        chunk = char
+      } else {
+        chunk = next
+      }
+    }
+    current = chunk
   }
-  if (current) lines.push(current)
-  return lines.length > 0 ? lines : [""]
+  for (const word of words) {
+    if (word) place(word)
+  }
+  if (current || lines.length === 0) lines.push(current)
+  return lines
 }
 
 function layout(body: string): PdfLine[] {
   const lines: PdfLine[] = []
-  for (const block of agreementBlocks(body)) {
+  const blocks = agreementBlocks(body)
+  blocks.forEach((block, blockIndex) => {
     const size = block.kind === "heading" ? 13 : 11
     const font = block.kind === "heading" ? "F2" : "F1"
+    const widths = font === "F2" ? helveticaBoldWidths : helveticaWidths
     const leading = block.kind === "heading" ? 22 : 15
-    const wrapped = wrap(block.text, size)
-    wrapped.forEach((text, index) => {
-      lines.push({ font, size, text, leading: index === 0 ? leading : 14 })
+    const gap = blockIndex === 0 ? 0 : 6
+    wrap(block.text, size, widths).forEach((text, index) => {
+      lines.push({
+        font,
+        size,
+        text,
+        leading: index === 0 ? leading + gap : 14,
+        blockStart: index === 0,
+      })
     })
-  }
+  })
   return lines
 }
 
@@ -99,8 +186,11 @@ function paginate(lines: PdfLine[]): PdfLine[][] {
   const pages: PdfLine[][] = []
   let page: PdfLine[] = []
   let y = TOP
-  for (const line of lines) {
-    if (y - line.leading < BOTTOM && page.length > 0) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const next = lines[index + 1]
+    const needed = line.blockStart && line.font === "F2" && next ? line.leading + next.leading : line.leading
+    if (y - needed < BOTTOM && page.length > 0) {
       pages.push(page)
       page = []
       y = TOP
@@ -150,7 +240,11 @@ function pageStream(lines: PdfLine[], pageNumber: number): string {
 
 function latin1(text: string): Uint8Array {
   const bytes = new Uint8Array(text.length)
-  for (let index = 0; index < text.length; index += 1) bytes[index] = text.charCodeAt(index) & 0xff
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index)
+    if (code > 0xff) throw new AgreementPdfError(code)
+    bytes[index] = code
+  }
   return bytes
 }
 
@@ -178,7 +272,7 @@ export function buildAgreementPdf(body: string): Uint8Array {
   objects.push(fontRegular)
   objects.push(fontBold)
   objects.push(`<< /Title ${pdfString("ProfileRelaunch paid-service agreement")} /Producer ${pdfString("ProfileRelaunch")} >>`)
-  objects[0] = `<< /Type /Catalog /Pages 2 0 R >>`
+  objects[0] = "<< /Type /Catalog /Pages 2 0 R >>"
   objects[1] = `<< /Type /Pages /Kids [${pageObjectNumbers.map(number => `${number} 0 R`).join(" ")}] /Count ${pages.length} >>`
   const fixedPages = pageObjectNumbers.map((number, index) => {
     const contentNumber = contentObjectNumbers[index]
@@ -229,7 +323,7 @@ function pdfStrings(pdf: Uint8Array): string[] {
           continue
         }
         const octal = source.slice(index + 1, index + 4)
-        if (/^[0-7]{3}$/.test(octal)) {
+        if (octal.length === 3 && octal >= "000" && octal <= "377" && [...octal].every(digit => digit >= "0" && digit <= "7")) {
           const code = Number.parseInt(octal, 8)
           text += FROM_WIN_ANSI[code] ?? String.fromCharCode(code)
           index += 4
@@ -259,7 +353,7 @@ export function pdfPlainText(pdf: Uint8Array): string {
     if (trimmed === "ProfileRelaunch") return false
     if (trimmed === "Paid-service agreement") return false
     if (trimmed === "ProfileRelaunch paid-service agreement") return false
-    if (/^Page \d+$/.test(trimmed)) return false
+    if (trimmed.startsWith("Page ") && [...trimmed.slice(5)].every(digit => digit >= "0" && digit <= "9") && trimmed.length > 5) return false
     return true
   }).join(" ")
 }

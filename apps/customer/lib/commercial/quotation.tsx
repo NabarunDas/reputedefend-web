@@ -47,20 +47,29 @@ export function CustomerQuotation({
         ) : null}
         <p className="quotation-price">{quotation.total}</p>
         <p>{quotation.taxNote}</p>
-        <HeadingTag>What we will do</HeadingTag>
-        <p className="quotation-prose">{quotation.deliverables}</p>
+        <p className="quotation-note">{quotation.overviewNote}</p>
+        <HeadingTag>Overview</HeadingTag>
+        <p className="quotation-prose">{quotation.overview}</p>
         <HeadingTag>Your part</HeadingTag>
         <p className="quotation-prose">{quotation.responsibilities}</p>
-        <HeadingTag>What is not included</HeadingTag>
-        <p className="quotation-prose">{quotation.exclusions}</p>
+        {quotation.paymentSummary ? (
+          <>
+            <HeadingTag>When you pay</HeadingTag>
+            <p className="quotation-prose">{quotation.paymentSummary}</p>
+          </>
+        ) : null}
+        <HeadingTag>Scope</HeadingTag>
+        <p className="quotation-prose quotation-record">{quotation.scope || "No scope is recorded on this quotation."}</p>
+        <HeadingTag>Exclusions</HeadingTag>
+        <p className="quotation-prose quotation-record">{quotation.exclusions || "No exclusions are recorded on this quotation."}</p>
         {quotation.successDefinition ? (
           <>
             <HeadingTag>What counts as success</HeadingTag>
-            <p className="quotation-prose">{quotation.successDefinition}</p>
+            <p className="quotation-prose quotation-record">{quotation.successDefinition}</p>
           </>
         ) : null}
-        <HeadingTag>When you pay</HeadingTag>
-        <p className="quotation-prose">{quotation.paymentTiming}</p>
+        <HeadingTag>{quotation.paymentSummary ? "Payment wording on this quotation" : "When you pay"}</HeadingTag>
+        <p className="quotation-prose quotation-record">{quotation.paymentWording || "No payment wording is recorded on this quotation."}</p>
         {quotation.assurance ? <p>{quotation.assurance}</p> : null}
         {quotation.terms ? (
           <>

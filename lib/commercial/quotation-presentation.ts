@@ -1,16 +1,17 @@
 /**
  * Customer quotation presentation.
  *
- * Stored scope, exclusions, payment timing and the bound agreement are not
- * rewritten. Repeated price, tax and payment sentences are shown once.
- * A success definition is shown only for an outcome-based success fee.
+ * The stored scope, exclusions, success definition and payment wording are
+ * shown in full. A trailing standard-wording marker is the only scope text
+ * omitted, and the stored snapshot is not changed. The overview is labelled
+ * as an explanation. It is not a substitute for those terms, and it is not
+ * produced by deleting sentences from them.
  */
 import { formatMoney } from "../money"
-import { customerFacingTaxNote, customerPriceBoundary, customerPriceLine } from "../pricing"
+import { customerFacingTaxNote } from "../pricing"
 import {
   customerFacingScope,
   preservedPaymentTiming,
-  preservedSuccessDefinition,
   publishedGuardLead,
   publishedGuidedCopy,
   publishedGuidedLine,
@@ -19,27 +20,15 @@ import {
 } from "./scope-templates"
 import { customerFacingTerms } from "./agreement-render"
 
-const GUIDED_FEE = "A Guided fee is payable upfront only after you have accepted a valid quotation and this agreement."
-const FOREIGN_SUCCESS_FEE = "Managed success fees are payable only when the defined successful outcome is achieved under the service terms."
-const FINAL_PRICE = `${customerPriceLine} ${customerPriceBoundary}`
-const SERVICE_PRICE_PREFIXES = [
-  "Guided Relaunch (",
-  "Guided Review (",
-  "Managed Profile Recovery (",
-  "Managed Relaunch (",
-  "Managed Review Protection (",
-  "Managed Review (",
-  "Relaunch Guard (",
-  "Profile + Review monitoring (",
-]
-
-const DELIVERABLES: Record<string, string> = {
-  GUIDED_RELAUNCH: "ProfileRelaunch prepares the profile relaunch work for the location named in this quotation. You submit that work to Google.",
-  GUIDED_REVIEW: "ProfileRelaunch prepares the review work named in this quotation. You submit that work to Google.",
-  MANAGED_RELAUNCH: "ProfileRelaunch carries out the authorised profile recovery work for the Business Profile and incident named in this quotation.",
-  MANAGED_REVIEW: "ProfileRelaunch carries out the authorised review work for the review named in this quotation.",
-  RELAUNCH_GUARD: `${publishedGuardLead}`,
+const OVERVIEW: Record<string, string> = {
+  GUIDED_RELAUNCH: `${publishedGuidedLine} ${publishedGuidedCopy}`,
+  GUIDED_REVIEW: `${publishedGuidedLine} ${publishedGuidedCopy}`,
+  MANAGED_RELAUNCH: `${publishedManagedLine} ${publishedManagedCopy}`,
+  MANAGED_REVIEW: `${publishedManagedLine} ${publishedManagedCopy}`,
+  RELAUNCH_GUARD: publishedGuardLead,
 }
+
+export const QUOTATION_OVERVIEW_NOTE = "This overview explains the service. It is not a substitute for the scope and exclusions below, which are the terms of this quotation."
 
 export const QUOTATION_ACCEPTANCE = "I have read this quotation and the agreement shown above, and I accept them for the service named in this quotation."
 
@@ -64,11 +53,14 @@ export type CustomerQuotationInput = {
 }
 
 export type CustomerQuotationPresentation = {
-  deliverables: string
+  overviewNote: string
+  overview: string
   responsibilities: string
+  scope: string
   exclusions: string
   successDefinition: string | null
-  paymentTiming: string
+  paymentSummary: string | null
+  paymentWording: string
   terms: string | null
   priceRows: QuotationPriceRow[]
   total: string
@@ -80,19 +72,12 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim()
 }
 
-function splitSentences(text: string): string[] {
-  return text.split(/\n+/).flatMap(paragraph => {
-    const trimmed = paragraph.trim()
-    if (!trimmed) return []
-    return trimmed.split(/(?<=\.)\s+/).map(sentence => sentence.trim()).filter(Boolean)
-  })
-}
-
-function remember(target: Set<string>, text: string) {
-  const normalized = normalize(text)
-  if (!normalized) return
-  target.add(normalized)
-  for (const sentence of splitSentences(text)) target.add(normalize(sentence))
+function trimEnds(text: string): string {
+  let start = 0
+  let end = text.length
+  while (start < end && (text[start] === " " || text[start] === "\n" || text[start] === "\t" || text[start] === "\r")) start += 1
+  while (end > start && (text[end - 1] === " " || text[end - 1] === "\n" || text[end - 1] === "\t" || text[end - 1] === "\r")) end -= 1
+  return text.slice(start, end)
 }
 
 export function customerResponsibilities(serviceCode: string): string {
@@ -108,72 +93,6 @@ export function customerResponsibilities(serviceCode: string): string {
   return "You give accurate information about the business named in this quotation, and you remain responsible for what you publish."
 }
 
-function allowedPrices(input: CustomerQuotationInput): Set<string> {
-  const tokens = new Set<string>()
-  const amounts = [
-    input.standardAmountMinor,
-    input.discountAmountMinor,
-    input.quotedAmountMinor ?? 0,
-    input.taxAmountMinor,
-    input.totalAmountMinor,
-  ]
-  for (const minor of amounts) {
-    if (!Number.isInteger(minor) || minor <= 0) continue
-    tokens.add(formatMoney(minor, input.currency))
-    const pounds = minor / 100
-    tokens.add(`£${pounds}`)
-    tokens.add(`£${pounds.toFixed(2)}`)
-  }
-  return tokens
-}
-
-function hasForeignPrice(sentence: string, allowed: Set<string>): boolean {
-  const pattern = /£\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/g
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(sentence)) !== null) {
-    const token = match[0]
-    const withPence = token.includes(".") ? token : `${token}.00`
-    const withoutPence = token.endsWith(".00") ? token.slice(0, -3) : token
-    if (!allowed.has(token) && !allowed.has(withPence) && !allowed.has(withoutPence)) return true
-  }
-  return false
-}
-
-function isServicePriceLabel(sentence: string, serviceName: string): boolean {
-  const text = normalize(sentence)
-  const bare = text.replace(/\.$/, "")
-  if (bare === serviceName || bare === "Relaunch Guard") return true
-  return SERVICE_PRICE_PREFIXES.some(prefix => text.startsWith(prefix))
-}
-
-function omittedSentences(input: CustomerQuotationInput, responsibilities: string): Set<string> {
-  const omitted = new Set<string>()
-  remember(omitted, input.paymentTiming)
-  remember(omitted, input.successDefinition)
-  remember(omitted, GUIDED_FEE)
-  remember(omitted, FINAL_PRICE)
-  remember(omitted, customerPriceLine)
-  remember(omitted, customerPriceBoundary)
-  for (const timing of Object.values(preservedPaymentTiming)) remember(omitted, timing)
-  for (const definition of Object.values(preservedSuccessDefinition)) remember(omitted, definition)
-  if (input.paymentModel !== "SUCCESS_FEE") remember(omitted, FOREIGN_SUCCESS_FEE)
-  for (const sentence of splitSentences(responsibilities)) omitted.add(normalize(sentence))
-  return omitted
-}
-
-function keptSentences(text: string, input: CustomerQuotationInput, omitted: Set<string>, allowed: Set<string>): string[] {
-  return splitSentences(text).filter(sentence => {
-    const normalized = normalize(sentence)
-    if (!normalized) return false
-    if (normalized.startsWith("Standard wording version ")) return false
-    if (normalized.startsWith("The final customer price is ")) return false
-    if (isServicePriceLabel(sentence, input.serviceName)) return false
-    if (omitted.has(normalized)) return false
-    if (hasForeignPrice(sentence, allowed)) return false
-    return true
-  })
-}
-
 export function quotationPaymentLine(input: Pick<CustomerQuotationInput, "paymentModel" | "paymentTiming" | "totalAmountMinor" | "currency">): string {
   const amount = formatMoney(input.totalAmountMinor, input.currency)
   const stored = normalize(input.paymentTiming)
@@ -186,7 +105,7 @@ export function quotationPaymentLine(input: Pick<CustomerQuotationInput, "paymen
   if (input.paymentModel === "RECURRING_MONTHLY" && stored === normalize(preservedPaymentTiming.RECURRING_MONTHLY)) {
     return `${amount} per month is billed after this quotation is accepted and monitoring is activated. Accepting this quotation does not start monitoring and does not take payment.`
   }
-  return input.paymentTiming.trim()
+  return trimEnds(input.paymentTiming)
 }
 
 function assuranceFor(input: CustomerQuotationInput, paymentTiming: string): string | null {
@@ -200,11 +119,9 @@ function assuranceFor(input: CustomerQuotationInput, paymentTiming: string): str
 }
 
 export function presentCustomerQuotation(input: CustomerQuotationInput): CustomerQuotationPresentation {
-  const responsibilities = customerResponsibilities(input.serviceCode)
-  const omitted = omittedSentences(input, responsibilities)
-  const allowed = allowedPrices(input)
-  const deliverableSentences = keptSentences(customerFacingScope(input.scope), input, omitted, allowed)
-  const exclusionSentences = keptSentences(input.exclusions, input, omitted, allowed)
+  const paymentWording = trimEnds(input.paymentTiming)
+  const paymentLine = quotationPaymentLine(input)
+  const paymentSummary = normalize(paymentLine) === normalize(paymentWording) ? null : paymentLine
   const priceRows: QuotationPriceRow[] = []
   if (input.discountAmountMinor > 0) {
     priceRows.push({ label: "Standard price", amount: formatMoney(input.standardAmountMinor, input.currency) })
@@ -217,17 +134,19 @@ export function presentCustomerQuotation(input: CustomerQuotationInput): Custome
   } else if (input.taxAmountMinor > 0) {
     priceRows.push({ label: "Included in the total", amount: formatMoney(input.taxAmountMinor, input.currency) })
   }
-  const paymentTiming = quotationPaymentLine(input)
   return {
-    deliverables: deliverableSentences.join(" ") || DELIVERABLES[input.serviceCode] || input.serviceName,
-    responsibilities,
-    exclusions: exclusionSentences.join(" ") || "This quotation covers only the service named above. Google makes the final platform decision.",
-    successDefinition: input.paymentModel === "SUCCESS_FEE" && input.successDefinition.trim() ? input.successDefinition.trim() : null,
-    paymentTiming,
+    overviewNote: QUOTATION_OVERVIEW_NOTE,
+    overview: OVERVIEW[input.serviceCode] ?? input.serviceName,
+    responsibilities: customerResponsibilities(input.serviceCode),
+    scope: customerFacingScope(input.scope),
+    exclusions: trimEnds(input.exclusions),
+    successDefinition: input.paymentModel === "SUCCESS_FEE" && trimEnds(input.successDefinition) ? trimEnds(input.successDefinition) : null,
+    paymentSummary,
+    paymentWording,
     terms: customerFacingTerms(input.termsReference),
     priceRows,
     total: formatMoney(input.totalAmountMinor, input.currency),
     taxNote: customerFacingTaxNote(input.taxBehaviour),
-    assurance: assuranceFor(input, paymentTiming),
+    assurance: assuranceFor(input, paymentSummary ?? paymentWording),
   }
 }

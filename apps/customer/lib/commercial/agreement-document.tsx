@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import { agreementBlocks } from "../../../../lib/commercial/agreement-render"
-import { buildAgreementPdf } from "../../../../lib/commercial/agreement-pdf"
+import { AgreementPdfError, buildAgreementPdf } from "../../../../lib/commercial/agreement-pdf"
 
 type Heading = "h2" | "h3"
 
@@ -32,6 +33,7 @@ export function PaidServiceAgreementDocument({
   const HeadingTag = heading
   const SectionTag = heading === "h2" ? "h3" : "h4"
   const blocks = agreementBlocks(body)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   return (
     <article className="agreement-document" aria-labelledby="paid-service-agreement-heading">
       <HeadingTag id="paid-service-agreement-heading">Paid-service agreement</HeadingTag>
@@ -39,7 +41,19 @@ export function PaidServiceAgreementDocument({
       {blocks.map((block, index) => block.kind === "heading"
         ? <SectionTag key={index}>{block.text}</SectionTag>
         : <p key={index}>{block.text}</p>)}
-      <button type="button" onClick={() => downloadPaidServiceAgreement(body)}>Download the agreement as a PDF</button>
+      <button type="button" onClick={() => {
+        try {
+          downloadPaidServiceAgreement(body)
+          setPdfError(null)
+        } catch (error) {
+          if (error instanceof AgreementPdfError) {
+            setPdfError(error.message)
+            return
+          }
+          throw error
+        }
+      }}>Download the agreement as a PDF</button>
+      {pdfError ? <p role="alert">{pdfError}</p> : null}
     </article>
   )
 }

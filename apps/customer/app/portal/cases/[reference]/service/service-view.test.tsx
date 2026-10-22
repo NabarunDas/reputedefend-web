@@ -321,7 +321,7 @@ describe("service and permissions", () => {
     expect(screen.getByRole("article", { name: "Paid-service agreement" })).toHaveTextContent("48-hour success definition")
     expect(document.body.textContent).not.toContain(hash)
     expect(document.body.textContent).not.toContain("SHA-256")
-    expect(screen.getByRole("heading", { name: "What we will do" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Scope" })).toBeTruthy()
     expect(screen.getByText("We prepare the profile relaunch for this location.")).toBeTruthy()
     expect(screen.queryByRole("link", { name: /terms/i })).toBeNull()
     expect(document.body.innerHTML).not.toContain('href="/terms"')
@@ -413,6 +413,25 @@ describe("service and permissions", () => {
     expect(agreement.textContent).toContain("Managed Profile Recovery is a success fee of £299.")
     expect(agreement.textContent).not.toContain("## ")
     expect(screen.getByRole("heading", { name: "13. Relaunch Guard" })).toBeTruthy()
+  })
+
+  it("shows a negotiated scope and exclusion, including amounts", () => {
+    const scope = "Includes specialist preparation budget capped at £50. Ask Mr. Smith — clause 4(a)."
+    const exclusions = "Does not include related appeal work charged at £75."
+    render(<ServiceView service={view({
+      serviceAgreement: null,
+      casePermission: null,
+      actions: [],
+      quote: quote({
+        scope,
+        exclusions,
+        paymentTiming: "Pay £99.00 before work. A holding amount of £25 is not collected.",
+      }),
+    })} />)
+    expect(screen.getByText(/not a substitute for the scope and exclusions/)).toBeTruthy()
+    expect(screen.getByText(scope)).toBeTruthy()
+    expect(screen.getByText(exclusions)).toBeTruthy()
+    expect(screen.getByText(/holding amount of £25/)).toBeTruthy()
   })
 
   it("keeps the Managed fee acknowledgement and the Guard recurring acknowledgement", async () => {

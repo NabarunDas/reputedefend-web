@@ -1044,12 +1044,27 @@ main.customer-main > section .document-list a {
   line-height: 1.2;
 }
 
+.quotation-note {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .quotation-prose,
 .agreement-document p {
   margin: 0;
   max-width: 65ch;
   line-height: 1.6;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.quotation-record {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .agreement-document h2,
@@ -1087,6 +1102,7 @@ main.customer-main > section .document-list a {
 
   .quotation,
   .agreement-document,
+  .quotation-note,
   .quotation-prose,
   .agreement-document p {
     max-width: none;

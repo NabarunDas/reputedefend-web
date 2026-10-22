@@ -53,13 +53,13 @@ function customerReceiptCopy(
     serviceName,
     heading: `We've received your ${serviceName} assessment`,
     greeting: `Hi ${data.fullName},`,
-    intro: `Thanks for sending us the details about ${data.businessName}. Your ${serviceName} assessment has been received and is ready for human review.`,
+    intro: `Thank you for telling us about ${data.businessName}. We have received your ${serviceName.toLowerCase()} assessment and saved the details you shared.`,
     caseRefLabel: "Your case reference",
     publicRef,
     caseRefNote:
       "Please keep this reference. We'll use it in future correspondence about this case.",
     nextHeading: "What happens next",
-    nextBody: `A ${brandName} specialist will review the information you submitted. If we need clarification or additional evidence, we'll contact you by email.`,
+    nextBody: `Our team will review your information and contact you by email if we need anything else. There is nothing further you need to do right now.`,
     securityHeading: "Security reminder",
     securityBody: `${brandName} will never ask you for your Google password, one-time password, verification code or security answers.`,
     reply:

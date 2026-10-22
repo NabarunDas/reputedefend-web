@@ -216,4 +216,44 @@ describe("proposed service agreements", () => {
     expect(status).toBe("not_operative")
     expect(PAID_SERVICE_AGREEMENT_VERSION).not.toBe(proposed.version)
   })
+
+  it("accepts an operative exact Guided agreement and refuses another service or changed terms", () => {
+    const guided = proposedServiceAgreements.find(a => a.serviceCode === "GUIDED_RELAUNCH")!
+    const input = {
+      sessionCustomerId: "customer",
+      membershipVerified: true,
+      actionOpen: true,
+      caseCustomerId: "customer",
+      quoteCustomerId: "customer",
+      quoteVersionId: "version",
+      submittedQuoteVersionId: "version",
+      submittedQuoteCustomerId: "customer",
+      currentQuoteVersionId: "version",
+      quoteStatus: "OFFERED",
+      quoteOpen: true,
+      taxBehaviour: "NOT_APPLICABLE",
+      serviceCode: "GUIDED_RELAUNCH" as const,
+      paymentModel: "UPFRONT" as const,
+      locationId: "location",
+      amountMinor: 9900,
+      catalogueOperative: true,
+      catalogueVersion: guided.version,
+      catalogueHash: guided.contentHash,
+      businessPurposeAccepted: true,
+      termsAccepted: true,
+      termsVersion: guided.version,
+      termsHash: guided.contentHash,
+      feeBasis: null,
+      existingAcceptanceId: null,
+      idempotencyKey: "key",
+      existingIdempotencyKey: null,
+      existingFingerprint: null,
+      fingerprint: "fingerprint",
+    }
+    expect(assessPaidServiceAcceptance(input).status).toBe("success")
+    expect(assessPaidServiceAcceptance({ ...input, serviceCode: "GUIDED_REVIEW" }).status).toBe("stale_version")
+    expect(assessPaidServiceAcceptance({ ...input, termsHash: "a".repeat(64) }).status).toBe("stale_version")
+    expect(assessPaidServiceAcceptance({ ...input, catalogueOperative: false }).status).toBe("not_operative")
+    expect(assessPaidServiceAcceptance({ ...input, membershipVerified: false }).status).toBe("membership_unverified")
+  })
 })

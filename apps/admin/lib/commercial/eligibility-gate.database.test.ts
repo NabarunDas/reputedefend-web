@@ -208,7 +208,7 @@ describe("COM-14A commercial eligibility gate", () => {
       evidence_reference: "ProfileRelaunch Ltd is not VAT registered. This records that fact. It is not a zero-rating and it does not authorise overseas sales.",
     }])
     const catalogue = await db.query<{ status: string; operative: boolean }>(
-      "select status, operative from public.paid_service_agreement_catalogue",
+      "select status, operative from public.paid_service_agreement_catalogue where version_id = 'PS-2026-10-14.2'",
     )
     expect(catalogue.rows).toEqual([{ status: "SOLICITOR_REVIEW", operative: false }])
     const enquiry = await db.query<{ def: string }>(

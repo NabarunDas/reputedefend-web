@@ -793,6 +793,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "gross customer price", probe: "admin_private.enforce_gross_customer_price_v1" },
   },
+  {
+    // CUSTOMER-QUOTE-04. Inserts the five owner-approved service agreements
+    // as unapproved catalogue rows and adds the owner-approval function.
+    // A new offer binds a service agreement only after that function runs.
+    // The omnibus row and issued quotations are not rewritten.
+    // Not applied to DEV or Production. Do not apply it from this change.
+    version: "20261022120000",
+    filename: "20261022120000_service_specific_agreements_v1.sql",
+    step: "CUSTOMER-QUOTE-04 service-specific agreements",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: true,
+    safeToReplay: false,
+    verification: { category: "service-specific agreement approval", probe: "public.admin_record_owner_paid_service_agreement_approval_v1" },
+  },
 ]
 
 /**
@@ -805,7 +820,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 /**
  * The newest repository migration marked `appliedToDev`. After the
  * gross-price filename was aligned, this is the verified DEV ledger head
- * `20261021214813`. The SQL was not replayed. This is not the Production head.
+ * `20261021214813`. The service-agreement migration after it is source only.
+ * The SQL was not replayed. This is not the Production head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

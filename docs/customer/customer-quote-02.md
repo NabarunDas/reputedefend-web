@@ -136,3 +136,5 @@ Approved for the owner-controlled DEV rollout are the **exact source bodies**, v
 The owner authorises D13's **fail-closed** rule: a new offer may bind a service-specific agreement only if that exact service version/hash is approved and operative; never fall back silently to a wrong agreement. Existing offered or accepted quotes are immutable. The implementation must leave \`QT-26-H6JSMB\` and \`PS-2026-10-14.2\` untouched until a controlled DEV replacement is performed. The approval itself authorises no email, money movement, or Production change.
 
 Any future changes to the body text require another version ID, SHA-256 hash and fresh owner approval. Legal obligations, consumer rights and privacy law remain applicable notwithstanding this owner approval.
+
+The owner-approval function and the additive catalogue file are now in source. See `docs/customer/customer-quote-04.md`. That file inserts the five bodies as unapproved rows and does not call the function. It is not applied to DEV or Production. It does not cancel `QT-26-H6JSMB`, send email, or take payment. Solicitor confirmation stays empty on those rows.

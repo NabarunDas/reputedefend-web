@@ -24,6 +24,7 @@ import { devCaseJourneyPreviewEnabled } from "@/lib/case-journey/gate"
 import { devAdminOutgoingMailLane } from "@/lib/communications/dev-lane"
 import { buildJourneyDocuments } from "@/lib/case-journey/documents"
 import { buildJourneyIntake } from "@/lib/case-journey/intake"
+import { loadEmailConfirmationStatus } from "@/lib/case-journey/email-confirmation-status"
 import { loadJourneyExtension } from "@/lib/case-journey/read"
 import { presentCaseJourney, selectJourneyStep } from "@/lib/case-journey/present"
 import type { CaseFlowFacts } from "@/lib/case-flow/model"
@@ -107,10 +108,12 @@ export default async function CaseJourneyPage({
   const evidenceOpen = selected?.id === "EVIDENCE_REVIEW" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const emailReadinessOpen = selected?.id === "CASE_RECEIVED" || selected?.id === "VERIFICATION"
   const communications = documentsOpen || emailReadinessOpen ? await loadCaseCommunications(detail.id) : null
+  const confirmationStatus = emailReadinessOpen ? await loadEmailConfirmationStatus(detail.id) : null
   const readyBrief = {
     ...brief,
     customerId: detail.customerId,
     emailSuppressed: communications ? communications.verifiedEmailSuppressed : null,
+    emailConfirmationPending: confirmationStatus?.state === "pending",
   }
   const documents = documentsOpen
     ? buildJourneyDocuments({

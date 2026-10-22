@@ -563,7 +563,39 @@ describe("persistGetHelpCase DEV mail gate", () => {
       nodeEnv: "production",
     })
     expect(result.receiptEmailStatus).toBe("sent")
+    expect(result.emailConfirmation).toBe("omitted")
+    expect(send.mock.calls[0]?.[0].text).not.toContain("Confirm my email address")
+    expect(send.mock.calls[1]?.[0].text).not.toContain("Confirm my email address")
     expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it("attaches one confirmation link to the first receipt and keeps it out of the mail ledger", async () => {
+    stubPreview({
+      VERCEL_ENV: "production",
+      COMMUNICATIONS_LINK_SECRET: "production-secret-must-not-mint-a-link",
+    })
+    const token = "cd".repeat(32)
+    const url = `https://profilerelaunch.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
+    const send = vi.fn(async (message: EnquiryEmailMessage) => ({ ok: true as const, id: `email_${message.kind}` }))
+    const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
+    const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async (_id, values) => { updates.push(values) },
+      provider: mockProvider(send),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+      resolveEmailConfirmation: async () => url,
+    })
+    const customer = send.mock.calls.find(call => call[0].kind === "customer-ack")?.[0]
+    const internal = send.mock.calls.find(call => call[0].kind === "internal")?.[0]
+    expect(result.emailConfirmation).toBe("pending")
+    expect(customer?.text.match(/Confirm my email address/g)).toHaveLength(1)
+    expect(customer?.html.match(/Confirm my email address/g)).toHaveLength(1)
+    expect(customer?.text).toContain(url)
+    expect(internal?.text).not.toContain("Confirm my email address")
+    expect(internal?.html).not.toContain(token)
+    expect(JSON.stringify(updates)).not.toContain(token)
+    expect(JSON.stringify(updates)).not.toContain("confirm-email")
   })
 
   it("does not send on another Preview branch or another Supabase project", async () => {

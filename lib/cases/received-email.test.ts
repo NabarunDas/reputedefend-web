@@ -6,6 +6,12 @@ import {
   brandTagline,
 } from "@/lib/brand"
 import {
+  EMAIL_CONFIRM_BODY,
+  EMAIL_CONFIRM_BUTTON,
+  EMAIL_CONFIRM_HEADING,
+  EMAIL_CONFIRM_SAVED,
+} from "@/lib/cases/email-confirmation"
+import {
   buildCaseReceivedCustomerMessage,
   buildCaseReceivedInternalMessage,
   caseReceivedCustomerHtml,
@@ -49,6 +55,8 @@ function expectCustomerReceiptContent(
     expect(body).toContain(serviceName)
     expect(body).toContain(publicRef)
     expect(body).toContain("What happens next")
+    expect(body).toContain("There is nothing further you need to do right now.")
+    expect(body).not.toContain("Confirm my email address")
     expect(body).toContain("Security reminder")
     expect(body).not.toMatch(/human review|email provider|automated workflow|processed by a bot/i)
     expect(body).toContain("simply reply to this email")
@@ -94,6 +102,47 @@ describe("case received customer email", () => {
     expect(message.text).toContain("verification code")
     expect(message.text).toContain("security answers")
     expect(message.text).not.toMatch(/We have received your enquiry/)
+  })
+
+  it("includes the confirmation button once, directly after the case reference, only when a link is supplied", () => {
+    const token = "ab".repeat(32)
+    const url = `https://profilerelaunch.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
+    const message = buildCaseReceivedCustomerMessage(
+      validCase,
+      "PROFILE_RECOVERY",
+      "PR-26-7K4M2Q",
+      "enquiries@reputedefend.com",
+      undefined,
+      url,
+    )
+    expect(message.subject).toBe("[ProfileRelaunch] We've received your Profile Recovery case — PR-26-7K4M2Q")
+    for (const body of [message.text, message.html]) {
+      expect(body.match(new RegExp(EMAIL_CONFIRM_BUTTON, "g"))).toHaveLength(1)
+      expect(body).toContain(EMAIL_CONFIRM_HEADING)
+      expect(body).toContain(EMAIL_CONFIRM_BODY)
+      expect(body).toContain("Security reminder")
+      expect(body).not.toContain("There is nothing further you need to do right now.")
+      expect(body.indexOf(EMAIL_CONFIRM_HEADING)).toBeGreaterThan(body.indexOf("PR-26-7K4M2Q"))
+      expect(body.indexOf("What happens next")).toBeGreaterThan(body.indexOf(EMAIL_CONFIRM_BUTTON))
+    }
+    expect(message.text).toContain(EMAIL_CONFIRM_SAVED)
+    expect(message.html).toContain("You don&#39;t need to submit it again.")
+    expect(message.text).toContain(url)
+    expect(message.html).toContain(`href="${url}"`)
+    expect(message.html).toContain('name="viewport"')
+    expect(message.html).toMatch(/max-width:\s*600px/)
+    const internal = buildCaseReceivedInternalMessage(
+      validCase,
+      "PROFILE_RECOVERY",
+      "PR-26-7K4M2Q",
+      "enquiries@reputedefend.com",
+      "owner@example.com",
+      undefined,
+      new Date("2026-09-15T12:00:00.000Z"),
+    )
+    expect(internal.text).not.toContain(EMAIL_CONFIRM_BUTTON)
+    expect(internal.html).not.toContain(EMAIL_CONFIRM_BUTTON)
+    expect(internal.text).not.toContain(token)
   })
 
   it("uses Review Protection wording and the exact public reference", () => {

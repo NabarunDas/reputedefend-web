@@ -364,6 +364,41 @@ export type Database = {
           internal_communication_recipient: string
         }[]
       }
+      prepare_email_confirmation_challenge_v1: {
+        Args: {
+          p_case: string
+          p_challenge: string
+          p_email: string
+          p_environment: string
+          p_token_hash: string
+          p_key_version: number
+        }
+        Returns: Json
+      }
+      read_email_confirmation_challenge_v1: {
+        Args: { p_challenge: string }
+        Returns: Json
+      }
+      confirm_email_challenge_v1: {
+        Args: { p_challenge: string; p_token_hash: string; p_environment: string }
+        Returns: Json
+      }
+      resend_email_confirmation_challenge_v1: {
+        Args: {
+          p_previous: string
+          p_previous_hash: string
+          p_new: string
+          p_new_hash: string
+          p_environment: string
+          p_key_version: number
+          p_expected_email: string | null
+        }
+        Returns: Json
+      }
+      abandon_email_confirmation_resend_v1: {
+        Args: { p_new: string; p_environment: string }
+        Returns: Json
+      }
       create_monitoring_request_v1: {
         Args: {
           p_submission_key: string

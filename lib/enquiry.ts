@@ -109,6 +109,8 @@ export type EnquiryResult = {
    * unavailable: a real send did not succeed.
    */
   receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
+  /** pending: the receipt includes a confirmation button. omitted: it does not. */
+  emailConfirmation?: "pending" | "omitted"
 }
 
 const PROCESS_ERROR = "Unable to process this enquiry."

@@ -406,6 +406,44 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     files: ["apps/admin/lib/jobs/adapters.ts"],
     reason: "A worker handler that builds its provider from the resolved mode in the environment it was registered with.",
   },
+
+  // Case-receipt email confirmation. The same injected map has to reach the
+  // lane check, the exact DEV mailbox and the versioned HMAC secret together.
+  {
+    helper: "runtimeEnvironment",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Selects development, preview or production from VERCEL_ENV before any confirmation link is minted.",
+  },
+  {
+    helper: "currentVersion",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Reads COMMUNICATIONS_LINK_KEY_VERSION so a confirmation stamp uses the current key, not a leftover one.",
+  },
+  {
+    helper: "secretFor",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Resolves the current or versioned link secret, including the computed COMMUNICATIONS_LINK_SECRET_V family.",
+  },
+  {
+    helper: "confirmationOrigin",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Builds the first-party confirmation origin from VERCEL_ENV and VERCEL_URL, and refuses production.",
+  },
+  {
+    helper: "emailConfirmationAllowed",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Combines the lane, the DEV database host and the single exact mailbox before a challenge is planned.",
+  },
+  {
+    helper: "confirmationRuntime",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Reuses the lane decision when a replacement confirmation link is materialised for the same environment.",
+  },
+  {
+    helper: "planFor",
+    files: ["lib/cases/email-confirmation.ts"],
+    reason: "Assembles the challenge id, HMAC and delivery URL from the lane, secret and origin already in hand.",
+  },
 ]
 
 /** Whether this exact callee, in this exact file, is a reviewed exception. */

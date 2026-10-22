@@ -260,7 +260,7 @@ function StepWorkspace({
       <ul>{step.missing.map(item => <li key={item}>{item}</li>)}</ul>
     </div>}
     {step.decision === "intake" && <IntakeSummary brief={brief} reference={reference} />}
-    {step.decision === "verification" && <VerificationSummary brief={brief} />}
+    {step.decision === "verification" && <VerificationSummary brief={brief} caseId={caseId} />}
     {showIntakeForm && <IntakeReviewForm caseId={caseId} version={version} />}
     {showVerificationForm && <VerificationForm caseId={caseId} version={version} canComplete={recordsAgree} recordedWebsite={brief.website} recordedProfileUrl={brief.profileUrl} />}
     {showAmend && <details className="guided-details">

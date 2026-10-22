@@ -94,16 +94,17 @@ function normalized(sql: string): string {
 
 describe("DEV-HISTORY-01 recovered statements", () => {
   it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual([])
-    expect(manifestVersions().at(-1)).toBe("20261022172455")
-    expect(manifestVersions().at(-2)).toBe("20261022124813")
-    expect(manifestVersions().at(-3)).toBe("20261021214813")
-    expect(manifestVersions().at(-4)).toBe("20261021155147")
-    expect(manifestVersions().at(-5)).toBe("20261021132018")
-    expect(manifestVersions().at(-6)).toBe("20261020210000")
-    expect(manifestVersions().at(-7)).toBe("20261020150000")
-    expect(manifestVersions().at(-8)).toBe("20261020120000")
-    expect(manifestVersions().at(-9)).toBe("20261019235000")
+    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261022234500"])
+    expect(manifestVersions().at(-1)).toBe("20261022234500")
+    expect(manifestVersions().at(-2)).toBe("20261022172455")
+    expect(manifestVersions().at(-3)).toBe("20261022124813")
+    expect(manifestVersions().at(-4)).toBe("20261021214813")
+    expect(manifestVersions().at(-5)).toBe("20261021155147")
+    expect(manifestVersions().at(-6)).toBe("20261021132018")
+    expect(manifestVersions().at(-7)).toBe("20261020210000")
+    expect(manifestVersions().at(-8)).toBe("20261020150000")
+    expect(manifestVersions().at(-9)).toBe("20261020120000")
+    expect(manifestVersions().at(-10)).toBe("20261019235000")
     for (const item of recovered) {
       const sql = read(`supabase/migrations/${item.filename}`)
       const bytes = Buffer.byteLength(sql)

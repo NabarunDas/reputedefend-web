@@ -11,6 +11,13 @@ import { caseTypeLabel, type CaseType } from "@/lib/cases/domain"
 import { caseServiceLabel, type EnquiryInput } from "@/lib/enquiry"
 import { escapeHtml } from "@/lib/enquiry-email"
 import type { EnquiryEmailMessage } from "@/lib/enquiry-provider"
+import {
+  EMAIL_CONFIRM_BODY,
+  EMAIL_CONFIRM_BUTTON,
+  EMAIL_CONFIRM_HEADING,
+  EMAIL_CONFIRM_SAVED,
+  usableConfirmationUrl,
+} from "@/lib/cases/email-confirmation"
 
 function brandedSubject(rest: string) {
   return `[${brandName}] ${rest}`
@@ -37,6 +44,11 @@ type CustomerReceiptCopy = {
   caseRefNote: string
   nextHeading: string
   nextBody: string
+  confirmHeading: string | null
+  confirmBody: string | null
+  confirmButton: string | null
+  confirmUrl: string | null
+  confirmSaved: string | null
   securityHeading: string
   securityBody: string
   reply: string
@@ -47,8 +59,10 @@ function customerReceiptCopy(
   data: EnquiryInput,
   caseType: CaseType,
   publicRef: string,
+  confirmationUrl?: string | null,
 ): CustomerReceiptCopy {
   const serviceName = caseTypeLabel(caseType)
+  const confirmUrl = usableConfirmationUrl(confirmationUrl)
   return {
     serviceName,
     heading: `We've received your ${serviceName} assessment`,
@@ -59,7 +73,14 @@ function customerReceiptCopy(
     caseRefNote:
       "Please keep this reference. We'll use it in future correspondence about this case.",
     nextHeading: "What happens next",
-    nextBody: `Our team will review your information and contact you by email if we need anything else. There is nothing further you need to do right now.`,
+    nextBody: confirmUrl
+      ? "Our team will review your information and contact you by email if we need anything else."
+      : "Our team will review your information and contact you by email if we need anything else. There is nothing further you need to do right now.",
+    confirmHeading: confirmUrl ? EMAIL_CONFIRM_HEADING : null,
+    confirmBody: confirmUrl ? EMAIL_CONFIRM_BODY : null,
+    confirmButton: confirmUrl ? EMAIL_CONFIRM_BUTTON : null,
+    confirmUrl,
+    confirmSaved: confirmUrl ? EMAIL_CONFIRM_SAVED : null,
     securityHeading: "Security reminder",
     securityBody: `${brandName} will never ask you for your Google password, one-time password, verification code or security answers.`,
     reply:
@@ -76,25 +97,36 @@ export function caseReceivedCustomerText(
   data: EnquiryInput,
   caseType: CaseType,
   publicRef: string,
+  confirmationUrl?: string | null,
 ) {
-  const copy = customerReceiptCopy(data, caseType, publicRef)
+  const copy = customerReceiptCopy(data, caseType, publicRef, confirmationUrl)
+  const confirmation = copy.confirmUrl
+    ? [
+      copy.confirmHeading,
+      copy.confirmBody,
+      `${copy.confirmButton}\n${copy.confirmUrl}`,
+      copy.confirmSaved,
+    ].join("\n\n")
+    : null
   return [
     copy.greeting,
     copy.intro,
     `${copy.caseRefLabel}\n\n${copy.publicRef}\n\n${copy.caseRefNote}`,
+    confirmation,
     `${copy.nextHeading}\n\n${copy.nextBody}`,
     `${copy.securityHeading}\n\n${copy.securityBody}`,
     copy.reply,
     `Regards,\n\n${brandName}\n${brandTagline}\n${brandSiteUrl}`,
-  ].join("\n\n")
+  ].filter((part): part is string => Boolean(part)).join("\n\n")
 }
 
 export function caseReceivedCustomerHtml(
   data: EnquiryInput,
   caseType: CaseType,
   publicRef: string,
+  confirmationUrl?: string | null,
 ) {
-  const copy = customerReceiptCopy(data, caseType, publicRef)
+  const copy = customerReceiptCopy(data, caseType, publicRef, confirmationUrl)
   const logoUrl = caseReceivedCustomerLogoUrl()
   const forest = brandColors.forest
   const green = brandColors.green
@@ -111,6 +143,27 @@ export function caseReceivedCustomerHtml(
   const caseRefNote = escapeHtml(copy.caseRefNote)
   const nextHeading = escapeHtml(copy.nextHeading)
   const nextBody = escapeHtml(copy.nextBody)
+  const confirmHeading = copy.confirmHeading ? escapeHtml(copy.confirmHeading) : ""
+  const confirmBody = copy.confirmBody ? escapeHtml(copy.confirmBody) : ""
+  const confirmButton = copy.confirmButton ? escapeHtml(copy.confirmButton) : ""
+  const confirmUrl = copy.confirmUrl ? escapeHtml(copy.confirmUrl) : ""
+  const confirmSaved = copy.confirmSaved ? escapeHtml(copy.confirmSaved) : ""
+  const confirmationRow = copy.confirmUrl
+    ? `<tr>
+          <td style="padding:8px 36px 8px 36px;font-family:${fontStack};color:${forest};">
+            <h2 style="margin:0 0 10px 0;font-size:18px;line-height:1.4;font-weight:700;color:${forest};">${confirmHeading}</h2>
+            <p style="margin:0 0 16px 0;font-size:16px;line-height:1.6;">${confirmBody}</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+              <tr>
+                <td bgcolor="${green}" style="border-radius:6px;background-color:${green};">
+                  <a href="${confirmUrl}" style="display:inline-block;padding:14px 22px;font-family:${fontStack};font-size:16px;line-height:1.2;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">${confirmButton}</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:16px 0 0 0;font-size:16px;line-height:1.6;">${confirmSaved}</p>
+          </td>
+        </tr>`
+    : ""
   const securityHeading = escapeHtml(copy.securityHeading)
   const securityBody = escapeHtml(copy.securityBody)
   const reply = escapeHtml(copy.reply)
@@ -166,6 +219,7 @@ export function caseReceivedCustomerHtml(
             <p style="margin:0;">${caseRefNote}</p>
           </td>
         </tr>
+        ${confirmationRow}
         <tr>
           <td style="padding:20px 36px 8px 36px;font-family:${fontStack};color:${forest};">
             <h2 style="margin:0 0 10px 0;font-size:16px;line-height:1.4;font-weight:700;color:${forest};">${nextHeading}</h2>
@@ -218,6 +272,7 @@ export function buildCaseReceivedCustomerMessage(
   publicRef: string,
   fromEmail: string,
   recipient: string = data.email,
+  confirmationUrl?: string | null,
 ): EnquiryEmailMessage {
   return {
     kind: "customer-ack",
@@ -225,8 +280,8 @@ export function buildCaseReceivedCustomerMessage(
     to: recipient,
     replyTo: fromEmail,
     subject: caseReceivedCustomerSubject(caseType, publicRef),
-    text: caseReceivedCustomerText(data, caseType, publicRef),
-    html: caseReceivedCustomerHtml(data, caseType, publicRef),
+    text: caseReceivedCustomerText(data, caseType, publicRef, confirmationUrl),
+    html: caseReceivedCustomerHtml(data, caseType, publicRef, confirmationUrl),
   }
 }
 

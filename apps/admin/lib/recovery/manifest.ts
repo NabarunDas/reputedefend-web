@@ -823,6 +823,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "quotation email", probe: "public.admin_queue_quote_offer_email_v1" },
   },
+  {
+    // AUTO-EMAIL-VERIFY. A hashed single-use challenge for the case-receipt
+    // confirmation button. Not applied to DEV or Production.
+    version: "20261022234500",
+    filename: "20261022234500_email_confirmation_challenge_v1.sql",
+    step: "AUTO-EMAIL-VERIFY case receipt email confirmation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "email confirmation", probe: "public.confirm_email_challenge_v1" },
+  },
 ]
 
 /**

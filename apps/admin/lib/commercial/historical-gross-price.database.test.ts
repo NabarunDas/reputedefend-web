@@ -210,7 +210,7 @@ beforeAll(async () => {
   expect(acceptedBefore.status).toBe("ACCEPTED")
 
   const upgraded = await applyUpgrade(db, "20261021155147")
-  expect(upgraded.applied.map(item => item.entry.version)).toEqual(["20261021214813", "20261022120000"])
+  expect(upgraded.applied.map(item => item.entry.version)).toEqual(["20261021214813", "20261022124813"])
 }, 180000)
 
 afterAll(async () => { await db.close() })

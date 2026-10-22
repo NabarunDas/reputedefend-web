@@ -63,7 +63,7 @@ describe("upgrading a database that is already running", () => {
     // ledger version 20261021214813. This disposable rebuild is not a live apply.
     // Preliminary evidence 20261021155147 and the DEV mail claim are already applied.
     // Production remains at SEC-08.
-    expect(pending.at(-1)?.version).toBe("20261022120000")
+    expect(pending.at(-1)?.version).toBe("20261022124813")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
     expect(pending.some(entry => entry.version === "20261021214813" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261021155147" && entry.appliedToDev)).toBe(true)

@@ -33,7 +33,7 @@ export type JourneyIntakeBrief = {
   /** Null when the communications read was not loaded. False is a loaded, clear result. */
   emailSuppressed: boolean | null
   /** An unconsumed case-receipt challenge exists. Delivery is not verification. */
-  emailConfirmationPending: boolean
+  emailConfirmationPending?: boolean
   businessName: string
   website: string | null
   locationName: string | null

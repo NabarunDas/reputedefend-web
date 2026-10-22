@@ -26,6 +26,14 @@ function provider(ok: boolean): OutgoingMailProvider & { sent: number } {
   }
 }
 
+function database(reply: (name: string) => unknown) {
+  return {
+    async rpc<T>(name: string, _args: Record<string, unknown>): Promise<T> {
+      return reply(name) as T
+    },
+  }
+}
+
 describe("exceptional staff confirmation resend", () => {
   it("does not contact the database or a provider in production", async () => {
     vi.stubEnv("VERCEL_ENV", "production")
@@ -33,7 +41,7 @@ describe("exceptional staff confirmation resend", () => {
     const calls: string[] = []
     const mail = provider(true)
     const result = await runStaffEmailResend({
-      database: { rpc: async name => { calls.push(name); return null } },
+      database: database(name => { calls.push(name); return null }),
       tokenHash: "a".repeat(64),
       caseId,
       provider: mail,
@@ -49,21 +57,19 @@ describe("exceptional staff confirmation resend", () => {
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
     const calls: string[] = []
     const result = await runStaffEmailResend({
-      database: {
-        rpc: async name => {
-          calls.push(name)
-          if (name === "admin_email_confirmation_status_v1") return { state: "pending", nextGeneration: 2 }
-          if (name === "admin_prepare_email_confirmation_resend_v1") {
-            return {
-              status: "ready",
-              publicRef: "PR-26-7K4M2Q",
-              caseType: "PROFILE_RECOVERY",
-              email: "alex@example.com",
-            }
+      database: database(name => {
+        calls.push(name)
+        if (name === "admin_email_confirmation_status_v1") return { state: "pending", nextGeneration: 2 }
+        if (name === "admin_prepare_email_confirmation_resend_v1") {
+          return {
+            status: "ready",
+            publicRef: "PR-26-7K4M2Q",
+            caseType: "PROFILE_RECOVERY",
+            email: "alex@example.com",
           }
-          return { status: "abandoned" }
-        },
-      },
+        }
+        return { status: "abandoned" }
+      }),
       tokenHash: "a".repeat(64),
       caseId,
       provider: provider(false),
@@ -84,17 +90,15 @@ describe("exceptional staff confirmation resend", () => {
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
     const mail = provider(true)
     const result = await runStaffEmailResend({
-      database: {
-        rpc: async name => {
-          if (name === "admin_email_confirmation_status_v1") return { state: "pending", nextGeneration: 2 }
-          return {
-            status: "ready",
-            publicRef: "PR-26-7K4M2Q",
-            caseType: "PROFILE_RECOVERY",
-            email: "alex@example.com",
-          }
-        },
-      },
+      database: database(name => {
+        if (name === "admin_email_confirmation_status_v1") return { state: "pending", nextGeneration: 2 }
+        return {
+          status: "ready",
+          publicRef: "PR-26-7K4M2Q",
+          caseType: "PROFILE_RECOVERY",
+          email: "alex@example.com",
+        }
+      }),
       tokenHash: "a".repeat(64),
       caseId,
       provider: mail,

@@ -479,6 +479,17 @@ describe("service-specific agreement activation", () => {
     expect(replacement?.publicRef).not.toBe(historicalRef)
     const taxed = await setTax(replacement!.id!, replacement!.version!)
     expect(taxed?.status).toBe("success")
+
+    // Regression: a draft prepared while the omnibus was active must not
+    // present both the previous agreement and the new one when later offered.
+    const amended = await db.query(
+      `update public.quote_versions
+       set terms_reference = coalesce(terms_reference, '') ||
+         ' Agreement PS-2026-10-14.2 SHA-256 0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4.'
+       where quote_id = $1 and status = 'DRAFT' returning id`,
+      [replacement!.id],
+    )
+    expect(amended.rows).toHaveLength(1)
     await expect(offer(replacement!.id!, taxed!.version!)).rejects.toThrow(/offered_quote:case_already_offered/)
     expect(await agreementOf(historicalVersionId)).toMatchObject({
       status: "OFFERED",
@@ -496,6 +507,15 @@ describe("service-specific agreement activation", () => {
     expect(cancelled?.status).toBe("success")
     const offered = await offer(replacement!.id!, taxed!.version!)
     expect(offered?.status).toBe("success")
+    const boundTerms = await db.query<{ terms_reference: string }>(
+      "select terms_reference from public.quote_versions where id = $1",
+      [offered!.quoteVersionId],
+    )
+    expect(boundTerms.rows[0].terms_reference).toContain(
+      `Agreement ${guided.version} SHA-256 ${guided.contentHash}.`,
+    )
+    expect(boundTerms.rows[0].terms_reference).not.toContain(PAID_SERVICE_AGREEMENT_VERSION)
+    expect(boundTerms.rows[0].terms_reference).not.toContain(paidServiceAgreementContentHash)
     expect(await agreementOf(offered!.quoteVersionId!)).toMatchObject({
       commercial_agreement_version: guided.version,
       commercial_agreement_hash: guided.contentHash,

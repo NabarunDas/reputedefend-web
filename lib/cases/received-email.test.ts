@@ -148,7 +148,7 @@ describe("case received customer email", () => {
       "enquiries@reputedefend.com",
     )
     expect(message.text).toContain("Hi Nabarun,")
-    expect(message.text).toContain("details about abc")
+    expect(message.text).toContain("telling us about abc")
     expect(message.text).toMatch(/Your case reference\n\nPR-26-EQMVKZ\n\n/)
     expect(message.html).toContain("PR-26-EQMVKZ")
     expect(message.html).not.toContain("pr-26-eqmvkz")

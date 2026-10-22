@@ -54,9 +54,9 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    expect(migrationHead.version).toBe("20261022170000")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261021214813")
+    expect(migrationHead.version).toBe("20261022172455")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261022172455")
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {

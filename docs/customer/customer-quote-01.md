@@ -14,11 +14,13 @@ A quotation already bound to `PS-2026-10-14.2` therefore still shows that full a
 
 ## Proposed service agreements
 
-Five new bodies are source proposals only. Each is `SOLICITOR_REVIEW`, not operative, not customer-visible, and not acceptance-actionable. The current acceptance gate treats every one of them as a stale version. They are not a replacement for `PS-2026-10-14.2`.
+Five bodies are source proposals only. Each is `SOLICITOR_REVIEW`, not operative, not customer-visible, and not acceptance-actionable. The current acceptance gate treats every one of them as a stale version. They are not a replacement for `PS-2026-10-14.2`.
 
-The customer-visible text of each proposal starts with the service title and the date 22 October 2026. It does not contain the version id. The version id and the SHA-256 below are metadata. They are what a later approval and catalogue row must name. These hashes replace the earlier proposal hashes because the visible wording was settled before any solicitor approval. Nothing was bound to the earlier hashes.
+The current register, the reading copies, and the hashes a reviewer may be asked to approve are in `docs/customer/customer-quote-02.md`. Those are the 22 October 2026 versions `PS-2026-10-22.GR`, `PS-2026-10-22.GV`, `PS-2026-10-22.MR`, `PS-2026-10-22.MV` and `PS-2026-10-22.GD`. This document does not repeat them as a second current register.
 
-| Service | Version | SHA-256 |
+The table below is the superseded 21 October 2026 draft. The customer-visible date on those bodies was also 22 October 2026, and the version id was metadata. Nothing was bound to these hashes. Do not approve them. A wording change needs a new version id and a new SHA-256. The 22 October versions replaced this table.
+
+| Service | Superseded version | SHA-256, unapproved and unused |
 | --- | --- | --- |
 | Guided Relaunch | PS-2026-10-21.GR | `e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88` |
 | Guided Review | PS-2026-10-21.GV | `6b4c26493e4e3450cfca9a5c41908ec44c22b329f85228a536c8192d1803a2ff` |
@@ -26,13 +28,11 @@ The customer-visible text of each proposal starts with the service title and the
 | Managed Review | PS-2026-10-21.MV | `6dded927728a4cec7226712eccbf1d3243645602f58a56f94275b76235549214` |
 | Relaunch Guard | PS-2026-10-21.GD | `b48fdffe3ff8ec15543fec0e0717fdabba73c4ffe128fc1b2600b8d2ca61c9e6` |
 
-Guided agreements state that the customer submits the prepared work and does not add ProfileRelaunch as a Google Manager. Managed and Guard agreements keep Manager access where that service needs it. Each agreement states only its own price. Shared clauses cover formation, authority, tax, confidentiality, intellectual property, liability, complaints, ending the service, and the law of England and Wales. Liability still preserves rights that cannot legally be limited, including death, personal injury caused by negligence, and fraud, and keeps the cap at the greater of £1,000 or twice the fee for that service order.
-
-A wording change to one of these proposals needs a new version id and a new SHA-256. Do not edit a pinned body and keep its hash.
+Guided agreements state that the customer submits the prepared work and does not add ProfileRelaunch as a Google Manager. Managed and Guard agreements keep Manager access where that service needs it, and a profile change needs separate approval. Each agreement states only its own price. Shared clauses cover formation, authority, tax, confidentiality, intellectual property, liability, complaints, ending the service, and the law of England and Wales. Liability still preserves rights that cannot legally be limited, including death, personal injury caused by negligence, and fraud, and keeps the cap at the greater of £1,000 or twice the fee for that service order.
 
 ## Approval and migration, not part of this change
 
-Before a newly issued quotation can bind one of these versions, a solicitor needs to approve that exact version and hash, and a later migration needs to:
+Before a newly issued quotation can bind a version in the current register, a solicitor needs to approve that exact version and hash, and a later migration needs to:
 
 - insert a catalogue row for the approved version and hash
 - record the approval evidence through the existing immutable approval path

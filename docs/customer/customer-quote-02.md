@@ -1,8 +1,14 @@
-# CUSTOMER-QUOTE-02 — Review pack for the five service agreements
+# CUSTOMER-QUOTE-03 — Aligned drafts of the five service agreements
 
-This pack prepares the five proposed paid-service agreements for a person to read and, separately, to approve or refuse. It does not approve them. Each agreement remains `SOLICITOR_REVIEW`. None is operative, customer-visible, or acceptance-actionable. No catalogue row is inserted, no migration is applied, no quote is issued, and no payment is taken.
+This pack records the 22 October 2026 drafts after the wording named in CUSTOMER-QUOTE-03 was brought into line with the published ProfileRelaunch promises. It does not approve them. Each agreement remains `SOLICITOR_REVIEW`. None is operative, customer-visible, or acceptance-actionable. No catalogue row is inserted, no migration is applied, no quote is issued, and no payment is taken.
 
-The contract text is the source body in `lib/commercial/service-agreements.ts`. The SHA-256 below is the hash of that exact UTF-8 body. The PDF is a reading copy of the same words. Approving a PDF file, or a hash of the PDF bytes, would not approve the agreement. A reviewer approves a version id together with the body hash, or does not approve it.
+Three kinds of text are kept apart:
+
+- A website promise is the wording currently published on the ProfileRelaunch site. This change does not rewrite the site.
+- Contract text is the proposed body in `lib/commercial/service-agreements.ts`. "Aligned in draft" means that body now contains the clause quoted below. It is not solicitor approval.
+- A legal judgement is a decision about whether that contract text is lawful, reasonable or sufficient. This pack does not make that judgement.
+
+The SHA-256 below is the hash of the exact UTF-8 body. The PDF is a reading copy of the same words. Approving a PDF file, or a hash of the PDF bytes, would not approve the agreement. A reviewer approves a version id together with the body hash, or does not approve it.
 
 The PDF adds the ProfileRelaunch name in the header and a page number. Those are not part of the hashed body. The version id and the hash are not printed in the agreement.
 
@@ -10,128 +16,71 @@ The PDF adds the ProfileRelaunch name in the header and a page number. Those are
 
 | Service | Reading copy | Version | SHA-256 of the source body | Status | Approved | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| Guided Relaunch | [guided-relaunch.pdf](quote-02/guided-relaunch.pdf) | PS-2026-10-21.GR | `e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88` | SOLICITOR_REVIEW | No | None |
-| Guided Review | [guided-review.pdf](quote-02/guided-review.pdf) | PS-2026-10-21.GV | `6b4c26493e4e3450cfca9a5c41908ec44c22b329f85228a536c8192d1803a2ff` | SOLICITOR_REVIEW | No | None |
-| Managed Profile Recovery | [managed-profile-recovery.pdf](quote-02/managed-profile-recovery.pdf) | PS-2026-10-21.MR | `1a7188c9d9f1b054cf3bf6627a66a9206f042dbf5684c5615c870be72f4699ee` | SOLICITOR_REVIEW | No | None |
-| Managed Review Protection | [managed-review-protection.pdf](quote-02/managed-review-protection.pdf) | PS-2026-10-21.MV | `6dded927728a4cec7226712eccbf1d3243645602f58a56f94275b76235549214` | SOLICITOR_REVIEW | No | None |
-| Relaunch Guard | [relaunch-guard.pdf](quote-02/relaunch-guard.pdf) | PS-2026-10-21.GD | `b48fdffe3ff8ec15543fec0e0717fdabba73c4ffe128fc1b2600b8d2ca61c9e6` | SOLICITOR_REVIEW | No | None |
+| Guided Relaunch | [guided-relaunch.pdf](quote-02/guided-relaunch.pdf) | PS-2026-10-22.GR | `705a8fe4aa51242ed3d01102a920a2ca22391fa4aa6f60e2c449d14b437f8eb3` | SOLICITOR_REVIEW | No | None |
+| Guided Review | [guided-review.pdf](quote-02/guided-review.pdf) | PS-2026-10-22.GV | `56334ee14bb3c31b4144e339738cefbd28039c5a163785cc9aa7c9f8b85bbbe9` | SOLICITOR_REVIEW | No | None |
+| Managed Profile Recovery | [managed-profile-recovery.pdf](quote-02/managed-profile-recovery.pdf) | PS-2026-10-22.MR | `725e0d769943852cef1ffe9dc12a0282bdd6c9ac7a7b2ef4c0fa16cbf637a269` | SOLICITOR_REVIEW | No | None |
+| Managed Review Protection | [managed-review-protection.pdf](quote-02/managed-review-protection.pdf) | PS-2026-10-22.MV | `62a1ee6fbd1cc196103c1ae281592ed857c84df4e13a5158aa7334794ebbc784` | SOLICITOR_REVIEW | No | None |
+| Relaunch Guard | [relaunch-guard.pdf](quote-02/relaunch-guard.pdf) | PS-2026-10-22.GD | `51da445b47ea6f2cc4671b3192c068c78ce81548a7f36a38e6ccc92607905f23` | SOLICITOR_REVIEW | No | None |
 
 Approved means a person has recorded approval of that exact version and that exact hash. Cursor, CI, and this document do not do that. The owner-reported note of 15 October 2026 applies only to `PS-2026-10-14.2`. It is not a solicitor document, and it does not approve these five bodies.
 
-Each proposal is dated 22 October 2026 in the customer-visible text. The contracting party in every body is ProfileRelaunch Ltd, company number 17520826, incorporated in England and Wales on 14 October 2026, registered office 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ. Notices go to contact@profilerelaunch.com. No body states a VAT number. Each body says ProfileRelaunch is not registered for VAT and does not add VAT while that remains the case.
+Each proposal is dated 22 October 2026 in the customer-visible text. The contracting party in every body is ProfileRelaunch Ltd, company number 17520826, incorporated in England and Wales on 14 October 2026, registered office 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ. Notices go to contact@profilerelaunch.com. No body states a VAT number. Each body says ProfileRelaunch is not registered for VAT and does not add VAT while that remains the case. No body invents a telephone number or a data-protection officer.
 
-A change to any body needs a new hash before anyone is asked to approve it. Do not approve a version and then edit the body.
+A change to any body needs a new version id and a new hash before anyone is asked to approve it. Do not approve a version and then edit the body. Do not reuse an older version id with a new hash.
 
-## What already matches
+## Superseded 21 October drafts
 
-These points are the same in the approved omnibus `PS-2026-10-14.2` (SHA-256 `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`), the published prices, and the proposal for the service they belong to. They are listed so a reviewer can see what this pack is not asking them to reopen.
+These hashes were the previous unapproved proposals. Nothing was bound to them, including quote `QT-26-H6JSMB`. The PDFs in this folder are the 22 October reading copies, not those drafts. Do not approve the hashes in this table.
 
-- Prices: Guided Relaunch £99 upfront, Guided Review £59 upfront, Managed Profile Recovery £299 success fee, Managed Review Protection £149 success fee, Relaunch Guard £9.99 per month per location. A quotation may state a different price for that order.
-- Managed Profile Recovery is earned only when the original restriction is absent at an initial check and again at least 48 hours later, and is not known to have returned between those checks. A pending or ambiguous observation is not a completed success.
-- Managed Review Protection is earned only when the named review is absent at two checks at least 48 hours apart. Reporting, hiding, a rating change, or an acknowledgement is not itself removal.
-- An undisputed Managed invoice is payable within 14 calendar days. There is no automatic card charge and no collection of the success fee in advance. Accepting the quotation does not take payment.
-- Guard checks are manual, twice each day, including weekends and bank holidays, on a Europe/London schedule, with an email when a check needs attention. They are not continuous monitoring and they do not promise to prevent a suspension or a review.
-- After Managed Profile Recovery has met its agreed outcome, the customer can choose 30 days of Guard for that location at no extra charge. The 30 days start when monitoring is activated. Continuing at the monthly price is the customer's choice. Charging does not start automatically.
-- Paid Guard monitoring can give 20% off a later standard Managed Profile Recovery or Managed Review Protection fee at that location when the issue arises during paid monitoring. A problem that already existed when monitoring started is excluded. The reduction does not apply to the monitoring fee or to a custom or bulk quotation, and it cannot be combined with another offer. Cancelling monitoring does not remove a reduction already agreed. The later case is still outcome-based.
-- Guard cancellation has no cancellation fee. Monitoring normally runs to the end of the paid month and does not renew. An immediate stop returns the unused portion of that month.
-- Guided cancellation before substantive case-specific work begins refunds the fee already paid. After that work begins, only an evidenced fair portion may be retained.
-- Nothing in the agreements limits liability for death or personal injury caused by negligence, fraud or fraudulent misrepresentation, or any other liability that cannot legally be limited. The proposed cap remains the greater of £1,000 or twice the fee for that service order. The omnibus still records that whether the cap is reasonable is open for the reviewer. This pack does not decide it.
-- The customer confirms the service is for the business. If the customer is in law a consumer, rights that cannot be excluded remain.
-- Confidentiality and the published privacy notice are the data terms. There is no separate processing schedule and no data-protection officer is named.
-- The governing law and courts are England and Wales, without removing a right to sue in another court where the law does not allow that choice to be taken away.
-- ProfileRelaunch is independent of Google. No agreement authorises ProfileRelaunch to decide a Google outcome.
+| Service | Superseded version | SHA-256, unapproved and unused |
+| --- | --- | --- |
+| Guided Relaunch | PS-2026-10-21.GR | `e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88` |
+| Guided Review | PS-2026-10-21.GV | `6b4c26493e4e3450cfca9a5c41908ec44c22b329f85228a536c8192d1803a2ff` |
+| Managed Profile Recovery | PS-2026-10-21.MR | `1a7188c9d9f1b054cf3bf6627a66a9206f042dbf5684c5615c870be72f4699ee` |
+| Managed Review Protection | PS-2026-10-21.MV | `6dded927728a4cec7226712eccbf1d3243645602f58a56f94275b76235549214` |
+| Relaunch Guard | PS-2026-10-21.GD | `b48fdffe3ff8ec15543fec0e0717fdabba73c4ffe128fc1b2600b8d2ca61c9e6` |
 
-## Decisions required
+`PS-2026-10-14.2` (SHA-256 `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`) is unchanged. It remains the only agreement a quotation can bind today. Every quotation already offered or accepted, including `QT-26-H6JSMB`, stays on that version and hash.
 
-Each item is a difference a person needs to accept, reject, or resolve by a new body and a new hash. This pack does not choose for them.
+## Decision status
 
-### D1. Guided work is prepared by ProfileRelaunch and submitted by the customer
+| Decision | Status | Agreement | Clause to review |
+| --- | --- | --- | --- |
+| D1. Guided responsibilities | aligned in draft | Guided Relaunch, section 3; Guided Review, section 3 | "We prepare it. You submit it. We organise the evidence and prepare the profile relaunch work for the location named in the quotation. We do not submit that work for you." Guided Review uses the same opening and "the review work named in the quotation." Section 6: "This service does not require you to add us as a Manager." |
+| D2. When the Guided fee is due | aligned in draft | Guided Relaunch and Guided Review, section 4 | "The price is £99 unless the accepted quotation states a different price. It is due after you accept the quotation and before work begins." Guided Review states £59. "Accepting the quotation does not take payment. Payment is a later step." |
+| D3. Guard discount during the included 30 days | aligned in draft | Relaunch Guard, section 5 | "The 20% reduction below does not apply during those 30 days." The published page says the paid-member discount does not apply during the included period. |
+| D4. Guard discount and Guided support | aligned in draft | Relaunch Guard, section 5 | "While you are paying the monthly price for a location, you receive 20% off the standard fee for an eligible new Managed Profile Recovery or Managed Review Protection case at that location." "The reduction does not apply during the included 30 days, to Guided support, to the monitoring fee, or to a custom or bulk quotation." "Once we agree a reduced fee for a case, cancelling monitoring does not remove that reduction." |
+| D5. Notice before a higher Guard price | aligned in draft | Relaunch Guard, section 5 | "We will not charge a higher monthly price unless we have given you at least 30 days' notice of that price and the date it would apply, and you have agreed to it. If you do not agree, monitoring ends before that date. We will not start the higher price automatically." |
+| D6. Interrupted Guard checks and lost contact | aligned in draft | Relaunch Guard, section 3 | "If we cannot complete a scheduled check, we retry, record what happened, and tell you if it stays incomplete. If the access this service needs is lost, we ask you to restore it and we pause billing for the coverage we cannot provide. If no working way to alert you remains, we pause the service and the billing. A phone number you have given us may be used only to resolve a failed email. We check a replacement email address before we use it." The same section still says the checks "are not a promise of continuous monitoring." |
+| D7. Separate approval for a profile change | aligned in draft | Managed Profile Recovery, Managed Review Protection and Relaunch Guard, section 6 | "Where this service needs access to a Business Profile, you add us as a Manager for this service only. You remain the owner. We do not change the profile unless you separately approve that change. We do not ask for your Google password or access to your email account." Guided agreements do not ask for Manager access. |
+| D8. Pounds and a customer's own conversion | aligned in draft | Every proposal, price section | "The price is in pounds sterling (GBP). That pound amount is our agreed fee. If you pay from an account in another currency, your bank or payment provider may convert it or charge its own fee. We do not set or guarantee that rate." No proposal mentions a Stripe presentment in another currency. |
+| D9. A pending Managed outcome | aligned in draft | Managed Profile Recovery and Managed Review Protection, section 4 | Recovery: "A pending outcome is not invoiced as success." Review: "A missing, unknown or ambiguous observation stays pending and is not invoiced as success." Section 5: "There is no automatic card charge and no collection of that success fee in advance." |
+| D10. Both check times are recorded | aligned in draft | Managed Profile Recovery and Managed Review Protection, sections 4 and 7 | "We record the time of each check and what we observed." Recovery also requires the checks to be "at least 48 hours later." Review requires "two checks at least 48 hours apart." |
+| D11. A dispute does not remove a claim | aligned in draft | Managed Profile Recovery and Managed Review Protection, section 5 | "You may dispute the claimed outcome in writing before the invoice falls due." "Either of us may still bring a claim." |
+| D12. Ending one order leaves another in place | aligned in draft | Guided and Managed, section 12; Relaunch Guard, section 12 | Guided and Managed: "Ending this service does not end a different service order." Guard: "Ending monitoring does not end a different service order." |
+| D13. Which agreement a new offer may use | requires human approval | Not a clause. Activation only, after a person approves an exact version and hash. | Choose, before any service-specific offer is switched on, either a fail-closed route or a documented transition. See below. This pack does not choose and does not switch any offer. |
+| D14. Liability, status, privacy, customers abroad, insurance and cancellation rights | requires human approval | Shared sections 2, 8, 10 and 13, left open on purpose | The cap, the business confirmation, the privacy notice, and the England and Wales clause are carried forward. Whether they are enough is a legal and compliance decision. See below. |
 
-The published recovery, review, pricing and how-it-works pages say "We prepare it. You submit it." The Guided proposals say the customer files the work with Google, ProfileRelaunch does not submit it, and the service does not require the customer to add ProfileRelaunch as a Manager.
+The website sentence "We prepare it. You submit it." is now the opening of both Guided service sections. The Guided service does not require the customer to add ProfileRelaunch as a Manager. The published Relaunch Guard page says the paid-member discount does not apply during the included period, and that a higher price needs at least 30 days' notice and the customer's agreement. Those promises are now in the Guard draft. The published page uses a typographic apostrophe in "30 days' notice". The contract uses a straight apostrophe so the reading copy can be drawn. The words are the same.
 
-The omnibus does not say that. Section 3 describes Guided Relaunch and Guided Review as support ProfileRelaunch carries out for the customer. Section 8 says that where the service needs access to a Business Profile, the customer adds ProfileRelaunch as a Manager. That sentence is not limited to Managed or Guard.
+Aligning a draft is not approval. D1 to D12 still need a person to accept the exact clause, the version id and the hash, or to send them back for another version.
 
-Decision: approve Guided agreements in which the customer submits and Manager access is not required, or require a new body that follows the omnibus instead.
+### D13. requires human approval
 
-### D2. When the Guided fee is due
+Until a service has its own operative agreement, a new offer of that service either continues to bind `PS-2026-10-14.2`, or it is refused. Both routes are open. This pack recommends the fail-closed route and does not implement it: do not issue a new binding customer offer on an unapproved service-specific agreement, and do not issue a second open offer for the same case. An already offered or accepted version stays on the agreement stored on it.
 
-The omnibus says a Guided fee is payable upfront only after a valid quotation and the agreement have been accepted. The proposals say the price is due after acceptance and before work begins. The standard quotation wording still says the quoted amount is payable later through the payment workflow, and that accepting the quote does not charge a card.
+The choice, and any later owner approval of a transition, is for a person. It is not a clause in these drafts.
 
-Decision: confirm that "before work begins" is the intended due point, or replace that sentence before approval so the agreement, the quotation, and the later payment step describe the same obligation.
+### D14. requires human approval
 
-### D3. The 20% reduction during the included 30 days of Guard
+These points stay open. Approval of a proposal would have to cover them expressly. This pack does not close them, and it does not invent a sign-off, a VAT number, a data-protection officer, or any authority from Google.
 
-The Relaunch Guard page says the paid-member discount does not apply during the included period. Omnibus section 13 says the same. The Guard proposal describes the included 30 days and, separately, 20% off while paid monitoring is active. It does not say the reduction is unavailable during the included period.
-
-Decision: accept the omission, or put the exclusion back into the Guard body and approve the new hash.
-
-### D4. Whether the 20% reduction is expressly unavailable for Guided support
-
-The Relaunch Guard page and omnibus section 13 say the discount does not apply to Guided support. The proposal grants 20% only for an eligible new Managed Profile Recovery or Managed Review Protection case. It does not repeat an exclusion for Guided support.
-
-Decision: confirm that a Managed-only grant is enough, or restore the express Guided exclusion and approve the new hash.
-
-### D5. Notice before a Guard price change
-
-The Relaunch Guard page says a higher monthly price needs at least 30 days' notice, and that the higher price is charged only if the customer accepts it. Neither the omnibus nor the Guard proposal contains that clause.
-
-Decision: leave the promise on the website only, or add it to the Guard body before approval.
-
-### D6. An incomplete Guard check or lost access
-
-The Relaunch Guard page says an incomplete check is retried and reported, and that lost access pauses billing for unavailable coverage. It also says that if no working alert channel remains, the service and billing pause. Neither the omnibus nor the Guard proposal contains those operational promises. The proposal does not invent a telephone number.
-
-Decision: leave those sentences on the website, or add the ones that should be contractual before approval.
-
-### D7. What Manager access allows Guard to change
-
-The Relaunch Guard page says Manager access allows changes, Guard checks and alerts by default, and a change to the profile needs separate approval. The Guard proposal asks the customer to add ProfileRelaunch as a Manager and says the customer remains the owner. It does not say that a profile change needs separate approval.
-
-Decision: accept the shorter access clause, or add the limit before approval.
-
-### D8. Payment in a currency other than pounds
-
-The pricing page says prices are in pounds, and that a payment provider may apply its own conversion rate or fees if the customer pays from an account in another currency. Omnibus section 4 says that where Stripe can present another currency, the final currency and amount are shown before payment, the quotation in pounds remains authoritative, and no conversion rate is guaranteed. The current seller presentment used by the eligibility checks is pounds only.
-
-Each proposal says the quotation amount in pounds is authoritative. None mentions a payment-provider conversion or a Stripe presentment in another currency.
-
-Decision: confirm that new agreements should not promise a non-pound presentment, and decide whether the customer's own provider conversion should be stated in the agreement.
-
-### D9. A pending Managed outcome
-
-The omnibus says a pending outcome is not invoiced as success. The Managed proposals say a pending outcome is not invoiced.
-
-Decision: confirm that a pending outcome produces no invoice at all.
-
-### D10. The record of the two Managed checks
-
-Omnibus section 10 says both verification timestamps and the observations that support them are recorded. The Managed proposals say the observations relied on for the success fee are recorded. They do not expressly say both timestamps are kept.
-
-Decision: confirm the observation record is sufficient, or require the timestamps in the body before approval.
-
-### D11. A dispute about a Managed outcome before a claim
-
-Omnibus section 19 says a dispute about whether a Managed outcome met the success criteria is first handled under the evidence and dispute clause, and that either party may still bring a claim. The proposals keep the written dispute and the pause on a genuinely disputed amount. Their governing-law section does not repeat that the dispute is handled there first.
-
-Decision: confirm the invoice dispute clause is the whole of that process.
-
-### D12. Ending one service while another continues
-
-The omnibus says ending one service order does not end a different service order. The Guard proposal says ending monitoring does not end a different service order. The Managed and Guided proposals do not say that.
-
-Decision: confirm the single-service agreements may stay silent, or add the sentence to the Managed and Guided endings before approval.
-
-### D13. Which services can be offered before all five are approved
-
-The safe rehearsal below is for Guided Relaunch only. The other four bodies may still be unapproved when that rehearsal is allowed.
-
-Decision: until a service has its own operative agreement, a new offer of that service either continues to bind `PS-2026-10-14.2`, or it is refused. This pack does not switch any service away from the omnibus.
-
-### D14. Open points that the proposals do not close
-
-The omnibus still lists the whole version, the liability cap, consumer misclassification, international customers and jurisdiction, professional indemnity, and privacy and data-processing terms as open for the reviewer. The website terms say the site is intended for businesses and is designed to support businesses internationally. The proposals keep the business confirmation, the consumer savings sentence, the England and Wales clause, the same liability cap, and the privacy-notice sentence. They do not add indemnity insurance or a processing schedule.
-
-Decision: these remain open. Approval of a proposal would have to cover them expressly. This pack does not close them.
+- Whether the liability cap, "the greater of £1,000 or twice the fee for that service order", is reasonable.
+- Whether the business-purpose confirmation, with the sentence that a consumer keeps rights the law does not allow to be excluded, correctly classifies customers.
+- Privacy and data-protection roles. The drafts keep confidentiality and the published privacy notice. They do not add a processing schedule.
+- Terms for customers in the United Kingdom and for customers elsewhere. The site is intended for businesses and is designed to support businesses internationally. The drafts keep the law and courts of England and Wales, and a sentence that this choice does not remove a right to sue in another court where the law does not allow that choice to be taken away.
+- Whether professional indemnity or other insurance should be stated.
+- Statutory cancellation protections, beyond the service-specific refund and cancellation clauses already in each draft.
 
 ## Later DEV activation, not part of this change
 
@@ -139,10 +88,10 @@ No migration in this change. Nothing here is applied to DEV or Production. `admi
 
 The catalogue table accepts only version `PS-2026-10-14.2` and hash `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`. Its body and hash cannot be updated. An operative row cannot be updated. Paid-service acceptance rows are immutable and currently must record that same version and hash. The offer trigger writes that version and hash when a draft becomes offered. An offered or accepted quote version cannot change its scope, price, payment wording, terms, agreement version, or agreement hash.
 
-A later migration, after a person has approved one exact version and hash, would have to do all of the following and no more:
+A later migration, after a person has approved one exact version and hash from the register above, would have to do all of the following and no more:
 
 1. Allow the new version id and its own hash in the catalogue checks. Leave the existing row, its body, and its hash untouched.
-2. Insert the approved body as its own row. Do not update `PS-2026-10-14.2`.
+2. Insert the approved body as its own row, still `SOLICITOR_REVIEW` and not operative. Do not update `PS-2026-10-14.2`.
 3. Leave that new row unconfirmed until a separate human confirmation records evidence that is not merely the version id or the hash. The current confirmation function rejects evidence that is only the version or the hash, and it writes one immutable approval. Once a row is operative, the current trigger does not let a later migration turn it back. Confirmation is one-way. Do not confirm a row until that service is meant to be offered.
 4. Change offer and acceptance routing only for a service whose row is operative. The routing writes that service's version and hash onto a draft when it is offered. It does not rewrite a quote version that is already offered or accepted. A service without an operative service-specific row follows decision D13.
 5. Widen the acceptance-table checks so a new acceptance may store the new version and hash. Do not update or delete an acceptance already stored.
@@ -161,7 +110,7 @@ When, and only when, the Guided Relaunch version and hash above are operative on
 2. End that offer before any replacement is offered. Use the existing `cancel` command. It records `QUOTE_CANCELLED`, revokes the acceptance link, and changes the status only. If the offer has already passed `valid_until`, it is no longer open for acceptance. `valid_until` cannot be edited on the offered version. Do not leave `QT-26-H6JSMB` offered while another quotation for the case is also offered.
 3. Create the replacement with `create_draft` for the same case, Guided Relaunch, and the £99 gross price. That command inserts a new quote and a new public reference. It does not update `QT-26-H6JSMB`.
 4. Set the draft tax through the existing command, then offer the new quote. The offer trigger binds the approved Guided Relaunch agreement to the new version only.
-5. Check that the case has one offered quote, that the new quote stores `PS-2026-10-21.GR` and hash `e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88`, and that the cancelled version still stores `PS-2026-10-14.2` and hash `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`.
+5. Check that the case has one offered quote, that the new quote stores `PS-2026-10-22.GR` and hash `705a8fe4aa51242ed3d01102a920a2ca22391fa4aa6f60e2c449d14b437f8eb3`, and that the cancelled version still stores `PS-2026-10-14.2` and hash `0a8da28dfddcbab53daf037ba952b2f55c5cbf1d4122bebfbcdc285e36c43bc4`.
 
 Do not call `create_version` and then `offer` on `QT-26-H6JSMB`. Offering another version of that same quote marks the current offer superseded and revokes its acceptance link. That is a different operation from cancelling the quote and creating a new one.
 

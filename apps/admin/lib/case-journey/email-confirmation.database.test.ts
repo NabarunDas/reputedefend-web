@@ -217,6 +217,14 @@ describe("email confirmation challenges", () => {
     const created = await createCase()
     const first = await prepare(created.id)
     expect(first.result.status).toBe("ready")
+    const notSent = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
+    expect(notSent.state).toBe("none") // a prepared challenge is not a sent email
+    await db.query(
+      `insert into public.communications
+        (case_id, communication_type, channel, direction, recipient, status)
+        values ($1, 'CASE_RECEIVED_CUSTOMER', 'EMAIL', 'OUTBOUND', 'alex@example.com', 'SENT')`,
+      [created.id],
+    )
     const pending = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
     expect(pending).toMatchObject({
       state: "pending",

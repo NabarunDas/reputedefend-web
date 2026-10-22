@@ -1,5 +1,4 @@
-import { cookies, headers } from "next/headers"
-import { confirmationCsrfToken, EMAIL_CONFIRM_SAVED } from "@/lib/cases/email-confirmation"
+import { EMAIL_CONFIRM_SAVED } from "@/lib/cases/email-confirmation"
 import { readEmailConfirmation } from "@/lib/cases/email-confirmation-command"
 import { readSupabaseConfig } from "@/lib/supabase/config"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
@@ -22,15 +21,6 @@ const unavailable = {
 
 export default async function ConfirmEmailPage({ params }: { params: Promise<{ challengeId: string }> }) {
   const { challengeId } = await params
-  const csrf = confirmationCsrfToken().slice(0, 64)
-  const secure = (await headers()).get("x-forwarded-proto") === "https"
-  ;(await cookies()).set("pr_email_confirm", csrf, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/confirm-email",
-    maxAge: 1800,
-    secure,
-  })
   const view = readSupabaseConfig().ready
     ? await readEmailConfirmation(createSupabaseServerClient(), challengeId).catch(() => unavailable)
     : unavailable
@@ -57,7 +47,6 @@ export default async function ConfirmEmailPage({ params }: { params: Promise<{ c
         {view.status !== "confirmed" && view.status !== "unavailable" && (
           <ConfirmEmailForm
             challengeId={challengeId}
-            csrf={csrf}
             canConfirm={view.status === "pending"}
             canResend={view.status === "pending" || view.status === "expired"}
           />

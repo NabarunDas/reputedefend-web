@@ -180,7 +180,7 @@ afterAll(async () => { await db.close() })
 describe("paid-service acceptance foundation", () => {
   it("stores the frozen contract without marking it operative", async () => {
     const catalogue = await rows<{ status: string; operative: boolean; body_text: string; content_hash: string }>(
-      "select status, operative, body_text, content_hash from public.paid_service_agreement_catalogue",
+      "select status, operative, body_text, content_hash from public.paid_service_agreement_catalogue where version_id = 'PS-2026-10-14.2'",
     )
     expect(catalogue).toEqual([{
       status: "SOLICITOR_REVIEW",
@@ -228,7 +228,7 @@ describe("paid-service acceptance foundation", () => {
     ])
     expect(earlier.status).toBe("unauthorised")
     const catalogue = await rows<{ status: string; operative: boolean }>(
-      "select status, operative from public.paid_service_agreement_catalogue",
+      "select status, operative from public.paid_service_agreement_catalogue where version_id = 'PS-2026-10-14.2'",
     )
     expect(catalogue).toEqual([{ status: "SOLICITOR_REVIEW", operative: false }])
     expect(await count("select count(*)::int as n from public.paid_service_agreement_approvals")).toBe(0)
@@ -274,7 +274,7 @@ describe("paid-service acceptance foundation", () => {
       version_id: PAID_SERVICE_AGREEMENT_VERSION,
       content_hash: paidServiceAgreementContentHash,
     }])
-    const body = await rows<{ body_text: string; operative: boolean }>("select body_text, operative from public.paid_service_agreement_catalogue")
+    const body = await rows<{ body_text: string; operative: boolean }>("select body_text, operative from public.paid_service_agreement_catalogue where version_id = 'PS-2026-10-14.2'")
     expect(body[0].body_text).toBe(paidServiceAgreementBody)
     expect(body[0].operative).toBe(true)
     await expect(db.query(

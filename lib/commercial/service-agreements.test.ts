@@ -23,7 +23,7 @@ describe("proposed service agreements", () => {
     expect(gate).toContain("WHERE version_id = 'PS-2026-10-14.2'")
   })
 
-  it("proposes five closed versions with distinct hashes and does not migrate them", () => {
+  it("pins five closed versions and inserts them only as unapproved catalogue rows", () => {
     expect(proposedServiceAgreements).toHaveLength(5)
     expect(new Set(proposedServiceAgreements.map(item => item.version)).size).toBe(5)
     expect(new Set(proposedServiceAgreements.map(item => item.contentHash)).size).toBe(5)
@@ -60,8 +60,19 @@ describe("proposed service agreements", () => {
     for (const file of readdirSync(migrations)) {
       const sql = readFileSync(new URL(file, migrations), "utf8")
       expect(sql).not.toContain("PS-2026-10-21")
-      expect(sql).not.toContain("PS-2026-10-22")
+      if (file !== "20261022120000_service_specific_agreements_v1.sql") expect(sql).not.toContain("PS-2026-10-22")
     }
+    const activation = readFileSync(new URL("20261022120000_service_specific_agreements_v1.sql", migrations), "utf8")
+    for (const item of proposedServiceAgreements) {
+      expect(activation).toContain(item.version)
+      expect(activation).toContain(item.contentHash)
+      expect(activation).toContain(item.body)
+    }
+    expect(activation).toContain("SOLICITOR_REVIEW")
+    expect(activation).toContain("BUSINESS_OWNER")
+    expect(activation).toContain("This is not external solicitor confirmation.")
+    expect(activation).not.toMatch(/UPDATE public\.paid_service_agreement_catalogue[\s\S]{0,500}'PS-2026-10-14\.2'/)
+    expect(activation).not.toContain("admin_confirm_paid_service_agreement_v1")
   })
 
   it("keeps each service agreement free of the other services' prices", () => {
@@ -200,7 +211,39 @@ describe("proposed service agreements", () => {
       existingFingerprint: null,
       fingerprint: "fingerprint",
     }).status
-    expect(status).toBe("stale_version")
+    expect(status).toBe("success")
+    const wrongService = assessPaidServiceAcceptance({
+      sessionCustomerId: "customer",
+      membershipVerified: true,
+      actionOpen: true,
+      caseCustomerId: "customer",
+      quoteCustomerId: "customer",
+      quoteVersionId: "version",
+      submittedQuoteVersionId: "version",
+      submittedQuoteCustomerId: "customer",
+      currentQuoteVersionId: "version",
+      quoteStatus: "OFFERED",
+      quoteOpen: true,
+      taxBehaviour: "NOT_APPLICABLE",
+      serviceCode: "GUIDED_RELAUNCH",
+      paymentModel: "UPFRONT",
+      locationId: "location",
+      amountMinor: 9900,
+      catalogueOperative: true,
+      catalogueVersion: proposedServiceAgreements[2].version,
+      catalogueHash: proposedServiceAgreements[2].contentHash,
+      businessPurposeAccepted: true,
+      termsAccepted: true,
+      termsVersion: proposedServiceAgreements[2].version,
+      termsHash: proposedServiceAgreements[2].contentHash,
+      feeBasis: null,
+      existingAcceptanceId: null,
+      idempotencyKey: "key",
+      existingIdempotencyKey: null,
+      existingFingerprint: null,
+      fingerprint: "fingerprint",
+    }).status
+    expect(wrongService).toBe("stale_version")
     expect(PAID_SERVICE_AGREEMENT_VERSION).not.toBe(proposed.version)
   })
 })

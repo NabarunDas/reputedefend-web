@@ -1,12 +1,12 @@
 /**
  * CUSTOMER-QUOTE-03 proposed service agreements.
  *
- * These bodies are immutable proposals. They are not PS-2026-10-14.2, they do
- * not replace its hash, and they are not written into agreement_versions.
- * Each one stays unapproved: not operative, not customer-visible, and not
- * acceptance-actionable. A later solicitor approval and a separate migration
- * are required before a new quotation may bind one. An issued quotation keeps
- * the agreement version already stored on it.
+ * These bodies are immutable proposals. They are not PS-2026-10-14.2 and they
+ * do not replace its hash. The activation migration inserts each body as its
+ * own catalogue row, still unapproved and not operative. A separate owner
+ * approval records that the business owner approved the wording. It does not
+ * record external solicitor confirmation. A new quotation binds one only after
+ * that approval. An issued quotation keeps the agreement already stored on it.
  *
  * The customer-visible text carries the service title and the date below.
  * The version id and SHA-256 stay on the proposal metadata. They are not

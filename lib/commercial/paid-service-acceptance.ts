@@ -14,6 +14,7 @@ import {
   paidServiceAgreementBody,
   paidServiceAgreementContentHash,
 } from "@/lib/commercial/paid-service-agreement"
+import { proposedServiceAgreement } from "@/lib/commercial/service-agreements"
 import { GUARD_RECURRING_CONSENT_VERSION, SUCCESS_FEE_CONSENT_VERSION } from "@/lib/payments/model"
 
 export const PAID_SERVICE_ACCEPTANCE_VERSION = PAID_SERVICE_AGREEMENT_VERSION
@@ -25,6 +26,16 @@ export const MANAGED_CONTINGENT_FEE_TEXT =
 
 export const solicitorConfirmationStatement = (version = PAID_SERVICE_AGREEMENT_VERSION, hash = paidServiceAgreementContentHash) =>
   `Solicitor reviewed paid-service agreement ${version} with SHA-256 ${hash}.`
+
+/** Owner wording approval. This sentence is not external solicitor confirmation. */
+export const ownerApprovalStatement = (version: string, hash: string) =>
+  `Business owner approved the wording of paid-service agreement ${version} with SHA-256 ${hash} on 22 October 2026. This is not external solicitor confirmation.`
+
+export function paidServiceAgreementPairAllowed(serviceCode: ServiceCode, version: string, hash: string) {
+  if (version === PAID_SERVICE_AGREEMENT_VERSION && hash === paidServiceAgreementContentHash) return true
+  const specific = proposedServiceAgreement(serviceCode)
+  return specific !== null && specific.version === version && specific.contentHash === hash
+}
 
 export const SOLICITOR_CONFIRMATION_STATEMENT = solicitorConfirmationStatement()
 
@@ -191,7 +202,7 @@ export function assessPaidServiceAcceptance(input: AcceptanceAssessmentInput): {
   }
   if (!input.actionOpen) return { status: "unauthorised", feeBasisKind: null, payment: null }
   if (!input.catalogueOperative) return { status: "not_operative", feeBasisKind: null, payment: null }
-  if (input.catalogueVersion !== PAID_SERVICE_AGREEMENT_VERSION || input.catalogueHash !== paidServiceAgreementContentHash) {
+  if (!paidServiceAgreementPairAllowed(input.serviceCode, input.catalogueVersion, input.catalogueHash)) {
     return { status: "stale_version", feeBasisKind: null, payment: null }
   }
   if (!input.quoteOpen || input.quoteStatus !== "OFFERED" || input.currentQuoteVersionId !== input.quoteVersionId) {
@@ -200,7 +211,10 @@ export function assessPaidServiceAcceptance(input: AcceptanceAssessmentInput): {
   if (input.taxBehaviour === "UNCONFIRMED") return { status: "tax_unconfirmed", feeBasisKind: null, payment: null }
   if (!input.businessPurposeAccepted) return { status: "missing_business_purpose", feeBasisKind: null, payment: null }
   if (!input.termsAccepted) return { status: "missing_terms", feeBasisKind: null, payment: null }
-  if (input.termsVersion !== PAID_SERVICE_AGREEMENT_VERSION || input.termsHash !== paidServiceAgreementContentHash) {
+  if (!paidServiceAgreementPairAllowed(input.serviceCode, input.termsVersion ?? "", input.termsHash ?? "")) {
+    return { status: "stale_version", feeBasisKind: null, payment: null }
+  }
+  if (input.termsVersion !== input.catalogueVersion || input.termsHash !== input.catalogueHash) {
     return { status: "stale_version", feeBasisKind: null, payment: null }
   }
 

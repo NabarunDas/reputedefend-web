@@ -217,8 +217,24 @@ function RequirementChecklist({ caseId, documents }: { caseId: string; documents
     { key: "other", name: "Other evidence", title: "Other evidence", detail: "", selected: false },
   ])
   const selected = rows.filter(row => row.selected)
+  const customCount = rows.filter(row => row.key === "other" || row.key.startsWith("other-")).length
+  const customSequence = useRef(0)
   function update(key: string, patch: Partial<Row>) {
     setRows(current => current.map(row => row.key === key ? { ...row, ...patch } : row))
+  }
+  function addDocument() {
+    if (customCount >= 10) return
+    customSequence.current += 1
+    setRows(current => [...current, {
+      key: `other-${customSequence.current}`,
+      name: "Additional document",
+      title: "",
+      detail: "",
+      selected: true,
+    }])
+  }
+  function removeDocument(key: string) {
+    setRows(current => current.filter(row => row.key !== key))
   }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -226,9 +242,14 @@ function RequirementChecklist({ caseId, documents }: { caseId: string; documents
       command.setLocalMessage("Select a document, or leave the list empty. An empty list is not a decision that no documents are required.")
       return
     }
-    const other = selected.find(row => row.key === "other")
-    if (other && (vagueEvidenceTitle(other.title) || other.detail.trim().length < 10)) {
-      command.setLocalMessage("Name the document the customer should send, and describe it. “Other evidence” is not specific enough for the customer email.")
+    const additional = selected.filter(row => row.key === "other" || row.key.startsWith("other-"))
+    if (additional.some(row => vagueEvidenceTitle(row.title) || row.detail.trim().length < 10)) {
+      command.setLocalMessage("Give each additional document a specific name and explain what the customer should provide (at least 10 characters).")
+      return
+    }
+    const names = selected.map(row => row.title.trim().toLocaleLowerCase("en-GB"))
+    if (new Set(names).size !== names.length) {
+      command.setLocalMessage("Each document should appear only once in this request.")
       return
     }
     const title = requirementTitle(selected)
@@ -251,40 +272,44 @@ function RequirementChecklist({ caseId, documents }: { caseId: string; documents
   }
   return <form className="record-form" onSubmit={save}>
     <h3>Documents to request</h3>
-    <p>Choose only what this case needs. These suggestions are not required for every case, and none of them asks for a personal identity document.</p>
+    <p>Choose what is relevant to this case. The suggestions are optional; add any other specific documents or screenshots that will help. Only ask for evidence you genuinely need.</p>
     <ul className="guided-checklist">
       {rows.map(row => <li key={row.key}>
         <label className="checkbox">
           <input
             type="checkbox"
             checked={row.selected}
-            aria-label={row.key === "other" ? "Include other evidence" : `Include ${row.name}`}
+            aria-label={row.key === "other" ? "Include other evidence" : row.key.startsWith("other-") ? `Include additional document ${row.key.slice(6)}` : `Include ${row.name}`}
             onChange={event => update(row.key, { selected: event.target.checked })}
           />
-          <span className="sr-only">{row.key === "other" ? "Other evidence" : "Include this requirement"}</span>
+          <span className="sr-only">{row.key === "other" || row.key.startsWith("other-") ? "Additional evidence" : "Include this requirement"}</span>
         </label>
         <label>
-          {row.key === "other" ? "Other evidence title" : "Document name"}
+          {row.key === "other" || row.key.startsWith("other-") ? "Additional document name" : "Document name"}
           <input
-            aria-label={row.key === "other" ? "Other evidence title" : `Document name: ${row.name}`}
+            aria-label={row.key === "other" ? "Other evidence title" : row.key.startsWith("other-") ? `Additional document ${row.key.slice(6)} title` : `Document name: ${row.name}`}
             value={row.title}
             maxLength={200}
             onChange={event => update(row.key, { title: event.target.value })}
           />
         </label>
-        {(row.selected || row.key === "other") && <label>
-          {row.key === "other" ? "Other evidence description" : "What to ask for"}
+        {(row.selected || row.key === "other" || row.key.startsWith("other-")) && <label>
+          {row.key === "other" || row.key.startsWith("other-") ? "What the customer should provide" : "What to ask for"}
           <textarea
-            aria-label={row.key === "other" ? "Other evidence description" : `What to ask for: ${row.name}`}
+            aria-label={row.key === "other" ? "Other evidence description" : row.key.startsWith("other-") ? `Additional document ${row.key.slice(6)} description` : `What to ask for: ${row.name}`}
             value={row.detail}
             maxLength={1000}
             rows={2}
             onChange={event => update(row.key, { detail: event.target.value })}
           />
         </label>}
+        {row.key.startsWith("other-") && <button type="button" onClick={() => removeDocument(row.key)}>Remove additional document {row.key.slice(6)}</button>}
       </li>)}
     </ul>
-    <p>An empty list is not a decision that no documents are required. Saving records the requirement and does not email the customer.</p>
+    <button type="button" onClick={addDocument} disabled={command.busy || command.uncertain || command.done || customCount >= 10}>
+      Add another document
+    </button>
+    <p>Save the documents together as one requirement, then review the customer email before sending. For a larger request, you can add another requirement separately. Saving alone does not send an email.</p>
     <fieldset disabled={command.busy || command.uncertain || command.done}>
       <button type="submit" disabled={selected.length === 0}>Save evidence requirements</button>
     </fieldset>

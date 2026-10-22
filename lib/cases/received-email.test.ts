@@ -50,6 +50,7 @@ function expectCustomerReceiptContent(
     expect(body).toContain(publicRef)
     expect(body).toContain("What happens next")
     expect(body).toContain("Security reminder")
+    expect(body).not.toMatch(/human review|email provider|automated workflow|processed by a bot/i)
     expect(body).toContain("simply reply to this email")
     expect(body).toContain("keep your case reference in the subject")
     expect(body).toContain(brandTagline)

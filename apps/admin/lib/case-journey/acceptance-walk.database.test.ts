@@ -234,7 +234,7 @@ describe("eleven-step Guided acceptance walk", () => {
     expectOk(await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: quote.id }, Number(quote.version) + 1]), "quote offer")
     const raw = randomBytes(32).toString("hex")
     const acceptance = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", {
-      quoteId: quote.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), secretHash: hash(raw),
+      quoteId: quote.id, expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), secretHash: hash(raw),
     }, null])
     expectOk(acceptance, "acceptance link")
     const pending = secret()
@@ -270,7 +270,7 @@ describe("eleven-step Guided acceptance walk", () => {
     )).rows[0].id
     const paymentSecret = secret()
     const issued = await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
-      serviceOrderId: order.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), secretHash: paymentSecret,
+      serviceOrderId: order.id, expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), secretHash: paymentSecret,
     }, order.record_version])
     expectOk(issued, "payment link")
     const paymentPending = secret()

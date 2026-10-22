@@ -24,6 +24,6 @@ describe("customer quotation acceptance link expiry", () => {
   })
   it("uses calendar date/time fields for browser-local input", () => {
     expect(localDateTime(NaN)).toBe("")
-    expect(localDateTime(now)).toMatch(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/)
+    expect(localDateTime(now)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
   })
 })

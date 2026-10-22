@@ -124,7 +124,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 6 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
 endobj
 6 0 obj
-<< /Length 3478 >>
+<< /Length 3604 >>
 stream
 q
 0.039 0.431 0.235 rg
@@ -149,11 +149,13 @@ BT
 0 -14 Td
 (specified review.) Tj
 0 -21 Td
-(We charge no success fee for a removal known to be wholly unrelated to the authorised work. The) Tj
+(We charge no success fee for a removal known to be wholly unrelated to the authorised work. We) Tj
 0 -14 Td
-(two checks are not uninterrupted surveillance. A missing, unknown or ambiguous observation stays) Tj
+(record the time of each check and what we observed. The two checks are not uninterrupted) Tj
 0 -14 Td
-(pending and is not invoiced.) Tj
+(surveillance. A missing, unknown or ambiguous observation stays pending and is not invoiced as) Tj
+0 -14 Td
+(success.) Tj
 0 -21 Td
 (There is no second success-fee obligation for the same service order and the same verified) Tj
 0 -14 Td
@@ -165,9 +167,11 @@ BT
 0 -21 Td
 (The price on the accepted quotation is the price for this order, including a discount we have already) Tj
 0 -14 Td
-(agreed in writing for this order. The price is in pounds sterling \(GBP\). The GBP amount on the) Tj
+(agreed in writing for this order. The price is in pounds sterling \(GBP\). That pound amount is our) Tj
 0 -14 Td
-(quotation is the authoritative amount.) Tj
+(agreed fee. If you pay from an account in another currency, your bank or payment provider may) Tj
+0 -14 Td
+(convert it or charge its own fee. We do not set or guarantee that rate.) Tj
 0 -21 Td
 (If tax on a supply to you has to be confirmed before payment, we will tell you that treatment and the) Tj
 0 -14 Td
@@ -193,7 +197,7 @@ BT
 0 -14 Td
 (remedy for deficient work. We will tell you the result of the review. An amount that is not genuinely) Tj
 0 -14 Td
-(disputed remains payable.) Tj
+(disputed remains payable. Either of us may still bring a claim.) Tj
 /F2 13 Tf
 0 -28 Td
 (6. Your responsibilities) Tj
@@ -203,9 +207,11 @@ BT
 0 -14 Td
 (quotation, and the access this service needs.) Tj
 0 -21 Td
-(Where this service needs access to a Business Profile, you add us as a Manager. You remain the) Tj
+(Where this service needs access to a Business Profile, you add us as a Manager for this service) Tj
 0 -14 Td
-(owner. We do not need your Google password or access to your email account.) Tj
+(only. You remain the owner. We do not change the profile unless you separately approve that) Tj
+0 -14 Td
+(change. We do not ask for your Google password or access to your email account.) Tj
 0 -21 Td
 (You will not ask us to do anything unlawful. You confirm that you are entitled to instruct us about the) Tj
 0 -14 Td
@@ -216,14 +222,6 @@ BT
 (You remain responsible for your Business Profile, for what you publish, and for the decisions you) Tj
 0 -14 Td
 (take after we have explained a recommendation.) Tj
-/F2 13 Tf
-0 -28 Td
-(7. Our responsibilities) Tj
-/F1 11 Tf
-0 -21 Td
-(We will perform this service with reasonable care and skill, keep you informed of material progress,) Tj
-0 -14 Td
-(and record the observations we rely on for the success fee.) Tj
 ET
 BT
 /F1 9 Tf
@@ -237,7 +235,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 8 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
 endobj
 8 0 obj
-<< /Length 3401 >>
+<< /Length 3299 >>
 stream
 q
 0.039 0.431 0.235 rg
@@ -256,7 +254,14 @@ ET
 BT
 0 0 0 rg
 54 730 Td
+/F2 13 Tf
+0 -28 Td
+(7. Our responsibilities) Tj
 /F1 11 Tf
+0 -21 Td
+(We will perform this service with reasonable care and skill, keep you informed of material progress,) Tj
+0 -14 Td
+(and record the time of each check and what we observed.) Tj
 0 -21 Td
 (We may use trained staff and contractors. We remain responsible to you for this service.) Tj
 0 -21 Td
@@ -329,16 +334,6 @@ BT
 (will review the complaint against the record of the service. This does not remove any right to bring a) Tj
 0 -14 Td
 (claim.) Tj
-/F2 13 Tf
-0 -28 Td
-(12. Ending the service) Tj
-/F1 11 Tf
-0 -21 Td
-(No success fee is payable for work that ends before the success fee is earned, unless it had) Tj
-0 -14 Td
-(already been earned under this agreement.) Tj
-0 -21 Td
-(Either of us may end the service by written notice if the other materially breaks this agreement and) Tj
 ET
 BT
 /F1 9 Tf
@@ -352,7 +347,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 10 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
 endobj
 10 0 obj
-<< /Length 2033 >>
+<< /Length 2432 >>
 stream
 q
 0.039 0.431 0.235 rg
@@ -371,7 +366,18 @@ ET
 BT
 0 0 0 rg
 54 730 Td
+/F2 13 Tf
+0 -28 Td
+(12. Ending the service) Tj
 /F1 11 Tf
+0 -21 Td
+(No success fee is payable for work that ends before the success fee is earned, unless it had) Tj
+0 -14 Td
+(already been earned under this agreement.) Tj
+0 -21 Td
+(Ending this service does not end a different service order.) Tj
+0 -21 Td
+(Either of us may end the service by written notice if the other materially breaks this agreement and) Tj
 0 -14 Td
 (does not put the breach right within 14 days of a notice asking for it to be put right, or if the other) Tj
 0 -14 Td
@@ -443,15 +449,15 @@ xref
 0000000277 00000 n 
 0000003876 00000 n 
 0000004020 00000 n 
-0000007550 00000 n 
-0000007694 00000 n 
-0000011147 00000 n 
-0000011292 00000 n 
-0000013378 00000 n 
-0000013476 00000 n 
-0000013579 00000 n 
+0000007676 00000 n 
+0000007820 00000 n 
+0000011171 00000 n 
+0000011316 00000 n 
+0000013801 00000 n 
+0000013899 00000 n 
+0000014002 00000 n 
 trailer
 << /Size 14 /Root 1 0 R /Info 13 0 R >>
 startxref
-13677
+14100
 %%EOF

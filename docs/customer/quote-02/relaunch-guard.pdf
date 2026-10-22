@@ -9,7 +9,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 4 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
 endobj
 4 0 obj
-<< /Length 3614 >>
+<< /Length 3675 >>
 stream
 q
 0.039 0.431 0.235 rg
@@ -98,19 +98,17 @@ BT
 0 -14 Td
 (response within a stated number of minutes, or that a suspension or a review will be prevented.) Tj
 0 -21 Td
+(If we cannot complete a scheduled check, we retry, record what happened, and tell you if it stays) Tj
+0 -14 Td
+(incomplete. If the access this service needs is lost, we ask you to restore it and we pause billing for) Tj
+0 -14 Td
+(the coverage we cannot provide. If no working way to alert you remains, we pause the service and) Tj
+0 -14 Td
+(the billing. A phone number you have given us may be used only to resolve a failed email. We) Tj
+0 -14 Td
+(check a replacement email address before we use it.) Tj
+0 -21 Td
 (We are independent of Google. We do not control Google's systems, decisions or timescales.) Tj
-/F2 13 Tf
-0 -28 Td
-(4. Price and when monitoring starts) Tj
-/F1 11 Tf
-0 -21 Td
-(The price is \2439.99 per month per location named in the accepted quotation, unless that quotation) Tj
-0 -14 Td
-(states a different price.) Tj
-0 -21 Td
-(Monitoring for a location starts only after you have accepted this quotation for that location, we have) Tj
-0 -14 Td
-(confirmed the access we asked for, and we have completed the initial check. Sending a setup form) Tj
 ET
 BT
 /F1 9 Tf
@@ -124,7 +122,121 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 6 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
 endobj
 6 0 obj
-<< /Length 3780 >>
+<< /Length 3803 >>
+stream
+q
+0.039 0.431 0.235 rg
+54 748 487.28 3 re f
+Q
+BT
+/F2 16 Tf
+0.063 0.149 0.122 rg
+54 770 Td
+(ProfileRelaunch) Tj
+/F1 10 Tf
+0.365 0.427 0.400 rg
+0 -18 Td
+(Paid-service agreement) Tj
+ET
+BT
+0 0 0 rg
+54 730 Td
+/F2 13 Tf
+0 -28 Td
+(4. Price and when monitoring starts) Tj
+/F1 11 Tf
+0 -21 Td
+(The price is \2439.99 per month per location named in the accepted quotation, unless that quotation) Tj
+0 -14 Td
+(states a different price.) Tj
+0 -21 Td
+(Monitoring for a location starts only after you have accepted this quotation for that location, we have) Tj
+0 -14 Td
+(confirmed the access we asked for, and we have completed the initial check. Sending a setup form) Tj
+0 -14 Td
+(does not start monitoring and does not take payment.) Tj
+0 -21 Td
+(Accepting this quotation does not start monitoring and does not take payment.) Tj
+0 -21 Td
+(We are not registered for VAT. We do not add VAT while that remains the case. This is not a) Tj
+0 -14 Td
+(statement that a supply is zero-rated or exempt.) Tj
+0 -21 Td
+(The price on the accepted quotation is the price for this order, including a discount we have already) Tj
+0 -14 Td
+(agreed in writing for this order. The price is in pounds sterling \(GBP\). That pound amount is our) Tj
+0 -14 Td
+(agreed fee. If you pay from an account in another currency, your bank or payment provider may) Tj
+0 -14 Td
+(convert it or charge its own fee. We do not set or guarantee that rate.) Tj
+0 -21 Td
+(If tax on a supply to you has to be confirmed before payment, we will tell you that treatment and the) Tj
+0 -14 Td
+(amount before you pay.) Tj
+/F2 13 Tf
+0 -28 Td
+(5. Included period, cancellation and a later case) Tj
+/F1 11 Tf
+0 -21 Td
+(After a Managed Profile Recovery that has already met its own agreed outcome, you can choose 30) Tj
+0 -14 Td
+(days of Relaunch Guard for the restored location at no extra charge. The 30 days start when) Tj
+0 -14 Td
+(monitoring is activated. We will remind you before the period ends. Continuing at the monthly price) Tj
+0 -14 Td
+(in this agreement is your choice. We will not automatically start charging you. The 20% reduction) Tj
+0 -14 Td
+(below does not apply during those 30 days.) Tj
+0 -21 Td
+(Contact us to cancel. There is no cancellation fee. Normally, monitoring continues until the end of) Tj
+0 -14 Td
+(your paid month and does not renew. If you ask us to stop immediately, we return the unused) Tj
+0 -14 Td
+(portion of that month.) Tj
+0 -21 Td
+(While you are paying the monthly price for a location, you receive 20% off the standard fee for an) Tj
+0 -14 Td
+(eligible new Managed Profile Recovery or Managed Review Protection case at that location. The) Tj
+0 -14 Td
+(issue must arise during that paid monitoring. A problem that already existed when monitoring) Tj
+0 -14 Td
+(started is excluded. The reduction does not apply during the included 30 days, to Guided support, to) Tj
+0 -14 Td
+(the monitoring fee, or to a custom or bulk quotation, and it cannot be combined with another offer.) Tj
+0 -14 Td
+(Once we agree a reduced fee for a case, cancelling monitoring does not remove that reduction.) Tj
+0 -14 Td
+(That later case is a separate quotation, and its fee still depends on the outcome agreed in that) Tj
+0 -14 Td
+(quotation.) Tj
+0 -21 Td
+(We will not charge a higher monthly price unless we have given you at least 30 days' notice of that) Tj
+0 -14 Td
+(price and the date it would apply, and you have agreed to it. If you do not agree, monitoring ends) Tj
+0 -14 Td
+(before that date. We will not start the higher price automatically.) Tj
+/F2 13 Tf
+0 -28 Td
+(6. Your responsibilities) Tj
+/F1 11 Tf
+0 -21 Td
+(You will give us accurate information about the business, the profile and the reviews named in the) Tj
+0 -14 Td
+(quotation, and the access this service needs.) Tj
+ET
+BT
+/F1 9 Tf
+0.365 0.427 0.400 rg
+54 40 Td
+(Page 2) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 8 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
+endobj
+8 0 obj
+<< /Length 3425 >>
 stream
 q
 0.039 0.431 0.235 rg
@@ -144,68 +256,12 @@ BT
 0 0 0 rg
 54 730 Td
 /F1 11 Tf
-0 -14 Td
-(does not start monitoring and does not take payment.) Tj
 0 -21 Td
-(Accepting this quotation does not start monitoring and does not take payment.) Tj
-0 -21 Td
-(We are not registered for VAT. We do not add VAT while that remains the case. This is not a) Tj
+(Where this service needs access to a Business Profile, you add us as a Manager for this service) Tj
 0 -14 Td
-(statement that a supply is zero-rated or exempt.) Tj
-0 -21 Td
-(The price on the accepted quotation is the price for this order, including a discount we have already) Tj
+(only. You remain the owner. We do not change the profile unless you separately approve that) Tj
 0 -14 Td
-(agreed in writing for this order. The price is in pounds sterling \(GBP\). The GBP amount on the) Tj
-0 -14 Td
-(quotation is the authoritative amount.) Tj
-0 -21 Td
-(If tax on a supply to you has to be confirmed before payment, we will tell you that treatment and the) Tj
-0 -14 Td
-(amount before you pay.) Tj
-/F2 13 Tf
-0 -28 Td
-(5. Included period, cancellation and a later case) Tj
-/F1 11 Tf
-0 -21 Td
-(After a Managed Profile Recovery that has already met its own agreed outcome, you can choose 30) Tj
-0 -14 Td
-(days of Relaunch Guard for the restored location at no extra charge. The 30 days start when) Tj
-0 -14 Td
-(monitoring is activated. We will remind you before the period ends. Continuing at the monthly price) Tj
-0 -14 Td
-(in this agreement is your choice. We will not automatically start charging you.) Tj
-0 -21 Td
-(Contact us to cancel. There is no cancellation fee. Normally, monitoring continues until the end of) Tj
-0 -14 Td
-(your paid month and does not renew. If you ask us to stop immediately, we return the unused) Tj
-0 -14 Td
-(portion of that month.) Tj
-0 -21 Td
-(While paid monitoring is active for a location, you receive 20% off the standard fee for an eligible) Tj
-0 -14 Td
-(new Managed Profile Recovery or Managed Review Protection case at that location. The issue) Tj
-0 -14 Td
-(must arise while that paid monitoring is active. A problem that already existed when monitoring) Tj
-0 -14 Td
-(started is excluded. The reduction does not apply to the monitoring fee, or to a custom or bulk) Tj
-0 -14 Td
-(quotation, and it cannot be combined with another offer. Once we agree a reduced fee for a case,) Tj
-0 -14 Td
-(cancelling monitoring does not remove that reduction. That later case is a separate quotation, and) Tj
-0 -14 Td
-(its fee still depends on the outcome agreed in that quotation.) Tj
-/F2 13 Tf
-0 -28 Td
-(6. Your responsibilities) Tj
-/F1 11 Tf
-0 -21 Td
-(You will give us accurate information about the business, the profile and the reviews named in the) Tj
-0 -14 Td
-(quotation, and the access this service needs.) Tj
-0 -21 Td
-(Where this service needs access to a Business Profile, you add us as a Manager. You remain the) Tj
-0 -14 Td
-(owner. We do not need your Google password or access to your email account.) Tj
+(change. We do not ask for your Google password or access to your email account.) Tj
 0 -21 Td
 (You will not ask us to do anything unlawful. You confirm that you are entitled to instruct us about the) Tj
 0 -14 Td
@@ -226,39 +282,6 @@ BT
 (you if a check needs your attention.) Tj
 0 -21 Td
 (We may use trained staff and contractors. We remain responsible to you for this service.) Tj
-ET
-BT
-/F1 9 Tf
-0.365 0.427 0.400 rg
-54 40 Td
-(Page 2) Tj
-ET
-endstream
-endobj
-7 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 8 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
-endobj
-8 0 obj
-<< /Length 3313 >>
-stream
-q
-0.039 0.431 0.235 rg
-54 748 487.28 3 re f
-Q
-BT
-/F2 16 Tf
-0.063 0.149 0.122 rg
-54 770 Td
-(ProfileRelaunch) Tj
-/F1 10 Tf
-0.365 0.427 0.400 rg
-0 -18 Td
-(Paid-service agreement) Tj
-ET
-BT
-0 0 0 rg
-54 730 Td
-/F1 11 Tf
 0 -21 Td
 (We may refuse or stop a check that we reasonably believe would be unlawful or would mislead) Tj
 0 -14 Td
@@ -313,6 +336,39 @@ BT
 (service order.) Tj
 0 -21 Td
 (Subject to the liabilities that cannot legally be limited or excluded, we are not liable for loss of profit) Tj
+ET
+BT
+/F1 9 Tf
+0.365 0.427 0.400 rg
+54 40 Td
+(Page 3) Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 10 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
+endobj
+10 0 obj
+<< /Length 2941 >>
+stream
+q
+0.039 0.431 0.235 rg
+54 748 487.28 3 re f
+Q
+BT
+/F2 16 Tf
+0.063 0.149 0.122 rg
+54 770 Td
+(ProfileRelaunch) Tj
+/F1 10 Tf
+0.365 0.427 0.400 rg
+0 -18 Td
+(Paid-service agreement) Tj
+ET
+BT
+0 0 0 rg
+54 730 Td
+/F1 11 Tf
 0 -14 Td
 (or loss of goodwill, except so far as that loss is a foreseeable result of our failure to perform the) Tj
 0 -14 Td
@@ -341,39 +397,6 @@ BT
 (does not put the breach right within 14 days of a notice asking for it to be put right, or if the other) Tj
 0 -14 Td
 (cannot pay its debts as they fall due.) Tj
-ET
-BT
-/F1 9 Tf
-0.365 0.427 0.400 rg
-54 40 Td
-(Page 3) Tj
-ET
-endstream
-endobj
-9 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 10 0 R /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> >>
-endobj
-10 0 obj
-<< /Length 1934 >>
-stream
-q
-0.039 0.431 0.235 rg
-54 748 487.28 3 re f
-Q
-BT
-/F2 16 Tf
-0.063 0.149 0.122 rg
-54 770 Td
-(ProfileRelaunch) Tj
-/F1 10 Tf
-0.365 0.427 0.400 rg
-0 -18 Td
-(Paid-service agreement) Tj
-ET
-BT
-0 0 0 rg
-54 730 Td
-/F1 11 Tf
 0 -21 Td
 (Ending monitoring does not end a different service order. Clauses that should continue after the) Tj
 0 -14 Td
@@ -441,17 +464,17 @@ xref
 0000000058 00000 n 
 0000000133 00000 n 
 0000000277 00000 n 
-0000003943 00000 n 
-0000004087 00000 n 
-0000007919 00000 n 
-0000008063 00000 n 
-0000011428 00000 n 
-0000011573 00000 n 
-0000013560 00000 n 
-0000013658 00000 n 
-0000013761 00000 n 
+0000004004 00000 n 
+0000004148 00000 n 
+0000008003 00000 n 
+0000008147 00000 n 
+0000011624 00000 n 
+0000011769 00000 n 
+0000014763 00000 n 
+0000014861 00000 n 
+0000014964 00000 n 
 trailer
 << /Size 14 /Root 1 0 R /Info 13 0 R >>
 startxref
-13859
+15062
 %%EOF

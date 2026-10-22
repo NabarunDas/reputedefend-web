@@ -28,11 +28,11 @@ describe("proposed service agreements", () => {
     expect(new Set(proposedServiceAgreements.map(item => item.version)).size).toBe(5)
     expect(new Set(proposedServiceAgreements.map(item => item.contentHash)).size).toBe(5)
     expect(Object.fromEntries(proposedServiceAgreements.map(item => [item.version, item.contentHash]))).toEqual({
-      "PS-2026-10-21.GR": "e4f9ecb589f0e4efa8f46a25faa750bb2db3cf3ad1665b511f34fb486fbe8c88",
-      "PS-2026-10-21.GV": "6b4c26493e4e3450cfca9a5c41908ec44c22b329f85228a536c8192d1803a2ff",
-      "PS-2026-10-21.MR": "1a7188c9d9f1b054cf3bf6627a66a9206f042dbf5684c5615c870be72f4699ee",
-      "PS-2026-10-21.MV": "6dded927728a4cec7226712eccbf1d3243645602f58a56f94275b76235549214",
-      "PS-2026-10-21.GD": "b48fdffe3ff8ec15543fec0e0717fdabba73c4ffe128fc1b2600b8d2ca61c9e6",
+      "PS-2026-10-22.GR": "705a8fe4aa51242ed3d01102a920a2ca22391fa4aa6f60e2c449d14b437f8eb3",
+      "PS-2026-10-22.GV": "56334ee14bb3c31b4144e339738cefbd28039c5a163785cc9aa7c9f8b85bbbe9",
+      "PS-2026-10-22.MR": "725e0d769943852cef1ffe9dc12a0282bdd6c9ac7a7b2ef4c0fa16cbf637a269",
+      "PS-2026-10-22.MV": "62a1ee6fbd1cc196103c1ae281592ed857c84df4e13a5158aa7334794ebbc784",
+      "PS-2026-10-22.GD": "51da445b47ea6f2cc4671b3192c068c78ce81548a7f36a38e6ccc92607905f23",
     })
     for (const item of proposedServiceAgreements) {
       expect(item.version).toBe(proposedServiceAgreementVersions[item.serviceCode])
@@ -60,6 +60,7 @@ describe("proposed service agreements", () => {
     for (const file of readdirSync(migrations)) {
       const sql = readFileSync(new URL(file, migrations), "utf8")
       expect(sql).not.toContain("PS-2026-10-21")
+      expect(sql).not.toContain("PS-2026-10-22")
     }
   })
 
@@ -98,6 +99,56 @@ describe("proposed service agreements", () => {
     expect(guard).toContain("return the unused portion of that month")
     expect(guard).toContain("you add us as a Manager")
     expect(guard).not.toMatch(/£99|£59|£299|£149/)
+  })
+
+  it("aligns each draft to the published promise for that service", () => {
+    const body = (code: string) => proposedServiceAgreements.find(item => item.serviceCode === code)!.body
+    const gbp = "That pound amount is our agreed fee. If you pay from an account in another currency, your bank or payment provider may convert it or charge its own fee. We do not set or guarantee that rate."
+    for (const code of ["GUIDED_RELAUNCH", "GUIDED_REVIEW", "MANAGED_RELAUNCH", "MANAGED_REVIEW", "RELAUNCH_GUARD"]) {
+      expect(body(code)).toContain(gbp)
+      expect(body(code)).not.toContain("Stripe")
+    }
+
+    for (const code of ["GUIDED_RELAUNCH", "GUIDED_REVIEW"]) {
+      const guided = body(code)
+      expect(guided).toContain("We prepare it. You submit it.")
+      expect(guided).toContain("due after you accept the quotation and before work begins")
+      expect(guided).toContain("Accepting the quotation does not take payment. Payment is a later step.")
+      expect(guided).toContain("Ending this service does not end a different service order.")
+    }
+
+    for (const code of ["MANAGED_RELAUNCH", "MANAGED_REVIEW"]) {
+      const managed = body(code)
+      expect(managed).toContain("We record the time of each check and what we observed.")
+      expect(managed).toContain("not invoiced as success")
+      expect(managed).toContain("There is no automatic card charge and no collection of that success fee in advance.")
+      expect(managed).toContain("Either of us may still bring a claim.")
+      expect(managed).toContain("We do not change the profile unless you separately approve that change.")
+      expect(managed).toContain("you add us as a Manager for this service only")
+      expect(managed).toContain("Ending this service does not end a different service order.")
+    }
+
+    const recovery = body("MANAGED_RELAUNCH")
+    expect(recovery).toContain("If an observation is missing, unknown or ambiguous, or the checks are less than 48 hours apart, the outcome stays pending. A pending outcome is not invoiced as success.")
+    const removal = body("MANAGED_REVIEW")
+    expect(removal).toContain("A missing, unknown or ambiguous observation stays pending and is not invoiced as success.")
+
+    const guard = body("RELAUNCH_GUARD")
+    expect(guard).toContain("The 20% reduction below does not apply during those 30 days.")
+    expect(guard).toContain("The reduction does not apply during the included 30 days, to Guided support")
+    expect(guard).toContain("While you are paying the monthly price for a location")
+    expect(guard).toContain("Once we agree a reduced fee for a case, cancelling monitoring does not remove that reduction.")
+    expect(guard).toContain("at least 30 days' notice of that price and the date it would apply, and you have agreed to it")
+    expect(guard).toContain("We will not start the higher price automatically.")
+    expect(guard).toContain("If we cannot complete a scheduled check, we retry, record what happened, and tell you if it stays incomplete.")
+    expect(guard).toContain("we pause billing for the coverage we cannot provide")
+    expect(guard).toContain("we pause the service and the billing")
+    expect(guard).toContain("A phone number you have given us may be used only to resolve a failed email.")
+    expect(guard).toContain("We check a replacement email address before we use it.")
+    expect(guard).toContain("not a promise of continuous monitoring")
+    expect(guard).toContain("We do not change the profile unless you separately approve that change.")
+    expect(guard).toContain("Ending monitoring does not end a different service order.")
+    expect(guard).not.toMatch(/\+44|telephone number/)
   })
 
   it("documents a later Guided reissue that ends QT-26-H6JSMB before the new offer", () => {

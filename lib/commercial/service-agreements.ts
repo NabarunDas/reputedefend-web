@@ -1,5 +1,5 @@
 /**
- * CUSTOMER-QUOTE-01 proposed service agreements.
+ * CUSTOMER-QUOTE-03 proposed service agreements.
  *
  * These bodies are immutable proposals. They are not PS-2026-10-14.2, they do
  * not replace its hash, and they are not written into agreement_versions.
@@ -10,19 +10,21 @@
  *
  * The customer-visible text carries the service title and the date below.
  * The version id and SHA-256 stay on the proposal metadata. They are not
- * printed in the body. A wording change before approval replaces the hash
- * for the same unapproved version id. It does not edit PS-2026-10-14.2.
+ * printed in the body. PS-2026-10-21 was an unapproved draft. The 22 October
+ * versions below replace it. Nothing was bound to either set of hashes.
+ * A further wording change needs a new version id. It does not edit
+ * PS-2026-10-14.2.
  */
 import { createHash } from "node:crypto"
 
 export const PROPOSED_SERVICE_AGREEMENT_STATUS = "SOLICITOR_REVIEW" as const
 
 export const proposedServiceAgreementVersions = {
-  GUIDED_RELAUNCH: "PS-2026-10-21.GR",
-  GUIDED_REVIEW: "PS-2026-10-21.GV",
-  MANAGED_RELAUNCH: "PS-2026-10-21.MR",
-  MANAGED_REVIEW: "PS-2026-10-21.MV",
-  RELAUNCH_GUARD: "PS-2026-10-21.GD",
+  GUIDED_RELAUNCH: "PS-2026-10-22.GR",
+  GUIDED_REVIEW: "PS-2026-10-22.GV",
+  MANAGED_RELAUNCH: "PS-2026-10-22.MR",
+  MANAGED_REVIEW: "PS-2026-10-22.MV",
+  RELAUNCH_GUARD: "PS-2026-10-22.GD",
 } as const
 
 const parties = `This agreement is between ProfileRelaunch Ltd (company number 17520826), a company registered in England and Wales and incorporated on 14 October 2026, whose registered office is 71–75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom, trading as ProfileRelaunch ("we", "us"), and the business named in the quotation that accepts this agreement ("you"). Notices to us under this agreement go to contact@profilerelaunch.com.`
@@ -77,7 +79,7 @@ const otherTerms = section("14. Other terms", [
 
 const taxSentences = [
   "We are not registered for VAT. We do not add VAT while that remains the case. This is not a statement that a supply is zero-rated or exempt.",
-  "The price on the accepted quotation is the price for this order, including a discount we have already agreed in writing for this order. The price is in pounds sterling (GBP). The GBP amount on the quotation is the authoritative amount.",
+  "The price on the accepted quotation is the price for this order, including a discount we have already agreed in writing for this order. The price is in pounds sterling (GBP). That pound amount is our agreed fee. If you pay from an account in another currency, your bank or payment provider may convert it or charge its own fee. We do not set or guarantee that rate.",
   "If tax on a supply to you has to be confirmed before payment, we will tell you that treatment and the amount before you pay.",
 ]
 
@@ -90,7 +92,7 @@ const guidedCustomer = [
 
 const accessCustomer = [
   "You will give us accurate information about the business, the profile and the reviews named in the quotation, and the access this service needs.",
-  "Where this service needs access to a Business Profile, you add us as a Manager. You remain the owner. We do not need your Google password or access to your email account.",
+  "Where this service needs access to a Business Profile, you add us as a Manager for this service only. You remain the owner. We do not change the profile unless you separately approve that change. We do not ask for your Google password or access to your email account.",
   "You will not ask us to do anything unlawful. You confirm that you are entitled to instruct us about the profile and reviews named in the quotation. You will read a deliverable within a reasonable time and tell us about an error you could reasonably be expected to notice.",
   "You remain responsible for your Business Profile, for what you publish, and for the decisions you take after we have explained a recommendation.",
 ]
@@ -131,12 +133,14 @@ function guidedDuties(work: string) {
 
 const guidedEnding = section("12. Ending the service", [
   "You may end this service before substantive case-specific work begins. A fee already paid is then refunded in full under the cancellation and refund terms in this agreement.",
+  "Ending this service does not end a different service order.",
   "Either of us may end the service by written notice if the other materially breaks this agreement and does not put the breach right within 14 days of a notice asking for it to be put right, or if the other cannot pay its debts as they fall due.",
   "Clauses that should continue after the service ends, including clauses on sums already earned, confidentiality, intellectual property, liability and governing law, continue to apply.",
 ])
 
 const managedEnding = section("12. Ending the service", [
   "No success fee is payable for work that ends before the success fee is earned, unless it had already been earned under this agreement.",
+  "Ending this service does not end a different service order.",
   "Either of us may end the service by written notice if the other materially breaks this agreement and does not put the breach right within 14 days of a notice asking for it to be put right, or if the other cannot pay its debts as they fall due.",
   "Clauses that should continue after the service ends, including clauses on sums already earned, confidentiality, intellectual property, liability and governing law, continue to apply.",
 ])
@@ -178,7 +182,7 @@ function compile(serviceCode: keyof typeof agreementTitles, parts: string[], end
 const guidedRelaunchBody = compile("GUIDED_RELAUNCH", [
   guidedService(
     "Guided Relaunch",
-    "We organise the evidence and prepare the profile relaunch work for the location named in the quotation. You remain the person who files it with Google. We do not submit that work for you.",
+    "We prepare it. You submit it. We organise the evidence and prepare the profile relaunch work for the location named in the quotation. We do not submit that work for you.",
   ),
   guidedPrice("£99"),
   guidedCancellation,
@@ -188,7 +192,7 @@ const guidedRelaunchBody = compile("GUIDED_RELAUNCH", [
 const guidedReviewBody = compile("GUIDED_REVIEW", [
   guidedService(
     "Guided Review",
-    "We organise the evidence and prepare the review work named in the quotation. You remain the person who files it with Google. We do not submit that work for you.",
+    "We prepare it. You submit it. We organise the evidence and prepare the review work named in the quotation. We do not submit that work for you.",
   ),
   guidedPrice("£59"),
   guidedCancellation,
@@ -205,18 +209,18 @@ const managedRelaunchBody = compile("MANAGED_RELAUNCH", [
     "The price is a success fee of £299 unless the accepted quotation states a different price. The quotation identifies the exact Business Profile and the incident. We record the baseline restriction before relying on it for the fee.",
     "The success fee is earned only when the original restriction is absent at an initial check and again at a second check at least 48 hours later, and the original restriction is not known to have returned between those checks.",
     "An unrelated new issue after that verified outcome does not invalidate the completed service. We charge no success fee for an outcome known to be wholly unrelated to work you authorised.",
-    "The two checks are two recorded observations. They are not uninterrupted surveillance. If an observation is missing, unknown or ambiguous, or the checks are less than 48 hours apart, the outcome stays pending. A pending outcome is not invoiced.",
+    "The two checks are two recorded observations. We record the time of each check and what we observed. They are not uninterrupted surveillance. If an observation is missing, unknown or ambiguous, or the checks are less than 48 hours apart, the outcome stays pending. A pending outcome is not invoiced as success.",
     "There is no second success-fee obligation for the same service order and the same verified outcome.",
     ...taxSentences,
   ]),
   section("5. Invoice, dispute and payment", [
     "The success fee is invoiced only after the documented outcome in section 4. You will pay an undisputed invoice within 14 calendar days. There is no automatic card charge and no collection of that success fee in advance.",
     "Accepting the quotation does not create an invoice and does not take payment.",
-    "You may dispute the claimed outcome in writing before the invoice falls due. Tell us what you dispute and why. Collection of a genuinely disputed amount pauses while we review that dispute against the recorded checks. Pausing collection is not an admission, and it does not remove a remedy for deficient work. We will tell you the result of the review. An amount that is not genuinely disputed remains payable.",
+    "You may dispute the claimed outcome in writing before the invoice falls due. Tell us what you dispute and why. Collection of a genuinely disputed amount pauses while we review that dispute against the recorded checks. Pausing collection is not an admission, and it does not remove a remedy for deficient work. We will tell you the result of the review. An amount that is not genuinely disputed remains payable. Either of us may still bring a claim.",
   ]),
   section("6. Your responsibilities", accessCustomer),
   section("7. Our responsibilities", [
-    "We will perform this service with reasonable care and skill, keep you informed of material progress, and record the observations we rely on for the success fee.",
+    "We will perform this service with reasonable care and skill, keep you informed of material progress, and record the time of each check and what we observed.",
     "We may use trained staff and contractors. We remain responsible to you for this service.",
     "We may refuse or stop work that we reasonably believe would be unlawful or would mislead Google or the public. The success fee is not payable for work stopped on that ground unless it had already been earned under section 4.",
   ]),
@@ -232,18 +236,18 @@ const managedReviewBody = compile("MANAGED_REVIEW", [
     "The price is a success fee of £149 unless the accepted quotation states a different price.",
     "The success fee is earned only when that specified review is absent at two checks at least 48 hours apart. Evidence that the same review returned during that period means that verification attempt has not succeeded.",
     "A different new negative review is a separate incident and does not invalidate the outcome for the specified review.",
-    "We charge no success fee for a removal known to be wholly unrelated to the authorised work. The two checks are not uninterrupted surveillance. A missing, unknown or ambiguous observation stays pending and is not invoiced.",
+    "We charge no success fee for a removal known to be wholly unrelated to the authorised work. We record the time of each check and what we observed. The two checks are not uninterrupted surveillance. A missing, unknown or ambiguous observation stays pending and is not invoiced as success.",
     "There is no second success-fee obligation for the same service order and the same verified outcome.",
     ...taxSentences,
   ]),
   section("5. Invoice, dispute and payment", [
     "The success fee is invoiced only after the documented outcome in section 4. You will pay an undisputed invoice within 14 calendar days. There is no automatic card charge and no collection of that success fee in advance.",
     "Accepting the quotation does not create an invoice and does not take payment.",
-    "You may dispute the claimed outcome in writing before the invoice falls due. Tell us what you dispute and why. Collection of a genuinely disputed amount pauses while we review that dispute against the recorded checks. Pausing collection is not an admission, and it does not remove a remedy for deficient work. We will tell you the result of the review. An amount that is not genuinely disputed remains payable.",
+    "You may dispute the claimed outcome in writing before the invoice falls due. Tell us what you dispute and why. Collection of a genuinely disputed amount pauses while we review that dispute against the recorded checks. Pausing collection is not an admission, and it does not remove a remedy for deficient work. We will tell you the result of the review. An amount that is not genuinely disputed remains payable. Either of us may still bring a claim.",
   ]),
   section("6. Your responsibilities", accessCustomer),
   section("7. Our responsibilities", [
-    "We will perform this service with reasonable care and skill, keep you informed of material progress, and record the observations we rely on for the success fee.",
+    "We will perform this service with reasonable care and skill, keep you informed of material progress, and record the time of each check and what we observed.",
     "We may use trained staff and contractors. We remain responsible to you for this service.",
     "We may refuse or stop work that we reasonably believe would be unlawful or would mislead Google or the public. The success fee is not payable for work stopped on that ground unless it had already been earned under section 4.",
   ]),
@@ -254,6 +258,7 @@ const guardBody = compile("RELAUNCH_GUARD", [
     "The service under this agreement is Relaunch Guard for each location named in the accepted quotation. We provide only that monitoring service.",
     "Our team carries out the checks manually, twice each day, including weekends and bank holidays, using a Europe/London schedule, and we email you if a check needs your attention.",
     "The checks are planned observations. They are not a promise of continuous monitoring, of a response within a stated number of minutes, or that a suspension or a review will be prevented.",
+    "If we cannot complete a scheduled check, we retry, record what happened, and tell you if it stays incomplete. If the access this service needs is lost, we ask you to restore it and we pause billing for the coverage we cannot provide. If no working way to alert you remains, we pause the service and the billing. A phone number you have given us may be used only to resolve a failed email. We check a replacement email address before we use it.",
     "We are independent of Google. We do not control Google's systems, decisions or timescales.",
   ]),
   section("4. Price and when monitoring starts", [
@@ -263,9 +268,10 @@ const guardBody = compile("RELAUNCH_GUARD", [
     ...taxSentences,
   ]),
   section("5. Included period, cancellation and a later case", [
-    "After a Managed Profile Recovery that has already met its own agreed outcome, you can choose 30 days of Relaunch Guard for the restored location at no extra charge. The 30 days start when monitoring is activated. We will remind you before the period ends. Continuing at the monthly price in this agreement is your choice. We will not automatically start charging you.",
+    "After a Managed Profile Recovery that has already met its own agreed outcome, you can choose 30 days of Relaunch Guard for the restored location at no extra charge. The 30 days start when monitoring is activated. We will remind you before the period ends. Continuing at the monthly price in this agreement is your choice. We will not automatically start charging you. The 20% reduction below does not apply during those 30 days.",
     "Contact us to cancel. There is no cancellation fee. Normally, monitoring continues until the end of your paid month and does not renew. If you ask us to stop immediately, we return the unused portion of that month.",
-    "While paid monitoring is active for a location, you receive 20% off the standard fee for an eligible new Managed Profile Recovery or Managed Review Protection case at that location. The issue must arise while that paid monitoring is active. A problem that already existed when monitoring started is excluded. The reduction does not apply to the monitoring fee, or to a custom or bulk quotation, and it cannot be combined with another offer. Once we agree a reduced fee for a case, cancelling monitoring does not remove that reduction. That later case is a separate quotation, and its fee still depends on the outcome agreed in that quotation.",
+    "While you are paying the monthly price for a location, you receive 20% off the standard fee for an eligible new Managed Profile Recovery or Managed Review Protection case at that location. The issue must arise during that paid monitoring. A problem that already existed when monitoring started is excluded. The reduction does not apply during the included 30 days, to Guided support, to the monitoring fee, or to a custom or bulk quotation, and it cannot be combined with another offer. Once we agree a reduced fee for a case, cancelling monitoring does not remove that reduction. That later case is a separate quotation, and its fee still depends on the outcome agreed in that quotation.",
+    "We will not charge a higher monthly price unless we have given you at least 30 days' notice of that price and the date it would apply, and you have agreed to it. If you do not agree, monitoring ends before that date. We will not start the higher price automatically.",
   ]),
   section("6. Your responsibilities", accessCustomer),
   section("7. Our responsibilities", [

@@ -24,5 +24,6 @@ describe("agreement rendering", () => {
     expect(customerFacingTerms("Agreement PS-2026-10-14.2.")).toBeNull()
     expect(customerFacingTerms("The service terms sent with this quote apply.")).toBe("The service terms sent with this quote apply.")
     expect(customerFacingTerms(`Agreement PS-2026-10-21.GR SHA-256 ${"ab".repeat(32)}.`)).toBeNull()
+    expect(customerFacingTerms(`Agreement PS-2026-10-22.GR SHA-256 ${"ab".repeat(32)}.`)).toBeNull()
   })
 })

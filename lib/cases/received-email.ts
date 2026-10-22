@@ -53,7 +53,7 @@ function customerReceiptCopy(
     serviceName,
     heading: `We've received your ${serviceName} assessment`,
     greeting: `Hi ${data.fullName},`,
-    intro: `Thank you for telling us about ${data.businessName}. We have received your ${serviceName.toLowerCase()} assessment and saved the details you shared.`,
+    intro: `Thank you for telling us about ${data.businessName}. We have received your ${serviceName} assessment and saved the details you shared.`,
     caseRefLabel: "Your case reference",
     publicRef,
     caseRefNote:

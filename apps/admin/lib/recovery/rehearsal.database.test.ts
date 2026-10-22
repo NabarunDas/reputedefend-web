@@ -48,7 +48,7 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(61)
+    expect(migrationChain).toHaveLength(62)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database

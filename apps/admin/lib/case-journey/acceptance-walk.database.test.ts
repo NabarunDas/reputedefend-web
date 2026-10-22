@@ -270,7 +270,7 @@ describe("eleven-step Guided acceptance walk", () => {
     )).rows[0].id
     const paymentSecret = secret()
     const issued = await rpc("admin_payment_command_v1", [token, key(), "issue_guided_payment_action", {
-      serviceOrderId: order.id, expiresAt: "2026-10-22T12:00:00.000Z", secretHash: paymentSecret,
+      serviceOrderId: order.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), secretHash: paymentSecret,
     }, order.record_version])
     expectOk(issued, "payment link")
     const paymentPending = secret()

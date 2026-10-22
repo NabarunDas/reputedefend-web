@@ -233,7 +233,11 @@ describe("commercial workspace view", () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ message: "Issued.", actionUrl: "https://customer.example/once" }) }))
     vi.stubGlobal("fetch", fetchMock)
     render(<OfferQuoteActionForm quoteId={QUOTE_ID} />)
-    fireEvent.change(screen.getByLabelText("Action expires"), { target: { value: "2026-12-01T12:00" } })
+    // A real acceptance link expires within seven days; use the form's
+    // safe future default rather than a fixed date that can become invalid.
+    const expiresField = screen.getByLabelText("Action expires") as HTMLInputElement
+    expect(Date.parse(expiresField.value)).toBeGreaterThan(Date.now() + 15 * 60 * 1000)
+    expect(Date.parse(expiresField.value)).toBeLessThan(Date.now() + 7 * 24 * 60 * 60 * 1000)
     fireEvent.click(screen.getByRole("button", { name: "Issue customer acceptance link" }))
     expect(await screen.findByText(/one-time customer link/i)).toBeInTheDocument()
     expect(screen.getByText(/cannot be shown again/i)).toBeInTheDocument()

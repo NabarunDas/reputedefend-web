@@ -224,7 +224,7 @@ describe("eleven-step Guided acceptance walk", () => {
       customerId: customer, businessId: business, caseId, locationId: location,
       scope: "Prepare the agreed recovery pack for this location only.",
       exclusions: "Google decisions, Manager access, and later payment collection are excluded.",
-      validUntil: "2026-11-20T12:00:00.000Z",
+      validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       applyDiscount: false, priceVersionId: price, serviceCode: "GUIDED_RELAUNCH",
     }, null])
     expectOk(quote, "quote draft")
@@ -234,7 +234,7 @@ describe("eleven-step Guided acceptance walk", () => {
     expectOk(await rpc("admin_quote_command_v1", [token, key(), "offer", { quoteId: quote.id }, Number(quote.version) + 1]), "quote offer")
     const raw = randomBytes(32).toString("hex")
     const acceptance = await rpc("admin_quote_command_v1", [token, key(), "create_quote_acceptance_action", {
-      quoteId: quote.id, expiresAt: "2026-10-22T12:00:00.000Z", secretHash: hash(raw),
+      quoteId: quote.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), secretHash: hash(raw),
     }, null])
     expectOk(acceptance, "acceptance link")
     const pending = secret()

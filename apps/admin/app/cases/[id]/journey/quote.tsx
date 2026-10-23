@@ -5,6 +5,7 @@ import {
   type QuoteReadiness,
 } from "@/lib/case-journey/quote-readiness"
 import { emptyQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-email"
+import { quoteActionExpiryWindow } from "@/lib/commerce/action-expiry"
 import { isUuid } from "@/lib/records/model"
 import { customerPriceBoundary } from "../../../../../../lib/pricing"
 import { formatGbp } from "@/lib/commerce/model"
@@ -157,11 +158,29 @@ export function QuotePanel({
         <p><strong>Email needs attention</strong></p>
         <p>This quotation email was not confirmed. It was not sent again.</p>
       </>}
-      {next === "manual" && <p><strong>The acceptance link exists, but the quotation has not been emailed.</strong></p>}
-      {next === "expired" && quote && <>
-        <p><strong>Customer acceptance link expired — Issue Replacement</strong></p>
-        <p>The replacement is issued only when you continue. This page does not revoke or create a link while it is shown.</p>
-        <OfferQuoteActionForm quoteId={quote.quoteId} quoteValidUntil={quote.validUntil} submitLabel="Issue Replacement" />
+      {next === "manual" && quote?.actionId && <>
+        <p><strong>The acceptance link exists, but the quotation has not been emailed.</strong></p>
+        <p>This one-time link cannot be retrieved after you leave this page. Revoke this unused link, then return to this step and send the quotation by email. Revoking it does not accept the quotation and does not take payment.</p>
+        <RevokeQuoteActionForm quoteId={quote.quoteId} actionId={quote.actionId} />
+      </>}
+      {next === "expired" && quote && <SendQuotationForm
+        quoteId={quote.quoteId}
+        publicRef={quote.publicRef}
+        caseReference={quote.caseReference}
+        serviceName={quote.serviceName}
+        amountMinor={quote.amountMinor}
+        currency={quote.currency}
+        paymentModel={quote.paymentModel}
+        scope={quote.scope}
+        exclusions={quote.exclusions}
+        validUntil={quote.validUntil}
+        heading="Send replacement quotation email"
+        submitLabel="Send replacement quotation email"
+        lead="Review the email, then send the replacement. The expired acceptance link is revoked only as part of that send. Sending does not mean the customer has accepted."
+      />}
+      {next === "renew" && <>
+        <p><strong>This quotation expires too soon for a replacement acceptance link.</strong></p>
+        <p>Review the quotation validity and renew the expiry before sending a replacement email. No link was revoked and no email was sent.</p>
       </>}
       {next === "accepted" && <p><strong>Quotation accepted — Continue to Step 7</strong> <a href={`/cases/${caseId}/journey?step=SERVICE_ACTIVATION`}>Continue to Step 7</a></p>}
       {next === "replace" && panel.priceChoice && <CaseQuoteForm
@@ -196,7 +215,12 @@ export function QuotePanel({
       <p>A manual one-time link does not send the quotation email.</p>
       <OfferQuoteActionForm quoteId={quote.quoteId} quoteValidUntil={quote.validUntil} />
     </details>}
-    {panel.commands.revokeAcceptance && quote?.actionId && <details>
+    {next === "expired" && quote && <details data-secondary="manual-replacement">
+      <summary>More Options</summary>
+      <p>Issue manual replacement link does not email the customer. The one-time secret cannot be retrieved after you leave this page.</p>
+      <OfferQuoteActionForm quoteId={quote.quoteId} quoteValidUntil={quote.validUntil} submitLabel="Issue manual replacement link" />
+    </details>}
+    {panel.commands.revokeAcceptance && quote?.actionId && next !== "manual" && <details>
       <summary>More Options</summary>
       <p>Revoking this link does not accept the quotation and does not take payment.</p>
       <RevokeQuoteActionForm quoteId={quote.quoteId} actionId={quote.actionId} />
@@ -225,11 +249,11 @@ function quotationStatus(panel: JourneyQuotePanel, email: QuoteEmailView): strin
   return "Needs attention"
 }
 
-type NextAction = "unavailable" | "verify" | "draft" | "confirm" | "review" | "offer" | "email" | "queued" | "submitted" | "delivered" | "attention" | "manual" | "expired" | "accepted" | "replace" | "blocked"
+type NextAction = "unavailable" | "verify" | "draft" | "confirm" | "review" | "offer" | "email" | "queued" | "submitted" | "delivered" | "attention" | "manual" | "expired" | "renew" | "accepted" | "replace" | "blocked"
 
 function stageState(next: NextAction): Record<"prepare" | "offer" | "acceptance", "done" | "current" | "upcoming"> {
   if (next === "accepted") return { prepare: "done", offer: "done", acceptance: "done" }
-  if (next === "delivered" || next === "expired") return { prepare: "done", offer: "done", acceptance: "current" }
+  if (next === "delivered" || next === "expired" || next === "renew") return { prepare: "done", offer: "done", acceptance: "current" }
   if (next === "offer" || next === "email" || next === "queued" || next === "submitted" || next === "attention" || next === "manual") {
     return { prepare: "done", offer: "current", acceptance: "upcoming" }
   }
@@ -244,7 +268,7 @@ function blockedCopy(panel: JourneyQuotePanel, email: QuoteEmailView): string {
   if (email.phase === "unavailable" && offeredQuote(panel)) {
     return "The quotation email history could not be confirmed. Reload this step before continuing."
   }
-  if (panel.headline === "Quote offered") {
+  if (panel.headline === "Quote offered" || panel.headline === "Acceptance link expired") {
     return "The quotation email stays closed until the customer's email and business authority are verified."
   }
   return "This quotation cannot be continued from here until the quote record is consistent."
@@ -256,7 +280,11 @@ function nextAction(panel: JourneyQuotePanel, readiness: QuoteReadiness, email: 
   }
   if (panel.headline === "Quote accepted") return "accepted"
   if (offeredQuote(panel)) {
-    if (panel.headline === "Acceptance link expired") return "expired"
+    if (panel.headline === "Acceptance link expired") {
+      if (!panel.quote || !quoteActionExpiryWindow(panel.quote.validUntil).ready) return "renew"
+      if (!panel.commands.issueAcceptance) return "blocked"
+      return "expired"
+    }
     if (email.phase === "unavailable") return "blocked"
     if (email.phase === "attention") return "attention"
     if (email.phase === "queued") return "queued"

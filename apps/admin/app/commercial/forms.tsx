@@ -448,6 +448,9 @@ export function ProcessPendingQuotationEmail({ communicationId }: { communicatio
 
 export function SendQuotationForm({
   quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, scope, exclusions, validUntil,
+  heading = "Send Quotation Email",
+  submitLabel = "Send Quotation Email",
+  lead = "Review the email, then send it. Sending does not mean the customer has accepted.",
 }: {
   quoteId: string
   publicRef: string
@@ -459,6 +462,9 @@ export function SendQuotationForm({
   scope: string
   exclusions: string
   validUntil: string
+  heading?: string
+  submitLabel?: string
+  lead?: string
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -523,8 +529,8 @@ export function SendQuotationForm({
     }
   }
   return <form onSubmit={submit} data-quotation-email="preview">
-    <h3>Send Quotation Email</h3>
-    <p>Review the email, then send it. Sending does not mean the customer has accepted.</p>
+    <h3>{heading}</h3>
+    <p>{lead}</p>
     {preview ? <>
       <p><strong>Subject:</strong> {preview.subject}</p>
       <div className="email-preview">
@@ -544,7 +550,7 @@ export function SendQuotationForm({
     {held?.kind === "submitted" && <p><strong>Quotation submitted to email provider</strong></p>}
     {held?.kind === "delivered" && <p><strong>Quotation delivered</strong></p>}
     {held?.kind === "attention" && <p><strong>Email needs attention</strong> The quotation email was not sent again.</p>}
-    {!held && <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : "Send Quotation Email"}</button>}
+    {!held && <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : submitLabel}</button>}
     {message && <p role="status">{message}</p>}
   </form>
 }

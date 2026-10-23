@@ -731,15 +731,22 @@ describe("guided quote acceptance", () => {
     quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" }
     show(source, quote, verifiedGb, emailView(ACTION_ID, []))
     expect(screen.getByText("The acceptance link exists, but the quotation has not been emailed.")).toBeTruthy()
+    expect(screen.getByText(/This one-time link cannot be retrieved after you leave this page/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Revoke open quote action" })).toBeTruthy()
     expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
     expect(screen.queryByText("Quotation delivered")).toBeNull()
     expect(screen.queryByText("Quotation email queued")).toBeNull()
     expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
   })
 
-  it("shows a replacement for an expired acceptance link and does not issue it while rendering", () => {
-    const fetchMock = vi.fn()
+  it("sends a replacement quotation email for an expired acceptance link and does not issue it while rendering", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ message: "The quotation email is queued. The provider has not accepted it." }),
+    })
     vi.stubGlobal("fetch", fetchMock)
     const source = facts({
       authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
@@ -748,11 +755,55 @@ describe("guided quote acceptance", () => {
     const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
     quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
     show(source, quote, verifiedGb, emailView(ACTION_ID, []))
-    expect(screen.getByText("Customer acceptance link expired — Issue Replacement")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Issue Replacement" })).toBeTruthy()
+    const primary = document.querySelector("[data-primary-action='expired']")
+    expect(primary?.textContent).toContain("Send replacement quotation email")
+    expect(primary?.textContent).toContain("The expired acceptance link is revoked only as part of that send.")
+    expect(primary?.textContent).not.toContain("Issue manual replacement link")
+    const manual = document.querySelector("[data-secondary='manual-replacement']")
+    expect(manual).not.toHaveAttribute("open")
+    expect(manual?.textContent).toContain("Issue manual replacement link does not email the customer.")
+    expect(manual?.textContent).toContain("The one-time secret cannot be retrieved after you leave this page.")
+    expect(screen.queryByRole("button", { name: "Issue Replacement" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
     expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.submit(screen.getByRole("button", { name: "Send replacement quotation email" }).closest("form")!)
+    expect(await screen.findByRole("status")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
+    const posted = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(posted.operation).toBe("queue_quote_offer_email")
+    expect(posted.quoteId).toBe(QUOTE_ID)
+  })
+
+  it("asks to renew a quotation that cannot hold a replacement acceptance link", () => {
+    const soon = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: PAST, validUntil: soon })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.currentVersion.validUntil = soon
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, []))
+    expect(screen.getByText("This quotation expires too soon for a replacement acceptance link.")).toBeTruthy()
+    expect(screen.getByText("Review the quotation validity and renew the expiry before sending a replacement email. No link was revoked and no email was sent.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue manual replacement link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+  })
+
+  it("keeps the replacement email closed until the customer email and business authority are verified", () => {
+    const source = facts({
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: PAST })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, []))
+    expect(screen.getByText("The quotation email stays closed until the customer's email and business authority are verified.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue manual replacement link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
   })
 
   it("does not issue a second link while a valid acceptance link is open", () => {
@@ -770,6 +821,7 @@ describe("guided quote acceptance", () => {
     expect(screen.getByText("Quotation delivered")).toBeTruthy()
     expect(screen.getByText("Waiting for Customer Acceptance")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Issue Replacement" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
   })

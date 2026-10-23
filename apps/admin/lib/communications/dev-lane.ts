@@ -42,47 +42,9 @@ export function devPreviewMailConfigured(env: EnvMap = process.env): boolean {
     && env.AWS_EVIDENCE_BUCKET === DEV_EVIDENCE_BUCKET
 }
 
-/**
- * One exact mailbox. A list, a suffix, a substring and a wildcard are rejected.
- * The value is not trimmed: surrounding space is malformed and fails closed.
- * Operator note: before any real DEV send, set the sensitive variable
- * DEV_MAIL_ALLOWED_RECIPIENTS on Admin Preview/develop to one owner-controlled
- * test mailbox alias. This code does not contain that address.
+/** Email eligibility comes from the database's verified customer and current business relationship.
+ * DEV restrictions concern resource separation, not a single customer mailbox.
  */
-function singleExactAddress(raw: string | null | undefined): string | null {
-  if (typeof raw !== "string" || raw.length < 3 || raw.length > 254) return null
-  if ([...raw].some(char => char <= " " || char === "," || char === "*" || char === "<" || char === ">")) return null
-  const address = raw.toLowerCase()
-  const at = address.indexOf("@")
-  if (at <= 0 || at !== address.lastIndexOf("@")) return null
-  const local = address.slice(0, at)
-  const domain = address.slice(at + 1)
-  if (local.length > 64 || domain.length < 3 || !domain.includes(".")) return null
-  if (domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) return null
-  const mailboxChar = "abcdefghijklmnopqrstuvwxyz0123456789.!#$%&'*+=?^_`{|}~-"
-  const domainChar = "abcdefghijklmnopqrstuvwxyz0123456789.-"
-  if ([...local].some(char => !mailboxChar.includes(char))) return null
-  if ([...domain].some(char => !domainChar.includes(char))) return null
-  return address
-}
-
-/** The single DEV mailbox, or null when this lane is off or the variable is unusable. */
-export function devQuoteAllowlistedRecipient(env: EnvMap = process.env): string | null {
-  if (!devAdminOutgoingMailLane(env)) return null
-  return singleExactAddress(env.DEV_MAIL_ALLOWED_RECIPIENTS)
-}
-
-/**
- * On the develop DEV lane the recipient must equal that one mailbox.
- * Every other lane keeps the verified customer address.
- */
-export function devQuoteRecipientAllowed(env: EnvMap, recipient: string | null | undefined): boolean {
-  if (!devAdminOutgoingMailLane(env)) return true
-  const allowed = devQuoteAllowlistedRecipient(env)
-  const address = singleExactAddress(typeof recipient === "string" ? recipient.trim() : null)
-  return allowed !== null && address !== null && allowed === address
-}
-
 export function devEvidenceUploadOriginAllowed(env: EnvMap, origin: string | null | undefined): boolean {
   const url = (env.SUPABASE_URL ?? "").trim().replace(/\/$/, "")
   const team = branchTeam(env.VERCEL_BRANCH_URL)

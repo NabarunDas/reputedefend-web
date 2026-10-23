@@ -48,7 +48,7 @@ export async function caseEvidenceUpload(request: NextRequest, storage: Customer
   const args = customerUploadArgs(body.operation, body)
   if (!args) {
     if (body.operation === "begin") {
-      const allowed = ["operation", "evidenceRequestId", "filename", "contentType", "size"]
+      const allowed = ["operation", "evidenceRequestId", ...(Object.hasOwn(body, "itemTitle") ? ["itemTitle"] : []), "filename", "contentType", "size"]
       const keys = Object.keys(body)
       if (keys.length !== allowed.length || allowed.some(field => !keys.includes(field))) return reply(ACTION_UNAVAILABLE)
       return reply("Check the file type and size before uploading.", 400)
@@ -58,8 +58,9 @@ export async function caseEvidenceUpload(request: NextRequest, storage: Customer
   if (!storage) return reply("Evidence upload is not available in this environment.", 503)
   try {
     if (isBeginUploadArgs(args)) {
-      const begun = await backend().rpc<unknown>("customer_evidence_begin_v1", {
+      const begun = await backend().rpc<unknown>(args.itemTitle ? "customer_evidence_begin_v2" : "customer_evidence_begin_v1", {
         p_token_hash: tokenHash(token), p_request: key, p_evidence_request: args.evidenceRequestId,
+        ...(args.itemTitle ? { p_item_title: args.itemTitle } : {}),
         p_filename: args.filename, p_content_type: args.contentType, p_size: args.size, p_bucket: storage.bucket,
       })
       if (!isBeginResult(begun) || begun.status !== "success" || !begun.versionId) {

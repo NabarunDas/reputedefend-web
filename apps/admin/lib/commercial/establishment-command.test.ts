@@ -76,6 +76,55 @@ describe("business establishment origin", () => {
     expect(saved?.[1].p_request).toBe(key)
   })
 
+  it("accepts a valid Admin login up to 30 minutes old, retaining the purchaser evidence checks", async () => {
+    const signedInAt = new Date(Date.now() - 29 * 60 * 1000).toISOString()
+    mocks.rpc.mockImplementation(async (name: string, args?: { p_payload?: { verificationStatus?: string; countryCode?: string } }) => {
+      if (name === "admin_session_v1") return {
+        userId: "11111111-1111-4111-8111-111111111111", createdAt: signedInAt,
+      }
+      if (name === "admin_record_business_establishment_v1") {
+        return { status: "success", verificationStatus: args?.p_payload?.verificationStatus, countryCode: args?.p_payload?.countryCode }
+      }
+      return null
+    })
+    const response = await recordBusinessEstablishment(req(branch))
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_record_business_establishment_v1", expect.objectContaining({
+      p_payload: expect.objectContaining({ countryCode: "GB", verificationStatus: "VERIFIED" }),
+    }))
+  })
+
+  it("requires a fresh sign-in after 30 minutes, without recording any establishment", async () => {
+    const signedInAt = new Date(Date.now() - 31 * 60 * 1000).toISOString()
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_session_v1") return {
+        userId: "11111111-1111-4111-8111-111111111111", createdAt: signedInAt,
+      }
+      if (name === "admin_record_business_establishment_v1") return { status: "success" }
+      return null
+    })
+    const response = await recordBusinessEstablishment(req(branch))
+    expect(response.status).toBe(403)
+    expect((await response.json() as { message: string }).message).toContain("30-minute")
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_session_v1"])
+  })
+
+  it("still rejects missing, malformed, or future-dated Admin sessions", async () => {
+    const sessions = [
+      null,
+      { userId: "11111111-1111-4111-8111-111111111111", createdAt: "invalid-date" },
+      { userId: "11111111-1111-4111-8111-111111111111", createdAt: new Date(Date.now() + 2 * 60 * 1000).toISOString() },
+      { createdAt: new Date().toISOString() },
+    ]
+    for (const session of sessions) {
+      mocks.rpc.mockReset().mockImplementation(async (name: string) =>
+        name === "admin_session_v1" ? session : { status: "success" })
+      const response = await recordBusinessEstablishment(req(branch))
+      expect(response.status).toBe(403)
+      expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_session_v1"])
+    }
+  })
+
   it("rejects a cross-origin POST and a cross-host pair of allowlisted Preview origins", async () => {
     expect((await recordBusinessEstablishment(req("https://evil.example", payload, deployment))).status).toBe(403)
     expect((await recordBusinessEstablishment(req(branch, payload, deployment))).status).toBe(403)

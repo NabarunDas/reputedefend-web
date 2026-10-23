@@ -334,7 +334,8 @@ describe("customer case documents", () => {
         submittedAt: null,
       }],
     }} />)
-    expect(screen.getByText("Upload pending · bill.pdf")).toBeTruthy()
+    expect(screen.getByText("Upload pending")).toBeTruthy()
+    expect(screen.getByText("bill.pdf")).toBeTruthy()
     expect(screen.getByText(/same file to resume/)).toBeTruthy()
     expect(screen.getByLabelText("Upload evidence")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "View" })).toBeNull()

@@ -43,6 +43,7 @@ const upgradedFiles = [
   "20261022172455_quote_offer_email_v1.sql",
   "20261023000158_email_confirmation_challenge_v1.sql",
   "20261023091735_email_confirmation_delivery_v1.sql",
+  "20261023103232_quote_email_recipient_parity_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()

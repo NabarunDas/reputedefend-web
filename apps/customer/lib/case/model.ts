@@ -37,6 +37,13 @@ export type CustomerPublishedPack = {
   items: CustomerPackItem[]
 }
 
+export type CustomerEvidenceItem = {
+  title: string
+  submissionStatus: CustomerSubmissionStatus
+  filename: string | null
+  submittedAt: string | null
+}
+
 export type CustomerEvidenceRequest = {
   requestId: string
   title: string
@@ -46,6 +53,8 @@ export type CustomerEvidenceRequest = {
   submissionStatus: CustomerSubmissionStatus
   filename: string | null
   submittedAt: string | null
+  /** Exact, separately uploadable documents from the approved request. */
+  items?: CustomerEvidenceItem[]
 }
 
 export type CustomerCasePack = {

@@ -86,7 +86,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "devAdminOutgoingMailLane",
-    files: ["apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/communications/gate.ts"],
+    files: ["apps/admin/lib/communications/gate.ts"],
     reason: "Selects the develop DEV preview so the disabled-mail message can name that lane. It reads the same identity values as the send gate.",
   },
   {

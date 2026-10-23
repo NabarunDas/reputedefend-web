@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { manifestFilenames, migrationChain } from "./manifest"
+import { manifestFilenames, migrationChain, migrationHead } from "./manifest"
 import { logicalName, mayApplyMigrations, migrationVersion, validateMigrationHistory, type RemoteMigration } from "./history"
 
 const repoFilenames = manifestFilenames()
@@ -30,11 +30,11 @@ describe("the migration history validator", () => {
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
-      "20261023103000_email_confirmation_delivery_v1.sql",
+      migrationHead.filename,
     ])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261023000158",
-      name: "email_confirmation_challenge_v1",
+      version: "20261023091735",
+      name: "email_confirmation_delivery_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })

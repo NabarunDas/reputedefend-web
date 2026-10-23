@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
+import { migrationHead } from "../recovery/manifest"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
@@ -40,7 +41,8 @@ const upgradedFiles = [
   "20261022124813_service_specific_agreements_v1.sql",
   "20261022172455_quote_offer_email_v1.sql",
   "20261023000158_email_confirmation_challenge_v1.sql",
-  "20261023103000_email_confirmation_delivery_v1.sql",
+  "20261023091735_email_confirmation_delivery_v1.sql",
+  migrationHead.filename,
 ].join(",")
 const db = new PGlite()
 

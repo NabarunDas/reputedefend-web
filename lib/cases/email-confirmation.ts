@@ -4,8 +4,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
  * Case-receipt email confirmation.
  *
  * The bearer is an HMAC over a distinct domain from evidence links and
- * quotation acceptance. Only its SHA-256 is stored. Production stays closed:
- * a production runtime does not mint a challenge or a button.
+ * quotation acceptance. Only its SHA-256 is stored. Production requires
+ * explicit activation with a separate database and the canonical site origin.
  */
 
 const TOKEN_CONTEXT = "email-confirmation"
@@ -27,7 +27,7 @@ export const EMAIL_CONFIRM_SUCCESS =
   "Your assessment is safely recorded. Please check your email and confirm your address so we can contact you securely."
 
 type RuntimeEnv = Record<string, string | undefined>
-export type ConfirmationEnvironment = "development" | "preview"
+export type ConfirmationEnvironment = "development" | "preview" | "production"
 
 export type EmailConfirmationPlan = {
   challengeId: string
@@ -125,17 +125,30 @@ function devDatabase(url: string | undefined): boolean {
   }
 }
 
+function productionConfirmationEnabled(env: RuntimeEnv): boolean {
+  if (env.EMAIL_CONFIRMATION_ENABLED !== "true" || env.CASE_PERSISTENCE_ENABLED !== "true") return false
+  if (env.EMAIL_CONFIRMATION_ORIGIN !== "https://profilerelaunch.com") return false
+  const raw = env.SUPABASE_URL?.trim() ?? ""
+  if (!raw || devDatabase(raw)) return false
+  try {
+    const url = new URL(raw)
+    return url.protocol === "https:"
+      && url.hostname.endsWith(".supabase.co")
+      && url.hostname !== ".supabase.co"
+      && url.pathname === "/"
+      && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+/** A verified deployment lane and its own datastore, not a customer email allowlist, controls activation. */
 export function confirmationRuntime(env: RuntimeEnv = process.env): ConfirmationEnvironment | null {
   const value = runtimeEnvironment(env)
   if (value === "development") return "development"
   if (value === "preview" && env.VERCEL_GIT_COMMIT_REF === "develop" && devDatabase(env.SUPABASE_URL)) return "preview"
+  if (value === "production" && productionConfirmationEnabled(env)) return "production"
   return null
-}
-
-export function confirmationAllowlist(env: RuntimeEnv = process.env): string | null {
-  if (runtimeEnvironment(env) !== "preview") return null
-  if (env.VERCEL_GIT_COMMIT_REF !== "develop" || !devDatabase(env.SUPABASE_URL)) return null
-  return singleExactAddress(env.DEV_MAIL_ALLOWED_RECIPIENTS)
 }
 
 function runtimeEnvironment(env: RuntimeEnv): ConfirmationEnvironment | "production" | null {
@@ -173,7 +186,8 @@ function safeHost(host: string): boolean {
 }
 
 function confirmationOrigin(env: RuntimeEnv): string | null {
-  const lane = runtimeEnvironment(env)
+  const lane = confirmationRuntime(env)
+  if (lane === "production") return "https://profilerelaunch.com"
   if (lane === "preview") {
     if (env.VERCEL_GIT_COMMIT_REF !== "develop" || !devDatabase(env.SUPABASE_URL)) return null
     const host = env.VERCEL_URL ?? ""
@@ -188,19 +202,9 @@ function confirmationOrigin(env: RuntimeEnv): string | null {
   return null
 }
 
-/** Preview on the DEV database accepts only the one exact mailbox. Production never does. */
+/** Every valid customer address is eligible when its deployment and datastore are trusted. */
 export function emailConfirmationAllowed(email: string, env: RuntimeEnv = process.env): boolean {
-  const environment = runtimeEnvironment(env)
-  const normalized = normalizeConfirmationEmail(email)
-  if (!environment || !normalized) return false
-  if (environment === "production") return false
-  if (environment === "preview") {
-    if (env.VERCEL_GIT_COMMIT_REF !== "develop") return false
-    if (!devDatabase(env.SUPABASE_URL)) return false
-    const allow = singleExactAddress(env.DEV_MAIL_ALLOWED_RECIPIENTS)
-    return allow !== null && allow === normalized
-  }
-  return true
+  return normalizeConfirmationEmail(email) !== null && confirmationRuntime(env) !== null
 }
 
 function planFor(
@@ -211,8 +215,8 @@ function planFor(
 ): EmailConfirmationPlan | null {
   if (!isUuid(caseId) || !isUuid(challengeId)) return null
   if (!emailConfirmationAllowed(email, env)) return null
-  const environment = runtimeEnvironment(env)
-  if (environment !== "development" && environment !== "preview") return null
+  const environment = confirmationRuntime(env)
+  if (!environment) return null
   const version = currentVersion(env)
   const secret = secretFor(version, env)
   const origin = confirmationOrigin(env)
@@ -281,7 +285,12 @@ export function usableConfirmationUrl(value: string | null | undefined): string 
   }
   const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost"
   if (parsed.protocol === "https:") {
-    if (productionConfirmationHost(parsed.hostname)) return null
+    const runtime = confirmationRuntime()
+    if (productionConfirmationHost(parsed.hostname)) {
+      if (runtime !== "production" || parsed.origin !== confirmationOrigin(process.env)) return null
+    } else if (runtime === "production") {
+      return null
+    }
   } else if (!(parsed.protocol === "http:" && loopback)) {
     return null
   }

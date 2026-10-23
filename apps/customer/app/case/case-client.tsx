@@ -2,7 +2,7 @@
 import { useId, useState } from "react"
 import {
   allowedFileAccept, canDownloadItem, canViewItem, evidenceFormatSummary, evidenceSizeSummary, fileExtension, fileTypeLabel, formatBytes, mimeExtensions, submissionLabel,
-  type CustomerCasePack, type CustomerEvidenceRequest, type CustomerSubmissionStatus,
+  type CustomerCasePack, type CustomerEvidenceItem, type CustomerEvidenceRequest,
 } from "@/lib/case/model"
 import { declaredUpload, evidenceFileChoiceError } from "@/lib/case/validation"
 
@@ -39,30 +39,87 @@ function EvidenceRequests({ requests }: { requests: CustomerEvidenceRequest[] })
 }
 
 function EvidenceRequestRow({ request }: { request: CustomerEvidenceRequest }) {
-  const [status, setStatus] = useState<CustomerSubmissionStatus>(request.submissionStatus)
-  const [filename, setFilename] = useState(request.filename)
-  const submitted = status === "AWAITING_REVIEW"
+  // The server issues only the items named in the approved evidence request.
+  // If a previous deployment has not provided item details, keep the legacy
+  // single-file behaviour instead of inventing customer upload permissions.
+  const authoritativeItems = !!request.items?.length
+  const [items, setItems] = useState<CustomerEvidenceItem[]>(() => authoritativeItems
+    ? request.items!
+    : [{
+      title: request.title,
+      submissionStatus: request.submissionStatus,
+      filename: request.filename,
+      submittedAt: request.submittedAt,
+    }])
+  const multi = items.length > 1
+  const received = items.filter(item => item.submissionStatus === "AWAITING_REVIEW").length
+  const label = multi ? "Requested documents" : request.title
+
+  function uploaded(index: number, filename: string) {
+    setItems(current => current.map((item, position) => position === index
+      ? { ...item, filename, submissionStatus: "AWAITING_REVIEW", submittedAt: new Date().toISOString() }
+      : item))
+  }
+
   return <li>
-    <strong>{request.title}</strong>
-    <p className="preserve-lines">{request.requestText}</p>
+    <strong>{label}</strong>
+    {!multi && <p className="preserve-lines">{request.requestText}</p>}
     {request.dueAt && <p className="muted">Due {formatDue(request.dueAt)}</p>}
-    {submitted && <>
-      <p role="status">{submissionLabel(status)}</p>
-      <p>{EVIDENCE_RECEIVED}</p>
-      {filename && <p className="muted">{filename}</p>}
-    </>}
-    {!submitted && <>
-      <p>{submissionLabel(status)}{filename ? ` · ${filename}` : ""}</p>
-      {status === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
-      <UploadEvidence requestId={request.requestId} onUploaded={(name) => { setStatus("AWAITING_REVIEW"); setFilename(name) }} />
-    </>}
+    {multi && <p>Upload a file for each document listed below. You can add them one at a time using this secure page.</p>}
+    {multi && <p role="status">{received} of {items.length} documents received</p>}
+    <ul className={multi ? "document-list" : "single-evidence-request"}>
+      {items.map((item, index) => (
+        <EvidenceItemRow
+          key={`${request.requestId}:${index}`}
+          item={item}
+          description={multi ? request.requestText.split("\n").find(line => line.startsWith(`${item.title} — `))?.slice(item.title.length + 3) ?? null : null}
+          multi={multi}
+          itemTitle={authoritativeItems ? item.title : undefined}
+          requestId={request.requestId}
+          onUploaded={name => uploaded(index, name)}
+        />
+      ))}
+    </ul>
+    {multi && received === items.length && <p>{EVIDENCE_RECEIVED}</p>}
+    {multi && request.submissionStatus === "AWAITING_REVIEW" && received === 0 && request.filename && (
+      <p className="muted">An earlier file ({request.filename}) was received for this request before the individual document list was available. Our team can review that file; please add any remaining documents below.</p>
+    )}
+  </li>
+}
+
+function EvidenceItemRow({
+  item, description, requestId, itemTitle, multi, onUploaded,
+}: {
+  item: CustomerEvidenceItem
+  description: string | null
+  requestId: string
+  itemTitle?: string
+  multi: boolean
+  onUploaded: (filename: string) => void
+}) {
+  const submitted = item.submissionStatus === "AWAITING_REVIEW"
+  return <li>
+    {multi && <strong>{item.title}</strong>}
+    {description && <p>{description}</p>}
+    <p role={submitted ? "status" : undefined}>{submissionLabel(item.submissionStatus)}</p>
+    {item.filename && <p className="muted">{item.filename}</p>}
+    {submitted && !multi && <p>{EVIDENCE_RECEIVED}</p>}
+    {item.submissionStatus === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
+    {!submitted && <UploadEvidence
+      requestId={requestId}
+      itemTitle={itemTitle}
+      itemLabel={multi ? item.title : null}
+      onUploaded={onUploaded}
+    />}
   </li>
 }
 
 function UploadEvidence({
-  requestId, onUploaded,
+  requestId, itemTitle, itemLabel, onUploaded,
 }: {
   requestId: string
+  itemTitle?: string
+  itemLabel: string | null
   onUploaded: (filename: string) => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -88,6 +145,7 @@ function UploadEvidence({
         body: JSON.stringify({
           operation: "begin",
           evidenceRequestId: requestId,
+          ...(itemTitle ? { itemTitle } : {}),
           filename: declared.filename,
           contentType: declared.contentType,
           size: declared.size,
@@ -126,7 +184,7 @@ function UploadEvidence({
   return <>
     <p id={hintId}>Accepted formats: {evidenceFormatSummary()}. {evidenceSizeSummary()}.</p>
     <label>
-      Upload evidence
+      {itemLabel ? `Upload ${itemLabel}` : "Upload evidence"}
       <input
         type="file"
         accept={allowedFileAccept}
@@ -136,6 +194,7 @@ function UploadEvidence({
         onChange={event => { void choose(event.target.files?.[0]); event.target.value = "" }}
       />
     </label>
+    {busy && <p role="status">Uploading this document securely…</p>}
     {error && <p id={errorId} role="alert">{error}</p>}
   </>
 }

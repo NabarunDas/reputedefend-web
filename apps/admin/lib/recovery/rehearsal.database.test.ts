@@ -48,15 +48,53 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(66)
+    expect(migrationChain).toHaveLength(67)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    expect(migrationHead.filename).toMatch(/quote_email_recipient_parity_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/customer_multi_item_evidence_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead.version).toBe("20261023103232")
+    expect(appliedMigrationHead.version).toBe("20261023144943")
+  })
+
+  it("rebuilds one independently constrained evidence slot per requested document", async () => {
+    const indexes = await rows<{ indexname: string; indexdef: string }>(
+      "select indexname,indexdef from pg_indexes where schemaname='public' and tablename='case_document_versions' and indexname like 'case_document_versions_one_customer_%idx' order by indexname",
+    )
+    expect(indexes.map(index => index.indexname)).toEqual([
+      "case_document_versions_one_customer_item_idx",
+      "case_document_versions_one_customer_request_idx",
+    ])
+    expect(indexes.find(index => index.indexname.endsWith("_item_idx"))?.indexdef).toContain("evidence_item_title")
+    expect(indexes.find(index => index.indexname.endsWith("_request_idx"))?.indexdef).toContain("evidence_item_title IS NULL")
+    const privileges = await rows<{ anon_ok: boolean; service_ok: boolean }>(
+      "select has_function_privilege('anon','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as anon_ok, has_function_privilege('service_role','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as service_ok",
+    )
+    expect(privileges).toEqual([{ anon_ok: false, service_ok: true }])
+
+    await db.exec("BEGIN")
+    try {
+      await db.query("update public.evidence_requests set title=$1 where id=$2", [
+        "Notice from Google; Business address details; Council address details", rehearsalIds.evidenceRequestOpen,
+      ])
+      const projection = await rows<{ items: { title: string; submissionStatus: string }[] }>(
+        `select request_item.value->'items' as items
+         from jsonb_array_elements(admin_private.customer_open_evidence_requests_v1($1::uuid,NULL::uuid)) request_item(value)
+         where request_item.value->>'requestId'=$2`,
+        [rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen],
+      )
+      expect(projection).toHaveLength(1)
+      expect(projection[0].items.map(item => item.title)).toEqual([
+        "Notice from Google", "Business address details", "Council address details",
+      ])
+      expect(projection[0].items.map(item => item.submissionStatus)).toEqual([
+        "NOT_SUBMITTED", "NOT_SUBMITTED", "NOT_SUBMITTED",
+      ])
+    } finally {
+      await db.exec("ROLLBACK")
+    }
   })
 
   it("includes the marketing intake migration that no feature test exercises", async () => {
@@ -141,6 +179,56 @@ describe("invariants a rebuilt database must still enforce", () => {
       `insert into public.case_document_versions(document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,created_by)
        values('${rehearsalIds.documentB}',9,'clash.pdf','application/pdf',1024,'${rehearsalBucket}','${version.storage_key}','${rehearsalIds.adminUser}')`,
     )).toMatch(/duplicate key|unique/i)
+  })
+
+  it("accepts separate uploaded items under one request without relaxing the legacy single-file guard", async () => {
+    const v2Allowed = await rows<{ allowed: boolean }>(
+      "select has_function_privilege('anon','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as allowed",
+    )
+    expect(v2Allowed[0].allowed).toBe(false)
+    const id = (number: number) => `5e5e5e5e-0000-4000-8000-${String(number).padStart(12, "0")}`
+    await db.exec("BEGIN")
+    try {
+      for (const [ordinal, item] of ["Notice from Google", "Address proof"].entries()) {
+        const docId = id(9001 + ordinal), verId = id(9011 + ordinal)
+        await db.query(
+          "insert into public.case_documents(id,case_id,evidence_request_id,title,created_by) values($1,$2,$3,$4,$5)",
+          [docId, rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen, item, rehearsalIds.adminUser],
+        )
+        await db.query(
+          `insert into public.case_document_versions(
+            id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,
+            storage_bucket,storage_key,created_by,submission_source,customer_action_id,
+            customer_evidence_request_id,evidence_item_title
+          ) values($1,$2,1,$3,'application/pdf',1000,$4,$5,$6,'CUSTOMER',$7,$8,$9)`,
+          [verId, docId, `synthetic-item-${ordinal}.pdf`, rehearsalBucket,
+           `cases/${rehearsalIds.caseA}/documents/${docId}/versions/${verId}`,
+           rehearsalIds.adminUser, rehearsalIds.customerAction, rehearsalIds.evidenceRequestOpen, item],
+        )
+      }
+      expect(await count(
+        `select count(*)::int as n from public.case_document_versions
+         where customer_evidence_request_id = '${rehearsalIds.evidenceRequestOpen}'
+           and evidence_item_title is not null and upload_status = 'PENDING_UPLOAD'`,
+      )).toBe(2)
+      const duplicateDoc = id(9003), duplicateVersion = id(9013)
+      await db.query(
+        "insert into public.case_documents(id,case_id,evidence_request_id,title,created_by) values($1,$2,$3,$4,$5)",
+        [duplicateDoc, rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen, "Notice from Google", rehearsalIds.adminUser],
+      )
+      await expect(db.query(
+        `insert into public.case_document_versions(
+          id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,
+          storage_bucket,storage_key,created_by,submission_source,customer_action_id,
+          customer_evidence_request_id,evidence_item_title
+        ) values($1,$2,1,'duplicate.pdf','application/pdf',1000,$3,$4,$5,'CUSTOMER',$6,$7,$8)`,
+        [duplicateVersion, duplicateDoc, rehearsalBucket,
+         `cases/${rehearsalIds.caseA}/documents/${duplicateDoc}/versions/${duplicateVersion}`,
+         rehearsalIds.adminUser, rehearsalIds.customerAction, rehearsalIds.evidenceRequestOpen, "Notice from Google"],
+      )).rejects.toThrow(/unique|duplicate/i)
+    } finally {
+      await db.exec("ROLLBACK")
+    }
   })
 
   it("keeps a prepared pack pinned to eligible evidence only", async () => {

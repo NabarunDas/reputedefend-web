@@ -862,6 +862,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "quotation recipient parity", probe: "public.admin_queue_quote_offer_email_v1" },
   },
+  {
+    // CUSTOMER-EVIDENCE-MULTI: one secure email link, independently uploaded
+    // items and unchanged scanning/review. DEV applied exactly once; repository
+    // filename and SQL match the 20261023144943 ledger statement.
+    // Production untouched; this migration must never be replayed in DEV.
+    version: "20261023144943",
+    filename: "20261023144943_customer_multi_item_evidence_v1.sql",
+    step: "CUSTOMER-EVIDENCE-MULTI secure upload slots",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer multi-document evidence", probe: "public.customer_evidence_begin_v2" },
+  },
 ]
 
 /**
@@ -873,7 +887,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261023103232`. The repository filename matches the DEV-applied version.
+ * `20261023144943`. The repository filename and SQL match the DEV-applied version.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

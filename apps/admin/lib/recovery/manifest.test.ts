@@ -18,9 +18,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261023103232_quote_email_recipient_parity_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261023144943_customer_multi_item_evidence_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toMatch(/quote_email_recipient_parity_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/customer_multi_item_evidence_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(true)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)

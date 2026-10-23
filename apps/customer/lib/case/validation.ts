@@ -4,7 +4,7 @@ import {
   type AllowedMime, type CustomerUploadOperation,
 } from "./model"
 
-export type BeginUploadArgs = { evidenceRequestId: string; filename: string; contentType: AllowedMime; size: number }
+export type BeginUploadArgs = { evidenceRequestId: string; itemTitle?: string; filename: string; contentType: AllowedMime; size: number }
 export type FinalizeUploadArgs = { versionId: string }
 export type CustomerUploadArgs = BeginUploadArgs | FinalizeUploadArgs
 
@@ -43,11 +43,18 @@ export function customerUploadArgs(operation: CustomerUploadOperation, raw: unkn
   const body = asRecord(raw)
   if (!body || body.operation !== operation) return null
   if (operation === "begin") {
-    if (!onlyKeys(body, ["operation", "evidenceRequestId", "filename", "contentType", "size"])) return null
+    const hasItem = Object.hasOwn(body, "itemTitle")
+    if (!onlyKeys(body, ["operation", "evidenceRequestId", ...(hasItem ? ["itemTitle"] : []), "filename", "contentType", "size"])) return null
+    // Validate the raw value before trimming so leading/trailing control
+    // characters cannot disappear and be accepted as a new item label.
+    const rawItem = hasItem ? body.itemTitle : null
+    if (hasItem && (typeof rawItem !== "string" || /[\r\n\u0000-\u001f\u007f]/.test(rawItem))) return null
+    const item = typeof rawItem === "string" ? rawItem.trim() : null
+    if (hasItem && (!item || item.length > 200)) return null
     if (!isUuid(body.evidenceRequestId) || typeof body.filename !== "string" || typeof body.contentType !== "string" || typeof body.size !== "number") return null
     const file = declaredUpload(body.filename, body.contentType, body.size)
     if (!file) return null
-    return { evidenceRequestId: body.evidenceRequestId, filename: file.filename, contentType: file.contentType, size: file.size }
+    return { evidenceRequestId: body.evidenceRequestId, ...(item ? { itemTitle: item } : {}), filename: file.filename, contentType: file.contentType, size: file.size }
   }
   if (!onlyKeys(body, ["operation", "versionId"]) || typeof body.versionId !== "string" || !isUuid(body.versionId)) return null
   return { versionId: body.versionId }

@@ -112,6 +112,33 @@ describe("customer evidence upload HTTP", () => {
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_evidence_begin_v1", "customer_evidence_upload_version_v1"])
   })
 
+  it("binds the selected document title to the new scoped upload RPC", async () => {
+    const store = storage()
+    mocks.rpc.mockResolvedValueOnce({ status: "success", versionId }).mockResolvedValueOnce(version)
+    const body = { ...beginBody, itemTitle: "Google suspension or rejection notice" }
+    const response = await caseEvidenceUpload(req(body), store)
+    expect(response.status).toBe(200)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_evidence_begin_v2", "customer_evidence_upload_version_v1",
+    ])
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({
+      p_evidence_request: requestId,
+      p_item_title: "Google suspension or rejection notice",
+    })
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/caseId|customerId|storageKey.*bill|X-Amz/)
+  })
+
+  it("rejects malformed or arbitrary extra fields before invoking item uploads", async () => {
+    const store = storage()
+    for (const invalid of ["", "  ", "\nHidden", "A".repeat(201)]) {
+      const response = await caseEvidenceUpload(req({ ...beginBody, itemTitle: invalid }), store)
+      expect(response.status).not.toBe(200)
+    }
+    expect((await caseEvidenceUpload(req({ ...beginBody, itemTitle: "Google notice", itemId: "other" }), store)).status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(store.createUpload).not.toHaveBeenCalled()
+  })
+
   it("does not finalize when the object is missing", async () => {
     const store = storage({ probeObject: vi.fn(async () => ({ exists: false, scan: "PENDING" as const })) })
     mocks.rpc.mockResolvedValueOnce(version)

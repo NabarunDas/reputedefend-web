@@ -149,6 +149,82 @@ describe("customer case documents", () => {
     expect(screen.queryByRole("button", { name: "Download" })).toBeNull()
   })
 
+  it("shows three independently uploadable documents from one secured evidence request", async () => {
+    const documents = [
+      "Google suspension or rejection notice",
+      "Address details",
+      "Council address details",
+    ]
+    const request = {
+      ...openRequest,
+      title: documents.join("; "),
+      requestText: documents.map(title => `${title} — Please provide a supporting document.`).join("\n"),
+      items: documents.map(title => ({
+        title, submissionStatus: "NOT_SUBMITTED" as const, filename: null, submittedAt: null,
+      })),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        versionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        upload: { url: "https://s3.example/post", fields: { key: "cases/x", "Content-Type": "application/pdf" } },
+      }) })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: "Uploaded — awaiting security review" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        versionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        upload: { url: "https://s3.example/post", fields: { key: "cases/y", "Content-Type": "application/pdf" } },
+      }) })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: "Uploaded — awaiting security review" }) })
+    vi.stubGlobal("fetch", fetchMock)
+    render(<CaseClient data={{ ...empty, evidenceRequests: [request] }} />)
+    expect(screen.getByText("0 of 3 documents received")).toBeTruthy()
+    expect(screen.getByLabelText("Upload Google suspension or rejection notice")).toBeTruthy()
+    expect(screen.getByLabelText("Upload Address details")).toBeTruthy()
+    expect(screen.getByLabelText("Upload Council address details")).toBeTruthy()
+    const pdf = new File(["%PDF-1.4"], "notice.pdf", { type: "application/pdf" })
+    fireEvent.change(screen.getByLabelText("Upload Google suspension or rejection notice"), { target: { files: [pdf] } })
+    await waitFor(() => expect(screen.getByText("1 of 3 documents received")).toBeTruthy())
+    expect(screen.queryByLabelText("Upload Google suspension or rejection notice")).toBeNull()
+    expect(screen.getByLabelText("Upload Address details")).toBeTruthy()
+    expect(screen.getByLabelText("Upload Council address details")).toBeTruthy()
+    expect(screen.queryByText(/No further action is required at the moment/)).toBeNull()
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({
+      operation: "begin", evidenceRequestId: openRequest.requestId,
+      itemTitle: "Google suspension or rejection notice", filename: "notice.pdf",
+    })
+    fireEvent.change(screen.getByLabelText("Upload Address details"), {
+      target: { files: [new File(["%PDF-1.4"], "address.pdf", { type: "application/pdf" })] },
+    })
+    await waitFor(() => expect(screen.getByText("2 of 3 documents received")).toBeTruthy())
+    expect(JSON.parse(String(fetchMock.mock.calls[3][1].body))).toMatchObject({
+      operation: "begin", evidenceRequestId: openRequest.requestId,
+      itemTitle: "Address details", filename: "address.pdf",
+    })
+    expect(screen.getByLabelText("Upload Council address details")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(6)
+  })
+
+  it("keeps previously submitted document slots while offering only missing items", () => {
+    const titles = ["Notice from Google", "Business address proof", "Council letter"]
+    render(<CaseClient data={{ ...empty, evidenceRequests: [{
+      ...openRequest,
+      title: titles.join("; "),
+      items: titles.map((title, index) => ({
+        title,
+        submissionStatus: index === 0 ? "AWAITING_REVIEW" as const : "NOT_SUBMITTED" as const,
+        filename: index === 0 ? "notice.pdf" : null,
+        submittedAt: index === 0 ? "2026-10-23T13:00:00Z" : null,
+      })),
+    }] }} />)
+    expect(screen.getByText("1 of 3 documents received")).toBeTruthy()
+    expect(screen.getByText("Uploaded — awaiting security review")).toBeTruthy()
+    expect(screen.getByText("notice.pdf")).toBeTruthy()
+    expect(screen.queryByLabelText("Upload Notice from Google")).toBeNull()
+    expect(screen.getByLabelText("Upload Business address proof")).toBeTruthy()
+    expect(screen.getByLabelText("Upload Council letter")).toBeTruthy()
+  })
+
   it("does not offer View or Download for an already uploaded customer file", () => {
     render(<CaseClient data={{
       ...empty,
@@ -258,7 +334,8 @@ describe("customer case documents", () => {
         submittedAt: null,
       }],
     }} />)
-    expect(screen.getByText("Upload pending · bill.pdf")).toBeTruthy()
+    expect(screen.getByText("Upload pending")).toBeTruthy()
+    expect(screen.getByText("bill.pdf")).toBeTruthy()
     expect(screen.getByText(/same file to resume/)).toBeTruthy()
     expect(screen.getByLabelText("Upload evidence")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "View" })).toBeNull()

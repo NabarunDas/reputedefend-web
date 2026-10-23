@@ -114,26 +114,28 @@ describe("email confirmation commands", () => {
     expect(JSON.stringify(result)).not.toContain("alex@example.com")
   })
 
-  it("withholds a preview resend for any address other than the one allowlisted mailbox", async () => {
+  it("resends to the original case customer on trusted Preview, without a single-address allowlist", async () => {
     vi.stubEnv("VERCEL_ENV", "preview")
     vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
     vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
     vi.stubEnv("VERCEL_URL", "reputedefend-web-git-develop.example.com")
-    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "owner-alias@example.com")
+    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "a-different-address@example.com")
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
     const token = deriveEmailConfirmationToken(challengeId, secret, 1)
-    const { calls, rpc } = client(() => ({
-      status: "ready",
-      publicRef: "PR-26-7K4M2Q",
-      maskedEmail: "a***@example.com",
-      caseType: "PROFILE_RECOVERY",
-      email: "alex@example.com",
-    }))
+    const { calls, rpc } = client(name => name === "record_email_confirmation_delivery_v1"
+      ? { status: "accepted" }
+      : {
+        status: "ready",
+        publicRef: "PR-26-7K4M2Q",
+        maskedEmail: "a***@example.com",
+        caseType: "PROFILE_RECOVERY",
+        email: "alex@example.com",
+      })
     const sent: string[] = []
     const provider: EnquiryProvider = {
       send: async message => {
         sent.push(message.to)
-        return { ok: true, id: "email_should_not_send" }
+        return { ok: true, id: "email_confirmation" }
       },
     }
     const result = await resendEmailConfirmation({
@@ -145,10 +147,36 @@ describe("email confirmation commands", () => {
       csrfCookie: csrf,
       csrf,
     })
+    expect(result.status).toBe("sent")
+    expect(sent).toEqual(["alex@example.com"])
+    expect(calls.map(call => call.name)).toEqual([
+      "resend_email_confirmation_challenge_v1",
+      "record_email_confirmation_delivery_v1",
+    ])
+    expect(calls[0]?.args.p_expected_email).toBeNull()
+  })
+
+  it("refuses an invalid database recipient without contacting the provider", async () => {
+    openDevelopment()
+    const token = deriveEmailConfirmationToken(challengeId, secret, 1)
+    const { calls, rpc } = client(() => ({
+      status: "ready",
+      publicRef: "PR-26-7K4M2Q",
+      maskedEmail: "a***@example.com",
+      caseType: "PROFILE_RECOVERY",
+      email: "alex@example.com,not-a-customer@example.com",
+    }))
+    const sent: string[] = []
+    const provider: EnquiryProvider = {
+      send: async message => { sent.push(message.to); return { ok: true, id: "should-not-send" } },
+    }
+    const result = await resendEmailConfirmation({
+      client: rpc, provider, fromEmail: "enquiries@reputedefend.com",
+      challengeId, token, csrfCookie: csrf, csrf,
+    })
     expect(result.status).toBe("withheld")
     expect(sent).toEqual([])
     expect(calls.at(-1)?.name).toBe("abandon_email_confirmation_resend_v1")
-    expect(calls[0]?.args.p_expected_email).toBe("owner-alias@example.com")
   })
 
   it("records provider acceptance before saying a replacement was sent", async () => {

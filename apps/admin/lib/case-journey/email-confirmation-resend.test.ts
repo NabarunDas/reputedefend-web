@@ -143,6 +143,39 @@ describe("exceptional staff confirmation resend", () => {
     expect(result.message).not.toContain("case receipt")
   })
 
+  it("uses the case-bound recipient on develop DEV Preview without a mailbox allowlist", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
+    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "owner-alias@example.com")
+    const calls: string[] = []
+    const mail = provider(true)
+    const result = await runStaffEmailResend({
+      database: database(name => {
+        calls.push(name)
+        if (name === "admin_email_confirmation_status_v1") {
+          return { state: "none", recovery: "send", nextGeneration: 1 }
+        }
+        if (name === "record_email_confirmation_delivery_v1") return { status: "accepted" }
+        return { status: "ready", publicRef: "PR-26-7K4M2Q", caseType: "PROFILE_RECOVERY", email: "another-customer@example.com" }
+      }),
+      tokenHash: "a".repeat(64),
+      caseId,
+      provider: mail,
+      fromEmail: "enquiries@reputedefend.com",
+    })
+    expect(result).toEqual({ message: STAFF_SEND_SENT, sent: true })
+    expect(mail.sent).toBe(1)
+    expect(calls).toEqual([
+      "admin_email_confirmation_status_v1",
+      "admin_prepare_email_confirmation_resend_v1",
+      "record_email_confirmation_delivery_v1",
+    ])
+  })
+
   it("names a later recovery email only after the provider acceptance is recorded", async () => {
     openLocal()
     const recorded = await runStaffEmailResend({

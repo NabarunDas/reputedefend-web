@@ -1,6 +1,6 @@
 import "server-only"
 import {
-  confirmationAllowlist,
+  emailConfirmationAllowed,
   confirmationRuntime,
   emailConfirmationResendContent,
   emailConfirmationStatus,
@@ -36,8 +36,6 @@ export async function runStaffEmailResend(input: {
 }): Promise<{ message: string; sent: boolean }> {
   const environment = confirmationRuntime()
   if (!environment || !input.provider || !input.fromEmail) return { message: STAFF_RESEND_NOT_SENT, sent: false }
-  const allow = environment === "preview" ? confirmationAllowlist() : null
-  if (environment === "preview" && !allow) return { message: STAFF_RESEND_NOT_SENT, sent: false }
 
   const status = await input.database.rpc<{
     state?: string
@@ -81,7 +79,7 @@ export async function runStaffEmailResend(input: {
     caseType: text(prepared?.caseType),
     url: delivery.deliveryUrl,
   })
-  if (!email || !content || (allow && email !== allow)) {
+  if (!email || !emailConfirmationAllowed(email) || !content) {
     await input.database.rpc("abandon_email_confirmation_resend_v1", { p_new: challengeId, p_environment: environment })
     return { message: STAFF_RESEND_NOT_SENT, sent: false }
   }

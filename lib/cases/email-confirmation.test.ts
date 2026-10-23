@@ -7,6 +7,7 @@ import {
   emailConfirmationAllowed,
   emailConfirmationResendContent,
   emailConfirmationTokenHash,
+  planChallengeDelivery,
   planInitialEmailConfirmation,
   usableConfirmationUrl,
 } from "@/lib/cases/email-confirmation"
@@ -19,14 +20,12 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-function preview(recipient: string | undefined) {
+function preview() {
   vi.stubEnv("VERCEL_ENV", "preview")
   vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
   vi.stubEnv("SUPABASE_URL", devHost)
   vi.stubEnv("VERCEL_URL", "reputedefend-web-git-develop.example.com")
   vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
-  if (recipient === undefined) vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", undefined)
-  else vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", recipient)
 }
 
 describe("case receipt email confirmation", () => {
@@ -42,18 +41,34 @@ describe("case receipt email confirmation", () => {
     expect(emailConfirmationTokenHash(token)).toHaveLength(64)
   })
 
-  it("stays closed in production and when the secret is missing", () => {
+  it("keeps Production off until expressly configured on a separate database, and requires the secret", () => {
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
     expect(confirmationRuntime()).toBeNull()
     expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
-    vi.stubEnv("VERCEL_ENV", "")
+
+    vi.stubEnv("CASE_PERSISTENCE_ENABLED", "true")
+    vi.stubEnv("EMAIL_CONFIRMATION_ENABLED", "true")
+    vi.stubEnv("EMAIL_CONFIRMATION_ORIGIN", "https://profilerelaunch.com")
+    vi.stubEnv("SUPABASE_URL", devHost)
+    expect(confirmationRuntime()).toBeNull()
+
+    vi.stubEnv("SUPABASE_URL", "https://separate-prod-project.supabase.co")
+    expect(confirmationRuntime()).toBe("production")
+    const production = planInitialEmailConfirmation(caseId, "alex@example.com")
+    expect(production?.environment).toBe("production")
+    expect(production?.deliveryUrl.startsWith("https://profilerelaunch.com/confirm-email/")).toBe(true)
+    expect(usableConfirmationUrl(production?.deliveryUrl)).toBe(production?.deliveryUrl)
+
+    vi.stubEnv("EMAIL_CONFIRMATION_ORIGIN", "https://attacker.example")
+    expect(confirmationRuntime()).toBeNull()
+    vi.stubEnv("EMAIL_CONFIRMATION_ORIGIN", "https://profilerelaunch.com")
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "short")
     expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
   })
 
-  it("accepts one exact develop mailbox and refuses lists, wildcards and other addresses", () => {
-    preview("owner-alias@example.com")
+  it("allows any valid customer email on trusted develop/DEV Preview regardless of an old allowlist", () => {
+    preview()
     const plan = planInitialEmailConfirmation(caseId, "owner-alias@example.com")
     expect(plan?.environment).toBe("preview")
     expect(plan?.email).toBe("owner-alias@example.com")
@@ -61,23 +76,37 @@ describe("case receipt email confirmation", () => {
     expect(plan?.deliveryUrl).toContain("#t=")
     expect(plan?.deliveryUrl).not.toContain("?t=")
     expect(emailConfirmationAllowed("owner-alias@example.com")).toBe(true)
-    for (const refused of [
-      "other@example.com",
+    expect(emailConfirmationAllowed("other@example.com")).toBe(true)
+    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "owner-alias@example.com")
+    expect(planInitialEmailConfirmation(caseId, "other@example.com")?.email).toBe("other@example.com")
+    for (const invalid of [
       "owner-alias@example.com,other@example.com",
       "*@example.com",
-      "owner-alias@example.net",
-      "not-owner-alias@example.com",
+      "not-an-email",
+      "",
     ]) {
-      expect(planInitialEmailConfirmation(caseId, refused), refused).toBeNull()
+      expect(planInitialEmailConfirmation(caseId, invalid), invalid).toBeNull()
     }
-    preview(undefined)
-    expect(planInitialEmailConfirmation(caseId, "owner-alias@example.com")).toBeNull()
     vi.stubEnv("VERCEL_GIT_COMMIT_REF", "feature")
-    vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "owner-alias@example.com")
     expect(planInitialEmailConfirmation(caseId, "owner-alias@example.com")).toBeNull()
     vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
     vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
     expect(planInitialEmailConfirmation(caseId, "owner-alias@example.com")).toBeNull()
+  })
+
+  it("routes Admin recovery links to the Marketing Preview in the same Vercel team", () => {
+    preview()
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-unique-build-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    const recovery = planChallengeDelivery(caseId)
+    expect(recovery?.origin).toBe("https://reputedefend-web-git-develop-clientcove.vercel.app")
+    expect(recovery?.deliveryUrl).toContain("https://reputedefend-web-git-develop-clientcove.vercel.app/confirm-email/")
+    expect(recovery?.deliveryUrl).not.toContain("profilerelaunch-admin")
+
+    vi.stubEnv("VERCEL_BRANCH_URL", "")
+    expect(planChallengeDelivery(caseId)).toBeNull()
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-attacker.vercel.app/path")
+    expect(planChallengeDelivery(caseId)).toBeNull()
   })
 
   it("builds one plain-text and one mobile confirmation button", () => {

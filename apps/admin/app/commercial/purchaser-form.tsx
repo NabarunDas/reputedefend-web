@@ -76,7 +76,7 @@ export function PurchaserForm({
     <p>
       Record the legal purchaser for this business. Use the name already on the business record when it is the legal name.
       The Google listing is not this record. Companies House is optional and is not required for a sole trader or an individual.
-      Saving a note does not verify the purchaser. Verifying it needs a fresh admin sign-in from the last five minutes and a real check.
+      Saving a note does not verify the purchaser. To record this, sign in to Admin within the last 30 minutes and check the genuine purchasing details.
       This does not offer the quote, take a payment, or send email.
     </p>
     {customerName ? <p>Customer on this case: {customerName}. Use that name only when that person is the purchaser.</p> : null}

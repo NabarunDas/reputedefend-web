@@ -27,7 +27,7 @@ Activation is complete only when the accepted quote's order id is the only succe
 
 A saved card is not required and is not collected here. Choosing Managed does not grant Google access. An expired agreement or permission link is not acceptance. A revoked permission or a membership in review puts the step back to attention. Disagreeing customer, business or authority records do the same.
 
-The manager-access control is the existing command. It still requires a fresh sign-in, recorded evidence, and confirmation that no Google password or one-time code was collected.
+The manager-access control is the existing command. It still requires an Admin sign-in from the last 30 minutes, recorded evidence, and confirmation that no Google password or one-time code was collected.
 
 ## Reopened cases
 

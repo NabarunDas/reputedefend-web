@@ -265,7 +265,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     action: "Create and correct the records a case hangs off, and verify the relationships between them.",
     expected:
       "A save writes only the fields on the allowlist for that entity, against the expected version, with a reason of at least ten characters.",
-    authorization: staffAndSession + " Contact verification additionally requires a sign-in from the last five minutes.",
+    authorization: staffAndSession + " Contact verification additionally requires a sign-in from the last 30 minutes.",
     persistence: "admin_audit_events records RECORD_CREATED, RECORD_UPDATED, MEMBERSHIP_CHANGED and CONTACT_VERIFIED.",
     negative:
       "An unknown field, a short reason, a stale version and a malformed email are each refused, a new relationship starts pending rather than verified, and verification outside the fresh-auth window returns reauth_required.",
@@ -476,7 +476,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     action: "See worker health, decide whether a dead-lettered job should be replayed, and, only on the gated DEV Preview, process one selected test-mode Stripe event.",
     expected:
       "Health is derived from the heartbeat, and a replay happens only with a reason, an explicit confirmation and a recent sign-in. The DEV one-shot claims only the selected test-mode PROCESS_STRIPE_EVENT after the same confirmation and a fresh sign-in.",
-    authorization: staffAndSession + " Replay and the DEV Stripe one-shot additionally require a sign-in from the last five minutes.",
+    authorization: staffAndSession + " Replay and the DEV Stripe one-shot additionally require a sign-in from the last 30 minutes.",
     persistence: "Attempts are append-only and the replay count is kept on the job. The one-shot writes its own command receipt and does not mark a Stripe receipt processed by itself. A receipt already processed by payment apply is left unpromoted.",
     negative:
       "Opening the page claims and runs nothing, a never-run worker reads as NEVER_RUN rather than healthy, and the cron entry point rejects a request without its secret. The DEV one-shot form is absent unless its gate is open. The route refuses a closed flag, the wrong branch, project, bucket or origin, a receipt already processed by payment apply, and it does not promote email, Guard or collection jobs that sit ahead of the selected event.",
@@ -523,7 +523,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     action: "Draft and approve service hours, response targets and retention policy.",
     expected:
       "A draft is separate from an approved version, approval inserts the next immutable version, and nothing invents a value that was not approved.",
-    authorization: staffAndSession + " Approval requires a sign-in from the last five minutes.",
+    authorization: staffAndSession + " Approval requires a sign-in from the last 30 minutes.",
     persistence: "Setting versions are immutable once approved; admin_audit_events records each change.",
     negative:
       "A response target cannot be approved without approved service hours, an approved version cannot be edited, and approval outside the fresh-auth window returns reauth_required.",
@@ -548,7 +548,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     surfaces: ["/api/operations/privacy-export"],
     action: "Record a privacy request and export what is held about a person.",
     expected: "An export produces a CSV of the records held, against the expected version.",
-    authorization: staffAndSession + " Export requires a sign-in from the last five minutes.",
+    authorization: staffAndSession + " Export requires a sign-in from the last 30 minutes.",
     persistence: "The request and its export are recorded in the audit trail.",
     negative:
       "Deletion performs nothing while PRIVACY_DELETION_ENABLED is off, and the page says so rather than offering an action that would not run.",
@@ -585,7 +585,7 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     surfaces: ["/api/sessions/revoke"],
     action: "See active sessions and revoke them.",
     expected: "Sessions list with their last-seen time and which one is current; revoking takes effect immediately.",
-    authorization: staffAndSession + " Revoking all sessions requires a sign-in from the last five minutes.",
+    authorization: staffAndSession + " Ending another session requires a sign-in from the last 30 minutes. Signing out of every session does not use that step-up.",
     persistence: "admin_auth_events records SESSION_REVOKED and SIGNED_OUT_ALL.",
     negative: "No token material appears in the listing, and a revoked session fails its next request.",
     evidence: ["lib/auth/database.test.ts", "lib/admin/command.test.ts", "app/security/page.test.tsx"],

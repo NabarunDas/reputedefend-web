@@ -1,3 +1,5 @@
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
+
 export const settingKeys = ["SERVICE_HOURS", "RESPONSE_TARGETS", "ALERT_ESCALATION", "SUPPORTED_MARKETS"] as const
 export type SettingKey = (typeof settingKeys)[number]
 export const templateKeys = ["EVIDENCE_REQUEST", "CASE_UPDATE", "CONVERSATION_REPLY", "GUARD_ALERT"] as const
@@ -73,7 +75,7 @@ export function privacyDeletionEnabled(env: Record<string, string | undefined> =
 }
 
 export function commandMessage(status?: string, reason?: string) {
-  if (status === "reauth_required") return "For security, sign out and sign in with a new email code, then try again within five minutes."
+  if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   if (status === "conflict") return "That record changed. Refresh and try again."
   if (status === "denied" && reason === "legal_hold") return "A legal hold blocks deletion. Financial and audit records remain."
   if (status === "denied" && reason === "email_not_verified") return "Verify the customer’s current email before completing this request."

@@ -9,6 +9,7 @@ import { guardExternalPayment, type DatabasePaymentLane } from "../../../../lib/
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { guardActivationEnabled, guardRefundsEnabled, guardSubscriptionsEnabled } from "./gate"
 import { isGuardOperation, guardArgs } from "./validation"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -43,7 +44,7 @@ function commandMessage(status: string | undefined, reason?: string): string {
   if (status === "unauthorized") return "Your session has ended. Please sign in again."
   if (status === "conflict" && reason === "coverage_exists") return "This location already has Guard coverage that has not ended."
   if (status === "conflict") return "That Guard record changed. Reload the page and try again."
-  if (status === "reauth_required") return "Sign in again within the last five minutes to activate Guard or change billing."
+  if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   if (status === "invalid") return "Check the fields before saving."
   if (status === "denied" && reason === "paid_not_ready") return "Payment entitlement is present but Guard cannot activate yet. An urgent exception was recorded."
   if (status === "denied" && reason === "requested_count") return "All requested locations for this monitoring request have already been identified."

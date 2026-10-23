@@ -2,6 +2,7 @@
 import { useState, useRef, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { recordPath, type Entity, type Membership, type RecordItem } from "@/lib/records/model"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 export function CommandForm({ endpoint, payload, children, destination, actionUrl, submitLabel = "Save", submitName, submitClass }: { endpoint: string; payload: (form: FormData) => unknown; children?: ReactNode; destination?: (id: string) => string; actionUrl?: string; submitLabel?: string; submitName?: string; submitClass?: string }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("")
   const [uncertain, setUncertain] = useState(false)
@@ -32,7 +33,7 @@ export function Reason({ label = "Reason for this change", name = "reason", maxL
 export function RecordForm({ entity, record, businessId }: { entity: Entity; record?: RecordItem; businessId?: string }) {
   return <CommandForm endpoint="save" destination={id => recordPath(entity, id)} payload={form => ({ entity, id: record?.id || null, version: record?.version || 0, reason: form.get("reason"), data: entity === "client" ? { name: form.get("name"), email: form.get("email"), phone: form.get("phone") } : entity === "business" ? { name: form.get("name"), website: form.get("website") } : { name: form.get("name"), country: form.get("country"), profileUrl: form.get("profileUrl"), businessId: record?.businessId || businessId } })}>
     <label>{entity === "client" ? "Full name" : entity === "business" ? "Business name" : "Location name (optional)"}<input name="name" required={entity !== "location"} maxLength={200} defaultValue={record?.name || ""} /></label>
-    {entity === "client" && <><label>Email address<input name="email" type="email" required maxLength={254} defaultValue={record?.email || ""} /></label><label>Phone number (optional)<input name="phone" type="tel" maxLength={50} defaultValue={record?.phone || ""} /></label><p className="muted">Changing a contact detail removes its verification. Changing an email also puts verified business relationships back into review and requires a sign-in within the last five minutes.</p></>}
+    {entity === "client" && <><label>Email address<input name="email" type="email" required maxLength={254} defaultValue={record?.email || ""} /></label><label>Phone number (optional)<input name="phone" type="tel" maxLength={50} defaultValue={record?.phone || ""} /></label><p className="muted">Changing a contact detail removes its verification. Changing an email also puts verified business relationships back into review. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p></>}
     {entity === "business" && <label>Website (optional)<input name="website" type="url" maxLength={2048} defaultValue={record?.website || ""} /></label>}
     {entity === "location" && <><label>Country<input name="country" required maxLength={100} defaultValue={record?.country || ""} /></label><label>Google Business Profile URL (optional)<input name="profileUrl" type="url" maxLength={2048} defaultValue={record?.profileUrl || ""} /></label><p className="muted">This location stays linked to its business so existing case and monitoring records keep their meaning.</p></>}
     <Reason />
@@ -44,7 +45,7 @@ export function VerifyContactForm({ record }: { record: RecordItem }) {
     <label>Contact checked<select name="channel"><option value="email">Email: {record.email}</option>{record.phone && <option value="phone">Phone: {record.phone}</option>}</select></label>
     <Reason name="evidence" label="How did you confirm this contact? Include the date and evidence reference." />
     <label className="checkbox"><input type="checkbox" required />I checked that the customer controls this contact method.</label>
-    <p className="muted">Requires an admin sign-in within the last five minutes.</p>
+    <p className="muted">{ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
   </CommandForm>
 }
 export function MembershipForm({ customerId, businessId, membership }: { customerId: string; businessId: string; membership?: Membership }) {
@@ -52,6 +53,6 @@ export function MembershipForm({ customerId, businessId, membership }: { custome
     <label>Relationship status<select name="status" defaultValue={membership?.status || "pending"}><option value="pending">Awaiting authority check</option><option value="verified">Authority verified</option><option value="revoked">Access withdrawn</option></select></label>
     <Reason name="evidence" label="Reason and evidence for this relationship" />
     <label className="checkbox"><input type="checkbox" required />I checked the client and business and have evidence for this status.</label>
-    <p className="muted">Authority verification requires a verified email or phone and a recent admin sign-in. A submitted enquiry alone is not proof of authority.</p>
+    <p className="muted">Authority verification requires a verified email or phone. {ADMIN_RECENT_SIGN_IN_MESSAGE} A submitted enquiry alone is not proof of authority.</p>
   </CommandForm>
 }

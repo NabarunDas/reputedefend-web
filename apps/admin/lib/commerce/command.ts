@@ -7,6 +7,7 @@ import { isUuid } from "../records/model"
 import { LOST_QUOTE_LINK_NOTE } from "./model"
 import { queueQuoteOfferEmail } from "./quote-offer-email"
 import { catalogueArgs, isCatalogueOperation, isQuoteOperation, quoteArgs, quoteTaxIssue } from "./validation"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -43,7 +44,7 @@ function commandMessage(status: string | undefined): string {
   if (status === "conflict") return "That commercial record changed. Reload the page and try again."
   if (status === "denied") return "That commercial action is not allowed."
   if (status === "invalid") return "Check the fields before saving."
-  if (status === "reauth_required") return "Sign in again within the last five minutes to approve a price."
+  if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   return "The commercial record could not be updated."
 }
 

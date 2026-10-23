@@ -10,7 +10,7 @@ The form reuses the business name as the legal name and shows the customer name 
 
 Purchaser types are a limited company, a sole trader, an individual, or another permitted customer. The limited-company choice is not restricted to the United Kingdom. Companies House is optional evidence for a limited company. It is not offered for a sole trader or an individual. Registration number and tax identifier stay blank unless staff already hold them.
 
-A saved note is `PENDING`. `VERIFIED` requires the checkbox that the staff member checked the genuine purchasing establishment, and a fresh admin session from the last five minutes. `REJECTED` records that the evidence is not sufficient. A self-declared note is not promoted to verified. Synthetic text, including `DEV SYNTHETIC / NOT REAL`, is refused before the database command is called.
+A saved note is `PENDING`. `VERIFIED` requires the checkbox that the staff member checked the genuine purchasing establishment, and an Admin session from the last 30 minutes. `REJECTED` records that the evidence is not sufficient. A self-declared note is not promoted to verified. Synthetic text, including `DEV SYNTHETIC / NOT REAL`, is refused before the database command is called.
 
 The purchaser type is stored as the opening sentence of the existing evidence reference. The command does not send a new field and does not supersede an existing verified row.
 

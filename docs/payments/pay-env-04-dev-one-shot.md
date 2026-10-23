@@ -31,7 +31,7 @@ The flag defaults to off. Do not set it in Production. Do not set it before a se
 
 ## Operator flow
 
-1. Sign in to the DEV Admin Preview. The action requires a sign-in from the last five minutes.
+1. Sign in to the DEV Admin Preview. The action requires a sign-in from the last 30 minutes.
 2. Open `/operations/jobs`. The one-shot form is rendered only when the gate above is open. Production and every other Preview hide it.
 3. Enter the exact Stripe event id (`evt_…`) and confirm the checkbox.
 4. Submit once. The browser sends a new idempotency UUID.

@@ -380,7 +380,7 @@ describe("commercial workspace view", () => {
 
     renderWorkspace({ ...ready, outcome: "RESTORED" }, [], { evidence: true })
     expect(screen.getByRole("button", { name: "Approve success fee" })).toBeInTheDocument()
-    expect(screen.getByText(/fresh sign-in/i)).toBeInTheDocument()
+    expect(screen.getByText(/more than 30 minutes ago/i)).toBeInTheDocument()
     expect(screen.getByText(/immutable accepted order total/i)).toBeInTheDocument()
     expect(screen.getAllByText(/does not charge a card/i).length).toBeGreaterThan(0)
   })

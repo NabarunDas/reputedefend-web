@@ -48,7 +48,7 @@ describe("settings command HTTP boundary", () => {
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const reauth = await settingsCommand(req({ operation: "approve_setting", payload: { id: key }, version: 1 }))
     expect(reauth.status).toBe(403)
-    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
     mocks.rpc.mockResolvedValue({ status: "success" })
     const ok = await settingsCommand(req({ operation: "create_incident", payload: { kind: "EMAIL", title: "Bounce surge", summary: "Provider outage recorded." } }))
     expect(ok.status).toBe(200)

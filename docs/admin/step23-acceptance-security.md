@@ -250,8 +250,8 @@ same ground is not covered again.
 only as a SHA-256 hash. The cookie is `__Host-`, `httpOnly`, `secure`, `sameSite=strict`,
 path `/`, twelve hours. A session is valid only while unrevoked, inside its expiry and seen
 in the last thirty minutes. Revocation takes effect on the next request. Sensitive
-operations — contact verification, settings approval, job replay, privacy export, revoking
-all sessions — additionally require a sign-in from the last five minutes, enforced in SQL
+operations — contact verification, settings approval, job replay, privacy export and ending
+another session — additionally require a sign-in from the last 30 minutes, enforced in SQL
 rather than in TypeScript.
 
 **Authorization.** `requireStaff()` is called by every protected page and every command,

@@ -5,6 +5,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "./model"
 import { commandArgs, type Operation } from "./validation"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 const reply = (message: string, status: number, id?: string) => NextResponse.json({ message, ...(id ? { id } : {}) }, { status, headers: privateResponseHeaders })
 const rpcs = { save: "admin_record_save_v1", verify: "admin_contact_verify_v1", membership: "admin_membership_save_v1" } as const
 export async function recordCommand(request: NextRequest, operation: Operation) {
@@ -35,7 +36,7 @@ export async function recordCommand(request: NextRequest, operation: Operation) 
     switch (result.status) {
       case "success": return reply("Saved. The activity history has been updated.", 200, result.id)
       case "unauthorized": return reply("Your session has ended. Please sign in again.", 401)
-      case "reauth_required": return reply("Sign out and sign in with a new email code, then make this change within five minutes.", 403)
+      case "reauth_required": return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
       case "conflict": return reply("This record has changed, or that email is already in use. Reload the record and check it before trying again.", 409)
       case "denied": return reply("Verify a current contact method before confirming business authority. A blank phone number cannot be verified.", 403)
       case "invalid": return reply("Check the record details and try again.", 400)

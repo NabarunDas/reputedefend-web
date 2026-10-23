@@ -6,6 +6,7 @@ import {
   defaultExpiryIso, type CaseAuthorization,
 } from "@/lib/authorization/model"
 import { Badge } from "../../ui"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 
 const authEndpoint = "/api/authorization/command"
 const managerEndpoint = "/api/manager-access/command"
@@ -107,7 +108,7 @@ export function AuthorizationPanel({ caseId, data, scope = "case" }: { caseId: s
             operation: "admin_revoke_authorization", caseId, authorizationId: row.id, recordVersion: row.recordVersion,
             reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
           })}>
-            <p>Requires a fresh Admin sign-in within five minutes. This never rewrites the original customer acceptance and does not refund or cancel billing.</p>
+            <p>{ADMIN_RECENT_SIGN_IN_MESSAGE} This never rewrites the original customer acceptance and does not refund or cancel billing.</p>
             <Reason />
             <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm this Admin-recorded revocation.</label>
           </CommandForm>
@@ -142,7 +143,7 @@ export function AuthorizationPanel({ caseId, data, scope = "case" }: { caseId: s
           operation: "verify", caseId, accessLevel: form.get("accessLevel"), evidence: form.get("reason"), confirmed: form.get("confirmed") === "true",
           recordVersion: data.managerAccess?.recordVersion ?? 0,
         })}>
-          <p>Requires a fresh Admin sign-in within five minutes. This is not accepted by the customer through an agreement checkbox.</p>
+          <p>{ADMIN_RECENT_SIGN_IN_MESSAGE} This is not accepted by the customer through an agreement checkbox.</p>
           <label>Access level<select name="accessLevel" required><option value="MANAGER">Manager</option><option value="OWNER">Owner</option></select></label>
           <Reason label="Verification evidence" />
           <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm Manager access was verified without collecting a Google password or one-time code.</label>

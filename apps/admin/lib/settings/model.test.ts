@@ -38,7 +38,7 @@ describe("settings model", () => {
   })
 
   it("explains reauth, holds, retroactive settings and unverified email", () => {
-    expect(commandMessage("reauth_required")).toMatch(/five minutes/)
+    expect(commandMessage("reauth_required")).toMatch(/30 minutes/)
     expect(commandMessage("denied", "legal_hold")).toMatch(/legal hold/i)
     expect(commandMessage("denied", "email_not_verified")).toMatch(/current email/)
     expect(commandMessage("denied", "deletion_disabled")).toMatch(/Physical deletion is disabled/)

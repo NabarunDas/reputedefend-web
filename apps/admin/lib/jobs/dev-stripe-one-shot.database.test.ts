@@ -359,7 +359,7 @@ describe("DEV Stripe one-shot SQL", () => {
 
   it("requires a fresh Admin session and does not grant the claim to browser roles", async () => {
     expect(await receive("evt_reauth_pi", "payment_intent.succeeded", "pi_reauth")).toMatchObject({ status: "success" })
-    await db.query("update public.admin_sessions set created_at = now() - interval '6 minutes' where token_hash = $1", [token])
+    await db.query("update public.admin_sessions set created_at = now() - interval '31 minutes' where token_hash = $1", [token])
     expect(await claim("evt_reauth_pi")).toMatchObject({ status: "reauth_required" })
     expect(await count("select count(*)::int as n from admin_private.job_outbox where promoted_at is null")).toBe(1)
     expect(await count("select count(*)::int as n from admin_private.jobs")).toBe(0)

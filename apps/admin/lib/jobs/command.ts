@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -69,7 +70,7 @@ export async function jobsCommand(request: NextRequest) {
         p_token: tokenHash(token), p_request: key, p_job: jobId, p_reason: reason.trim(), p_confirmed: true, p_version: version,
       })
       if (result?.status === "success") return reply("That dead-lettered job has been queued again.", 200)
-      if (result?.status === "reauth_required") return reply("Sign out and sign in with a new email code, then replay within five minutes.", 403)
+      if (result?.status === "reauth_required") return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
       if (result?.status === "denied") return reply("Only dead-lettered jobs can be replayed.", 403)
       if (result?.status === "conflict") return reply("That job changed. Reload the page and try again.", 409)
       return reply(result?.status === "unauthorized" ? "Your session has ended. Please sign in again." : "We couldn’t replay that job.", mapStatus(result?.status))

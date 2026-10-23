@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { renderQuotationOffer } from "../../../../lib/email/quotation-offer"
 import { deliveryLabel } from "./model"
-import { devQuoteAllowlistedRecipient, devQuoteRecipientAllowed } from "./dev-lane"
 import { sendEmailHandler } from "./handler"
 import {
   communicationAccessTokenHash,
@@ -112,7 +111,7 @@ describe("quotation email materialisation", () => {
     expect(prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: secret })?.tokenHash).toBe(communicationAccessTokenHash(quote))
   })
 
-  it("refuses a missing link key and a non-test mailbox on the development lane", async () => {
+  it("requires a valid link and correct DEV customer portal, not an artificial test recipient", async () => {
     const missing = await sendEmailHandler({}, {
       async send() { return { ok: true, providerMessageId: "msg", replay: false } },
     }).execute({
@@ -121,6 +120,7 @@ describe("quotation email materialisation", () => {
       rpc: rpcFor(loaded()),
     })
     expect(missing).toMatchObject({ ok: false, error: "Secure acceptance link cannot be materialised" })
+
     const devOrigin = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
     const devRendered = renderQuotationOffer({
       publicRef: "QT-26-ABCDEF",
@@ -133,9 +133,18 @@ describe("quotation email materialisation", () => {
       validUntil: "2026-11-03T12:00:00.000Z",
       actionUrl: `${devOrigin}/action/${actionId}`,
     })!
-    const denied = await sendEmailHandler({ ...devEnv, COMMUNICATIONS_LINK_SECRET: secret }, {
-      async send() { return { ok: true, providerMessageId: "msg", replay: false } },
-    }).execute({
+    const sends: string[] = []
+    const devProvider = {
+      async send(message: { to: string }) {
+        sends.push(message.to)
+        return { ok: true as const, providerMessageId: "msg_dev", replay: false as const }
+      },
+    }
+    const dev = await sendEmailHandler({
+      ...devEnv,
+      COMMUNICATIONS_LINK_SECRET: secret,
+      DEV_MAIL_ALLOWED_RECIPIENTS: "someone-else@example.com",
+    }, devProvider).execute({
       idempotencyKey: "send-email:comm:v1",
       payload: { communicationId: "comm", contentVersion: 1 },
       rpc: rpcFor(loaded({
@@ -145,39 +154,27 @@ describe("quotation email materialisation", () => {
         bodyHtml: devRendered.html,
       })),
     })
-    expect(denied).toMatchObject({ ok: false, error: "Recipient is not the development mailbox named for this preview" })
-    expect(devQuoteAllowlistedRecipient(devEnv)).toBeNull()
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com,other@example.com" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "*@example.com" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "@example.com" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "notalex@example.com" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: " alex@example.com" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com.invalid" }, "alex@example.com")).toBe(false)
-    expect(devQuoteRecipientAllowed({ ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "Alex@Example.com" }, "ALEX@example.com")).toBe(true)
-    const named = { ...devEnv, DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com", COMMUNICATIONS_LINK_SECRET: secret }
-    expect(devQuoteAllowlistedRecipient(named)).toBe("alex@example.com")
-    const delivered = await sendEmailHandler(named, {
-      async send() { return { ok: true, providerMessageId: "msg_dev", replay: false } },
-    }).execute({
-      idempotencyKey: "send-email:comm:v1",
+    expect(dev.ok).toBe(true)
+    expect(sends).toEqual(["customer@gmail.com"])
+
+    const wrongPortal = await sendEmailHandler({ ...devEnv, COMMUNICATIONS_LINK_SECRET: secret }, devProvider).execute({
+      idempotencyKey: "send-email:wrong-portal:v1",
       payload: { communicationId: "comm", contentVersion: 1 },
       rpc: rpcFor(loaded({
-        recipient: "alex@example.com",
-        customerOrigin: devOrigin,
+        customerOrigin: "https://profilerelaunch-customer-git-develop-wrong-team.vercel.app",
         bodyText: devRendered.text,
         bodyHtml: devRendered.html,
       })),
     })
-    expect(delivered.ok).toBe(true)
-    const allowed = await sendEmailHandler({ COMMUNICATIONS_LINK_SECRET: secret }, {
-      async send() { return { ok: true, providerMessageId: "msg_prod", replay: false } },
-    }).execute({
+    expect(wrongPortal).toMatchObject({ ok: false, error: "Secure acceptance link cannot be materialised" })
+    expect(sends).toEqual(["customer@gmail.com"])
+
+    const production = await sendEmailHandler({ COMMUNICATIONS_LINK_SECRET: secret }, devProvider).execute({
       idempotencyKey: "send-email:comm:v1",
       payload: { communicationId: "comm", contentVersion: 1 },
       rpc: rpcFor(loaded({ recipient: "customer@gmail.com" })),
     })
-    expect(allowed.ok).toBe(true)
+    expect(production.ok).toBe(true)
   })
 
   it("does not send a second provider effect for the same job or after acceptance", async () => {

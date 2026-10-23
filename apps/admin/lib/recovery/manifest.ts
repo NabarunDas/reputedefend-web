@@ -836,13 +836,14 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "email confirmation", probe: "public.confirm_email_challenge_v1" },
   },
   {
-    // AUTO-EMAIL-VERIFY delivery provenance. Records whether the provider
-    // accepted each confirmation email. Not applied to DEV or Production.
-    version: "20261023103000",
-    filename: "20261023103000_email_confirmation_delivery_v1.sql",
+    // AUTO-EMAIL-VERIFY delivery provenance. Applied and verified in DEV.
+    // Canonical source aligned to the existing DEV ledger version without SQL replay.
+    // Production unchanged; never replay the DEV-applied migration.
+    version: "20261023091735",
+    filename: "20261023091735_email_confirmation_delivery_v1.sql",
     step: "AUTO-EMAIL-VERIFY confirmation delivery provenance",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "email confirmation delivery", probe: "public.record_email_confirmation_delivery_v1" },
@@ -858,7 +859,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261023000158`. SQL is byte-for-byte identical to the reviewed source.
+ * `20261023091735`. The repository filename matches the DEV-applied version.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

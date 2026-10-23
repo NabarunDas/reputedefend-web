@@ -190,7 +190,15 @@ function confirmationOrigin(env: RuntimeEnv): string | null {
   if (lane === "production") return "https://profilerelaunch.com"
   if (lane === "preview") {
     if (env.VERCEL_GIT_COMMIT_REF !== "develop" || !devDatabase(env.SUPABASE_URL)) return null
-    const host = env.VERCEL_URL ?? ""
+    const currentHost = env.VERCEL_URL ?? ""
+    // Staff recovery runs in the Admin app; confirmation itself is served by Marketing.
+    // Bind the Marketing alias to the same Vercel team and branch. Never email an Admin URL.
+    let host = currentHost
+    if (currentHost.startsWith("profilerelaunch-admin-")) {
+      const matched = /^profilerelaunch-admin-git-develop-([a-z0-9-]+)\\.vercel\\.app$/.exec(env.VERCEL_BRANCH_URL ?? "")
+      if (!matched?.[1]) return null
+      host = `reputedefend-web-git-develop-${matched[1]}.vercel.app`
+    }
     if (!safeHost(host) || productionConfirmationHost(host)) return null
     return `https://${host}`
   }

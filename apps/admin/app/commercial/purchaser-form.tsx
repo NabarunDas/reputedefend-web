@@ -11,11 +11,13 @@ export function PurchaserForm({
   businessName,
   customerName,
   listingCountry,
+  guided = false,
 }: {
   businessId: string
   businessName: string
   customerName?: string | null
   listingCountry?: string | null
+  guided?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -23,6 +25,7 @@ export function PurchaserForm({
   const [message, setMessage] = useState("")
   const [purchaserType, setPurchaserType] = useState<PurchaserType>("LIMITED_COMPANY")
   const [countryChoice, setCountryChoice] = useState("")
+  const [otherCountry, setOtherCountry] = useState("")
   const key = useRef<string | null>(null)
   const evidenceTypes = purchaserType === "LIMITED_COMPANY"
     ? ["OTHER", "COMPANIES_HOUSE", "REGISTRY_EXTRACT"]
@@ -34,9 +37,10 @@ export function PurchaserForm({
     event.preventDefault()
     if (busy || done || uncertain) return
     const form = new FormData(event.currentTarget)
-    const outcome = String(form.get("outcome") || "")
-    const otherCountry = String(form.get("otherCountry") || "").trim().toUpperCase()
-    const countryCode = countryChoice === "GB" ? "GB" : countryChoice === "OTHER" ? otherCountry : ""
+    const typedCountry = String(form.get("otherCountry") || "").trim().toUpperCase()
+    const countryCode = countryChoice === "GB" ? "GB" : countryChoice === "OTHER" ? typedCountry : ""
+    const confirmed = form.get("confirmed") === "yes"
+    const outcome = guided ? (confirmed ? "verified" : "pending") : String(form.get("outcome") || "")
     key.current ||= crypto.randomUUID()
     setBusy(true)
     setMessage("")
@@ -55,7 +59,7 @@ export function PurchaserForm({
           registrationId: form.get("registrationId"),
           taxId: form.get("taxId"),
           outcome,
-          confirmed: form.get("confirmed") === "yes",
+          confirmed,
         }),
       })
       const result = await response.json() as { message?: string }
@@ -71,13 +75,15 @@ export function PurchaserForm({
     }
   }
 
+  const needsSubdivision = !guided
+    ? countryChoice === "OTHER"
+    : countryChoice === "OTHER" && (otherCountry === "US" || otherCountry === "CA")
   return <form className="record-form" onSubmit={submit}>
-    <h3>Purchasing establishment</h3>
+    <h3>{guided ? "Record the purchasing establishment" : "Purchasing establishment"}</h3>
     <p>
-      Record the legal purchaser for this business. Use the name already on the business record when it is the legal name.
-      The Google listing is not this record. Companies House is optional and is not required for a sole trader or an individual.
-      Saving a note does not verify the purchaser. To record this, sign in to Admin within the last 30 minutes and check the genuine purchasing details.
-      This does not offer the quote, take a payment, or send email.
+      {guided
+        ? "A saved note is not a verified purchasing establishment. Sign in within the last 30 minutes and confirm a genuine check before marking it verified."
+        : "Record the legal purchaser for this business. Use the name already on the business record when it is the legal name. The Google listing is not this record. Companies House is optional and is not required for a sole trader or an individual. Saving a note does not verify the purchaser. To record this, sign in to Admin within the last 30 minutes and check the genuine purchasing details. This does not offer the quote, take a payment, or send email."}
     </p>
     {customerName ? <p>Customer on this case: {customerName}. Use that name only when that person is the purchaser.</p> : null}
     {listingCountry ? <p>The Google listing country on this case is {listingCountry}. It is not the purchasing establishment.</p> : null}
@@ -98,34 +104,44 @@ export function PurchaserForm({
         </select>
       </label>
       {countryChoice === "OTHER" && <label>Two-letter country code
-        <input name="otherCountry" required minLength={2} maxLength={2} autoComplete="off" />
+        <input name="otherCountry" required minLength={2} maxLength={2} autoComplete="off" value={guided ? otherCountry : undefined} onChange={guided ? event => setOtherCountry(event.target.value.trim().toUpperCase()) : undefined} />
       </label>}
-      {(countryChoice === "OTHER") && <label>State or province, when the country needs one
-        <input name="subdivisionCode" maxLength={6} autoComplete="off" />
+      {needsSubdivision && <label>State or province
+        <input name="subdivisionCode" maxLength={6} autoComplete="off" required={guided} />
       </label>}
       <label>Evidence checked
         <select name="evidenceType" defaultValue="OTHER" key={purchaserType}>
           {evidenceTypes.map(type => <option key={type} value={type}>{evidenceTypeLabels[type]}</option>)}
         </select>
       </label>
-      <label>Registration number, if you already have one
-        <input name="registrationId" maxLength={64} />
-      </label>
-      <p className="muted">Leave the registration number blank for a sole trader or an individual. Companies House is not required.</p>
-      <label>Tax identifier, only if you already hold one
-        <input name="taxId" maxLength={64} />
-      </label>
-      <p className="muted">Leave this blank when you do not have one. It does not charge tax and it does not change the advertised price.</p>
+      {guided ? <details>
+        <summary>Add a registration or tax identifier</summary>
+        <label>Registration number, if you already have one
+          <input name="registrationId" maxLength={64} />
+        </label>
+        <label>Tax identifier, only if you already hold one
+          <input name="taxId" maxLength={64} />
+        </label>
+      </details> : <>
+        <label>Registration number, if you already have one
+          <input name="registrationId" maxLength={64} />
+        </label>
+        <p className="muted">Leave the registration number blank for a sole trader or an individual. Companies House is not required.</p>
+        <label>Tax identifier, only if you already hold one
+          <input name="taxId" maxLength={64} />
+        </label>
+        <p className="muted">Leave this blank when you do not have one. It does not charge tax and it does not change the advertised price.</p>
+      </>}
       <label>What you checked, or what is still missing
         <textarea name="evidenceReference" required minLength={20} maxLength={450} rows={3} />
       </label>
-      <label>Verification
+      {!guided && <label>Verification
         <select name="outcome" defaultValue="pending">
           <option value="pending">Not yet verified</option>
           <option value="verified">Verified from a real check</option>
           <option value="rejected">Not sufficient</option>
         </select>
-      </label>
+      </label>}
       <label className="checkbox">
         <input type="checkbox" name="confirmed" value="yes" />
         I checked the genuine purchasing establishment and have supporting evidence.

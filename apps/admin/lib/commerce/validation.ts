@@ -117,3 +117,31 @@ export function isCatalogueOperation(value: string): value is CatalogueOperation
 export function isQuoteOperation(value: string): value is QuoteOperation {
   return quoteOperations.includes(value as QuoteOperation)
 }
+
+/**
+ * An approved inclusive percentage, with at most two decimal places, as basis points.
+ * 20 is 2000. 20.5 is 2050. A missing or rounded value is not an approved rate.
+ */
+export function approvedInclusiveRateBps(value: unknown): number | null {
+  if (typeof value !== "string") return null
+  const text = value.trim()
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(text)) return null
+  const [whole, fraction = ""] = text.split(".")
+  const bps = Number(whole) * 100 + Number((fraction + "00").slice(0, 2))
+  if (!Number.isInteger(bps) || bps < 0 || bps > 10000) return null
+  return bps
+}
+
+/** A specific tax-entry problem, before the quote command runs. */
+export function quoteTaxIssue(operation: string, body: Record<string, unknown>): string | null {
+  if (operation !== "set_draft_tax") return null
+  const behaviour = typeof body.taxBehaviour === "string" ? body.taxBehaviour : ""
+  if (behaviour === "EXCLUSIVE") return "A published quotation cannot add tax on top of the customer price."
+  if (behaviour === "INCLUSIVE" && integer(body.taxRateBps) === null) {
+    return "Enter the approved tax percentage before saving. The customer total stays the advertised price."
+  }
+  if (behaviour === "NOT_APPLICABLE" && (body.taxRateBps != null || body.taxJurisdiction != null || body.taxCode != null)) {
+    return "VAT not charged does not take a tax rate, jurisdiction, or tax code."
+  }
+  return null
+}

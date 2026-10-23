@@ -914,6 +914,27 @@ summary { cursor: pointer; }
   border-top: 1px solid var(--line);
 }
 .guided-facts dl.quote-summary > .quote-summary-block dd { max-width: 46rem; }
+.quote-workspace p,
+.quote-workspace li { max-width: 40rem; }
+.quote-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.quote-progress li {
+  flex: 1 1 8rem;
+  min-width: 0;
+  margin: 0;
+  padding: .45rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: .35rem;
+  font-weight: 700;
+}
+.quote-progress li[data-state="done"] { border-color: var(--green); }
+.quote-progress li[data-state="current"] { border-color: var(--accent); background: color-mix(in srgb, var(--lime) 32%, var(--surface)); }
 .guided-warning {
   margin: .75rem 0;
   padding: .75rem .85rem;
@@ -987,6 +1008,9 @@ summary { cursor: pointer; }
   .guided-facts dl.quote-summary > .quote-summary-block {
     grid-template-columns: minmax(0, 1fr);
   }
+  .quote-progress { flex-direction: column; }
+  .quote-workspace p,
+  .quote-workspace li { max-width: none; }
 }
 
 .cockpit-blockers { border-left: 3px solid var(--danger); }

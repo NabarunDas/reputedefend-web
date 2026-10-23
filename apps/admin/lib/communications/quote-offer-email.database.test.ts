@@ -4,6 +4,7 @@
  * or Production, and no provider is contacted.
  */
 import { createHash, randomUUID } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { proposedServiceAgreements } from "../../../../lib/commercial/service-agreements"
@@ -246,7 +247,12 @@ describe("quotation email queue", () => {
     expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
     expect(await count("select count(*)::int as n from admin_private.job_outbox where aggregate_id = $1", [first.result.id])).toBe(1)
     const second = await queue(offered.id)
-    expect(second.result).toMatchObject({ status: "denied", reason: "open_action", actionId: first.actionId })
+    expect(second.result).toMatchObject({
+      status: "denied",
+      reason: "open_action",
+      actionId: first.actionId,
+      communicationId: first.result.id,
+    })
     expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
 
     const stored = await db.query<{
@@ -588,5 +594,324 @@ describe("quotation email queue", () => {
     const status = await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id = $1", [queued.result.id])
     expect(status.rows[0].delivery_status).not.toBe("DELIVERED")
     expect(status.rows[0].delivery_status).not.toBe("PROVIDER_ACCEPTED")
+  })
+
+  it("permits a development quotation claim 29 minutes after sign-in and refuses it at 31", async () => {
+    const definition = (await db.query<{ def: string }>(
+      "select pg_get_functiondef('public.admin_dev_send_email_claim_v1(text,uuid,uuid,boolean,text)'::regprocedure) as def",
+    )).rows[0].def
+    expect(definition).toContain("interval '30 minutes'")
+    expect(definition).not.toContain("interval '5 minutes'")
+    const source = readFileSync(new URL("../commerce/quote-offer-email.ts", import.meta.url), "utf8")
+    expect(source).toContain("admin_dev_send_email_claim_v1")
+    expect(source).not.toContain("Process queued email")
+    expect(source).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
+
+    const approved = await rpc("admin_record_owner_paid_service_agreement_approval_v1", [adminToken, key(), guided.version, ownerEvidence])
+    expect(["confirmed", "replay", "already_confirmed"]).toContain(approved?.status)
+    const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    const queueOnPortal = async (quoteId: string) => {
+      const request = key()
+      const actionId = deriveQuoteAcceptanceActionId(request)
+      const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
+      const row = await detail(quoteId)
+      const rendered = row.currentVersion ? renderQuotationOffer({
+        publicRef: row.publicRef,
+        caseRef: row.caseReference,
+        serviceName: row.currentVersion.serviceName,
+        amountMinor: row.currentVersion.totalAmountMinor,
+        currency: row.currentVersion.currency,
+        paymentModel: row.currentVersion.paymentModel,
+        scope: row.currentVersion.scope,
+        exclusions: row.currentVersion.exclusions,
+        validUntil: row.currentVersion.validUntil,
+        actionUrl: `${portal}/action/${actionId}`,
+      }) : null
+      return queue(quoteId, {
+        devLane: true,
+        customerOrigin: portal,
+        subject: rendered!.subject,
+        bodyText: rendered!.text,
+        bodyHtml: rendered!.html,
+        actionId,
+        secretHash: prepared.tokenHash,
+        linkKeyVersion: prepared.version,
+      }, request)
+    }
+    const offered = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const queued = await queueOnPortal(offered.id)
+    expect(queued.result.status, JSON.stringify(queued.result)).toBe("success")
+
+    await db.query("update public.admin_sessions set created_at = now() - interval '29 minutes' where token_hash = $1", [adminToken])
+    const claimed = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.result.id, true, portal])
+    expect(claimed.status).toBe("success")
+    expect(claimed.jobType).toBe("SEND_EMAIL")
+    const idempotencyKey = `send-email:${queued.result.id}:v1`
+    expect(await rpc("communication_begin_provider_attempt_v1", [queued.result.id, 1, idempotencyKey])).toMatchObject({ status: "success" })
+    expect(await rpc("communication_mark_acceptance_unknown_v1", [queued.result.id, idempotencyKey])).toMatchObject({ status: "success" })
+    await db.query("update admin_private.jobs set lease_expires_at = now() - interval '1 second' where id = $1", [claimed.jobId])
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [adminToken])
+    const again = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.result.id, true, portal])
+    expect(again).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+
+    const late = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const lateQueued = await queueOnPortal(late.id)
+    expect(lateQueued.result.status, JSON.stringify(lateQueued.result)).toBe("success")
+    const jobsBefore = await count("select count(*)::int as n from admin_private.jobs")
+    await db.query("update public.admin_sessions set created_at = now() - interval '31 minutes' where token_hash = $1", [adminToken])
+    expect(await rpc("admin_dev_send_email_claim_v1", [adminToken, key(), lateQueued.result.id, true, portal])).toEqual({ status: "reauth_required" })
+    expect(await count("select count(*)::int as n from admin_private.jobs")).toBe(jobsBefore)
+    expect((await db.query<{ lifecycle: string }>("select lifecycle from public.communications where id = $1", [lateQueued.result.id])).rows[0].lifecycle).toBe("QUEUED")
+
+    await db.query("update public.admin_sessions set revoked_at = now() where token_hash = $1", [adminToken])
+    expect(await rpc("admin_dev_send_email_claim_v1", [adminToken, key(), lateQueued.result.id, true, portal])).toEqual({ status: "unauthorized" })
+    await db.query("update public.admin_sessions set revoked_at = null, created_at = now() where token_hash = $1", [adminToken])
+  })
+
+  it("refuses an offer for a stale version and an expired quotation", async () => {
+    const caseId = await createCase()
+    const draft = await rpc("admin_quote_command_v1", [adminToken, key(), "create_draft", {
+      customerId: customer,
+      businessId: business,
+      locationId: location,
+      caseId,
+      scope: "Recover the suspended profile for this location.",
+      exclusions: "Google decisions stay outside this quotation.",
+      validUntil: later(),
+      applyDiscount: false,
+      priceVersionId: await priceId("GUIDED_RELAUNCH"),
+      serviceCode: "GUIDED_RELAUNCH",
+    }, null])
+    expect(draft?.status).toBe("success")
+    const taxed = await rpc("admin_quote_command_v1", [adminToken, key(), "set_draft_tax", {
+      quoteId: draft!.id, taxBehaviour: "NOT_APPLICABLE",
+    }, draft!.version])
+    expect(taxed?.status).toBe("success")
+    expect((await db.query<{ total: number }>(
+      "select total_amount_minor as total from public.quote_versions where quote_id = $1",
+      [draft!.id],
+    )).rows[0].total).toBe(9900)
+    const stale = await rpc("admin_quote_command_v1", [adminToken, key(), "offer", { quoteId: draft!.id }, (taxed!.version ?? 0) + 9])
+    expect(stale?.status).toBe("conflict")
+    expect((await db.query<{ status: string }>("select status from public.quotes where id = $1", [draft!.id])).rows[0].status).toBe("DRAFT")
+    await db.exec("alter table public.quote_versions disable trigger user")
+    await db.query("update public.quote_versions set valid_until = now() - interval '1 minute' where quote_id = $1", [draft!.id])
+    await db.exec("alter table public.quote_versions enable trigger user")
+    const expired = await rpc("admin_quote_command_v1", [adminToken, key(), "offer", { quoteId: draft!.id }, taxed!.version])
+    expect(expired?.status).toBe("denied")
+    expect((await db.query<{ status: string }>("select status from public.quotes where id = $1", [draft!.id])).rows[0].status).toBe("DRAFT")
+  })
+
+  it("keeps one queued quotation when recent login fails and processes that same email after sign-in", async () => {
+    const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    const offered = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const request = key()
+    const actionId = deriveQuoteAcceptanceActionId(request)
+    const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
+    const row = await detail(offered.id)
+    const rendered = renderQuotationOffer({
+      publicRef: row.publicRef,
+      caseRef: row.caseReference,
+      serviceName: row.currentVersion.serviceName,
+      amountMinor: row.currentVersion.totalAmountMinor,
+      currency: row.currentVersion.currency,
+      paymentModel: row.currentVersion.paymentModel,
+      scope: row.currentVersion.scope,
+      exclusions: row.currentVersion.exclusions,
+      validUntil: row.currentVersion.validUntil,
+      actionUrl: `${portal}/action/${actionId}`,
+    })!
+    const queued = await queue(offered.id, {
+      devLane: true,
+      customerOrigin: portal,
+      subject: rendered.subject,
+      bodyText: rendered.text,
+      bodyHtml: rendered.html,
+      actionId,
+      secretHash: prepared.tokenHash,
+      linkKeyVersion: prepared.version,
+    }, request)
+    expect(queued.result.status, JSON.stringify(queued.result)).toBe("success")
+    const openBefore = await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1 and status = 'OPEN'", [offered.versionId])
+    expect(openBefore).toBe(1)
+    await db.query("update public.admin_sessions set created_at = now() - interval '31 minutes' where token_hash = $1", [adminToken])
+    expect(await rpc("admin_dev_send_email_claim_v1", [adminToken, key(), queued.result.id, true, portal])).toEqual({ status: "reauth_required" })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where customer_action_id = $1", [actionId])).toBe(1)
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [adminToken])
+    const again = await queue(offered.id)
+    expect(again.result).toMatchObject({
+      status: "denied",
+      reason: "open_action",
+      communicationId: queued.result.id,
+      lifecycle: "QUEUED",
+      deliveryStatus: "NONE",
+    })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where customer_action_id = $1", [actionId])).toBe(1)
+    const claimed = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.result.id, true, portal])
+    expect(claimed.status).toBe("success")
+    expect(claimed.jobType).toBe("SEND_EMAIL")
+    expect(claimed.payload).toMatchObject({ communicationId: queued.result.id })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1 and status = 'OPEN'", [offered.versionId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and lifecycle = 'QUEUED'", [queued.result.id])).toBe(1)
+  })
+
+  it("replaces an expired acceptance link once and refuses a second open link", async () => {
+    const offered = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const issue = (secretHash: string) => rpc("admin_quote_command_v1", [adminToken, key(), "create_quote_acceptance_action", {
+      quoteId: offered.id,
+      expiresAt: later(48),
+      secretHash,
+    }, offered.version])
+    const issued = await issue("ab".repeat(32))
+    expect(issued?.status, JSON.stringify(issued)).toBe("success")
+    await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+    await db.query("update public.customer_actions set expires_at = now() - interval '1 minute' where id = $1", [issued!.id])
+    await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+    const replacement = await issue("cd".repeat(32))
+    expect(replacement?.status, JSON.stringify(replacement)).toBe("success")
+    expect(replacement?.id).not.toBe(issued?.id)
+    expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [issued!.id])).rows[0].status).toBe("REVOKED")
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1 and status = 'OPEN'", [offered.versionId])).toBe(1)
+    const duplicate = await issue("ef".repeat(32))
+    expect(duplicate?.status).toBe("denied")
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1 and status = 'OPEN'", [offered.versionId])).toBe(1)
+  })
+
+  it("queues one replacement quotation email for an expired acceptance link and leaves a live link unchanged", async () => {
+    const offered = await offerService("GUIDED_RELAUNCH", { standard: true, validUntil: later(72) })
+    const openActions = () => count(
+      "select count(*)::int as n from public.customer_actions where quote_version_id = $1 and status = 'OPEN'",
+      [offered.versionId],
+    )
+    const queuedFor = (actionId: string) => count(
+      "select count(*)::int as n from public.communications where customer_action_id = $1 and template_key = 'QUOTE_OFFER' and lifecycle = 'QUEUED'",
+      [actionId],
+    )
+    const restoreTrust = async () => {
+      await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
+      await db.query(
+        "insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values ($1,'email','alex@example.com',$2,'Verified from a live call with the customer.')",
+        [customer, admin],
+      )
+      await db.query(
+        "update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $2, evidence = 'Companies House match discussed on a live call.' where customer_id = $1 and business_id = $3",
+        [customer, admin, business],
+      )
+    }
+    let actionsLocked = false
+    let versionsLocked = false
+    try {
+      const first = await queue(offered.id)
+      expect(first.result.status, JSON.stringify(first.result)).toBe("success")
+      const unchanged = await queue(offered.id)
+      expect(unchanged.result).toMatchObject({
+        status: "denied",
+        reason: "open_action",
+        actionId: first.actionId,
+        communicationId: first.result.id,
+        lifecycle: "QUEUED",
+        deliveryStatus: "NONE",
+      })
+      expect(await openActions()).toBe(1)
+      expect(await queuedFor(first.actionId)).toBe(1)
+
+      await db.exec("alter table public.customer_actions disable trigger customer_actions_protect")
+      actionsLocked = true
+      await db.query("update public.customer_actions set expires_at = now() - interval '1 minute' where id = $1", [first.actionId])
+      await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+      actionsLocked = false
+
+      await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
+      expect((await queue(offered.id)).result).toMatchObject({ status: "denied", reason: "contact_unverified" })
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [first.actionId])).rows[0].status).toBe("OPEN")
+      await restoreTrust()
+
+      await db.exec("alter table public.quote_versions disable trigger user")
+      versionsLocked = true
+      await db.query("update public.quote_versions set valid_until = now() + interval '10 minutes' where id = $1", [offered.versionId])
+      expect((await queue(offered.id)).result).toMatchObject({ status: "denied", reason: "link_window" })
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [first.actionId])).rows[0].status).toBe("OPEN")
+      await db.query("update public.quote_versions set valid_until = now() - interval '1 minute' where id = $1", [offered.versionId])
+      expect((await queue(offered.id)).result).toMatchObject({ status: "denied", reason: "quote_expired" })
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [first.actionId])).rows[0].status).toBe("OPEN")
+      await db.query("update public.quote_versions set valid_until = now() + interval '3 days' where id = $1", [offered.versionId])
+      await db.exec("alter table public.quote_versions enable trigger user")
+      versionsLocked = false
+
+      const replacement = await queue(offered.id)
+      expect(replacement.result, JSON.stringify(replacement.result)).toMatchObject({
+        status: "success",
+        lifecycle: "QUEUED",
+        deliveryStatus: "NONE",
+      })
+      expect(replacement.actionId).not.toBe(first.actionId)
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [first.actionId])).rows[0].status).toBe("REVOKED")
+      expect(await openActions()).toBe(1)
+      expect((await db.query<{ id: string }>(
+        "select id from public.customer_actions where quote_version_id = $1 and status = 'OPEN'",
+        [offered.versionId],
+      )).rows[0].id).toBe(replacement.actionId)
+      expect(await queuedFor(replacement.actionId)).toBe(1)
+      expect(await count(
+        "select count(*)::int as n from public.communications where customer_action_id = $1 and template_key = 'QUOTE_OFFER'",
+        [replacement.actionId],
+      )).toBe(1)
+
+      const replay = await rpc("admin_queue_quote_offer_email_v1", [adminToken, replacement.request, replacement.payload])
+      expect(replay).toMatchObject({ status: "success", id: replacement.result.id, lifecycle: "QUEUED", deliveryStatus: "NONE" })
+      const second = await queue(offered.id)
+      expect(second.result).toMatchObject({
+        status: "denied",
+        reason: "open_action",
+        actionId: replacement.actionId,
+        communicationId: replacement.result.id,
+      })
+      expect(await openActions()).toBe(1)
+      expect(await queuedFor(replacement.actionId)).toBe(1)
+      expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(2)
+
+      const provider = createIdempotentMailProvider()
+      const execute = () => sendEmailHandler({ COMMUNICATIONS_LINK_SECRET: linkSecret }, provider).execute({
+        idempotencyKey: `send-email:${replacement.result.id}:v1`,
+        payload: { communicationId: replacement.result.id, contentVersion: 1 },
+        rpc: namedRpc(),
+      })
+      expect((await execute()).ok).toBe(true)
+      expect((await execute()).ok).toBe(true)
+      expect(provider.effects).toBe(1)
+
+      const session = sha256(randomUUID())
+      await db.query(
+        "insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at) values ($1,$2,$3, now() + interval '1 day')",
+        [session, first.actionId, customerAuth],
+      )
+      expect(await rpc("customer_action_command_v1", [session, key(), "accept", { accepted: true }])).toMatchObject({ status: "unavailable" })
+      expect(await count("select count(*)::int as n from public.quote_acceptances where quote_version_id = $1", [offered.versionId])).toBe(0)
+      expect(await count("select count(*)::int as n from public.service_orders where quote_version_id = $1", [offered.versionId])).toBe(0)
+      expect((await db.query<{ status: string }>("select status from public.quotes where id = $1", [offered.id])).rows[0].status).toBe("OFFERED")
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [replacement.actionId])).rows[0].status).toBe("OPEN")
+
+      const blocked = await offerService("GUIDED_RELAUNCH", { standard: true, validUntil: later(72) })
+      await db.query(
+        "update public.business_memberships set status = 'pending', verified_at = null, verified_by = null where customer_id = $1 and business_id = $2",
+        [customer, business],
+      )
+      expect((await queue(blocked.id)).result).toMatchObject({ status: "denied", reason: "authority_unverified" })
+      expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [blocked.versionId])).toBe(0)
+      expect(await count(
+        "select count(*)::int as n from public.communications where template_key = 'QUOTE_OFFER' and customer_action_id in (select id from public.customer_actions where quote_version_id = $1)",
+        [blocked.versionId],
+      )).toBe(0)
+      expect((await queue(offered.id)).result).toMatchObject({ status: "denied", reason: "authority_unverified" })
+      expect(await queuedFor(replacement.actionId)).toBe(1)
+      expect(await openActions()).toBe(0)
+      expect((await db.query<{ status: string }>("select status from public.customer_actions where id = $1", [replacement.actionId])).rows[0].status).toBe("REVOKED")
+    } finally {
+      if (actionsLocked) await db.exec("alter table public.customer_actions enable trigger customer_actions_protect")
+      if (versionsLocked) await db.exec("alter table public.quote_versions enable trigger user")
+      await restoreTrust()
+    }
   })
 })

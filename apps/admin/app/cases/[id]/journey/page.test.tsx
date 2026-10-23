@@ -255,7 +255,7 @@ describe("the case journey route", () => {
       params: Promise.resolve({ id: CASE_ID }),
       searchParams: Promise.resolve({ step: "QUOTE_ACCEPTANCE" }),
     }))
-    expect(screen.getByRole("heading", { name: "Quote & Contract Acceptance" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Quotation & Acceptance" })).toBeInTheDocument()
     expect(screen.getByText("Quote and acceptance stay closed until the earlier steps are recorded.")).toBeInTheDocument()
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()

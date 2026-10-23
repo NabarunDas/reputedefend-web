@@ -94,7 +94,7 @@ describe("scope and exclusions fields", () => {
     const editedExclusions = "Other reviews and Google's decision are outside this quote."
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: editedScope } })
     fireEvent.change(screen.getByLabelText("Exclusions"), { target: { value: editedExclusions } })
-    fireEvent.change(screen.getByLabelText("Valid until"), { target: { value: "2026-12-01T12:00" } })
+    fireEvent.change(screen.getByLabelText("Quote expiry"), { target: { value: "2026-12-01T12:00" } })
     fireEvent.submit(screen.getByRole("button", { name: "Create draft quote" }).closest("form")!)
     expect(await screen.findByRole("status")).toHaveTextContent("Draft saved.")
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)

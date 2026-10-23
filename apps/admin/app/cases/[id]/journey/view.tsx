@@ -20,6 +20,8 @@ import type { PreparedPackCase } from "@/lib/packs/model"
 import { AssessmentPanel } from "./assessment"
 import { QuotePanel } from "./quote"
 import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
+import { unavailableQuoteReadiness, type QuoteReadiness } from "@/lib/case-journey/quote-readiness"
+import { emptyQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-email"
 import { ActivationPanel } from "./activation"
 import type { JourneyActivationPanel } from "@/lib/case-journey/activation"
 import { PreparationPanel } from "./preparation"
@@ -104,7 +106,8 @@ export function CaseJourneyView({
   customerId = "",
   businessId = "",
   locationId = null,
-  developmentQuotationMail = false,
+  quoteReadiness = unavailableQuoteReadiness,
+  quoteEmail = emptyQuoteEmail,
 }: {
   reference: string
   customer: string
@@ -122,12 +125,13 @@ export function CaseJourneyView({
   evidenceReview?: JourneyEvidenceReview | null
   assessment?: CaseAssessmentView | null
   quote?: JourneyQuotePanel | null
+  quoteReadiness?: QuoteReadiness
+  quoteEmail?: QuoteEmailView
   activation?: JourneyActivationPanel | null
   preparation?: JourneyPreparationPanel | null
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
   outcome?: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
   closure?: { caseDetail: CaseDetail; panel: JourneyClosurePanel } | null
-  developmentQuotationMail?: boolean
 }) {
   const selected = journey.steps.find(step => step.id === selectedId) ?? journey.steps[0]
   const status = caseStatusLabel(journey.caseStatus)
@@ -158,7 +162,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} developmentQuotationMail={developmentQuotationMail} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} quoteReadiness={quoteReadiness} quoteEmail={quoteEmail} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -202,12 +206,13 @@ function StepWorkspace({
   evidenceReview,
   assessment,
   quote,
+  quoteReadiness,
+  quoteEmail,
   activation,
   preparation,
   submission,
   outcome,
   closure,
-  developmentQuotationMail,
 }: {
   step: JourneyStepView
   journey: CaseJourneyPresentation
@@ -225,12 +230,13 @@ function StepWorkspace({
   evidenceReview: JourneyEvidenceReview | null
   assessment: CaseAssessmentView | null
   quote: JourneyQuotePanel | null
+  quoteReadiness: QuoteReadiness
+  quoteEmail: QuoteEmailView
   activation: JourneyActivationPanel | null
   preparation: JourneyPreparationPanel | null
   submission: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
   outcome: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
   closure: { caseDetail: CaseDetail; panel: JourneyClosurePanel } | null
-  developmentQuotationMail: boolean
 }) {
   const intakeReviewed = journey.steps.find(item => item.id === "CASE_RECEIVED")?.state === "COMPLETED"
   const recordsAgree = brief.emailControl !== "records_disagree" && brief.authority !== "records_disagree" && brief.conflicts.length === 0
@@ -274,14 +280,14 @@ function StepWorkspace({
     {showAssessment && <AssessmentPanel caseId={caseId} version={version} assessment={assessment} stepState={step.state} />}
     {showQuote && quote && <QuotePanel
       panel={quote}
+      readiness={quoteReadiness}
+      email={quoteEmail}
       caseId={caseId}
       customerId={customerId}
       businessId={businessId}
       locationId={locationId}
       customerName={customer}
       businessName={business}
-      listingCountry={brief.country}
-      developmentQuotationMail={developmentQuotationMail}
     />}
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}

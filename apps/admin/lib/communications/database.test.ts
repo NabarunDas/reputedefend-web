@@ -1523,7 +1523,7 @@ describe("DEV SEND_EMAIL claim", () => {
     )).rows[0].first_provider_attempt_at).toBeNull()
   })
 
-  it("does nothing for a missing session or a stale sign-in", async () => {
+  it("does nothing for a missing session or a stale sign-in on the historical five-minute claim", async () => {
     const row = await queueReviewed(devPortal)
     expect(await rpc("admin_dev_send_email_claim_v1", ["b".repeat(64), key(), row.id, true, devPortal])).toEqual({ status: "unauthorized" })
     await db.query("update public.admin_sessions set created_at = now() - interval '6 minutes' where token_hash=$1", [token])

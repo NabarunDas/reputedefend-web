@@ -59,6 +59,44 @@ describe("rebuilding the whole schema from zero", () => {
     expect(appliedMigrationHead.version).toBe("20261023103232")
   })
 
+  it("rebuilds one independently constrained evidence slot per requested document", async () => {
+    const indexes = await rows<{ indexname: string; indexdef: string }>(
+      "select indexname,indexdef from pg_indexes where schemaname='public' and tablename='case_document_versions' and indexname like 'case_document_versions_one_customer_%idx' order by indexname",
+    )
+    expect(indexes.map(index => index.indexname)).toEqual([
+      "case_document_versions_one_customer_item_idx",
+      "case_document_versions_one_customer_request_idx",
+    ])
+    expect(indexes.find(index => index.indexname.endsWith("_item_idx"))?.indexdef).toContain("evidence_item_title")
+    expect(indexes.find(index => index.indexname.endsWith("_request_idx"))?.indexdef).toContain("evidence_item_title IS NULL")
+    const privileges = await rows<{ anon_ok: boolean; service_ok: boolean }>(
+      "select has_function_privilege('anon','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as anon_ok, has_function_privilege('service_role','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as service_ok",
+    )
+    expect(privileges).toEqual([{ anon_ok: false, service_ok: true }])
+
+    await db.exec("BEGIN")
+    try {
+      await db.query("update public.evidence_requests set title=$1 where id=$2", [
+        "Notice from Google; Business address details; Council address details", rehearsalIds.evidenceRequestOpen,
+      ])
+      const projection = await rows<{ items: { title: string; submissionStatus: string }[] }>(
+        `select request_item.value->'items' as items
+         from jsonb_array_elements(admin_private.customer_open_evidence_requests_v1($1::uuid,NULL::uuid)) request_item(value)
+         where request_item.value->>'requestId'=$2`,
+        [rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen],
+      )
+      expect(projection).toHaveLength(1)
+      expect(projection[0].items.map(item => item.title)).toEqual([
+        "Notice from Google", "Business address details", "Council address details",
+      ])
+      expect(projection[0].items.map(item => item.submissionStatus)).toEqual([
+        "NOT_SUBMITTED", "NOT_SUBMITTED", "NOT_SUBMITTED",
+      ])
+    } finally {
+      await db.exec("ROLLBACK")
+    }
+  })
+
   it("includes the marketing intake migration that no feature test exercises", async () => {
     // 20260915193000 was never applied by any existing PGlite suite, so a
     // clean rebuild is the only thing proving it still runs against the chain.

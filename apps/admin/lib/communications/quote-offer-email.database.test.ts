@@ -350,18 +350,17 @@ describe("quotation email queue", () => {
     expect((await queue(expired.id)).result).toMatchObject({ status: "denied", reason: "quote_expired" })
   })
 
-  it("requires one exact development mailbox and leaves other lanes unchanged in SQL", async () => {
-    const allowed = await offerService("GUIDED_RELAUNCH")
-    expect((await queue(allowed.id, { devLane: true })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: " alex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com,other@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "*@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "notalex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com.invalid" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(allowed.id, { devLane: true, devAllowlistedRecipient: "alex@example.com" })).result.status).toBe("success")
+  it("queues DEV quotations for each real verified customer address without a test mailbox gate", async () => {
+    const first = await offerService("GUIDED_RELAUNCH")
+    const devFirst = await queue(first.id, { devLane: true })
+    expect(devFirst.result.status, JSON.stringify(devFirst.result)).toBe("success")
+
+    // An attempt to override the recipient must never reach the customer.
+    const rejectedOverride = await offerService("GUIDED_RELAUNCH")
+    expect((await queue(rejectedOverride.id, { devLane: true, recipient: "attacker@example.com" })).result)
+      .toMatchObject({ status: "denied", reason: "recipient_mismatch" })
+
+    // Same DEV database, a second legitimate address: no allowlist or provider gate.
     await db.query("update public.customers set email = 'synthetic.customer@example.net' where id = $1", [customer])
     await db.query(
       "insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values ($1,'email','synthetic.customer@example.net',$2,'Verified the replacement address on a live call.')",
@@ -371,11 +370,19 @@ describe("quotation email queue", () => {
       "update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $2, evidence = 'Rechecked after the synthetic address change.' where customer_id = $1",
       [customer, admin],
     )
-    const denied = await offerService("GUIDED_RELAUNCH")
-    expect((await queue(denied.id, { devLane: true, devAllowlistedRecipient: "alex@example.com" })).result).toMatchObject({ status: "denied", reason: "dev_recipient" })
-    expect((await queue(denied.id, { devLane: true, devAllowlistedRecipient: "synthetic.customer@example.net" })).result.status).toBe("success")
-    const production = await offerService("GUIDED_RELAUNCH")
-    expect((await queue(production.id, { devLane: false })).result.status).toBe("success")
+    const second = await offerService("GUIDED_RELAUNCH")
+    expect((await queue(second.id, { devLane: true })).result.status).toBe("success")
+    const sentTo = (await db.query<{recipient: string}>(
+      "select recipient from public.communications where template_key = 'QUOTE_OFFER' and customer_action_id in (select id from public.customer_actions where quote_version_id in ($1, $2)) order by created_at",
+      [first.versionId, second.versionId],
+    )).rows.map(row => row.recipient)
+    expect(sentTo).toEqual(expect.arrayContaining(["alex@example.com", "synthetic.customer@example.net"]))
+
+    // Production uses the same verified-customer recipient rule.
+    const third = await offerService("GUIDED_RELAUNCH")
+    expect((await queue(third.id, { devLane: false })).result.status).toBe("success")
+
+    // Restore the synthetic fixture for later tests.
     await db.query("update public.customers set email = 'alex@example.com' where id = $1", [customer])
     await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
     await db.query(
@@ -507,7 +514,6 @@ describe("quotation email queue", () => {
     expect(rendered).not.toBeNull()
     const queued = await queue(offered.id, {
       devLane: true,
-      devAllowlistedRecipient: "alex@example.com",
       customerOrigin: portal,
       subject: rendered!.subject,
       bodyText: rendered!.text,
@@ -531,7 +537,6 @@ describe("quotation email queue", () => {
         VERCEL_GIT_COMMIT_REF: "develop",
         VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
         SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
-        DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com",
         COMMUNICATIONS_LINK_SECRET: linkSecret,
       },
     })

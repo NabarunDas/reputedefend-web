@@ -190,7 +190,7 @@ describe("commercial admin commands", () => {
     expect(JSON.stringify(payload)).not.toContain("https://example.invalid")
   })
 
-  it("refuses an accepted quotation without a reference exception, and does not let the browser choose the development mailbox", async () => {
+  it("refuses an accepted quotation without a reference exception, and never lets the browser choose the recipient", async () => {
     const linkSecret = "quotation-link-secret-for-tests-32b"
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
@@ -260,7 +260,7 @@ describe("commercial admin commands", () => {
     expect(dev.status).toBe(403)
     expect(await dev.json()).toMatchObject({ message: expect.stringMatching(/Queued is not delivered/) })
     const payload = mocks.rpc.mock.calls.find(call => call[0] === "admin_queue_quote_offer_email_v1")?.[1].p_payload
-    expect(payload.devAllowlistedRecipient).toBe("quotation-test@profilerelaunch.test")
+    expect(payload.devAllowlistedRecipient).toBeUndefined()
     expect(payload.recipient).toBeUndefined()
     expect(payload.devLane).toBe(true)
     expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_dev_send_email_claim_v1")).toBe(true)

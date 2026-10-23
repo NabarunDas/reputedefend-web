@@ -1,6 +1,6 @@
 import type { EnvMap } from "../jobs/config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
-import { devEvidenceUploadOriginAllowed, devQuoteRecipientAllowed } from "./dev-lane"
+import { devEvidenceUploadOriginAllowed } from "./dev-lane"
 import { acceptanceWindowExpired, communicationsSendEnabled } from "./gate"
 import { linkSecretForVersion, materializeUploadUrl, prepareCommunicationAccessLink, prepareQuoteAcceptanceLink } from "./link"
 import { evidenceBodiesSharePortal } from "./snapshot"
@@ -79,9 +79,6 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
         const linkError = quote ? "Secure acceptance link cannot be materialised" : "Secure upload link cannot be materialised"
         if (!devEvidenceUploadOriginAllowed(env, origin) || !evidenceBodiesSharePortal(text, html, origin, actionId)) {
           return { ok: false, retryable: false, error: linkError }
-        }
-        if (quote && !devQuoteRecipientAllowed(env, loaded.recipient)) {
-          return { ok: false, retryable: false, error: "Recipient is not the development mailbox named for this preview" }
         }
         const version = integerVersion(loaded.linkKeyVersion)
         const prepared = actionId && version !== null

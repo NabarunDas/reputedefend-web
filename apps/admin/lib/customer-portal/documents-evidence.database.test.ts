@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
+import { migrationHead } from "../recovery/manifest"
 
 const appliedHead = "20261003183002"
 const migration = "20261003194353_customer_portal_documents_evidence_v1.sql"
@@ -38,7 +39,8 @@ const upgradedFiles = [
   "20261022124813_service_specific_agreements_v1.sql",
   "20261022172455_quote_offer_email_v1.sql",
   "20261023000158_email_confirmation_challenge_v1.sql",
-  "20261023103000_email_confirmation_delivery_v1.sql",
+  "20261023091735_email_confirmation_delivery_v1.sql",
+  migrationHead.filename,
 ].join(",")
 const db = new PGlite()
 

@@ -106,7 +106,7 @@ describe("case received customer email", () => {
 
   it("includes the confirmation button once, directly after the case reference, only when a link is supplied", () => {
     const token = "ab".repeat(32)
-    const url = `https://profilerelaunch.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
+    const url = `https://reputedefend-web-git-develop.example.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
     const message = buildCaseReceivedCustomerMessage(
       validCase,
       "PROFILE_RECOVERY",

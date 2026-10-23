@@ -19,6 +19,8 @@ afterEach(() => {
 
 function openDevelopment() {
   vi.stubEnv("VERCEL_ENV", "")
+  vi.stubEnv("NODE_ENV", "test")
+  vi.stubEnv("VERCEL_URL", "127.0.0.1:3000")
   vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
 }
 
@@ -147,5 +149,47 @@ describe("email confirmation commands", () => {
     expect(sent).toEqual([])
     expect(calls.at(-1)?.name).toBe("abandon_email_confirmation_resend_v1")
     expect(calls[0]?.args.p_expected_email).toBe("owner-alias@example.com")
+  })
+
+  it("records provider acceptance before saying a replacement was sent", async () => {
+    openDevelopment()
+    const token = deriveEmailConfirmationToken(challengeId, secret, 1)
+    const { calls, rpc } = client(name => {
+      if (name === "record_email_confirmation_delivery_v1") return { status: "accepted" }
+      return {
+        status: "ready",
+        publicRef: "PR-26-7K4M2Q",
+        maskedEmail: "a***@example.com",
+        caseType: "PROFILE_RECOVERY",
+        email: "alex@example.com",
+      }
+    })
+    const provider: EnquiryProvider = { send: async () => ({ ok: true, id: "email_confirmation" }) }
+    const result = await resendEmailConfirmation({
+      client: rpc,
+      provider,
+      fromEmail: "enquiries@reputedefend.com",
+      challengeId,
+      token,
+      csrfCookie: csrf,
+      csrf,
+    })
+    expect(result.status).toBe("sent")
+    expect(calls.map(call => call.name)).toEqual([
+      "resend_email_confirmation_challenge_v1",
+      "record_email_confirmation_delivery_v1",
+    ])
+    expect(calls[1]?.args.p_outcome).toBe("accepted")
+    expect(JSON.stringify(calls)).not.toContain(token)
+  })
+
+  it("does not read a challenge when the lane is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("VERCEL_ENV", "")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
+    const { calls, rpc } = client(() => ({ status: "pending", publicRef: "PR-26-7K4M2Q", maskedEmail: "a***@example.com" }))
+    const view = await readEmailConfirmation(rpc, challengeId)
+    expect(view.status).toBe("unavailable")
+    expect(calls).toEqual([])
   })
 })

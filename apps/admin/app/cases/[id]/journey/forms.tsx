@@ -1,9 +1,7 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { emailReadiness, screeningContradictsRecord, screeningFieldDefaults, type JourneyIntakeBrief } from "@/lib/case-journey/intake"
-import { isUuid } from "@/lib/records/model"
 
 function postDecision(key: string, body: unknown) {
   return fetch("/api/cases/journey", {
@@ -85,7 +83,7 @@ function EmailStatus({ brief }: { brief: JourneyIntakeBrief }) {
   </>
 }
 
-function ResendConfirmation({ caseId }: { caseId: string }) {
+function RecoveryConfirmation({ caseId, mode }: { caseId: string; mode: "send" | "resend" }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   async function send(event: FormEvent<HTMLFormElement>) {
@@ -106,29 +104,31 @@ function ResendConfirmation({ caseId }: { caseId: string }) {
       setBusy(false)
     }
   }
+  const sending = mode === "send"
   return <form onSubmit={send}>
-    <p>Resend confirmation is only for recovery. It does not verify the address.</p>
-    <button type="submit" disabled={busy}>Resend confirmation</button>
+    <p>{sending
+      ? "Send confirmation is only for recovery when the first receipt did not ask, or the provider did not accept that email. It does not verify the address."
+      : "Resend confirmation is only for recovery. It does not verify the address."}</p>
+    <button type="submit" disabled={busy}>{sending ? "Send confirmation" : "Resend confirmation"}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }
 
 function EmailFollowUp({ brief, workflow, caseId }: { brief: JourneyIntakeBrief; workflow: boolean; caseId?: string }) {
   const readiness = emailReadiness(brief)
-  const href = isUuid(brief.customerId) ? `/records/client/${brief.customerId}` : null
+  const recovery = readiness.recovery === "send" || readiness.recovery === "resend" ? readiness.recovery : null
+  const pendingLabel = readiness.confirmationPending || (readiness.provenance === "recovery" && readiness.label.startsWith("Email confirmation pending"))
   return <>
     <p>{readiness.detail}</p>
-    {workflow && readiness.confirmationPending && <div className="guided-warning" role="status">
+    {workflow && pendingLabel && <div className="guided-warning" role="status">
       <p><strong>{readiness.label}</strong></p>
-      <p>The confirmation was requested automatically in the case receipt. This page does not verify the address, and it does not record contact-verification evidence.</p>
-      {caseId && <ResendConfirmation caseId={caseId} />}
+      <p>{readiness.confirmationPending
+        ? "The provider accepted the confirmation in the case receipt. This page does not verify the address."
+        : "The provider accepted a separate recovery email. This page does not verify the address."}</p>
+      {caseId && recovery && <RecoveryConfirmation caseId={caseId} mode={recovery} />}
     </div>}
-    {workflow && readiness.outstanding && !readiness.confirmationPending && <div className="guided-warning" role="status">
-      <p><strong>Email verification is still outstanding.</strong></p>
-      <p>A later evidence email needs a verified address. This screening can still be recorded. This page does not verify the address, and it has no checkbox that would do so.</p>
-      {href
-        ? <p>On the customer record, open “Record a contact verification”. That action needs evidence of how the address was confirmed. <Link href={href}>Open the customer record</Link></p>
-        : <p>The customer record is not available, so that verification action cannot be opened from here.</p>}
+    {workflow && !pendingLabel && recovery && caseId && <div className="guided-warning" role="status">
+      <RecoveryConfirmation caseId={caseId} mode={recovery} />
     </div>}
     {workflow && readiness.state === "suppressed" && <div className="guided-warning" role="status">
       <p><strong>This verified address is suppressed.</strong></p>

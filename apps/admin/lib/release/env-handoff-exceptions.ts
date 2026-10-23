@@ -412,7 +412,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   {
     helper: "runtimeEnvironment",
     files: ["lib/cases/email-confirmation.ts"],
-    reason: "Selects development, preview or production from VERCEL_ENV before any confirmation link is minted.",
+    reason: "Selects the confirmation lane from VERCEL_ENV and NODE_ENV. A missing VERCEL_ENV is not development when NODE_ENV is production.",
   },
   {
     helper: "currentVersion",
@@ -427,7 +427,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   {
     helper: "confirmationOrigin",
     files: ["lib/cases/email-confirmation.ts"],
-    reason: "Builds the first-party confirmation origin from VERCEL_ENV and VERCEL_URL, and refuses production.",
+    reason: "Builds a preview origin from VERCEL_URL or a loopback origin for local development, and refuses a production host.",
   },
   {
     helper: "emailConfirmationAllowed",

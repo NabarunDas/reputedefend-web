@@ -10,8 +10,10 @@ import {
 import type { OutgoingMailProvider } from "../communications/mail"
 
 export const STAFF_RESEND_NOT_SENT = "Nothing was sent, and the address was not marked verified."
-export const STAFF_RESEND_SENT = "A new confirmation was requested. The address was not marked verified."
+export const STAFF_SEND_SENT = "The provider accepted a confirmation email. The address was not marked verified."
+export const STAFF_RESEND_SENT = "The provider accepted a separate recovery email. The address was not marked verified."
 export const STAFF_RESEND_VERIFIED = "This address is already verified. Nothing was sent."
+export const STAFF_RECORD_FAILED = "The provider accepted the email, but the confirmation record was not saved. The address was not marked verified."
 
 type Database = {
   rpc<T>(name: string, args: Record<string, unknown>): Promise<T>
@@ -37,14 +39,21 @@ export async function runStaffEmailResend(input: {
   const allow = environment === "preview" ? confirmationAllowlist() : null
   if (environment === "preview" && !allow) return { message: STAFF_RESEND_NOT_SENT, sent: false }
 
-  const status = await input.database.rpc<{ state?: string; nextGeneration?: number } | null>("admin_email_confirmation_status_v1", {
+  const status = await input.database.rpc<{
+    state?: string
+    recovery?: string
+    nextGeneration?: number
+  } | null>("admin_email_confirmation_status_v1", {
     p_token: input.tokenHash,
     p_case: input.caseId,
   })
   const generation = status?.nextGeneration
-  if (!status || status.state === "verified" || typeof generation !== "number" || generation < 1 || generation > 8) {
+  if (!status || status.state === "verified" || status.recovery === "unavailable" || typeof generation !== "number" || generation < 1 || generation > 8) {
     return { message: status?.state === "verified" ? STAFF_RESEND_VERIFIED : STAFF_RESEND_NOT_SENT, sent: false }
   }
+  const recovery = status.recovery === "send" || status.recovery === "resend"
+    ? status.recovery
+    : generation === 1 ? "send" : "resend"
 
   const challengeId = newEmailConfirmationChallengeId()
   const delivery = planChallengeDelivery(challengeId)
@@ -94,5 +103,11 @@ export async function runStaffEmailResend(input: {
     await input.database.rpc("abandon_email_confirmation_resend_v1", { p_new: challengeId, p_environment: environment })
     return { message: STAFF_RESEND_NOT_SENT, sent: false }
   }
-  return { message: STAFF_RESEND_SENT, sent: true }
+  const recorded = await input.database.rpc<{ status?: string } | null>("record_email_confirmation_delivery_v1", {
+    p_challenge: challengeId,
+    p_environment: environment,
+    p_outcome: "accepted",
+  })
+  if (recorded?.status !== "accepted") return { message: STAFF_RECORD_FAILED, sent: false }
+  return { message: recovery === "send" ? STAFF_SEND_SENT : STAFF_RESEND_SENT, sent: true }
 }

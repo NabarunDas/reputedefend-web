@@ -399,6 +399,10 @@ export type Database = {
         Args: { p_new: string; p_environment: string }
         Returns: Json
       }
+      record_email_confirmation_delivery_v1: {
+        Args: { p_challenge: string; p_environment: string; p_outcome: string }
+        Returns: Json
+      }
       create_monitoring_request_v1: {
         Args: {
           p_submission_key: string

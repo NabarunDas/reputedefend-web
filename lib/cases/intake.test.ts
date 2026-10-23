@@ -575,7 +575,7 @@ describe("persistGetHelpCase DEV mail gate", () => {
       COMMUNICATIONS_LINK_SECRET: "production-secret-must-not-mint-a-link",
     })
     const token = "cd".repeat(32)
-    const url = `https://profilerelaunch.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
+    const url = `https://reputedefend-web-git-develop.example.com/confirm-email/11111111-1111-4111-8111-111111111111#t=${token}`
     const send = vi.fn(async (message: EnquiryEmailMessage) => ({ ok: true as const, id: `email_${message.kind}` }))
     const updates: Array<Database["public"]["Tables"]["communications"]["Update"]> = []
     const result = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
@@ -596,6 +596,51 @@ describe("persistGetHelpCase DEV mail gate", () => {
     expect(internal?.html).not.toContain(token)
     expect(JSON.stringify(updates)).not.toContain(token)
     expect(JSON.stringify(updates)).not.toContain("confirm-email")
+  })
+
+  it("records provider acceptance and does not claim a confirmation that was not accepted", async () => {
+    stubPreview({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      SUPABASE_URL: DEV_URL,
+      VERCEL_URL: "reputedefend-web-git-develop.example.com",
+      COMMUNICATIONS_LINK_SECRET: "preview-secret-must-not-enter-the-ledger",
+      DEV_MAIL_ALLOWED_RECIPIENTS: "alex@example.com",
+    })
+    const token = "ef".repeat(32)
+    const challengeId = "22222222-2222-4222-8222-222222222222"
+    const url = `https://reputedefend-web-git-develop.example.com/confirm-email/${challengeId}#t=${token}`
+    const recorded: Array<{ challengeId: string; outcome: string }> = []
+    const refused = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      provider: mockProvider(async () => ({ ok: false, reason: "rejected" })),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+      resolveEmailConfirmation: async () => url,
+      recordEmailConfirmationDelivery: async (input) => { recorded.push(input) },
+    })
+    expect(refused.emailConfirmation).toBe("omitted")
+    expect(refused.receiptEmailStatus).not.toBe("sent")
+    expect(recorded).toEqual([{ challengeId, outcome: "rejected" }])
+    expect(JSON.stringify(recorded)).not.toContain(token)
+
+    recorded.length = 0
+    const productionUrl = `https://profilerelaunch.com/confirm-email/${challengeId}#t=${token}`
+    const wrongHost = await persistGetHelpCase(validCase, SUBMISSION_KEY, {
+      createIntake: mockCreateIntake(),
+      updateCommunication: async () => {},
+      provider: mockProvider(async (message) => {
+        expect(message.kind === "customer-ack" ? message.text : "").not.toContain("Confirm my email address")
+        return { ok: true, id: `email_${message.kind}` }
+      }),
+      emailConfig: readyConfig,
+      nodeEnv: "production",
+      resolveEmailConfirmation: async () => productionUrl,
+      recordEmailConfirmationDelivery: async (input) => { recorded.push(input) },
+    })
+    expect(wrongHost.emailConfirmation).toBe("omitted")
+    expect(recorded).toEqual([{ challengeId, outcome: "rejected" }])
   })
 
   it("does not send on another Preview branch or another Supabase project", async () => {

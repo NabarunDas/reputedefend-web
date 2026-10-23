@@ -190,6 +190,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/admin/lib/auth/config.ts",
       "apps/customer/lib/config.ts",
       "apps/customer/lib/portal/config.ts",
+      "lib/cases/email-confirmation.ts",
       "lib/cases/intake.ts",
       "lib/enquiries/intake.ts",
       "lib/enquiry-config.ts",

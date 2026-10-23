@@ -105,7 +105,7 @@ export function ConfirmEmailForm({ challengeId, canConfirm, canResend }: Props) 
           Resend confirmation
         </button>}
       </div>
-      {!token && <p className={styles.note}>Open the confirmation button in your email to continue. This page does not confirm an address on its own.</p>}
+      {(!token || !csrf) && <p className={styles.note}>Open the confirmation button in your email to continue. This page does not confirm an address on its own.</p>}
       {message && <p className={styles.note} role="status">{message}</p>}
     </form>
   )

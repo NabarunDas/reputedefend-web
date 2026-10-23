@@ -6,6 +6,7 @@ import { lifecycleLabel } from "@/lib/communications/model"
 import {
   alreadySaved,
   approvalNotice,
+  evidenceSendState,
   messageIsLive,
   openRequirements,
   requirementCoverage,
@@ -18,6 +19,7 @@ import {
 import { evidenceWording } from "@/lib/case-journey/wording-text"
 import { brandStoredEvidenceEmail } from "@/lib/communications/brand-email"
 import { trustedEmailSnapshot } from "@/lib/communications/snapshot"
+import { SendApprovedEvidenceEmail } from "./send-approved-email"
 
 const evidenceEndpoint = "/api/evidence/command"
 const communicationEndpoint = "/api/operations/communications"
@@ -38,7 +40,7 @@ export function DocumentRequestPanel({ caseId, documents, replyMailbox = null }:
     </dl>
     <h3>Original request</h3>
     <p className="preserve-lines">{documents.issue}</p>
-    <p>Saving evidence requirements does not contact the customer. You can review the email and send it separately when the contact checks are complete.</p>
+    <p>Choose the evidence you need, review the email and approve it. Then use <strong>Send approved email</strong> here to contact the customer. Saving or approving alone does not send anything.</p>
     {documents.history === "unavailable" && <p className="notice">The communication history could not be loaded. That is not the same as no email having been prepared.</p>}
     {documents.history === "incomplete" && <p className="notice">Older communications exist and are not shown, so a draft is not offered from this page.</p>}
     {documents.history === "ambiguous" && <p className="notice">The evidence-request messages disagree, so this page will not draft or review one.</p>}
@@ -49,7 +51,7 @@ export function DocumentRequestPanel({ caseId, documents, replyMailbox = null }:
     )}
     {draftBlocked && documents.drafting.draftReasons.map(reason => <p key={reason} className="notice">{reason}</p>)}
     {documents.cancelledMessage && !live && <p>The last draft was cancelled. It was not sent.</p>}
-    {live && documents.currentMessage && <EmailDraft key={`${documents.currentMessage.id}:${documents.currentMessage.version}`} documents={documents} replyMailbox={replyMailbox} />}
+    {live && documents.currentMessage && <EmailDraft key={`${documents.currentMessage.id}:${documents.currentMessage.version}`} caseId={caseId} documents={documents} replyMailbox={replyMailbox} />}
     {open.length === 0 && <RequirementChecklist caseId={caseId} documents={documents} />}
     {open.length > 0 && !live && historyReady && (
       <details className="guided-details">
@@ -113,7 +115,7 @@ function EmailPreview({
   </div>
 }
 
-function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; replyMailbox: string | null }) {
+function EmailDraft({ caseId, documents, replyMailbox }: { caseId: string; documents: JourneyDocuments; replyMailbox: string | null }) {
   const message = documents.currentMessage
   const parts = splitEvidenceMessage(message?.bodyText ?? null)
   const [editing, setEditing] = useState(false)
@@ -130,7 +132,8 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
   const failed = message.delivery === "Failed" || message.delivery === "Suppressed" || message.delivery.startsWith("Permanently") || message.delivery.startsWith("Temporarily") || message.delivery.startsWith("Bounce") || message.delivery === "Complained"
   const documentTitle = requirementCoverage(documents).included?.title ?? null
   const providerAccepted = message.delivery.startsWith("Accepted by email provider")
-  const approvedUnsent = reviewed && message.delivery !== "Delivered" && !providerAccepted
+  const approvedUnsent = reviewed && message.delivery === "Not sent"
+  const sendState = evidenceSendState(documents)
   const editingPreview = (message?.templateVersion ?? 0) >= 3 && parts.uploadUrl
     ? brandStoredEvidenceEmail({
       subject: nextSubject,
@@ -206,6 +209,15 @@ function EmailDraft({ documents, replyMailbox }: { documents: JourneyDocuments; 
     {message.contentLocked && <p>This approved wording is kept. A later change is a new draft.</p>}
     {draft && !documents.drafting.canReview && documents.drafting.reviewReason && <p className="notice">{documents.drafting.reviewReason}</p>}
     {draft && !notice.blocked && documents.drafting.canReview && !wordingHold && <ReviewDraft messageId={message.id} version={message.version} />}
+    {sendState && !editing && !command.done && !command.uncertain && <SendApprovedEvidenceEmail
+      caseId={caseId}
+      communicationId={message.id}
+      version={message.version}
+      recipient={message.recipient}
+      state={sendState}
+      devSendManually={documents.sendManuallyOnDev === true}
+    />}
+    {reviewed && documents.sendDisabledReason && <p className="notice">{documents.sendDisabledReason}</p>}
     {(draft || reviewed) && <ReplaceDraft messageId={message.id} version={message.version} />}
   </section>
 }
@@ -371,7 +383,7 @@ function ReviewDraft({ messageId, version }: { messageId: string; version: numbe
     <fieldset disabled={command.busy}>
       <button type="submit">Approve email</button>
     </fieldset>
-    <p>Approving keeps this exact wording. It does not send the email.</p>
+    <p>Approval saves the exact reviewed wording. Once approved, a <strong>Send approved email</strong> button appears here. Approval alone does not send anything.</p>
     <CommandStatus command={command} />
   </form>
 }

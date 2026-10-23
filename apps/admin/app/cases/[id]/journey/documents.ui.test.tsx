@@ -76,6 +76,8 @@ function documents(input: {
   issue?: string
   requests?: EvidenceRequest[]
   history?: CaseCommunicationRead | null
+  sendDisabledReason?: string
+  sendManuallyOnDev?: boolean
   drafting?: { customerOriginConfigured: boolean; uploadLinkConfigured: boolean; senderConfigured: boolean }
 } = {}): JourneyDocuments {
   const history = input.history === undefined
@@ -95,7 +97,8 @@ function documents(input: {
     businessName: "Mercer Bakery",
     requests: input.requests ?? [],
     history,
-    sendDisabledReason: sendDisabled,
+    sendDisabledReason: input.sendDisabledReason ?? sendDisabled,
+    sendManuallyOnDev: input.sendManuallyOnDev ?? false,
     drafting: input.drafting ?? { customerOriginConfigured: true, uploadLinkConfigured: true, senderConfigured: true },
   })
 }
@@ -266,7 +269,7 @@ describe("the step 3 document request", () => {
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
-    expect(screen.queryByText(sendDisabled)).toBeNull()
+    expect(screen.getByText(sendDisabled)).toBeInTheDocument()
 
     cleanup()
     render(<DocumentRequestPanel caseId={CASE_ID} documents={buildJourneyDocuments({
@@ -289,6 +292,107 @@ describe("the step 3 document request", () => {
     expect(screen.getByText(/email address is suppressed/i)).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Generate email draft" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Queue for sending" })).toBeNull()
+  })
+
+  it("shows Send approved email in Step 3 only after a verified and locked reviewed message", async () => {
+    const history: CaseCommunicationRead = {
+      status: "success",
+      complete: true,
+      total: 1,
+      returned: 1,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: false,
+      communications: [communication({
+        lifecycle: "REVIEWED",
+        contentLocked: true,
+        reviewedAt: "2026-02-03T00:00:00.000Z",
+      })],
+    }
+    const doc = documents({
+      requests: [request()],
+      history,
+      sendDisabledReason: "",
+      sendManuallyOnDev: true,
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, "Queued"))
+      .mockResolvedValueOnce(jsonResponse(200, "Submitted to email provider"))
+    vi.stubGlobal("fetch", fetchMock)
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={doc} />)
+    expect(screen.getByRole("heading", { name: "Approved — Not sent" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Send approved email" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Approve email" })).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Send approved email" }))
+    await screen.findByText(/The approved email has been processed/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+      operation: "queue", communicationId: MESSAGE_ID, version: 2,
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({
+      communicationId: MESSAGE_ID, confirmed: true,
+    })
+
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      history: { ...history, verifiedEmail: "different@example.com" },
+      sendDisabledReason: "", sendManuallyOnDev: true,
+    })} />)
+    expect(screen.queryByRole("button", { name: "Send approved email" })).toBeNull()
+
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      history: { ...history, verifiedEmailSuppressed: true },
+      sendDisabledReason: "", sendManuallyOnDev: true,
+    })} />)
+    expect(screen.queryByRole("button", { name: "Send approved email" })).toBeNull()
+
+    cleanup()
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={documents({
+      requests: [request()],
+      history: { ...history, communications: [communication({ lifecycle: "DRAFT", contentLocked: false })] },
+      sendDisabledReason: "", sendManuallyOnDev: true,
+    })} />)
+    expect(screen.queryByRole("button", { name: "Send approved email" })).toBeNull()
+  })
+
+  it("offers controlled queued-email processing without duplicate sends after a DEV reauthentication interruption", () => {
+    const history: CaseCommunicationRead = {
+      status: "success",
+      complete: true,
+      total: 1,
+      returned: 1,
+      verifiedEmail: "alex@example.com",
+      verifiedEmailSuppressed: false,
+      communications: [communication({
+        lifecycle: "QUEUED", contentLocked: true, deliveryStatus: "NONE",
+        queuedAt: "2026-02-03T00:00:00.000Z", firstProviderAttemptAt: null,
+      })],
+    }
+    const make = (communications: CaseCommunicationRead["communications"]) => documents({
+      requests: [request()],
+      history: { ...history, communications },
+      sendDisabledReason: "",
+      sendManuallyOnDev: true,
+    })
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={make(history.communications)} />)
+    expect(screen.queryByRole("button", { name: "Send approved email" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Send queued email" })).toBeEnabled()
+    cleanup()
+
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={make([communication({
+      lifecycle: "QUEUED", contentLocked: true, deliveryStatus: "NONE",
+      firstProviderAttemptAt: "2026-02-03T00:00:00.000Z",
+    })])} />)
+    expect(screen.queryByRole("button", { name: "Send queued email" })).toBeNull()
+    cleanup()
+
+    render(<DocumentRequestPanel caseId={CASE_ID} documents={make([communication({
+      lifecycle: "QUEUED", contentLocked: true, deliveryStatus: "PROVIDER_ACCEPTED",
+    })])} />)
+    expect(screen.queryByRole("button", { name: /Send.*email/ })).toBeNull()
   })
 
   it("explains when the preview cannot draft or review and still lets a requirement be saved", async () => {

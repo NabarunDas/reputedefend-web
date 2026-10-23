@@ -52,7 +52,7 @@ function rpcFor(row: Record<string, unknown>, calls: string[] = []) {
       calls.push(name)
       if (name === "communication_load_send_v1") return row as T
       if (name === "communication_begin_provider_attempt_v1") {
-        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: "2026-10-22T12:00:00.000Z" } as T
+        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: new Date().toISOString() } as T
       }
       return { status: "success" } as T
     },

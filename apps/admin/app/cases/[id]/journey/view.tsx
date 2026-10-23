@@ -54,7 +54,7 @@ const stateClass: Record<JourneyStepState, string> = {
 const previewNote: Record<JourneyStepId, string> = {
   CASE_RECEIVED: "Read the enquiry, then record whether it is reviewed or incomplete.",
   VERIFICATION: "Check the business and listing, then record the screening outcome.",
-  REQUEST_DOCUMENTS: "Choose the documents, save one request, then edit and approve the email. Approving does not send it.",
+  REQUEST_DOCUMENTS: "Choose the documents, save a request, review the email, then approve and send it here. Approval alone does not send.",
   EVIDENCE_REVIEW: "Review each uploaded file. A clean scan is not approval, and accepting a file does not fulfil its request.",
   ASSESSMENT: "Record the findings and the recommended pathway, then review and approve them. Saving the form does not complete this step.",
   QUOTE_ACCEPTANCE: "Prepare and offer the quote with the existing commercial commands. Only an accepted quote on a complete list finishes this step.",

@@ -81,7 +81,7 @@ describe("case receipt email confirmation", () => {
   })
 
   it("builds one plain-text and one mobile confirmation button", () => {
-    const url = `https://profilerelaunch.com/confirm-email/${caseId}#t=${"ab".repeat(32)}`
+    const url = `https://reputedefend-web-git-develop.example.com/confirm-email/${caseId}#t=${"ab".repeat(32)}`
     const content = emailConfirmationResendContent({
       publicRef: "PR-26-7K4M2Q",
       caseType: "PROFILE_RECOVERY",
@@ -98,5 +98,36 @@ describe("case receipt email confirmation", () => {
     expect(usableConfirmationUrl(url)).toBe(url)
     expect(usableConfirmationUrl(url.replace("https://", "http://"))).toBeNull()
     expect(usableConfirmationUrl(url.replace("#t=", "?t="))).toBeNull()
+    expect(usableConfirmationUrl(`https://profilerelaunch.com/confirm-email/${caseId}#t=${"ab".repeat(32)}`)).toBeNull()
+    expect(usableConfirmationUrl(`https://customer.profilerelaunch.com/confirm-email/${caseId}#t=${"ab".repeat(32)}`)).toBeNull()
+  })
+
+  it("refuses a missing production lane and will not point a local link at Production", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("VERCEL_ENV", "")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
+    vi.stubEnv("VERCEL_URL", "profilerelaunch.com")
+    expect(confirmationRuntime()).toBeNull()
+    expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
+
+    vi.stubEnv("NODE_ENV", "development")
+    vi.stubEnv("VERCEL_ENV", "")
+    vi.stubEnv("VERCEL_URL", "profilerelaunch.com")
+    expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
+    expect(planInitialEmailConfirmation(caseId, "alex@example.com")?.deliveryUrl ?? "").not.toContain("profilerelaunch.com")
+
+    vi.stubEnv("VERCEL_URL", "127.0.0.1:3000")
+    const local = planInitialEmailConfirmation(caseId, "alex@example.com")
+    expect(local?.origin).toBe("http://127.0.0.1:3000")
+    expect(local?.deliveryUrl.startsWith(`http://127.0.0.1:3000/confirm-email/`)).toBe(true)
+    expect(local?.deliveryUrl).not.toContain("profilerelaunch.com")
+
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("SUPABASE_URL", devHost)
+    vi.stubEnv("VERCEL_URL", "profilerelaunch.com")
+    expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
+    vi.stubEnv("VERCEL_URL", "")
+    expect(planInitialEmailConfirmation(caseId, "alex@example.com")).toBeNull()
   })
 })

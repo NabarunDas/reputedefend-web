@@ -835,6 +835,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "email confirmation", probe: "public.confirm_email_challenge_v1" },
   },
+  {
+    // AUTO-EMAIL-VERIFY delivery provenance. Records whether the provider
+    // accepted each confirmation email. Not applied to DEV or Production.
+    version: "20261023103000",
+    filename: "20261023103000_email_confirmation_delivery_v1.sql",
+    step: "AUTO-EMAIL-VERIFY confirmation delivery provenance",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "email confirmation delivery", probe: "public.record_email_confirmation_delivery_v1" },
+  },
 ]
 
 /**

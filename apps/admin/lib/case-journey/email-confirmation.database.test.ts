@@ -217,17 +217,36 @@ describe("email confirmation challenges", () => {
     const created = await createCase()
     const first = await prepare(created.id)
     expect(first.result.status).toBe("ready")
-    const notSent = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
-    expect(notSent.state).toBe("none") // a prepared challenge is not a sent email
+    const preparedOnly = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
+    expect(preparedOnly).toMatchObject({
+      state: "none",
+      provenance: "none",
+      recovery: "send",
+      label: "Not verified",
+      nextGeneration: 2,
+    })
+    expect(preparedOnly.label).not.toContain("requested automatically")
     await db.query(
       `insert into public.communications
         (case_id, communication_type, channel, direction, recipient, status)
         values ($1, 'CASE_RECEIVED_CUSTOMER', 'EMAIL', 'OUTBOUND', 'alex@example.com', 'SENT')`,
       [created.id],
     )
+    const sentOnly = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
+    expect(sentOnly).toMatchObject({
+      state: "none",
+      provenance: "none",
+      recovery: "send",
+      label: "Not verified",
+    })
+    expect(sentOnly.label).not.toContain("requested automatically")
+    const accepted = await rpc("record_email_confirmation_delivery_v1", [first.link.challengeId, "development", "accepted"])
+    expect(accepted.status).toBe("accepted")
     const pending = await rpc("admin_email_confirmation_status_v1", [adminToken, created.id])
     expect(pending).toMatchObject({
       state: "pending",
+      provenance: "initial_receipt",
+      recovery: "resend",
       label: "Email confirmation pending — requested automatically in your case receipt",
       nextGeneration: 2,
     })
@@ -253,6 +272,67 @@ describe("email confirmation challenges", () => {
     expect(anon).toBe(false)
     expect(authenticated).toBe(false)
     expect(service).toBe(true)
+    const recorder = (await db.query<{ ok: boolean }>(
+      "select has_function_privilege('anon', 'public.record_email_confirmation_delivery_v1(uuid, text, text)', 'execute') as ok",
+    )).rows[0].ok
+    expect(recorder).toBe(false)
+  })
+
+  it("offers recovery for a case with no accepted email, an expired link, or a separate recovery email", async () => {
+    await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
+    const untouched = await createCase()
+    const none = await rpc("admin_email_confirmation_status_v1", [adminToken, untouched.id])
+    expect(none).toMatchObject({
+      state: "none",
+      provenance: "none",
+      recovery: "send",
+      label: "Not verified",
+      nextGeneration: 1,
+    })
+    expect(none.label).not.toContain("requested automatically")
+
+    const expiredCase = await createCase()
+    const expiredLink = await prepare(expiredCase.id)
+    expect((await rpc("record_email_confirmation_delivery_v1", [expiredLink.link.challengeId, "development", "accepted"])).status).toBe("accepted")
+    await db.query(
+      "update public.email_confirmation_challenges set created_at = clock_timestamp() - interval '4 days', expires_at = clock_timestamp() - interval '1 hour' where id = $1",
+      [expiredLink.link.challengeId],
+    )
+    const expired = await rpc("admin_email_confirmation_status_v1", [adminToken, expiredCase.id])
+    expect(expired).toMatchObject({
+      state: "none",
+      provenance: "initial_receipt",
+      recovery: "resend",
+      label: "Not verified",
+    })
+    expect(expired.label).not.toContain("requested automatically")
+
+    const rejectedCase = await createCase()
+    const rejectedLink = await prepare(rejectedCase.id)
+    expect((await rpc("record_email_confirmation_delivery_v1", [rejectedLink.link.challengeId, "development", "rejected"])).status).toBe("rejected")
+    const rejected = await rpc("admin_email_confirmation_status_v1", [adminToken, rejectedCase.id])
+    expect(rejected).toMatchObject({ state: "none", provenance: "none", recovery: "send", label: "Not verified" })
+
+    const recoveryCase = await createCase()
+    const initial = await prepare(recoveryCase.id)
+    expect((await rpc("record_email_confirmation_delivery_v1", [initial.link.challengeId, "development", "accepted"])).status).toBe("accepted")
+    const next = material(recoveryCase.id, 2)
+    const prepared = await rpc("admin_prepare_email_confirmation_resend_v1", [
+      adminToken, recoveryCase.id, next.challengeId, next.hash, "development", 1, 2,
+    ])
+    expect(prepared.status).toBe("ready")
+    const beforeAcceptance = await rpc("admin_email_confirmation_status_v1", [adminToken, recoveryCase.id])
+    expect(beforeAcceptance).toMatchObject({ state: "none", provenance: "initial_receipt", recovery: "resend", label: "Not verified" })
+    expect((await rpc("record_email_confirmation_delivery_v1", [next.challengeId, "development", "accepted"])).status).toBe("accepted")
+    const recovery = await rpc("admin_email_confirmation_status_v1", [adminToken, recoveryCase.id])
+    expect(recovery).toMatchObject({
+      state: "pending",
+      provenance: "recovery",
+      recovery: "resend",
+      label: "Email confirmation pending — requested in a separate recovery email",
+    })
+    expect(recovery.label).not.toContain("requested automatically in your case receipt")
+    expect(await count("select count(*)::int as n from public.customer_contact_verifications where customer_id = $1", [customer])).toBe(0)
   })
 
   it("supersedes an open challenge when the customer email changes and does not verify the new address", async () => {

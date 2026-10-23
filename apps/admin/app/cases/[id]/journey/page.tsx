@@ -113,7 +113,10 @@ export default async function CaseJourneyPage({
     ...brief,
     customerId: detail.customerId,
     emailSuppressed: communications ? communications.verifiedEmailSuppressed : null,
-    emailConfirmationPending: confirmationStatus?.state === "pending",
+    emailConfirmationPending: confirmationStatus?.state === "pending" && confirmationStatus.provenance === "initial_receipt",
+    emailConfirmationState: confirmationStatus?.state,
+    emailConfirmationProvenance: confirmationStatus?.provenance,
+    emailConfirmationRecovery: confirmationStatus?.recovery,
   }
   const documents = documentsOpen
     ? buildJourneyDocuments({

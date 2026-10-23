@@ -51,6 +51,16 @@ vi.mock("@/lib/commerce/queries", () => ({
 vi.mock("@/lib/payments/queries", () => ({ loadMoney: (...args: unknown[]) => loadMoney(...args) }))
 vi.mock("@/lib/authorization/queries", () => ({ getCaseAuthorization: (...args: unknown[]) => getCaseAuthorization(...args) }))
 vi.mock("@/lib/packs/queries", () => ({ getPreparedPackCase: (...args: unknown[]) => getPreparedPackCase(...args) }))
+const loadEmailConfirmationStatus = vi.fn(async (..._args: unknown[]) => null as {
+  state: "pending" | "verified" | "none"
+  provenance: "initial_receipt" | "recovery" | "none"
+  recovery: "send" | "resend" | "unavailable"
+  label: string
+  nextGeneration: number
+} | null)
+vi.mock("@/lib/case-journey/email-confirmation-status", () => ({
+  loadEmailConfirmationStatus: (...args: unknown[]) => loadEmailConfirmationStatus(...args),
+}))
 
 import CaseJourneyPage, { metadata } from "./page"
 
@@ -105,6 +115,7 @@ function facts(): CaseFlowFacts {
 afterEach(() => {
   cleanup()
   vi.unstubAllEnvs()
+  loadEmailConfirmationStatus.mockResolvedValue(null)
 })
 
 function records() {
@@ -674,10 +685,82 @@ describe("the case journey route", () => {
     }))
     expect(screen.getByText(/alex@example.com — Not verified/)).toBeInTheDocument()
     expect(screen.getAllByText(/do not agree/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Email verification is still outstanding/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Open the customer record" })).toHaveAttribute("href", `/records/client/${CUSTOMER_ID}`)
+    expect(screen.queryByText(/Email verification is still outstanding/)).toBeNull()
+    expect(screen.queryByText(/Record a contact verification/)).toBeNull()
+    expect(screen.queryByRole("link", { name: "Open the customer record" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send confirmation" })).toBeNull()
     expect(screen.getByRole("button", { name: "Record the screening decision" })).toBeInTheDocument()
     expect(screen.queryByRole("checkbox", { name: /email/i })).toBeNull()
+  })
+
+  it("offers send or resend for an unverified address and does not ask staff to verify it", async () => {
+    allowPreview()
+    records()
+    getCase.mockResolvedValue(caseDetail())
+    loadCaseFlowFacts.mockResolvedValue(facts())
+    loadEmailConfirmationStatus.mockResolvedValue({
+      state: "none",
+      provenance: "none",
+      recovery: "send",
+      label: "Not verified",
+      nextGeneration: 1,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("button", { name: "Send confirmation" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Resend confirmation" })).toBeNull()
+    expect(screen.queryByText(/requested automatically in your case receipt/)).toBeNull()
+    expect(screen.queryByText(/Record a contact verification/)).toBeNull()
+
+    cleanup()
+    loadEmailConfirmationStatus.mockResolvedValue({
+      state: "pending",
+      provenance: "initial_receipt",
+      recovery: "resend",
+      label: "Email confirmation pending — requested automatically in your case receipt",
+      nextGeneration: 2,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getAllByText(/requested automatically in your case receipt/).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Resend confirmation" })).toBeInTheDocument()
+    expect(screen.queryByText(/Record a contact verification/)).toBeNull()
+
+    cleanup()
+    loadEmailConfirmationStatus.mockResolvedValue({
+      state: "pending",
+      provenance: "recovery",
+      recovery: "resend",
+      label: "Email confirmation pending — requested in a separate recovery email",
+      nextGeneration: 3,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getAllByText(/separate recovery email/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/requested automatically in your case receipt/)).toBeNull()
+    expect(screen.getByRole("button", { name: "Resend confirmation" })).toBeInTheDocument()
+
+    cleanup()
+    loadEmailConfirmationStatus.mockResolvedValue({
+      state: "none",
+      provenance: "initial_receipt",
+      recovery: "resend",
+      label: "Not verified",
+      nextGeneration: 2,
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "VERIFICATION" }),
+    }))
+    expect(screen.getByRole("button", { name: "Resend confirmation" })).toBeInTheDocument()
+    expect(screen.queryByText(/requested automatically in your case receipt/)).toBeNull()
+    expect(screen.queryByText(/Record a contact verification/)).toBeNull()
   })
 
   it("keeps closure closed until the earlier steps are recorded", async () => {

@@ -19,8 +19,11 @@ import {
   type CaseType,
 } from "@/lib/cases/domain"
 import {
+  confirmationChallengeId,
+  confirmationRuntime,
   emailConfirmationStatus,
   planInitialEmailConfirmation,
+  usableConfirmationUrl,
 } from "@/lib/cases/email-confirmation"
 import {
   buildCaseReceivedCustomerMessage,
@@ -79,6 +82,14 @@ export type PersistGetHelpCaseOptions = {
    * link cannot be made. The returned URL is for the outbound message only.
    */
   resolveEmailConfirmation?: (input: { caseId: string; email: string }) => Promise<string | null>
+  /**
+   * Records whether the provider accepted the confirmation email.
+   * The challenge id is not a bearer. Absent uses the normal database record.
+   */
+  recordEmailConfirmationDelivery?: (input: {
+    challengeId: string
+    outcome: "accepted" | "rejected"
+  }) => Promise<void>
 }
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
@@ -412,13 +423,43 @@ async function deliverPersistedIntake(
     internalOutcome = "failed"
   }
 
+  const confirmationIncluded = usableConfirmationUrl(confirmationUrl) !== null
+  const confirmationAccepted = confirmationIncluded && customerOutcome === "sent"
+  const challengeId = confirmationChallengeId(confirmationUrl)
+  if (challengeId && (customerOutcome === "sent" || customerOutcome === "failed")) {
+    await recordConfirmationDelivery(options, client, challengeId, confirmationAccepted ? "accepted" : "rejected")
+  }
+
   return report({
     ...success,
     // Creating a challenge does not mean an email has gone out.
-    // Only the provider-accepted customer receipt can be presented as sent.
-    emailConfirmation: confirmationUrl && customerOutcome === "sent" ? "pending" : "omitted",
+    // Only a usable link in a provider-accepted customer receipt is presented as sent.
+    emailConfirmation: confirmationAccepted ? "pending" : "omitted",
     ...customerReceipt(customerOutcome === "sent" || intake.customer_communication_status === "SENT"),
   }, customerOutcome, internalOutcome)
+}
+
+async function recordConfirmationDelivery(
+  options: PersistGetHelpCaseOptions,
+  client: SupabaseServerClient | null,
+  challengeId: string,
+  outcome: "accepted" | "rejected",
+) {
+  if (options.recordEmailConfirmationDelivery) {
+    await options.recordEmailConfirmationDelivery({ challengeId, outcome })
+    return
+  }
+  const environment = confirmationRuntime()
+  if (!client || !environment) return
+  try {
+    await client.rpc("record_email_confirmation_delivery_v1", {
+      p_challenge: challengeId,
+      p_environment: environment,
+      p_outcome: outcome,
+    })
+  } catch {
+    console.error("[case-intake] email confirmation delivery was not recorded")
+  }
 }
 
 const CASE_ID_PATTERN = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i

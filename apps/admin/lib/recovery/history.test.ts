@@ -29,7 +29,9 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual([
+      "20261023103000_email_confirmation_delivery_v1.sql",
+    ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261023000158",
       name: "email_confirmation_challenge_v1",

@@ -32,8 +32,12 @@ export type JourneyIntakeBrief = {
   emailControl: "verified" | "not_recorded" | "records_disagree"
   /** Null when the communications read was not loaded. False is a loaded, clear result. */
   emailSuppressed: boolean | null
-  /** An unconsumed case-receipt challenge exists. Delivery is not verification. */
+  /** True only when the provider accepted the initial case-receipt confirmation. */
   emailConfirmationPending?: boolean
+  /** Provider-accepted delivery, when the confirmation read succeeded. */
+  emailConfirmationState?: "pending" | "verified" | "none"
+  emailConfirmationProvenance?: "initial_receipt" | "recovery" | "none"
+  emailConfirmationRecovery?: "send" | "resend" | "unavailable"
   businessName: string
   website: string | null
   locationName: string | null
@@ -171,15 +175,21 @@ export type EmailReadiness = {
   detail: string
   /** Verification is still missing. Suppression is reported separately. */
   outstanding: boolean
-  /** The case receipt asked the customer to confirm. That request is not evidence. */
+  /** The provider accepted the initial case-receipt confirmation. That request is not evidence. */
   confirmationPending: boolean
+  /** Exceptional recovery. None means this page does not offer a send. */
+  recovery: "send" | "resend" | "none"
+  provenance: "initial_receipt" | "recovery" | "none"
 }
 
 /**
  * Verification comes only from the customer record and the case projection agreeing.
  * Format, delivery, opening a message, or a checkbox on this workflow is not evidence.
  */
-export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailControl" | "emailSuppressed" | "emailConfirmationPending" | "snapshot">): EmailReadiness {
+const RECEIPT_PENDING_LABEL = "Email confirmation pending — requested automatically in your case receipt"
+const RECOVERY_PENDING_LABEL = "Email confirmation pending — requested in a separate recovery email"
+
+export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailControl" | "emailSuppressed" | "emailConfirmationPending" | "emailConfirmationState" | "emailConfirmationProvenance" | "emailConfirmationRecovery" | "snapshot">): EmailReadiness {
   const customerEmail = blank(brief.email)
   const submittedEmail = blank(brief.snapshot?.email) || customerEmail
   const sameAddress = !submittedEmail || !customerEmail || same(submittedEmail, customerEmail)
@@ -192,6 +202,8 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "There is no customer email to verify. The enquiry can still be reviewed.",
       outstanding: true,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
   if (brief.emailControl === "records_disagree") {
@@ -202,6 +214,8 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "The customer record and the case record do not agree, so this address is not shown as verified. A delivered or opened message does not resolve that.",
       outstanding: true,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
   if (brief.emailControl === "verified" && !sameAddress) {
@@ -212,6 +226,8 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "The customer record has a verification for a different address. The submitted address is not verified.",
       outstanding: true,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
   if (brief.emailControl === "verified" && brief.emailSuppressed === true) {
@@ -222,6 +238,8 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "This address is verified, and sending to it is suppressed. A draft is not created. This page does not remove the suppression.",
       outstanding: false,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
   if (brief.emailControl === "verified" && brief.emailSuppressed == null) {
@@ -232,6 +250,8 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "The customer record and the case record both show this address as verified. Whether sending is suppressed could not be loaded.",
       outstanding: false,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
   if (brief.emailControl === "verified") {
@@ -242,20 +262,90 @@ export function emailReadiness(brief: Pick<JourneyIntakeBrief, "email" | "emailC
       detail: "The customer record and the case record both show this address as verified.",
       outstanding: false,
       confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
     }
   }
-  const pending = brief.emailConfirmationPending === true
+  if (brief.emailSuppressed === true) {
+    return {
+      ...base,
+      state: "not_recorded",
+      label: "Not verified",
+      detail: "Sending to this address is suppressed. This page does not verify the address, and it does not clear a suppression.",
+      outstanding: true,
+      confirmationPending: false,
+      recovery: "none",
+      provenance: "none",
+    }
+  }
+  const presented = presentConfirmation(brief)
   return {
     ...base,
     state: "not_recorded",
-    label: pending
-      ? "Email confirmation pending — requested automatically in your case receipt"
-      : "Not verified",
-    detail: pending
-      ? "A correct email format, a delivered message, or an opened message does not verify this address. The confirmation was requested in the case receipt. This page does not verify the address."
-      : "A correct email format, a delivered message, or an opened message does not verify this address. The enquiry can still be reviewed.",
+    label: presented.label,
+    detail: presented.detail,
     outstanding: true,
-    confirmationPending: pending,
+    confirmationPending: presented.confirmationPending,
+    recovery: presented.recovery,
+    provenance: presented.provenance,
+  }
+}
+
+function presentConfirmation(brief: Pick<JourneyIntakeBrief, "emailConfirmationPending" | "emailConfirmationState" | "emailConfirmationProvenance" | "emailConfirmationRecovery">): Pick<EmailReadiness, "label" | "detail" | "confirmationPending" | "recovery" | "provenance"> {
+  const state = brief.emailConfirmationState
+  const provenance = brief.emailConfirmationProvenance
+  const recovery = brief.emailConfirmationRecovery
+  if (state === "pending" && provenance === "initial_receipt" && recovery !== "unavailable") {
+    return {
+      label: RECEIPT_PENDING_LABEL,
+      detail: "A correct email format, a delivered message, or an opened message does not verify this address. The provider accepted the confirmation in the case receipt. This page does not verify the address.",
+      confirmationPending: true,
+      recovery: "resend",
+      provenance: "initial_receipt",
+    }
+  }
+  if (state === "pending" && provenance === "recovery" && recovery !== "unavailable") {
+    return {
+      label: RECOVERY_PENDING_LABEL,
+      detail: "A correct email format, a delivered message, or an opened message does not verify this address. The provider accepted a separate recovery email. That email was not the first case receipt. This page does not verify the address.",
+      confirmationPending: false,
+      recovery: "resend",
+      provenance: "recovery",
+    }
+  }
+  if (brief.emailConfirmationPending === true && state == null && provenance == null) {
+    return {
+      label: RECEIPT_PENDING_LABEL,
+      detail: "A correct email format, a delivered message, or an opened message does not verify this address. The confirmation was requested in the case receipt. This page does not verify the address.",
+      confirmationPending: true,
+      recovery: "resend",
+      provenance: "initial_receipt",
+    }
+  }
+  if (recovery === "resend") {
+    return {
+      label: "Not verified",
+      detail: "The earlier confirmation link is no longer active. The address is not verified. Resending does not verify the address.",
+      confirmationPending: false,
+      recovery: "resend",
+      provenance: provenance === "initial_receipt" || provenance === "recovery" ? provenance : "none",
+    }
+  }
+  if (recovery === "send") {
+    return {
+      label: "Not verified",
+      detail: "Confirmation has not been accepted by the email provider. The first case receipt is the normal request. This recovery send does not verify the address.",
+      confirmationPending: false,
+      recovery: "send",
+      provenance: "none",
+    }
+  }
+  return {
+    label: "Not verified",
+    detail: "A correct email format, a delivered message, or an opened message does not verify this address. The enquiry can still be reviewed. This page does not verify the address.",
+    confirmationPending: false,
+    recovery: "none",
+    provenance: "none",
   }
 }
 
@@ -274,6 +364,9 @@ export function buildJourneyIntake(input: {
   customerId?: string | null
   emailSuppressed?: boolean | null
   emailConfirmationPending?: boolean
+  emailConfirmationState?: JourneyIntakeBrief["emailConfirmationState"]
+  emailConfirmationProvenance?: JourneyIntakeBrief["emailConfirmationProvenance"]
+  emailConfirmationRecovery?: JourneyIntakeBrief["emailConfirmationRecovery"]
 }): JourneyIntakeBrief {
   const recordEmail = input.customer.emailVerified === true
   const emailControl = recordEmail === input.projectedEmailVerified
@@ -308,6 +401,9 @@ export function buildJourneyIntake(input: {
     emailControl,
     emailSuppressed: input.emailSuppressed === true ? true : input.emailSuppressed === false ? false : null,
     emailConfirmationPending: input.emailConfirmationPending === true,
+    emailConfirmationState: input.emailConfirmationState,
+    emailConfirmationProvenance: input.emailConfirmationProvenance,
+    emailConfirmationRecovery: input.emailConfirmationRecovery,
     businessName: input.business.name ?? "",
     website: input.business.website ?? null,
     locationName: input.location.name ?? null,

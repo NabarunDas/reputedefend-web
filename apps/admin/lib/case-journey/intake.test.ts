@@ -104,6 +104,39 @@ describe("journey intake brief", () => {
       confirmationPending: true,
     })
     expect(emailReadiness({ ...brief, emailControl: "verified", emailSuppressed: false, emailConfirmationPending: true }).label).toBe("Verified")
+    expect(emailReadiness({
+      ...brief,
+      emailConfirmationState: "none",
+      emailConfirmationProvenance: "none",
+      emailConfirmationRecovery: "send",
+    })).toMatchObject({ label: "Not verified", confirmationPending: false, recovery: "send" })
+    expect(emailReadiness({
+      ...brief,
+      emailConfirmationState: "none",
+      emailConfirmationProvenance: "initial_receipt",
+      emailConfirmationRecovery: "resend",
+    })).toMatchObject({ label: "Not verified", confirmationPending: false, recovery: "resend" })
+    expect(emailReadiness({
+      ...brief,
+      emailConfirmationState: "pending",
+      emailConfirmationProvenance: "recovery",
+      emailConfirmationRecovery: "resend",
+    })).toMatchObject({
+      label: "Email confirmation pending — requested in a separate recovery email",
+      confirmationPending: false,
+      recovery: "resend",
+    })
+    expect(emailReadiness({
+      ...brief,
+      emailConfirmationState: "pending",
+      emailConfirmationProvenance: "initial_receipt",
+      emailConfirmationRecovery: "resend",
+    }).label).toBe("Email confirmation pending — requested automatically in your case receipt")
+    expect(emailReadiness({
+      ...brief,
+      emailControl: "records_disagree",
+      emailConfirmationRecovery: "send",
+    }).recovery).toBe("none")
     expect(emailReadiness({ ...brief, email: "", snapshot: null })).toMatchObject({ label: "No email", outstanding: true })
     expect(emailReadiness({
       ...brief,

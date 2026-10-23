@@ -65,6 +65,9 @@ export function confirmationCustomerMessage(status: string): string {
   if (status === "sent") {
     return "We have asked our email service to send a new confirmation to the same address. Your assessment is already saved."
   }
+  if (status === "unrecorded") {
+    return "The email service accepted the message, but it could not be recorded. Your assessment is already saved."
+  }
   if (status === "withheld" || status === "suppressed") {
     return "A new confirmation email was not sent. Your assessment is already saved. You do not need to submit it again."
   }
@@ -174,6 +177,14 @@ export async function resendEmailConfirmation(input: {
       publicRef,
       maskedEmail,
     }
+  }
+  const recorded = await input.client.rpc("record_email_confirmation_delivery_v1", {
+    p_challenge: nextId,
+    p_environment: environment,
+    p_outcome: "accepted",
+  })
+  if (recorded.error || emailConfirmationStatus(recorded.data) !== "accepted") {
+    return { status: "unrecorded", publicRef, maskedEmail }
   }
   return { status: "sent", publicRef, maskedEmail }
 }

@@ -12,7 +12,6 @@ const TOKEN_CONTEXT = "email-confirmation"
 const CHALLENGE_NAMESPACE = "9c1e0a11-c0ff-5ee1-8a11-000000000280"
 const CHALLENGE_NAME = "email-confirmation-challenge"
 const DEV_DATABASE_HOST = "rmzozuiamjcclvtgutgd.supabase.co"
-const PUBLIC_SITE_ORIGIN = "https://profilerelaunch.com"
 const HEX = "0123456789abcdef"
 
 export const EMAIL_CONFIRM_BUTTON = "Confirm my email address"
@@ -22,6 +21,8 @@ export const EMAIL_CONFIRM_BODY =
 export const EMAIL_CONFIRM_SAVED = "Your assessment is already saved. You don't need to submit it again."
 export const EMAIL_CONFIRM_PENDING_LABEL =
   "Email confirmation pending — requested automatically in your case receipt"
+export const EMAIL_CONFIRM_RECOVERY_LABEL =
+  "Email confirmation pending — requested in a separate recovery email"
 export const EMAIL_CONFIRM_SUCCESS =
   "Your assessment is safely recorded. Please check your email and confirm your address so we can contact you securely."
 
@@ -126,7 +127,9 @@ function devDatabase(url: string | undefined): boolean {
 
 export function confirmationRuntime(env: RuntimeEnv = process.env): ConfirmationEnvironment | null {
   const value = runtimeEnvironment(env)
-  return value === "development" || value === "preview" ? value : null
+  if (value === "development") return "development"
+  if (value === "preview" && env.VERCEL_GIT_COMMIT_REF === "develop" && devDatabase(env.SUPABASE_URL)) return "preview"
+  return null
 }
 
 export function confirmationAllowlist(env: RuntimeEnv = process.env): string | null {
@@ -136,10 +139,29 @@ export function confirmationAllowlist(env: RuntimeEnv = process.env): string | n
 }
 
 function runtimeEnvironment(env: RuntimeEnv): ConfirmationEnvironment | "production" | null {
-  if (env.VERCEL_ENV === "production") return "production"
-  if (env.VERCEL_ENV === "preview") return "preview"
-  if (env.VERCEL_ENV == null || env.VERCEL_ENV === "" || env.VERCEL_ENV === "development") return "development"
+  const vercel = env.VERCEL_ENV
+  const node = env.NODE_ENV
+  if (vercel === "production") return "production"
+  if (vercel === "preview") return "preview"
+  if (vercel === "development") return node === "production" ? null : "development"
+  if (vercel == null || vercel === "") {
+    if (node === "development" || node === "test") return "development"
+    return null
+  }
   return null
+}
+
+function productionConfirmationHost(host: string): boolean {
+  const name = host.toLowerCase().split(":")[0] ?? ""
+  return name === "profilerelaunch.com" || name.endsWith(".profilerelaunch.com")
+}
+
+function loopbackHost(host: string): boolean {
+  const match = /^(localhost|127\.0\.0\.1)(?::([0-9]{1,5}))?$/.exec(host.toLowerCase())
+  if (!match) return false
+  if (!match[2]) return true
+  const port = Number(match[2])
+  return port >= 1 && port <= 65535
 }
 
 function safeHost(host: string): boolean {
@@ -151,13 +173,19 @@ function safeHost(host: string): boolean {
 }
 
 function confirmationOrigin(env: RuntimeEnv): string | null {
-  if (env.VERCEL_ENV === "production") return null
-  if (env.VERCEL_ENV === "preview") {
+  const lane = runtimeEnvironment(env)
+  if (lane === "preview") {
+    if (env.VERCEL_GIT_COMMIT_REF !== "develop" || !devDatabase(env.SUPABASE_URL)) return null
     const host = env.VERCEL_URL ?? ""
-    if (!safeHost(host)) return null
+    if (!safeHost(host) || productionConfirmationHost(host)) return null
     return `https://${host}`
   }
-  return PUBLIC_SITE_ORIGIN
+  if (lane === "development") {
+    const host = env.VERCEL_URL ?? ""
+    if (!loopbackHost(host)) return null
+    return `http://${host}`
+  }
+  return null
 }
 
 /** Preview on the DEV database accepts only the one exact mailbox. Production never does. */
@@ -244,15 +272,35 @@ export function usableConfirmationUrl(value: string | null | undefined): string 
   if (!value) return null
   const url = value.trim()
   if (url !== value || url.length < 20 || url.length > 2000) return null
-  if (!url.startsWith("https://")) return null
   if (url.includes(" ") || url.includes("\n") || url.includes("\r") || url.includes('"') || url.includes("<")) return null
-  const hash = url.indexOf("#t=")
-  if (hash < 0) return null
-  const token = url.slice(hash + 3)
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost"
+  if (parsed.protocol === "https:") {
+    if (productionConfirmationHost(parsed.hostname)) return null
+  } else if (!(parsed.protocol === "http:" && loopback)) {
+    return null
+  }
+  if (parsed.username || parsed.password || parsed.search) return null
+  if (!parsed.pathname.includes("/confirm-email/")) return null
+  const token = parsed.hash.startsWith("#t=") ? parsed.hash.slice(3) : ""
   if (!hex64(token)) return null
-  const path = url.slice(0, hash)
-  if (!path.includes("/confirm-email/")) return null
   return url
+}
+
+export function confirmationChallengeId(value: string | null | undefined): string | null {
+  if (!value) return null
+  const hash = value.indexOf("#")
+  const path = hash >= 0 ? value.slice(0, hash) : value
+  const marker = "/confirm-email/"
+  const at = path.lastIndexOf(marker)
+  if (at < 0) return null
+  const id = path.slice(at + marker.length).replace(/\/$/, "")
+  return isUuid(id) ? id : null
 }
 
 export function confirmationCsrfToken(): string {

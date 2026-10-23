@@ -90,16 +90,6 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     reason: "Selects the develop DEV preview so the disabled-mail message can name that lane. It reads the same identity values as the send gate.",
   },
   {
-    helper: "devQuoteAllowlistedRecipient",
-    files: ["apps/admin/lib/communications/dev-lane.ts"],
-    reason: "The one exact DEV mailbox is read from the same injected lane as the send gate. A list, a suffix, a substring or a wildcard is not a mailbox.",
-  },
-  {
-    helper: "devQuoteRecipientAllowed",
-    files: ["apps/admin/lib/communications/handler.ts"],
-    reason: "A quotation send on the develop DEV lane may go only to the one mailbox named by DEV_MAIL_ALLOWED_RECIPIENTS. The check has to see the same injected lane as the send gate.",
-  },
-  {
     helper: "devEvidenceUploadOriginAllowed",
     files: ["apps/admin/lib/communications/handler.ts"],
     reason: "An evidence-request send on the develop DEV lane must keep the DEV customer portal origin already stored in the approved snapshot.",

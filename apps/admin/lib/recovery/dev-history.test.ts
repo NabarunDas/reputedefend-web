@@ -94,8 +94,8 @@ function normalized(sql: string): string {
 
 describe("DEV-HISTORY-01 recovered statements", () => {
   it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261022234500"])
-    expect(manifestVersions().at(-1)).toBe("20261022234500")
+    expect(pendingMigrations().map(entry => entry.version)).toEqual([])
+    expect(manifestVersions().at(-1)).toBe("20261023000158")
     expect(manifestVersions().at(-2)).toBe("20261022172455")
     expect(manifestVersions().at(-3)).toBe("20261022124813")
     expect(manifestVersions().at(-4)).toBe("20261021214813")

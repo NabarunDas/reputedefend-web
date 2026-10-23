@@ -367,7 +367,7 @@ function emailOutcome(ok: boolean, deliveryStatus: string | undefined): string {
 
 type HeldQuotationEmail = {
   id: string
-  kind: "process" | "attention" | "submitted" | "delivered"
+  kind: "process" | "attention" | "queued" | "submitted" | "delivered"
   message: string
 }
 
@@ -394,6 +394,16 @@ function holdQueuedEmail(status: number, result: {
     return { id: result.id, kind: "process", message: kept }
   }
   return { id: result.id, kind: "attention", message }
+}
+
+/** A confirmed queue result replaces Send. An unconfirmed request can still be retried. */
+function advanceQuotationEmail(result: { deliveryStatus?: unknown; message?: unknown }): HeldQuotationEmail {
+  const message = typeof result.message === "string" && result.message
+    ? result.message
+    : "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered."
+  if (result.deliveryStatus === "DELIVERED") return { id: "", kind: "delivered", message }
+  if (result.deliveryStatus === "PROVIDER_ACCEPTED") return { id: "", kind: "submitted", message }
+  return { id: "", kind: "queued", message }
 }
 
 export function ProcessPendingQuotationEmail({ communicationId }: { communicationId: string }) {
@@ -474,6 +484,7 @@ export function SendQuotationForm({
   const [introduction, setIntroduction] = useState("")
   const [held, setHeld] = useState<HeldQuotationEmail | null>(null)
   const commandKey = useRef<string | null>(null)
+  const locked = useRef(false)
   const preview = renderQuotationOffer({
     publicRef,
     caseRef: caseReference,
@@ -491,12 +502,13 @@ export function SendQuotationForm({
   const previewHtml = preview ? previewHtmlDocument(preview.html) : ""
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (busy) return
+    if (busy || locked.current || held) return
     if (!preview) {
       setMessage("Check the subject and introduction. The quotation wording itself stays on the server.")
       return
     }
     commandKey.current ||= crypto.randomUUID()
+    locked.current = true
     setBusy(true)
     setMessage("")
     try {
@@ -511,6 +523,13 @@ export function SendQuotationForm({
         }),
       })
       const result = await response.json() as { message?: string; deliveryStatus?: string; id?: string; lifecycle?: string }
+      if (response.ok) {
+        const advanced = advanceQuotationEmail(result)
+        setHeld(advanced)
+        setMessage(advanced.message)
+        router.refresh()
+        return
+      }
       const recovered = holdQueuedEmail(response.status, result)
       if (recovered) {
         setHeld(recovered)
@@ -518,10 +537,12 @@ export function SendQuotationForm({
         router.refresh()
         return
       }
+      locked.current = false
       const outcome = emailOutcome(response.ok, result.deliveryStatus)
       setMessage(`${outcome}. ${result.message || "The quotation email could not be confirmed."}`)
-      if (!response.ok) commandKey.current = null
+      commandKey.current = null
     } catch {
+      locked.current = false
       setMessage("We couldn’t save that. Reload the page and try again.")
       commandKey.current = null
     } finally {
@@ -547,8 +568,12 @@ export function SendQuotationForm({
       <p>Only the subject and introduction can be edited.</p>
     </> : <p><button type="button" onClick={() => setEditing(true)}>Edit</button></p>}
     {held?.kind === "process" && <ProcessPendingQuotationEmail communicationId={held.id} />}
+    {held?.kind === "queued" && <p><strong>Quotation email queued</strong> Queued is not sent, and it is not delivered.</p>}
     {held?.kind === "submitted" && <p><strong>Quotation submitted to email provider</strong></p>}
-    {held?.kind === "delivered" && <p><strong>Quotation delivered</strong></p>}
+    {held?.kind === "delivered" && <>
+      <p><strong>Quotation delivered</strong></p>
+      <p><strong>Waiting for Customer Acceptance</strong></p>
+    </>}
     {held?.kind === "attention" && <p><strong>Email needs attention</strong> The quotation email was not sent again.</p>}
     {!held && <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : submitLabel}</button>}
     {message && <p role="status">{message}</p>}

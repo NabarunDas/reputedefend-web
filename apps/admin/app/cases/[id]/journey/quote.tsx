@@ -180,7 +180,8 @@ export function QuotePanel({
       />}
       {next === "renew" && <>
         <p><strong>This quotation expires too soon for a replacement acceptance link.</strong></p>
-        <p>Review the quotation validity and renew the expiry before sending a replacement email. No link was revoked and no email was sent.</p>
+        <p>An offered quotation cannot be given a longer expiry in place. Cancel it, then return to this step and create a new draft with a longer expiry. The new draft uses the current approved price and still has to pass the existing agreement and offer checks. Cancelling does not accept the quotation, does not take payment, and does not create the replacement by itself.</p>
+        {quote && <QuoteActionForm operation="cancel" quoteId={quote.quoteId} version={quote.version} label="Cancel this quotation" />}
       </>}
       {next === "accepted" && <p><strong>Quotation accepted — Continue to Step 7</strong> <a href={`/cases/${caseId}/journey?step=SERVICE_ACTIVATION`}>Continue to Step 7</a></p>}
       {next === "replace" && panel.priceChoice && <CaseQuoteForm
@@ -291,6 +292,7 @@ function nextAction(panel: JourneyQuotePanel, readiness: QuoteReadiness, email: 
     if (email.phase === "submitted") return "submitted"
     if (email.phase === "delivered") return "delivered"
     if (panel.quote?.actionId) return "manual"
+    if (panel.commands.issueAcceptance && panel.quote && !quoteActionExpiryWindow(panel.quote.validUntil).ready) return "renew"
     if (panel.commands.issueAcceptance) return "email"
     return "blocked"
   }

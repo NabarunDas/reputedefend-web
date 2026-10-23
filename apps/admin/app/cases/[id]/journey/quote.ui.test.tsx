@@ -463,17 +463,77 @@ describe("guided quote acceptance", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
     expect(screen.getByRole("textbox", { name: "Subject" })).toBeTruthy()
     expect(screen.getByRole("textbox", { name: "Introduction" })).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Send Quotation Email" })).toHaveLength(1)
     fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
-    expect(await screen.findByRole("status")).toHaveTextContent(/Queued\./)
+    expect(await screen.findByText("Quotation email queued")).toBeTruthy()
     expect(screen.getByRole("status")).toHaveTextContent(/queued is not delivered/)
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(payload.operation).toBe("queue_quote_offer_email")
     expect(payload.quoteId).toBe(QUOTE_ID)
     expect(JSON.stringify(payload)).not.toContain("#t=")
     expect(payload).not.toHaveProperty("secretHash")
     expect(payload).not.toHaveProperty("recipient")
-    expect(navigation.refresh).not.toHaveBeenCalled()
+    expect(navigation.refresh).toHaveBeenCalledTimes(1)
     expect(screen.getByRole("status").textContent).not.toMatch(/Delivered/)
+    fireEvent.submit(document.querySelector("[data-quotation-email='preview']")!)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("advances a submitted quotation email without leaving Send active", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        message: "The quotation email was submitted to the email provider. Accepted by the provider is not delivered.",
+        lifecycle: "QUEUED",
+        deliveryStatus: "PROVIDER_ACCEPTED",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    show(source, quoteItem("OFFERED", "NOT_APPLICABLE"))
+    expect(screen.getAllByRole("button", { name: "Send Quotation Email" })).toHaveLength(1)
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByText("Quotation submitted to email provider")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+    expect(navigation.refresh).toHaveBeenCalledTimes(1)
+    fireEvent.submit(document.querySelector("[data-quotation-email='preview']")!)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("retries an unconfirmed quotation email and does not reuse a failed request as a second queue", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          message: "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered.",
+          lifecycle: "QUEUED",
+          deliveryStatus: "NONE",
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    show(source, quoteItem("OFFERED", "NOT_APPLICABLE"))
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByText(/Reload the page and try again/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Send Quotation Email" })).toBeTruthy()
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByText("Quotation email queued")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].headers["idempotency-key"]).not.toBe(fetchMock.mock.calls[1][1].headers["idempotency-key"])
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).operation).toBe("queue_quote_offer_email")
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).operation).toBe("queue_quote_offer_email")
   })
 
   it("hides the purchaser form when the establishment is already verified", () => {
@@ -776,7 +836,13 @@ describe("guided quote acceptance", () => {
     expect(posted.quoteId).toBe(QUOTE_ID)
   })
 
-  it("asks to renew a quotation that cannot hold a replacement acceptance link", () => {
+  it("cancels a quotation that cannot hold a replacement acceptance link instead of sending it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ message: "The quote record has been updated. This does not take payment." }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
     const soon = new Date(Date.now() + 10 * 60 * 1000).toISOString()
     const source = facts({
       authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
@@ -786,11 +852,37 @@ describe("guided quote acceptance", () => {
     quote.currentVersion.validUntil = soon
     quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
     show(source, quote, verifiedGb, emailView(ACTION_ID, []))
-    expect(screen.getByText("This quotation expires too soon for a replacement acceptance link.")).toBeTruthy()
-    expect(screen.getByText("Review the quotation validity and renew the expiry before sending a replacement email. No link was revoked and no email was sent.")).toBeTruthy()
+    const primary = document.querySelector("[data-primary-action='renew']")
+    expect(primary?.textContent).toContain("This quotation expires too soon for a replacement acceptance link.")
+    expect(primary?.textContent).toContain("Cancel it, then return to this step and create a new draft with a longer expiry.")
+    expect(screen.getByRole("button", { name: "Cancel this quotation" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue manual replacement link" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.submit(screen.getByRole("button", { name: "Cancel this quotation" }).closest("form")!)
+    expect(await screen.findByRole("status")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      operation: "cancel",
+      quoteId: QUOTE_ID,
+      version: 2,
+    })
+  })
+
+  it("does not offer Send when an offered quotation has less than sixteen minutes of validity", () => {
+    const soon = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", validUntil: soon })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.currentVersion.validUntil = soon
+    show(source, quote)
+    expect(screen.getByRole("button", { name: "Cancel this quotation" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
   })
 
   it("keeps the replacement email closed until the customer email and business authority are verified", () => {

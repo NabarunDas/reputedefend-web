@@ -1,5 +1,7 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
+import { isUuid } from "@/lib/records/model"
 import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
 import { customerPriceBoundary, customerPriceLine } from "../../../../lib/pricing"
 import { ScopeExclusionsFields } from "./scope-fields"
@@ -363,6 +365,87 @@ function emailOutcome(ok: boolean, deliveryStatus: string | undefined): string {
   return "Queued"
 }
 
+type HeldQuotationEmail = {
+  id: string
+  kind: "process" | "attention" | "submitted" | "delivered"
+  message: string
+}
+
+/** A queued row is kept. Another queue is not how that row is processed. */
+function holdQueuedEmail(status: number, result: {
+  id?: unknown
+  lifecycle?: unknown
+  deliveryStatus?: unknown
+  message?: unknown
+}): HeldQuotationEmail | null {
+  if (status < 400 || !isUuid(result.id)) return null
+  const message = typeof result.message === "string" && result.message
+    ? result.message
+    : "The quotation email is queued. It was not created again."
+  if (result.deliveryStatus === "DELIVERED") return { id: result.id, kind: "delivered", message }
+  if (result.deliveryStatus === "PROVIDER_ACCEPTED") return { id: result.id, kind: "submitted", message }
+  if (result.deliveryStatus === "ACCEPTANCE_UNKNOWN" || /unknown/i.test(message)) {
+    return { id: result.id, kind: "attention", message }
+  }
+  if (result.lifecycle === "QUEUED" && (result.deliveryStatus === "NONE" || result.deliveryStatus == null) && (status === 403 || status === 503)) {
+    const kept = /already open/i.test(message)
+      ? "A quotation email is already queued. It was not created again. Process that pending email from this step. Queued is not delivered."
+      : message
+    return { id: result.id, kind: "process", message: kept }
+  }
+  return { id: result.id, kind: "attention", message }
+}
+
+export function ProcessPendingQuotationEmail({ communicationId }: { communicationId: string }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState("")
+  const [done, setDone] = useState<"idle" | "attention" | "submitted">("idle")
+  const commandKey = useRef<string | null>(null)
+  async function submit() {
+    if (busy || done !== "idle") return
+    commandKey.current ||= crypto.randomUUID()
+    setBusy(true)
+    try {
+      const response = await fetch("/api/operations/dev-send-email", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": commandKey.current },
+        body: JSON.stringify({ communicationId, confirmed: true }),
+      })
+      const result = await response.json() as { message?: string }
+      const text = result.message || "The queued quotation email could not be confirmed."
+      if (response.status === 403 && /sign in/i.test(text)) {
+        setMessage(`${text} Return to this step after signing in. The queued quotation email is already saved.`)
+        return
+      }
+      if (!response.ok) {
+        setDone("attention")
+        setMessage(/unknown/i.test(text)
+          ? "Provider acceptance is unknown. The email was not sent again."
+          : text)
+        return
+      }
+      setDone("submitted")
+      setMessage("Accepted by the provider is not delivered.")
+    } catch {
+      setDone("attention")
+      setMessage("The queued quotation email could not be confirmed. It was not created again.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (done === "submitted") {
+    return <p role="status"><strong>Quotation submitted to email provider</strong> {message}</p>
+  }
+  if (done === "attention") {
+    return <p role="status"><strong>Email needs attention</strong> {message}</p>
+  }
+  return <div data-quotation-email="pending">
+    <p>This processes the quotation email that is already queued. It does not create another email or another acceptance link.</p>
+    <button type="button" onClick={submit} disabled={busy}>{busy ? "Processing…" : "Process Pending Quotation Email"}</button>
+    {message && <p role="status">{message}</p>}
+  </div>
+}
+
 export function SendQuotationForm({
   quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, scope, exclusions, validUntil,
 }: {
@@ -377,11 +460,13 @@ export function SendQuotationForm({
   exclusions: string
   validUntil: string
 }) {
+  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [editing, setEditing] = useState(false)
   const [subject, setSubject] = useState("")
   const [introduction, setIntroduction] = useState("")
+  const [held, setHeld] = useState<HeldQuotationEmail | null>(null)
   const commandKey = useRef<string | null>(null)
   const preview = renderQuotationOffer({
     publicRef,
@@ -419,7 +504,14 @@ export function SendQuotationForm({
           introduction: editing && introduction.trim() ? introduction.trim() : undefined,
         }),
       })
-      const result = await response.json() as { message?: string; deliveryStatus?: string }
+      const result = await response.json() as { message?: string; deliveryStatus?: string; id?: string; lifecycle?: string }
+      const recovered = holdQueuedEmail(response.status, result)
+      if (recovered) {
+        setHeld(recovered)
+        setMessage(recovered.message)
+        router.refresh()
+        return
+      }
       const outcome = emailOutcome(response.ok, result.deliveryStatus)
       setMessage(`${outcome}. ${result.message || "The quotation email could not be confirmed."}`)
       if (!response.ok) commandKey.current = null
@@ -448,14 +540,18 @@ export function SendQuotationForm({
       </label>
       <p>Only the subject and introduction can be edited.</p>
     </> : <p><button type="button" onClick={() => setEditing(true)}>Edit</button></p>}
-    <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : "Send Quotation Email"}</button>
+    {held?.kind === "process" && <ProcessPendingQuotationEmail communicationId={held.id} />}
+    {held?.kind === "submitted" && <p><strong>Quotation submitted to email provider</strong></p>}
+    {held?.kind === "delivered" && <p><strong>Quotation delivered</strong></p>}
+    {held?.kind === "attention" && <p><strong>Email needs attention</strong> The quotation email was not sent again.</p>}
+    {!held && <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : "Send Quotation Email"}</button>}
     {message && <p role="status">{message}</p>}
   </form>
 }
 
 export function OfferQuoteActionForm({
-  quoteId, expiresAt, quoteValidUntil,
-}: { quoteId: string; expiresAt?: string; quoteValidUntil?: string }) {
+  quoteId, expiresAt, quoteValidUntil, submitLabel = "Issue customer acceptance link",
+}: { quoteId: string; expiresAt?: string; quoteValidUntil?: string; submitLabel?: string }) {
   const { busy, message, actionUrl, run, setMessage } = useCommand()
   const window = quoteActionExpiryWindow(quoteValidUntil)
   const original = expiresAt ? Date.parse(expiresAt) : NaN
@@ -487,7 +583,7 @@ export function OfferQuoteActionForm({
     </label>
     <p className="muted">The link must expire before the quotation expires, and within seven days. The suggested time is one day from now.</p>
     {!window.ready && <p role="alert">This quote expires too soon to issue a secure acceptance link. Review the quotation validity first.</p>}
-    <button type="submit" disabled={busy || !window.ready}>{busy ? "Creating…" : "Issue customer acceptance link"}</button>
+    <button type="submit" disabled={busy || !window.ready}>{busy ? "Creating…" : submitLabel}</button>
     {message && <p role="status">{message}</p>}
     {actionUrl && <p role="status">This is a one-time customer link. Copy it now. It cannot be shown again. {LOST_QUOTE_LINK_NOTE}<label>Customer link<input readOnly value={actionUrl} /></label></p>}
   </form>

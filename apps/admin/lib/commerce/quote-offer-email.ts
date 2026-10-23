@@ -73,6 +73,8 @@ type QueueResult = {
   status?: string
   reason?: string
   id?: string
+  communicationId?: string
+  actionId?: string
   lifecycle?: string
   deliveryStatus?: string
 }
@@ -115,7 +117,7 @@ async function submitDevelopmentQuotation(input: {
     return reply(stillQueued, 409, queued)
   }
   if (claimed.status === "reauth_required") {
-    return reply("The quotation email is queued. Sign out and sign in again, then send it from this step within 30 minutes. Queued is not delivered.", 403, queued)
+    return reply("The quotation email is queued. Sign out and sign in again, then return to this step and process the pending quotation email within 30 minutes. The queued email was kept. Queued is not delivered.", 403, queued)
   }
   if (claimed.status !== "success" || !claimed.leaseToken) {
     return reply(stillQueued, claimed.status === "conflict" ? 409 : 503, queued)
@@ -214,6 +216,13 @@ export async function queueQuoteOfferEmail(input: {
   }
   if (result?.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
   if (result?.status === "conflict") return reply("This quotation has changed. Reload it before continuing.", 409)
+  if (result?.reason === "open_action") {
+    const existing: Record<string, unknown> = {}
+    if (result.communicationId) existing.id = result.communicationId
+    if (result.lifecycle) existing.lifecycle = result.lifecycle
+    if (result.deliveryStatus) existing.deliveryStatus = result.deliveryStatus
+    return reply(reasons.open_action.message, reasons.open_action.status, existing)
+  }
   const known = result?.reason ? reasons[result.reason] : undefined
   if (known) return reply(known.message, known.status)
   if (result?.status === "denied") return reply("That quotation email cannot be queued.", 403)

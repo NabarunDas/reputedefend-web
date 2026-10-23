@@ -12,6 +12,8 @@ import { standardScopeExclusions } from "../../../../../../lib/commercial/scope-
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import type { QuoteReadiness } from "@/lib/case-journey/quote-readiness"
+import { projectQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-email"
+import type { CaseCommunicationRead, CaseCommunicationRow } from "@/lib/communications/model"
 import { QuotePanel } from "./quote"
 import { CaseJourneyView } from "./view"
 
@@ -32,6 +34,9 @@ const LOCATION_ID = "33333333-3333-4333-8333-333333333333"
 const QUOTE_ID = "44444444-4444-4444-8444-444444444444"
 const VERSION_ID = "66666666-6666-4666-8666-666666666666"
 const PRICE_ID = "77777777-7777-4777-8777-777777777777"
+const ACTION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+const COMMUNICATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+const PAST = "2026-10-01T12:00:00.000Z"
 
 const brief = {
   message: "The listing was suspended.",
@@ -198,7 +203,58 @@ const missingPurchaser: QuoteReadiness = {
   taxPath: "unavailable",
 }
 
-function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: QuoteReadiness = verifiedGb) {
+function communication(overrides: Partial<CaseCommunicationRow> = {}): CaseCommunicationRow {
+  return {
+    id: COMMUNICATION_ID,
+    caseId: CASE_ID,
+    caseReference: "PR-1",
+    evidenceRequestId: null,
+    communicationType: "QUOTE_OFFER",
+    templateKey: "QUOTE_OFFER",
+    templateVersion: 1,
+    lifecycle: "QUEUED",
+    deliveryStatus: "NONE",
+    legacyStatus: null,
+    recipient: "alex@example.com",
+    subject: "Your ProfileRelaunch quotation Q-100",
+    bodyText: `https://customer.example/action/${ACTION_ID}`,
+    bodyHtml: `<a href="https://customer.example/action/${ACTION_ID}">Review and accept quotation</a>`,
+    provider: null,
+    providerMessageId: null,
+    lastError: null,
+    contentLocked: true,
+    contentVersion: 1,
+    version: 1,
+    draftedAt: NOW,
+    reviewedAt: NOW,
+    queuedAt: NOW,
+    firstProviderAttemptAt: null,
+    providerAcceptedAt: null,
+    deliveredAt: null,
+    failedAt: null,
+    cancelledAt: null,
+    supersededBy: null,
+    events: [],
+    eventsTruncated: false,
+    canReplace: false,
+    ...overrides,
+  }
+}
+
+function emailView(actionId: string | null, rows: CaseCommunicationRow[], devSend = true): QuoteEmailView {
+  const history: CaseCommunicationRead = {
+    status: "success",
+    complete: true,
+    total: rows.length,
+    returned: rows.length,
+    verifiedEmail: "alex@example.com",
+    verifiedEmailSuppressed: false,
+    communications: rows,
+  }
+  return projectQuoteEmail(history, actionId, { devSend })
+}
+
+function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: QuoteReadiness = verifiedGb, email?: QuoteEmailView) {
   const journey = presentCaseJourney(source, NOW, [], {
     assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
   })
@@ -225,6 +281,7 @@ function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: Quo
     documents={null}
     quote={journey.steps.find(step => step.id === "QUOTE_ACCEPTANCE")?.state === "LOCKED" ? null : panel}
     quoteReadiness={readiness}
+    quoteEmail={email}
   />)
 }
 
@@ -508,6 +565,7 @@ describe("guided quote acceptance", () => {
     expect(screen.getAllByText("Tax treatment needs review").length).toBeGreaterThan(0)
     expect(screen.queryByText("VAT: Not charged")).toBeNull()
     expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
     fireEvent.click(screen.getByText("Review tax treatment"))
     fireEvent.change(screen.getByLabelText("Tax treatment"), { target: { value: "INCLUSIVE" } })
     fireEvent.submit(screen.getByRole("button", { name: "Save reviewed tax treatment" }).closest("form")!)
@@ -537,5 +595,192 @@ describe("guided quote acceptance", () => {
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "COMPLETED")
     expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).not.toHaveAttribute("data-state", "LOCKED")
     expect(screen.queryByRole("button", { name: /Pay|Stripe/i })).toBeNull()
+  })
+
+  it("offers an approved non-GB quotation by email instead of returning to tax review", () => {
+    const france: QuoteReadiness = {
+      status: "verified",
+      countryCode: "FR",
+      countryLabel: "France",
+      legalName: "Bakery SARL",
+      sellerVat: "NOT_VAT_REGISTERED",
+      taxPath: "review",
+    }
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    show(source, quoteItem("OFFERED", "NOT_APPLICABLE"), france, emailView(null, []))
+    expect(screen.getByRole("button", { name: "Send Quotation Email" })).toBeTruthy()
+    expect(screen.queryByText("Tax treatment needs review")).toBeNull()
+    expect(screen.getByText("Tax treatment recorded")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+  })
+
+  it("does not call a queued quotation email sent or delivered", () => {
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: FUTURE })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, [communication()], false))
+    expect(screen.getByText("Quotation email queued")).toBeTruthy()
+    expect(screen.getByText("The queued quotation email stays on this step. It is not created again from here.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Process Pending Quotation Email" })).toBeNull()
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+    expect(screen.queryByText("Quotation delivered")).toBeNull()
+    expect(screen.queryByText("Quotation submitted to email provider")).toBeNull()
+  })
+
+  it("recovers a failed quotation email instead of creating another", () => {
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: FUTURE })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, [communication({ deliveryStatus: "FAILED", failedAt: NOW })]))
+    expect(screen.getByText("Email needs attention")).toBeTruthy()
+    expect(screen.getByText("This quotation email was not confirmed. It was not sent again.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Process Pending Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue Replacement" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
+  })
+
+  it("keeps the queued communication when recent login fails and processes that same email", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          id: COMMUNICATION_ID,
+          lifecycle: "QUEUED",
+          deliveryStatus: "NONE",
+          message: "The quotation email is queued. Sign out and sign in again, then return to this step and process the pending quotation email within 30 minutes. The queued email was kept. Queued is not delivered.",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ message: "Sign out and sign in with a new email code, then try again within 30 minutes." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: "The queued email was submitted to the email provider." }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    show(source, quoteItem("OFFERED", "NOT_APPLICABLE"))
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByText(/return to this step and process the pending quotation email/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Process Pending Quotation Email" }))
+    expect(await screen.findByText(/Return to this step after signing in/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Process Pending Quotation Email" }))
+    expect(await screen.findByText("Quotation submitted to email provider")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).operation).toBe("queue_quote_offer_email")
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/operations/dev-send-email")
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/operations/dev-send-email")
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ communicationId: COMMUNICATION_ID, confirmed: true })
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ communicationId: COMMUNICATION_ID, confirmed: true })
+    expect(fetchMock.mock.calls[1][1].headers["idempotency-key"]).toBe(fetchMock.mock.calls[2][1].headers["idempotency-key"])
+    expect(fetchMock.mock.calls.map(call => JSON.parse(call[1].body).operation).filter(Boolean)).toEqual(["queue_quote_offer_email"])
+  })
+
+  it("does not send the provider again when acceptance is unknown", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        id: COMMUNICATION_ID,
+        lifecycle: "QUEUED",
+        deliveryStatus: "ACCEPTANCE_UNKNOWN",
+        message: "Provider acceptance is unknown. The email was not sent again.",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    show(source, quoteItem("OFFERED", "NOT_APPLICABLE"))
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByText("Email needs attention")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Process Pending Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
+  })
+
+  it("does not claim a manual acceptance link was emailed", () => {
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: FUTURE })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, []))
+    expect(screen.getByText("The acceptance link exists, but the quotation has not been emailed.")).toBeTruthy()
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+    expect(screen.queryByText("Quotation delivered")).toBeNull()
+    expect(screen.queryByText("Quotation email queued")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
+  })
+
+  it("shows a replacement for an expired acceptance link and does not issue it while rendering", () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: PAST })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, []))
+    expect(screen.getByText("Customer acceptance link expired — Issue Replacement")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Issue Replacement" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("does not issue a second link while a valid acceptance link is open", () => {
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE", actionStatus: "OPEN", actionExpiresAt: FUTURE })] },
+    })
+    const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
+    quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: FUTURE, kind: "QUOTE_ACCEPTANCE" }
+    show(source, quote, verifiedGb, emailView(ACTION_ID, [communication({
+      deliveryStatus: "DELIVERED",
+      deliveredAt: NOW,
+      lifecycle: "QUEUED",
+    })]))
+    expect(screen.getByText("Quotation delivered")).toBeTruthy()
+    expect(screen.getByText("Waiting for Customer Acceptance")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Issue Replacement" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+  })
+
+  it("keeps purchaser verification as the only primary action", () => {
+    show(facts(), null, missingPurchaser)
+    const primary = document.querySelector("[data-primary-action='verify']")
+    expect(primary?.textContent).toContain("Record the purchasing establishment")
+    expect(primary?.textContent).not.toContain("Create Draft Quotation")
+    expect(document.querySelector("[data-secondary='draft']")).not.toHaveAttribute("open")
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
   })
 })

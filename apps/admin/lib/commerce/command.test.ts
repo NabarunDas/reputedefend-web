@@ -258,13 +258,93 @@ describe("commercial admin commands", () => {
       }),
     }))
     expect(dev.status).toBe(403)
-    expect(await dev.json()).toMatchObject({ message: expect.stringMatching(/Queued is not delivered/) })
+    const devBody = await dev.json() as { message?: string; id?: string; lifecycle?: string; deliveryStatus?: string }
+    expect(devBody).toMatchObject({
+      id: quoteId,
+      lifecycle: "QUEUED",
+      deliveryStatus: "NONE",
+    })
+    expect(devBody.message).toMatch(/return to this step and process the pending quotation email/)
+    expect(devBody.message).toMatch(/Queued is not delivered/)
     const payload = mocks.rpc.mock.calls.find(call => call[0] === "admin_queue_quote_offer_email_v1")?.[1].p_payload
     expect(payload.devAllowlistedRecipient).toBeUndefined()
     expect(payload.recipient).toBeUndefined()
     expect(payload.devLane).toBe(true)
     expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_dev_send_email_claim_v1")).toBe(true)
     expect(mocks.rpc.mock.calls.some(call => call[0] === "communication_load_send_v1")).toBe(false)
+  })
+
+  it("returns the existing quotation email when a second queue is refused", async () => {
+    const communicationId = "66666666-6666-4666-8666-666666666666"
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "quotation-link-secret-for-tests-32b")
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_quote_detail_v1") {
+        return {
+          status: "OFFERED",
+          publicRef: "QT-26-ABCDEF",
+          caseReference: "PR-26-CASE01",
+          currentVersion: {
+            status: "OFFERED",
+            serviceName: "Guided Relaunch",
+            totalAmountMinor: 9900,
+            currency: "GBP",
+            paymentModel: "UPFRONT",
+            scope: "Recover the suspended profile for this location.",
+            exclusions: "Google decisions stay outside this quotation.",
+            validUntil: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+          },
+        }
+      }
+      return {
+        status: "denied",
+        reason: "open_action",
+        communicationId,
+        lifecycle: "QUEUED",
+        deliveryStatus: "NONE",
+      }
+    })
+    const denied = await quoteCommand(req("/api/operations/quotes", { operation: "queue_quote_offer_email", quoteId }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ id: communicationId, lifecycle: "QUEUED", deliveryStatus: "NONE" })
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_dev_send_email_claim_v1")).toBe(false)
+  })
+
+  it("does not call the provider again when acceptance is already unknown", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("CUSTOMER_ORIGIN", "https://profilerelaunch-customer-git-develop-clientcove.vercel.app")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "quotation-link-secret-for-tests-32b")
+    const devOrigin = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const { devSendEmailCommand } = await import("@/lib/communications/dev-send")
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "acceptance_unknown" })
+    const provider = { send: async () => { throw new Error("provider called") } }
+    const denied = await devSendEmailCommand(new NextRequest(`${devOrigin}/api/operations/dev-send-email`, {
+      method: "POST",
+      headers: {
+        origin: devOrigin,
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+        cookie: `${sessionCookie}=${"a".repeat(64)}`,
+      },
+      body: JSON.stringify({ communicationId: quoteId, confirmed: true }),
+    }), { provider })
+    expect(denied.status).toBe(409)
+    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/not sent again/) })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_dev_send_email_claim_v1"])
   })
 
   it("maps reauth_required for price approval", async () => {

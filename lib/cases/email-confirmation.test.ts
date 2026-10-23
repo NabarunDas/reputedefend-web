@@ -7,6 +7,7 @@ import {
   emailConfirmationAllowed,
   emailConfirmationResendContent,
   emailConfirmationTokenHash,
+  planChallengeDelivery,
   planInitialEmailConfirmation,
   usableConfirmationUrl,
 } from "@/lib/cases/email-confirmation"
@@ -91,6 +92,21 @@ describe("case receipt email confirmation", () => {
     vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
     vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
     expect(planInitialEmailConfirmation(caseId, "owner-alias@example.com")).toBeNull()
+  })
+
+  it("routes Admin recovery links to the Marketing Preview in the same Vercel team", () => {
+    preview()
+    vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-unique-build-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    const recovery = planChallengeDelivery(caseId)
+    expect(recovery?.origin).toBe("https://reputedefend-web-git-develop-clientcove.vercel.app")
+    expect(recovery?.deliveryUrl).toContain("https://reputedefend-web-git-develop-clientcove.vercel.app/confirm-email/")
+    expect(recovery?.deliveryUrl).not.toContain("profilerelaunch-admin")
+
+    vi.stubEnv("VERCEL_BRANCH_URL", "")
+    expect(planChallengeDelivery(caseId)).toBeNull()
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-attacker.vercel.app/path")
+    expect(planChallengeDelivery(caseId)).toBeNull()
   })
 
   it("builds one plain-text and one mobile confirmation button", () => {

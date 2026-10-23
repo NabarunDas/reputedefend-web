@@ -126,6 +126,7 @@ export default async function CaseJourneyPage({
       requests: (evidenceCase ?? await getEvidenceCase(detail.id)).requests,
       history: communications,
       sendDisabledReason: sendDisabledReason(),
+      sendManuallyOnDev: devAdminOutgoingMailLane(),
       drafting: {
         customerOriginConfigured: Boolean(authConfig()?.customerOrigin),
         uploadLinkConfigured: linkSecret() !== null,

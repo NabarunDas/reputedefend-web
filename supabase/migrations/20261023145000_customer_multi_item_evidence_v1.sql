@@ -101,7 +101,7 @@ BEGIN
   ) pending ON true
   WHERE r.case_id = p_case AND r.status = 'OPEN' AND (scoped IS NULL OR r.id = scoped);
   RETURN result;
-END; $function$
+END; $function$;
 
 CREATE FUNCTION public.customer_evidence_begin_v2(p_token_hash text, p_request uuid, p_evidence_request uuid, p_item_title text, p_filename text, p_content_type text, p_size bigint, p_bucket text)
  RETURNS jsonb
@@ -215,7 +215,7 @@ BEGIN
   );
   INSERT INTO admin_private.customer_evidence_upload_receipts VALUES (p_request, actor, fp, result, now());
   RETURN result;
-END; $function$
+END; $function$;
 
 REVOKE ALL ON FUNCTION public.customer_evidence_begin_v2(text, uuid, uuid, text, text, text, bigint, text)
   FROM PUBLIC, anon, authenticated, service_role;

@@ -1,6 +1,6 @@
 import "server-only"
 import {
-  confirmationAllowlist,
+  emailConfirmationAllowed,
   confirmationCsrfMatches,
   confirmationRuntime,
   emailConfirmationResendContent,
@@ -124,8 +124,6 @@ export async function resendEmailConfirmation(input: {
   const token = presentedConfirmationToken(input.token)
   if (!environment || !isUuid(input.challengeId) || !token || !input.provider || !input.fromEmail) return hidden
   if (!confirmationCsrfMatches(input.csrfCookie, input.csrf)) return { ...hidden, status: "csrf" }
-  const expected = environment === "preview" ? confirmationAllowlist() : null
-  if (environment === "preview" && !expected) return { ...hidden, status: "withheld" }
   const nextId = newEmailConfirmationChallengeId()
   const delivery = planChallengeDelivery(nextId)
   if (!delivery) return hidden
@@ -136,7 +134,7 @@ export async function resendEmailConfirmation(input: {
     p_new_hash: delivery.tokenHash,
     p_environment: environment,
     p_key_version: delivery.keyVersion,
-    p_expected_email: expected,
+    p_expected_email: null,
   })
   if (prepared.error) return hidden
   const body = record(prepared.data)
@@ -150,7 +148,7 @@ export async function resendEmailConfirmation(input: {
     caseType: text(body?.caseType),
     url: delivery.deliveryUrl,
   })
-  if (!email || !content || (expected && email !== expected)) {
+  if (!email || !emailConfirmationAllowed(email) || !content) {
     await input.client.rpc("abandon_email_confirmation_resend_v1", { p_new: nextId, p_environment: environment })
     return { ...hidden, status: "withheld", publicRef, maskedEmail }
   }

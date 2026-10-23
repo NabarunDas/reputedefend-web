@@ -862,6 +862,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "quotation recipient parity", probe: "public.admin_queue_quote_offer_email_v1" },
   },
+  {
+    // CUSTOMER-EVIDENCE-MULTI: existing secure email link now represents
+    // individual customer-upload slots. One document per named requirement,
+    // with separate evidence records, shared case-scoped authorisation and
+    // unchanged scanning/review. Source-only until DEV proof.
+    version: "20261023145000",
+    filename: "20261023145000_customer_multi_item_evidence_v1.sql",
+    step: "CUSTOMER-EVIDENCE-MULTI secure upload slots",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "customer multi-document evidence", probe: "public.customer_evidence_begin_v2" },
+  },
 ]
 
 /**

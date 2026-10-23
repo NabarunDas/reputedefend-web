@@ -2,7 +2,7 @@ import "server-only"
 import { NextResponse } from "next/server"
 import { backend, tokenHash } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
-import { devAdminOutgoingMailLane, devCustomerPortalOrigin, devQuoteAllowlistedRecipient } from "../communications/dev-lane"
+import { devAdminOutgoingMailLane, devCustomerPortalOrigin } from "../communications/dev-lane"
 import { settleDevSendEmailClaim, type DevSendClaim } from "../communications/dev-send"
 import { communicationsSendEnabled, sendDisabledReason } from "../communications/gate"
 import { deriveQuoteAcceptanceActionId, prepareQuoteAcceptanceLink, snapshotUploadUrl } from "../communications/link"
@@ -49,10 +49,6 @@ const reasons: Record<string, { message: string; status: number }> = {
   },
   recipient_mismatch: {
     message: "The recipient does not match the verified customer email, so the quotation email was not queued.",
-    status: 403,
-  },
-  dev_recipient: {
-    message: "Development quotation email can be sent only when the verified customer address is the single mailbox named by DEV_MAIL_ALLOWED_RECIPIENTS.",
     status: 403,
   },
   link_window: {
@@ -140,12 +136,8 @@ export async function queueQuoteOfferEmail(input: {
   if (!communicationsSendEnabled()) return reply(sendDisabledReason(), 403)
   if (!input.customerOrigin) return reply("The customer site origin is not configured.", 503)
   const devLane = devAdminOutgoingMailLane()
-  const allowlisted = devLane ? devQuoteAllowlistedRecipient() : null
   if (devLane && input.customerOrigin !== devCustomerPortalOrigin()) {
     return reply("The customer site origin must be the development customer portal.", 503)
-  }
-  if (devLane && !allowlisted) {
-    return reply("Development quotation email is closed. Set the sensitive Admin Preview/develop variable DEV_MAIL_ALLOWED_RECIPIENTS to one exact owner-controlled test mailbox. A list, a suffix, or a wildcard is not accepted, and this page cannot set it.", 403)
   }
   const fromAddress = mailFromAddress()
   if (!fromAddress) return reply("The outbound sender address is not configured.", 503)
@@ -204,7 +196,6 @@ export async function queueQuoteOfferEmail(input: {
         replyTo: confirmedReplyMailbox(),
         sendEnabled: true,
         devLane,
-        ...(allowlisted ? { devAllowlistedRecipient: allowlisted } : {}),
       },
     })
   } catch {

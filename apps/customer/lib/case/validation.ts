@@ -45,8 +45,12 @@ export function customerUploadArgs(operation: CustomerUploadOperation, raw: unkn
   if (operation === "begin") {
     const hasItem = Object.hasOwn(body, "itemTitle")
     if (!onlyKeys(body, ["operation", "evidenceRequestId", ...(hasItem ? ["itemTitle"] : []), "filename", "contentType", "size"])) return null
-    const item = hasItem && typeof body.itemTitle === "string" ? body.itemTitle.trim() : null
-    if (hasItem && (!item || item.length > 200 || /[\r\n]/.test(item))) return null
+    // Validate the raw value before trimming so leading/trailing control
+    // characters cannot disappear and be accepted as a new item label.
+    const rawItem = hasItem ? body.itemTitle : null
+    if (hasItem && (typeof rawItem !== "string" || /[\r\n\u0000-\u001f\u007f]/.test(rawItem))) return null
+    const item = typeof rawItem === "string" ? rawItem.trim() : null
+    if (hasItem && (!item || item.length > 200)) return null
     if (!isUuid(body.evidenceRequestId) || typeof body.filename !== "string" || typeof body.contentType !== "string" || typeof body.size !== "number") return null
     const file = declaredUpload(body.filename, body.contentType, body.size)
     if (!file) return null

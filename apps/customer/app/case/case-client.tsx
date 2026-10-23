@@ -102,7 +102,7 @@ function EvidenceItemRow({
     {multi && <strong>{item.title}</strong>}
     {description && <p>{description}</p>}
     <p role={submitted ? "status" : undefined}>{submissionLabel(item.submissionStatus)}</p>
-    {item.filename && <p className="muted">{item.filename}</p>
+    {item.filename && <p className="muted">{item.filename}</p>}
     {submitted && !multi && <p>{EVIDENCE_RECEIVED}</p>}
     {item.submissionStatus === "UPLOAD_PENDING" && <p className="muted">Choose the same file to resume, or another permitted file to start again.</p>}
     {!submitted && <UploadEvidence

@@ -148,6 +148,7 @@ describe("exceptional staff confirmation resend", () => {
     vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
     vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
     vi.stubEnv("VERCEL_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
     vi.stubEnv("COMMUNICATIONS_LINK_SECRET", secret)
     vi.stubEnv("DEV_MAIL_ALLOWED_RECIPIENTS", "owner-alias@example.com")
     const calls: string[] = []

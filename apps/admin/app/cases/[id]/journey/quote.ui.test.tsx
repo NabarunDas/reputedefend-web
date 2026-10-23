@@ -14,6 +14,7 @@ import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import type { QuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { projectQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-email"
 import type { CaseCommunicationRead, CaseCommunicationRow } from "@/lib/communications/model"
+import type { Membership } from "@/lib/records/model"
 import { QuotePanel } from "./quote"
 import { CaseJourneyView } from "./view"
 
@@ -254,7 +255,13 @@ function emailView(actionId: string | null, rows: CaseCommunicationRow[], devSen
   return projectQuoteEmail(history, actionId, { devSend })
 }
 
-function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: QuoteReadiness = verifiedGb, email?: QuoteEmailView) {
+function show(
+  source: CaseFlowFacts,
+  quote: QuoteListItem | null,
+  readiness: QuoteReadiness = verifiedGb,
+  email?: QuoteEmailView,
+  options: { membership?: Membership; emailRecovery?: "send" | "resend" | null } = {},
+) {
   const journey = presentCaseJourney(source, NOW, [], {
     assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
   })
@@ -282,7 +289,34 @@ function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: Quo
     quote={journey.steps.find(step => step.id === "QUOTE_ACCEPTANCE")?.state === "LOCKED" ? null : panel}
     quoteReadiness={readiness}
     quoteEmail={email}
+    membership={options.membership}
+    emailRecovery={options.emailRecovery}
   />)
+}
+
+function summaryFact(label: string): string {
+  const row = [...document.querySelectorAll(".quote-summary > div")].find(node => node.querySelector("dt")?.textContent === label)
+  if (!row) throw new Error(`Missing fact ${label}`)
+  return row.querySelector("dd")?.textContent ?? ""
+}
+
+function offeredCase(auth: Partial<CaseFlowFacts["authorization"]>): CaseFlowFacts {
+  return facts({
+    authorization: { ...facts().authorization, ...auth },
+    commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+  })
+}
+
+function relationship(status: Membership["status"], version: number): Membership {
+  return {
+    customerId: CUSTOMER_ID,
+    businessId: BUSINESS_ID,
+    name: "Bakery",
+    version,
+    status,
+    evidence: "An earlier note was recorded.",
+    verifiedAt: null,
+  }
 }
 
 afterEach(() => {
@@ -332,7 +366,7 @@ describe("guided quote acceptance", () => {
     const exclusions = screen.getByText("No Google submission from this quote.")
     expect(scope.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(exclusions.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText("Purchaser verified — United Kingdom")).toBeTruthy()
+    expect(screen.getByText("Verified — United Kingdom")).toBeTruthy()
     expect(screen.getByText("Review the service details, then offer this quotation.")).toBeTruthy()
     expect(screen.queryByRole("heading", { name: "Purchasing establishment" })).toBeNull()
     expect(screen.queryByRole("heading", { name: "Record the purchasing establishment" })).toBeNull()
@@ -366,7 +400,10 @@ describe("guided quote acceptance", () => {
       "Total customer price",
       "Expiry",
       "Quotation status",
+      "Customer email",
       "Purchasing establishment",
+      "Business authority",
+      "Quotation",
       "Pricing",
     ])
     const details = document.querySelector("details.guided-details")
@@ -538,7 +575,7 @@ describe("guided quote acceptance", () => {
 
   it("hides the purchaser form when the establishment is already verified", () => {
     show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] } }), quoteItem("DRAFT", "UNCONFIRMED"))
-    expect(screen.getByText("Purchaser verified — United Kingdom")).toBeTruthy()
+    expect(screen.getByText("Verified — United Kingdom")).toBeTruthy()
     expect(screen.getByText("View Verification Details")).toBeTruthy()
     expect(screen.queryByRole("heading", { name: "Record the purchasing establishment" })).toBeNull()
     expect(screen.getByRole("button", { name: "Confirm Pricing" })).toBeTruthy()
@@ -892,7 +929,12 @@ describe("guided quote acceptance", () => {
     const quote = quoteItem("OFFERED", "NOT_APPLICABLE")
     quote.action = { id: ACTION_ID, status: "OPEN", expiresAt: PAST, kind: "QUOTE_ACCEPTANCE" }
     show(source, quote, verifiedGb, emailView(ACTION_ID, []))
-    expect(screen.getByText("The quotation email stays closed until the customer's email and business authority are verified.")).toBeTruthy()
+    expect(screen.getByText(/The quotation email stays closed because the customer email is not verified/)).toBeTruthy()
+    expect(screen.queryByText(/email and business authority/)).toBeNull()
+    expect(summaryFact("Customer email")).toBe("Not verified")
+    expect(summaryFact("Business authority")).toBe("Pending review")
+    expect(screen.getByRole("link", { name: "Open the existing email confirmation on Case Received" })).toHaveAttribute("href", `/cases/${CASE_ID}/journey?step=CASE_RECEIVED`)
+    expect(screen.queryByRole("button", { name: "Record business authority" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send replacement quotation email" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue manual replacement link" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
@@ -926,5 +968,173 @@ describe("guided quote acceptance", () => {
     expect(document.querySelector("[data-secondary='draft']")).not.toHaveAttribute("open")
     expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+  })
+
+  it("shows a verified email and missing business authority as separate facts, then records authority in this step", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ message: "Saved. The activity history has been updated.", id: CUSTOMER_ID }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const first = show(
+      offeredCase({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "missing" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+    )
+    expect(summaryFact("Customer email")).toBe("Verified")
+    expect(summaryFact("Purchasing establishment")).toBe("Verified — United Kingdom")
+    expect(summaryFact("Business authority")).toBe("Not yet verified")
+    expect(summaryFact("Quotation")).toBe("Offered; £99.00 pricing confirmed")
+    expect(screen.getByText(/business authority is not yet verified/)).toBeTruthy()
+    expect(screen.queryByText(/email and business authority/)).toBeNull()
+    expect(document.querySelector("[data-primary-action='verify-authority']")).toBeTruthy()
+    expect(screen.getByText("Verify business authority")).toBeTruthy()
+    expect(screen.getByLabelText("Relationship status")).toHaveValue("pending")
+    expect(screen.getByText(/more than 30 minutes ago/)).toBeTruthy()
+    expect(screen.getByText(/does not ask the customer to confirm an email/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create Draft Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Pay|Stripe|Activate/i })).toBeNull()
+    fireEvent.change(screen.getByLabelText("Relationship status"), { target: { value: "verified" } })
+    fireEvent.change(screen.getByLabelText(/Reason and evidence for this relationship/), { target: { value: "Checked the authority letter on 23 October 2026." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /may represent this business/ }))
+    fireEvent.submit(screen.getByRole("button", { name: "Record business authority" }).closest("form")!)
+    expect(await screen.findByRole("status")).toHaveTextContent(/activity history/)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/records/membership")
+    expect(fetchMock.mock.calls[0][1].headers["idempotency-key"]).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      customerId: CUSTOMER_ID,
+      businessId: BUSINESS_ID,
+      version: 0,
+      status: "verified",
+      evidence: "Checked the authority letter on 23 October 2026.",
+    })
+    expect(navigation.refresh).toHaveBeenCalledTimes(1)
+    expect(navigation.push).not.toHaveBeenCalled()
+    first.unmount()
+
+    show(
+      offeredCase({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+      verifiedGb,
+      undefined,
+      { membership: relationship("verified", 1) },
+    )
+    expect(summaryFact("Customer email")).toBe("Verified")
+    expect(summaryFact("Business authority")).toBe("Verified")
+    expect(summaryFact("Quotation")).toBe("Offered; £99.00 pricing confirmed")
+    expect(screen.getAllByRole("button", { name: "Send Quotation Email" })).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: "Record business authority" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record business authority review" })).toBeNull()
+    expect(screen.queryByText("Verify business authority")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create Draft Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send confirmation" })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a pending or withdrawn relationship closed and sends the stored version", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ message: "Saved. The activity history has been updated.", id: CUSTOMER_ID }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const pending = show(
+      offeredCase({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "pending" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+      verifiedGb,
+      undefined,
+      { membership: relationship("pending", 4) },
+    )
+    expect(summaryFact("Business authority")).toBe("Pending review")
+    expect(screen.getByText(/business authority is still pending/)).toBeTruthy()
+    expect(document.querySelector("[data-primary-action='review-authority']")).toBeTruthy()
+    expect(screen.getByLabelText("Relationship status")).toHaveValue("pending")
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByText(/email and business authority/)).toBeNull()
+    fireEvent.change(screen.getByLabelText("Relationship status"), { target: { value: "verified" } })
+    fireEvent.change(screen.getByLabelText(/Reason and evidence for this relationship/), { target: { value: "Checked the authority letter on 23 October 2026." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /may represent this business/ }))
+    fireEvent.submit(screen.getByRole("button", { name: "Record business authority review" }).closest("form")!)
+    expect(await screen.findByRole("status")).toBeTruthy()
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).version).toBe(4)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).status).toBe("verified")
+    pending.unmount()
+
+    show(
+      offeredCase({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "revoked" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+      verifiedGb,
+      undefined,
+      { membership: relationship("revoked", 2) },
+    )
+    expect(summaryFact("Customer email")).toBe("Verified")
+    expect(summaryFact("Business authority")).toBe("Withdrawn — needs an evidenced review")
+    expect(screen.getByText(/business authority was withdrawn/)).toBeTruthy()
+    expect(screen.getByLabelText("Relationship status")).toHaveValue("revoked")
+    expect(screen.getByRole("button", { name: "Record business authority review" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record business authority" })).toBeNull()
+  })
+
+  it("routes a missing email to confirmation and does not open a second authority form", () => {
+    const authorityVerified = show(
+      offeredCase({ customerEmailVerified: false, businessAuthorityVerified: true, membershipStatus: "verified" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+      verifiedGb,
+      undefined,
+      { emailRecovery: "resend", membership: relationship("verified", 1) },
+    )
+    expect(summaryFact("Customer email")).toBe("Not verified")
+    expect(summaryFact("Business authority")).toBe("Verified")
+    expect(screen.getByRole("button", { name: "Resend confirmation" })).toBeTruthy()
+    expect(screen.getByText(/does not verify the address/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Record business authority/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
+    expect(screen.queryByText(/email and business authority/)).toBeNull()
+    authorityVerified.unmount()
+
+    show(
+      offeredCase({ customerEmailVerified: false, businessAuthorityVerified: false, membershipStatus: "missing" }),
+      quoteItem("OFFERED", "NOT_APPLICABLE"),
+      verifiedGb,
+      undefined,
+      { emailRecovery: "send" },
+    )
+    expect(summaryFact("Customer email")).toBe("Not verified")
+    expect(summaryFact("Business authority")).toBe("Not yet verified")
+    expect(summaryFact("Purchasing establishment")).toBe("Verified — United Kingdom")
+    expect(document.querySelector("[data-primary-action='confirm-email']")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Send confirmation" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Record business authority/ })).toBeNull()
+    expect(screen.queryByText(/email and business authority/)).toBeNull()
+    expect(screen.getByText(/customer email is not verified/)).toBeTruthy()
+  })
+
+  it("does not open the authority form for a case that has no business id", () => {
+    const source = offeredCase({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "missing" })
+    const panel = buildJourneyQuotePanel({
+      facts: source,
+      now: NOW,
+      assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
+      prices: [price()],
+      quote: quoteItem("OFFERED", "NOT_APPLICABLE"),
+      quoteDetailMissing: false,
+    })
+    render(<QuotePanel
+      panel={panel}
+      readiness={verifiedGb}
+      caseId={CASE_ID}
+      customerId="not-a-customer"
+      businessId={BUSINESS_ID}
+      locationId={LOCATION_ID}
+      customerName="Alex"
+      businessName="Bakery"
+    />)
+    expect(screen.getByText("This case has no business record to open from here.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Record business authority/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send Quotation Email" })).toBeNull()
   })
 })

@@ -276,7 +276,9 @@ describe("guided quote preparation", () => {
       quote: quoteDetail({ status: "OFFERED" }),
     })
     expect(unverified.view.commands.issueAcceptance).toBe(false)
-    expect(unverified.view.notices.join(" ")).toMatch(/email and business authority/)
+    expect(unverified.view.trust).toEqual({ emailVerified: false, authority: "pending", gap: "email" })
+    expect(unverified.view.notices.join(" ")).toMatch(/customer email is not verified/)
+    expect(unverified.view.notices.join(" ")).not.toMatch(/email and business authority/)
     expect(unverified.view.remaining).toBeNull()
 
     const trustedDraft = panel({
@@ -289,6 +291,49 @@ describe("guided quote preparation", () => {
     expect(trustedDraft.view.commands.offer).toBe(true)
     expect(trustedDraft.view.remaining?.items.join(" ")).toMatch(/still checks them again/)
     expect(trustedDraft.view.remaining?.items.join(" ")).not.toMatch(/still needs the customer's email/)
+  })
+
+  it("keeps email and business authority as separate gates on an offered quote", () => {
+    const offered = (overrides: Partial<CaseFlowAuthorizationFact>) => panel({
+      facts: {
+        commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+        authorization: authorization(overrides),
+      },
+      quote: quoteDetail({ status: "OFFERED" }, { taxBehaviour: "NOT_APPLICABLE" }),
+    }).view
+
+    const authorityMissing = offered({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "missing" })
+    expect(authorityMissing.trust).toEqual({ emailVerified: true, authority: "missing", gap: "authority" })
+    expect(authorityMissing.commands).toMatchObject({ draft: false, offer: false, issueAcceptance: false })
+    expect(authorityMissing.notices.join(" ")).toMatch(/business authority is not yet verified/)
+    expect(authorityMissing.notices.join(" ")).not.toMatch(/email and business authority/)
+
+    const pending = offered({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "pending" })
+    expect(pending.trust.gap).toBe("authority-review")
+    expect(pending.commands.issueAcceptance).toBe(false)
+    expect(pending.notices.join(" ")).toMatch(/business authority is still pending/)
+
+    const revoked = offered({ customerEmailVerified: true, businessAuthorityVerified: false, membershipStatus: "revoked" })
+    expect(revoked.trust.gap).toBe("authority-review")
+    expect(revoked.commands.issueAcceptance).toBe(false)
+    expect(revoked.notices.join(" ")).toMatch(/business authority was withdrawn/)
+
+    const emailMissing = offered({ customerEmailVerified: false, businessAuthorityVerified: true, membershipStatus: "verified" })
+    expect(emailMissing.trust).toEqual({ emailVerified: false, authority: "verified", gap: "email" })
+    expect(emailMissing.commands.issueAcceptance).toBe(false)
+    expect(emailMissing.notices.join(" ")).toMatch(/customer email is not verified/)
+    expect(emailMissing.notices.join(" ")).not.toMatch(/business authority is not/)
+
+    const bothMissing = offered({ customerEmailVerified: false, businessAuthorityVerified: false, membershipStatus: "missing" })
+    expect(bothMissing.trust).toEqual({ emailVerified: false, authority: "missing", gap: "email" })
+    expect(bothMissing.commands.issueAcceptance).toBe(false)
+    expect(bothMissing.notices.join(" ")).toMatch(/customer email is not verified/)
+    expect(bothMissing.notices.join(" ")).not.toMatch(/email and business authority/)
+
+    const ready = offered({ customerEmailVerified: true, businessAuthorityVerified: true, membershipStatus: "verified" })
+    expect(ready.trust.gap).toBeNull()
+    expect(ready.commands).toMatchObject({ draft: false, offer: false, issueAcceptance: true })
+    expect(ready.notices.join(" ")).not.toMatch(/stays closed/)
   })
 
   it("allows a replacement draft after decline or expiry and does not call that acceptance", () => {

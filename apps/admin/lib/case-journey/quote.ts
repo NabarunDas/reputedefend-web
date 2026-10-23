@@ -9,7 +9,7 @@
  */
 
 import type { AssessmentJudgement } from "./assessment"
-import type { CaseFlowFacts, CaseServiceTrack } from "../case-flow/model"
+import type { CaseFlowAuthorizationFact, CaseFlowFacts, CaseServiceTrack } from "../case-flow/model"
 import { commercialQuotesTied, summariseCommercial } from "../case-flow/resolve"
 import {
   currentApprovedPrice,
@@ -54,6 +54,16 @@ export type JourneyQuoteRemaining = {
   items: string[]
 }
 
+export type QuoteAuthorityState = "verified" | "pending" | "revoked" | "missing"
+export type QuoteTrustGap = "email" | "authority" | "authority-review" | null
+
+export type JourneyQuoteTrust = {
+  emailVerified: boolean
+  authority: QuoteAuthorityState
+  /** One next check. Email control comes before authority because verified authority requires it. */
+  gap: QuoteTrustGap
+}
+
 export type JourneyQuotePanel = {
   pathway: "GUIDED" | "MANAGED" | null
   trackNote: string
@@ -64,6 +74,27 @@ export type JourneyQuotePanel = {
   priceChoice: CommercialPriceChoice | null
   quote: JourneyQuoteRecord | null
   commands: JourneyQuoteCommands
+  trust: JourneyQuoteTrust
+}
+
+/** Independent trust facts. A missing membership is not an unverified email. */
+export function quoteTrust(auth: CaseFlowAuthorizationFact): JourneyQuoteTrust {
+  const emailVerified = auth.customerEmailVerified
+  const authority: QuoteAuthorityState = auth.businessAuthorityVerified
+    ? "verified"
+    : auth.membershipStatus === "revoked"
+      ? "revoked"
+      : auth.membershipStatus === "pending"
+        ? "pending"
+        : "missing"
+  const gap: QuoteTrustGap = !emailVerified
+    ? "email"
+    : authority === "verified"
+      ? null
+      : authority === "missing"
+        ? "authority"
+        : "authority-review"
+  return { emailVerified, authority, gap }
 }
 
 const noCommands: JourneyQuoteCommands = {
@@ -195,7 +226,8 @@ export function buildJourneyQuotePanel(input: {
   const liveDraft = commercial.state === "DRAFT_UNCONFIGURED" || commercial.state === "DRAFT_READY"
   const liveOffered = commercial.state === "OFFERED_AWAITING" || commercial.state === "OFFERED_NO_LINK"
   const canReplace = !named || closedReplacement(named.status)
-  const trustReady = input.facts.authorization.customerEmailVerified && input.facts.authorization.businessAuthorityVerified
+  const trust = quoteTrust(input.facts.authorization)
+  const trustReady = trust.gap === null
   const commands: JourneyQuoteCommands = blocked ? noCommands : {
     draft: canReplace && !liveDraft && !liveOffered && commercial.state !== "ACCEPTED" && !!priceChoice,
     setTax: commercial.state === "DRAFT_UNCONFIGURED" && !!quote,
@@ -206,8 +238,14 @@ export function buildJourneyQuotePanel(input: {
   if (!blocked && canReplace && !commands.draft && commercial.state !== "ACCEPTED" && !liveDraft && !liveOffered && !priceChoice) {
     notices.push("A quote cannot be drafted until one current approved price matches the service. No price has been invented.")
   }
-  if (!blocked && commercial.state === "OFFERED_NO_LINK" && !trustReady) {
-    notices.push("The acceptance link stays closed until the customer's email and business authority are verified. Those are the existing customer-action checks.")
+  if (!blocked && (commercial.state === "OFFERED_NO_LINK" || commercial.acceptanceExpired) && trust.gap) {
+    notices.push(trust.gap === "email"
+      ? "The quotation email stays closed because the customer email is not verified. Business authority is a separate check and is not used to infer the email."
+      : trust.authority === "revoked"
+        ? "The quotation email stays closed because business authority was withdrawn. The customer email is a separate check."
+        : trust.authority === "pending"
+          ? "The quotation email stays closed because business authority is still pending. The customer email is a separate check."
+          : "The quotation email stays closed because business authority is not yet verified. The customer email is a separate check.")
   }
 
   const headline = !input.facts.commercial.complete
@@ -268,5 +306,6 @@ export function buildJourneyQuotePanel(input: {
     priceChoice: commands.draft ? priceChoice : null,
     quote,
     commands,
+    trust,
   }
 }

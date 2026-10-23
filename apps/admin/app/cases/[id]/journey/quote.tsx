@@ -9,6 +9,9 @@ import { quoteActionExpiryWindow } from "@/lib/commerce/action-expiry"
 import { isUuid } from "@/lib/records/model"
 import { customerPriceBoundary } from "../../../../../../lib/pricing"
 import { formatGbp } from "@/lib/commerce/model"
+import type { Membership } from "@/lib/records/model"
+import { MembershipForm } from "../../../records/forms"
+import { RecoveryConfirmation } from "./forms"
 import { CaseQuoteForm } from "../commercial/forms"
 import { PurchaserForm } from "../../../commercial/purchaser-form"
 import {
@@ -35,6 +38,8 @@ export function QuotePanel({
   locationId,
   customerName,
   businessName,
+  membership,
+  emailRecovery = null,
 }: {
   panel: JourneyQuotePanel
   readiness: QuoteReadiness
@@ -45,6 +50,8 @@ export function QuotePanel({
   locationId: string | null
   customerName: string
   businessName: string
+  membership?: Membership
+  emailRecovery?: "send" | "resend" | null
 }) {
   const quote = panel.quote
   const next = nextAction(panel, readiness, email)
@@ -73,7 +80,10 @@ export function QuotePanel({
       {price && <div><dt>Total customer price</dt><dd>{price}</dd></div>}
       {quote && <div><dt>Expiry</dt><dd>{quote.validUntilLabel}</dd></div>}
       <div><dt>Quotation status</dt><dd>{quotationStatus(panel, email)}</dd></div>
-      <div><dt>Purchasing establishment</dt><dd>{purchaserStatusLabel(readiness)}</dd></div>
+      <div><dt>Customer email</dt><dd>{panel.trust.emailVerified ? "Verified" : "Not verified"}</dd></div>
+      <div><dt>Purchasing establishment</dt><dd>{establishmentFact(readiness)}</dd></div>
+      <div><dt>Business authority</dt><dd>{authorityFact(panel.trust.authority)}</dd></div>
+      <div><dt>Quotation</dt><dd>{quotationFact(panel, readiness, email)}</dd></div>
       <div><dt>Pricing</dt><dd>{recordedTax ? (pricingConfirmed ? "Pricing confirmed" : "Tax treatment recorded") : pricingStatusLabel(readiness, quote?.taxBehaviour ?? null, pricingConfirmed)}</dd></div>
     </dl>
     {showUkPrice && <>
@@ -195,6 +205,23 @@ export function QuotePanel({
         submitLabel="Create Draft Quotation"
         compact
       />}
+      {next === "confirm-email" && <>
+        <p>Customer email is not verified. This step does not record that verification by hand.</p>
+        {emailRecovery
+          ? <RecoveryConfirmation caseId={caseId} mode={emailRecovery} />
+          : <p><a href={`/cases/${caseId}/journey?step=CASE_RECEIVED`}>Open the existing email confirmation on Case Received</a></p>}
+      </>}
+      {(next === "verify-authority" || next === "review-authority") && (!isUuid(businessId) || !isUuid(customerId)) && <p>This case has no business record to open from here.</p>}
+      {next === "verify-authority" && isUuid(businessId) && isUuid(customerId) && <details open>
+        <summary>Verify business authority</summary>
+        <p>Record evidence that this customer may represent this business. Preliminary screening, the purchasing establishment, and a verified email are not this record.</p>
+        <MembershipForm customerId={customerId} businessId={businessId} membership={membership} submitLabel="Record business authority" journey />
+      </details>}
+      {next === "review-authority" && isUuid(businessId) && isUuid(customerId) && <details open>
+        <summary>Review business authority</summary>
+        <p>This relationship is not verified authority. Record a new evidenced check. A pending or withdrawn relationship does not open the quotation email.</p>
+        <MembershipForm customerId={customerId} businessId={businessId} membership={membership} submitLabel="Record business authority review" journey />
+      </details>}
       {next === "blocked" && <p>{blockedCopy(panel, email)}</p>}
     </section>
     {next === "verify" && panel.commands.draft && panel.priceChoice && <details data-secondary="draft">
@@ -250,27 +277,51 @@ function quotationStatus(panel: JourneyQuotePanel, email: QuoteEmailView): strin
   return "Needs attention"
 }
 
-type NextAction = "unavailable" | "verify" | "draft" | "confirm" | "review" | "offer" | "email" | "queued" | "submitted" | "delivered" | "attention" | "manual" | "expired" | "renew" | "accepted" | "replace" | "blocked"
+type NextAction = "unavailable" | "verify" | "draft" | "confirm" | "review" | "offer" | "email" | "queued" | "submitted" | "delivered" | "attention" | "manual" | "expired" | "renew" | "accepted" | "replace" | "blocked" | "confirm-email" | "verify-authority" | "review-authority"
 
 function stageState(next: NextAction): Record<"prepare" | "offer" | "acceptance", "done" | "current" | "upcoming"> {
   if (next === "accepted") return { prepare: "done", offer: "done", acceptance: "done" }
   if (next === "delivered" || next === "expired" || next === "renew") return { prepare: "done", offer: "done", acceptance: "current" }
-  if (next === "offer" || next === "email" || next === "queued" || next === "submitted" || next === "attention" || next === "manual") {
+  if (next === "offer" || next === "email" || next === "queued" || next === "submitted" || next === "attention" || next === "manual" || next === "confirm-email" || next === "verify-authority" || next === "review-authority") {
     return { prepare: "done", offer: "current", acceptance: "upcoming" }
   }
   return { prepare: "current", offer: "upcoming", acceptance: "upcoming" }
+}
+
+function trustAction(gap: NonNullable<JourneyQuotePanel["trust"]["gap"]>): NextAction {
+  if (gap === "email") return "confirm-email"
+  if (gap === "authority-review") return "review-authority"
+  return "verify-authority"
 }
 
 function offeredQuote(panel: JourneyQuotePanel): boolean {
   return panel.headline === "Quote offered" || panel.headline === "Acceptance link expired"
 }
 
+function establishmentFact(readiness: QuoteReadiness): string {
+  if (readiness.status === "verified" && readiness.countryLabel) return `Verified — ${readiness.countryLabel}`
+  return purchaserStatusLabel(readiness)
+}
+
+function authorityFact(authority: JourneyQuotePanel["trust"]["authority"]): string {
+  if (authority === "verified") return "Verified"
+  if (authority === "pending") return "Pending review"
+  if (authority === "revoked") return "Withdrawn — needs an evidenced review"
+  return "Not yet verified"
+}
+
+function quotationFact(panel: JourneyQuotePanel, readiness: QuoteReadiness, email: QuoteEmailView): string {
+  const offered = panel.headline === "Quote offered" || panel.headline === "Acceptance link expired"
+  const price = panel.quote ? formatGbp(panel.quote.amountMinor) : null
+  const confirmed = readiness.taxPath === "uk_not_charged" && panel.quote?.taxBehaviour === "NOT_APPLICABLE"
+  if (offered && confirmed && price) return `Offered; ${price} pricing confirmed`
+  if (offered) return quotationStatus(panel, email)
+  return quotationStatus(panel, email)
+}
+
 function blockedCopy(panel: JourneyQuotePanel, email: QuoteEmailView): string {
   if (email.phase === "unavailable" && offeredQuote(panel)) {
     return "The quotation email history could not be confirmed. Reload this step before continuing."
-  }
-  if (panel.headline === "Quote offered" || panel.headline === "Acceptance link expired") {
-    return "The quotation email stays closed until the customer's email and business authority are verified."
   }
   return "This quotation cannot be continued from here until the quote record is consistent."
 }
@@ -283,7 +334,7 @@ function nextAction(panel: JourneyQuotePanel, readiness: QuoteReadiness, email: 
   if (offeredQuote(panel)) {
     if (panel.headline === "Acceptance link expired") {
       if (!panel.quote || !quoteActionExpiryWindow(panel.quote.validUntil).ready) return "renew"
-      if (!panel.commands.issueAcceptance) return "blocked"
+      if (panel.trust.gap) return trustAction(panel.trust.gap)
       return "expired"
     }
     if (email.phase === "unavailable") return "blocked"
@@ -291,9 +342,11 @@ function nextAction(panel: JourneyQuotePanel, readiness: QuoteReadiness, email: 
     if (email.phase === "queued") return "queued"
     if (email.phase === "submitted") return "submitted"
     if (email.phase === "delivered") return "delivered"
+    if (email.phase === "none" && panel.trust.gap) return trustAction(panel.trust.gap)
     if (panel.quote?.actionId) return "manual"
     if (panel.commands.issueAcceptance && panel.quote && !quoteActionExpiryWindow(panel.quote.validUntil).ready) return "renew"
     if (panel.commands.issueAcceptance) return "email"
+    if (panel.trust.gap) return trustAction(panel.trust.gap)
     return "blocked"
   }
   if (readiness.status === "unavailable") return "unavailable"

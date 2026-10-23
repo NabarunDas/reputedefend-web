@@ -144,6 +144,12 @@ export default async function CaseJourneyPage({
   const quoteEmail = quoteOpen
     ? projectQuoteEmail(communications, quote?.quote?.actionId ?? null, { devSend: devAdminOutgoingMailLane() })
     : emptyQuoteEmail
+  const quoteConfirmation = quoteOpen && !facts.authorization.customerEmailVerified
+    ? await loadEmailConfirmationStatus(detail.id)
+    : null
+  const quoteEmailRecovery = quoteConfirmation?.recovery === "send" || quoteConfirmation?.recovery === "resend"
+    ? quoteConfirmation.recovery
+    : null
   const activationOpen = selected?.id === "SERVICE_ACTIVATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const activation = activationOpen ? await loadJourneyActivation(facts, now, {
     recordConflict: brief.conflicts.length > 0,
@@ -207,6 +213,8 @@ export default async function CaseJourneyPage({
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
+    membership={membership}
+    emailRecovery={quoteEmailRecovery}
   />
 }
 

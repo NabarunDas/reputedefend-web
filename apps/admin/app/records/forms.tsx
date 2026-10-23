@@ -48,11 +48,25 @@ export function VerifyContactForm({ record }: { record: RecordItem }) {
     <p className="muted">{ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
   </CommandForm>
 }
-export function MembershipForm({ customerId, businessId, membership }: { customerId: string; businessId: string; membership?: Membership }) {
-  return <CommandForm endpoint="membership" payload={form => ({ customerId, businessId, version: membership?.version || 0, status: form.get("status"), evidence: form.get("evidence") })}>
+export function MembershipForm({
+  customerId,
+  businessId,
+  membership,
+  submitLabel = "Save",
+  journey = false,
+}: {
+  customerId: string
+  businessId: string
+  membership?: Membership
+  submitLabel?: string
+  journey?: boolean
+}) {
+  return <CommandForm endpoint="membership" submitLabel={submitLabel} payload={form => ({ customerId, businessId, version: membership?.version || 0, status: form.get("status"), evidence: form.get("evidence") })}>
     <label>Relationship status<select name="status" defaultValue={membership?.status || "pending"}><option value="pending">Awaiting authority check</option><option value="verified">Authority verified</option><option value="revoked">Access withdrawn</option></select></label>
     <Reason name="evidence" label="Reason and evidence for this relationship" />
-    <label className="checkbox"><input type="checkbox" required />I checked the client and business and have evidence for this status.</label>
-    <p className="muted">Authority verification requires a verified email or phone. {ADMIN_RECENT_SIGN_IN_MESSAGE} A submitted enquiry alone is not proof of authority.</p>
+    <label className="checkbox"><input type="checkbox" required />I checked that this customer may represent this business, and I have evidence for this status.</label>
+    <p className="muted">{journey
+      ? <>{ADMIN_RECENT_SIGN_IN_MESSAGE} It does not ask the customer to confirm an email that is already verified, and it does not send the quotation or take a payment.</>
+      : <>Authority verification requires a verified email or phone. {ADMIN_RECENT_SIGN_IN_MESSAGE} A submitted enquiry, a matched name, or preliminary screening is not proof of authority.</>}</p>
   </CommandForm>
 }

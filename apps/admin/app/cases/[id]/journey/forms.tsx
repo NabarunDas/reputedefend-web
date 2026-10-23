@@ -83,7 +83,7 @@ function EmailStatus({ brief }: { brief: JourneyIntakeBrief }) {
   </>
 }
 
-function RecoveryConfirmation({ caseId, mode }: { caseId: string; mode: "send" | "resend" }) {
+export function RecoveryConfirmation({ caseId, mode }: { caseId: string; mode: "send" | "resend" }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   async function send(event: FormEvent<HTMLFormElement>) {

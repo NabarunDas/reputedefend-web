@@ -143,6 +143,56 @@ describe("invariants a rebuilt database must still enforce", () => {
     )).toMatch(/duplicate key|unique/i)
   })
 
+  it("accepts separate uploaded items under one request without relaxing the legacy single-file guard", async () => {
+    const v2Allowed = await rows<{ allowed: boolean }>(
+      "select has_function_privilege('anon','public.customer_evidence_begin_v2(text,uuid,uuid,text,text,text,bigint,text)','EXECUTE') as allowed",
+    )
+    expect(v2Allowed[0].allowed).toBe(false)
+    const id = (number: number) => `5e5e5e5e-0000-4000-8000-${String(number).padStart(12, "0")}`
+    await db.exec("BEGIN")
+    try {
+      for (const [ordinal, item] of ["Notice from Google", "Address proof"].entries()) {
+        const docId = id(9001 + ordinal), verId = id(9011 + ordinal)
+        await db.query(
+          "insert into public.case_documents(id,case_id,evidence_request_id,title,created_by) values($1,$2,$3,$4,$5)",
+          [docId, rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen, item, rehearsalIds.adminUser],
+        )
+        await db.query(
+          `insert into public.case_document_versions(
+            id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,
+            storage_bucket,storage_key,created_by,submission_source,customer_action_id,
+            customer_evidence_request_id,evidence_item_title
+          ) values($1,$2,1,$3,'application/pdf',1000,$4,$5,$6,'CUSTOMER',$7,$8,$9)`,
+          [verId, docId, `synthetic-item-${ordinal}.pdf`, rehearsalBucket,
+           `cases/${rehearsalIds.caseA}/documents/${docId}/versions/${verId}`,
+           rehearsalIds.adminUser, rehearsalIds.customerAction, rehearsalIds.evidenceRequestOpen, item],
+        )
+      }
+      expect(await count(
+        `select count(*)::int as n from public.case_document_versions
+         where customer_evidence_request_id = '${rehearsalIds.evidenceRequestOpen}'
+           and evidence_item_title is not null and upload_status = 'PENDING_UPLOAD'`,
+      )).toBe(2)
+      const duplicateDoc = id(9003), duplicateVersion = id(9013)
+      await db.query(
+        "insert into public.case_documents(id,case_id,evidence_request_id,title,created_by) values($1,$2,$3,$4,$5)",
+        [duplicateDoc, rehearsalIds.caseA, rehearsalIds.evidenceRequestOpen, "Notice from Google", rehearsalIds.adminUser],
+      )
+      await expect(db.query(
+        `insert into public.case_document_versions(
+          id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,
+          storage_bucket,storage_key,created_by,submission_source,customer_action_id,
+          customer_evidence_request_id,evidence_item_title
+        ) values($1,$2,1,'duplicate.pdf','application/pdf',1000,$3,$4,$5,'CUSTOMER',$6,$7,$8)`,
+        [duplicateVersion, duplicateDoc, rehearsalBucket,
+         `cases/${rehearsalIds.caseA}/documents/${duplicateDoc}/versions/${duplicateVersion}`,
+         rehearsalIds.adminUser, rehearsalIds.customerAction, rehearsalIds.evidenceRequestOpen, "Notice from Google"],
+      )).rejects.toThrow(/unique|duplicate/i)
+    } finally {
+      await db.exec("ROLLBACK")
+    }
+  })
+
   it("keeps a prepared pack pinned to eligible evidence only", async () => {
     expect(await fails(
       `insert into public.case_prepared_pack_items(pack_id,document_id,version_id,position,document_title,original_filename,content_type,size_bytes,added_by)

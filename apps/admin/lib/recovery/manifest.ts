@@ -848,6 +848,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "email confirmation delivery", probe: "public.record_email_confirmation_delivery_v1" },
   },
+  {
+    // ENV-PARITY. Quotation recipient comes from the verified customer record
+    // in both DEV and Production, never a hardcoded test mailbox.
+    // Source-only until the exact DEV migration is applied and verified.
+    // Does not itself send any email or activate a provider.
+    version: "20261023130000",
+    filename: "20261023130000_quote_email_recipient_parity_v1.sql",
+    step: "ENV-PARITY quotation recipient",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "quotation recipient parity", probe: "public.admin_queue_quote_offer_email_v1" },
+  },
 ]
 
 /**

@@ -125,10 +125,8 @@ function devDatabase(url: string | undefined): boolean {
   }
 }
 
-function productionConfirmationEnabled(env: RuntimeEnv): boolean {
-  if (env.EMAIL_CONFIRMATION_ENABLED !== "true" || env.CASE_PERSISTENCE_ENABLED !== "true") return false
-  if (env.EMAIL_CONFIRMATION_ORIGIN !== "https://profilerelaunch.com") return false
-  const raw = env.SUPABASE_URL?.trim() ?? ""
+function separateProductionDatabase(rawValue: string | undefined): boolean {
+  const raw = rawValue?.trim() ?? ""
   if (!raw || devDatabase(raw)) return false
   try {
     const url = new URL(raw)
@@ -147,7 +145,11 @@ export function confirmationRuntime(env: RuntimeEnv = process.env): Confirmation
   const value = runtimeEnvironment(env)
   if (value === "development") return "development"
   if (value === "preview" && env.VERCEL_GIT_COMMIT_REF === "develop" && devDatabase(env.SUPABASE_URL)) return "preview"
-  if (value === "production" && productionConfirmationEnabled(env)) return "production"
+  if (value === "production"
+    && env.EMAIL_CONFIRMATION_ENABLED === "true"
+    && env.CASE_PERSISTENCE_ENABLED === "true"
+    && env.EMAIL_CONFIRMATION_ORIGIN === "https://profilerelaunch.com"
+    && separateProductionDatabase(env.SUPABASE_URL)) return "production"
   return null
 }
 
@@ -280,7 +282,7 @@ export function planReplacementEmailConfirmation(
   return planFor(caseId, email, challengeId, env)
 }
 
-export function usableConfirmationUrl(value: string | null | undefined): string | null {
+export function usableConfirmationUrl(value: string | null | undefined, env: RuntimeEnv = process.env): string | null {
   if (!value) return null
   const url = value.trim()
   if (url !== value || url.length < 20 || url.length > 2000) return null
@@ -293,9 +295,9 @@ export function usableConfirmationUrl(value: string | null | undefined): string 
   }
   const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost"
   if (parsed.protocol === "https:") {
-    const runtime = confirmationRuntime()
+    const runtime = confirmationRuntime(env)
     if (productionConfirmationHost(parsed.hostname)) {
-      if (runtime !== "production" || parsed.origin !== confirmationOrigin(process.env)) return null
+      if (runtime !== "production" || parsed.origin !== confirmationOrigin(env)) return null
     } else if (runtime === "production") {
       return null
     }

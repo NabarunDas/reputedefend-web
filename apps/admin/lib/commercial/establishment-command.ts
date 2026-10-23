@@ -8,6 +8,11 @@ import { buildPurchaserRecord, purchaserCommandMessage, type EstablishmentComman
 
 const reply = (message: string, status: number) => NextResponse.json({message}, {status, headers: privateResponseHeaders})
 
+// Only purchaser-establishment recording uses this recent-login window.
+// A valid, non-revoked Admin session and all existing case/identity checks
+// remain mandatory; this does not extend session inactivity or lifetime.
+const PURCHASER_SIGN_IN_WINDOW_MS = 30 * 60 * 1000
+
 export async function recordBusinessEstablishment(request: NextRequest) {
   const config=authConfig()
   if (!config) return reply("Workspace unavailable.",503)
@@ -42,8 +47,8 @@ export async function recordBusinessEstablishment(request: NextRequest) {
     const store=backend();const hash=tokenHash(token)
     const session=await store.rpc<{userId?:string;createdAt?:string}|null>("admin_session_v1",{p_token:hash})
     const start=session?.createdAt?Date.parse(session.createdAt):NaN
-    if(!session?.userId||!Number.isFinite(start)||start>Date.now()+60000||Date.now()-start>300000)
-      return reply("Sign out and sign in again, then record this within five minutes.",403)
+    if(!session?.userId||!Number.isFinite(start)||start>Date.now()+60000||Date.now()-start>PURCHASER_SIGN_IN_WINDOW_MS)
+      return reply("Your 30-minute security window has expired. Sign out and sign in again to record the purchasing establishment.",403)
     const result=await store.rpc<EstablishmentCommandResult>("admin_record_business_establishment_v1",{
       p_token:hash,p_request:key,p_payload:payload
     })

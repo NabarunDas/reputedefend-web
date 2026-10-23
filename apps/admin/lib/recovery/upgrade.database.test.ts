@@ -59,21 +59,21 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The tail is the DEV-applied gross-price migration. Its filename matches
-    // ledger version 20261021214813. This disposable rebuild is not a live apply.
-    // Preliminary evidence 20261021155147 and the DEV mail claim are already applied.
+    // The tail is the DEV-applied customer multi-item evidence migration. Its
+    // canonical filename matches DEV ledger 20261023144943 exactly.
+    // This disposable rebuild is not a live apply; older migrations are already applied.
     // Production remains at SEC-08.
     expect(pending.at(-1)?.version).toBe(pending[pending.length - 1]?.version)
     expect(pending.at(-1)?.filename).toMatch(/customer_multi_item_evidence_v1\.sql$/)
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.version).toBe("20261023103232")
     expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.version).toBe("20261023091735")
-    expect(pending.at(-2)?.appliedToDev).toBe(true)
-    expect(pending.at(-4)?.version).toBe("20261023000158")
     expect(pending.at(-3)?.appliedToDev).toBe(true)
-    expect(pending.at(-5)?.version).toBe("20261022172455")
+    expect(pending.at(-4)?.version).toBe("20261023000158")
     expect(pending.at(-4)?.appliedToDev).toBe(true)
+    expect(pending.at(-5)?.version).toBe("20261022172455")
+    expect(pending.at(-5)?.appliedToDev).toBe(true)
     expect(pending.some(entry => entry.version === "20261021214813" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261021155147" && entry.appliedToDev)).toBe(true)
     expect(pending.some(entry => entry.version === "20261021132018" && entry.appliedToDev)).toBe(true)

@@ -1,4 +1,3 @@
-BEGIN;
 -- CUSTOMER-EVIDENCE-MULTI: one secure email link; one requested item per
 -- evidence record. Keep the same session/OTP, file validation, S3 storage,
 -- scan, administrative evidence review and durable event/audit rules.
@@ -239,4 +238,3 @@ END; $function$;
 REVOKE ALL ON FUNCTION public.customer_evidence_begin_v2(text, uuid, uuid, text, text, text, bigint, text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.customer_evidence_begin_v2(text, uuid, uuid, text, text, text, bigint, text) TO service_role;
-COMMIT;

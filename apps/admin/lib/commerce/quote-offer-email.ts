@@ -79,7 +79,7 @@ type QueueResult = {
 
 const queuedOnly = "The quotation email is queued. The email provider has not accepted it yet, and queued is not delivered."
 const submitted = "The quotation email was submitted to the email provider. Accepted by the provider is not delivered."
-const stillQueued = "The quotation email is queued. It was not submitted to the email provider. Use Process queued email on Communications. Queued is not delivered."
+const stillQueued = "The quotation email is queued. It was not submitted to the email provider. Queued is not delivered."
 
 function devSendRequestId(queueKey: string): string {
   return deriveQuoteAcceptanceActionId(`dev-send:${queueKey}`)
@@ -115,7 +115,7 @@ async function submitDevelopmentQuotation(input: {
     return reply(stillQueued, 409, queued)
   }
   if (claimed.status === "reauth_required") {
-    return reply("The quotation email is queued. Sign out and sign in with a new email code, then use Process queued email on Communications. Queued is not delivered.", 403, queued)
+    return reply("The quotation email is queued. Sign out and sign in again, then send it from this step within 30 minutes. Queued is not delivered.", 403, queued)
   }
   if (claimed.status !== "success" || !claimed.leaseToken) {
     return reply(stillQueued, claimed.status === "conflict" ? 409 : 503, queued)
@@ -155,7 +155,7 @@ export async function queueQuoteOfferEmail(input: {
     return reply("We couldn’t confirm the quotation email. Reload the page before trying again.", 503)
   }
   if (detail == null) return reply("Your session has ended. Please sign in again.", 401)
-  if (detail.status === "conflict" || !detail.currentVersion) return reply("That commercial record changed. Reload the page and try again.", 409)
+  if (detail.status === "conflict" || !detail.currentVersion) return reply("This quotation has changed. Reload it before continuing.", 409)
   if (detail.status !== "OFFERED" || detail.currentVersion.status !== "OFFERED") {
     return reply(reasons.quote_not_offered.message, reasons.quote_not_offered.status)
   }
@@ -213,7 +213,7 @@ export async function queueQuoteOfferEmail(input: {
     return reply(queuedOnly, 200, { id: result.id, lifecycle: result.lifecycle ?? "QUEUED", deliveryStatus: result.deliveryStatus ?? "NONE" })
   }
   if (result?.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
-  if (result?.status === "conflict") return reply("That commercial record changed. Reload the page and try again.", 409)
+  if (result?.status === "conflict") return reply("This quotation has changed. Reload it before continuing.", 409)
   const known = result?.reason ? reasons[result.reason] : undefined
   if (known) return reply(known.message, known.status)
   if (result?.status === "denied") return reply("That quotation email cannot be queued.", 403)

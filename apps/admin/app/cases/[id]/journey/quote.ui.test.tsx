@@ -11,6 +11,7 @@ import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { standardScopeExclusions } from "../../../../../../lib/commercial/scope-templates"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
+import type { QuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { QuotePanel } from "./quote"
 import { CaseJourneyView } from "./view"
 
@@ -135,7 +136,7 @@ function price(): PriceVersion {
   }
 }
 
-function quoteItem(status = "DRAFT"): QuoteListItem {
+function quoteItem(status = "DRAFT", taxBehaviour = "INCLUSIVE"): QuoteListItem {
   return {
     id: QUOTE_ID,
     publicRef: "Q-100",
@@ -167,7 +168,7 @@ function quoteItem(status = "DRAFT"): QuoteListItem {
       discountBps: 0,
       discountAmountMinor: 0,
       quotedSubtotalMinor: 9900,
-      taxBehaviour: "INCLUSIVE",
+      taxBehaviour,
       taxAmountMinor: 0,
       totalAmountMinor: 9900,
       currency: "GBP",
@@ -179,7 +180,25 @@ function quoteItem(status = "DRAFT"): QuoteListItem {
   }
 }
 
-function show(source: CaseFlowFacts, quote: QuoteListItem | null, developmentQuotationMail = false) {
+const verifiedGb: QuoteReadiness = {
+  status: "verified",
+  countryCode: "GB",
+  countryLabel: "United Kingdom",
+  legalName: "Bakery Ltd",
+  sellerVat: "NOT_VAT_REGISTERED",
+  taxPath: "uk_not_charged",
+}
+
+const missingPurchaser: QuoteReadiness = {
+  status: "missing",
+  countryCode: null,
+  countryLabel: null,
+  legalName: null,
+  sellerVat: "NOT_VAT_REGISTERED",
+  taxPath: "unavailable",
+}
+
+function show(source: CaseFlowFacts, quote: QuoteListItem | null, readiness: QuoteReadiness = verifiedGb) {
   const journey = presentCaseJourney(source, NOW, [], {
     assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 },
   })
@@ -205,7 +224,7 @@ function show(source: CaseFlowFacts, quote: QuoteListItem | null, developmentQuo
     version={3}
     documents={null}
     quote={journey.steps.find(step => step.id === "QUOTE_ACCEPTANCE")?.state === "LOCKED" ? null : panel}
-    developmentQuotationMail={developmentQuotationMail}
+    quoteReadiness={readiness}
   />)
 }
 
@@ -221,8 +240,8 @@ describe("guided quote acceptance", () => {
     show(source, null)
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "LOCKED")
     expect(screen.getByText("Quote and acceptance stay closed until the earlier steps are recorded.")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Offer quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create Draft Quotation" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe|Choose the service track/i })).toBeNull()
   })
 
@@ -231,11 +250,11 @@ describe("guided quote acceptance", () => {
     vi.stubGlobal("fetch", fetchMock)
     show(facts(), null)
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).not.toHaveAttribute("data-state", "COMPLETED")
-    expect(screen.getAllByText(/not the customer's agreement/).length).toBeGreaterThan(0)
     expect(screen.getByText("Service: Not chosen")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Offer quote" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Purchasing establishment" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe|Choose the service track/i })).toBeNull()
-    fireEvent.submit(screen.getByRole("button", { name: "Create draft quote" }).closest("form")!)
+    fireEvent.submit(screen.getByRole("button", { name: "Create Draft Quotation" }).closest("form")!)
     expect(await screen.findByRole("status")).toHaveTextContent(/does not take payment/)
     expect(fetchMock.mock.calls[0][0]).toBe("/api/operations/quotes")
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
@@ -250,26 +269,18 @@ describe("guided quote acceptance", () => {
   })
 
   it("offers a configured draft and does not treat a declined quote as acceptance", () => {
-    const { unmount } = show(facts({ commercial: { complete: true, quotes: [quoteFact()] } }), quoteItem())
-    const offer = screen.getByRole("button", { name: "Offer quote" })
+    const { unmount } = show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "NOT_APPLICABLE" })] } }), quoteItem("DRAFT", "NOT_APPLICABLE"))
+    const offer = screen.getByRole("button", { name: "Review & Offer Quotation" })
     const scope = screen.getByText("Recover the suspended profile.")
     const exclusions = screen.getByText("No Google submission from this quote.")
     expect(scope.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(exclusions.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText("Not recorded on this quote")).toBeTruthy()
-    expect(screen.getByText(/Review the scope and exclusions above before offering this quote/)).toBeTruthy()
-    expect(screen.getByText(/does not add a country restriction/)).toBeTruthy()
-    expect(screen.getAllByText(/not clearance to offer/).length).toBeGreaterThan(1)
-    expect(screen.getByRole("heading", { name: "What remains before offering" })).toBeTruthy()
-    expect(screen.getByText(/Google listing country is not that record/)).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Purchasing establishment" })).toBeTruthy()
-    expect(screen.getAllByText(/Companies House is optional/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Google listing country on this case is United Kingdom/)).toBeTruthy()
-    expect(screen.getByText(/It is not the purchasing establishment/)).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Open the business record" })).toHaveAttribute("href", `/records/business/${BUSINESS_ID}`)
-    expect(screen.getByRole("link", { name: "Review the customer and business relationship" })).toHaveAttribute("href", `/records/client/${CUSTOMER_ID}/link?business=${BUSINESS_ID}`)
-    expect(screen.getByText(/The button does not mean this draft is eligible/)).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Create draft quote" })).toBeNull()
+    expect(screen.getByText("Purchaser verified — United Kingdom")).toBeTruthy()
+    expect(screen.getByText("Review the service details, then offer this quotation.")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Purchasing establishment" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Record the purchasing establishment" })).toBeNull()
+    expect(screen.queryByText(/basis point|tax rate \(bps\)|DEV_MAIL_ALLOWED_RECIPIENTS/i)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create Draft Quotation" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Issue customer acceptance link" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Activate|Pay|Stripe/i })).toBeNull()
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).not.toHaveAttribute("data-state", "COMPLETED")
@@ -277,14 +288,14 @@ describe("guided quote acceptance", () => {
 
     show(facts({ commercial: { complete: true, quotes: [quoteFact({ status: "DECLINED" })] } }), quoteItem("DECLINED"))
     expect(screen.getByText("This quote is not accepted. A declined, expired or incomplete record is not the customer's agreement.")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Create draft quote" })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Offer quote" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Create Draft Quotation" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Review & Offer Quotation" })).toBeNull()
     expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "NEEDS_ATTENTION")
   })
 
   it("keeps scope and exclusions full width, with line breaks, and stacks on a narrow screen", () => {
-    const source = facts({ commercial: { complete: true, quotes: [quoteFact()] } })
-    const quote = quoteItem()
+    const source = facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "NOT_APPLICABLE" })] } })
+    const quote = quoteItem("DRAFT", "NOT_APPLICABLE")
     quote.currentVersion = {
       ...quote.currentVersion,
       scope: "First scope line.\n\nSecond scope line stays in the scope section.",
@@ -293,21 +304,24 @@ describe("guided quote acceptance", () => {
     show(source, quote)
     const labels = [...document.querySelectorAll(".quote-summary dt")].map(node => node.textContent)
     expect(labels).toEqual([
-      "Quote",
       "Service",
-      "Amount",
-      "Customer price",
-      "Internal tax record",
-      "Valid until",
-      "Scope",
-      "Exclusions",
-      "Wording template",
+      "Quote",
+      "Total customer price",
+      "Expiry",
+      "Quotation status",
+      "Purchasing establishment",
+      "Pricing",
     ])
-    const scope = [...document.querySelectorAll(".quote-summary-block")].find(node => node.querySelector("dt")?.textContent === "Scope")
-    const exclusions = [...document.querySelectorAll(".quote-summary-block")].find(node => node.querySelector("dt")?.textContent === "Exclusions")
-    expect(scope?.querySelector("dd")).toHaveClass("preserve-lines")
-    expect(scope?.querySelector("dd")?.textContent).toBe("First scope line.\n\nSecond scope line stays in the scope section.")
-    expect(exclusions?.querySelector("dd")?.textContent).toBe("First exclusion.\nSecond exclusion stays in the exclusions section.")
+    const details = document.querySelector("details.guided-details")
+    expect(details).toHaveAttribute("open")
+    expect(details?.textContent).toContain("First scope line.")
+    expect(details?.textContent).toContain("Second scope line stays in the scope section.")
+    expect(details?.textContent).toContain("First exclusion.")
+    expect(details?.textContent).toContain("Second exclusion stays in the exclusions section.")
+    const scope = details?.querySelectorAll("p.preserve-lines")[0]
+    const exclusions = details?.querySelectorAll("p.preserve-lines")[1]
+    expect(scope).toHaveClass("preserve-lines")
+    expect(exclusions).toHaveClass("preserve-lines")
     const quoteRow = [...document.querySelectorAll(".quote-summary > div")].find(node => node.querySelector("dt")?.textContent === "Quote")
     expect(quoteRow).not.toHaveClass("quote-summary-block")
     expect(quoteRow?.parentElement).toHaveClass("quote-summary")
@@ -316,6 +330,7 @@ describe("guided quote acceptance", () => {
     expect(css).toContain("grid-template-columns: minmax(0, 1fr)")
     expect(css).toContain(".guided-facts dl.quote-summary > .quote-summary-block")
     expect(css).toMatch(/@media \(max-width: 800px\) \{[\s\S]*\.guided-facts dl\.quote-summary > div/)
+    expect(css).toMatch(/@media \(max-width: 800px\) \{[\s\S]*\.quote-progress \{ flex-direction: column; \}/)
     expect(css).toMatch(/dl \{ display: grid; grid-template-columns: 10rem minmax\(0, 1fr\)/)
   })
 
@@ -334,6 +349,7 @@ describe("guided quote acceptance", () => {
     })
     render(<QuotePanel
       panel={panel}
+      readiness={missingPurchaser}
       caseId={CASE_ID}
       customerId=""
       businessId="not-a-business"
@@ -369,9 +385,10 @@ describe("guided quote acceptance", () => {
     })
     const quote = quoteItem("OFFERED")
     quote.currentVersion = { ...quote.currentVersion, taxBehaviour: "NOT_APPLICABLE" }
-    show(source, quote, true)
-    expect(screen.getByRole("button", { name: "Send quotation to customer" })).toBeTruthy()
-    expect(screen.getByText(/DEV_MAIL_ALLOWED_RECIPIENTS/)).toBeTruthy()
+    show(source, quote)
+    expect(screen.getByRole("button", { name: "Send Quotation Email" })).toBeTruthy()
+    expect(screen.queryByText(/DEV_MAIL_ALLOWED_RECIPIENTS/)).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Plain text" })).toBeNull()
     const frame = document.querySelector("iframe[title='Quotation email']")
     expect(frame?.getAttribute("sandbox")).toBe("")
     expect(frame?.getAttribute("srcdoc")).toContain("Review and accept quotation")
@@ -379,19 +396,19 @@ describe("guided quote acceptance", () => {
     expect(frame?.getAttribute("srcdoc")).not.toContain("#t=")
     expect(frame?.getAttribute("srcdoc")).not.toContain("<script")
     expect(frame?.getAttribute("srcdoc")).not.toContain("https://customer.example/action/")
-    expect(screen.getByRole("button", { name: "Review and accept quotation" })).toBeDisabled()
-    expect(screen.getByText("Copy a one-time link instead")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Review and accept quotation" })).toBeNull()
+    expect(screen.getByText("More Options")).toBeTruthy()
     expect(screen.getByText("Your ProfileRelaunch quotation Q-100")).toBeTruthy()
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Recover the suspended profile/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/No Google submission from this quote/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/For your security, please never share passwords/)).toBeTruthy()
-    expect(screen.getByText(/Secure link added when you send/)).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Edit subject and introduction" }))
+    expect(frame?.getAttribute("srcdoc")).toContain("For your security, please never share passwords")
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
     expect(screen.getByRole("textbox", { name: "Subject" })).toBeTruthy()
     expect(screen.getByRole("textbox", { name: "Introduction" })).toBeTruthy()
-    fireEvent.submit(screen.getByRole("button", { name: "Send quotation to customer" }).closest("form")!)
-    expect(await screen.findByRole("status")).toHaveTextContent(/queued is not delivered/)
+    fireEvent.submit(screen.getByRole("button", { name: "Send Quotation Email" }).closest("form")!)
+    expect(await screen.findByRole("status")).toHaveTextContent(/Queued\./)
+    expect(screen.getByRole("status")).toHaveTextContent(/queued is not delivered/)
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(payload.operation).toBe("queue_quote_offer_email")
     expect(payload.quoteId).toBe(QUOTE_ID)
@@ -399,5 +416,126 @@ describe("guided quote acceptance", () => {
     expect(payload).not.toHaveProperty("secretHash")
     expect(payload).not.toHaveProperty("recipient")
     expect(navigation.refresh).not.toHaveBeenCalled()
+    expect(screen.getByRole("status").textContent).not.toMatch(/Delivered/)
+  })
+
+  it("hides the purchaser form when the establishment is already verified", () => {
+    show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] } }), quoteItem("DRAFT", "UNCONFIRMED"))
+    expect(screen.getByText("Purchaser verified — United Kingdom")).toBeTruthy()
+    expect(screen.getByText("View Verification Details")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Record the purchasing establishment" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Confirm Pricing" })).toBeTruthy()
+    expect(screen.getByText("VAT: Not charged")).toBeTruthy()
+    expect(screen.getByText("No additional taxes or mandatory fees charged by ProfileRelaunch.")).toBeTruthy()
+    expect(screen.getAllByText("£99.00").length).toBeGreaterThan(0)
+  })
+
+  it("shows a short purchaser form only when verification is missing", () => {
+    show(facts(), null, missingPurchaser)
+    expect(screen.getByRole("heading", { name: "Record the purchasing establishment" })).toBeTruthy()
+    expect(screen.getByLabelText("Legal purchasing name")).toBeTruthy()
+    expect(screen.getByLabelText("Purchaser")).toBeTruthy()
+    expect(screen.getByLabelText("Purchasing country")).toBeTruthy()
+    const registration = screen.getByLabelText("Registration number, if you already have one")
+    const taxId = screen.getByLabelText("Tax identifier, only if you already hold one")
+    expect(registration.closest("details")).not.toHaveAttribute("open")
+    expect(taxId.closest("details")?.querySelector("summary")?.textContent).toBe("Add a registration or tax identifier")
+    expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+    expect(screen.queryByText("VAT: Not charged")).toBeNull()
+  })
+
+  it("does not treat a pending or conflicting establishment as verified", () => {
+    const pending: QuoteReadiness = { ...missingPurchaser, status: "pending" }
+    const { unmount } = show(facts(), null, pending)
+    expect(screen.getAllByText("Purchasing establishment not verified").length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/not a verified purchasing establishment/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Purchaser verified/)).toBeNull()
+    unmount()
+
+    const conflicting: QuoteReadiness = {
+      status: "conflicting",
+      countryCode: null,
+      countryLabel: null,
+      legalName: null,
+      sellerVat: "NOT_VAT_REGISTERED",
+      taxPath: "review",
+    }
+    show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] } }), quoteItem("DRAFT", "UNCONFIRMED"), conflicting)
+    expect(screen.getByText("This step cannot treat the purchaser as verified.")).toBeTruthy()
+    expect(screen.getAllByText("Tax treatment needs review").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+    expect(screen.queryByText("VAT: Not charged")).toBeNull()
+  })
+
+  it("confirms UK pricing without a rate and does not ask again once saved", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The quote record has been updated. This does not take payment." }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { unmount } = show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] } }), quoteItem("DRAFT", "UNCONFIRMED"))
+    fireEvent.submit(screen.getByRole("button", { name: "Confirm Pricing" }).closest("form")!)
+    expect(await screen.findByRole("status")).toBeTruthy()
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(payload).toEqual({
+      operation: "set_draft_tax",
+      quoteId: QUOTE_ID,
+      version: 2,
+      quoteVersionId: VERSION_ID,
+      taxBehaviour: "NOT_APPLICABLE",
+    })
+    expect(payload).not.toHaveProperty("taxRateBps")
+    expect(payload).not.toHaveProperty("taxJurisdiction")
+    expect(payload).not.toHaveProperty("taxCode")
+    unmount()
+
+    show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "NOT_APPLICABLE" })] } }), quoteItem("DRAFT", "NOT_APPLICABLE"))
+    expect(screen.getAllByText("Pricing confirmed").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+    expect(screen.getAllByText("£99.00").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: /Pay|Stripe/i })).toBeNull()
+  })
+
+  it("requires an approved percentage before an inclusive tax request", () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const overseas: QuoteReadiness = {
+      status: "verified",
+      countryCode: "FR",
+      countryLabel: "France",
+      legalName: "Bakery SARL",
+      sellerVat: "UNKNOWN",
+      taxPath: "review",
+    }
+    show(facts({ commercial: { complete: true, quotes: [quoteFact({ taxBehaviour: "UNCONFIRMED" })] } }), quoteItem("DRAFT", "UNCONFIRMED"), overseas)
+    expect(screen.getAllByText("Tax treatment needs review").length).toBeGreaterThan(0)
+    expect(screen.queryByText("VAT: Not charged")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Confirm Pricing" })).toBeNull()
+    fireEvent.click(screen.getByText("Review tax treatment"))
+    fireEvent.change(screen.getByLabelText("Tax treatment"), { target: { value: "INCLUSIVE" } })
+    fireEvent.submit(screen.getByRole("button", { name: "Save reviewed tax treatment" }).closest("form")!)
+    expect(screen.getByRole("alert")).toHaveTextContent(/approved tax percentage/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("keeps an offered quotation incomplete until the customer accepts", () => {
+    const source = facts({
+      authorization: { ...facts().authorization, customerEmailVerified: true, businessAuthorityVerified: true },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    const { unmount } = show(source, quoteItem("OFFERED", "NOT_APPLICABLE"))
+    expect(screen.queryByText("Waiting for Customer Acceptance")).toBeNull()
+    expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.queryByRole("link", { name: "Continue to Step 7" })).toBeNull()
+    unmount()
+
+    const accepted = facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "GUIDED",
+      commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", taxBehaviour: "NOT_APPLICABLE", orderId: "order-1" })] },
+    })
+    show(accepted, quoteItem("ACCEPTED", "NOT_APPLICABLE"))
+    expect(screen.getByText("Quotation accepted — Continue to Step 7")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Continue to Step 7" })).toHaveAttribute("href", `/cases/${CASE_ID}/journey?step=SERVICE_ACTIVATION`)
+    expect(document.querySelector("[data-step='QUOTE_ACCEPTANCE']")).toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).not.toHaveAttribute("data-state", "LOCKED")
+    expect(screen.queryByRole("button", { name: /Pay|Stripe/i })).toBeNull()
   })
 })

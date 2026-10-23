@@ -38,8 +38,14 @@ function useCommand() {
   return { busy, message, run }
 }
 
+function defaultQuoteExpiry(): string {
+  const at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
 export function CaseQuoteForm({
-  caseId, customerId, businessId, locationId, customerName, businessName, choice,
+  caseId, customerId, businessId, locationId, customerName, businessName, choice, submitLabel = "Create draft quote", compact = false,
 }: {
   caseId: string
   customerId: string
@@ -48,6 +54,8 @@ export function CaseQuoteForm({
   customerName: string
   businessName: string
   choice: CommercialPriceChoice
+  submitLabel?: string
+  compact?: boolean
 }) {
   const { busy, message, run } = useCommand()
   if (!isUuid(caseId) || !isUuid(customerId) || !isUuid(businessId) || !isUuid(choice.id)) {
@@ -71,11 +79,16 @@ export function CaseQuoteForm({
     })
   }
   return <form onSubmit={submit}>
-    <p>Quoting <strong>{customerName}</strong> for <strong>{businessName}</strong>.</p>
-    <p>{choice.serviceName} · {choice.amountLabel} · {choice.paymentLabel}. This is the current approved price. The server checks the case, the customer and the price again.</p>
-    <ScopeExclusionsFields serviceCode={choice.serviceCode} />
-    <label>Valid until<input name="validUntil" type="datetime-local" required /></label>
-    <button type="submit" disabled={busy}>{busy ? "Creating…" : "Create draft quote"}</button>
+    {compact ? <p>{choice.serviceName} · {choice.amountLabel}. The approved service wording is already filled in.</p> : <>
+      <p>Quoting <strong>{customerName}</strong> for <strong>{businessName}</strong>.</p>
+      <p>{choice.serviceName} · {choice.amountLabel} · {choice.paymentLabel}. This is the current approved price. The server checks the case, the customer and the price again.</p>
+    </>}
+    {compact ? <details>
+      <summary>Review Service Details</summary>
+      <ScopeExclusionsFields serviceCode={choice.serviceCode} compact />
+    </details> : <ScopeExclusionsFields serviceCode={choice.serviceCode} />}
+    <label>Quote expiry<input name="validUntil" type="datetime-local" required defaultValue={compact ? defaultQuoteExpiry() : undefined} /></label>
+    <button type="submit" disabled={busy}>{busy ? "Creating…" : submitLabel}</button>
     <p role="status">{message}</p>
   </form>
 }

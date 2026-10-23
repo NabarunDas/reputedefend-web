@@ -103,7 +103,7 @@ export async function settleDevSendEmailClaim(input: {
 
 function claimMessage(result: DevSendClaim): { message: string; status: number } {
   if (result.status === "unauthorized") return { message: "Your session has ended. Please sign in again.", status: 401 }
-  if (result.status === "reauth_required") return { message: "Sign out and sign in with a new email code, then try again within five minutes.", status: 403 }
+  if (result.status === "reauth_required") return { message: "Sign out and sign in with a new email code, then try again within 30 minutes.", status: 403 }
   if (result.status === "conflict") return { message: "That email is already being processed. Wait for the lease to end, then submit a new idempotency key.", status: 409 }
   if (result.reason === "origin") return { message: "The stored upload link is not the development customer portal. The email was not sent.", status: 403 }
   if (result.reason === "acceptance_unknown") return { message: "Provider acceptance is unknown. The email was not sent again.", status: 409 }

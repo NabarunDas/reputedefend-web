@@ -144,7 +144,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
   {
     id: "QUOTE_ACCEPTANCE",
     order: 6,
-    title: "Quote & Contract Acceptance",
+    title: "Quotation & Acceptance",
     purpose: "Offer a quote the customer can accept, and record that acceptance.",
     responsibleParty: "ADMIN_AND_CUSTOMER",
     dataDependencies: [

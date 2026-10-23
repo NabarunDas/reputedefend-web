@@ -6,7 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { LOST_QUOTE_LINK_NOTE } from "./model"
 import { queueQuoteOfferEmail } from "./quote-offer-email"
-import { catalogueArgs, isCatalogueOperation, isQuoteOperation, quoteArgs } from "./validation"
+import { catalogueArgs, isCatalogueOperation, isQuoteOperation, quoteArgs, quoteTaxIssue } from "./validation"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -51,12 +51,12 @@ const ELIGIBILITY_BLOCKED = "This quote cannot be issued yet. The purchasing est
 
 /** Staff next steps for reason codes the quote command already returns. Unknown text is never shown. */
 const quoteDenialByReason: Record<string, string> = {
-  unresolved_establishment: "This quote cannot be offered yet. Record a verified purchasing establishment on the business record. The Google listing country is not that record.",
-  conflicting_establishment: "This quote cannot be offered yet. More than one current verified purchasing establishment is on the business record. Review that record before offering.",
-  awaiting_confirmation: "This quote cannot be offered yet. Country and tax eligibility is not confirmed for this payer. The offer stays closed until that check clears.",
-  tax_determination_mismatch: "This quote cannot be offered yet. The quote tax record does not match the eligibility determination. Do not offer until they agree.",
+  unresolved_establishment: "Purchaser details need verification.",
+  conflicting_establishment: "Purchaser details need verification.",
+  awaiting_confirmation: "The tax treatment needs review before this quotation can be offered.",
+  tax_determination_mismatch: "The tax treatment needs review before this quotation can be offered.",
   vat_threshold: "This quote cannot be offered yet. The seller turnover check has not cleared a binding quote.",
-  tax_unconfirmed: "This quote cannot be offered yet. Set the draft tax record before offering. An unconfirmed tax record still blocks an offer.",
+  tax_unconfirmed: "The tax treatment needs review before this quotation can be offered.",
   sanctions_blocked: "This quote cannot be offered yet. The purchasing establishment is in a place the commercial check does not allow. Review the business record before offering.",
   subdivision_required: "This quote cannot be offered yet. The purchasing establishment needs a recorded state or province before country and tax eligibility can clear.",
   blocked: "This quote cannot be offered yet. Country and tax eligibility is blocked for this payer. The offer stays closed.",
@@ -141,7 +141,10 @@ export async function quoteCommand(request: NextRequest): Promise<NextResponse> 
     if (typeof operation !== "string" || !isQuoteOperation(operation)) {
       return reply("Check the fields before saving.", 400)
     }
-    const args = quoteArgs(operation, body as Record<string, unknown>)
+    const record = body as Record<string, unknown>
+    const taxIssue = quoteTaxIssue(operation, record)
+    if (taxIssue) return reply(taxIssue, 400)
+    const args = quoteArgs(operation, record)
     if (!args) return reply("Check the fields before saving.", 400)
     if (operation === "queue_quote_offer_email" && "quoteId" in args && typeof args.quoteId === "string") {
       return queueQuoteOfferEmail({
@@ -166,8 +169,11 @@ export async function quoteCommand(request: NextRequest): Promise<NextResponse> 
       p_token: tokenHash(gated.token), p_request: gated.key, p_operation: operation, p_payload: payload, p_version: version,
     })
     const denial = quoteDenialMessage(result.status, result.reason)
+    const failure = denial ?? (result.status === "conflict"
+      ? "This quotation has changed. Reload it before continuing."
+      : commandMessage(result.status))
     if (result.status === "eligibility_blocked") return reply(denial ?? ELIGIBILITY_BLOCKED, 409)
-    if (result.status !== "success") return reply(denial ?? commandMessage(result.status), mapStatus(result.status))
+    if (result.status !== "success") return reply(failure, mapStatus(result.status))
     const issued = issuesLink && result.replay !== true && result.id && gated.config.customerOrigin
     return reply(
       issued ? `The secure customer quote action is ready. ${LOST_QUOTE_LINK_NOTE}`

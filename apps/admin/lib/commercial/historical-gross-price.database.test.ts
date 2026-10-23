@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, applyUpgrade, preparePlatform } from "../recovery/harness"
-import { migrationHead } from "../recovery/manifest"
+import { chainAfter } from "../recovery/manifest"
 
 const db = new PGlite()
 const admin = "c0a55000-0000-4000-8000-0000000000a1"
@@ -211,7 +211,7 @@ beforeAll(async () => {
   expect(acceptedBefore.status).toBe("ACCEPTED")
 
   const upgraded = await applyUpgrade(db, "20261021155147")
-  expect(upgraded.applied.map(item => item.entry.version)).toEqual(["20261021214813", "20261022124813", "20261022172455", "20261023000158", "20261023091735", "20261023103232", migrationHead.version])
+  expect(upgraded.applied.map(item => item.entry.version)).toEqual(chainAfter("20261021155147").map(entry => entry.version))
 }, 180000)
 
 afterAll(async () => { await db.close() })

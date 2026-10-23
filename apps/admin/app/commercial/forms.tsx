@@ -4,7 +4,8 @@ import { LOST_QUOTE_LINK_NOTE } from "@/lib/commerce/model"
 import { customerPriceBoundary, customerPriceLine } from "../../../../lib/pricing"
 import { ScopeExclusionsFields } from "./scope-fields"
 import { localDateTime, quoteActionExpiryWindow } from "@/lib/commerce/action-expiry"
-import { quotationButtonLabel, renderQuotationOffer } from "../../../../lib/email/quotation-offer"
+import { renderQuotationOffer } from "../../../../lib/email/quotation-offer"
+import { approvedInclusiveRateBps } from "@/lib/commerce/validation"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -262,33 +263,69 @@ export function QuoteActionForm({ operation, quoteId, version, quoteVersionId, l
   </form>
 }
 
-export function SetDraftTaxForm({ quoteId, version, quoteVersionId }: { quoteId: string; version: number; quoteVersionId: string }) {
+export function ConfirmPricingForm({ quoteId, version, quoteVersionId }: { quoteId: string; version: number; quoteVersionId: string }) {
   const { busy, message, run } = useCommand()
+  return <form onSubmit={event => {
+    event.preventDefault()
+    void run("/api/operations/quotes", "set_draft_tax", { quoteId, version, quoteVersionId, taxBehaviour: "NOT_APPLICABLE" })
+  }}>
+    <button type="submit" disabled={busy}>{busy ? "Saving…" : "Confirm Pricing"}</button>
+    {message && <p role="status">{message}</p>}
+  </form>
+}
+
+export function SetDraftTaxForm({ quoteId, version, quoteVersionId }: { quoteId: string; version: number; quoteVersionId: string }) {
+  const { busy, message, run, setMessage } = useCommand()
+  const [behaviour, setBehaviour] = useState("NOT_APPLICABLE")
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const taxBehaviour = String(form.get("taxBehaviour") || "")
+    if (taxBehaviour === "EXCLUSIVE") {
+      setMessage("A published quotation cannot add tax on top of the customer price.")
+      return
+    }
+    const percent = String(form.get("taxPercent") || "")
+    const taxRateBps = taxBehaviour === "INCLUSIVE" ? approvedInclusiveRateBps(percent) : null
+    if (taxBehaviour === "INCLUSIVE" && taxRateBps === null) {
+      setMessage("Enter the approved tax percentage before saving. The customer total stays the advertised price.")
+      return
+    }
+    const jurisdiction = String(form.get("taxJurisdiction") || "").trim().toUpperCase()
+    const taxCode = String(form.get("taxCode") || "").trim()
+    if (taxBehaviour === "INCLUSIVE" && jurisdiction && !/^[A-Z]{2}$/.test(jurisdiction)) {
+      setMessage("Enter the approved two-letter tax jurisdiction, or leave it blank.")
+      return
+    }
     await run("/api/operations/quotes", "set_draft_tax", {
-      quoteId, version, quoteVersionId,
-      taxBehaviour: String(form.get("taxBehaviour") || ""),
-      taxRateBps: String(form.get("taxRateBps") || "") || undefined,
-      taxJurisdiction: String(form.get("taxJurisdiction") || "") || undefined,
-      taxCode: String(form.get("taxCode") || "") || undefined,
+      quoteId, version, quoteVersionId, taxBehaviour,
+      ...(taxRateBps === null ? {} : { taxRateBps }),
+      ...(jurisdiction ? { taxJurisdiction: jurisdiction } : {}),
+      ...(taxCode ? { taxCode } : {}),
     })
   }
   return <form onSubmit={submit}>
-    <p className="muted">{customerPriceLine} {customerPriceBoundary} Not applicable is the internal record for a verified GB purchasing establishment while the seller is not VAT-registered. Inclusive is only for a later approved rate calculated inside the same total. Exclusive is not available on a quote.</p>
-    <label>Internal tax record
-      <select name="taxBehaviour" required>
-        <option value="NOT_APPLICABLE">Not applicable</option>
-        <option value="INCLUSIVE">Inclusive</option>
-        <option value="UNCONFIRMED">Unconfirmed</option>
+    <p className="muted">{customerPriceLine} {customerPriceBoundary} This does not add tax to the advertised customer price.</p>
+    <label>Tax treatment
+      <select name="taxBehaviour" value={behaviour} onChange={event => setBehaviour(event.target.value)}>
+        <option value="NOT_APPLICABLE">VAT not charged</option>
+        <option value="INCLUSIVE">Approved tax included in the customer price</option>
       </select>
     </label>
-    <label>Tax rate (bps)<input name="taxRateBps" type="number" min={0} max={10000} /></label>
-    <label>Jurisdiction<input name="taxJurisdiction" maxLength={2} /></label>
-    <label>Tax code<input name="taxCode" maxLength={40} /></label>
-    <button type="submit" disabled={busy}>{busy ? "Saving…" : "Set draft tax"}</button>
-    {message && <p role="status">{message}</p>}
+    {behaviour === "INCLUSIVE" && <label>Approved tax percentage
+      <input name="taxPercent" inputMode="decimal" autoComplete="off" placeholder="20" />
+    </label>}
+    <details>
+      <summary>Additional tax details</summary>
+      <label>Jurisdiction, when the approved decision names one
+        <input name="taxJurisdiction" maxLength={2} autoComplete="off" />
+      </label>
+      <label>Tax code, when the approved decision names one
+        <input name="taxCode" maxLength={40} autoComplete="off" />
+      </label>
+    </details>
+    <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save reviewed tax treatment"}</button>
+    {message && <p role="alert">{message}</p>}
   </form>
 }
 
@@ -319,9 +356,15 @@ function previewHtmlDocument(html: string): string {
   return html.split(previewActionUrl).join("#").split("<script").join("").split("</script").join("")
 }
 
+function emailOutcome(ok: boolean, deliveryStatus: string | undefined): string {
+  if (!ok) return "Needs attention"
+  if (deliveryStatus === "DELIVERED") return "Delivered"
+  if (deliveryStatus === "PROVIDER_ACCEPTED") return "Submitted to email provider"
+  return "Queued"
+}
+
 export function SendQuotationForm({
   quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, scope, exclusions, validUntil,
-  developmentQuotationMail = false,
 }: {
   quoteId: string
   publicRef: string
@@ -333,7 +376,6 @@ export function SendQuotationForm({
   scope: string
   exclusions: string
   validUntil: string
-  developmentQuotationMail?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
@@ -355,7 +397,6 @@ export function SendQuotationForm({
     subject: editing && subject.trim() ? subject : undefined,
     introduction: editing && introduction.trim() ? introduction : undefined,
   })
-  const previewText = preview?.text.split(previewActionUrl).join("[Secure link added when you send]")
   const previewHtml = preview ? previewHtmlDocument(preview.html) : ""
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -368,13 +409,20 @@ export function SendQuotationForm({
     setBusy(true)
     setMessage("")
     try {
-      const result = await post("/api/operations/quotes", "queue_quote_offer_email", {
-        quoteId,
-        subject: editing && subject.trim() ? subject.trim() : undefined,
-        introduction: editing && introduction.trim() ? introduction.trim() : undefined,
-      }, commandKey.current)
-      setMessage(result.message)
-      if (!result.ok) commandKey.current = null
+      const response = await fetch("/api/operations/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": commandKey.current },
+        body: JSON.stringify({
+          operation: "queue_quote_offer_email",
+          quoteId,
+          subject: editing && subject.trim() ? subject.trim() : undefined,
+          introduction: editing && introduction.trim() ? introduction.trim() : undefined,
+        }),
+      })
+      const result = await response.json() as { message?: string; deliveryStatus?: string }
+      const outcome = emailOutcome(response.ok, result.deliveryStatus)
+      setMessage(`${outcome}. ${result.message || "The quotation email could not be confirmed."}`)
+      if (!response.ok) commandKey.current = null
     } catch {
       setMessage("We couldn’t save that. Reload the page and try again.")
       commandKey.current = null
@@ -383,18 +431,13 @@ export function SendQuotationForm({
     }
   }
   return <form onSubmit={submit} data-quotation-email="preview">
-    <h3>Quotation email</h3>
-    <p>Review the email below, then send it. Queuing does not mean the email provider has accepted it, and it does not mean the customer has received it.</p>
-    {developmentQuotationMail && <p>On this development preview, set the sensitive variable DEV_MAIL_ALLOWED_RECIPIENTS on Admin Preview/develop to one exact owner-controlled test mailbox before sending. It must be the verified customer address. This page cannot set it, and a list, a suffix, or a wildcard is not accepted.</p>}
-    {preview && previewText ? <>
+    <h3>Send Quotation Email</h3>
+    <p>Review the email, then send it. Sending does not mean the customer has accepted.</p>
+    {preview ? <>
       <p><strong>Subject:</strong> {preview.subject}</p>
       <div className="email-preview">
         <iframe className="email-preview-frame email-preview-frame-branded" title="Quotation email" sandbox="" srcDoc={previewHtml} />
       </div>
-      <h4>Plain text</h4>
-      <pre className="preserve-lines">{previewText}</pre>
-      <p><button type="button" disabled>{quotationButtonLabel}</button></p>
-      <p>The secure link is created when you send. It is not shown in this preview and it is not stored in the email record.</p>
     </> : <p role="alert">This quotation cannot be shown as an email yet. Check the subject and introduction.</p>}
     {editing ? <>
       <label>Subject
@@ -403,9 +446,9 @@ export function SendQuotationForm({
       <label>Introduction
         <textarea name="introduction" value={introduction} maxLength={4000} rows={4} onChange={event => setIntroduction(event.target.value)} />
       </label>
-      <p>Only the subject and introduction can be edited. The amount, inclusions, exclusions, validity, button and security wording stay on the server.</p>
-    </> : <p><button type="button" onClick={() => setEditing(true)}>Edit subject and introduction</button></p>}
-    <button type="submit" disabled={busy || !preview}>{busy ? "Queuing…" : "Send quotation to customer"}</button>
+      <p>Only the subject and introduction can be edited.</p>
+    </> : <p><button type="button" onClick={() => setEditing(true)}>Edit</button></p>}
+    <button type="submit" disabled={busy || !preview}>{busy ? "Sending…" : "Send Quotation Email"}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }

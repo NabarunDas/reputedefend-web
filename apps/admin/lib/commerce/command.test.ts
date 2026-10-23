@@ -335,9 +335,9 @@ describe("commercial admin commands", () => {
   it("explains a known quote denial and still calls the quote command", async () => {
     const leaked = "Thanks — we'll confirm your quote and payment details shortly. 22222222-2222-4222-8222-222222222222"
     const known: Array<[string, RegExp]> = [
-      ["unresolved_establishment", /Record a verified purchasing establishment/],
-      ["awaiting_confirmation", /Country and tax eligibility is not confirmed/],
-      ["tax_determination_mismatch", /does not match the eligibility determination/],
+      ["unresolved_establishment", /Purchaser details need verification/],
+      ["awaiting_confirmation", /tax treatment needs review/],
+      ["tax_determination_mismatch", /tax treatment needs review/],
       ["vat_threshold", /seller turnover check/],
       ["exclusive_adds_tax", /Tax cannot be added on top/],
       ["total_above_gross", /final customer price/],
@@ -365,7 +365,7 @@ describe("commercial admin commands", () => {
     }))
     expect(blocked.status).toBe(409)
     const blockedBody = await blocked.json() as { message?: string }
-    expect(blockedBody.message).toMatch(/Google listing country is not that record/)
+    expect(blockedBody.message).toMatch(/Purchaser details need verification/)
     expect(blockedBody.message).not.toContain(leaked)
 
     mocks.rpc.mockResolvedValueOnce({ status: "denied", reason: "internal_debug: business 22222222-2222-4222-8222-222222222222", message: leaked })
@@ -390,5 +390,28 @@ describe("commercial admin commands", () => {
     }))
     expect(catalogue.status).toBe(403)
     expect(await catalogue.json()).toMatchObject({ message: "That commercial action is not allowed." })
+  })
+
+  it("refuses inclusive tax without an approved rate and a stale quotation", async () => {
+    const missingRate = await quoteCommand(req("/api/operations/quotes", {
+      operation: "set_draft_tax", quoteId, version: 2, quoteVersionId: quoteId, taxBehaviour: "INCLUSIVE",
+    }))
+    expect(missingRate.status).toBe(400)
+    expect(await missingRate.json()).toMatchObject({
+      message: "Enter the approved tax percentage before saving. The customer total stays the advertised price.",
+    })
+    const exclusive = await quoteCommand(req("/api/operations/quotes", {
+      operation: "set_draft_tax", quoteId, version: 2, quoteVersionId: quoteId, taxBehaviour: "EXCLUSIVE", taxRateBps: 2000,
+    }))
+    expect(exclusive.status).toBe(400)
+    expect(await exclusive.json()).toMatchObject({ message: "A published quotation cannot add tax on top of the customer price." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+
+    mocks.rpc.mockResolvedValue({ status: "conflict" })
+    const stale = await quoteCommand(req("/api/operations/quotes", {
+      operation: "offer", quoteId, version: 2, quoteVersionId: quoteId,
+    }))
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toMatchObject({ message: "This quotation has changed. Reload it before continuing." })
   })
 })

@@ -5,6 +5,8 @@ import { loadCaseFlowFacts } from "@/lib/case-flow/load"
 import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
+import { loadCaseQuoteReadiness } from "@/lib/case-journey/quote-readiness-command"
+import { unavailableQuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
@@ -137,6 +139,7 @@ export default async function CaseJourneyPage({
   const evidenceReview = evidenceOpen ? await loadEvidenceReview(detail, journeyFacts, now, evidenceCase) : null
   const quoteOpen = selected?.id === "QUOTE_ACCEPTANCE" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const quote = quoteOpen ? await loadJourneyQuote(facts, now, assessmentJudgement) : null
+  const quoteReadiness = quoteOpen ? await loadCaseQuoteReadiness(detail.id) : unavailableQuoteReadiness
   const activationOpen = selected?.id === "SERVICE_ACTIVATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
   const activation = activationOpen ? await loadJourneyActivation(facts, now, {
     recordConflict: brief.conflicts.length > 0,
@@ -190,6 +193,7 @@ export default async function CaseJourneyPage({
     evidenceReview={evidenceReview}
     assessment={assessment}
     quote={quote}
+    quoteReadiness={quoteReadiness}
     activation={activation}
     preparation={preparation?.panel ?? null}
     submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
@@ -198,7 +202,6 @@ export default async function CaseJourneyPage({
     customerId={detail.customerId}
     businessId={detail.businessId}
     locationId={detail.locationId}
-    developmentQuotationMail={devAdminOutgoingMailLane()}
   />
 }
 

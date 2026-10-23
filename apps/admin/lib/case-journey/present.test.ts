@@ -187,7 +187,7 @@ describe("the eleven-step catalogue", () => {
       "Review Request & Request Documents",
       "Evidence Review",
       "Assessment & Recommended Path",
-      "Quote & Contract Acceptance",
+      "Quotation & Acceptance",
       "Service Activation — Guided or Managed",
       "Case Preparation & Approval",
       "Submission & Tracking",

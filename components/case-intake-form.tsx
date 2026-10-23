@@ -71,6 +71,7 @@ export const PERSISTED_SUCCESS_COPY = {
   review: "Your request is safely recorded. Our team will review the details and get in touch if we need anything else.",
   keep: "Please keep this reference handy so we can find your case quickly if you contact us.",
   emailSent: "A confirmation email is on its way. Please check your inbox and, if needed, your spam folder.",
+  emailConfirm: "Your assessment is safely recorded. Please check your email and confirm your address so we can contact you securely.",
   emailSuppressed: "You do not need to submit your assessment again. Please keep this case reference for your records.",
   emailFailed: "We could not send a confirmation email just now, but your request is safely recorded. Please keep this case reference.",
 } as const
@@ -144,6 +145,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
   const [persistedRef, setPersistedRef] = useState("")
   const [receiptEmailSent, setReceiptEmailSent] = useState(false)
   const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "suppressed" | "unavailable" | "">("")
+  const [emailConfirmationPending, setEmailConfirmationPending] = useState(false)
   const [statusText, setStatusText] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -275,6 +277,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         caseRef?: string
         receiptEmailSent?: boolean
         receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
+        emailConfirmation?: "pending" | "omitted"
         errors?: EnquiryFieldErrors
       }
 
@@ -282,6 +285,7 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
         setSimulated(json.simulated === true)
         setPersistedRef(json.persisted && json.caseRef ? json.caseRef : "")
         setReceiptEmailSent(json.receiptEmailSent === true)
+        setEmailConfirmationPending(json.emailConfirmation === "pending")
         setReceiptEmailStatus(
           json.receiptEmailStatus === "sent" || json.receiptEmailStatus === "suppressed" || json.receiptEmailStatus === "unavailable"
             ? json.receiptEmailStatus
@@ -334,9 +338,11 @@ export function CaseIntakeForm({ initialService = "" }: CaseIntakeFormProps) {
             <p>{
               receiptEmailStatus === "suppressed"
                 ? PERSISTED_SUCCESS_COPY.emailSuppressed
-                : receiptEmailSent || receiptEmailStatus === "sent"
-                  ? PERSISTED_SUCCESS_COPY.emailSent
-                  : PERSISTED_SUCCESS_COPY.emailFailed
+                : emailConfirmationPending && (receiptEmailSent || receiptEmailStatus === "sent")
+                  ? PERSISTED_SUCCESS_COPY.emailConfirm
+                  : receiptEmailSent || receiptEmailStatus === "sent"
+                    ? PERSISTED_SUCCESS_COPY.emailSent
+                    : PERSISTED_SUCCESS_COPY.emailFailed
             }</p>
           </>
         ) : (

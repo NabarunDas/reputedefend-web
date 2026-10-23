@@ -823,6 +823,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "quotation email", probe: "public.admin_queue_quote_offer_email_v1" },
   },
+  {
+    // AUTO-EMAIL-VERIFY. A hashed single-use challenge for the case-receipt
+    // confirmation button. DEV-applied at ledger 20261023000158; Production unchanged.
+    version: "20261023000158",
+    filename: "20261023000158_email_confirmation_challenge_v1.sql",
+    step: "AUTO-EMAIL-VERIFY case receipt email confirmation",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "email confirmation", probe: "public.confirm_email_challenge_v1" },
+  },
 ]
 
 /**
@@ -834,7 +846,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261022172455`. SQL is byte-for-byte identical to the reviewed source.
+ * `20261023000158`. SQL is byte-for-byte identical to the reviewed source.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

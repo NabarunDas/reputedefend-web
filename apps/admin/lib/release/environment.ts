@@ -108,7 +108,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "authConfig() and customerBackendConfig() are null, so customer actions and the Customer Portal both stay closed. The marketing site falls back to its email-only intake path.",
     blocksAdminLaunch: true,
     blocksOptionalCapabilityOnly: false,
-    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/customer/lib/config.ts", "lib/cases/persistence-config.ts", "lib/payments/config.ts", "lib/supabase/config.ts"],
+    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/customer/lib/config.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts", "lib/payments/config.ts", "lib/supabase/config.ts"],
   },
   {
     name: "SUPABASE_SECRET_KEY",
@@ -225,6 +225,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/admin/proxy.ts",
       "apps/customer/lib/case/config.ts",
       "apps/customer/lib/config.ts",
+      "lib/cases/email-confirmation.ts",
       "lib/cases/persistence-config.ts",
       "lib/payments/config.ts",
       "lib/payments/stripe-url.ts",
@@ -247,7 +248,7 @@ export const environmentContract: readonly EnvVariable[] = [
   },
   {
     name: "VERCEL_URL",
-    apps: ["admin", "customer"],
+    apps: ["admin", "customer", "marketing"],
     classification: "NON_SECRET_CONFIGURATION",
     secret: false,
     scope: "PLATFORM_PROVIDED",
@@ -256,7 +257,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "Preview origin resolution fails closed if VERCEL_BRANCH_URL is also unavailable. Production does not use it.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: false,
-    readBy: ["apps/admin/lib/auth/config.ts", "apps/customer/lib/config.ts"],
+    readBy: ["apps/admin/lib/auth/config.ts", "apps/customer/lib/config.ts", "lib/cases/email-confirmation.ts"],
   },
   {
     name: "VERCEL_DEPLOYMENT_ID",
@@ -282,7 +283,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "Those develop-only controls refuse the request. The guided case workflow is not served, and Marketing Preview case email stays closed.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "lib/cases/persistence-config.ts"],
+    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts"],
   },
 
   {
@@ -549,20 +550,20 @@ export const environmentContract: readonly EnvVariable[] = [
   },
   {
     name: "COMMUNICATIONS_LINK_SECRET",
-    apps: ["admin"],
+    apps: ["admin", "marketing"],
     classification: "PROVIDER_SECRET",
     secret: true,
     scope: "PRODUCTION_ONLY",
     atAdminCutover: "ABSENT",
-    controls: "HMAC key for evidence-request capability links. At least 32 characters. Versioned siblings are read as COMMUNICATIONS_LINK_SECRET_V{n}.",
-    whenAbsent: "linkSecret() is null, so an EVIDENCE_REQUEST communication cannot be drafted or sent.",
+    controls: "HMAC key for evidence-request capability links and the case-receipt email confirmation. At least 32 characters. Versioned siblings are read as COMMUNICATIONS_LINK_SECRET_V{n}.",
+    whenAbsent: "linkSecret() is null, so an EVIDENCE_REQUEST communication cannot be drafted or sent. A case receipt is still sent, without an email-confirmation button.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/link.ts"],
+    readBy: ["apps/admin/lib/communications/link.ts", "lib/cases/email-confirmation.ts"],
   },
   {
     name: "COMMUNICATIONS_LINK_KEY_VERSION",
-    apps: ["admin"],
+    apps: ["admin", "marketing"],
     classification: "NON_SECRET_CONFIGURATION",
     secret: false,
     scope: "PRODUCTION_ONLY",
@@ -571,7 +572,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "Falls back to version 1. An unparseable or out-of-range value also falls back to 1 rather than failing.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/link.ts"],
+    readBy: ["apps/admin/lib/communications/link.ts", "lib/cases/email-confirmation.ts"],
   },
   {
     name: "RESEND_API_KEY",
@@ -700,16 +701,16 @@ export const environmentContract: readonly EnvVariable[] = [
   },
   {
     name: "DEV_MAIL_ALLOWED_RECIPIENTS",
-    apps: ["admin"],
+    apps: ["admin", "marketing"],
     classification: "NON_SECRET_CONFIGURATION",
     secret: false,
     scope: "PREVIEW_AND_DEVELOPMENT_ONLY",
     atAdminCutover: "ABSENT",
-    controls: "The one exact mailbox that may receive a quotation email on the develop DEV preview. It must be set as a sensitive Admin Preview/develop variable to an owner-controlled test alias. A list, a suffix, a substring, or a wildcard is rejected. Production does not consult it.",
-    whenAbsent: "Development quotation email fails closed and is not queued. Other lanes keep the verified customer address and the existing worker.",
+    controls: "The one exact mailbox that may receive a quotation email, or a case-receipt email-confirmation button, on the develop DEV preview. It must be set as a sensitive Admin Preview/develop variable to an owner-controlled test alias. A list, a suffix, a substring, or a wildcard is rejected. Production does not consult it.",
+    whenAbsent: "Development quotation email fails closed and is not queued. A develop preview case receipt is still sent only by its existing lane, and it omits the confirmation button unless the recipient is this exact mailbox.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/dev-lane.ts"],
+    readBy: ["apps/admin/lib/communications/dev-lane.ts", "lib/cases/email-confirmation.ts"],
   },
   {
     name: "STRIPE_SECRET_KEY",
@@ -1081,7 +1082,7 @@ export const computedEnvFamilies = [
     secret: true,
     controls:
       "A superseded evidence-link HMAC key, kept so communications stamped with an older version can still be re-derived on retry.",
-    readBy: ["apps/admin/lib/communications/link.ts"],
+    readBy: ["apps/admin/lib/communications/link.ts", "lib/cases/email-confirmation.ts"],
   },
 ]
 

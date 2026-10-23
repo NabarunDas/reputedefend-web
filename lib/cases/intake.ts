@@ -19,6 +19,10 @@ import {
   type CaseType,
 } from "@/lib/cases/domain"
 import {
+  emailConfirmationStatus,
+  planInitialEmailConfirmation,
+} from "@/lib/cases/email-confirmation"
+import {
   buildCaseReceivedCustomerMessage,
   buildCaseReceivedInternalMessage,
 } from "@/lib/cases/received-email"
@@ -69,6 +73,12 @@ export type PersistGetHelpCaseOptions = {
   mailLedger?: IntakeMailLedger
   /** A caller-supplied database client. Production creates its own. */
   supabaseClient?: SupabaseServerClient
+  /**
+   * Builds the one-time confirmation link for the first receipt.
+   * Absent means the normal planner, which omits the button when a secure
+   * link cannot be made. The returned URL is for the outbound message only.
+   */
+  resolveEmailConfirmation?: (input: { caseId: string; email: string }) => Promise<string | null>
 }
 
 const GENERIC_DELIVERY_ERROR = "Delivery failed."
@@ -104,6 +114,30 @@ async function defaultCreateIntake(args: CaseIntakeRpcArgs): Promise<CaseIntakeR
     throw new Error("CASE_INTAKE_RPC_FAILED")
   }
   return row
+}
+
+async function defaultResolveEmailConfirmation(
+  caseId: string,
+  email: string,
+  client: SupabaseServerClient | null,
+): Promise<string | null> {
+  const plan = planInitialEmailConfirmation(caseId, email)
+  if (!plan || !client) return null
+  try {
+    const prepared = await client.rpc("prepare_email_confirmation_challenge_v1", {
+      p_case: caseId,
+      p_challenge: plan.challengeId,
+      p_email: plan.email,
+      p_environment: plan.environment,
+      p_token_hash: plan.tokenHash,
+      p_key_version: plan.keyVersion,
+    })
+    if (prepared.error || emailConfirmationStatus(prepared.data) !== "ready") return null
+    return plan.deliveryUrl
+  } catch {
+    console.error("[case-intake] email confirmation omitted")
+    return null
+  }
 }
 
 function defaultUpdateCommunication(client: SupabaseServerClient) {
@@ -284,6 +318,7 @@ async function deliverPersistedIntake(
   if (!customerNeedsDelivery && !internalNeedsDelivery) {
     return report({
       ...success,
+      emailConfirmation: "omitted",
       ...customerReceipt(intake.customer_communication_status === "SENT"),
     }, intake.customer_communication_status === "SENT" ? "sent" : "skipped", intake.internal_communication_status === "SENT" ? "sent" : "skipped")
   }
@@ -303,11 +338,19 @@ async function deliverPersistedIntake(
     }
     return report({
       ...success,
+      emailConfirmation: "omitted",
       ...customerReceipt(intake.customer_communication_status === "SENT"),
     }, customerNeedsDelivery ? "failed" : "skipped", internalNeedsDelivery ? "failed" : "skipped")
   }
 
   const canonicalData = enquiryInputFromSnapshot(snapshot)
+  const confirmationUrl = customerNeedsDelivery && customerRecipient
+    ? await (options.resolveEmailConfirmation ?? ((input: { caseId: string; email: string }) =>
+      defaultResolveEmailConfirmation(input.caseId, input.email, client)))({
+      caseId: intake.case_id,
+      email: customerRecipient,
+    })
+    : null
   const fromEmail = emailConfig.fromEmail || "undelivered"
 
   let customerOutcome: IntakeDeliveryOutcome = customerRecipient
@@ -320,6 +363,7 @@ async function deliverPersistedIntake(
         intake.public_ref,
         fromEmail,
         customerRecipient,
+        confirmationUrl,
       ),
       provider,
       configReady: emailConfig.ready && !devClosed,
@@ -370,6 +414,9 @@ async function deliverPersistedIntake(
 
   return report({
     ...success,
+    // Creating a challenge does not mean an email has gone out.
+    // Only the provider-accepted customer receipt can be presented as sent.
+    emailConfirmation: confirmationUrl && customerOutcome === "sent" ? "pending" : "omitted",
     ...customerReceipt(customerOutcome === "sent" || intake.customer_communication_status === "SENT"),
   }, customerOutcome, internalOutcome)
 }

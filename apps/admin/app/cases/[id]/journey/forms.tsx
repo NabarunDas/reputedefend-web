@@ -85,12 +85,45 @@ function EmailStatus({ brief }: { brief: JourneyIntakeBrief }) {
   </>
 }
 
-function EmailFollowUp({ brief, workflow }: { brief: JourneyIntakeBrief; workflow: boolean }) {
+function ResendConfirmation({ caseId }: { caseId: string }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState("")
+  async function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    try {
+      const response = await fetch("/api/cases/email-confirmation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ caseId }),
+      })
+      const result = await response.json() as { message?: string }
+      setMessage(result.message || "Nothing was sent, and the address was not marked verified.")
+    } catch {
+      setMessage("Nothing was sent, and the address was not marked verified.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <form onSubmit={send}>
+    <p>Resend confirmation is only for recovery. It does not verify the address.</p>
+    <button type="submit" disabled={busy}>Resend confirmation</button>
+    {message && <p role="status">{message}</p>}
+  </form>
+}
+
+function EmailFollowUp({ brief, workflow, caseId }: { brief: JourneyIntakeBrief; workflow: boolean; caseId?: string }) {
   const readiness = emailReadiness(brief)
   const href = isUuid(brief.customerId) ? `/records/client/${brief.customerId}` : null
   return <>
     <p>{readiness.detail}</p>
-    {workflow && readiness.outstanding && <div className="guided-warning" role="status">
+    {workflow && readiness.confirmationPending && <div className="guided-warning" role="status">
+      <p><strong>{readiness.label}</strong></p>
+      <p>The confirmation was requested automatically in the case receipt. This page does not verify the address, and it does not record contact-verification evidence.</p>
+      {caseId && <ResendConfirmation caseId={caseId} />}
+    </div>}
+    {workflow && readiness.outstanding && !readiness.confirmationPending && <div className="guided-warning" role="status">
       <p><strong>Email verification is still outstanding.</strong></p>
       <p>A later evidence email needs a verified address. This screening can still be recorded. This page does not verify the address, and it has no checkbox that would do so.</p>
       {href
@@ -134,7 +167,7 @@ export function IntakeSummary({ brief, reference }: { brief: JourneyIntakeBrief;
   </div>
 }
 
-export function VerificationSummary({ brief }: { brief: JourneyIntakeBrief }) {
+export function VerificationSummary({ brief, caseId }: { brief: JourneyIntakeBrief; caseId: string }) {
   const authority = brief.authority === "verified"
     ? "Business authority is recorded. It is separate from email control."
     : brief.authority === "pending"
@@ -154,7 +187,7 @@ export function VerificationSummary({ brief }: { brief: JourneyIntakeBrief }) {
       <dt>Website</dt><dd>{brief.website ? safeLink(brief.website) : "Not provided"}</dd>
       <dt>Google Profile</dt><dd>{brief.profileUrl ? safeLink(brief.profileUrl) : "Not provided"}</dd>
     </dl>
-    <EmailFollowUp brief={brief} workflow />
+    <EmailFollowUp brief={brief} workflow caseId={caseId} />
     <details className="guided-details">
       <summary>Verification details</summary>
       <p>{authority}</p>

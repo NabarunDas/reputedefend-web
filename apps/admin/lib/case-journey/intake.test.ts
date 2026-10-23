@@ -97,6 +97,13 @@ describe("journey intake brief", () => {
     expect(brief.authority).toBe("pending")
     expect(brief.emailControl).toBe("not_recorded")
     expect(emailReadiness(brief).detail).toMatch(/does not verify this address/)
+    expect(emailReadiness({ ...brief, emailConfirmationPending: true })).toMatchObject({
+      state: "not_recorded",
+      label: "Email confirmation pending — requested automatically in your case receipt",
+      outstanding: true,
+      confirmationPending: true,
+    })
+    expect(emailReadiness({ ...brief, emailControl: "verified", emailSuppressed: false, emailConfirmationPending: true }).label).toBe("Verified")
     expect(emailReadiness({ ...brief, email: "", snapshot: null })).toMatchObject({ label: "No email", outstanding: true })
     expect(emailReadiness({
       ...brief,

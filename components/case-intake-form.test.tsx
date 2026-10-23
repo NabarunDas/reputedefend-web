@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import { EMAIL_CONFIRM_SUCCESS } from "@/lib/cases/email-confirmation"
 import { CaseIntakeForm, COUNTRY_HINT, EVIDENCE_NOTE, PERSISTED_SUCCESS_COPY, STEP_TITLES, SUBMIT_NOTE, SUCCESS_COPY, SIMULATED_COPY, WEBSITE_HINT } from "./case-intake-form"
 import { CASE_SERVICES, FORMAL_CASE_SERVICES, parseServiceParam } from "@/lib/enquiry"
 
@@ -279,6 +280,44 @@ describe("CaseIntakeForm", () => {
     expect(PERSISTED_SUCCESS_COPY.emailSent).toContain("inbox")
     expect(PERSISTED_SUCCESS_COPY.emailSent).not.toMatch(/email provider|delivered|guaranteed/i)
     expect(screen.queryByText(SUCCESS_COPY.body)).not.toBeInTheDocument()
+  })
+
+  it("asks the customer to confirm the address when the receipt included that step", async () => {
+    stubSubmissionKey()
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        persisted: true,
+        caseRef: "PR-26-7K4M2Q",
+        caseType: "PROFILE_RECOVERY",
+        receiptEmailSent: true,
+        receiptEmailStatus: "sent",
+        emailConfirmation: "pending",
+      }),
+    }))
+    await submitValidAssessment()
+    expect(EMAIL_CONFIRM_SUCCESS).toBe(PERSISTED_SUCCESS_COPY.emailConfirm)
+    expect(await screen.findByText(EMAIL_CONFIRM_SUCCESS)).toBeInTheDocument()
+    expect(screen.queryByText(PERSISTED_SUCCESS_COPY.emailSent)).not.toBeInTheDocument()
+  })
+
+  it("does not claim the confirmation email was sent when the receipt failed", async () => {
+    stubSubmissionKey()
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        persisted: true,
+        caseRef: "PR-26-7K4M2Q",
+        receiptEmailSent: false,
+        receiptEmailStatus: "unavailable",
+        emailConfirmation: "pending",
+      }),
+    }))
+    await submitValidAssessment()
+    expect(await screen.findByText(PERSISTED_SUCCESS_COPY.emailFailed)).toBeInTheDocument()
+    expect(screen.queryByText(EMAIL_CONFIRM_SUCCESS)).not.toBeInTheDocument()
   })
 
   it("tells the customer the case was recorded if the receipt email failed", async () => {

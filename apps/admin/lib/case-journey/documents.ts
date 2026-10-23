@@ -71,6 +71,7 @@ export type JourneyEvidenceMessage = {
   contentLocked: boolean
   evidenceRequestId: string | null
   draftedAt: string
+  firstProviderAttemptAt?: string | null
 }
 
 export type DraftingInputs = {
@@ -96,6 +97,8 @@ export type JourneyDocuments = {
   verifiedEmail: string | null
   verifiedEmailSuppressed: boolean
   sendDisabledReason: string
+  /** Isolated develop DEV email processing uses the existing one-email send command. */
+  sendManuallyOnDev?: boolean
   drafting: DraftingAvailability
   currentMessage: JourneyEvidenceMessage | null
   cancelledMessage: boolean
@@ -117,6 +120,7 @@ type MessageSource = {
   contentLocked: boolean
   evidenceRequestId: string | null
   draftedAt: string
+  firstProviderAttemptAt?: string | null
   supersededBy: string | null
 }
 
@@ -232,6 +236,7 @@ export function buildJourneyDocuments(input: {
   requests: EvidenceRequest[]
   history: CaseCommunicationRead | null
   sendDisabledReason: string
+  sendManuallyOnDev?: boolean
   drafting: DraftingInputs
 }): JourneyDocuments {
   const requests = input.requests.map(request => ({
@@ -250,6 +255,7 @@ export function buildJourneyDocuments(input: {
     verifiedEmail: input.history?.verifiedEmail ?? null,
     verifiedEmailSuppressed: input.history?.verifiedEmailSuppressed ?? false,
     sendDisabledReason: input.sendDisabledReason,
+    sendManuallyOnDev: input.sendManuallyOnDev ?? false,
     drafting: draftingAvailability(input.drafting),
   }
   if (!input.history) {
@@ -289,7 +295,33 @@ function toMessage(row: MessageSource): JourneyEvidenceMessage {
     contentLocked: row.contentLocked,
     evidenceRequestId: row.evidenceRequestId,
     draftedAt: row.draftedAt,
+    firstProviderAttemptAt: row.firstProviderAttemptAt ?? null,
   }
+}
+
+/**
+ * Step 3 can use the same reviewed communication that the Communications
+ * workspace queues. This is display eligibility only; both command endpoints
+ * still recheck the current server/SQL state and the verified recipient.
+ */
+export function evidenceSendState(documents: JourneyDocuments): "reviewed" | "queued" | null {
+  const message = documents.currentMessage
+  if (documents.history !== "ready"
+    || documents.sendDisabledReason
+    || documents.verifiedEmailSuppressed
+    || !documents.verifiedEmail
+    || !message
+    || !message.contentLocked
+    || message.delivery !== "Not sent"
+    || !message.evidenceRequestId
+    || !documents.requests.some(row => row.id === message.evidenceRequestId && row.status === "OPEN")
+    || !trustedEmailSnapshot(message.bodyText, message.bodyHtml)
+    || message.recipient.trim().toLowerCase() !== documents.verifiedEmail.trim().toLowerCase()) return null
+  if (message.lifecycle === "REVIEWED") return "reviewed"
+  // Only DEV has a manual one-job sender. A queued email with any previous
+  // provider attempt must not be offered again as a fresh sending action.
+  if (message.lifecycle === "QUEUED" && documents.sendManuallyOnDev && !message.firstProviderAttemptAt) return "queued"
+  return null
 }
 
 export function openRequirements(documents: JourneyDocuments): JourneyRequirement[] {

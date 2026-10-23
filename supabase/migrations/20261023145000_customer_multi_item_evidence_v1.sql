@@ -2,7 +2,26 @@ BEGIN;
 -- CUSTOMER-EVIDENCE-MULTI: one secure email link; one requested item per
 -- evidence record. Keep the same session/OTP, file validation, S3 storage,
 -- scan, administrative evidence review and durable event/audit rules.
--- Legacy v1 upload function remains unchanged.
+-- Legacy v1 upload function remains unchanged. Its original one-active-file
+-- constraint remains for older clients; the new item uploads get one active
+-- file per reviewed item instead.
+ALTER TABLE public.case_document_versions
+  ADD COLUMN evidence_item_title text;
+ALTER TABLE public.case_document_versions
+  ADD CONSTRAINT case_document_versions_evidence_item_title_check
+  CHECK (evidence_item_title IS NULL OR char_length(btrim(evidence_item_title)) BETWEEN 1 AND 200);
+DROP INDEX public.case_document_versions_one_customer_request_idx;
+CREATE UNIQUE INDEX case_document_versions_one_customer_request_idx
+  ON public.case_document_versions(customer_evidence_request_id)
+  WHERE submission_source = 'CUSTOMER'
+    AND upload_status IN ('PENDING_UPLOAD','UPLOADED')
+    AND evidence_item_title IS NULL;
+CREATE UNIQUE INDEX case_document_versions_one_customer_item_idx
+  ON public.case_document_versions(customer_evidence_request_id, evidence_item_title)
+  WHERE submission_source = 'CUSTOMER'
+    AND upload_status IN ('PENDING_UPLOAD','UPLOADED')
+    AND evidence_item_title IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION admin_private.customer_open_evidence_requests_v1(p_case uuid, p_action uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -61,7 +80,7 @@ BEGIN
         WHERE cv.customer_evidence_request_id = r.id
           AND cv.submission_source = 'CUSTOMER'
           AND cv.upload_status = 'UPLOADED'
-          AND d.title = needed.title
+          AND coalesce(cv.evidence_item_title, d.title) = needed.title
         ORDER BY cv.uploaded_at, cv.id
         LIMIT 1
       ) item_uploaded ON TRUE
@@ -73,7 +92,7 @@ BEGIN
           AND cv.submission_source = 'CUSTOMER'
           AND cv.upload_status = 'PENDING_UPLOAD'
           AND cv.customer_action_id = p_action
-          AND d.title = needed.title
+          AND coalesce(cv.evidence_item_title, d.title) = needed.title
         ORDER BY cv.created_at, cv.id
         LIMIT 1
       ) item_pending ON TRUE
@@ -146,7 +165,7 @@ BEGIN
   FROM public.case_document_versions v
   JOIN public.case_documents doc ON doc.id = v.document_id
   WHERE v.customer_evidence_request_id = req.id
-    AND doc.title = btrim(p_item_title)
+    AND coalesce(v.evidence_item_title, doc.title) = btrim(p_item_title)
     AND v.submission_source = 'CUSTOMER'
     AND v.upload_status IN ('PENDING_UPLOAD', 'UPLOADED')
   ORDER BY v.created_at, v.id
@@ -193,10 +212,10 @@ BEGIN
   INSERT INTO public.case_document_versions(
     id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
     storage_provider, storage_bucket, storage_key, created_by,
-    submission_source, customer_action_id, customer_evidence_request_id
+    submission_source, customer_action_id, customer_evidence_request_id, evidence_item_title
   ) VALUES (
     version_id, d.id, version_no, btrim(p_filename), p_content_type, p_size, 'S3', p_bucket, object_key, actor,
-    'CUSTOMER', a.id, req.id
+    'CUSTOMER', a.id, req.id, btrim(p_item_title)
   );
   INSERT INTO public.case_document_events(case_id, document_id, version_id, actor_id, event, details)
   VALUES (cs.id, d.id, version_id, actor, 'UPLOAD_BEGUN', jsonb_build_object(

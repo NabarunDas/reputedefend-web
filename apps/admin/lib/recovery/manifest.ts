@@ -851,13 +851,13 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // ENV-PARITY. Quotation recipient comes from the verified customer record
     // in both DEV and Production, never a hardcoded test mailbox.
-    // Source-only until the exact DEV migration is applied and verified.
-    // Does not itself send any email or activate a provider.
-    version: "20261023130000",
-    filename: "20261023130000_quote_email_recipient_parity_v1.sql",
+    // DEV-applied once at exact ledger version 20261023103232; source aligned.
+    // Does not itself send any email or activate a provider. Production untouched.
+    version: "20261023103232",
+    filename: "20261023103232_quote_email_recipient_parity_v1.sql",
     step: "ENV-PARITY quotation recipient",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "quotation recipient parity", probe: "public.admin_queue_quote_offer_email_v1" },
@@ -873,7 +873,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261023091735`. The repository filename matches the DEV-applied version.
+ * `20261023103232`. The repository filename matches the DEV-applied version.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

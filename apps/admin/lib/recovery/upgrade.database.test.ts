@@ -65,7 +65,7 @@ describe("upgrading a database that is already running", () => {
     // Production remains at SEC-08.
     expect(pending.at(-1)?.version).toBe(pending[pending.length - 1]?.version)
     expect(pending.at(-1)?.filename).toMatch(/quote_email_recipient_parity_v1\.sql$/)
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.version).toBe("20261023091735")
     expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.version).toBe("20261023000158")

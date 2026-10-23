@@ -1,4 +1,3 @@
-BEGIN;
 -- ENV-PARITY DEV quotation recipient support.
 -- Replaces only the current function definition without changing existing data.
 -- A quotation email is addressed to the verified customer from public.customers.
@@ -274,5 +273,3 @@ REVOKE ALL ON FUNCTION public.admin_queue_quote_offer_email_v1(text, uuid, jsonb
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_queue_quote_offer_email_v1(text, uuid, jsonb)
   TO service_role;
-
-COMMIT;

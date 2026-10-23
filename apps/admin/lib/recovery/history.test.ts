@@ -29,13 +29,10 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261023210000_admin_case_quote_readiness_v1.sql",
-      "20261023210100_dev_email_recent_login_30m_v1.sql",
-    ])
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261023144943",
-      name: "customer_multi_item_evidence_v1",
+      version: "20261023221042",
+      name: "dev_email_recent_login_30m_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })

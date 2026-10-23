@@ -877,25 +877,25 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "customer multi-document evidence", probe: "public.customer_evidence_begin_v2" },
   },
   {
-    // ADMIN-JOURNEY-06. Read-only Step 6 readiness. Not applied to DEV.
-    // Do not apply without approval, and do not replay it once applied.
-    version: "20261023210000",
-    filename: "20261023210000_admin_case_quote_readiness_v1.sql",
+    // ADMIN-JOURNEY-06. Read-only Step 6 readiness applied to DEV at 20261023221028.
+    // Source filename aligned; SQL was not replayed.
+    version: "20261023221028",
+    filename: "20261023221028_admin_case_quote_readiness_v1.sql",
     step: "ADMIN-JOURNEY-06 quote readiness",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "quote readiness", probe: "public.admin_case_quote_readiness_v1" },
   },
   {
     // ADMIN-JOURNEY-06. DEV email claim recent sign-in is 30 minutes.
-    // Not applied to DEV. Other recent-login windows stay at five minutes.
-    version: "20261023210100",
-    filename: "20261023210100_dev_email_recent_login_30m_v1.sql",
+    // Applied to DEV at 20261023221042; never replay. Other recent-login windows unchanged.
+    version: "20261023221042",
+    filename: "20261023221042_dev_email_recent_login_30m_v1.sql",
     step: "ADMIN-JOURNEY-06 DEV email recent sign-in",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "DEV email recent sign-in", probe: "public.admin_dev_send_email_claim_v1" },
@@ -911,7 +911,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261023144943`. The repository filename and SQL match the DEV-applied version.
+ * `20261023221042`. Repository source filenames aligned to the generated ledger; no SQL replay.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

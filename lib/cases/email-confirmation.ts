@@ -195,7 +195,7 @@ function confirmationOrigin(env: RuntimeEnv): string | null {
     // Bind the Marketing alias to the same Vercel team and branch. Never email an Admin URL.
     let host = currentHost
     if (currentHost.startsWith("profilerelaunch-admin-")) {
-      const matched = /^profilerelaunch-admin-git-develop-([a-z0-9-]+)\\.vercel\\.app$/.exec(env.VERCEL_BRANCH_URL ?? "")
+      const matched = /^profilerelaunch-admin-git-develop-([a-z0-9-]+)\.vercel\.app$/.exec(env.VERCEL_BRANCH_URL ?? "")
       if (!matched?.[1]) return null
       host = `reputedefend-web-git-develop-${matched[1]}.vercel.app`
     }

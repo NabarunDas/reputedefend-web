@@ -218,7 +218,8 @@ describe("customer case documents", () => {
       })),
     }] }} />)
     expect(screen.getByText("1 of 3 documents received")).toBeTruthy()
-    expect(screen.getByText("Uploaded — awaiting security review · notice.pdf")).toBeTruthy()
+    expect(screen.getByText("Uploaded — awaiting security review")).toBeTruthy()
+    expect(screen.getByText("notice.pdf")).toBeTruthy()
     expect(screen.queryByLabelText("Upload Notice from Google")).toBeNull()
     expect(screen.getByLabelText("Upload Business address proof")).toBeTruthy()
     expect(screen.getByLabelText("Upload Council letter")).toBeTruthy()

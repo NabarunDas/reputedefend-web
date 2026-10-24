@@ -17,7 +17,7 @@ import { outcomes, type Submission } from "../cases/model"
 import { formatGbp, type ServiceOrder } from "../commerce/model"
 import { obligationLabel, type MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
-import { activationOrderLink } from "./activation"
+import { acceptedServiceProjection, activationOrderLink } from "./activation"
 import { readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { submissionPartyMatches, submissionRecordsDisagree } from "./submission"
 
@@ -176,7 +176,10 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
     events,
   })
   const expectedModel = track === "GUIDED" ? "UPFRONT" : track === "MANAGED" ? "SUCCESS_FEE" : null
-  const foreign = expectedModel ? facts.payment.orders.some(row => row.paymentModel !== expectedModel) : facts.payment.orders.length > 0
+  const pendingAccepted = acceptedServiceProjection(facts, now)
+  const foreign = expectedModel
+    ? facts.payment.orders.some(row => row.paymentModel !== expectedModel)
+    : facts.payment.orders.length > 0 && !pendingAccepted
   const incomplete = !facts.commercial.complete || !facts.payment.complete || commercialQuotesTied(facts)
   const setupConflict = track === "MANAGED" && !!order?.setupReady && !order.consentRecorded
   const paidWithoutReceipt = !!order && order.obligationState === "PAID" && !order.receiptRecorded
@@ -234,6 +237,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
   if (facts.reopened && !closed && !facts.outcome) known.push("This case was reopened. The earlier outcome was cleared and does not verify this step.")
   if (facts.reopened && closed) known.push("This case was reopened before the current outcome was recorded.")
   if (outcomeShape === "pre_closure" && !conflict) known.push("The stored outcome is on an open case. Recording it did not close the case.")
+  if (pendingAccepted && !expectedModel) known.push("An accepted order is waiting on an earlier step. That outstanding payment is not a billing disagreement, and this step does not collect it.")
   if (position === "disagree") known.push("The outcome and billing records do not agree, so no billing command is offered from here.")
   else if (position === "incomplete") known.push("The quote or payment list is incomplete, so billing cannot be confirmed from here.")
   else if (position === "settled" && track === "GUIDED") known.push("The Guided order stays ACCEPTED_AWAITING_PAYMENT. The upfront obligation is PAID and a receipt is recorded. No second charge is inferred.")

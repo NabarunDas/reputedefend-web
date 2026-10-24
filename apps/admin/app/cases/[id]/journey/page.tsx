@@ -8,7 +8,7 @@ import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { loadCaseQuoteReadiness } from "@/lib/case-journey/quote-readiness-command"
 import { unavailableQuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { emptyQuoteEmail, projectQuoteEmail } from "@/lib/case-journey/quote-email"
-import { activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import { acceptedOrderOutstandingLabel, acceptedServiceProjection, activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
@@ -105,6 +105,9 @@ export default async function CaseJourneyPage({
     outcomeEvents,
   }
   let journey = presentCaseJourney(journeyFacts, now, events, journeyOptions)
+  const pendingAccepted = acceptedServiceProjection(journeyFacts, now)
+  const acceptedOrder = pendingAccepted && !pendingAccepted.aligned ? await loadOrder(pendingAccepted.orderId) : null
+  const acceptedOrderLabel = acceptedOrder ? acceptedOrderOutstandingLabel(acceptedOrder) : null
   const selectedId = selectJourneyStep(journey, query.step)
   const selected = journey.steps.find(step => step.id === selectedId)
   const documentsOpen = selected?.id === "REQUEST_DOCUMENTS" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
@@ -206,6 +209,7 @@ export default async function CaseJourneyPage({
     quoteReadiness={quoteReadiness}
     quoteEmail={quoteEmail}
     activation={activation}
+    acceptedOrderLabel={acceptedOrderLabel}
     preparation={preparation?.panel ?? null}
     submission={submission ? { caseDetail: detail, panel: submission.panel } : null}
     outcome={outcome ? { caseDetail: detail, panel: outcome.panel } : null}

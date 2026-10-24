@@ -1254,6 +1254,72 @@ describe("quote acceptance", () => {
   })
 })
 
+describe("an accepted order before the stored track is updated", () => {
+  it("keeps Step 10 locked and names the accepted service on Step 7", () => {
+    const journey = show({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "UNDECIDED",
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order()] },
+    })
+    expect(step(journey, "QUOTE_ACCEPTANCE").state).toBe("COMPLETED")
+    expect(step(journey, "SERVICE_ACTIVATION").state).toBe("CURRENT")
+    expect(step(journey, "SERVICE_ACTIVATION").whoMustAct).toMatch(/already chosen/)
+    expect(step(journey, "SERVICE_ACTIVATION").whoMustAct).not.toMatch(/still have to choose/)
+    expect(step(journey, "OUTCOME_BILLING").state).toBe("LOCKED")
+    expect(step(journey, "OUTCOME_BILLING").state).not.toBe("NEEDS_ATTENTION")
+    expect(journey.serviceTrack).toBe("UNDECIDED")
+    expect(journey.projectedService).toEqual({
+      persisted: false,
+      model: "UPFRONT",
+      summary: "An accepted upfront order is on file. The stored service track has not been updated.",
+    })
+  })
+
+  it("opens Continue from Initial Review once the earlier steps are already complete", () => {
+    const journey = show({
+      technicalStage: "INITIAL_REVIEW",
+      serviceTrack: "UNDECIDED",
+      caseStatus: "RECEIVED",
+      evidence: reviewedEvidence,
+      communications: [delivered()],
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order()] },
+    }, [intake("REVIEWED"), screening()], { assessment: { phase: "approved", pathway: "GUIDED", versionNumber: 1 } })
+    expect(completed(journey)).toEqual([
+      "CASE_RECEIVED",
+      "VERIFICATION",
+      "REQUEST_DOCUMENTS",
+      "EVIDENCE_REVIEW",
+      "ASSESSMENT",
+      "QUOTE_ACCEPTANCE",
+    ])
+    expect(journey.focusStepId).toBe("SERVICE_ACTIVATION")
+    expect(step(journey, "SERVICE_ACTIVATION").state).toBe("CURRENT")
+    expect(step(journey, "SERVICE_ACTIVATION").whoMustAct).toMatch(/already chosen/)
+    expect(step(journey, "OUTCOME_BILLING").state).toBe("LOCKED")
+    expect(journey.serviceTrack).toBe("UNDECIDED")
+    expect(journey.projectedService?.persisted).toBe(false)
+  })
+
+  it("still marks Step 10 when the undecided case does not have one coherent order", () => {
+    const several = show({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "UNDECIDED",
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order(), order({ orderId: "order-2" })] },
+    })
+    expect(step(several, "OUTCOME_BILLING").state).toBe("NEEDS_ATTENTION")
+    const unpaidReceipt = show({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "UNDECIDED",
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order({ obligationState: "PAID", receiptRecorded: false })] },
+    })
+    expect(step(unpaidReceipt, "OUTCOME_BILLING").state).toBe("NEEDS_ATTENTION")
+  })
+})
+
 describe("service activation", () => {
   const guidedPaid = {
     technicalStage: "PREPARATION" as const,

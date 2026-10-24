@@ -164,7 +164,7 @@ function show(source: CaseFlowFacts, authorizationRecord: CaseAuthorization | nu
   const panel = buildJourneyActivationPanel({
     facts: source,
     now: NOW,
-    order: source.serviceTrack === "GUIDED" ? loadedOrder(source) : null,
+    order: source.serviceTrack === "GUIDED" || source.payment.orders.some(row => row.paymentModel === "UPFRONT" && row.orderId === ORDER_ID) ? loadedOrder(source) : null,
     orderDetailMissing: false,
     moneyOrders,
     authorization: authorizationRecord,
@@ -190,6 +190,30 @@ afterEach(() => {
 })
 
 describe("guided service activation", () => {
+  it("continues an accepted Guided order without issuing a payment or marking it paid", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The accepted service is recorded on the case. The payment stays outstanding until Stripe confirms settlement and a receipt is stored." }) })
+    vi.stubGlobal("fetch", fetchMock)
+    show(facts({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "UNDECIDED",
+      caseStatus: "RECEIVED",
+      allowedTransitions: ["PAYMENT_REQUIRED", "AUTHORIZATION_REQUIRED"],
+    }))
+    expect(screen.getAllByText("Guided Relaunch — accepted; £99 payment outstanding").length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/stored service track is not chosen/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Continue to Guided Payment" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Issue upfront payment link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Mark as paid/i })).toBeNull()
+    expect(document.querySelector("[data-step='OUTCOME_BILLING']")).not.toHaveAttribute("data-state", "NEEDS_ATTENTION")
+    fireEvent.submit(screen.getByRole("button", { name: "Continue to Guided Payment" }).closest("form")!)
+    expect(await screen.findByRole("status")).toHaveTextContent(/payment stays outstanding/)
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(payload).toEqual({ caseId: CASE_ID, version: 3 })
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/cases/journey/reconcile")
+    expect(payload).not.toHaveProperty("serviceCode")
+    expect(payload).not.toHaveProperty("obligationState")
+  })
+
   it("keeps a locked step free of payment and Google controls", () => {
     show(facts({ technicalStage: "INITIAL_REVIEW", allowedTransitions: ["ASSESSMENT_READY"], serviceTrack: "UNDECIDED", commercial: { complete: true, quotes: [] }, payment: { complete: true, orders: [] } }))
     expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).toHaveAttribute("data-state", "LOCKED")

@@ -24,7 +24,7 @@ import type {
 } from "../case-flow/model"
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
-import { ACTIVATION_ORDER_DISAGREE_WHO, activationLinkProblem, activationOrderLink } from "./activation"
+import { ACTIVATION_ORDER_DISAGREE_WHO, acceptedServiceProjection, activationLinkProblem, activationOrderLink } from "./activation"
 import { preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
 import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
@@ -105,6 +105,11 @@ export type CaseJourneyPresentation = {
   /** Set when the canonical action is a saved-card step this agreement does not allow. */
   suppressedAction: { id: CaseNextActionId; label: string; reason: string } | null
   projectionNote: string | null
+  /**
+   * An accepted order is on file and the stored track or stage is not there yet.
+   * This is not a claim that the case record has changed.
+   */
+  projectedService: { persisted: false; model: "UPFRONT" | "SUCCESS_FEE"; summary: string } | null
 }
 
 const savedCardActions = new Set<CaseNextActionId>([
@@ -269,6 +274,16 @@ export function presentCaseJourney(
 
   const suppressed = flow.primaryAction && savedCardActions.has(flow.primaryAction.id) ? flow.primaryAction : null
   const incompatibilities = incompatibleNotes(facts, suppressed !== null)
+  const pendingAccepted = acceptedServiceProjection(facts, now)
+  const projectedService = pendingAccepted && !pendingAccepted.aligned
+    ? {
+      persisted: false as const,
+      model: pendingAccepted.model,
+      summary: pendingAccepted.model === "UPFRONT"
+        ? "An accepted upfront order is on file. The stored service track has not been updated."
+        : "An accepted success-fee order is on file. The stored service track has not been updated.",
+    }
+    : null
 
   return {
     steps,
@@ -280,11 +295,12 @@ export function presentCaseJourney(
     reopened: facts.reopened && !closed,
     closed,
     attention: flow.attentionItems.map(item => ({ code: item.code, title: item.title, explanation: item.explanation })),
-    blockers: flow.blockers.filter(item => !incompatibleBlockers.has(item.code)).map(item => undecidedTrackBlocker(item, options.assessment)),
+    blockers: flow.blockers.filter(item => !incompatibleBlockers.has(item.code)).map(item => undecidedTrackBlocker(item, options.assessment, projectedService !== null)),
     incompatibilities,
     nextAction: suppressed ? null : flow.primaryAction,
     suppressedAction: suppressed ? { id: suppressed.id, label: suppressed.label, reason: savedCardReason } : null,
     projectionNote: projectionNote(facts),
+    projectedService,
   }
 }
 
@@ -351,8 +367,14 @@ function stageFocus(stage: TechnicalStage): JourneyStepId {
   }
 }
 
-function undecidedTrackBlocker(blocker: CaseBlocker, assessment: AssessmentJudgement | null | undefined): CaseBlocker {
+function undecidedTrackBlocker(blocker: CaseBlocker, assessment: AssessmentJudgement | null | undefined, acceptedOrder = false): CaseBlocker {
   if (blocker.code !== "SERVICE_TRACK_UNDECIDED") return blocker
+  if (acceptedOrder) {
+    return {
+      ...blocker,
+      explanation: "The stored service track is not chosen. An accepted order is already on file. Continue on service activation records that order. It does not ask for the service to be chosen again, and a recommended pathway is not that order.",
+    }
+  }
   const pathway = assessment?.phase === "approved" && (assessment.pathway === "GUIDED" || assessment.pathway === "MANAGED")
     ? assessment.pathway === "GUIDED" ? "Guided" : "Managed"
     : null
@@ -902,6 +924,25 @@ function reopenNote(facts: CaseFlowFacts): string[] {
 function readActivation(facts: CaseFlowFacts, now: string, options: JourneyPresentationOptions): Reading {
   if (facts.serviceTrack === "GUIDED") return readGuidedActivation(facts, now, options)
   if (facts.serviceTrack === "MANAGED") return readManagedActivation(facts, now, options)
+  const pending = acceptedServiceProjection(facts, now)
+  if (pending && !pending.aligned) {
+    return {
+      proof: "unproven",
+      known: [
+        pending.model === "UPFRONT"
+          ? "An accepted upfront order is on file. The stored service track is still not chosen."
+          : "An accepted success-fee order is on file. The stored service track is still not chosen.",
+        "The accepted order is not the stored track until Continue succeeds. Payment is not marked complete from that confirmation.",
+        ...reopenNote(facts),
+      ],
+      missing: [
+        pending.model === "UPFRONT"
+          ? "A confirmed case record of the accepted service, then a PAID upfront obligation and a receipt."
+          : "A confirmed case record of the accepted Managed service. No upfront payment is collected.",
+      ],
+      who: "ProfileRelaunch confirms the accepted order. The customer has already chosen the service.",
+    }
+  }
   return {
     proof: "unproven",
     known: ["No service track has been chosen, so neither the Guided nor the Managed branch applies yet.", ...reopenNote(facts)],

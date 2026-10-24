@@ -925,6 +925,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "quotation email snapshot", probe: "admin_private.quote_offer_snapshot_reason_v1" },
   },
+  {
+    // ADMIN-JOURNEY-07. Records an accepted service order on the case.
+    // Not applied to DEV or Production. Do not apply it from the pull request.
+    // It does not edit a quotation, issue a payment link, or mark an obligation paid.
+    version: "20261024235000",
+    filename: "20261024235000_admin_reconcile_accepted_service_v1.sql",
+    step: "ADMIN-JOURNEY-07 accepted service reconciliation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "accepted service reconciliation", probe: "public.admin_reconcile_accepted_service_v1" },
+  },
 ]
 
 /**

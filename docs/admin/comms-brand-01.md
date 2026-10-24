@@ -65,7 +65,7 @@ DEV already received this insert as `20261017210826`. Repeating that apply would
 
 1. The reviewed statement is `supabase/migrations/20261017210826_comms_brand_evidence_request_v3_dev.sql`. It has already been applied to DEV.
 2. Do not apply it again, and do not apply it to Production. Version 3 was inserted as `DRAFT`. Do not set it to `APPROVED` in the file, and do not retire version 2.
-3. Approve it with the existing `approve_template_draft` action after a fresh sign-in. That approval does not change version 2. Until it happens, new drafts keep using version 2.
+3. Approve it with the existing `approve_template_draft` action after an Admin sign-in from the last 30 minutes. That approval does not change version 2. Until it happens, new drafts keep using version 2.
 4. Confirm a newly generated evidence-request draft is template version 3, that its HTML contains one list and one action URL, and that the stored body has no `#t=`.
 5. Review the branded preview, edit the plain text, save, and approve without sending.
 6. Leave every existing communication snapshot as stored.

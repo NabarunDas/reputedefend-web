@@ -6,6 +6,7 @@ import { SignOut } from "../sign-out"
 import { RevokeSession } from "../revoke-session"
 import { redirect } from "next/navigation"
 import { PageHeader } from "../ui"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 
 const date = (value: string) => new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date(value))
 export const metadata = { title: "Security" }
@@ -27,7 +28,7 @@ export default async function SecurityPage() {
         Signed in {date(session.createdAt)}<br />Last active {date(session.lastSeenAt)}
         {!session.current && <RevokeSession id={session.id} label={date(session.createdAt)} />}
       </li>)}</ul>
-      <p className="muted">Ending another session requires a sign-in from the last five minutes. If asked, sign out and use a new email code.</p>
+      <p className="muted">Ending another session uses the recent sign-in rule. {ADMIN_RECENT_SIGN_IN_MESSAGE} Signing out of this session does not use that rule.</p>
       <SignOut />
     </section>
   </section>

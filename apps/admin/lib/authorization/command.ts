@@ -6,6 +6,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { authorizationArgs, managerArgs } from "./validation"
 import { authorizationOperations, managerOperations, LOST_LINK_NOTE, type AuthorizationOperation, type ManagerOperation } from "./model"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -41,7 +42,7 @@ function commandMessage(status: string | undefined): string {
   if (status === "conflict") return "That record is not available. Reload the case before trying again."
   if (status === "denied") return "That action is not allowed until the required authority checks are current."
   if (status === "invalid") return "Check the fields before saving."
-  if (status === "reauth_required") return "Sign in again within the last five minutes to continue."
+  if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   return "The authorisation record could not be updated."
 }
 

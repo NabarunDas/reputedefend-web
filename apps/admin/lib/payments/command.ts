@@ -10,6 +10,7 @@ import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
 import { isPaymentOperation, paymentArgs } from "./validation"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const reply = (message: string, status = 200, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -45,7 +46,7 @@ function commandMessage(status: string | undefined): string {
   if (status === "conflict") return "That payment record changed. Reload the page and try again."
   if (status === "denied") return "That payment action is not allowed."
   if (status === "invalid") return "Check the fields before saving."
-  if (status === "reauth_required") return "Sign in again within the last five minutes to approve a success fee or issue a TEST-MODE hosted invoice fallback."
+  if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   return "The payment record could not be updated."
 }
 

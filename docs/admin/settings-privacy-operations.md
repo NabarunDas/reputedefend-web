@@ -23,7 +23,7 @@ Current operating model has one Admin account; no backup staff account exists.
 
 ## Fresh authority
 
-Sensitive Admin operations require the current Admin session to have been created within the previous five minutes. Otherwise the command returns `reauth_required`. Fresh email OTP remains reauthentication. There is no second authentication mechanism.
+Sensitive Admin operations require the current Admin session to have been created within the previous 30 minutes. Otherwise the command returns `reauth_required`. Fresh email OTP remains reauthentication. There is no second authentication mechanism.
 
 Fresh auth is required for approving or retiring settings, retention policies, communication templates and Guard check schedules; creating or releasing a legal hold; verifying privacy identity manually; reviewing a privacy disposition; generating a privacy export; completing privacy deletion/disposition; and executing eligible deletion. Approval may start at the current instant (a two-minute clock-skew allowance) but cannot start in the past.
 

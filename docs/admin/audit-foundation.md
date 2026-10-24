@@ -8,7 +8,7 @@ Built from main after PRs #85 and #86 merged. The user confirmed working OTP log
 - Action/result filters; 50-row keyset pagination with one lookahead row. IDs stay strings to preserve bigint precision. Times use Europe/London, including daylight saving.
 - Existing and future sign-in/sign-out events appear automatically. Source event IDs prevent duplicate historical imports.
 - End one other active session with an explicit confirmation. Current-session and all-device sign-out retain their existing behaviour.
-- A successful email OTP sign-in within five minutes is required to end another session. An older session receives clear instructions to sign out and sign back in; a page refresh or ordinary activity cannot refresh this verification time.
+- A successful email OTP sign-in within 30 minutes is required to end another session. An older session receives clear instructions to sign out and sign back in; a page refresh or ordinary activity cannot refresh this verification time.
 - Append-only activity storage with actor, action, outcome, target, time and request reference. No tokens, OTPs, customer details or free-form payloads are stored.
 
 This is the authorisation foundation for the currently implemented operations. It does not introduce client records, enquiries, payments, account management or generic write access. Those later modules need their own command, record-version, audit field projection and domain tests.
@@ -18,7 +18,7 @@ This is the authorisation foundation for the currently implemented operations. I
 | Operation | Server/database rule |
 | --- | --- |
 | View activity | Bound, enabled, confirmed admin identity and a live opaque session; checked in the page/query and again in the database RPC |
-| End another session | Same identity/session checks, sign-in age at most five minutes, target belongs to that identity, target active, target is not current session |
+| End another session | Same identity/session checks, sign-in age at most 30 minutes, target belongs to that identity, target active, target is not current session |
 | Modify identity or invite staff | No portal endpoint; single-account operator bootstrap remains outside the application |
 | Write audit | Private database writer or auth-event trigger only; no service-role, browser or public execute grant |
 | Edit/delete audit | No application grants; immutable trigger rejects update, delete and truncate, including accidental privileged SQL |

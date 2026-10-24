@@ -5,6 +5,7 @@ import { formatGbp, orderStateLabel, paymentModelLabel, quoteStatusLabel, servic
 import { customerFacingTaxNote } from "../../../../lib/pricing"
 import { isUuid } from "@/lib/records/model"
 import { Badge, EmptyState, PageHeader } from "../ui"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 import {
   ApprovePriceForm, CreatePriceForm, CreateQuoteForm, CreateVersionForm, OfferQuoteActionForm, QuoteActionForm,
   RecordQualificationForm, RetirePriceForm, RevokeQuoteActionForm, SetDraftTaxForm,
@@ -34,7 +35,7 @@ export default async function CommercialPage({ searchParams }: { searchParams: P
     {tab === "catalogue" && <>
       <section className="panel">
         <h2>Create future price version</h2>
-        <p className="muted">New versions must take effect in the future. Approval requires a fresh sign-in and does not rewrite the effective date. Approved amounts cannot be edited in place. Quotes use only the current approved price.</p>
+        <p className="muted">New versions must take effect in the future. {ADMIN_RECENT_SIGN_IN_MESSAGE} Approval does not rewrite the effective date. Approved amounts cannot be edited in place. Quotes use only the current approved price.</p>
         <CreatePriceForm />
       </section>
       <section className="panel">

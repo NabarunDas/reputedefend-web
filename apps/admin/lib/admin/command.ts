@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { authConfig, sessionCookie } from "../auth/config"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "./reauth-copy"
 
 export const commandReply = (message: string, status = 200) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
 export async function revokeSession(request: NextRequest) {
@@ -33,7 +34,7 @@ export async function revokeSession(request: NextRequest) {
     switch (result) {
       case "success": return commandReply("That session has been signed out.")
       case "unauthorized": return commandReply("Your session has ended. Please sign in again.", 401)
-      case "reauth_required": return commandReply("For security, sign out and sign in with a new email code, then try again within five minutes.", 403)
+      case "reauth_required": return commandReply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
       case "denied": return commandReply("Use Sign out to end your current session.", 403)
       case "conflict": return commandReply("That session has already ended or is no longer available. Refresh the page to see the latest list.", 409)
       default: return commandReply("We couldn’t complete that request. Please reload the page.", 503)

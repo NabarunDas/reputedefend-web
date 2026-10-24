@@ -5,6 +5,7 @@ import {
 } from "../../../../lib/google-business-profile/capability"
 import type { ProviderFailureCode } from "../../../../lib/google-business-profile/errors"
 import { containsTokenMaterial } from "../../../../lib/google-business-profile/token-crypto"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 export const integrationKeys = ["google_business_profile"] as const
 export type IntegrationKey = (typeof integrationKeys)[number]
@@ -152,7 +153,7 @@ const reasonMessages: Record<string, string> = {
 export function commandMessage(status?: string, reason?: string): string {
   if (status === "unauthorized") return "Please sign in again."
   if (status === "reauth_required") {
-    return "For security, sign out and sign in with a new email code, then try again within five minutes."
+    return ADMIN_RECENT_SIGN_IN_MESSAGE
   }
   if (status === "conflict") return "That connection changed. Refresh and try again."
   const known = reason ? reasonMessages[reason] : undefined

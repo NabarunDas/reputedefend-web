@@ -46,7 +46,7 @@ describe("jobs admin commands", () => {
       operation: "replay", jobId, version: 3, reason: "Need to retry the health probe after a worker fault.", confirmed: true,
     }))
     expect(reauth.status).toBe(403)
-    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
     mocks.rpc.mockResolvedValue({ status: "denied" })
     const denied = await jobsCommand(req({
       operation: "replay", jobId, version: 3, reason: "Need to retry the health probe after a worker fault.", confirmed: true,

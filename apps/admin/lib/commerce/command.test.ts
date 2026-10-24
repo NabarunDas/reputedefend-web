@@ -353,7 +353,7 @@ describe("commercial admin commands", () => {
       operation: "approve_price_version", priceVersionId: quoteId, version: 1,
     }))
     expect(denied.status).toBe(403)
-    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
   })
 
   it("requires a Guard coverage UUID before sending a QUALIFIED snapshot", async () => {

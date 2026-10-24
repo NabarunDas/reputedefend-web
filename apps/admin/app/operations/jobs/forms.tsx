@@ -1,5 +1,6 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 
 export function EnqueueProbeForm() {
   const [busy, setBusy] = useState(false)
@@ -73,7 +74,7 @@ export function ReplayJobForm({ jobId, version }: { jobId: string; version: numb
       <textarea name="reason" required minLength={10} maxLength={2000} rows={2} />
     </label>
     <label className="checkbox"><input type="checkbox" name="confirmed" value="yes" required />Replay this dead-lettered job</label>
-    <p className="muted">Requires a sign-in from the last five minutes. The same idempotency key is reused.</p>
+    <p className="muted">{ADMIN_RECENT_SIGN_IN_MESSAGE} The same idempotency key is reused.</p>
     <button type="submit" disabled={busy}>{busy ? "Replaying…" : "Replay job"}</button>
     {message && <p role="status">{message}</p>}
   </form>

@@ -900,6 +900,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "DEV email recent sign-in", probe: "public.admin_dev_send_email_claim_v1" },
   },
+  {
+    // ADMIN-SEC-REAUTH-30. One 30-minute recent-sign-in window for every
+    // remaining Admin step-up. Awaiting approval. Not applied to DEV or Production.
+    version: "20261024003000",
+    filename: "20261024003000_admin_recent_signin_30m_v1.sql",
+    step: "ADMIN-SEC-REAUTH-30 recent sign-in",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Admin recent sign-in", probe: "admin_private.settings_reauth_ok_v1" },
+  },
 ]
 
 /**

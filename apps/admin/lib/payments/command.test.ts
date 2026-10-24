@@ -80,7 +80,7 @@ describe("admin payment commands", () => {
       operation: "issue_invoice_fallback", serviceOrderId: orderId, version: 1, obligationId: orderId, expiresAt,
     }))
     expect(reauth.status).toBe(403)
-    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await reauth.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
   })
 
   it("maps reauth_required for success-fee approval", async () => {
@@ -91,7 +91,7 @@ describe("admin payment commands", () => {
       outcomeEvidenceVersionId: "99999999-9999-4999-8999-999999999999",
     }))
     expect(denied.status).toBe(403)
-    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
   })
 
   it("does not store or reissue an untrusted hosted invoice URL", async () => {

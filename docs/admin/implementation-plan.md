@@ -94,7 +94,7 @@ At login, check the approved email server-side, send a uniform response for allo
 
 Recommended defaults: code validity ten minutes; resend delay sixty seconds; five failed verification attempts per challenge; account and IP rate limits; thirty-minute idle timeout; twelve-hour absolute session limit. Enforce application limits in a shared datastore, not process memory. Validate provider limits as part of configuration. Code values must never appear in logs or audit payloads.
 
-Require fresh OTP verification within five minutes for staff-role changes, refunds, exports of sensitive data and payment collection. Fresh email OTP is reauthentication, not independent MFA. Staff mailboxes should have MFA enabled. The user-facing admin login remains email and OTP.
+Require a recent Admin sign-in within 30 minutes for staff-role changes, refunds, exports of sensitive data and payment collection. Fresh email OTP is reauthentication, not independent MFA. Staff mailboxes should have MFA enabled. The user-facing admin login remains email and OTP.
 
 ## Session and recovery controls
 Check active staff membership on every request, including downloads and jobs initiated by a user. Staff deactivation immediately invalidates admin sessions and prevents pending privileged jobs from running without reassignment. Provide sign out, sign out all sessions, session list and last successful login.

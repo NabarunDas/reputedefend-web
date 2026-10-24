@@ -98,7 +98,7 @@ No Stripe objects, invoices, payment attempts, subscriptions, or success-fee obl
 
 ## Admin commands
 
-`admin_catalogue_command_v1` and `admin_quote_command_v1` are service-role SECURITY DEFINER RPCs with fixed `search_path`, idempotency receipts, optimistic `record_version`, and `COMMERCE_CHANGED` audit. Price approval requires a fresh Admin sign-in within five minutes. Browser table writes are denied. RLS is enabled on all new public tables.
+`admin_catalogue_command_v1` and `admin_quote_command_v1` are service-role SECURITY DEFINER RPCs with fixed `search_path`, idempotency receipts, optimistic `record_version`, and `COMMERCE_CHANGED` audit. Price approval requires an Admin sign-in from the last 30 minutes. Browser table writes are denied. RLS is enabled on all new public tables.
 
 ## Still blocked / unchanged
 

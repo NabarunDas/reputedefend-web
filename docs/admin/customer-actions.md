@@ -43,7 +43,7 @@ If the verified email has no Auth identity, the customer server may create it wi
 
 ## Agreements
 
-`agreement_versions` rows are immutable snapshots of owner-approved wording supplied by Admin. `content_hash` is SHA-256 (64 lowercase hex) over `agreement_kind`, `title`, `body_text` and `scope_text`. The application does not invent legal or success-fee text. `authorization_records` store the current ACTIVE/REVIEW_REQUIRED/REVOKED state from an accepted snapshot. Acceptance source is `CUSTOMER_OTP` and those accepted-scope fields (including `location_id`) are never overwritten. Admin emergency revocation requires a fresh sign-in within five minutes, the current `recordVersion`, and records `ADMIN_RECORDED_REVOCATION` on the event, not by rewriting acceptance.
+`agreement_versions` rows are immutable snapshots of owner-approved wording supplied by Admin. `content_hash` is SHA-256 (64 lowercase hex) over `agreement_kind`, `title`, `body_text` and `scope_text`. The application does not invent legal or success-fee text. `authorization_records` store the current ACTIVE/REVIEW_REQUIRED/REVOKED state from an accepted snapshot. Acceptance source is `CUSTOMER_OTP` and those accepted-scope fields (including `location_id`) are never overwritten. Admin emergency revocation requires an Admin sign-in from the last 30 minutes, the current `recordVersion`, and records `ADMIN_RECORDED_REVOCATION` on the event, not by rewriting acceptance.
 
 OPEN actions are revoked if the customer email changes or membership leaves `verified`. Affected ACTIVE authorisations become `REVIEW_REQUIRED` with an `AUTHORIZATION_REVIEW_REQUIRED` system event (`CUSTOMER_EMAIL_CHANGED` or `BUSINESS_AUTHORITY_CHANGED`). They never auto-reactivate; a new customer acceptance of a new snapshot is required. Changing the email back does not revive a revoked link or a `REVIEW_REQUIRED` record.
 
@@ -55,7 +55,7 @@ Manager-access current state may be overwritten on re-verification, but append-o
 
 ## Manager access
 
-`location_manager_access` is verified by Admin, not by a customer checkbox. Evidence 10–1000 characters, fresh sign-in, explicit confirmation. Never collect a Google password or one-time code.
+`location_manager_access` is verified by Admin, not by a customer checkbox. Evidence 10–1000 characters, an Admin sign-in from the last 30 minutes, and explicit confirmation. Never collect a Google password or one-time code.
 
 ## Apps
 

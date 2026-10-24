@@ -1,6 +1,7 @@
 "use client"
 import { useRef, useState, type FormEvent } from "react"
 import { LOST_PAYMENT_LINK_NOTE } from "@/lib/payments/model"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 
 function futureLocalMin(minutes = 5) {
   const at = new Date(Date.now() + minutes * 60 * 1000)
@@ -63,7 +64,7 @@ export function IssuePaymentActionForm({
   return <form onSubmit={submit}>
     {obligationId && <input type="hidden" name="obligationId" value={obligationId} />}
     <label>Expires<input name="expiresAt" type="datetime-local" required min={minFrom} suppressHydrationWarning /></label>
-    {operation === "issue_invoice_fallback" && <p>This creates a TEST-MODE hosted payment fallback. It does not mark the obligation paid. Sign in again within the last five minutes.</p>}
+    {operation === "issue_invoice_fallback" && <p>This creates a TEST-MODE hosted payment fallback. It does not mark the obligation paid. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p>}
     <button type="submit" disabled={busy}>{label}</button>
     <p role="status">{message}{actionUrl ? ` This is a one-time customer link. Copy it now. It cannot be shown again. ${LOST_PAYMENT_LINK_NOTE}` : ""}</p>
     {actionUrl && <p><label>Customer link<input readOnly value={actionUrl} /></label></p>}
@@ -86,7 +87,7 @@ export function ApproveSuccessFeeForm({
     })
   }
   return <form onSubmit={submit}>
-    <p>Approval requires a fresh sign-in in the last five minutes. The amount is the immutable accepted order total. This page does not charge a card. Select accepted case evidence for the same case.</p>
+    <p>{ADMIN_RECENT_SIGN_IN_MESSAGE} The amount is the immutable accepted order total. This page does not charge a card. Select accepted case evidence for the same case.</p>
     <label>Accepted outcome evidence
       <select name="outcomeEvidenceVersionId" required>
         <option value="">Select accepted evidence</option>

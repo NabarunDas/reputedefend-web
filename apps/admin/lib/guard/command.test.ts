@@ -79,7 +79,7 @@ describe("guard admin commands", () => {
     mocks.rpc.mockResolvedValue({ status: "reauth_required" })
     const denied = await guardCommand(req({ operation: "activate", coverageId, version: 1 }))
     expect(denied.status).toBe(403)
-    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/five minutes/) })
+    expect(await denied.json()).toMatchObject({ message: expect.stringMatching(/30 minutes/) })
   })
 
   it("blocks activation when GUARD_ACTIVATION_ENABLED is unset, false, or malformed", async () => {

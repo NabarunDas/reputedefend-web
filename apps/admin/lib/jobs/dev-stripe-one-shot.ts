@@ -10,6 +10,7 @@ import { authConfig, sessionCookie } from "../auth/config"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import type { JobHandlerResult, JobRpc } from "./model"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 
 const DEV_SUPABASE_URL = "https://rmzozuiamjcclvtgutgd.supabase.co"
 const DEV_EVIDENCE_BUCKET = "profilerelaunch-evidence-dev-01"
@@ -186,7 +187,7 @@ function settleStatus(outcome: SettleOutcome): number {
 
 function claimMessage(result: ClaimResult): { message: string; status: number } {
   if (result.status === "unauthorized") return { message: "Your session has ended. Please sign in again.", status: 401 }
-  if (result.status === "reauth_required") return { message: "Sign out and sign in with a new email code, then try again within five minutes.", status: 403 }
+  if (result.status === "reauth_required") return { message: ADMIN_RECENT_SIGN_IN_MESSAGE, status: 403 }
   if (result.status === "conflict") return { message: "That event is already leased. Wait for the lease to end, then submit a new idempotency key.", status: 409 }
   if (result.status === "preflight_required") return { message: "That event still needs a provider classification.", status: 409 }
   if (result.reason === "missing") return { message: "That test-mode Stripe event is not queued.", status: 404 }

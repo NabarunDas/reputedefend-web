@@ -18,7 +18,7 @@ Use Clients & businesses in the admin navigation. Start a location from its busi
 
 Contact verification applies only to the exact current contact value. Changing a phone clears its proof. Changing an email clears its proof and puts verified business relationships back into pending review, with an audited system event. Changing the value back does not revive old proof. These rules also run on existing marketing intake writes.
 
-Business authority verification requires at least one currently verified contact method, evidence of authority and an admin OTP sign-in within five minutes. An enquiry, matching name, matching email text, or a case/monitoring foreign key is never sufficient by itself. Email changes and contact verification also require a recent admin sign-in.
+Business authority verification requires at least one currently verified contact method, evidence of authority and an Admin sign-in from the last 30 minutes. An enquiry, matching name, matching email text, or a case/monitoring foreign key is never sufficient by itself. Email changes and contact verification also require a recent admin sign-in.
 
 The future customer field projections are private SQL functions with explicit field lists. They require a verified business relationship and a current verified email. No browser or service-role caller can execute them directly. A future customer portal must first resolve the customer identity from its own verified session; a caller-supplied customer ID must never become an authentication mechanism. No customer portal or customer permissions are activated by this PR.
 

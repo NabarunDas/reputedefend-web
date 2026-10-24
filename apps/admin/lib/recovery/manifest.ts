@@ -912,6 +912,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Admin recent sign-in", probe: "admin_private.settings_reauth_ok_v1" },
   },
+  {
+    // QUOTE-EMAIL-VALIDATION-01. Accepts the approved concise Guided Relaunch
+    // quotation email. Not applied to DEV or Production. Do not send mail or
+    // edit the stored quotation while reviewing this file.
+    version: "20261024181000",
+    filename: "20261024181000_quote_offer_email_snapshot_v1.sql",
+    step: "QUOTE-EMAIL-VALIDATION-01 quotation email snapshot",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "quotation email snapshot", probe: "admin_private.quote_offer_snapshot_reason_v1" },
+  },
 ]
 
 /**

@@ -49,6 +49,11 @@ type Json = Record<string, unknown> & {
 const key = () => randomUUID()
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex")
 const later = (hours = 72) => new Date(Date.now() + hours * 3600 * 1000).toISOString()
+const monitoredReply = "support@profilerelaunch.com"
+const concisePayment = "Payment: The £99 fee is payable upfront through a separate payment step after you accept this quotation and the service agreement. Acceptance does not charge your card."
+const conciseAmount = "Amount: £99.00 GBP — inclusive of any applicable taxes."
+const replyCase = "If you have any questions about this quotation, simply reply to this email and keep your case reference in the subject."
+const replyLegacy = "If you have a question about this quotation, reply to this email."
 
 async function rpc<T = Json>(name: string, args: unknown[] = []) {
   const sql = `select public.${name}(${args.map((_, index) => `$${index + 1}`).join(",")}) as value`
@@ -140,26 +145,39 @@ async function detail(quoteId: string) {
       exclusions: string
       validUntil: string
       status: string
+      taxBehaviour: string
     }
   }>("admin_quote_detail_v1", [adminToken, quoteId])
 }
 
-async function queue(quoteId: string, overrides: Record<string, unknown> = {}, request = key()) {
-  const row = await detail(quoteId)
-  const actionId = deriveQuoteAcceptanceActionId(request)
-  const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
-  const rendered = row.currentVersion ? renderQuotationOffer({
+function renderStoredOffer(
+  row: Awaited<ReturnType<typeof detail>>,
+  actionUrl: string,
+  replyTo: string | null = monitoredReply,
+) {
+  if (!row.currentVersion) return null
+  return renderQuotationOffer({
     publicRef: row.publicRef,
     caseRef: row.caseReference,
     serviceName: row.currentVersion.serviceName,
     amountMinor: row.currentVersion.totalAmountMinor,
     currency: row.currentVersion.currency,
     paymentModel: row.currentVersion.paymentModel,
+    taxBehaviour: row.currentVersion.taxBehaviour,
     scope: row.currentVersion.scope,
     exclusions: row.currentVersion.exclusions,
     validUntil: row.currentVersion.validUntil,
-    actionUrl: `${origin}/action/${actionId}`,
-  }) : null
+    actionUrl,
+    replyTo,
+  })
+}
+
+async function queue(quoteId: string, overrides: Record<string, unknown> = {}, request = key()) {
+  const row = await detail(quoteId)
+  const actionId = deriveQuoteAcceptanceActionId(request)
+  const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
+  const replyTo = "replyTo" in overrides ? overrides.replyTo as string | null : monitoredReply
+  const rendered = renderStoredOffer(row, `${origin}/action/${actionId}`, replyTo)
   const payload = {
     quoteId,
     actionId,
@@ -170,7 +188,7 @@ async function queue(quoteId: string, overrides: Record<string, unknown> = {}, r
     bodyText: rendered?.text ?? "not a quotation",
     bodyHtml: rendered?.html ?? "<p>not a quotation</p>",
     fromAddress: "ops@example.com",
-    replyTo: null,
+    replyTo,
     sendEnabled: true,
     devLane: false,
     ...overrides,
@@ -238,8 +256,13 @@ describe("quotation email queue", () => {
     expect((await rpc("admin_record_owner_paid_service_agreement_approval_v1", [adminToken, key(), guided.version, ownerEvidence])).status).toBe("confirmed")
     const offered = await offerService("GUIDED_RELAUNCH", { standard: true })
     const first = await queue(offered.id)
-    expect(first.rendered?.text).toContain("Amount: £99.00 GBP")
-    expect(first.rendered?.text).toContain("Review and accept quotation")
+    expect(first.rendered?.text).toContain(conciseAmount)
+    expect(first.rendered?.text).toContain(concisePayment)
+    expect(first.rendered?.text).toContain(replyCase)
+    expect(first.rendered?.html).toContain(conciseAmount)
+    expect(first.rendered?.html).toContain(concisePayment)
+    expect(first.rendered?.text).not.toContain("We prepare it. You submit it.")
+    expect(first.rendered?.text).not.toContain("Payment: Upfront")
     expect(first.result).toMatchObject({ status: "success", lifecycle: "QUEUED", deliveryStatus: "NONE" })
     expect(first.result).not.toHaveProperty("actionUrl")
     const replay = await queue(offered.id, {}, first.request)
@@ -272,6 +295,10 @@ describe("quotation email queue", () => {
     expect(stored.rows[0].secret_hash).not.toBe(token)
     expect(stored.rows[0].action_link_version).toBeNull()
     expect(stored.rows[0].link_key_version).toBe(1)
+    expect(stored.rows[0].body_text).toBe(first.rendered?.text)
+    expect(stored.rows[0].body_html).toBe(first.rendered?.html)
+    expect(stored.rows[0].body_text).toContain(concisePayment)
+    expect(stored.rows[0].body_html).toContain(concisePayment)
     expect(stored.rows[0].body_text).not.toContain("#t=")
     expect(stored.rows[0].body_text).not.toContain(token)
     expect(stored.rows[0].body_html).not.toContain("#t=")
@@ -322,6 +349,10 @@ describe("quotation email queue", () => {
         if (label !== own) expect(queued.rendered!.text).not.toContain(label)
       }
       expect(queued.rendered!.text).toContain(queued.row.currentVersion.serviceName)
+      const payment = queued.row.currentVersion.paymentModel === "SUCCESS_FEE" ? "Payment: Success fee" : "Payment: Upfront"
+      expect(queued.rendered!.text).toContain(payment)
+      expect(queued.rendered!.html).toContain(payment)
+      expect(queued.rendered!.text).not.toContain("The £99 fee is payable upfront through a separate payment step")
       expect(queued.rendered!.text).not.toContain("Standard wording version ")
       expect(queued.rendered!.text).not.toContain("SHA-256")
       expect(queued.rendered!.text).not.toContain("PS-")
@@ -471,6 +502,7 @@ describe("quotation email queue", () => {
   it("does not special-case a quotation reference and does not email an accepted one", async () => {
     const definition = await db.query<{ def: string }>("select pg_get_functiondef('public.admin_queue_quote_offer_email_v1(text,uuid,jsonb)'::regprocedure) as def")
     expect(definition.rows[0].def).not.toContain("QT-26-TBGP5Q")
+    expect(definition.rows[0].def).toContain("qv.tax_behaviour")
     const offered = await offerService("GUIDED_RELAUNCH")
     const before = await count("select count(*)::int as n from public.communications")
     await db.exec("alter table public.quotes disable trigger user")
@@ -505,18 +537,7 @@ describe("quotation email queue", () => {
     const actionId = deriveQuoteAcceptanceActionId(request)
     const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
     const row = await detail(offered.id)
-    const rendered = row.currentVersion ? renderQuotationOffer({
-      publicRef: row.publicRef,
-      caseRef: row.caseReference,
-      serviceName: row.currentVersion.serviceName,
-      amountMinor: row.currentVersion.totalAmountMinor,
-      currency: row.currentVersion.currency,
-      paymentModel: row.currentVersion.paymentModel,
-      scope: row.currentVersion.scope,
-      exclusions: row.currentVersion.exclusions,
-      validUntil: row.currentVersion.validUntil,
-      actionUrl: `${portal}/action/${actionId}`,
-    }) : null
+    const rendered = renderStoredOffer(row, `${portal}/action/${actionId}`)
     expect(rendered).not.toBeNull()
     const queued = await queue(offered.id, {
       devLane: true,
@@ -603,6 +624,8 @@ describe("quotation email queue", () => {
     expect(definition).toContain("interval '30 minutes'")
     expect(definition).not.toContain("interval '5 minutes'")
     const source = readFileSync(new URL("../commerce/quote-offer-email.ts", import.meta.url), "utf8")
+    expect(source).toContain("The quotation email wording was not accepted, so it was not queued. The quotation itself was not changed.")
+    expect(source).not.toContain("The quotation changed before the email was queued.")
     expect(source).toContain("admin_dev_send_email_claim_v1")
     expect(source).not.toContain("Process queued email")
     expect(source).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
@@ -615,18 +638,7 @@ describe("quotation email queue", () => {
       const actionId = deriveQuoteAcceptanceActionId(request)
       const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
       const row = await detail(quoteId)
-      const rendered = row.currentVersion ? renderQuotationOffer({
-        publicRef: row.publicRef,
-        caseRef: row.caseReference,
-        serviceName: row.currentVersion.serviceName,
-        amountMinor: row.currentVersion.totalAmountMinor,
-        currency: row.currentVersion.currency,
-        paymentModel: row.currentVersion.paymentModel,
-        scope: row.currentVersion.scope,
-        exclusions: row.currentVersion.exclusions,
-        validUntil: row.currentVersion.validUntil,
-        actionUrl: `${portal}/action/${actionId}`,
-      }) : null
+      const rendered = renderStoredOffer(row, `${portal}/action/${actionId}`)
       return queue(quoteId, {
         devLane: true,
         customerOrigin: portal,
@@ -709,18 +721,7 @@ describe("quotation email queue", () => {
     const actionId = deriveQuoteAcceptanceActionId(request)
     const prepared = prepareQuoteAcceptanceLink(actionId, { COMMUNICATIONS_LINK_SECRET: linkSecret })!
     const row = await detail(offered.id)
-    const rendered = renderQuotationOffer({
-      publicRef: row.publicRef,
-      caseRef: row.caseReference,
-      serviceName: row.currentVersion.serviceName,
-      amountMinor: row.currentVersion.totalAmountMinor,
-      currency: row.currentVersion.currency,
-      paymentModel: row.currentVersion.paymentModel,
-      scope: row.currentVersion.scope,
-      exclusions: row.currentVersion.exclusions,
-      validUntil: row.currentVersion.validUntil,
-      actionUrl: `${portal}/action/${actionId}`,
-    })!
+    const rendered = renderStoredOffer(row, `${portal}/action/${actionId}`)!
     const queued = await queue(offered.id, {
       devLane: true,
       customerOrigin: portal,
@@ -913,5 +914,234 @@ describe("quotation email queue", () => {
       if (versionsLocked) await db.exec("alter table public.quote_versions enable trigger user")
       await restoreTrust()
     }
+  })
+
+  it("accepts the approved concise Guided email and keeps every other safeguard", async () => {
+    const migration = readFileSync(new URL("../../../../supabase/migrations/20261024181000_quote_offer_email_snapshot_v1.sql", import.meta.url), "utf8")
+    const dollar = (tag: string) => {
+      const marker = `$${tag}$`
+      const start = migration.indexOf(marker)
+      const end = migration.indexOf(marker, start + marker.length)
+      return migration.slice(start + marker.length, end)
+    }
+    const canonical = standardScopeExclusions("GUIDED_RELAUNCH")!
+    expect(dollar("scope")).toBe(canonical.scope)
+    expect(dollar("exclusions")).toBe(canonical.exclusions)
+    expect(migration).toContain("p_tax text")
+    expect(migration).toContain("qv.tax_behaviour")
+
+    await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
+    await db.query(
+      "insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values ($1,'email','alex@example.com',$2,'Verified from a live call with the customer.')",
+      [customer, admin],
+    )
+    await db.query(
+      "update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $2, evidence = 'Companies House match discussed on a live call.' where customer_id = $1",
+      [customer, admin],
+    )
+    await db.query("delete from admin_private.email_suppressions where address_normalized = 'alex@example.com'")
+
+    const approved = await rpc("admin_record_owner_paid_service_agreement_approval_v1", [adminToken, key(), guided.version, ownerEvidence])
+    expect(["confirmed", "replay", "already_confirmed"]).toContain(approved?.status)
+    const offered = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const before = await count("select count(*)::int as n from public.communications where template_key = 'QUOTE_OFFER'")
+    const first = await queue(offered.id)
+    expect(first.result, JSON.stringify(first.result)).toMatchObject({ status: "success", lifecycle: "QUEUED", deliveryStatus: "NONE" })
+    const stored = await db.query<{ body_text: string; body_html: string; status: string; total: number; scope_text: string; exclusions_text: string }>(`
+      select c.body_text, c.body_html, q.status, v.total_amount_minor as total, v.scope_text, v.exclusions_text
+      from public.communications c
+      join public.customer_actions a on a.id = c.customer_action_id
+      join public.quote_versions v on v.id = a.quote_version_id
+      join public.quotes q on q.id = v.quote_id
+      where c.id = $1
+    `, [first.result.id])
+    expect(stored.rows[0].body_text).toBe(first.rendered?.text)
+    expect(stored.rows[0].body_html).toBe(first.rendered?.html)
+    for (const content of [stored.rows[0].body_text, stored.rows[0].body_html]) {
+      expect(content).toContain(conciseAmount)
+      expect(content).toContain("No additional taxes or mandatory fees charged by ProfileRelaunch.")
+      expect(content).toContain(concisePayment)
+      expect(content).toContain("We organise your evidence and prepare the materials needed for your Google Business Profile relaunch submission.")
+      expect(content).toContain("You review and submit the prepared materials to Google yourself.")
+      expect(content).toContain("Submitting the prepared work to Google or managing the case with Google on your behalf.")
+      expect(content).toContain("Ongoing profile and review monitoring.")
+      expect(content).toContain("A guaranteed result or processing time; Google makes the final decision.")
+      expect(content).toContain(replyCase)
+      expect(content).not.toContain("We prepare it. You submit it.")
+      expect(content).not.toContain("Managed success fees are payable")
+      expect(content).not.toContain("Payment: Upfront")
+    }
+    expect(stored.rows[0].status).toBe("OFFERED")
+    expect(stored.rows[0].total).toBe(9900)
+    expect(stored.rows[0].scope_text).toBe(canonical.scope)
+    expect(stored.rows[0].exclusions_text).toBe(canonical.exclusions)
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where template_key = 'QUOTE_OFFER'")).toBe(before + 1)
+    const replay = await queue(offered.id, {}, first.request)
+    expect(replay.result).toEqual(first.result)
+    const duplicate = await queue(offered.id)
+    expect(duplicate.result).toMatchObject({ status: "denied", reason: "open_action", communicationId: first.result.id })
+    expect(await count("select count(*)::int as n from public.communications where template_key = 'QUOTE_OFFER'")).toBe(before + 1)
+
+    const refuse = async (mutate: (text: string, html: string) => { text: string; html: string }) => {
+      const request = key()
+      const actionId = deriveQuoteAcceptanceActionId(request)
+      const rendered = renderStoredOffer(await detail(offered.id), `${origin}/action/${actionId}`)!
+      const next = mutate(rendered.text, rendered.html)
+      const denied = await queue(offered.id, { subject: rendered.subject, bodyText: next.text, bodyHtml: next.html }, request)
+      expect(denied.result, JSON.stringify(denied.result)).toMatchObject({ status: "denied", reason: "snapshot_mismatch" })
+    }
+    await refuse((text, html) => ({
+      text: text.replace(conciseAmount, "Amount: £59.00 GBP — inclusive of any applicable taxes."),
+      html: html.replace(conciseAmount, "Amount: £59.00 GBP — inclusive of any applicable taxes."),
+    }))
+    await refuse((text, html) => ({
+      text: text.replace("We organise your evidence and prepare the materials needed for your Google Business Profile relaunch submission.", "A different scope."),
+      html: html.replace("We organise your evidence and prepare the materials needed for your Google Business Profile relaunch submission.", "A different scope."),
+    }))
+    await refuse((text, html) => ({
+      text: text.replace(replyCase, ""),
+      html: html.replace(replyCase, ""),
+    }))
+    await refuse((text, html) => ({
+      text,
+      html: html.replace(replyCase, ""),
+    }))
+    await refuse((text, html) => ({
+      text: text.replace("— inclusive of any applicable taxes.", " The total shown is the amount recorded on this quote."),
+      html: html.replace("— inclusive of any applicable taxes.", " The total shown is the amount recorded on this quote."),
+    }))
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [offered.versionId])).toBe(1)
+    expect((await db.query<{ status: string; total: number }>(
+      "select q.status, v.total_amount_minor as total from public.quotes q join public.quote_versions v on v.id = q.current_version_id where q.id = $1",
+      [offered.id],
+    )).rows[0]).toEqual({ status: "OFFERED", total: 9900 })
+
+    const verboseQuote = await offerService("GUIDED_RELAUNCH", { standard: true })
+    const verboseRequest = key()
+    const verboseAction = deriveQuoteAcceptanceActionId(verboseRequest)
+    const verboseRow = await detail(verboseQuote.id)
+    const verbose = renderQuotationOffer({
+      publicRef: verboseRow.publicRef,
+      caseRef: verboseRow.caseReference,
+      serviceName: verboseRow.currentVersion.serviceName,
+      amountMinor: verboseRow.currentVersion.totalAmountMinor,
+      currency: verboseRow.currentVersion.currency,
+      paymentModel: verboseRow.currentVersion.paymentModel,
+      scope: verboseRow.currentVersion.scope,
+      exclusions: verboseRow.currentVersion.exclusions,
+      validUntil: verboseRow.currentVersion.validUntil,
+      actionUrl: `${origin}/action/${verboseAction}`,
+      replyTo: monitoredReply,
+    })!
+    expect(verbose.text).toContain("We prepare it. You submit it.")
+    expect(verbose.text).toContain("Payment: Upfront")
+    expect((await queue(verboseQuote.id, {
+      subject: verbose.subject, bodyText: verbose.text, bodyHtml: verbose.html,
+    }, verboseRequest)).result).toMatchObject({ status: "denied", reason: "snapshot_mismatch" })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [verboseQuote.versionId])).toBe(0)
+
+    const custom = await offerService("GUIDED_RELAUNCH")
+    const customQueued = await queue(custom.id)
+    expect(customQueued.result.status, JSON.stringify(customQueued.result)).toBe("success")
+    expect(customQueued.rendered?.text).toContain("Payment: Upfront")
+    expect(customQueued.rendered?.text).toContain("Recover the suspended profile for this location.")
+    expect(customQueued.rendered?.text).not.toContain(concisePayment)
+    const legacyRequest = key()
+    const legacyAction = deriveQuoteAcceptanceActionId(legacyRequest)
+    const legacyRendered = renderStoredOffer(await detail(custom.id), `${origin}/action/${legacyAction}`)!
+    const legacy = await queue(custom.id, {
+      subject: legacyRendered.subject,
+      bodyText: legacyRendered.text.replace(replyCase, replyLegacy),
+      bodyHtml: legacyRendered.html.replace(replyCase, replyLegacy),
+    }, legacyRequest)
+    expect(legacy.result, JSON.stringify(legacy.result)).toMatchObject({ status: "denied", reason: "open_action" })
+    const legacyQuote = await offerService("GUIDED_RELAUNCH")
+    const legacyOnly = key()
+    const legacyOnlyAction = deriveQuoteAcceptanceActionId(legacyOnly)
+    const legacyBody = renderStoredOffer(await detail(legacyQuote.id), `${origin}/action/${legacyOnlyAction}`)!
+    expect((await queue(legacyQuote.id, {
+      subject: legacyBody.subject,
+      bodyText: legacyBody.text.replace(replyCase, replyLegacy),
+      bodyHtml: legacyBody.html.replace(replyCase, replyLegacy),
+    }, legacyOnly)).result).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+
+    const reviewAgreement = proposedServiceAgreements.find(item => item.serviceCode === "GUIDED_REVIEW")!
+    expect(["confirmed", "replay", "already_confirmed"]).toContain(
+      (await rpc("admin_record_owner_paid_service_agreement_approval_v1", [adminToken, key(), reviewAgreement.version, ownerEvidence])).status,
+    )
+    const review = await offerService("GUIDED_REVIEW", { standard: true })
+    const reviewQueued = await queue(review.id)
+    expect(reviewQueued.result.status, JSON.stringify(reviewQueued.result)).toBe("success")
+    expect(reviewQueued.rendered?.text).toContain("Amount: £59.00 GBP")
+    expect(reviewQueued.rendered?.text).toContain("Payment: Upfront")
+    expect(reviewQueued.rendered?.text).not.toContain(concisePayment)
+    expect(reviewQueued.rendered?.html).not.toContain(concisePayment)
+
+    const inclusiveRow = await detail(offered.id)
+    const action = randomUUID()
+    const inclusiveBody = renderQuotationOffer({
+      publicRef: inclusiveRow.publicRef,
+      caseRef: inclusiveRow.caseReference,
+      serviceName: inclusiveRow.currentVersion.serviceName,
+      amountMinor: inclusiveRow.currentVersion.totalAmountMinor,
+      currency: inclusiveRow.currentVersion.currency,
+      paymentModel: inclusiveRow.currentVersion.paymentModel,
+      taxBehaviour: "INCLUSIVE",
+      scope: inclusiveRow.currentVersion.scope,
+      exclusions: inclusiveRow.currentVersion.exclusions,
+      validUntil: inclusiveRow.currentVersion.validUntil,
+      actionUrl: `${origin}/action/${action}`,
+      replyTo: monitoredReply,
+    })!
+    const snapshot = (tax: string) => db.query<{ value: string | null }>(
+      `select admin_private.quote_offer_snapshot_reason_v1(
+        $1,$2,$3,$4,$5::uuid,$6,$7,$8::integer,$9,$10,$11,$12,$13::timestamptz,$14,$15,$16
+      ) as value`,
+      [
+        inclusiveBody.subject, inclusiveBody.text, inclusiveBody.html, origin, action, inclusiveRow.publicRef,
+        inclusiveRow.currentVersion.serviceName, inclusiveRow.currentVersion.totalAmountMinor, inclusiveRow.currentVersion.currency,
+        inclusiveRow.currentVersion.paymentModel, inclusiveRow.currentVersion.scope, inclusiveRow.currentVersion.exclusions,
+        inclusiveRow.currentVersion.validUntil, null, monitoredReply, tax,
+      ],
+    )
+    expect((await snapshot("INCLUSIVE")).rows[0].value).toBeNull()
+    expect((await snapshot("NOT_APPLICABLE")).rows[0].value).toBeNull()
+    expect((await snapshot("EXCLUSIVE")).rows[0].value).toBe("snapshot_mismatch")
+
+    const unverified = await offerService("GUIDED_RELAUNCH", { standard: true })
+    await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
+    expect((await queue(unverified.id)).result).toMatchObject({ status: "denied", reason: "contact_unverified" })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [unverified.versionId])).toBe(0)
+    await db.query(
+      "insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values ($1,'email','alex@example.com',$2,'Verified from a live call with the customer.')",
+      [customer, admin],
+    )
+
+    const revoked = await offerService("GUIDED_RELAUNCH", { standard: true })
+    await db.query(
+      "update public.business_memberships set status = 'revoked', verified_at = null, verified_by = null where customer_id = $1",
+      [customer],
+    )
+    expect((await queue(revoked.id)).result).toMatchObject({ status: "denied", reason: "authority_unverified" })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [revoked.versionId])).toBe(0)
+    await db.query(
+      "update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $2, evidence = 'Companies House match discussed on a live call.' where customer_id = $1",
+      [customer, admin],
+    )
+
+    const expired = await offerService("GUIDED_RELAUNCH", { standard: true })
+    await db.exec("alter table public.quote_versions disable trigger user")
+    await db.query("update public.quote_versions set valid_until = now() - interval '1 minute' where id = $1", [expired.versionId])
+    await db.exec("alter table public.quote_versions enable trigger user")
+    expect((await queue(expired.id)).result).toMatchObject({ status: "denied", reason: "quote_expired" })
+    expect((await db.query<{ status: string }>("select status from public.quotes where id = $1", [expired.id])).rows[0].status).toBe("OFFERED")
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [expired.versionId])).toBe(0)
+
+    const suppressed = await offerService("GUIDED_RELAUNCH", { standard: true })
+    await db.query("insert into admin_private.email_suppressions(address_normalized, reason) values ('alex@example.com', 'SUPPRESSED')")
+    expect((await queue(suppressed.id)).result).toMatchObject({ status: "denied", reason: "suppressed" })
+    expect(await count("select count(*)::int as n from public.customer_actions where quote_version_id = $1", [suppressed.versionId])).toBe(0)
+    await db.query("delete from admin_private.email_suppressions where address_normalized = 'alex@example.com'")
   })
 })

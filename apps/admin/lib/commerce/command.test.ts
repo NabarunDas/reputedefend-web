@@ -274,6 +274,51 @@ describe("commercial admin commands", () => {
     expect(mocks.rpc.mock.calls.some(call => call[0] === "communication_load_send_v1")).toBe(false)
   })
 
+  it("describes rejected quotation email wording without saying the quotation changed", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+    vi.stubEnv("COMMUNICATIONS_LINK_SECRET", "quotation-link-secret-for-tests-32b")
+    const offered = {
+      status: "OFFERED",
+      publicRef: "QT-26-ABCDEF",
+      caseReference: "PR-26-CASE01",
+      currentVersion: {
+        status: "OFFERED",
+        serviceName: "Guided Relaunch",
+        totalAmountMinor: 9900,
+        currency: "GBP",
+        paymentModel: "UPFRONT",
+        taxBehaviour: "NOT_APPLICABLE",
+        scope: "Recover the suspended profile for this location.",
+        exclusions: "Google decisions stay outside this quotation.",
+        validUntil: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+      },
+    }
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_quote_detail_v1") return offered
+      return { status: "denied", reason: "snapshot_mismatch" }
+    })
+    const denied = await quoteCommand(req("/api/operations/quotes", { operation: "queue_quote_offer_email", quoteId }))
+    expect(denied.status).toBe(409)
+    expect(await denied.json()).toEqual({
+      message: "The quotation email wording was not accepted, so it was not queued. The quotation itself was not changed.",
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_quote_detail_v1") return offered
+      return { status: "conflict" }
+    })
+    const conflict = await quoteCommand(req("/api/operations/quotes", {
+      operation: "queue_quote_offer_email", quoteId,
+    }))
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toEqual({ message: "This quotation has changed. Reload it before continuing." })
+  })
+
   it("returns the existing quotation email when a second queue is refused", async () => {
     const communicationId = "66666666-6666-4666-8666-666666666666"
     vi.stubEnv("VERCEL_ENV", "production")

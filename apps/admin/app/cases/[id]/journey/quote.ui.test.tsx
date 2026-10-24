@@ -322,6 +322,7 @@ function relationship(status: Membership["status"], version: number): Membership
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   navigation.refresh.mockClear()
 })
 
@@ -458,6 +459,38 @@ describe("guided quote acceptance", () => {
     expect(screen.getByText("This case has no business record to open from here.")).toBeTruthy()
   })
 
+  it("matches the monitored reply mailbox and concise Guided quote in Step 6 Preview", () => {
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "support@profilerelaunch.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+    const source = facts({
+      authorization: {
+        ...facts().authorization,
+        customerEmailVerified: true,
+        businessAuthorityVerified: true,
+      },
+      commercial: { complete: true, quotes: [quoteFact({ status: "OFFERED", taxBehaviour: "NOT_APPLICABLE" })] },
+    })
+    const standard = standardScopeExclusions("GUIDED_RELAUNCH")!
+    const quote = quoteItem("OFFERED")
+    quote.currentVersion = {
+      ...quote.currentVersion,
+      taxBehaviour: "NOT_APPLICABLE",
+      scope: standard.scope,
+      exclusions: standard.exclusions,
+    }
+    show(source, quote)
+    const html = document.querySelector("iframe[title='Quotation email']")?.getAttribute("srcdoc") || ""
+    expect(html).toContain("Amount: £99.00 GBP")
+    expect(html).toContain("inclusive of any applicable taxes")
+    expect(html).toContain("simply reply to this email")
+    expect(html).toContain("keep your case reference in the subject")
+    expect(html).not.toContain("contact us through the ProfileRelaunch website")
+    expect(html).not.toContain("We prepare it. You submit it.")
+    expect(html).not.toContain("Managed success fees are payable")
+    expect(html).not.toContain("#t=")
+    expect(screen.getByRole("button", { name: "Send Quotation Email" })).toBeTruthy()
+  })
+
   it("previews the quotation email and queues it only from the send button", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -492,7 +525,7 @@ describe("guided quote acceptance", () => {
     expect(frame?.getAttribute("srcdoc")).not.toContain("https://customer.example/action/")
     expect(screen.queryByRole("button", { name: "Review and accept quotation" })).toBeNull()
     expect(screen.getByText("More Options")).toBeTruthy()
-    expect(screen.getByText("Your ProfileRelaunch quotation Q-100")).toBeTruthy()
+    expect(screen.getByText("Your ProfileRelaunch quotation Q-100 — Case PR-1")).toBeTruthy()
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Recover the suspended profile/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/No Google submission from this quote/).length).toBeGreaterThan(0)

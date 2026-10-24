@@ -8,6 +8,7 @@ import { emptyQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-e
 import { quoteActionExpiryWindow } from "@/lib/commerce/action-expiry"
 import { isUuid } from "@/lib/records/model"
 import { customerPriceBoundary } from "../../../../../../lib/pricing"
+import { confirmedReplyMailbox } from "../../../../../../lib/email/reply-mailbox"
 import { formatGbp } from "@/lib/commerce/model"
 import type { Membership } from "@/lib/records/model"
 import { MembershipForm } from "../../../records/forms"
@@ -148,6 +149,8 @@ export function QuotePanel({
         amountMinor={quote.amountMinor}
         currency={quote.currency}
         paymentModel={quote.paymentModel}
+        taxBehaviour={quote.taxBehaviour}
+        replyTo={confirmedReplyMailbox()}
         scope={quote.scope}
         exclusions={quote.exclusions}
         validUntil={quote.validUntil}
@@ -181,6 +184,8 @@ export function QuotePanel({
         amountMinor={quote.amountMinor}
         currency={quote.currency}
         paymentModel={quote.paymentModel}
+        taxBehaviour={quote.taxBehaviour}
+        replyTo={confirmedReplyMailbox()}
         scope={quote.scope}
         exclusions={quote.exclusions}
         validUntil={quote.validUntil}

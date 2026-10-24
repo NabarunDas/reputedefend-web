@@ -917,7 +917,7 @@ describe("quotation email queue", () => {
   })
 
   it("accepts the approved concise Guided email and keeps every other safeguard", async () => {
-    const migration = readFileSync(new URL("../../../../supabase/migrations/20261024181000_quote_offer_email_snapshot_v1.sql", import.meta.url), "utf8")
+    const migration = readFileSync(new URL("../../../../supabase/migrations/20261024190832_quote_offer_email_snapshot_v1.sql", import.meta.url), "utf8")
     const dollar = (tag: string) => {
       const marker = `$${tag}$`
       const start = migration.indexOf(marker)

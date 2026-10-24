@@ -55,8 +55,8 @@ describe("rebuilding the whole schema from zero", () => {
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
     expect(migrationHead.filename).toMatch(/quote_offer_email_snapshot_v1\.sql$/)
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261024085235")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261024190832")
   })
 
   it("rebuilds one independently constrained evidence slot per requested document", async () => {

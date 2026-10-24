@@ -914,13 +914,13 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // QUOTE-EMAIL-VALIDATION-01. Accepts the approved concise Guided Relaunch
-    // quotation email. Not applied to DEV or Production. Do not send mail or
-    // edit the stored quotation while reviewing this file.
-    version: "20261024181000",
-    filename: "20261024181000_quote_offer_email_snapshot_v1.sql",
+    // quotation email. Applied once to DEV with recorded version 20261024190832.
+    // SQL was not replayed and Production remains unchanged.
+    version: "20261024190832",
+    filename: "20261024190832_quote_offer_email_snapshot_v1.sql",
     step: "QUOTE-EMAIL-VALIDATION-01 quotation email snapshot",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "quotation email snapshot", probe: "admin_private.quote_offer_snapshot_reason_v1" },
@@ -936,7 +936,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261024085235`. Source filename aligned to the generated ledger; applied SQL was not replayed.
+ * `20261024190832`. Source filename aligned to the generated ledger; applied SQL was not replayed.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

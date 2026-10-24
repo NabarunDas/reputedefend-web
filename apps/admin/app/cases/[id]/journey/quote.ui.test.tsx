@@ -492,7 +492,7 @@ describe("guided quote acceptance", () => {
     expect(frame?.getAttribute("srcdoc")).not.toContain("https://customer.example/action/")
     expect(screen.queryByRole("button", { name: "Review and accept quotation" })).toBeNull()
     expect(screen.getByText("More Options")).toBeTruthy()
-    expect(screen.getByText("Your ProfileRelaunch quotation Q-100")).toBeTruthy()
+    expect(screen.getByText("Your ProfileRelaunch quotation Q-100 — Case PR-1")).toBeTruthy()
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Recover the suspended profile/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/No Google submission from this quote/).length).toBeGreaterThan(0)

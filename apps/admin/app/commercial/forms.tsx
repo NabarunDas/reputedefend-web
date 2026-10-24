@@ -457,7 +457,7 @@ export function ProcessPendingQuotationEmail({ communicationId }: { communicatio
 }
 
 export function SendQuotationForm({
-  quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, scope, exclusions, validUntil,
+  quoteId, publicRef, caseReference, serviceName, amountMinor, currency, paymentModel, taxBehaviour, scope, exclusions, validUntil, replyTo,
   heading = "Send Quotation Email",
   submitLabel = "Send Quotation Email",
   lead = "Review the email, then send it. Sending does not mean the customer has accepted.",
@@ -469,9 +469,11 @@ export function SendQuotationForm({
   amountMinor: number
   currency: string
   paymentModel: string
+  taxBehaviour?: string
   scope: string
   exclusions: string
   validUntil: string
+  replyTo?: string | null
   heading?: string
   submitLabel?: string
   lead?: string
@@ -492,9 +494,11 @@ export function SendQuotationForm({
     amountMinor,
     currency,
     paymentModel,
+    taxBehaviour,
     scope,
     exclusions,
     validUntil,
+    replyTo,
     actionUrl: previewActionUrl,
     subject: editing && subject.trim() ? subject : undefined,
     introduction: editing && introduction.trim() ? introduction : undefined,

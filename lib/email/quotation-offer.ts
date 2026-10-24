@@ -1,4 +1,6 @@
 import { brandName, brandSiteUrl } from "../brand"
+import { standardScopeExclusions } from "../commercial/scope-templates"
+import { customerPriceBoundary } from "../pricing"
 import {
   customerEmailSecurityNote,
   renderCustomerEmail,
@@ -10,7 +12,7 @@ import { validReplyMailbox } from "./reply-mailbox"
 export const quotationButtonLabel = "Review and accept quotation"
 export const quotationIndependenceSentence = `${brandName} is independent of Google. We do not control Google's systems, decisions or timescales.`
 export const quotationLinkExpirySentence = "This secure link expires before that date and no later than seven days after it is sent."
-export const quotationReplySentence = "If you have a question about this quotation, reply to this email."
+export const quotationReplySentence = "If you have any questions about this quotation, simply reply to this email and keep your case reference in the subject."
 export const quotationWebsiteSentence = "If you have a question about this quotation, contact us through the ProfileRelaunch website."
 export const quotationWordingMarker = "Standard wording version "
 export const publishedCustomerPriceLabels = ["£99.00", "£59.00", "£299.00", "£149.00", "£9.99"] as const
@@ -80,6 +82,7 @@ export function renderQuotationOffer(input: {
   amountMinor: number
   currency: string
   paymentModel: string
+  taxBehaviour?: string
   scope: string
   exclusions: string
   validUntil: string
@@ -100,26 +103,53 @@ export function renderQuotationOffer(input: {
   const exclusions = customerLines(input.exclusions)
   const introduction = editableQuotationIntroduction(input.introduction)
   if (!amountLabel || !validUntilLabel || !payment || !scope || !exclusions || !introduction) return null
+  // Only shorten the unchanged, approved Guided Relaunch standard wording.
+  // Edited quote scopes, other services and frozen contract records are never rewritten.
+  const canonical = standardScopeExclusions("GUIDED_RELAUNCH")
+  const conciseGuided = canonical !== null
+    && input.serviceName === "Guided Relaunch"
+    && input.amountMinor === 9900
+    && input.currency === "GBP"
+    && input.paymentModel === "UPFRONT"
+    && (input.taxBehaviour === "NOT_APPLICABLE" || input.taxBehaviour === "INCLUSIVE")
+    && input.scope.trim() === canonical.scope
+    && input.exclusions.trim() === canonical.exclusions
+  const includedItems = conciseGuided
+    ? [
+      "We organise your evidence and prepare the materials needed for your Google Business Profile relaunch submission.",
+      "You review and submit the prepared materials to Google yourself.",
+    ]
+    : scope
+  const excludedItems = conciseGuided
+    ? [
+      "Submitting the prepared work to Google or managing the case with Google on your behalf.",
+      "Ongoing profile and review monitoring.",
+      "A guaranteed result or processing time; Google makes the final decision.",
+    ]
+    : exclusions
   const ownPrice = amountLabel.split(" ")[0]
   if (publishedCustomerPriceLabels.some(label => label !== ownPrice && input.scope.includes(label))) return null
   if (publishedCustomerPriceLabels.some(label => label !== ownPrice && input.exclusions.includes(label))) return null
   const replyTo = validReplyMailbox(input.replyTo)
   const caseRef = input.caseRef?.trim() || ""
   if (caseRef && (caseRef.length > 40 || unsafeCopy(caseRef))) return null
-  const subject = (input.subject?.trim() || `Your ${brandName} quotation ${publicRef}`).trim()
+  const subject = (input.subject?.trim() || `Your ${brandName} quotation ${publicRef}${caseRef ? ` — Case ${caseRef}` : ""}`).trim()
   if (subject.length > 200 || !subject.includes(publicRef) || unsafeCopy(subject)) return null
   const blocks: CustomerEmailBlock[] = [
     ...introduction.split(/\n{2,}/).map(text => ({ type: "paragraph" as const, text })),
     { type: "paragraph", text: `Quotation: ${publicRef}` },
     { type: "paragraph", text: `Service: ${serviceName}` },
-    { type: "paragraph", text: `Amount: ${amountLabel}` },
-    { type: "paragraph", text: `Payment: ${payment}` },
+    { type: "paragraph", text: conciseGuided ? `Amount: ${amountLabel} — inclusive of any applicable taxes.` : `Amount: ${amountLabel}` },
+    ...(conciseGuided ? [{ type: "paragraph" as const, text: customerPriceBoundary }] : []),
+    { type: "paragraph", text: conciseGuided
+      ? "Payment: The £99 fee is payable upfront through a separate payment step after you accept this quotation and the service agreement. Acceptance does not charge your card."
+      : `Payment: ${payment}` },
     { type: "paragraph", text: `This quotation is valid until ${validUntilLabel}.` },
-    { type: "list", title: "Included in this quotation", items: scope },
-    { type: "list", title: "Not included", items: exclusions },
+    { type: "list", title: "Included in this quotation", items: includedItems },
+    { type: "list", title: "Not included", items: excludedItems },
     { type: "paragraph", text: quotationLinkExpirySentence },
     { type: "button", label: quotationButtonLabel, url: input.actionUrl },
-    { type: "paragraph", text: replyTo ? quotationReplySentence : quotationWebsiteSentence },
+    { type: "paragraph", text: replyTo ? (caseRef ? quotationReplySentence : "If you have any questions about this quotation, simply reply to this email and keep your quotation reference in the subject.") : quotationWebsiteSentence },
     { type: "paragraph", text: "Kind regards," },
     { type: "paragraph", text: `${brandName} Support Team` },
     { type: "paragraph", text: quotationIndependenceSentence },

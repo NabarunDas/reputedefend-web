@@ -168,6 +168,7 @@ export async function queueQuoteOfferEmail(input: {
     amountMinor: detail.currentVersion.totalAmountMinor,
     currency: detail.currentVersion.currency,
     paymentModel: detail.currentVersion.paymentModel,
+    taxBehaviour: detail.currentVersion.taxBehaviour,
     scope: detail.currentVersion.scope,
     exclusions: detail.currentVersion.exclusions,
     validUntil: detail.currentVersion.validUntil,

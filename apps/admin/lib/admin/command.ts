@@ -2,6 +2,7 @@ import "server-only"
 import { randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { authConfig, sessionCookie } from "../auth/config"
+import { adminCommandOriginError } from "../auth/command-origin"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "./reauth-copy"
@@ -10,7 +11,8 @@ export const commandReply = (message: string, status = 200) => NextResponse.json
 export async function revokeSession(request: NextRequest) {
   const config = authConfig()
   if (!config) return commandReply("The admin workspace is unavailable. Please try again shortly.", 503)
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return commandReply("Please reload this page and try again.", 403)
+  const originMessage = adminCommandOriginError(request.headers.get("origin"), request.nextUrl.origin, config, "Please reload this page and try again.")
+  if (originMessage) return commandReply(originMessage, 403)
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return commandReply("Please reload this page and try again.", 415)
   const token = request.cookies.get(sessionCookie)?.value
   if (!validToken(token)) return commandReply("Please sign in again.", 401)

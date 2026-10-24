@@ -4,8 +4,8 @@
  * Each command module asserts its own origin check, but nothing asserted that
  * a new route handler has one at all. These checks walk `app/api` on disk and
  * require every POST route to be either a documented unauthenticated endpoint
- * or a delegate of a command module that compares the request origin against
- * the configured one. A route added without that fails here.
+ * or a delegate of a command module that enforces the same-origin allowlist.
+ * A route added without that fails here.
  */
 
 import { readFileSync, readdirSync } from "node:fs"
@@ -36,7 +36,7 @@ const unauthenticatedPosts: Record<string, string> = {
   "/api/[[...path]]": "catch-all that only refuses",
 }
 
-const originCheck = /request\.headers\.get\("origin"\) !== (?:config\.origin|requestOrigin)/
+const originCheck = /request\.headers\.get\("origin"\) !== (?:config\.origin|requestOrigin)|adminCommandOriginError\(\s*request\.headers\.get\("origin"\)/
 
 /** The command module a route delegates to, resolved from its imports. */
 function delegateSources(file: string): string[] {

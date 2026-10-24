@@ -1086,7 +1086,8 @@ describe("guard alerts SQL", () => {
     }, increaseAlert!.version])).toMatchObject({ status: "denied", reason: "incomplete_only" })
 
     const validAt = new Date(Date.now() + 24 * 3600 * 1000)
-    validAt.setUTCHours(8, 15, 0, 0)
+    // 09:30 UTC is inside the 09:00–11:00 London morning window in both GMT and BST.
+    validAt.setUTCHours(9, 30, 0, 0)
     const validDate = validAt.toISOString().slice(0, 10)
     await rpc("guard_maintain_checks_v1", [`${validDate}T08:00:00Z`, validDate])
     const validWindow = (await db.query<{ id: string; record_version: number }>(

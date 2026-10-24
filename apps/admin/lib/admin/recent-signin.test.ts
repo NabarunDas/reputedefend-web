@@ -4,7 +4,7 @@ import { findMigration, pendingMigrations } from "../recovery/manifest"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "./reauth-copy"
 
 const root = new URL("../../../../", import.meta.url)
-const migrationName = "20261024003000_admin_recent_signin_30m_v1.sql"
+const migrationName = "20261024085235_admin_recent_signin_30m_v1.sql"
 const replaced = [
   "public.admin_record_save_v1",
   "public.admin_contact_verify_v1",
@@ -38,11 +38,11 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
 
   it("replaces the audited functions and no unrelated timer", () => {
     expect(findMigration(migrationName)).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([migrationName])
+    expect(pendingMigrations()).toEqual([])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

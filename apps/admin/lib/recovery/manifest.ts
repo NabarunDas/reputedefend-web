@@ -902,12 +902,12 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // ADMIN-SEC-REAUTH-30. One 30-minute recent-sign-in window for every
-    // remaining Admin step-up. Awaiting approval. Not applied to DEV or Production.
-    version: "20261024003000",
-    filename: "20261024003000_admin_recent_signin_30m_v1.sql",
+    // remaining Admin step-up. Applied once to DEV at 20261024085235. Not applied to Production.
+    version: "20261024085235",
+    filename: "20261024085235_admin_recent_signin_30m_v1.sql",
     step: "ADMIN-SEC-REAUTH-30 recent sign-in",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Admin recent sign-in", probe: "admin_private.settings_reauth_ok_v1" },
@@ -923,7 +923,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261023221042`. Repository source filenames aligned to the generated ledger; no SQL replay.
+ * `20261024085235`. Source filename aligned to the generated ledger; applied SQL was not replayed.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

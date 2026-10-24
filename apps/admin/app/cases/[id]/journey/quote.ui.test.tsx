@@ -482,6 +482,8 @@ describe("guided quote acceptance", () => {
     const html = document.querySelector("iframe[title='Quotation email']")?.getAttribute("srcdoc") || ""
     expect(html).toContain("Amount: £99.00 GBP")
     expect(html).toContain("inclusive of any applicable taxes")
+    expect(html).toContain("The £99 fee is payable upfront through a separate payment step")
+    expect(html).toContain("Acceptance does not charge your card.")
     expect(html).toContain("simply reply to this email")
     expect(html).toContain("keep your case reference in the subject")
     expect(html).not.toContain("contact us through the ProfileRelaunch website")

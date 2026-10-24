@@ -56,7 +56,7 @@ const reasons: Record<string, { message: string; status: number }> = {
     status: 400,
   },
   snapshot_mismatch: {
-    message: "The quotation changed before the email was queued. Reload the page and try again.",
+    message: "The quotation email wording was not accepted, so it was not queued. The quotation itself was not changed.",
     status: 409,
   },
   case_closed: {

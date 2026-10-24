@@ -100,6 +100,7 @@ export function CaseJourneyView({
   assessment = null,
   quote = null,
   activation = null,
+  acceptedOrderLabel = null,
   preparation = null,
   submission = null,
   outcome = null,
@@ -133,6 +134,7 @@ export function CaseJourneyView({
   membership?: Membership
   emailRecovery?: "send" | "resend" | null
   activation?: JourneyActivationPanel | null
+  acceptedOrderLabel?: string | null
   preparation?: JourneyPreparationPanel | null
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
   outcome?: { caseDetail: CaseDetail; panel: JourneyOutcomePanel } | null
@@ -150,6 +152,7 @@ export function CaseJourneyView({
         <p className="badge-row">
           <Badge tone={status.tone}>{status.word}</Badge>
           <Badge tone="neutral">Service: {serviceTrackLabels[journey.serviceTrack]}</Badge>
+          {journey.projectedService && <Badge tone="warning">{acceptedOrderLabel ?? activation?.projectedOrderLabel ?? journey.projectedService.summary}</Badge>}
           {journey.reopened && <Badge tone="warning">Reopened</Badge>}
         </p>
       </div>
@@ -300,7 +303,7 @@ function StepWorkspace({
       membership={membership}
       emailRecovery={emailRecovery}
     />}
-    {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
+    {showActivation && activation && <ActivationPanel caseId={caseId} version={version} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
     {showSubmission && submission && <SubmissionPanel caseDetail={submission.caseDetail} panel={submission.panel} />}
     {showOutcome && outcome && <OutcomePanel caseDetail={outcome.caseDetail} panel={outcome.panel} />}
@@ -369,6 +372,7 @@ function instructionFor(step: JourneyStepView, journey: CaseJourneyPresentation)
   if (step.id === "PREPARATION" && step.state === "LOCKED") return "Case preparation stays closed until the earlier steps are recorded."
   if (step.id === "PREPARATION" && step.state === "NEEDS_ATTENTION") return "This pack is not ready. A stale pack, a conflicting record, or more than one published pack does not finish the step."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "COMPLETED") return "This service is activated from the recorded payment or authorisation. A checkout return, a saved card, and the selected track are not what completed it."
+  if (step.id === "SERVICE_ACTIVATION" && journey.projectedService && step.state !== "LOCKED" && step.state !== "COMPLETED" && step.state !== "NOT_APPLICABLE") return "The customer has already accepted the service. Continue records that order and then shows the existing payment action. Continue does not mark the payment complete."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "LOCKED") return "Service activation stays closed until the earlier steps are recorded."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "NEEDS_ATTENTION") return "Activation is not recorded. A failed payment, an expired link, a revoked permission, or disagreeing records do not activate the service."
   if (step.id === "SERVICE_ACTIVATION" && step.state === "WAITING") return "The customer still has to pay or accept the authorisation. An open link is not activation."

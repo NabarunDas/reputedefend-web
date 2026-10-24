@@ -175,12 +175,72 @@ function panel(
   })
 }
 
+describe("accepted order reconciliation", () => {
+  it("offers one Continue action for an accepted Guided order while the stored track is undecided", () => {
+    const view = panel({
+      technicalStage: "INITIAL_REVIEW",
+      serviceTrack: "UNDECIDED",
+      caseStatus: "RECEIVED",
+      allowedTransitions: ["ASSESSMENT_READY", "EVIDENCE_COLLECTION"],
+    }, { order: serviceOrder() })
+    expect(view.continueToPayment).toEqual({
+      label: "Continue to Guided Payment",
+      headline: "Guided Relaunch — accepted; £99 payment outstanding",
+    })
+    expect(view.headline).toBe("Guided Relaunch — accepted; £99 payment outstanding")
+    expect(view.issueUpfront).toBeNull()
+    expect(view.who).toMatch(/already chosen/)
+    expect(view.who).not.toMatch(/still have to choose/)
+    expect(view.trackNote).toMatch(/not chosen/)
+    expect(view.detail).toMatch(/does not send email/)
+  })
+
+  it("uses the Guided Review amount and does not infer the service from £99", () => {
+    const review = panel({
+      technicalStage: "INITIAL_REVIEW",
+      serviceTrack: "UNDECIDED",
+      allowedTransitions: ["ASSESSMENT_READY"],
+    }, {
+      order: serviceOrder({ serviceCode: "GUIDED_REVIEW", amountMinor: 5900 }),
+      moneyOrders: [money({ serviceCode: "GUIDED_REVIEW", amountMinor: 5900 })],
+    })
+    expect(review.headline).toBe("Guided Review — accepted; £59 payment outstanding")
+    expect(review.continueToPayment?.label).toBe("Continue to Guided Payment")
+    const pricedAsGuided = panel({
+      technicalStage: "INITIAL_REVIEW",
+      serviceTrack: "UNDECIDED",
+      allowedTransitions: ["ASSESSMENT_READY"],
+    }, {
+      order: serviceOrder({ serviceCode: "GUIDED_REVIEW", amountMinor: 9900 }),
+      moneyOrders: [money({ serviceCode: "MANAGED_RELAUNCH", amountMinor: 9900, paymentModel: "SUCCESS_FEE" })],
+    })
+    expect(pricedAsGuided.continueToPayment).toBeNull()
+    expect(pricedAsGuided.issueUpfront).toBeNull()
+  })
+
+  it("continues a Managed order without an upfront payment link", () => {
+    const view = panel({
+      technicalStage: "SERVICE_SELECTION",
+      serviceTrack: "UNDECIDED",
+      allowedTransitions: ["PAYMENT_REQUIRED", "AUTHORIZATION_REQUIRED"],
+      payment: { complete: true, orders: [upfront({ paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null })] },
+    }, {
+      order: serviceOrder({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", state: "ACCEPTED_SUCCESS_FEE" }),
+      moneyOrders: [money({ serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, amountMinor: 9900 })],
+    })
+    expect(view.continueToPayment?.label).toBe("Continue to Managed authorisation")
+    expect(view.headline).toBe("Managed Relaunch — accepted; no upfront payment")
+    expect(view.issueUpfront).toBeNull()
+  })
+})
+
 describe("guided service activation", () => {
   it("offers the existing upfront link only when collection is already the next action", () => {
     const view = panel()
     expect(view.track).toBe("GUIDED")
     expect(view.headline).toBe("Guided payment outstanding")
     expect(view.issueUpfront).toEqual({ serviceOrderId: ORDER_ID, version: 3 })
+    expect(view.continueToPayment).toBeNull()
     expect(view.requirements.find(item => item.label === "Upfront obligation PAID")?.state).toBe("Not met")
     expect(view.detail).toMatch(/not the selected track/)
     expect(view.authorization).toBeNull()

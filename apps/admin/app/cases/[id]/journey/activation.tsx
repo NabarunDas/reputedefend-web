@@ -1,13 +1,14 @@
 import type { JourneyActivationPanel } from "@/lib/case-journey/activation"
 import { IssuePaymentActionForm } from "../../../money/forms"
 import { AuthorizationPanel } from "../authorization-forms"
+import { ContinueAcceptedServiceForm } from "./continue-payment"
 
 /**
  * Guided and Managed activation on Step 7.
  * The payment link and the authorisation forms are the existing commands.
  * Pack preparation and Google submission stay on later steps.
  */
-export function ActivationPanel({ caseId, panel }: { caseId: string; panel: JourneyActivationPanel }) {
+export function ActivationPanel({ caseId, version, panel }: { caseId: string; version: number; panel: JourneyActivationPanel }) {
   const order = panel.order
   return <div className="guided-facts" data-activation={panel.headline}>
     <p>{panel.trackNote}</p>
@@ -24,6 +25,7 @@ export function ActivationPanel({ caseId, panel }: { caseId: string; panel: Jour
     </ul>}
     <p><strong>Who must act.</strong> {panel.who}</p>
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
+    {panel.continueToPayment && <ContinueAcceptedServiceForm caseId={caseId} version={version} label={panel.continueToPayment.label} />}
     {panel.issueUpfront && <>
       <p>Issuing this link uses the existing payment command. It does not mark the obligation paid, and it does not start a live charge from this page. Collection stays on the existing payment gate.</p>
       <IssuePaymentActionForm

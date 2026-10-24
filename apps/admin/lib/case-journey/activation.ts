@@ -11,7 +11,7 @@
 import type { CaseAuthorization } from "../authorization/model"
 import type { CaseFlowFacts, CaseFlowOrderFact, CaseServiceTrack } from "../case-flow/model"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
-import { formatGbp, paymentModelLabel, type ServiceOrder } from "../commerce/model"
+import { formatGbp, paymentModelLabel, serviceLabel, type ServiceOrder } from "../commerce/model"
 import { ukDate } from "../admin/activity"
 import type { MoneyOrder } from "../payments/model"
 
@@ -57,6 +57,68 @@ export function activationOrderLink(facts: CaseFlowFacts, now: string): Activati
     return { linked: false, quoteId: commercial.quote.id, quoteOrderId, trackOrder, reason: "mismatch" }
   }
   return { linked: true, quoteId: commercial.quote.id, quoteOrderId, trackOrder, reason: "linked" }
+}
+
+export type AcceptedServiceProjection = {
+  orderId: string
+  model: "UPFRONT" | "SUCCESS_FEE"
+  aligned: boolean
+}
+
+const laterGuidedStages = ["PAYMENT_REQUIRED", "PREPARATION", "READY_TO_SUBMIT", "SUBMITTED", "WAITING_GOOGLE", "OWNER_ACTION", "FURTHER_REVIEW", "OUTCOME_REVIEW", "FINISHED"]
+const laterManagedStages = ["AUTHORIZATION_REQUIRED", "PREPARATION", "READY_TO_SUBMIT", "SUBMITTED", "WAITING_GOOGLE", "OWNER_ACTION", "FURTHER_REVIEW", "OUTCOME_REVIEW", "FINISHED"]
+
+/** Whole pounds stay as £99. Any pence uses the existing money format. */
+export function acceptedOrderAmountLabel(amountMinor: number): string {
+  if (!Number.isInteger(amountMinor) || amountMinor < 0 || amountMinor % 100 !== 0) return formatGbp(amountMinor)
+  return `£${amountMinor / 100}`
+}
+
+export function trackForServiceCode(code: string): "GUIDED" | "MANAGED" | null {
+  if (code === "GUIDED_RELAUNCH" || code === "GUIDED_REVIEW") return "GUIDED"
+  if (code === "MANAGED_RELAUNCH" || code === "MANAGED_REVIEW") return "MANAGED"
+  return null
+}
+
+/**
+ * One accepted order can be waiting on a case whose stored track is still
+ * undecided. The price is not the service. Alignment is the stored track and
+ * a stage that already reached payment or authorisation.
+ */
+export function acceptedServiceProjection(facts: CaseFlowFacts, now: string): AcceptedServiceProjection | null {
+  if (!facts.commercial.complete || !facts.payment.complete || commercialQuotesTied(facts)) return null
+  const commercial = summariseCommercial(facts, now)
+  if (commercial.state !== "ACCEPTED" || !commercial.quote) return null
+  const orderId = nonempty(commercial.quote.orderId)
+  if (!orderId || facts.payment.orders.length !== 1) return null
+  const order = facts.payment.orders[0]
+  if (order.orderId !== orderId) return null
+  const upfront = order.paymentModel === "UPFRONT"
+    && order.orderState === "ACCEPTED_AWAITING_PAYMENT"
+    && order.obligationKind === "UPFRONT"
+    && (order.obligationState === "DUE" || order.obligationState === "COLLECTING")
+    && !order.receiptRecorded
+  const managed = order.paymentModel === "SUCCESS_FEE"
+    && order.orderState === "ACCEPTED_SUCCESS_FEE"
+    && order.obligationState !== "PAID"
+    && order.obligationState !== "FAILED"
+    && !order.receiptRecorded
+  if (!upfront && !managed) return null
+  const model = upfront ? "UPFRONT" as const : "SUCCESS_FEE" as const
+  const track = model === "UPFRONT" ? "GUIDED" : "MANAGED"
+  const aligned = facts.serviceTrack === track && (model === "UPFRONT" ? laterGuidedStages : laterManagedStages).includes(facts.technicalStage)
+  return { orderId, model, aligned }
+}
+
+export function acceptedOrderOutstandingLabel(input: { serviceCode: string; amountMinor: number; paymentModel: string }): string | null {
+  const track = trackForServiceCode(input.serviceCode)
+  if (track === "GUIDED" && input.paymentModel === "UPFRONT") {
+    return `${serviceLabel(input.serviceCode)} — accepted; ${acceptedOrderAmountLabel(input.amountMinor)} payment outstanding`
+  }
+  if (track === "MANAGED" && input.paymentModel === "SUCCESS_FEE") {
+    return `${serviceLabel(input.serviceCode)} — accepted; no upfront payment`
+  }
+  return null
 }
 
 export function activationLinkProblem(link: ActivationOrderLink, track: CaseServiceTrack): string | null {
@@ -127,6 +189,11 @@ export type JourneyActivationRequirement = {
   detail: string
 }
 
+export type JourneyActivationContinue = {
+  label: string
+  headline: string
+}
+
 export type JourneyActivationPanel = {
   track: CaseServiceTrack
   headline: string
@@ -137,6 +204,10 @@ export type JourneyActivationPanel = {
   notices: string[]
   who: string
   issueUpfront: { serviceOrderId: string; version: number } | null
+  /** Confirms the accepted order. It does not issue a payment link. */
+  continueToPayment: JourneyActivationContinue | null
+  /** The accepted order, shown separately from the stored track until Continue succeeds. */
+  projectedOrderLabel: string | null
   authorization: CaseAuthorization | null
 }
 
@@ -297,16 +368,65 @@ export function buildJourneyActivationPanel(input: {
         : "ProfileRelaunch verifies authority and Google access. The customer accepts the agreement and the case permission."
       : "ProfileRelaunch and the customer still have to choose the service."
 
+  const projection = acceptedServiceProjection(facts, input.now)
+  const projectedTrack = projection?.model === "UPFRONT" ? "GUIDED" : projection?.model === "SUCCESS_FEE" ? "MANAGED" : null
+  const codeTrack = loadedOrder ? trackForServiceCode(loadedOrder.serviceCode) : null
+  const projectedLabel = loadedOrder ? acceptedOrderOutstandingLabel(loadedOrder) : null
+  const moneyAgreesWithOrder = !!projection && !!moneyOrder && !!loadedOrder
+    && moneyOrder.orderId === projection.orderId
+    && moneyOrder.paymentModel === projection.model
+    && moneyOrder.serviceCode === loadedOrder.serviceCode
+    && moneyOrder.amountMinor === loadedOrder.amountMinor
+    && moneyOrder.currency === "GBP"
+    && loadedOrder.currency === "GBP"
+    && sameId(moneyOrder.caseId, facts.caseId)
+    && sameId(moneyOrder.customerId, facts.customerId)
+    && sameId(loadedOrder.caseId, facts.caseId)
+  const trackConflict = (facts.serviceTrack === "GUIDED" || facts.serviceTrack === "MANAGED") && !!codeTrack && codeTrack !== facts.serviceTrack
+  const continueToPayment = projection && !projection.aligned && projectedLabel && codeTrack === projectedTrack && moneyAgreesWithOrder
+    && !trackConflict && !input.recordsConflict && listsComplete && !tied && !linkProblem && !moneyDisagrees && !issueUpfront
+    ? {
+      label: projection.model === "UPFRONT" ? "Continue to Guided Payment" : "Continue to Managed authorisation",
+      headline: projectedLabel,
+    }
+    : null
+  if (trackConflict) {
+    notices.push("The stored service track does not match the accepted order. This step does not overwrite it and does not start a payment.")
+  }
+  const shownRequirements = continueToPayment
+    ? projection?.model === "UPFRONT"
+      ? [
+        requirement("Accepted order", true, `${loadedOrder ? serviceLabel(loadedOrder.serviceCode) : "The service"} is already accepted. Continue does not ask for that choice again.`),
+        requirement("Stored service track", facts.serviceTrack === "GUIDED", "The case record changes only when Continue succeeds."),
+        requirement("Upfront obligation PAID", false, "Stripe settlement and a receipt mark the payment complete. This step does not."),
+      ]
+      : [
+        requirement("Accepted success-fee order", true, "The customer has already accepted Managed. Continue does not ask for that choice again."),
+        requirement("Stored service track", facts.serviceTrack === "MANAGED", "The case record changes only when Continue succeeds."),
+        requirement("Upfront payment", false, "Managed has no upfront fee. Continue does not collect one."),
+      ]
+    : requirements
+
   return {
     track: facts.serviceTrack,
-    headline,
-    detail,
-    trackNote,
+    headline: continueToPayment?.headline ?? headline,
+    detail: continueToPayment
+      ? projection?.model === "UPFRONT"
+        ? "The accepted order is not yet the stored service track. Continue records it and opens the existing secure payment action. It does not send email, open Stripe, or mark the obligation paid."
+        : "The accepted order is not yet the stored service track. Continue records Managed authorisation as the next stage. It does not collect an upfront fee."
+      : detail,
+    trackNote: continueToPayment
+      ? `The stored service track is ${facts.serviceTrack === "UNDECIDED" ? "not chosen" : facts.serviceTrack === "GUIDED" ? "Guided" : "Managed"}. The accepted order is shown separately until Continue succeeds.`
+      : trackNote,
     order,
-    requirements,
+    requirements: shownRequirements,
     notices,
-    who,
+    who: continueToPayment
+      ? "ProfileRelaunch confirms the accepted order. The customer has already chosen the service."
+      : who,
     issueUpfront,
+    continueToPayment,
+    projectedOrderLabel: continueToPayment?.headline ?? null,
     authorization: facts.serviceTrack === "MANAGED" ? input.authorization : null,
   }
 }

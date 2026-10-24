@@ -183,7 +183,7 @@ describe("the eleven-step catalogue", () => {
   it("lists the operator steps in the required order", () => {
     expect(journeyCatalogue.map(item => item.title)).toEqual([
       "Case Received",
-      "Business, Profile & Contact Verification",
+      "Preliminary business, profile and contact screening",
       "Review Request & Request Documents",
       "Evidence Review",
       "Assessment & Recommended Path",
@@ -1070,6 +1070,8 @@ describe("intake review and business screening records", () => {
   it("completes screening for a genuine business, including one with no website or a suspended listing", () => {
     const genuine = show({}, [intake("REVIEWED"), screening()])
     expect(step(genuine, "VERIFICATION").state).toBe("COMPLETED")
+    expect(step(genuine, "VERIFICATION").title).toBe("Preliminary business, profile and contact screening")
+    expect(step(genuine, "VERIFICATION").whoMustAct).toMatch(/not formal business authority/)
     expect(step(genuine, "VERIFICATION").known.join(" ")).toMatch(/not a verified purchasing establishment/)
     const noWebsite = show({}, [intake("REVIEWED"), screening({ website: "NONE" })])
     expect(step(noWebsite, "VERIFICATION").state).toBe("COMPLETED")

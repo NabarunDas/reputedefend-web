@@ -359,7 +359,7 @@ describe("the case journey route", () => {
       params: Promise.resolve({ id: CASE_ID }),
       searchParams: Promise.resolve({ step: "VERIFICATION" }),
     }))
-    expect(screen.getByRole("heading", { name: "Business, Profile & Contact Verification" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Preliminary business, profile and contact screening" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Record the screening decision" })).toBeNull()
     expect(screen.getByText(/no control that skips ahead/)).toBeInTheDocument()
   })

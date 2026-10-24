@@ -516,7 +516,7 @@ function readVerification(
       proof: "complete",
       known: [...known, `Preliminary checks were recorded from ${decision?.source}. This is not a verified purchasing establishment and it is not tax eligibility.`],
       missing: [],
-      who: "The preliminary check is recorded. The purchasing establishment still waits for the quote.",
+      who: "Preliminary screening is recorded. It is not formal business authority and it is not the legal purchasing establishment.",
     }
   }
   const missing = ["A preliminary screening record with a source, an outcome and a reason."]

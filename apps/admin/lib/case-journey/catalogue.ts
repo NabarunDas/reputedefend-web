@@ -68,8 +68,8 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
   {
     id: "VERIFICATION",
     order: 2,
-    title: "Business, Profile & Contact Verification",
-    purpose: "Make the initial check of the business, the Google Profile and the contact. Screening, verified email, business authority and the purchasing establishment stay separate.",
+    title: "Preliminary business, profile and contact screening",
+    purpose: "Record preliminary screening of the business, the Google Profile and the contact. This is not formal customer business authority and it is not the legal purchasing establishment. Verified email stays a separate record.",
     responsibleParty: "ADMIN",
     dataDependencies: [
       "basic business screening",

@@ -17,6 +17,7 @@ import type { CaseDetail } from "@/lib/cases/model"
 import type { EvidenceCase } from "@/lib/evidence/model"
 import type { EvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
+import type { Membership } from "@/lib/records/model"
 import { AssessmentPanel } from "./assessment"
 import { QuotePanel } from "./quote"
 import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
@@ -55,7 +56,7 @@ const stateClass: Record<JourneyStepState, string> = {
 
 const previewNote: Record<JourneyStepId, string> = {
   CASE_RECEIVED: "Read the enquiry, then record whether it is reviewed or incomplete.",
-  VERIFICATION: "Check the business and listing, then record the screening outcome.",
+  VERIFICATION: "Record preliminary screening of the business, profile and contact. This does not verify the customer's email, grant business authority, or record the legal purchasing establishment.",
   REQUEST_DOCUMENTS: "Choose the documents, save a request, review the email, then approve and send it here. Approval alone does not send.",
   EVIDENCE_REVIEW: "Review each uploaded file. A clean scan is not approval, and accepting a file does not fulfil its request.",
   ASSESSMENT: "Record the findings and the recommended pathway, then review and approve them. Saving the form does not complete this step.",
@@ -108,6 +109,8 @@ export function CaseJourneyView({
   locationId = null,
   quoteReadiness = unavailableQuoteReadiness,
   quoteEmail = emptyQuoteEmail,
+  membership,
+  emailRecovery = null,
 }: {
   reference: string
   customer: string
@@ -127,6 +130,8 @@ export function CaseJourneyView({
   quote?: JourneyQuotePanel | null
   quoteReadiness?: QuoteReadiness
   quoteEmail?: QuoteEmailView
+  membership?: Membership
+  emailRecovery?: "send" | "resend" | null
   activation?: JourneyActivationPanel | null
   preparation?: JourneyPreparationPanel | null
   submission?: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
@@ -162,7 +167,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} quoteReadiness={quoteReadiness} quoteEmail={quoteEmail} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} quoteReadiness={quoteReadiness} quoteEmail={quoteEmail} membership={membership} emailRecovery={emailRecovery} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -208,6 +213,8 @@ function StepWorkspace({
   quote,
   quoteReadiness,
   quoteEmail,
+  membership,
+  emailRecovery,
   activation,
   preparation,
   submission,
@@ -232,6 +239,8 @@ function StepWorkspace({
   quote: JourneyQuotePanel | null
   quoteReadiness: QuoteReadiness
   quoteEmail: QuoteEmailView
+  membership?: Membership
+  emailRecovery: "send" | "resend" | null
   activation: JourneyActivationPanel | null
   preparation: JourneyPreparationPanel | null
   submission: { caseDetail: CaseDetail; panel: JourneySubmissionPanel } | null
@@ -288,6 +297,8 @@ function StepWorkspace({
       locationId={locationId}
       customerName={customer}
       businessName={business}
+      membership={membership}
+      emailRecovery={emailRecovery}
     />}
     {showActivation && activation && <ActivationPanel caseId={caseId} panel={activation} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
@@ -369,7 +380,7 @@ function instructionFor(step: JourneyStepView, journey: CaseJourneyPresentation)
   if (step.state === "COMPLETED") return "This step is complete."
   if (step.id === "VERIFICATION" && step.state === "NEEDS_ATTENTION") return "Screening cannot be completed until the conflict below is resolved."
   if (step.id === "CASE_RECEIVED" && step.state === "NEEDS_ATTENTION") return "The intake is not reviewed. Record the outcome and the next action."
-  if (step.state === "LOCKED" && step.decision === "verification") return "Business verification starts after the intake review is recorded."
+  if (step.state === "LOCKED" && step.decision === "verification") return "Preliminary screening starts after the intake review is recorded. It does not verify email or business authority."
   if (step.id === "REQUEST_DOCUMENTS" && step.state === "LOCKED") return "Document requests stay closed until the earlier steps are recorded."
   if (step.id === "REQUEST_DOCUMENTS" && step.state === "WAITING") return "The message is waiting on the email provider. That is not delivery."
   if (step.id === "EVIDENCE_REVIEW" && step.state === "LOCKED") return "Evidence review stays closed until the earlier steps are recorded."

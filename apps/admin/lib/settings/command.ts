@@ -2,6 +2,7 @@ import "server-only"
 import { NextRequest, NextResponse } from "next/server"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
+import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { commandMessage, isSettingsOperation, payloadLooksSecret, privacyDeletionEnabled } from "./model"
@@ -36,9 +37,8 @@ async function readJson(request: NextRequest, limit = 8192): Promise<{ error: Ne
 function sessionOrError(request: NextRequest): { error: NextResponse } | { token: string; key: string } {
   const config = authConfig()
   if (!config) return { error: json("The workspace is unavailable. Please try again shortly.", 503) }
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) {
-    return { error: json("Reload this page and try again.", 403) }
-  }
+  const originMessage = adminCommandOriginError(request.headers.get("origin"), request.nextUrl.origin, config, "Reload this page and try again.")
+  if (originMessage) return { error: json(originMessage, 403) }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") {
     return { error: json("Reload this page and try again.", 415) }
   }

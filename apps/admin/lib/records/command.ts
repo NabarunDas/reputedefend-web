@@ -1,6 +1,7 @@
 import "server-only"
 import { NextRequest, NextResponse } from "next/server"
 import { authConfig, sessionCookie } from "../auth/config"
+import { adminCommandOriginError } from "../auth/command-origin"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "./model"
@@ -11,7 +12,8 @@ const rpcs = { save: "admin_record_save_v1", verify: "admin_contact_verify_v1", 
 export async function recordCommand(request: NextRequest, operation: Operation) {
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
-  if (request.headers.get("origin") !== config.origin || request.nextUrl.origin !== config.origin) return reply("Please reload this page and try again.", 403)
+  const originMessage = adminCommandOriginError(request.headers.get("origin"), request.nextUrl.origin, config, "Please reload this page and try again.")
+  if (originMessage) return reply(originMessage, 403)
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") return reply("Please reload this page and try again.", 415)
   const token = request.cookies.get(sessionCookie)?.value
   if (!validToken(token)) return reply("Please sign in again.", 401)

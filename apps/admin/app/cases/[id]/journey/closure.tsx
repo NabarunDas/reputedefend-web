@@ -77,6 +77,6 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
       ? "The Guided preparation is already closed. This queues the completion update that was not sent. Queued is not delivered. It does not close the case again, record a Google decision, or enrol Relaunch Guard."
       : panel.fulfilmentClose
       ? "Closing records the Guided preparation as delivered. A completion email is queued only when outgoing mail is on, and queued is not delivered. If mail is off, the notification stays pending. Nothing here submits work to Google, and Relaunch Guard stays optional."
-      : "This step does not send a closure email, submit anything to Google, or collect a payment."}</p>
+      : "A verified success is closed only after the success fee is settled. An unsuccessful or withdrawn case can close with no fee. An unpaid invoice, a disputed fee, a pending Google response, or outstanding customer action stays open. This step does not send a closure email, submit anything to Google, collect a payment, or enrol Relaunch Guard."}</p>
   </div>
 }

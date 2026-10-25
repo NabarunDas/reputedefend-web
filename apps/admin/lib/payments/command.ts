@@ -114,7 +114,11 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         orderRef?: string
       }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId, ...declaredLivemodeArgument() })
       if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
-      if (prepared.status !== "success") return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      if (prepared.status !== "success") {
+        if (prepared.reason === "success_verification") return reply("The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart.", 403)
+        if (prepared.reason === "collection_paused") return reply("Collection is paused while this success fee is disputed. No new invoice was created and no card was charged.", 403)
+        return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      }
       if (prepared.replay && prepared.hostedInvoiceUrl && !trustedStripeUrl(prepared.hostedInvoiceUrl, "invoice")) {
         return reply("TEST-MODE FOUNDATION: a hosted invoice cannot be issued until Stripe test payments and seller/tax configuration are enabled.", 503)
       }
@@ -162,10 +166,10 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         }
       }
     }
-    const result = await backend().rpc<{ status?: string; id?: string; obligationId?: string; expiresAt?: string; replay?: boolean }>("admin_payment_command_v1", {
+    const result = await backend().rpc<{ status?: string; id?: string; obligationId?: string; expiresAt?: string; replay?: boolean; message?: string }>("admin_payment_command_v1", {
       p_token: tokenHash(token), p_request: key, p_operation: operation, p_payload: payload, p_version: version,
     })
-    if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
+    if (result.status !== "success") return reply(result.message || commandMessage(result.status), mapStatus(result.status))
     if (operation === "issue_invoice_fallback") {
       return reply(
         result.replay

@@ -36,7 +36,12 @@ vi.mock("@/lib/payments/success-fee-cases", () => ({
     ["55555555-5555-4555-8555-555555555555", { caseType: "PROFILE_RECOVERY", outcome: "RESTORED" }],
     ["66666666-6666-4666-8666-666666666666", { caseType: "PROFILE_RECOVERY", outcome: null }],
   ]),
-  loadSuccessVerification: async () => new Set(["77777777-7777-4777-8777-777777777777"]),
+  loadSuccessVerification: async () => ({
+    ready: new Set(["77777777-7777-4777-8777-777777777777"]),
+    baselines: new Map(),
+    checks: new Map(),
+    pauses: new Map(),
+  }),
 }))
 vi.mock("@/lib/payments/queries", () => ({
   loadMoney: async () => ({

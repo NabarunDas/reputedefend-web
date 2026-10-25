@@ -84,6 +84,13 @@ export type JourneyOutcomePanel = {
   commands: JourneyOutcomeCommands | null
   /** The operator can record one success observation. Approval stays hidden until the pair qualifies. */
   recordObservation: boolean
+  /** False when the verification read failed, so a target is not frozen from a blank screen. */
+  verificationKnown: boolean
+  baseline: { targetRef: string; restrictionRef: string } | null
+  checks: Array<{ id: string; finding: string; qualifying: boolean; invalidated: boolean }>
+  collectionPause: "OPEN" | "UPHELD" | "NOT_UPHELD" | null
+  /** Present when a success-fee obligation can be paused or decided. */
+  pauseOrder: { orderId: string; obligationId: string } | null
   order: {
     orderId: string
     version: number
@@ -389,10 +396,14 @@ export function presentJourneyOutcome(input: {
   /** Case-detail work events. Required to accept an outcome after reopen. */
   events?: readonly OutcomeProofEvent[] | null
   /**
-   * True only when the database has two observations of the same target at least 48 hours apart.
-   * A missing read stays false, so approval and invoicing are withheld.
+   * True only when the database has a trustworthy pair for the contracted target
+   * at least 48 hours apart. A missing read stays false, so approval and invoicing are withheld.
    */
   verificationReady?: boolean
+  verificationKnown?: boolean
+  baseline?: { targetRef: string; restrictionRef: string } | null
+  checks?: Array<{ id: string; finding: string; qualifying: boolean; invalidated: boolean }>
+  collectionPause?: "OPEN" | "UPHELD" | "NOT_UPHELD" | null
 }): { disagreed: boolean; panel: JourneyOutcomePanel } {
   const projected = projectOutcome(input.facts, input.now, input.events)
   const recorded = input.recorded
@@ -466,7 +477,7 @@ export function presentJourneyOutcome(input: {
   }
   const recordObservation = canBill && position === "pending" && !paired?.approvalId && evidenceReady && !verificationReady && !!paired
   if (recordObservation) {
-    notices.push("The success fee stays pending until two recorded observations of the same profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
+    notices.push("The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
   }
   if (canBill && !!paired?.approvalId && !paired.receiptId && !input.facts.capabilities.paymentsEnabled && paired.obligationState !== "PAID") {
     notices.push("A TEST-MODE hosted invoice is not offered because payment collection is not enabled. This step does not create one.")
@@ -474,6 +485,11 @@ export function presentJourneyOutcome(input: {
   if (paired?.invoiceStatus === "DRAFT" && position !== "disagree") notices.push("A draft invoice is not an issued invoice and it is not payment.")
   if (position === "invoiced") notices.push("An issued invoice is not payment. Returning from the invoice page does not settle it.")
   if (position === "settled") notices.push("Settlement is the provider receipt. An approval, an invoice link, a saved card and a checkout return are not that receipt.")
+  const canPauseCollection = input.facts.serviceTrack === "MANAGED"
+    && !!paired?.obligationId
+    && !paired.receiptId
+    && paired.obligationState !== "PAID"
+    && paired.obligationState !== "VOID"
   const offeredEvidence = evidenceReady ? listedEvidence : []
   const commandOrder = paired && (approve || invoice)
     ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
@@ -534,6 +550,13 @@ export function presentJourneyOutcome(input: {
           : projected.who,
       commands: commandOrder || record ? { approve, invoice, record } : null,
       recordObservation,
+      verificationKnown: input.verificationKnown === true,
+      baseline: input.baseline ?? null,
+      checks: input.checks ?? [],
+      collectionPause: input.collectionPause ?? null,
+      pauseOrder: canPauseCollection && paired?.obligationId
+        ? { orderId: paired.orderId, obligationId: paired.obligationId }
+        : null,
       order: commandOrder ?? (recordObservation && paired
         ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
         : null),

@@ -31,9 +31,9 @@ function MoneyOrderActions({
 }: {
   row: MoneyOrder
   outcomes: Map<string, SuccessFeeCaseOutcome> | null
-  verified: Set<string> | null
+  verified: Awaited<ReturnType<typeof loadSuccessVerification>>
 }) {
-  const approval = successFeeApprovalOffer(row, outcomes, verified?.has(row.orderId) === true)
+  const approval = successFeeApprovalOffer(row, outcomes, verified?.ready.has(row.orderId) === true)
   return <>
     {row.paymentModel === "UPFRONT" && row.obligationState !== "PAID" && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_guided_payment_action" label="Issue upfront payment action" />}
     {row.paymentModel === "SUCCESS_FEE" && row.obligationState === "AUTHENTICATION_REQUIRED" && row.obligationId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_recovery_action" label="Issue recovery action" obligationId={row.obligationId} />}

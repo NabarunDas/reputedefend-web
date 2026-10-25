@@ -296,7 +296,11 @@ async function loadJourneyOutcome(
     now,
     order,
     orderDetailMissing: !!orderId && order?.id !== orderId,
-    verificationReady: !!orderId && verified?.has(orderId) === true,
+    verificationReady: !!orderId && verified?.ready.has(orderId) === true,
+    verificationKnown: verified !== null,
+    baseline: orderId ? verified?.baselines.get(orderId) ?? null : null,
+    checks: orderId ? verified?.checks.get(orderId) ?? [] : [],
+    collectionPause: orderId ? verified?.pauses.get(orderId) ?? null : null,
     events: detail.events.map(event => ({ id: event.id, event: event.event, details: event.details })),
     recorded: {
       submissions: detail.submissions,
@@ -336,7 +340,7 @@ async function loadJourneyClosure(
     },
     precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
     mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
-    verificationReady: !!orderId && verified?.has(orderId) === true,
+    verificationReady: !!orderId && verified?.ready.has(orderId) === true,
   }
   const presented = presentJourneyClosure(input)
   return { disagreed: presented.disagreed, closureRecordsDisagree: presented.closureRecordsDisagree, input }

@@ -88,12 +88,23 @@ export type CasePublishedDocument = {
   publishedAt: string
 }
 
+export type GuidedPackHandover = {
+  title: string
+  serviceName: "Guided Relaunch" | "Guided Review"
+  packNumber: number
+  instructions: string
+  instructionSelectors: string[]
+  customerSubmitted: boolean
+  correctionRequested: boolean
+}
+
 export type CustomerCaseDocuments = {
   found: true
   case: PortalCaseContext
   requests: CaseEvidenceRequest[]
   submissions: CaseEvidenceSubmission[]
   documents: CasePublishedDocument[]
+  pack: GuidedPackHandover | null
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -240,7 +251,7 @@ export function parseCaseDocuments(value: unknown): CustomerCaseDocuments | "not
   const row = record(value)
   if (!row) return null
   if (sameKeys(row, ["found"]) && row.found === false) return "not_found"
-  if (!sameKeys(row, ["found", "case", "requests", "submissions", "documents"]) || row.found !== true) return null
+  if (!sameKeys(row, ["found", "case", "requests", "submissions", "documents", "pack"]) || row.found !== true) return null
   const caseRow = record(row.case)
   if (!caseRow || !sameKeys(caseRow, ["reference", "caseType", "serviceTrack", "businessName", "locationName"])) return null
   const shared = context(caseRow)
@@ -266,7 +277,29 @@ export function parseCaseDocuments(value: unknown): CustomerCaseDocuments | "not
     if (!parsed) return null
     parsedDocuments.push(parsed)
   }
-  return { found: true, case: shared, requests: parsedRequests, submissions: parsedSubmissions, documents: parsedDocuments }
+  const pack = parseGuidedPack(row.pack)
+  if (pack === undefined) return null
+  return { found: true, case: shared, requests: parsedRequests, submissions: parsedSubmissions, documents: parsedDocuments, pack }
+}
+
+const GUIDED_PACK_INSTRUCTIONS = "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you."
+
+function parseGuidedPack(value: unknown): GuidedPackHandover | null | undefined {
+  if (value === null) return null
+  const row = record(value)
+  if (!row || !sameKeys(row, ["title", "serviceName", "packNumber", "instructions", "instructionSelectors", "customerSubmitted", "correctionRequested"])) return undefined
+  const title = text(row.title, 80)
+  const serviceName = row.serviceName === "Guided Relaunch" || row.serviceName === "Guided Review" ? row.serviceName : null
+  const packNumber = typeof row.packNumber === "number" && Number.isSafeInteger(row.packNumber) && row.packNumber >= 1 && row.packNumber <= 99 ? row.packNumber : null
+  const selectors = arrayOf(row.instructionSelectors, 20)
+  if (!title || !serviceName || !packNumber || row.instructions !== GUIDED_PACK_INSTRUCTIONS || !selectors) return undefined
+  if (typeof row.customerSubmitted !== "boolean" || typeof row.correctionRequested !== "boolean") return undefined
+  const instructionSelectors: string[] = []
+  for (const selector of selectors) {
+    if (typeof selector !== "string" || !DOCUMENT_SELECTOR.test(selector)) return undefined
+    instructionSelectors.push(selector)
+  }
+  return { title, serviceName, packNumber, instructions: GUIDED_PACK_INSTRUCTIONS, instructionSelectors, customerSubmitted: row.customerSubmitted, correctionRequested: row.correctionRequested }
 }
 
 function parseCaseRequest(value: unknown): CaseEvidenceRequest | null {

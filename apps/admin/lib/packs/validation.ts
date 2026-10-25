@@ -2,7 +2,8 @@ import { isUuid } from "../records/model"
 import { packOperations, type PackOperation } from "./model"
 
 export type PackCreateArgs = { caseId: string }
-export type PackItemArgs = { caseId: string; packId: string; recordVersion: number; versionId: string }
+export type PackItemRole = "DELIVERABLE" | "EVIDENCE" | "INSTRUCTIONS"
+export type PackItemArgs = { caseId: string; packId: string; recordVersion: number; versionId: string; role?: PackItemRole }
 export type PackMoveArgs = PackItemArgs & { direction: "up" | "down" }
 export type PackApproveArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
 export type PackPublishArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
@@ -42,6 +43,19 @@ export function packArgs(operation: PackOperation, raw: unknown): PackArgs | nul
     return { caseId: body.caseId, packId: body.packId, recordVersion: body.recordVersion as number, reason, confirmed: true }
   }
   if (!isUuid(body.versionId)) return null
+  if (operation === "add_item") {
+    const keys = ["operation", "caseId", "packId", "recordVersion", "versionId"]
+    if ("role" in body) keys.push("role")
+    if (!onlyKeys(body, keys)) return null
+    if ("role" in body && body.role !== "DELIVERABLE" && body.role !== "EVIDENCE" && body.role !== "INSTRUCTIONS") return null
+    return {
+      caseId: body.caseId,
+      packId: body.packId,
+      recordVersion: body.recordVersion as number,
+      versionId: body.versionId,
+      ...("role" in body ? { role: body.role as PackItemRole } : {}),
+    }
+  }
   if (operation === "move_item") {
     if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "versionId", "direction"])) return null
     if (body.direction !== "up" && body.direction !== "down") return null

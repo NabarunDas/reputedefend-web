@@ -437,4 +437,124 @@ describe("payment job handlers", () => {
       p_payload: expect.objectContaining({ chargeId: "ch_testguard1", supplemental: true }),
     }))
   })
+
+  it("queues one Guided payment confirmation only when customer mail is enabled", async () => {
+    const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    const previousEnv = process.env.VERCEL_ENV
+    const previousOrigin = process.env.CUSTOMER_ORIGIN
+    const mailEnv = {
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "develop",
+      VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+      SUPABASE_URL: "https://rmzozuiamjcclvtgutgd.supabase.co",
+      CUSTOMER_ORIGIN: portal,
+      AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+      COMMUNICATIONS_SEND_ENABLED: "true",
+      JOB_PROVIDER_MODE: "production",
+      RESEND_API_KEY: "re_dev_placeholder",
+      COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+    }
+    const context = {
+      status: "applicable",
+      alreadyQueued: false,
+      caseRef: "PR-26-FULF99",
+      orderRef: "SO-26-FULF99",
+      amountMinor: 9900,
+      currency: "GBP",
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+    }
+    fake.objects.set("pi_guided_mail", {
+      id: "pi_guided_mail",
+      status: "succeeded",
+      amountMinor: 9900,
+      currency: "gbp",
+      customerId: "cus_test",
+      metadata: { customerId, serviceOrderId: orderId, obligationId, providerOperationId: operationId },
+    })
+    try {
+      process.env.VERCEL_ENV = "preview"
+      process.env.CUSTOMER_ORIGIN = portal
+      const off = rpcMock()
+      const skipped = await processStripeEventHandler().execute({
+        idempotencyKey: key,
+        payload: { eventId: "evt_mail_off", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
+        rpc: off.asJob,
+      })
+      expect(skipped).toEqual({ ok: true })
+      expect(off.rpc.mock.calls.map(call => call[0])).not.toContain("payment_confirmation_context_v1")
+      expect(off.rpc.mock.calls.map(call => call[0])).not.toContain("payment_queue_confirmation_v1")
+
+      const on = rpcMock()
+      on.rpc.mockImplementation(async (name: string) => {
+        if (name === "payment_confirmation_context_v1") return context
+        if (name === "payment_queue_confirmation_v1") return { status: "success" }
+        return { status: "success" }
+      })
+      const queued = await processStripeEventHandler(mailEnv).execute({
+        idempotencyKey: key,
+        payload: { eventId: "evt_mail_on", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
+        rpc: on.asJob,
+      })
+      expect(queued).toEqual({ ok: true })
+      const queuedCall = on.rpc.mock.calls.find(call => call[0] === "payment_queue_confirmation_v1")
+      expect(queuedCall?.[1]).toMatchObject({
+        p_payload: {
+          sendEnabled: true,
+          paymentIntentId: "pi_guided_mail",
+          fromAddress: "ops@example.com",
+          customerOrigin: portal,
+        },
+      })
+      const payload = (queuedCall?.[1] as { p_payload: { subject: string; bodyText: string; bodyHtml: string } }).p_payload
+      expect(payload.subject).toContain("PR-26-FULF99")
+      expect(payload.subject).toContain("SO-26-FULF99")
+      expect(payload.bodyText).toContain("£99.00 GBP")
+      expect(payload.bodyText.match(/\/portal\/cases\//g)).toHaveLength(1)
+      expect(payload.bodyHtml.match(/\/portal\/cases\//g)).toHaveLength(1)
+      expect(`${payload.subject}\n${payload.bodyText}\n${payload.bodyHtml}`).not.toMatch(/pi_|cus_|#t=|\/action\//)
+
+      const replay = rpcMock()
+      replay.rpc.mockImplementation(async (name: string) => {
+        if (name === "payment_confirmation_context_v1") return { ...context, alreadyQueued: true }
+        return { status: "success" }
+      })
+      const again = await processStripeEventHandler(mailEnv).execute({
+        idempotencyKey: key,
+        payload: { eventId: "evt_mail_replay", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
+        rpc: replay.asJob,
+      })
+      expect(again).toEqual({ ok: true })
+      expect(replay.rpc.mock.calls.map(call => call[0])).not.toContain("payment_queue_confirmation_v1")
+
+      const refused = rpcMock()
+      refused.rpc.mockImplementation(async (name: string) => {
+        if (name === "payment_confirmation_context_v1") return context
+        if (name === "payment_queue_confirmation_v1") return { status: "denied", reason: "snapshot" }
+        return { status: "success" }
+      })
+      expect(await processStripeEventHandler(mailEnv).execute({
+        idempotencyKey: key,
+        payload: { eventId: "evt_mail_denied", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
+        rpc: refused.asJob,
+      })).toEqual({ ok: false, retryable: false, error: "Payment confirmation email was refused." })
+
+      const retry = rpcMock()
+      retry.rpc.mockImplementation(async (name: string) => {
+        if (name === "payment_confirmation_context_v1") return context
+        if (name === "payment_queue_confirmation_v1") return { status: "error" }
+        return { status: "success" }
+      })
+      expect(await processStripeEventHandler(mailEnv).execute({
+        idempotencyKey: key,
+        payload: { eventId: "evt_mail_retry", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
+        rpc: retry.asJob,
+      })).toEqual({ ok: false, retryable: true, error: "Payment confirmation email was not queued." })
+    } finally {
+      if (previousEnv === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = previousEnv
+      if (previousOrigin === undefined) delete process.env.CUSTOMER_ORIGIN
+      else process.env.CUSTOMER_ORIGIN = previousOrigin
+    }
+  })
 })

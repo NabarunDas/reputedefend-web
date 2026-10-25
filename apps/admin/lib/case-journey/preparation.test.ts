@@ -116,7 +116,7 @@ describe("prepared pack panel", () => {
       packs: loaded([pack()], [eligible()]),
       recordsConflict: false,
     })
-    expect(view.headline).toBe("Prepared pack needs approval")
+    expect(view.headline).toBe("Approve the completed pack")
     expect(view.commands?.packs[0]?.id).toBe("pack-1")
     expect(view.commands?.eligible).toHaveLength(1)
     expect(view.requirements.find(item => item.label === "Approval")?.state).toBe("Not met")
@@ -148,6 +148,21 @@ describe("prepared pack panel", () => {
     })
     expect(view.commands?.eligible.map(item => item.versionId)).toEqual([VERSION_ID])
     expect(view.notices.join(" ")).toMatch(/not offered/)
+    expect(view.requirements.find(item => item.label === "Eligible evidence")?.detail).toMatch(/staff document does not need an evidence request/)
+  })
+
+  it("offers a staff document that has no evidence request", () => {
+    const staff = eligible({ versionId: "staff-letter", documentId: "document-staff" })
+    const view = buildJourneyPreparationPanel({
+      facts: facts(
+        { packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 0 }], eligibleCount: 1 },
+        [version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" })],
+      ),
+      packs: loaded([pack({ items: [] })], [staff]),
+      recordsConflict: false,
+    })
+    expect(view.commands?.eligible.map(item => item.versionId)).toEqual(["staff-letter"])
+    expect(view.headline).toBe("Add the statement, evidence and customer instructions")
   })
 
   it("withholds commands when the pack record is missing or does not match", () => {
@@ -172,7 +187,7 @@ describe("prepared pack panel", () => {
       packs: loaded([pack({ status: "STALE", approvedAt: "2026-06-02T12:00:00.000Z" })]),
       recordsConflict: false,
     })
-    expect(stale.headline).toBe("Prepared pack is stale")
+    expect(stale.headline).toBe("Replace the stale pack before sending it")
     expect(stale.commands).not.toBeNull()
     expect(stale.requirements.find(item => item.label === "Current pack")?.detail).toMatch(/replaced by a new draft/)
 
@@ -190,7 +205,7 @@ describe("prepared pack panel", () => {
       ]),
       recordsConflict: false,
     })
-    expect(history.headline).toBe("Prepared pack is current")
+    expect(history.headline).toBe("The completed pack is available to the customer")
     expect(history.packs.map(item => item.state)).toEqual(["Superseded", "Published"])
     expect(history.packs[0]?.history).toBe(true)
   })
@@ -212,7 +227,7 @@ describe("prepared pack panel", () => {
     expect(readiness.ready).toBe(false)
     expect(readiness.otherPublished).toBe(true)
     expect(view.headline).toBe("Another pack is still published")
-    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.headline).not.toBe("The completed pack is available to the customer")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.detail).toMatch(/still published/)
@@ -255,8 +270,8 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(rows).ready).toBe(true)
-    expect(view.headline).toBe("Prepared pack is current")
-    expect(view.who).toBe("The published pack is current.")
+    expect(view.headline).toBe("The completed pack is available to the customer")
+    expect(view.who).toBe("The completed pack is available to the customer.")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Met")
     expect(view.commands?.packs.map(item => item.id)).toEqual(["pack-1", "pack-2"])
@@ -268,7 +283,7 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(alone).ready).toBe(true)
-    expect(single.headline).toBe("Prepared pack is current")
+    expect(single.headline).toBe("The completed pack is available to the customer")
     expect(single.commands).not.toBeNull()
   })
 
@@ -281,7 +296,7 @@ describe("prepared pack panel", () => {
     })
     expect(preparationReadiness(rows, { recordsConflict: true }).ready).toBe(false)
     expect(view.headline).toBe("Case records disagree")
-    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.headline).not.toBe("The completed pack is available to the customer")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
     expect(view.notices.join(" ")).toMatch(/authority records disagree/)

@@ -9,6 +9,12 @@ function configuredFromAddress(raw: string | undefined): boolean {
   return !!raw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) && raw.length <= 254
 }
 
+/** The From address snapshotted on a queued customer email. Null when it is not a mailbox. */
+export function outgoingFromAddress(env: EnvMap = process.env): string | null {
+  const raw = env.COMMUNICATIONS_FROM_EMAIL?.trim().toLowerCase() ?? ""
+  return configuredFromAddress(raw) ? raw : null
+}
+
 /** Live customer mail requires a worker at least this frequent. Daily Hobby cadence is not enough. */
 export const MAX_LIVE_MAIL_CADENCE_SECONDS = 300
 export const PROVIDER_IDEMPOTENCY_SAFETY_WINDOW_MS = 23 * 60 * 60 * 1000

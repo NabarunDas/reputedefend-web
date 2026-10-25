@@ -260,9 +260,21 @@ function EligibleVersionRow({ caseId, pack, version }: { caseId: string; pack: P
     <strong>{version.documentTitle}</strong> · {version.originalFilename} · {fileTypeLabel(version.contentType)} · {formatBytes(version.sizeBytes)} · version {version.versionNumber}
     <div className="evidence-actions">
       <AccessButtons caseId={caseId} versionId={version.versionId} actions={actions} />
-      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={() => ({
-        operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
-      })} />
+      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={form => {
+        const role = form.get("role")
+        return {
+          operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
+          ...(role === "DELIVERABLE" || role === "EVIDENCE" || role === "INSTRUCTIONS" ? { role } : {}),
+        }
+      }}>
+        <label>Role in the Guided pack
+          <select name="role" defaultValue="DELIVERABLE">
+            <option value="DELIVERABLE">Completed statement</option>
+            <option value="EVIDENCE">Supporting evidence</option>
+            <option value="INSTRUCTIONS">Customer submission instructions</option>
+          </select>
+        </label>
+      </CommandForm>
     </div>
   </li>
 }

@@ -44,13 +44,11 @@ export function packDisplayState(pack: { status: string; published?: boolean }):
 }
 
 function safeVersion(version: CaseFlowEvidenceVersionFact | undefined, documentId: string): boolean {
-  return !!version
-    && version.documentId === documentId
-    && version.uploadStatus === "UPLOADED"
-    && version.scanStatus === "NO_THREATS_FOUND"
-    && version.validationStatus === "VALID"
-    && version.reviewStatus === "ACCEPTED"
-    && !!version.evidenceRequestId
+  if (!version || version.documentId !== documentId) return false
+  if (version.uploadStatus !== "UPLOADED" || version.scanStatus !== "NO_THREATS_FOUND") return false
+  if (version.validationStatus !== "VALID" || version.reviewStatus !== "ACCEPTED") return false
+  if (version.submissionSource === "ADMIN") return true
+  return !!version.evidenceRequestId
 }
 
 export function preparationRecordsDisagree(facts: CaseFlowFacts, packs: PreparedPackCase): boolean {
@@ -135,7 +133,7 @@ export function buildJourneyPreparationPanel(input: {
   const current = readiness.current
   const eligible = loaded ? provenEligible(facts, loaded) : []
   if (loaded && eligible.length !== loaded.eligible.length) {
-    notices.push("A listed file is not an accepted, validated, clean version linked to a request. It is not offered for this pack.")
+    notices.push("A listed file is not an accepted, validated, clean version. A customer upload still has to be linked to its request. It is not offered for this pack.")
   }
   if (readiness.otherPublished) {
     notices.push("More than one pack is published, or an earlier pack is still published. These records disagree, so no pack command is offered from here. Resolve the extra published pack on the evidence workspace.")
@@ -148,22 +146,22 @@ export function buildJourneyPreparationPanel(input: {
   const headline = disagreed
     ? "Pack records disagree"
     : readiness.stale
-      ? "Prepared pack is stale"
+      ? "Replace the stale pack before sending it"
       : readiness.otherPublished
         ? "Another pack is still published"
         : input.recordsConflict
           ? "Case records disagree"
           : !current
-            ? "No prepared pack"
+            ? "Prepare the submission materials"
             : current.status === "DRAFT" && current.itemCount === 0
-              ? "Prepared pack needs evidence"
+              ? "Add the statement, evidence and customer instructions"
               : current.status === "DRAFT"
-                ? "Prepared pack needs approval"
+                ? "Approve the completed pack"
                 : current.status === "APPROVED" && !current.published
-                  ? "Prepared pack needs publication"
+                  ? "Send the completed pack"
                   : readiness.ready
-                    ? "Prepared pack is current"
-                    : "Prepared pack is not ready"
+                    ? "The completed pack is available to the customer"
+                    : "The completed pack is not ready"
 
   const detail = "Case preparation is the current approved pack after it has been published. Approval does not publish it. Publication uses the existing customer case-access rule and does not submit anything to Google."
 
@@ -171,7 +169,7 @@ export function buildJourneyPreparationPanel(input: {
     {
       label: "Eligible evidence",
       state: !disagreed && ((current?.itemCount ?? 0) > 0 || eligible.length > 0) ? "Met" : "Not met",
-      detail: "Only an accepted, validated, clean file linked to a request can be added. An unscanned, rejected, superseded or unlinked file is not a substitute.",
+      detail: "A staff document does not need an evidence request. A customer upload still has to be linked to its request. An unscanned, rejected or superseded file is not a substitute.",
     },
     {
       label: "Approval",
@@ -203,12 +201,12 @@ export function buildJourneyPreparationPanel(input: {
         : readiness.stale
           ? "ProfileRelaunch creates a new draft from the current accepted evidence and approves it again."
           : current?.status === "APPROVED" && !current.published
-            ? "ProfileRelaunch publishes the approved pack. Publication does not submit anything to Google."
+            ? "Send the completed pack. Sending it does not submit anything to Google."
             : current?.status === "DRAFT"
-              ? "ProfileRelaunch adds accepted evidence and approves the draft. Approval does not publish it."
+              ? "Approve the completed pack. Sending it comes after approval."
               : readiness.ready
-                ? "The published pack is current."
-                : "ProfileRelaunch creates a draft pack."
+                ? "The completed pack is available to the customer."
+                : "Prepare the submission materials."
 
   return { headline, detail, packs: display, requirements, notices, who, commands }
 }

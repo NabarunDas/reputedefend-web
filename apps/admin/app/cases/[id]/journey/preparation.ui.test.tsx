@@ -210,7 +210,7 @@ describe("guided case preparation", () => {
 
     show(facts({ packs: { packs: [row], eligibleCount: 0 } }), { caseId: CASE_ID, packs: [published], eligible: [] })
     expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "COMPLETED")
-    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Prepared pack is current")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "The completed pack is available to the customer")
     expect(screen.getByText(/Publication: Met/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Unpublish pack", hidden: true })).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
@@ -242,7 +242,7 @@ describe("guided case preparation", () => {
       eligible: [],
     })
     expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "COMPLETED")
-    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Prepared pack is current")
+    expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "The completed pack is available to the customer")
     expect(screen.getByText(/This approved history is read-only/)).toBeTruthy()
 
     cleanup()

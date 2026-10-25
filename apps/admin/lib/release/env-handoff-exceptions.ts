@@ -74,6 +74,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
       "apps/admin/lib/communications/gate.ts",
       "apps/admin/lib/communications/handler.ts",
       "apps/admin/lib/communications/mail.ts",
+      "apps/admin/lib/payments/handlers.ts",
       "apps/admin/lib/release/gates.ts",
       "apps/admin/lib/settings/system-status.ts",
     ],
@@ -143,6 +144,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     helper: "mailFromAddress",
     files: ["apps/admin/lib/communications/mail.ts"],
     reason: "Reads COMMUNICATIONS_FROM_EMAIL inside the provider construction, where the environment is already in hand.",
+  },
+  {
+    helper: "outgoingFromAddress",
+    files: ["apps/admin/lib/payments/handlers.ts"],
+    reason: "The payment-confirmation email snapshots the same From address the outgoing gate already validated. The webhook handler is driven by the worker environment.",
   },
   {
     helper: "webhookSecret",

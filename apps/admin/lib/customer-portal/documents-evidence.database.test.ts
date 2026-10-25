@@ -47,6 +47,7 @@ const upgradedFiles = [
   "20261024085235_admin_recent_signin_30m_v1.sql",
   "20261024190832_quote_offer_email_snapshot_v1.sql",
   "20261024233701_admin_reconcile_accepted_service_v1.sql",
+  "20261025020000_guided_payment_request_email_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()
@@ -95,7 +96,7 @@ async function insertCase(options: {
       closed_at, outcome, intake_snapshot, closure_summary, priority, priority_reason, next_action, assigned
     ) values (
       $1,$2,'PROFILE_RECOVERY',$3,$4,$5,$6,'LEAK-SUBTYPE','LEAK-ISSUE-DESCRIPTION','https://example.test/LEAK-REVIEW-URL','LEAK-SOURCE',
-      now(), now(), 'GUIDED', $7, $8, $9, $10, '{"leak":"LEAK-INTAKE"}'::jsonb, 'LEAK-CLOSURE-SUMMARY', 'HIGH',
+      now(), now(), 'UNDECIDED', $7, $8, $9, $10, '{"leak":"LEAK-INTAKE"}'::jsonb, 'LEAK-CLOSURE-SUMMARY', 'HIGH',
       'LEAK-PRIORITY-REASON', 'LEAK-NEXT-ACTION', true
     )`,
     [

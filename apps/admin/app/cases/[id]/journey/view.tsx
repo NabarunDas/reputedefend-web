@@ -23,6 +23,7 @@ import { QuotePanel } from "./quote"
 import type { JourneyQuotePanel } from "@/lib/case-journey/quote"
 import { unavailableQuoteReadiness, type QuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { emptyQuoteEmail, type QuoteEmailView } from "@/lib/case-journey/quote-email"
+import { emptyPaymentRequestEmail, type PaymentRequestEmailView } from "@/lib/case-journey/payment-request-email"
 import { ActivationPanel } from "./activation"
 import type { JourneyActivationPanel } from "@/lib/case-journey/activation"
 import { PreparationPanel } from "./preparation"
@@ -110,6 +111,7 @@ export function CaseJourneyView({
   locationId = null,
   quoteReadiness = unavailableQuoteReadiness,
   quoteEmail = emptyQuoteEmail,
+  paymentEmail = emptyPaymentRequestEmail,
   membership,
   emailRecovery = null,
 }: {
@@ -131,6 +133,7 @@ export function CaseJourneyView({
   quote?: JourneyQuotePanel | null
   quoteReadiness?: QuoteReadiness
   quoteEmail?: QuoteEmailView
+  paymentEmail?: PaymentRequestEmailView
   membership?: Membership
   emailRecovery?: "send" | "resend" | null
   activation?: JourneyActivationPanel | null
@@ -170,7 +173,7 @@ export function CaseJourneyView({
     </section>}
 
     <div className="guided-workflow-layout">
-      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} quoteReadiness={quoteReadiness} quoteEmail={quoteEmail} membership={membership} emailRecovery={emailRecovery} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
+      <StepWorkspace step={selected} journey={journey} brief={brief} caseId={caseId} customerId={customerId} businessId={businessId} locationId={locationId} customer={customer} business={business} version={version} reference={reference} documents={documents} replyMailbox={replyMailbox} evidenceReview={evidenceReview} assessment={assessment} quote={quote} quoteReadiness={quoteReadiness} quoteEmail={quoteEmail} paymentEmail={paymentEmail} membership={membership} emailRecovery={emailRecovery} activation={activation} preparation={preparation} submission={submission} outcome={outcome} closure={closure} />
       <nav className="guided-nav" aria-label="Eleven-step case workflow">
         <ol className="guided-steps">
           {journey.steps.map(step => {
@@ -216,6 +219,7 @@ function StepWorkspace({
   quote,
   quoteReadiness,
   quoteEmail,
+  paymentEmail,
   membership,
   emailRecovery,
   activation,
@@ -242,6 +246,7 @@ function StepWorkspace({
   quote: JourneyQuotePanel | null
   quoteReadiness: QuoteReadiness
   quoteEmail: QuoteEmailView
+  paymentEmail: PaymentRequestEmailView
   membership?: Membership
   emailRecovery: "send" | "resend" | null
   activation: JourneyActivationPanel | null
@@ -303,7 +308,7 @@ function StepWorkspace({
       membership={membership}
       emailRecovery={emailRecovery}
     />}
-    {showActivation && activation && <ActivationPanel caseId={caseId} version={version} panel={activation} />}
+    {showActivation && activation && <ActivationPanel caseId={caseId} version={version} panel={activation} email={paymentEmail} />}
     {showPreparation && preparation && <PreparationPanel caseId={caseId} panel={preparation} />}
     {showSubmission && submission && <SubmissionPanel caseDetail={submission.caseDetail} panel={submission.panel} />}
     {showOutcome && outcome && <OutcomePanel caseDetail={outcome.caseDetail} panel={outcome.panel} />}

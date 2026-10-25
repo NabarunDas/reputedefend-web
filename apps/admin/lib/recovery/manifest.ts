@@ -938,6 +938,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "accepted service reconciliation", probe: "public.admin_reconcile_accepted_service_v1" },
   },
+  {
+    // Guided payment request. Queues one portal payment email for an accepted
+    // Guided upfront order and reuses an open payment action. Not applied to
+    // DEV or Production. Do not apply it from the pull request. It does not
+    // send mail, open Stripe, or mark an obligation paid.
+    version: "20261025020000",
+    filename: "20261025020000_guided_payment_request_email_v1.sql",
+    step: "Guided payment-request email",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "guided payment request", probe: "public.admin_queue_guided_payment_request_v1" },
+  },
 ]
 
 /**

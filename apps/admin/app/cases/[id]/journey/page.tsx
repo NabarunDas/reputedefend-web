@@ -8,6 +8,7 @@ import { buildJourneyQuotePanel } from "@/lib/case-journey/quote"
 import { loadCaseQuoteReadiness } from "@/lib/case-journey/quote-readiness-command"
 import { unavailableQuoteReadiness } from "@/lib/case-journey/quote-readiness"
 import { emptyQuoteEmail, projectQuoteEmail } from "@/lib/case-journey/quote-email"
+import { emptyPaymentRequestEmail, projectPaymentRequestEmail } from "@/lib/case-journey/payment-request-email"
 import { acceptedOrderOutstandingLabel, acceptedServiceProjection, activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
@@ -154,6 +155,10 @@ export default async function CaseJourneyPage({
     ? quoteConfirmation.recovery
     : null
   const activationOpen = selected?.id === "SERVICE_ACTIVATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
+  const activationCommunications = activationOpen ? await loadCaseCommunications(detail.id) : null
+  const paymentEmail = activationOpen
+    ? projectPaymentRequestEmail(activationCommunications, detail.reference, { devSend: devAdminOutgoingMailLane() })
+    : emptyPaymentRequestEmail
   const activation = activationOpen ? await loadJourneyActivation(facts, now, {
     recordConflict: brief.conflicts.length > 0,
     emailRecordsDisagree: brief.emailControl === "records_disagree",
@@ -208,6 +213,7 @@ export default async function CaseJourneyPage({
     quote={quote}
     quoteReadiness={quoteReadiness}
     quoteEmail={quoteEmail}
+    paymentEmail={paymentEmail}
     activation={activation}
     acceptedOrderLabel={acceptedOrderLabel}
     preparation={preparation?.panel ?? null}

@@ -17,6 +17,7 @@ export const customerEmailSecurityNote =
   "For your security, please never share passwords, verification codes or sign-in credentials."
 
 const actionUrlPattern = /^https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const portalPaymentsPattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}\/payments$/
 
 export type CustomerEmailBlock =
   | { type: "paragraph"; text: string }
@@ -48,6 +49,12 @@ export function trustedActionUrl(value: string): boolean {
   return actionUrlPattern.test(value) && !value.includes("#") && !value.includes("?")
 }
 
+/** An action URL, or the authenticated case Payments page. No query, fragment, or token. */
+export function trustedCustomerLink(value: string): boolean {
+  if (value.includes("#") || value.includes("?") || value.includes("#t=")) return false
+  return trustedActionUrl(value) || portalPaymentsPattern.test(value)
+}
+
 function blockText(block: CustomerEmailBlock): string | null {
   if (block.type === "paragraph" || block.type === "heading") {
     return safeText(block.text) ? block.text.trim() : null
@@ -60,7 +67,7 @@ function blockText(block: CustomerEmailBlock): string | null {
     const lines = block.items.map(item => `- ${item.trim()}`)
     return title ? `${title}\n${lines.join("\n")}` : lines.join("\n")
   }
-  if (!safeText(block.label) || !trustedActionUrl(block.url)) return null
+  if (!safeText(block.label) || !trustedCustomerLink(block.url)) return null
   return `${block.label.trim()}\n${block.url}`
 }
 
@@ -84,7 +91,7 @@ function blockHtml(block: CustomerEmailBlock): string | null {
     const items = block.items.map(item => `<li style="margin:0 0 6px 0;">${escapeHtml(item.trim())}</li>`).join("")
     return `${title}<ul style="margin:0 0 16px 0;padding:0 0 0 20px;font-family:${FONT};font-size:16px;line-height:1.6;color:${forest};">${items}</ul>`
   }
-  if (!safeText(block.label) || !trustedActionUrl(block.url)) return null
+  if (!safeText(block.label) || !trustedCustomerLink(block.url)) return null
   const label = escapeHtml(block.label.trim())
   const url = escapeHtml(block.url)
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;border-collapse:collapse;"><tr><td bgcolor="${green}" style="border-radius:4px;background-color:${green};"><a href="${url}" style="display:inline-block;padding:14px 22px;font-family:${FONT};font-size:16px;line-height:1.4;font-weight:700;color:#ffffff;background-color:${green};text-decoration:none;">${label}</a></td></tr></table>`
@@ -92,7 +99,7 @@ function blockHtml(block: CustomerEmailBlock): string | null {
 
 /**
  * Email-client HTML and the matching plain-text alternative.
- * Button addresses must already be server-generated action URLs with no token.
+ * Button addresses must already be server-generated action URLs or the case Payments page, with no token.
  */
 export function renderCustomerEmail(content: CustomerEmailContent): { html: string; text: string } | null {
   if (!safeText(content.title)) return null

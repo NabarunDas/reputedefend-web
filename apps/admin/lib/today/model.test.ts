@@ -210,7 +210,7 @@ describe("which section a case lands in", () => {
     ["waitingOnCustomer", "CUSTOMER"],
     ["waitingOnCustomerOverdue", "CUSTOMER"],
     ["waitingOnAgreement", "CUSTOMER"],
-    ["waitingOnGoogle", "GOOGLE"],
+    ["waitingOnGoogleDated", "GOOGLE"],
     ["waitingOnScan", "SYSTEM"],
   ] as const)("puts %s under %s and never in Do next", (name, group) => {
     const model = build([scenario(name)])

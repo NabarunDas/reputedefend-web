@@ -130,7 +130,7 @@ describe("the first thing on the page", () => {
     serve([
       todayScenarios.adminApprovePack,
       todayScenarios.blockedCommercialUnknown,
-      todayScenarios.waitingOnGoogle,
+      todayScenarios.waitingOnGoogleDated,
       todayScenarios.waitingOnCustomer,
     ])
     loadDashboard.mockResolvedValue(dashboard({
@@ -167,8 +167,8 @@ describe("a busy working day", () => {
     const work = within(panel("Do next")).getAllByRole("heading", { level: 3 }).map(node => node.textContent)
     expect(work).toEqual([
       "Deal with a blocked evidence file",
-      "Approve the evidence pack",
-      "Close the case",
+      "Approve the completed pack",
+      "Close the Guided preparation",
     ])
   })
 
@@ -215,7 +215,7 @@ describe("a busy working day", () => {
 describe("a day of waiting", () => {
   beforeEach(() => serve([
     todayScenarios.waitingOnCustomer,
-    todayScenarios.waitingOnGoogle,
+    todayScenarios.waitingOnGoogleDated,
     todayScenarios.waitingOnScan,
   ]))
 
@@ -248,6 +248,8 @@ describe("a day of waiting", () => {
   })
 
   it("shows no date at all on a case that records none", async () => {
+    cleanup()
+    serve([todayScenarios.waitingOnCustomer, todayScenarios.waitingOnScan])
     await show()
     expect(panel("Waiting").textContent).not.toMatch(/Due |Overdue/)
   })

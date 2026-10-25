@@ -189,8 +189,6 @@ const guidedLabels: Record<GuidedPaymentKind, string> = {
   contradictory: "The obligation is marked paid, but no receipt is recorded",
 }
 
-const COLLECTED_NOW = "£0 collected now. Payment method saved for the agreed success fee if the qualifying outcome is achieved and approved."
-
 function stage(id: JourneyStage["id"], label: string, tone: JourneyTone, detail: string): JourneyStage {
   return { id, label, tone, toneLabel: toneLabels[tone], symbol: toneSymbols[tone], detail }
 }
@@ -316,6 +314,8 @@ export function buildCommercialWorkspaceModel(input: {
   /** Payment rows already restricted to the authoritative order id. */
   money: MoneyOrder[]
   prices: PriceVersion[]
+  /** Database answer for the two-observation, 48-hour success check. Omitted means not ready. */
+  verificationReady?: boolean
 }): CommercialWorkspaceModel {
   const { facts, now } = input
   const commercial = summariseCommercial(facts, now)
@@ -401,10 +401,6 @@ export function buildCommercialWorkspaceModel(input: {
     notices.push("Commercial records disagree: the payment model does not match the accepted service.")
   }
 
-  const setupConflict = !!payment.successFeeOrder && payment.managedSetupReady && !payment.managedConsentRecorded
-  if (setupConflict) {
-    notices.push("Commercial records disagree: a reusable payment method is recorded without later-charge consent.")
-  }
   const paidWithoutReceipt = !!payment.upfrontOrder && payment.upfrontPaid && !payment.upfrontOrder.receiptRecorded
   const receiptWithoutPaid = !!payment.upfrontOrder && payment.upfrontOrder.receiptRecorded && !payment.upfrontPaid
   if (paidWithoutReceipt || receiptWithoutPaid) {
@@ -412,7 +408,6 @@ export function buildCommercialWorkspaceModel(input: {
   }
 
   const guidedExpiresAt = activeCustomerAction(facts, ["GUIDED_PAYMENT", "PAYMENT_RECOVERY"], now)?.expiresAt ?? null
-  const managedSetupExpiresAt = activeCustomerAction(facts, ["MANAGED_PAYMENT_SETUP"], now)?.expiresAt ?? null
   const managedSetupExpired = !!expiredCustomerAction(facts, ["MANAGED_PAYMENT_SETUP"], now)
   const guided = mode === "guided" && !orderMissing && (accepted || !!payment.upfrontOrder) ? guidedKind(payment, facts, now) : null
 
@@ -421,7 +416,7 @@ export function buildCommercialWorkspaceModel(input: {
   const paymentBlocked = failClosed || payment.truncated
 
   const summary = summaryRows(detail, serviceOrder, moneyOrder, kind, commercial)
-  const journey = buildJourney({ kind, commercial, accepted, orderMissing, orderUnexpected, orderPresent, mode, guided, payment, setupConflict, managedSetupExpired, listsComplete })
+  const journey = buildJourney({ kind, commercial, accepted, orderMissing, orderUnexpected, orderPresent, mode, guided, payment, setupConflict: false, managedSetupExpired, listsComplete })
 
   const serviceForQuote = quoteServiceForCase(facts.serviceTrack, facts.caseType)
   const creatingQuote = input.primaryAction?.id === "CREATE_QUOTE" && input.primaryAction.state === "ACTION_REQUIRED"
@@ -442,6 +437,7 @@ export function buildCommercialWorkspaceModel(input: {
   })
 
   const qualifyingOutcome = isQualifyingSuccessFeeOutcome(facts.caseType, facts.outcome)
+  const verificationReady = input.verificationReady === true
   const commands = commandsFor({
     primary: input.primaryAction,
     kind,
@@ -450,17 +446,15 @@ export function buildCommercialWorkspaceModel(input: {
     creatingQuote: creatingQuote && !commercial.truncated && !tied && !failClosed,
     actionOpen: commercial.quote?.actionStatus === "OPEN" && !!detail?.action?.id,
     hasOrderContext: !!moneyOrder,
-    setupReady: payment.managedSetupReady,
-    consent: payment.managedConsentRecorded,
-    setupConflict,
     approvalId: moneyOrder?.approvalId ?? null,
     qualifyingOutcome,
+    verificationReady,
     recovery: !!moneyOrder && moneyOrder.paymentModel === "SUCCESS_FEE" && moneyOrder.obligationState === "AUTHENTICATION_REQUIRED" && !!moneyOrder.obligationId,
     paymentsEnabled: facts.capabilities.paymentsEnabled,
   })
 
   const managed = mode === "managed" && (accepted || !!payment.successFeeOrder)
-    ? managedSection(payment, moneyOrder, setupConflict, managedSetupExpired, qualifyingOutcome)
+    ? managedSection(payment, moneyOrder, verificationReady, qualifyingOutcome)
     : null
   const guardNote = mode === "guard"
     ? "This is a recurring Guard subscription, not a one-off case payment. Accepting the quote does not start billing or take money. Guard billing exceptions stay on Money."
@@ -472,7 +466,7 @@ export function buildCommercialWorkspaceModel(input: {
         hrefLabel: "Open Guard qualification",
       }
     : null
-  const detailText = paymentDetail(mode, guided, payment, managedSetupExpired, guidedExpiresAt, managedSetupExpiresAt)
+  const detailText = paymentDetail(mode, guided, guidedExpiresAt)
 
   return {
     notices,
@@ -658,10 +652,9 @@ function paymentTone(input: {
     return "current"
   }
   if (input.mode === "managed") {
-    if (input.setupConflict) return "unknown"
     if (!input.payment.successFeeOrder) return "not_started"
-    if (input.payment.managedSetupReady && input.payment.managedConsentRecorded) return "complete"
-    if (input.payment.managedConsentRecorded && !input.payment.managedSetupReady) return "attention"
+    const order = input.payment.successFeeOrder
+    if (order.obligationState === "PAID" && order.receiptRecorded) return "complete"
     return "current"
   }
   return "not_started"
@@ -679,11 +672,10 @@ function paymentJourneyDetail(input: {
   if (input.mode === "guard" && input.accepted) return "Recurring Guard billing, not an upfront payment."
   if (input.mode === "guided" && input.guided) return guidedLabels[input.guided]
   if (input.mode === "managed") {
-    if (input.setupConflict) return "Consent and the saved payment method disagree."
-    if (input.payment.managedSetupReady && input.payment.managedConsentRecorded) return "Consent and a reusable payment method are in place. Nothing has been collected."
     if (!input.payment.successFeeOrder) return "No accepted success-fee order yet."
-    if (!input.payment.managedConsentRecorded) return "Later-charge consent is missing."
-    if (!input.payment.managedSetupReady) return "Consent is recorded. A usable payment method is still missing."
+    const order = input.payment.successFeeOrder
+    if (order.obligationState === "PAID" && order.receiptRecorded) return "The success fee is settled by the provider receipt."
+    return "No upfront payment. A saved card is not required and nothing is charged automatically."
   }
   if (!input.accepted) return "Payment or setup starts after acceptance."
   return "Payment or setup cannot be confirmed."
@@ -698,7 +690,7 @@ function paymentHeadline(
 ): string {
   if (guardNote) return "Recurring Guard"
   if (guided) return guidedLabels[guided]
-  if (managed) return managed.rows.every(row => row.state === "In place") ? "Setup ready — nothing collected" : "Success-fee setup is not complete"
+  if (managed) return managed.collectedNow?.startsWith("The success fee is settled") ? "Success fee settled" : managed.rows.some(row => row.label === "Accepted success-fee order" && row.state === "In place") ? "No upfront payment" : "Success-fee order is missing"
   if (!accepted) return "No payment or setup yet"
   return "Payment or setup cannot be confirmed"
 }
@@ -706,10 +698,7 @@ function paymentHeadline(
 function paymentDetail(
   mode: "guided" | "managed" | "guard" | "none",
   guided: GuidedPaymentKind | null,
-  payment: PaymentView,
-  managedSetupExpired: boolean,
   guidedExpiresAt: string | null,
-  managedSetupExpiresAt: string | null,
 ): string {
   if (mode === "guard") return "Recurring collection is a later Guard billing step. It is not taken by accepting this quote."
   if (guided === "collecting") return "Collection has started. A completed checkout page is not a payment."
@@ -725,61 +714,46 @@ function paymentDetail(
   if (guided === "action_expired") return "The payment link has expired. It cannot be shown again. Another link is issued only when that is this case's next action."
   if (guided === "contradictory") return "Do not treat this as paid until the obligation and the receipt agree."
   if (guided === "void") return "The obligation is void. Nothing is being collected."
-  if (mode === "managed" && managedSetupExpiresAt) return `A setup link is open until ${ukDate(managedSetupExpiresAt)}. Waiting for the customer to save a payment method. Saving a method is not a collection.`
-  if (mode === "managed" && managedSetupExpired) return "The setup link has expired. It cannot be shown again. Another link is issued only when that is this case's next action."
-  if (mode === "managed" && payment.managedSetupReady && payment.managedConsentRecorded) return COLLECTED_NOW
-  if (mode === "managed") return "£0 collected now. A success fee is not taken by saving a payment method, and it is not taken unless the qualifying outcome is achieved and approved."
+  if (mode === "managed") return "No upfront payment. A saved card is not required, is not authority to start work, and is not charged automatically. The success fee is invoiced only after two observations at least 48 hours apart."
   return "Nothing is due until a quote has been accepted and an order exists."
 }
 
 function managedSection(
   payment: PaymentView,
   moneyOrder: MoneyOrder | null,
-  setupConflict: boolean,
-  managedSetupExpired: boolean,
+  verificationReady: boolean,
   qualifyingOutcome: boolean,
 ): NonNullable<CommercialWorkspaceModel["managed"]> {
   const hasOrder = !!payment.successFeeOrder
-  const consent = payment.managedConsentRecorded
-  const method = payment.managedSetupReady
-  const ready = hasOrder && consent && method && !setupConflict
+  const settled = !!payment.successFeeOrder && payment.successFeeOrder.obligationState === "PAID" && payment.successFeeOrder.receiptRecorded
   const rows: ManagedSetupRow[] = [
     {
       label: "Accepted success-fee order",
       state: hasOrder ? "In place" : "Missing",
-      detail: hasOrder ? "The accepted quote created the order the success fee would be charged against." : "There is no accepted success-fee order.",
+      detail: hasOrder ? "The accepted quote created the order. The fee is invoiced only after verified success." : "There is no accepted success-fee order.",
     },
     {
-      label: "Later-charge consent",
-      state: consent ? "In place" : "Missing",
-      detail: consent ? "Consent to a later charge is recorded." : "Consent to charge the success fee later has not been recorded.",
+      label: "Saved card",
+      state: "Not required",
+      detail: "This agreement does not collect a card in advance. A saved method is not authority and nothing is charged automatically.",
     },
     {
-      label: "Reusable payment method",
-      state: method ? "In place" : "Missing",
-      detail: method ? "A usable saved payment method is on file." : consent ? "Consent is recorded, but no usable payment method is saved." : "No usable payment method is saved.",
-    },
-    {
-      label: "Setup readiness",
-      state: ready ? "In place" : "Missing",
-      detail: setupConflict
-        ? "A payment method is marked usable without later-charge consent, so setup is not treated as ready."
-        : ready
-          ? "Consent and a reusable payment method are both recorded. This is not a collection."
-          : managedSetupExpired
-            ? "The setup link has expired before setup became ready."
-            : "Setup is ready only when the order, the consent and a usable payment method are all recorded.",
+      label: "Success verification",
+      state: verificationReady ? "In place" : "Missing",
+      detail: verificationReady
+        ? "Two observations of the same target are at least 48 hours apart, and the original issue is not known to have returned between them."
+        : "Two observations of the same profile or review, at least 48 hours apart, are still required before a success fee can be approved.",
     },
   ]
-  const collectedNow = hasOrder && ready ? COLLECTED_NOW : hasOrder ? "£0 collected now. Nothing has been collected." : null
+  const collectedNow = !hasOrder ? null : settled ? "The success fee is settled by the provider receipt." : "£0 collected now. Nothing has been collected."
   let approval: string | null = null
-  if (hasOrder && !ready) {
-    approval = "The outcome is not yet chargeable. Setup is still incomplete, so success-fee approval is not available."
-  } else if (hasOrder && ready && moneyOrder?.approvalId) {
+  if (hasOrder && moneyOrder?.approvalId) {
     approval = "Success-fee approval is recorded. That is not a collection, and it is not a charge."
-  } else if (hasOrder && ready && moneyOrder && !qualifyingOutcome) {
+  } else if (hasOrder && moneyOrder && !qualifyingOutcome) {
     approval = "No success fee is due yet. Approval becomes available only after the qualifying service outcome has been recorded. For Profile Recovery, the qualifying outcome is restoration. For Review Protection, the qualifying outcome is removal."
-  } else if (hasOrder && ready && moneyOrder && qualifyingOutcome) {
+  } else if (hasOrder && moneyOrder && !verificationReady) {
+    approval = "Approval needs two recorded observations of the same target, at least 48 hours apart. A saved card is not required and nothing is charged automatically."
+  } else if (hasOrder && moneyOrder && qualifyingOutcome && verificationReady) {
     approval = "Success-fee approval uses the immutable accepted amount and accepted evidence. Approval is not itself proof of payment, and it does not charge a card."
   }
   return { rows, collectedNow, approval }
@@ -831,14 +805,12 @@ function priceGapFor(input: {
  * contact, verify authority, or any earlier prerequisite.
  *
  * Success-fee approval is not a CaseFlow action. It is offered only when the
- * payment projection says setup is ready, consent is recorded, no approval
- * exists, the records are complete, and `isQualifyingSuccessFeeOutcome`
- * matches the case. That helper copies the database rule for display.
- * `approve_success_fee` checks the rule again. Approval does not charge a
- * card. It is not gated by the payment-link switch: the command does not
- * consult that switch, and collection afterwards still uses the existing
- * payment path. Recovery is the existing success-fee authentication command,
- * and it stays hidden when payment collection is off.
+ * two-observation verification is ready, no approval exists, the records are
+ * complete, and `isQualifyingSuccessFeeOutcome` matches the case. A saved
+ * card is not required. `approve_success_fee` checks the rule again.
+ * Approval does not charge a card. It is not gated by the payment-link
+ * switch. Recovery is the existing success-fee authentication command, and
+ * it stays hidden when payment collection is off.
  *
  * `quoteServiceForCase`, `currentApprovedPrice`, `expectedModel` and
  * `moneyMode` only choose presentation. The database remains the authority
@@ -852,11 +824,9 @@ function commandsFor(input: {
   creatingQuote: boolean
   actionOpen: boolean
   hasOrderContext: boolean
-  setupReady: boolean
-  consent: boolean
-  setupConflict: boolean
   approvalId: string | null
   qualifyingOutcome: boolean
+  verificationReady: boolean
   recovery: boolean
   paymentsEnabled: boolean
 }): CommercialCommands {
@@ -877,7 +847,7 @@ function commandsFor(input: {
     issueUpfront: payOpen && journey("START_UPFRONT_PAYMENT"),
     issueRecovery: payOpen && input.recovery,
     issueManagedSetup: payOpen && journey("START_MANAGED_PAYMENT_SETUP"),
-    approveSuccessFee: !input.paymentBlocked && input.hasOrderContext && input.setupReady && input.consent && !input.setupConflict && !input.approvalId && input.qualifyingOutcome,
+    approveSuccessFee: !input.paymentBlocked && input.hasOrderContext && input.verificationReady && !input.approvalId && input.qualifyingOutcome,
   }
 }
 

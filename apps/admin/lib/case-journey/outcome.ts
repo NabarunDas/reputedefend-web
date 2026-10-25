@@ -82,6 +82,8 @@ export type JourneyOutcomePanel = {
   who: string
   /** Null withholds every billing command. */
   commands: JourneyOutcomeCommands | null
+  /** The operator can record one success observation. Approval stays hidden until the pair qualifies. */
+  recordObservation: boolean
   order: {
     orderId: string
     version: number
@@ -181,7 +183,6 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
     ? facts.payment.orders.some(row => row.paymentModel !== expectedModel)
     : facts.payment.orders.length > 0 && !pendingAccepted
   const incomplete = !facts.commercial.complete || !facts.payment.complete || commercialQuotesTied(facts)
-  const setupConflict = track === "MANAGED" && !!order?.setupReady && !order.consentRecorded
   const paidWithoutReceipt = !!order && order.obligationState === "PAID" && !order.receiptRecorded
   const receiptWithoutPaid = !!order && order.receiptRecorded && order.obligationState !== "PAID"
   const wrongGuidedObligation = track === "GUIDED" && !!order && order.obligationKind !== "UPFRONT"
@@ -197,7 +198,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
   const badResult = facts.submissions.some(item => item.result !== null && item.result !== "DECIDED" && item.result !== "WITHDRAWN")
   const brokenLink = link.reason === "mismatch" || link.reason === "ambiguous_orders" || duplicateIds(facts.payment.orders.map(row => row.orderId))
   const outcomeWithoutOrder = !!facts.outcome && !link.linked
-  const conflict = foreign || setupConflict || paidWithoutReceipt || receiptWithoutPaid || wrongGuidedObligation
+  const conflict = foreign || paidWithoutReceipt || receiptWithoutPaid || wrongGuidedObligation
     || wrongManagedObligation || wrongState || feeOnUnsuccessful || outcomeConflict
     || undecidedOutcome || partyConflict || badResult || brokenLink || outcomeWithoutOrder
 
@@ -387,6 +388,11 @@ export function presentJourneyOutcome(input: {
   orderDetailMissing?: boolean
   /** Case-detail work events. Required to accept an outcome after reopen. */
   events?: readonly OutcomeProofEvent[] | null
+  /**
+   * True only when the database has two observations of the same target at least 48 hours apart.
+   * A missing read stays false, so approval and invoicing are withheld.
+   */
+  verificationReady?: boolean
 }): { disagreed: boolean; panel: JourneyOutcomePanel } {
   const projected = projectOutcome(input.facts, input.now, input.events)
   const recorded = input.recorded
@@ -430,13 +436,13 @@ export function presentJourneyOutcome(input: {
     order: input.order ?? null,
     orderDetailMissing: input.orderDetailMissing === true,
   })
+  const verificationReady = input.verificationReady === true
   const approveRequested = !!canBill
     && position === "pending"
     && !paired?.approvalId
     && !paired?.obligationId
-    && paired?.setupReady === true
-    && !!paired?.consentId
     && evidenceReady
+    && verificationReady
   const invoiceRequested = !!canBill
     && !!paired?.approvalId
     && !!paired?.obligationId
@@ -446,6 +452,7 @@ export function presentJourneyOutcome(input: {
     && paired.invoiceStatus !== "PAID"
     && !paired.receiptId
     && input.facts.capabilities.paymentsEnabled
+    && verificationReady
   const identityBlocks = (approveRequested || invoiceRequested) && !identityOk
   if (identityBlocks && (position === "pending" || position === "approved")) position = "disagree"
   const approve = approveRequested && identityOk && position === "pending"
@@ -456,6 +463,10 @@ export function presentJourneyOutcome(input: {
   if (recordIncomplete) notices.push("The submission or money records could not be loaded, so no billing command is offered from here.")
   if (identityBlocks && (position === "disagree" || position === "failed")) {
     notices.push("The accepted quote, the service order and the money record do not name the same case and customer, so no billing command is offered from here.")
+  }
+  const recordObservation = canBill && position === "pending" && !paired?.approvalId && evidenceReady && !verificationReady && !!paired
+  if (recordObservation) {
+    notices.push("The success fee stays pending until two recorded observations of the same profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
   }
   if (canBill && !!paired?.approvalId && !paired.receiptId && !input.facts.capabilities.paymentsEnabled && paired.obligationState !== "PAID") {
     notices.push("A TEST-MODE hosted invoice is not offered because payment collection is not enabled. This step does not create one.")
@@ -522,7 +533,10 @@ export function presentJourneyOutcome(input: {
           ? "The provider has not confirmed payment. ProfileRelaunch does not treat an invoice link as settlement."
           : projected.who,
       commands: commandOrder || record ? { approve, invoice, record } : null,
-      order: commandOrder,
+      recordObservation,
+      order: commandOrder ?? (recordObservation && paired
+        ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
+        : null),
     },
   }
 }

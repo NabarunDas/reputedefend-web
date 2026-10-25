@@ -213,6 +213,7 @@ function modelFor(
     money?: MoneyOrder[]
     prices?: PriceVersion[]
     primaryAction?: CaseNextAction | null
+    verificationReady?: boolean
   } = {},
 ): CommercialWorkspaceModel {
   const loaded = facts(factOverrides)
@@ -227,6 +228,7 @@ function modelFor(
     orderDetailMissing: extras.orderDetailMissing,
     money: extras.money ?? [],
     prices: extras.prices ?? [],
+    verificationReady: extras.verificationReady,
   })
 }
 
@@ -396,43 +398,46 @@ describe("commercial workspace model", () => {
     expect(model.managed).toBeNull()
   })
 
-  it("keeps Managed consent and a saved payment method apart when consent is missing", () => {
+  it("does not require a saved card or later-charge consent for a Managed success fee", () => {
     const model = managed({ consentRecorded: false, setupReady: false })
-    expect(model.managed?.rows.find(row => row.label === "Later-charge consent")?.state).toBe("Missing")
-    expect(model.managed?.rows.find(row => row.label === "Reusable payment method")?.state).toBe("Missing")
-    expect(model.managed?.collectedNow).not.toContain("Payment method saved")
+    expect(model.managed?.rows.find(row => row.label === "Saved card")?.state).toBe("Not required")
+    expect(model.managed?.rows.find(row => row.label === "Saved card")?.detail).toMatch(/not authority/i)
+    expect(model.paymentHeadline).toBe("No upfront payment")
+    expect(model.managed?.collectedNow).toBe("£0 collected now. Nothing has been collected.")
     expect(model.commands.issueManagedSetup).toBe(false)
     expect(model.caseAction).not.toMatchObject({ label: "Send the payment-setup link" })
     expect(model.commands.approveSuccessFee).toBe(false)
+    expect(model.failClosed).toBe(false)
   })
 
-  it("shows Managed consent without treating a missing payment method as ready", () => {
-    const model = managed({ consentRecorded: true, setupReady: false })
-    expect(model.managed?.rows.find(row => row.label === "Later-charge consent")?.state).toBe("In place")
-    expect(model.managed?.rows.find(row => row.label === "Reusable payment method")?.state).toBe("Missing")
-    expect(stage(model, "payment").toneLabel).toBe("Needs attention")
-    expect(model.managed?.collectedNow).not.toContain("Payment method saved")
+  it("does not treat a saved card without later-charge consent as a commercial disagreement", () => {
+    const model = managed({ consentRecorded: false, setupReady: true })
+    expect(model.failClosed).toBe(false)
+    expect(model.notices.some(notice => /later-charge consent/i.test(notice))).toBe(false)
+    expect(stage(model, "payment").toneLabel).toBe("In progress")
     expect(model.commands.issueManagedSetup).toBe(false)
-    expect(model.caseAction).toMatchObject({ kind: "here", label: "Resolve a payment-setup problem" })
+    expect(model.commands.approveSuccessFee).toBe(false)
   })
 
-  it("shows Managed setup ready without claiming money was collected", () => {
-    const model = managed({ consentRecorded: true, setupReady: true })
-    expect(model.paymentHeadline).toBe("Setup ready — nothing collected")
-    expect(stage(model, "payment").toneLabel).toBe("Complete")
-    expect(model.managed?.collectedNow).toBe("£0 collected now. Payment method saved for the agreed success fee if the qualifying outcome is achieved and approved.")
+  it("shows an accepted Managed order without claiming money was collected", () => {
+    const model = managed({ consentRecorded: false, setupReady: false })
+    expect(model.paymentHeadline).toBe("No upfront payment")
+    expect(stage(model, "payment").toneLabel).toBe("In progress")
+    expect(model.managed?.collectedNow).toBe("£0 collected now. Nothing has been collected.")
+    expect(model.paymentDetail).toMatch(/saved card is not required/i)
     expect(model.commands.issueManagedSetup).toBe(false)
     expect(model.commands.issueUpfront).toBe(false)
   })
 
-  it("shows success-fee approval only once setup is ready and the outcome qualifies", () => {
-    const ready = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED" })
+  it("shows success-fee approval only when the 48-hour observations and the outcome both qualify", () => {
+    const ready = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED", verificationReady: true })
     expect(ready.commands.approveSuccessFee).toBe(true)
     expect(ready.managed?.approval).toMatch(/immutable accepted amount/i)
     expect(ready.managed?.approval).toMatch(/does not charge a card/i)
-    const waiting = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED" })
+    const waiting = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED", verificationReady: false })
     expect(waiting.commands.approveSuccessFee).toBe(false)
-    expect(waiting.managed?.approval).toMatch(/not yet chargeable/i)
+    expect(waiting.managed?.approval).toMatch(/48 hours/i)
+    expect(waiting.managed?.approval).toMatch(/saved card is not required/i)
   })
 
   it("does not treat a capped commercial list as no quote", () => {
@@ -530,29 +535,29 @@ describe("commercial workspace model", () => {
   })
 
   it("does not offer success-fee approval before a qualifying outcome", () => {
-    const none = managed({ consentRecorded: true, setupReady: true })
+    const none = managed({ consentRecorded: false, setupReady: false }, { verificationReady: true })
     expect(none.commands.approveSuccessFee).toBe(false)
     expect(none.managed?.approval).toMatch(/No success fee is due yet/i)
     expect(none.managed?.approval).toMatch(/restoration/i)
     expect(none.managed?.approval).toMatch(/removal/i)
     expect(none.managed?.approval).not.toMatch(/has been restored|has been removed/i)
 
-    const partial = managed({ consentRecorded: true, setupReady: true }, { outcome: "PARTIALLY_RESTORED" })
+    const partial = managed({ consentRecorded: false, setupReady: false }, { outcome: "PARTIALLY_RESTORED", verificationReady: true })
     expect(partial.commands.approveSuccessFee).toBe(false)
-    const notRestored = managed({ consentRecorded: true, setupReady: true }, { outcome: "NOT_RESTORED" })
+    const notRestored = managed({ consentRecorded: false, setupReady: false }, { outcome: "NOT_RESTORED", verificationReady: true })
     expect(notRestored.commands.approveSuccessFee).toBe(false)
 
-    const restored = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED" })
+    const restored = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED", verificationReady: true })
     expect(restored.commands.approveSuccessFee).toBe(true)
 
-    const removed = managed({ consentRecorded: true, setupReady: true }, { outcome: "REMOVED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    const removed = managed({ consentRecorded: false, setupReady: false }, { outcome: "REMOVED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW", verificationReady: true })
     expect(removed.commands.approveSuccessFee).toBe(true)
-    const recommended = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESPONSE_RECOMMENDED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    const recommended = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESPONSE_RECOMMENDED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW", verificationReady: true })
     expect(recommended.commands.approveSuccessFee).toBe(false)
-    const restoredReview = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW" })
+    const restoredReview = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED", caseType: "REVIEW_PROTECTION", serviceCode: "MANAGED_REVIEW", verificationReady: true })
     expect(restoredReview.commands.approveSuccessFee).toBe(false)
 
-    const already = managed({ consentRecorded: true, setupReady: true }, { outcome: "RESTORED", approvalId: "approval-1" })
+    const already = managed({ consentRecorded: false, setupReady: false }, { outcome: "RESTORED", approvalId: "approval-1", verificationReady: true })
     expect(already.commands.approveSuccessFee).toBe(false)
     expect(already.managed?.approval).toMatch(/not a collection/i)
   })
@@ -594,20 +599,19 @@ describe("commercial workspace model", () => {
     expect(model.commands.issueRecovery).toBe(false)
   })
 
-  it("waits on an active Managed setup link and does not offer another", () => {
+  it("does not wait on an old Managed setup link", () => {
     const model = managedSetup("OPEN", FUTURE)
-    expect(model.caseAction).toMatchObject({ kind: "here", label: "Waiting for the customer to save a payment method" })
+    expect(model.caseAction).toMatchObject({ kind: "elsewhere", label: "Move the case to preparation" })
     expect(model.commands.issueManagedSetup).toBe(false)
-    expect(model.paymentDetail).toMatch(/open until/i)
-    expect(model.paymentDetail).toContain("2026")
+    expect(model.paymentDetail).toMatch(/saved card is not required/i)
+    expect(model.paymentDetail).not.toMatch(/save a payment method/i)
   })
 
-  it("returns an expired Managed setup link to issuing another", () => {
+  it("does not reissue an expired Managed setup link", () => {
     const model = managedSetup("OPEN", PAST)
-    expect(model.caseAction).toMatchObject({ kind: "here", label: "Send the payment-setup link" })
-    expect(model.commands.issueManagedSetup).toBe(true)
-    expect(model.paymentDetail).toMatch(/expired/i)
-    expect(model.caseAction.kind === "here" ? model.caseAction.description : "").not.toMatch(/waiting/i)
+    expect(model.caseAction).toMatchObject({ kind: "elsewhere", label: "Move the case to preparation" })
+    expect(model.commands.issueManagedSetup).toBe(false)
+    expect(model.paymentDetail).not.toMatch(/expired/i)
   })
 
   it("waits on an active Guided payment link and does not offer another", () => {
@@ -653,7 +657,7 @@ describe("commercial workspace model", () => {
     expect(managedOff.commands.issueManagedSetup).toBe(false)
     expect(managedOff.commands.issueUpfront).toBe(false)
     expect(managedOff.commands.issueRecovery).toBe(false)
-    if (managedOff.caseAction.kind === "here") expect(managedOff.caseAction.description).toMatch(/switched off/i)
+    expect(managedOff.caseAction).toMatchObject({ label: "Move the case to preparation" })
   })
 
   it("does not issue acceptance while the customer email is unverified", () => {
@@ -746,7 +750,7 @@ function guided(obligationState: string, orderOverrides: Partial<CaseFlowOrderFa
 
 function managed(
   flags: { consentRecorded: boolean; setupReady: boolean },
-  options: { outcome?: string | null; caseType?: string; serviceCode?: string; approvalId?: string | null } = {},
+  options: { outcome?: string | null; caseType?: string; serviceCode?: string; approvalId?: string | null; verificationReady?: boolean } = {},
 ): CommercialWorkspaceModel {
   const serviceCode = options.serviceCode ?? "MANAGED_RELAUNCH"
   return modelFor({
@@ -779,6 +783,7 @@ function managed(
       approvalId: options.approvalId ?? null,
       acceptedEvidence: [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }],
     })],
+    verificationReady: options.verificationReady,
   })
 }
 
@@ -821,6 +826,7 @@ function managedSetup(status: "OPEN" | "NONE", expiresAt: string | null, payment
   return modelFor({
     serviceTrack: "MANAGED",
     technicalStage: "AUTHORIZATION_REQUIRED",
+    allowedTransitions: ["PREPARATION"],
     authorization: authorised(),
     capabilities: { liveMailEnabled: false, paymentsEnabled, googleSubmissionLive: false },
     commercial: { complete: true, quotes: [quoteFact({ status: "ACCEPTED", orderId: ORDER_ID })] },

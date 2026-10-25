@@ -6,7 +6,7 @@ import { loadGuard } from "@/lib/guard/queries"
 import { billingStateLabel } from "@/lib/guard/model"
 import { loadMoney } from "@/lib/payments/queries"
 import { obligationLabel } from "@/lib/payments/model"
-import { loadSuccessFeeCaseOutcomes } from "@/lib/payments/success-fee-cases"
+import { loadSuccessFeeCaseOutcomes, loadSuccessVerification } from "@/lib/payments/success-fee-cases"
 import { successFeeApprovalOffer } from "@/lib/payments/success-fee-offer"
 import { Badge, EmptyState, Notice, PageHeader } from "../ui"
 import { ApproveSuccessFeeForm, IssuePaymentActionForm } from "./forms"
@@ -15,31 +15,45 @@ import type { SuccessFeeCaseOutcome } from "@/lib/payments/success-fee-offer"
 
 export const metadata = { title: "Money" }
 
+function openInvoice(row: MoneyOrder): boolean {
+  return !!row.obligationId
+    && !!row.obligationState
+    && !["PAID", "VOID"].includes(row.obligationState)
+    && row.invoiceStatus !== "ISSUED"
+    && row.invoiceStatus !== "PAID"
+    && !row.receiptId
+}
+
 function MoneyOrderActions({
   row,
   outcomes,
+  verified,
 }: {
   row: MoneyOrder
   outcomes: Map<string, SuccessFeeCaseOutcome> | null
+  verified: Set<string> | null
 }) {
-  const approval = successFeeApprovalOffer(row, outcomes)
+  const approval = successFeeApprovalOffer(row, outcomes, verified?.has(row.orderId) === true)
   return <>
     {row.paymentModel === "UPFRONT" && row.obligationState !== "PAID" && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_guided_payment_action" label="Issue upfront payment action" />}
-    {row.paymentModel === "SUCCESS_FEE" && !row.setupReady && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_managed_setup_action" label="Issue payment-method setup action" />}
     {row.paymentModel === "SUCCESS_FEE" && row.obligationState === "AUTHENTICATION_REQUIRED" && row.obligationId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_recovery_action" label="Issue recovery action" obligationId={row.obligationId} />}
     {approval.kind === "approve" && <ApproveSuccessFeeForm serviceOrderId={row.orderId} version={row.version} evidence={row.acceptedEvidence} />}
     {approval.kind === "explain" && <Notice tone="blocked">{approval.message}</Notice>}
-    {row.obligationId && row.obligationState && !["PAID", "VOID"].includes(row.obligationState) && row.invoiceStatus !== "ISSUED" && row.invoiceStatus !== "PAID" && !row.receiptId && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue TEST-MODE hosted invoice fallback" obligationId={row.obligationId} />}
-    {row.invoiceStatus === "ISSUED" && <p>A test-mode invoice has been issued. That does not mark the obligation paid. Payment is confirmed only when the provider reports it.</p>}
+    {row.paymentModel === "UPFRONT" && openInvoice(row) && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue TEST-MODE hosted invoice fallback" obligationId={row.obligationId} />}
+    {row.paymentModel === "SUCCESS_FEE" && openInvoice(row) && <IssuePaymentActionForm serviceOrderId={row.orderId} version={row.version} operation="issue_invoice_fallback" label="Issue success-fee invoice" obligationId={row.obligationId} />}
+    {row.invoiceStatus === "ISSUED" && <p>An invoice has been issued. That does not mark the obligation paid. Payment is confirmed only when the provider reports it.</p>}
     {row.receiptId && <p>Receipt recorded.</p>}
   </>
 }
 
 export default async function MoneyPage() {
   const [money, guard] = await Promise.all([loadMoney(), loadGuard()])
-  const successFeeOutcomes = await loadSuccessFeeCaseOutcomes(money.orders)
+  const [successFeeOutcomes, verified] = await Promise.all([
+    loadSuccessFeeCaseOutcomes(money.orders),
+    loadSuccessVerification(money.orders.map(row => row.orderId)),
+  ])
   return <section className="page">
-    <PageHeader title="Money" description="Payment obligations, payment-method setup, success-fee approval and Guard subscriptions. Stripe stays off until a later finance launch. This page cannot mark a payment paid, mark a refund, force a success, change an amount, or override paid-through." />
+    <PageHeader title="Money" description="Payment obligations, success-fee invoices and Guard subscriptions. A Managed success fee is not collected in advance and a saved card is not required. This page cannot mark a payment paid, mark a refund, force a success, change an amount, or override paid-through." />
     <section className="panel">
       <h2>Service orders</h2>
       {!money.orders.length ? <EmptyState>No accepted service orders.</EmptyState> : <div className="table-scroll" role="region" aria-label="Money" tabIndex={0}>
@@ -54,8 +68,8 @@ export default async function MoneyPage() {
             <td>{formatGbp(row.amountMinor)} {row.currency}</td>
             <td>{paymentModelLabel(row.paymentModel)}</td>
             <td><Badge tone={row.obligationState === "PAID" ? "success" : row.obligationState === "AUTHENTICATION_REQUIRED" ? "warning" : "neutral"}>{obligationLabel(row.obligationState)}</Badge></td>
-            <td>{row.setupReady ? "Payment method saved" : row.consentId ? "Consent recorded" : "Not set up"}</td>
-            <td><MoneyOrderActions row={row} outcomes={successFeeOutcomes} /></td>
+            <td>{row.paymentModel === "SUCCESS_FEE" ? (row.setupReady ? "Optional method saved" : "Not required") : row.setupReady ? "Payment method saved" : row.consentId ? "Consent recorded" : "Not set up"}</td>
+            <td><MoneyOrderActions row={row} outcomes={successFeeOutcomes} verified={verified} /></td>
           </tr>)}</tbody>
         </table>
       </div>}

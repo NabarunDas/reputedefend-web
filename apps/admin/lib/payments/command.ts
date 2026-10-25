@@ -166,11 +166,18 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
       p_token: tokenHash(token), p_request: key, p_operation: operation, p_payload: payload, p_version: version,
     })
     if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
+    if (operation === "issue_invoice_fallback") {
+      return reply(
+        result.replay
+          ? "This invoice was already issued. The customer opens it from the signed-in portal. No bearer secret was emailed and no card was charged."
+          : "The invoice is issued and is due within 14 days. The customer opens it from the signed-in portal. In a development workspace this is test mode. This did not email a bearer secret or charge a card.",
+        200,
+        { id: result.id, obligationId: result.obligationId },
+      )
+    }
     const issued = issuesLink && result.replay !== true && result.id && config.customerOrigin
     return reply(
-      issued ? (operation === "issue_invoice_fallback"
-        ? `TEST-MODE hosted invoice fallback is ready. Returning from the invoice page does not mark this paid. ${LOST_PAYMENT_LINK_NOTE}`
-        : `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`)
+      issued ? `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`
         : issuesLink ? "This payment action was already created. The secret cannot be shown again."
         : operation === "approve_success_fee" ? "The success fee is approved. It is collected by a hosted invoice after verified success. This did not charge a saved card."
         : "The payment record has been updated.",

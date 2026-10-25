@@ -200,6 +200,8 @@ export function presentJourneyClosure(input: {
   precedingComplete: boolean
   /** Outgoing mail is enabled and a monitored Reply-To is confirmed. */
   mailRecovery?: boolean
+  /** Database answer for the two-observation success check. Omitted means not ready. */
+  verificationReady?: boolean
 }): { disagreed: boolean; closureRecordsDisagree: boolean; panel: JourneyClosurePanel } {
   const outcomeView = presentJourneyOutcome({
     facts: input.facts,
@@ -208,6 +210,7 @@ export function presentJourneyClosure(input: {
     order: input.order,
     orderDetailMissing: input.orderDetailMissing,
     events: input.events,
+    verificationReady: input.verificationReady,
   })
   const facts = input.facts
   const detail = input.detail

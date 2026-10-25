@@ -976,6 +976,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided fulfilment closure", probe: "public.admin_guided_fulfilment_close_v1" },
   },
+  {
+    // MANAGED-JOURNEY-E2E. Records two observations at least 48 hours apart
+    // before a success fee can be approved or a new success-fee invoice prepared.
+    // Source only. Do not apply to DEV or Production from this change.
+    // It does not send mail, charge a card, or edit an existing case.
+    version: "20261025163000",
+    filename: "20261025163000_managed_success_verification_v1.sql",
+    step: "MANAGED-JOURNEY-E2E success verification",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Managed success verification", probe: "admin_private.success_verification_ready_v1" },
+  },
 ]
 
 /**

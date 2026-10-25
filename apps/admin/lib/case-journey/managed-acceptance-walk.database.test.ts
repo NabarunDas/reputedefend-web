@@ -52,8 +52,10 @@ const otherCustomer = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const business = "33333333-3333-4333-8333-333333333333"
 const successLocation = "b2000000-0000-4000-8000-0000000000b2"
 const unsuccessfulLocation = "c2000000-0000-4000-8000-0000000000c2"
+const reviewLocation = "e2000000-0000-4000-8000-0000000000e2"
 const successCase = "b1000000-0000-4000-8000-0000000000b1"
 const unsuccessfulCase = "c1000000-0000-4000-8000-0000000000c1"
+const reviewCase = "e1000000-0000-4000-8000-0000000000e1"
 const token = "b".repeat(64)
 const note = "Reviewed the caller’s request and confirmed the details."
 const staffNote = "Staff intake note stays off the customer record."
@@ -88,6 +90,66 @@ const key = () => crypto.randomUUID()
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const secret = () => hash(randomBytes(32).toString("hex"))
 const ahead = (hours: number) => new Date(Date.now() + hours * 3600 * 1000).toISOString()
+const observationTarget = "https://maps.google.com/?cid=bakery"
+const observationRestriction = "original-listing-restriction"
+
+async function orderBasis(orderId: string) {
+  return (await db.query<{ success_definition: string; customer_id: string; case_id: string; case_type: string }>(`
+    select qv.success_definition, so.customer_id, so.case_id, cs.case_type
+    from public.service_orders so
+    join public.quote_versions qv on qv.id = so.quote_version_id
+    join public.cases cs on cs.id = so.case_id
+    where so.id = $1
+  `, [orderId])).rows[0]
+}
+
+async function insertObservation(orderId: string, input: {
+  observedAt: string
+  finding?: string
+  targetRef?: string
+  restrictionRef?: string
+  customerId?: string
+  visibility?: string
+  successDefinition?: string
+}) {
+  const basis = await orderBasis(orderId)
+  await db.query(`
+    insert into public.success_observations(
+      request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+      observed_at, finding, review_visibility, observer_ref, note, approved_by, approved_at
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11,$12,$13, now())
+  `, [
+    key(),
+    basis.case_id,
+    input.customerId ?? basis.customer_id,
+    orderId,
+    input.targetRef ?? observationTarget,
+    input.restrictionRef ?? observationRestriction,
+    input.successDefinition ?? basis.success_definition,
+    input.observedAt,
+    input.finding ?? "ABSENT",
+    input.visibility ?? (basis.case_type === "REVIEW_PROTECTION" ? "VISIBLE" : "NOT_APPLICABLE"),
+    "staff-observer-live-check",
+    "Checked the original target and restriction on a live screen.",
+    admin,
+  ])
+}
+
+async function verificationReady(caseId: string, orderId: string) {
+  return (await db.query<{ ready: boolean }>(
+    "select admin_private.success_verification_ready_v1($1::uuid, $2::uuid) as ready",
+    [caseId, orderId],
+  )).rows[0].ready
+}
+
+async function rolledBack(seed: () => Promise<void>) {
+  await db.exec("begin")
+  try {
+    await seed()
+  } finally {
+    await db.exec("rollback")
+  }
+}
 
 async function rpc<T = Json>(name: string, args: unknown[]): Promise<T> {
   const placeholders = args.map((_, index) => `$${index + 1}`).join(",")
@@ -338,8 +400,9 @@ async function approveFee(orderId: string, evidenceVersionId: string, recordVers
   }, recordVersion])
 }
 
-async function walkToReadyForOutcome(input: { caseId: string; locationId: string; marker: string; closeOutcome: string }) {
+async function walkToReadyForOutcome(input: { caseId: string; locationId: string; marker: string; closeOutcome: string; serviceCode?: string }) {
   const { caseId, locationId, marker, closeOutcome } = input
+  const serviceCode = input.serviceCode ?? "MANAGED_RELAUNCH"
   expectOk(await rpc("admin_case_journey_decision_v1", [token, key(), caseId, await versionOf(caseId), "intake", {
     outcome: "REVIEWED", nextAction: "", note: staffNote,
   }]), "intake")
@@ -404,14 +467,15 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   await move(caseId, "SERVICE_SELECTION")
 
   const price = (await db.query<{ id: string }>(
-    "select id from public.price_versions where service_code = 'MANAGED_RELAUNCH' and seed_key is not null",
+    "select id from public.price_versions where service_code = $1 and seed_key is not null",
+    [serviceCode],
   )).rows[0].id
   const quote = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
     customerId: customer, businessId: business, caseId, locationId,
     scope: "Prepare the agreed recovery pack for this location only.",
     exclusions: "Google decisions and later success-fee collection are excluded.",
     validUntil: ahead(24 * 30),
-    applyDiscount: false, priceVersionId: price, serviceCode: "MANAGED_RELAUNCH",
+    applyDiscount: false, priceVersionId: price, serviceCode,
   }, null])
   expectOk(quote, "quote draft")
   expectOk(await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", {
@@ -660,7 +724,8 @@ beforeAll(async () => {
     insert into public.businesses(id, display_name) values ('${business}', 'Bakery');
     insert into public.locations(id, business_id, country) values
       ('${successLocation}', '${business}', 'United Kingdom'),
-      ('${unsuccessfulLocation}', '${business}', 'United Kingdom');
+      ('${unsuccessfulLocation}', '${business}', 'United Kingdom'),
+      ('${reviewLocation}', '${business}', 'United Kingdom');
     insert into public.cases(
       id, case_type, customer_id, business_id, location_id, issue_description, intake_snapshot, created_at,
       information_accurate_at, privacy_accepted_at
@@ -673,6 +738,11 @@ beforeAll(async () => {
       (
         '${unsuccessfulCase}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${unsuccessfulLocation}', 'The profile disappeared.',
         '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"The profile disappeared."}'::jsonb,
+        '2026-01-01', now(), now()
+      ),
+      (
+        '${reviewCase}', 'REVIEW_PROTECTION', '${customer}', '${business}', '${reviewLocation}', 'A review should be removed.',
+        '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"A review should be removed."}'::jsonb,
         '2026-01-01', now(), now()
       );
     insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values
@@ -728,6 +798,56 @@ describe("composed Managed acceptance walks", () => {
     }
     expect(await approvalCount(recordedOrder.id)).toBe(0)
     expect(await chargeCounts(successCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
+    const unverifiedRequest = key()
+    expect(await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, unverifiedRequest)).toMatchObject({
+      status: "denied", reason: "success_verification",
+    })
+    expect(await commandReceiptCount(unverifiedRequest)).toBe(0)
+    expect(await approvalCount(recordedOrder.id)).toBe(0)
+    const pair = { targetRef: observationTarget, restrictionRef: observationRestriction }
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-02T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, targetRef: "https://maps.google.com/?cid=other", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, customerId: otherCustomer, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, customerId: otherCustomer, observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, finding: "AMBIGUOUS", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-03T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, finding: "RECURRENCE", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { ...pair, visibility: "VISIBLE", observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { ...pair, visibility: "VISIBLE", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+    await insertObservation(recordedOrder.id, { ...pair, observedAt: "2026-01-03T00:00:00.000Z" })
+    expect(await verificationReady(successCase, recordedOrder.id)).toBe(true)
     const approvalRequest = key()
     const approved = await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, approvalRequest)
     expectOk(approved, "success fee")
@@ -866,6 +986,9 @@ describe("composed Managed acceptance walks", () => {
       [unsuccessfulCase],
     )).rows[0]).toMatchObject({ status: "UNDER_REVIEW", work_stage: "OUTCOME_REVIEW", outcome: "NOT_RESTORED" })
     const after = await orderRow(unsuccessfulCase)
+    await insertObservation(after.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+    await insertObservation(after.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+    expect(await verificationReady(unsuccessfulCase, after.id)).toBe(true)
     const refusedRequest = key()
     expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
     expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
@@ -923,6 +1046,47 @@ describe("composed Managed acceptance walks", () => {
         and p.prosrc ~* 'update[[:space:]]+(public\\.)?payment_obligations[[:space:]]+set[[:space:]]+state[[:space:]]*=[[:space:]]*''void'''
     `)
     expect(writers.rows, "a composed voided-fee close needs a command that writes VOID").toEqual([])
+  }, 120000)
+
+  it("approves a Managed Review fee only after two visible observations and withholds it when the review reappears", async () => {
+    const summary = "The review was removed and the success fee was approved in test mode."
+    const walked = await walkToReadyForOutcome({
+      caseId: reviewCase, locationId: reviewLocation, marker: "managedreview", closeOutcome: "REMOVED", serviceCode: "MANAGED_REVIEW",
+    })
+    expectOk(await caseCommand(reviewCase, "record_outcome", { outcome: "REMOVED", summary }), "record outcome")
+    const order = await orderRow(reviewCase)
+    expect(order.amount_minor).toBe(14900)
+    const pair = { targetRef: observationTarget, restrictionRef: observationRestriction }
+    const earlyRequest = key()
+    expect(await approveFee(order.id, walked.evidenceVersionId, order.record_version, earlyRequest)).toMatchObject({
+      status: "denied", reason: "success_verification",
+    })
+    expect(await commandReceiptCount(earlyRequest)).toBe(0)
+    await rolledBack(async () => {
+      await insertObservation(order.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(order.id, { ...pair, observedAt: "2026-01-03T00:00:00.000Z" })
+      await insertObservation(order.id, { ...pair, finding: "RECURRENCE", observedAt: "2026-01-02T12:00:00.000Z" })
+      expect(await verificationReady(reviewCase, order.id)).toBe(false)
+    })
+    await insertObservation(order.id, { ...pair, observedAt: "2026-01-01T00:00:00.000Z" })
+    await insertObservation(order.id, { ...pair, observedAt: "2026-01-03T00:00:00.000Z" })
+    expect(await verificationReady(reviewCase, order.id)).toBe(true)
+    const approved = await approveFee(order.id, walked.evidenceVersionId, order.record_version)
+    expectOk(approved, "review success fee")
+    expect((await db.query<{ kind: string; state: string; amount_minor: number }>(
+      "select kind, state, amount_minor from public.payment_obligations where id = $1",
+      [approved.obligationId],
+    )).rows[0]).toEqual({ kind: "SUCCESS_FEE", state: "DUE", amount_minor: 14900 })
+    await insertObservation(order.id, { ...pair, finding: "RECURRENCE", observedAt: "2026-10-01T00:00:00.000Z" })
+    expect(await verificationReady(reviewCase, order.id)).toBe(true)
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 0, receipts: 0 })
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])
+    expectOk(prepared, "review invoice")
+    const again = await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])
+    expect(again).toMatchObject({ status: "success", invoiceId: prepared.invoiceId })
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 1, receipts: 0 })
+    expect((await caseCommand(reviewCase, "close", { outcome: "REMOVED", summary })).status).toBe("prerequisite")
+    expect(await approvalCount(order.id)).toBe(1)
   }, 120000)
 
   it("refuses a first Managed submission from FURTHER_REVIEW when none has been recorded", async () => {

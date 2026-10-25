@@ -164,7 +164,7 @@ function shown(
   source: CaseFlowFacts,
   orders: MoneyOrder[] | null = [money()],
   submissions: Submission[] | null = [submission()],
-  detail: { order?: ServiceOrder | null; orderDetailMissing?: boolean; events?: { id: string; event: string; details: Record<string, unknown> }[] } = {},
+  detail: { order?: ServiceOrder | null; orderDetailMissing?: boolean; verificationReady?: boolean; events?: { id: string; event: string; details: Record<string, unknown> }[] } = {},
 ) {
   const events = (detail.events ?? []).map(event => ({ ...event, createdAt: WHEN }))
   const presented = presentJourneyOutcome({
@@ -179,6 +179,7 @@ function shown(
     },
     order: detail.order ?? null,
     orderDetailMissing: detail.orderDetailMissing === true,
+    verificationReady: detail.verificationReady !== false,
     events,
   })
   const journey = presentCaseJourney(source, NOW, events, {
@@ -219,7 +220,7 @@ describe("outcome verification and billing", () => {
     const source = facts({
       serviceTrack: "MANAGED",
       submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
-      payment: { complete: true, orders: [success()] },
+      payment: { complete: true, orders: [success({ setupReady: false, consentRecorded: false })] },
       evidence: { requests: [], versions: [version] },
       capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
     })
@@ -230,8 +231,8 @@ describe("outcome verification and billing", () => {
       obligationId: null,
       obligationKind: null,
       obligationState: null,
-      setupReady: true,
-      consentId: "consent-1",
+      setupReady: false,
+      consentId: null,
       receiptId: null,
       acceptedEvidence: [{ id: version.versionId, filename: "outcome.png", versionNumber: 1 }],
     })
@@ -241,6 +242,11 @@ describe("outcome verification and billing", () => {
     expect(presented.panel.evidence).toEqual(["outcome.png · v1"])
     expect(step?.state).toBe("WAITING")
     expect(step?.state).not.toBe("COMPLETED")
+
+    const unverified = shown(source, [row], [submission({ actor: "ADMIN", track: "MANAGED" })], { order: serviceOrder(), verificationReady: false })
+    expect(unverified.presented.panel.commands).toBeNull()
+    expect(unverified.presented.panel.recordObservation).toBe(true)
+    expect(unverified.presented.panel.notices.join(" ")).toMatch(/48 hours/)
 
     const missing = shown(facts({
       serviceTrack: "MANAGED",

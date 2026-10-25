@@ -437,6 +437,21 @@ describe("Admin recent sign-in is 30 minutes after the follow-up migration", () 
     await age(31)
     expect(await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", fee, await orderVersion(orderId)])).toMatchObject({ status: "reauth_required" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_obligations where service_order_id=$1", [orderId])).rows[0].n).toBe(0)
+    const definition = (await db.query<{ success_definition: string; customer_id: string; case_id: string }>(`
+      select qv.success_definition, so.customer_id, so.case_id
+      from public.service_orders so
+      join public.quote_versions qv on qv.id = so.quote_version_id
+      where so.id = $1
+    `, [orderId])).rows[0]
+    for (const hours of [72, 12]) {
+      await db.query(`
+        insert into public.success_observations(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          observed_at, finding, review_visibility, observer_ref, note, approved_by, approved_at
+        ) values ($1,$2,$3,$4,'https://maps.google.com/?cid=bakery','listing-suspended',$5, now() - ($6 * interval '1 hour'),
+          'ABSENT','NOT_APPLICABLE','staff-observer-live-check','Checked the original listing on a live screen.',$7, now())
+      `, [crypto.randomUUID(), definition.case_id, definition.customer_id, orderId, definition.success_definition, hours, uid])
+    }
     await age(29)
     const approved = await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", fee, await orderVersion(orderId)])
     expect(approved?.status, JSON.stringify(approved)).toBe("success")
@@ -577,6 +592,27 @@ describe("Admin recent sign-in is 30 minutes after the follow-up migration", () 
       "insert into public.case_document_versions(id,document_id,version_number,original_filename,declared_content_type,declared_size_bytes,storage_bucket,storage_key,upload_status,scan_status,validation_status,review_status,created_by) values($1,$2,1,'outcome.png','image/png',1200,'evidence-test',$3,'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)",
       [versionId, documentId, `cases/${includedCase}/documents/${documentId}/versions/${versionId}`, uid],
     )
+    await db.query(`
+      insert into public.success_observations(
+        request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+        observed_at, finding, review_visibility, observer_ref, note, approved_by, approved_at
+      )
+      select gen_random_uuid(), o.case_id, o.customer_id, o.id,
+        'https://maps.google.com/?cid=bakery', 'listing-suspended', qv.success_definition,
+        now() - interval '72 hours', 'ABSENT', 'NOT_APPLICABLE', 'staff-observer-live-check',
+        'Checked the original listing on a live screen.', $1::uuid, now()
+      from public.service_orders o
+      join public.quote_versions qv on qv.id = o.quote_version_id
+      where o.id = $2::uuid
+      union all
+      select gen_random_uuid(), o.case_id, o.customer_id, o.id,
+        'https://maps.google.com/?cid=bakery', 'listing-suspended', qv.success_definition,
+        now() - interval '12 hours', 'ABSENT', 'NOT_APPLICABLE', 'staff-observer-live-check',
+        'Checked the original listing on a live screen.', $1::uuid, now()
+      from public.service_orders o
+      join public.quote_versions qv on qv.id = o.quote_version_id
+      where o.id = $2::uuid
+    `, [uid, managed.orderId])
     await db.query(
       "insert into public.success_fee_approvals(service_order_id,case_id,quote_version_id,outcome,success_definition,outcome_evidence_version_id,evidence_note,approval_reason,amount_minor,currency,discount_amount_minor,tax_behaviour,tax_amount_minor,payment_method_ready,approved_by) select o.id,o.case_id,o.quote_version_id,'RESTORED','Restored the listed profile.', $1, 'Outcome evidence accepted after review.', 'Approved after the restored outcome evidence was checked.', o.amount_minor,o.currency,0,o.tax_behaviour,o.tax_amount_minor,false,$2 from public.service_orders o where o.id=$3",
       [versionId, uid, managed.orderId],

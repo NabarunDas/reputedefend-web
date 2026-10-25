@@ -33,6 +33,7 @@ describe("the migration history validator", () => {
       "20261025020000_guided_payment_request_email_v1.sql",
       "20261025140000_guided_fulfilment_handover_v1.sql",
       "20261025160000_guided_fulfilment_closure_v1.sql",
+      "20261025163000_managed_success_verification_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261024233701",

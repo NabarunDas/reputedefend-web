@@ -36,6 +36,7 @@ vi.mock("@/lib/payments/success-fee-cases", () => ({
     ["55555555-5555-4555-8555-555555555555", { caseType: "PROFILE_RECOVERY", outcome: "RESTORED" }],
     ["66666666-6666-4666-8666-666666666666", { caseType: "PROFILE_RECOVERY", outcome: null }],
   ]),
+  loadSuccessVerification: async () => new Set(["77777777-7777-4777-8777-777777777777"]),
 }))
 vi.mock("@/lib/payments/queries", () => ({
   loadMoney: async () => ({
@@ -142,12 +143,14 @@ describe("money workspace", () => {
     expect(screen.queryByRole("button", { name: /mark refunded|override paid-through|cancel all/i })).toBeNull()
   })
 
-  it("offers success-fee approval only when outcome, evidence, setup and consent all hold", async () => {
+  it("offers success-fee approval when the outcome, evidence and 48-hour observations hold, without a saved card", async () => {
     render(await MoneyPage())
     expect(screen.getByRole("combobox", { name: /accepted outcome evidence/i })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: /outcome.png/ })).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve success fee" })).toHaveLength(1)
-    expect(screen.getByText(/Payment-method setup is not complete/)).toBeInTheDocument()
+    expect(screen.getByText(/48 hours/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Issue payment-method setup action" })).toBeNull()
+    expect(screen.queryByText(/Payment-method setup is not complete/)).toBeNull()
   })
 
   it("does not offer success-fee approval before a qualifying outcome", async () => {

@@ -607,7 +607,7 @@ describe("journey status from authoritative records", () => {
     })
     expect(step(withoutCard, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
     expect(step(withCard, "SERVICE_ACTIVATION").state).not.toBe("COMPLETED")
-    expect(withCard.incompatibilities.join(" ")).toMatch(/PS-2026-10-14\.2/)
+    expect(withCard.incompatibilities).toEqual([])
     expect(withCard.suppressedAction).toBeNull()
     expect(withCard.blockers.some(item => item.code === "MANAGED_PAYMENT_SETUP_INCOMPLETE")).toBe(false)
   })
@@ -1038,8 +1038,8 @@ describe("journey status from authoritative records", () => {
       communications: [delivered()],
     })
     expect(step(journey, "SERVICE_ACTIVATION").state).toBe("COMPLETED")
-    expect(journey.suppressedAction?.id).toBe("START_MANAGED_PAYMENT_SETUP")
-    expect(journey.nextAction).toBeNull()
+    expect(journey.suppressedAction).toBeNull()
+    expect(journey.nextAction?.id).toBe("ADVANCE_TO_PREPARATION")
   })
 })
 

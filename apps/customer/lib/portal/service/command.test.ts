@@ -200,7 +200,7 @@ describe("portal service command", () => {
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
     const paymentsUrl = `${origin}/portal/cases/PR-26-ABCDEF/payments`
     expect(payload.subject).toContain("SO-26-ABCDEF")
-    expect(payload.bodyText).toContain("Pay £99 securely")
+    expect(payload.bodyText).toContain("Pay £99.00 securely")
     expect(payload.bodyText).toContain("£99.00 GBP")
     expect(payload.bodyText).toContain(paymentsUrl)
     expect(payload.bodyText).toContain("simply reply to this email")
@@ -240,5 +240,14 @@ describe("portal service command", () => {
     expect(failedQueue.status).toBe(200)
     expect(failedBody).toEqual({ status: "success" })
     expect(JSON.stringify(failedBody)).not.toMatch(/communications|SQL/)
+
+    mocks.rpc.mockReset()
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
+    mocks.rpc.mockResolvedValueOnce({
+      ...accepted,
+      snapshot: { ...accepted.snapshot, amountMinor: 7920 },
+    })
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 })

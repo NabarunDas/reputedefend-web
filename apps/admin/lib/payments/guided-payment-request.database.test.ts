@@ -252,7 +252,7 @@ describe("guided payment-request queue", () => {
     const row = await seed({ openAction: true })
     const beforeOps = await count("select count(*)::int as n from public.provider_operations")
     const first = await queue(row)
-    expect(first.rendered?.buttonLabel).toBe("Pay £99 securely")
+    expect(first.rendered?.buttonLabel).toBe("Pay £99.00 securely")
     expect(first.result).toMatchObject({ status: "success", lifecycle: "QUEUED", deliveryStatus: "NONE", reusedAction: true, replay: false, actionId: row.paymentAction })
     expect(first.result).not.toHaveProperty("actionUrl")
     const stored = await db.query<{ body_text: string; body_html: string; customer_action_id: string; link_key_version: number | null }>(
@@ -261,7 +261,7 @@ describe("guided payment-request queue", () => {
     )
     expect(stored.rows[0].customer_action_id).toBe(row.paymentAction)
     expect(stored.rows[0].link_key_version).toBeNull()
-    expect(stored.rows[0].body_text).toContain("Pay £99 securely")
+    expect(stored.rows[0].body_text).toContain("Pay £99.00 securely")
     expect(stored.rows[0].body_text).toContain(`${origin}/portal/cases/${row.caseRef}/payments`)
     expect(stored.rows[0].body_text).not.toContain("#t=")
     expect(stored.rows[0].body_html).not.toContain("/action/")
@@ -288,9 +288,37 @@ describe("guided payment-request queue", () => {
     const review = await seed({ serviceCode: "GUIDED_REVIEW", openAction: true })
     const reviewQueued = await queue(review)
     expect(review.serviceName).toBe("Guided Review")
-    expect(reviewQueued.rendered?.buttonLabel).toBe("Pay £59 securely")
+    expect(reviewQueued.rendered?.buttonLabel).toBe("Pay £59.00 securely")
     expect(reviewQueued.result).toMatchObject({ status: "success", reusedAction: true, actionId: review.paymentAction })
-    expect(String(reviewQueued.result.id ? (await db.query<{ body_text: string }>("select body_text from public.communications where id = $1", [reviewQueued.result.id])).rows[0].body_text : "")).toContain("Pay £59 securely")
+    expect(String(reviewQueued.result.id ? (await db.query<{ body_text: string }>("select body_text from public.communications where id = $1", [reviewQueued.result.id])).rows[0].body_text : "")).toContain("Pay £59.00 securely")
+  })
+
+  it("queues the accepted £79.20 total and withholds a payment email that has no monitored Reply-To", async () => {
+    const discounted = await seed({ amount: 7920, openAction: true })
+    const queued = await queue(discounted)
+    expect(queued.rendered?.buttonLabel).toBe("Pay £79.20 securely")
+    expect(queued.result).toMatchObject({ status: "success", reusedAction: true, actionId: discounted.paymentAction })
+    const stored = await db.query<{ body_text: string }>("select body_text from public.communications where id = $1", [queued.result.id])
+    expect(stored.rows[0].body_text).toContain("Amount: £79.20 GBP")
+    expect(stored.rows[0].body_text).toContain("Pay £79.20 securely")
+    expect(stored.rows[0].body_text).toContain("simply reply to this email")
+    expect(stored.rows[0].body_text).not.toContain("£99.00")
+    expect(stored.rows[0].body_text).not.toContain("contact us through the ProfileRelaunch website")
+    expect((await queue(discounted, {
+      subject: queued.rendered?.subject,
+      bodyText: queued.rendered?.text.replaceAll("£79.20", "£99.00"),
+      bodyHtml: queued.rendered?.html.replaceAll("£79.20", "£99.00"),
+    })).result).toMatchObject({ status: "denied", reason: "snapshot_mismatch" })
+    expect(await count("select count(*)::int as n from public.communications where customer_action_id = $1", [discounted.paymentAction])).toBe(1)
+
+    const missing = await seed({ openAction: true })
+    expect((await queue(missing, { replyTo: "" })).result).toMatchObject({ status: "denied", reason: "reply_to" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1", [missing.caseId])).toBe(0)
+    const disabled = await seed({ openAction: true })
+    expect((await queue(disabled, { sendEnabled: false, replyTo: "" })).result).toMatchObject({ status: "denied", reason: "send_disabled" })
+    const zero = await seed({ amount: 0, openAction: true })
+    expect((await queue(zero)).result).toMatchObject({ status: "denied" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1", [zero.caseId])).toBe(0)
   })
 
   it("does not request an upfront fee for Managed, a duplicate action, a mismatch, or a paid order", async () => {
@@ -413,7 +441,7 @@ describe("guided payment-request queue", () => {
     expect(occurrences(html, paymentsUrl)).toBe(1)
     expect(text).toContain(row.orderRef)
     expect(text).toContain("£99.00 GBP")
-    expect(text).toContain("Pay £99 securely")
+    expect(text).toContain("Pay £99.00 securely")
     expect(text).toContain(paymentRequestOpeningSentence)
     expect(text).toContain(customerEmailSecurityNote)
     expect(text).toContain("simply reply to this email")
@@ -436,7 +464,7 @@ describe("guided payment-request queue", () => {
     expect(provider.payloads[0].to).toBe("alex@example.com")
     expect(occurrences(provider.payloads[0].text, paymentsUrl)).toBe(1)
     expect(occurrences(String(provider.payloads[0].html), paymentsUrl)).toBe(1)
-    expect(provider.payloads[0].text).toContain("Pay £99 securely")
+    expect(provider.payloads[0].text).toContain("Pay £99.00 securely")
     expect(`${provider.payloads[0].text}\n${provider.payloads[0].html}`).not.toMatch(/#t=|\/action\//)
     await rpc("communication_mark_provider_accepted_v1", [queued.result.id, "resend", "msg_payment_once", idempotencyKey])
     expect((await execute()).ok).toBe(true)

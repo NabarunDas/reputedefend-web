@@ -19,9 +19,9 @@ const guided = {
 }
 
 describe("guided payment-request email", () => {
-  it("links Pay £99 securely to the case payments page and does not repeat a quotation", () => {
+  it("links the accepted total to the case payments page and does not repeat a quotation", () => {
     const rendered = renderPaymentRequest(guided)
-    expect(rendered?.buttonLabel).toBe("Pay £99 securely")
+    expect(rendered?.buttonLabel).toBe("Pay £99.00 securely")
     expect(rendered?.paymentsUrl).toBe(`${origin}/portal/cases/PR-26-GHNLB9/payments`)
     expect(rendered?.subject).toContain("SO-26-GHHRGY")
     expect(rendered?.text).toContain("Guided Relaunch")
@@ -40,21 +40,26 @@ describe("guided payment-request email", () => {
     expect(renderPaymentRequest(guided)).toEqual(rendered)
   })
 
-  it("uses Pay £59 securely for Guided Review and refuses Managed and Guard", () => {
+  it("uses the accepted Guided Review total and refuses Managed, Guard, and a missing Reply-To", () => {
     const review = renderPaymentRequest({
       ...guided,
       serviceCode: "GUIDED_REVIEW",
       serviceName: "Guided Review",
       amountMinor: 5900,
-      replyTo: null,
     })
-    expect(review?.buttonLabel).toBe("Pay £59 securely")
+    expect(review?.buttonLabel).toBe("Pay £59.00 securely")
     expect(review?.text).toContain("Amount: £59.00 GBP")
-    expect(review?.text).toContain("contact us through the ProfileRelaunch website")
+    expect(review?.text).toContain("simply reply to this email")
+    expect(review?.text).not.toContain("contact us through the ProfileRelaunch website")
+    const discounted = renderPaymentRequest({ ...guided, amountMinor: 7920 })
+    expect(discounted?.buttonLabel).toBe("Pay £79.20 securely")
+    expect(discounted?.text).toContain("Amount: £79.20 GBP")
+    expect(renderPaymentRequest({ ...guided, replyTo: null })).toBeNull()
+    expect(renderPaymentRequest({ ...guided, replyTo: "not-an-email" })).toBeNull()
     expect(renderPaymentRequest({ ...guided, serviceCode: "MANAGED_RELAUNCH", serviceName: "Managed Relaunch", amountMinor: 29900 })).toBeNull()
     expect(renderPaymentRequest({ ...guided, serviceCode: "MANAGED_REVIEW", serviceName: "Managed Review", amountMinor: 14900 })).toBeNull()
     expect(renderPaymentRequest({ ...guided, serviceCode: "RELAUNCH_GUARD", serviceName: "Relaunch Guard", amountMinor: 999 })).toBeNull()
-    expect(renderPaymentRequest({ ...guided, amountMinor: 5900 })).toBeNull()
+    expect(renderPaymentRequest({ ...guided, amountMinor: 0 })).toBeNull()
     expect(renderPaymentRequest({ ...guided, origin: "https://customer.example/portal" })).toBeNull()
     expect(renderPaymentRequest({ ...guided, caseRef: "PR-1" })).toBeNull()
   })

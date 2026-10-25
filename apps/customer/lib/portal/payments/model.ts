@@ -34,9 +34,13 @@ export function obligationDetail(state: ObligationState): string {
 }
 
 function upfrontPayLabel(order: PaymentOrder): string {
-  if (order.currency === "GBP" && order.paymentModel === "UPFRONT" && order.amountMinor === 9900) return "Pay £99 securely"
-  if (order.currency === "GBP" && order.paymentModel === "UPFRONT" && order.amountMinor === 5900) return "Pay £59 securely"
-  return "Continue to secure checkout"
+  if (order.currency !== "GBP" || order.paymentModel !== "UPFRONT") return "Continue to secure checkout"
+  if (!Number.isInteger(order.amountMinor) || order.amountMinor < 1 || order.amountMinor > 100_000_000) {
+    return "Continue to secure checkout"
+  }
+  const pounds = Math.floor(order.amountMinor / 100)
+  const pence = String(order.amountMinor % 100).padStart(2, "0")
+  return `Pay £${pounds}.${pence} securely`
 }
 
 export function checkoutControl(

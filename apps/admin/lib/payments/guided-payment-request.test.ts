@@ -60,6 +60,8 @@ beforeEach(() => {
   vi.stubEnv("JOB_PROVIDER_MODE", "production")
   vi.stubEnv("RESEND_API_KEY", "re_test_key")
   vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
   mocks.rpc.mockReset().mockImplementation(async (name: string) => {
     if (name === "admin_order_detail_v1") return order()
     if (name === "admin_dev_send_email_claim_v1") return { status: "denied", reason: "not_ready" }
@@ -83,12 +85,12 @@ describe("guided payment-request command", () => {
     expect(payload.version).toBe(4)
     expect(payload.customerOrigin).toBe(portal)
     expect(payload.recipient).toBeUndefined()
-    expect(payload.bodyText).toContain("Pay £99 securely")
+    expect(payload.bodyText).toContain("Pay £99.00 securely")
     expect(payload.bodyText).toContain(`${portal}/portal/cases/PR-26-GHNLB9/payments`)
     expect(payload.bodyText).not.toContain("#t=")
     expect(payload.bodyText).not.toContain("/action/")
     expect(payload.bodyText).not.toContain("Review and accept quotation")
-    expect(payload.bodyHtml).toContain("Pay £99 securely")
+    expect(payload.bodyHtml).toContain("Pay £99.00 securely")
     expect(JSON.stringify(payload)).not.toContain("other@example.com")
   })
 
@@ -102,5 +104,13 @@ describe("guided payment-request command", () => {
     expect(await managed.json()).toMatchObject({ message: expect.stringMatching(/not charged an upfront fee/) })
     expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_queue_guided_payment_request_v1")).toBe(false)
     expect((await POST(req(undefined, { origin: "https://admin.example.invalid" }))).status).toBe(403)
+  })
+
+  it("does not queue when the monitored Reply-To is missing", async () => {
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
+    const response = await POST(req())
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ message: expect.stringMatching(/No email was queued/) })
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_queue_guided_payment_request_v1")).toBe(false)
   })
 })

@@ -63,15 +63,19 @@ DECLARE
   amount_label text;
   stripped text;
 BEGIN
-  IF p_service_code = 'GUIDED_RELAUNCH' AND p_amount = 9900 AND p_service_name = 'Guided Relaunch' THEN
-    label := 'Pay £99 securely';
-    amount_label := '£99.00 GBP';
-  ELSIF p_service_code = 'GUIDED_REVIEW' AND p_amount = 5900 AND p_service_name = 'Guided Review' THEN
-    label := 'Pay £59 securely';
-    amount_label := '£59.00 GBP';
+  IF p_service_code = 'GUIDED_RELAUNCH' AND p_service_name = 'Guided Relaunch' THEN
+    NULL;
+  ELSIF p_service_code = 'GUIDED_REVIEW' AND p_service_name = 'Guided Review' THEN
+    NULL;
   ELSE
     RETURN 'snapshot_mismatch';
   END IF;
+  -- The accepted order total, in pence. Catalogue list prices are not required.
+  IF p_amount IS NULL OR p_amount < 1 OR p_amount > 100000000 THEN
+    RETURN 'snapshot_mismatch';
+  END IF;
+  label := 'Pay £' || (p_amount / 100)::text || '.' || lpad((p_amount % 100)::text, 2, '0') || ' securely';
+  amount_label := '£' || (p_amount / 100)::text || '.' || lpad((p_amount % 100)::text, 2, '0') || ' GBP';
   IF p_origin IS NULL OR p_origin !~ '^https://[A-Za-z0-9.-]+$'
     OR p_case_ref IS NULL OR p_case_ref !~ '^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$'
     OR p_order_ref IS NULL OR p_order_ref !~ '^SO-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$'
@@ -98,15 +102,12 @@ BEGIN
     OR (length(p_text) - length(replace(p_text, label, ''))) IS DISTINCT FROM length(label)
     OR (length(p_html) - length(replace(p_html, label, ''))) IS DISTINCT FROM length(label)
   THEN RETURN 'snapshot_mismatch'; END IF;
-  IF p_reply_to IS NULL THEN
-    IF position('If you have a question about this payment, contact us through the ProfileRelaunch website.' IN p_text) = 0
-      OR position('If you have a question about this payment, contact us through the ProfileRelaunch website.' IN p_html) = 0
-    THEN RETURN 'snapshot_mismatch'; END IF;
-  ELSE
-    IF position('If you have a question about this payment, simply reply to this email and keep the order reference in the subject.' IN p_text) = 0
-      OR position('If you have a question about this payment, simply reply to this email and keep the order reference in the subject.' IN p_html) = 0
-    THEN RETURN 'snapshot_mismatch'; END IF;
-  END IF;
+  IF p_reply_to IS NULL
+    OR length(p_reply_to) > 254
+    OR p_reply_to !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    OR position('If you have a question about this payment, simply reply to this email and keep the order reference in the subject.' IN p_text) = 0
+    OR position('If you have a question about this payment, simply reply to this email and keep the order reference in the subject.' IN p_html) = 0
+  THEN RETURN 'snapshot_mismatch'; END IF;
   stripped := replace(replace(p_text, expected, ''), 'https://profilerelaunch.com', '');
   IF position('https://' IN stripped) > 0 OR position('http://' IN stripped) > 0 THEN RETURN 'snapshot_mismatch'; END IF;
   stripped := replace(replace(p_html, expected, ''), 'https://profilerelaunch.com', '');
@@ -329,8 +330,9 @@ BEGIN
     OR ord.currency IS DISTINCT FROM 'GBP'
     OR ord.state IS DISTINCT FROM 'ACCEPTED_AWAITING_PAYMENT'
     OR ord.tax_behaviour NOT IN ('NOT_APPLICABLE', 'INCLUSIVE')
-    OR (ord.service_code = 'GUIDED_RELAUNCH' AND ord.amount_minor IS DISTINCT FROM 9900)
-    OR (ord.service_code = 'GUIDED_REVIEW' AND ord.amount_minor IS DISTINCT FROM 5900)
+    OR ord.amount_minor IS NULL
+    OR ord.amount_minor < 1
+    OR ord.amount_minor > 100000000
   THEN RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch'); END IF;
 
   SELECT * INTO cs FROM public.cases WHERE id = ord.case_id FOR UPDATE;
@@ -394,6 +396,9 @@ BEGIN
   END IF;
   IF admin_private.obligation_has_blocking_invoice_v1(ob.id) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'unmatched_payment');
+  END IF;
+  IF reply_to IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'reply_to');
   END IF;
 
   SELECT count(*) INTO open_count FROM public.customer_actions

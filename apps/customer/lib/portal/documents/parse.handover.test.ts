@@ -28,7 +28,8 @@ const found = {
 
 describe("guided pack handover parser", () => {
   it("reads a published pack and rejects a payload that omits it", () => {
-    expect(parseCaseDocuments(found)?.pack).toMatchObject({
+    const parsed = parseCaseDocuments(found)
+    expect(parsed !== "not_found" && parsed ? parsed.pack : null).toMatchObject({
       serviceName: "Guided Relaunch",
       instructions,
       instructionSelectors: ["pd-2"],

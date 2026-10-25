@@ -90,6 +90,7 @@ const caseDocuments: CustomerCaseDocuments = {
     sizeBytes: 20480,
     publishedAt,
   }],
+  pack: null,
 }
 
 const raw = /PENDING_UPLOAD|UPLOADED|NO_THREATS_FOUND|THREATS_FOUND|VALID|REJECTED|ACCEPTED|UNREVIEWED|supabase|storageKey|storage_key|X-Amz|s3:\/\//

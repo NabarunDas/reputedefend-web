@@ -17,6 +17,7 @@ const relaunch = {
   amountMinor: 9900,
   currency: "GBP",
   origin,
+  replyTo: "cases@profilerelaunch.com",
 }
 
 describe("guided fulfilment email", () => {
@@ -43,6 +44,7 @@ describe("guided fulfilment email", () => {
       amountMinor: 5900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     expect(rendered).not.toBeNull()
     expect(rendered!.subject).toBe("Your Guided Review submission pack is ready — PR-26-FULF59")
@@ -52,7 +54,10 @@ describe("guided fulfilment email", () => {
     expect(rendered!.text.match(new RegExp(packReadyButton, "g"))).toHaveLength(1)
     expect(rendered!.pageUrl).toBe(`${origin}/portal/cases/PR-26-FULF59/documents`)
     expect(rendered!.html.match(/\/portal\/cases\//g)).toHaveLength(1)
+    expect(rendered!.text).toContain("Reply to this email")
+    expect(rendered!.text).not.toContain("contact us through the ProfileRelaunch website")
     expect(rendered!.text).not.toMatch(/ProfileRelaunch submits|we have submitted/i)
+    expect(renderPackReady({ ...relaunch, serviceCode: "GUIDED_REVIEW", serviceName: "Guided Review", caseRef: "PR-26-FULF59", amountMinor: 5900, replyTo: null })).toBeNull()
   })
 
   it("uses the accepted amount, including one that is not the catalogue list price", () => {

@@ -32,6 +32,8 @@ export type JourneyPreparationPanel = {
   who: string
   /** The existing pack panel. Null withholds every pack command. */
   commands: PreparedPackCase | null
+  /** One recovery for a published pack whose announcement was never queued. */
+  packEmailRecovery: { packId: string; recordVersion: number } | null
 }
 
 export function packDisplayState(pack: { status: string; published?: boolean }): JourneyPreparationPack["state"] {
@@ -180,6 +182,7 @@ export function buildJourneyPreparationPanel(input: {
   facts: CaseFlowFacts
   packs: PreparedPackCase | null
   recordsConflict: boolean
+  mailRecovery?: boolean
 }): JourneyPreparationPanel {
   const facts = input.facts
   const loaded = input.packs
@@ -281,5 +284,10 @@ export function buildJourneyPreparationPanel(input: {
                 ? notification.detail
                 : "Prepare the submission materials."
 
-  return { headline, detail, packs: display, requirements, notices, who, commands }
+  const stored = source?.packs.find(pack => pack.id === current?.id)
+  const packEmailRecovery = input.mailRecovery && readiness.ready && notification.headline === "Available in portal; email not sent" && stored
+    ? { packId: stored.id, recordVersion: stored.recordVersion }
+    : null
+
+  return { headline, detail, packs: display, requirements, notices, who, commands, packEmailRecovery }
 }

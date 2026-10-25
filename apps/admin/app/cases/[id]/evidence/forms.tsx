@@ -320,6 +320,14 @@ export function UnpublishPackForm({ caseId, pack }: { caseId: string; pack: Prep
   </details>
 }
 
+export function RecoverPackEmailForm({ caseId, pack }: { caseId: string; pack: { packId: string; recordVersion: number } }) {
+  return <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Send pack-ready email" payload={() => ({
+    operation: "send_pack_email", caseId, packId: pack.packId, recordVersion: pack.recordVersion,
+  })}>
+    <p>The pack is already in the portal. This queues the notification that was not sent. It does not publish the pack again, and it does not send another copy if the provider has already accepted one.</p>
+  </CommandForm>
+}
+
 export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: PreparedPackCase }) {
   const draft = packs.packs.find(pack => pack.status === "DRAFT")
   const inDraft = new Set(draft?.items.map(item => item.versionId) ?? [])

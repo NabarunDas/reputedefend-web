@@ -453,6 +453,8 @@ describe("payment job handlers", () => {
       JOB_PROVIDER_MODE: "production",
       RESEND_API_KEY: "re_dev_placeholder",
       COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+      COMMUNICATIONS_REPLY_TO_EMAIL: "cases@profilerelaunch.com",
+      COMMUNICATIONS_REPLY_TO_CONFIRMED: "monitored",
     }
     const context = {
       status: "applicable",

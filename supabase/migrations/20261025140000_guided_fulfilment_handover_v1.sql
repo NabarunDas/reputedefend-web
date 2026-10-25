@@ -60,11 +60,21 @@ CREATE TABLE public.guided_customer_reports (
   note text NOT NULL CHECK (length(btrim(note)) BETWEEN 10 AND 2000),
   submitted_on date,
   google_reference text,
+  task_id uuid REFERENCES public.case_tasks(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT guided_customer_reports_shape_check CHECK (
-    (kind = 'CORRECTION' AND submitted_on IS NULL AND google_reference IS NULL)
-    OR (kind = 'GOOGLE_SUBMISSION' AND submitted_on IS NOT NULL
-      AND google_reference IS NOT NULL AND length(btrim(google_reference)) BETWEEN 1 AND 200)
+    (kind = 'CORRECTION' AND submitted_on IS NULL AND google_reference IS NULL AND task_id IS NOT NULL)
+    OR (
+      kind = 'GOOGLE_SUBMISSION' AND submitted_on IS NOT NULL AND task_id IS NULL
+      AND (
+        google_reference IS NULL
+        OR (
+          length(btrim(google_reference)) BETWEEN 1 AND 200
+          AND google_reference ~ '^[A-Za-z0-9][A-Za-z0-9 .:_-]{0,198}$'
+          AND position('http' IN lower(google_reference)) = 0
+        )
+      )
+    )
   )
 );
 CREATE UNIQUE INDEX guided_customer_reports_one_submission_idx
@@ -226,6 +236,15 @@ BEGIN
   WHERE i.pack_id = p.id AND r.role = 'INSTRUCTIONS';
   IF deliverables IS DISTINCT FROM 1 THEN RETURN 'deliverable'; END IF;
   IF instructions IS DISTINCT FROM 1 THEN RETURN 'instructions'; END IF;
+  IF (
+    SELECT i.document_id FROM public.case_prepared_pack_items i
+    INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+    WHERE i.pack_id = p.id AND r.role = 'DELIVERABLE'
+  ) IS NOT DISTINCT FROM (
+    SELECT i.document_id FROM public.case_prepared_pack_items i
+    INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+    WHERE i.pack_id = p.id AND r.role = 'INSTRUCTIONS'
+  ) THEN RETURN 'document'; END IF;
   SELECT count(*)::int INTO bad_author
   FROM public.case_prepared_pack_items i
   INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
@@ -383,6 +402,8 @@ BEGIN
     OR admin_private.fulfilment_page_count_v1(p_html, page) IS DISTINCT FROM 1
     OR position(expected IN coalesce(p_text, '')) = 0
     OR position(expected IN coalesce(p_html, '')) = 0
+    OR position('reply to this email' IN lower(coalesce(p_text, ''))) = 0
+    OR position('reply to this email' IN lower(coalesce(p_html, ''))) = 0
   THEN RETURN 'snapshot'; END IF;
   IF p_template = 'GUIDED_PACK_READY' AND position(
     'You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.'
@@ -536,7 +557,10 @@ BEGIN
   IF c.id IS NULL OR ord.service_code NOT IN ('GUIDED_RELAUNCH', 'GUIDED_REVIEW') THEN
     RETURN jsonb_build_object('status', 'not_applicable');
   END IF;
-  reply_to := NULLIF(btrim(coalesce(p_payload->>'replyTo', '')), '');
+  reply_to := NULLIF(lower(btrim(coalesce(p_payload->>'replyTo', ''))), '');
+  IF reply_to IS NULL OR length(reply_to) > 254 OR reply_to !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'reply_to');
+  END IF;
   reason := admin_private.fulfilment_snapshot_reason_v1(
     c.id, 'PAYMENT_CONFIRMATION', p_payload->>'subject', p_payload->>'bodyText', p_payload->>'bodyHtml', p_payload->>'customerOrigin'
   );
@@ -596,7 +620,10 @@ BEGIN
   IF present IS DISTINCT FROM array_length(keys, 1) OR p_data->>'sendEnabled' IS DISTINCT FROM 'true' THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
-  reply_to := NULLIF(btrim(coalesce(p_data->>'replyTo', '')), '');
+  reply_to := NULLIF(lower(btrim(coalesce(p_data->>'replyTo', ''))), '');
+  IF reply_to IS NULL OR length(reply_to) > 254 OR reply_to !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'reply_to');
+  END IF;
   reason := admin_private.fulfilment_snapshot_reason_v1(
     p_case, 'GUIDED_PACK_READY', p_data->>'subject', p_data->>'bodyText', p_data->>'bodyHtml', p_data->>'customerOrigin'
   );
@@ -670,10 +697,10 @@ BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
   actor := (s->>'userId')::uuid;
-  IF p_request IS NULL OR p_case IS NULL OR p_operation IS NULL OR p_operation NOT IN ('create','add_item','remove_item','move_item','approve','publish','unpublish')
+  IF p_request IS NULL OR p_case IS NULL OR p_operation IS NULL OR p_operation NOT IN ('create','add_item','remove_item','move_item','approve','publish','unpublish','send_pack_email')
     OR p_data IS NULL OR jsonb_typeof(p_data) <> 'object'
-    OR (p_operation = 'publish' AND octet_length(p_data::text) > 65536)
-    OR (p_operation IS DISTINCT FROM 'publish' AND octet_length(p_data::text) > 4096)
+    OR (p_operation IN ('publish', 'send_pack_email') AND octet_length(p_data::text) > 65536)
+    OR (p_operation NOT IN ('publish', 'send_pack_email') AND octet_length(p_data::text) > 4096)
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   data := coalesce(p_data, '{}'::jsonb);
   fp := md5(jsonb_build_array(p_case, p_pack, p_version, p_operation, data)::text);
@@ -749,6 +776,39 @@ BEGIN
     PERFORM admin_private.write_record_audit_v1(actor, 'EVIDENCE_CHANGED', 'success', c.id, p_request, 'case', 'Prepared pack unpublished',
       jsonb_build_object('operation', 'unpublish', 'packId', p.id, 'packNumber', p.pack_number));
     result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', false);
+    INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+
+  IF p_operation = 'send_pack_email' THEN
+    IF (data - 'subject' - 'bodyText' - 'bodyHtml' - 'fromAddress' - 'replyTo' - 'customerOrigin' - 'sendEnabled') <> '{}'::jsonb THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF p.status IS DISTINCT FROM 'APPROVED' OR p.published_at IS NULL OR p.unpublished_at IS NOT NULL THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    commercial := admin_private.guided_settlement_reason_v1(c.id);
+    IF commercial IS NOT NULL AND commercial IS DISTINCT FROM 'not_guided' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', commercial);
+    END IF;
+    materials := admin_private.guided_pack_materials_reason_v1(p.id);
+    IF materials IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied', 'reason', materials); END IF;
+    IF NOT admin_private.pack_publishable_v1(p.id) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF EXISTS (SELECT 1 FROM public.guided_pack_announcements existing WHERE existing.pack_id = p.id) THEN
+      result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', true, 'packEmail', 'already_queued');
+      INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
+      RETURN result;
+    END IF;
+    IF data->>'sendEnabled' IS DISTINCT FROM 'true' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'send_disabled');
+    END IF;
+    mail := admin_private.queue_guided_pack_ready_v1(c.id, p.id, actor, data);
+    IF mail->>'status' IS DISTINCT FROM 'success' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', coalesce(mail->>'reason', 'mail'));
+    END IF;
+    PERFORM admin_private.write_record_audit_v1(actor, 'COMMUNICATION_CHANGED', 'success', c.id, p_request, 'case', 'Queued the pack-ready email. The provider has not accepted it.',
+      jsonb_build_object('operation', 'send_pack_email', 'packId', p.id, 'communicationId', mail->>'id'));
+    result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', true, 'packEmail', 'success');
     INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
     RETURN result;
   END IF;
@@ -1293,7 +1353,8 @@ BEGIN
         ),
         'correctionRequested', EXISTS (
           SELECT 1 FROM public.guided_customer_reports report
-          WHERE report.pack_id = p.id AND report.kind = 'CORRECTION'
+          INNER JOIN public.case_tasks task ON task.id = report.task_id
+          WHERE report.pack_id = p.id AND report.kind = 'CORRECTION' AND task.status = 'OPEN'
         )
       );
     END IF;
@@ -1322,7 +1383,7 @@ AS $$
 DECLARE
   v_customer uuid; v_auth uuid; v_email text; v_case uuid;
   cs public.cases; p public.case_prepared_packs; fp text; cached jsonb; result jsonb;
-  note text; reference text; submitted date;
+  note text; reference text; submitted date; task_id uuid;
 BEGIN
   SELECT customer_id, auth_user_id, email INTO v_customer, v_auth, v_email
   FROM admin_private.customer_portal_actor_v1(p_token_hash);
@@ -1361,23 +1422,32 @@ BEGIN
     IF p_data ? 'submittedOn' OR p_data ? 'googleReference' THEN
       RETURN jsonb_build_object('status', 'invalid');
     END IF;
-    INSERT INTO public.guided_customer_reports(case_id, customer_id, pack_id, kind, note)
-    VALUES (cs.id, cs.customer_id, p.id, 'CORRECTION', note);
+    IF EXISTS (
+      SELECT 1 FROM public.guided_customer_reports report
+      INNER JOIN public.case_tasks task ON task.id = report.task_id
+      WHERE report.pack_id = p.id AND report.kind = 'CORRECTION' AND task.status = 'OPEN'
+    ) THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
     INSERT INTO public.case_tasks(
       case_id, title, owner, kind, due_at, deadline_source, deadline_timezone, reminder_policy
     ) VALUES (
       cs.id, 'Review a correction to the Guided pack', 'ADMIN', 'FOLLOW_UP', now() + interval '2 days',
       'The customer asked for a correction before submitting the pack to Google', 'Europe/London', 'MANUAL_QUEUE'
-    );
+    ) RETURNING id INTO task_id;
+    INSERT INTO public.guided_customer_reports(case_id, customer_id, pack_id, kind, note, task_id)
+    VALUES (cs.id, cs.customer_id, p.id, 'CORRECTION', note, task_id);
     INSERT INTO public.case_work_events(case_id, actor_id, event, note, visibility)
     VALUES (cs.id, v_auth, 'CUSTOMER_CORRECTION', note, 'CUSTOMER');
     result := jsonb_build_object('status', 'success', 'kind', 'CORRECTION');
   ELSE
-    reference := btrim(coalesce(p_data->>'googleReference', ''));
+    reference := nullif(btrim(coalesce(p_data->>'googleReference', '')), '');
     BEGIN submitted := (p_data->>'submittedOn')::date; EXCEPTION WHEN OTHERS THEN submitted := NULL; END;
-    IF reference !~ '^[A-Za-z0-9][A-Za-z0-9 .:_-]{0,198}$'
-      OR position('http' IN lower(reference)) > 0
-      OR submitted IS NULL OR submitted > current_date OR submitted < DATE '2020-01-01'
+    IF submitted IS NULL OR submitted > current_date OR submitted < DATE '2020-01-01'
+      OR (
+        reference IS NOT NULL AND (
+          reference !~ '^[A-Za-z0-9][A-Za-z0-9 .:_-]{0,198}$'
+          OR position('http' IN lower(reference)) > 0
+        )
+      )
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
     IF EXISTS (SELECT 1 FROM public.guided_customer_reports report WHERE report.pack_id = p.id AND report.kind = 'GOOGLE_SUBMISSION') THEN
       RETURN jsonb_build_object('status', 'conflict');

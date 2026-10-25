@@ -58,8 +58,8 @@ export function renderPaymentConfirmation(input: {
   const ready = sharedReady(input)
   const orderRef = input.orderRef.trim()
   const pageUrl = portalCasePage(input.origin, input.caseRef, "payments")
-  if (!ready || !pageUrl || !orderRefPattern.test(orderRef)) return null
   const replyTo = validReplyMailbox(input.replyTo)
+  if (!ready || !pageUrl || !orderRefPattern.test(orderRef) || !replyTo) return null
   const subject = `Payment received for your ${brandName} ${ready.serviceName} — ${ready.caseRef} — ${orderRef}`
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
@@ -69,9 +69,7 @@ export function renderPaymentConfirmation(input: {
     { type: "paragraph", text: "Your receipt is on the secure payments page. Sign in there to view it. This email does not contain card details." },
     { type: "button", label: paymentConfirmationButton, url: pageUrl },
     { type: "paragraph", text: "ProfileRelaunch will now prepare your submission materials. You submit the finished pack to Google yourself." },
-    { type: "paragraph", text: replyTo
-      ? "If you have a question about this payment, reply to this email and keep the order reference in the subject."
-      : "If you have a question about this payment, contact us through the ProfileRelaunch website." },
+    { type: "paragraph", text: "If you have a question about this payment, reply to this email and keep the order reference in the subject." },
   ]
   const rendered = renderCustomerEmail({ title: "Payment received", blocks, caseRef: ready.caseRef })
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null
@@ -91,8 +89,8 @@ export function renderPackReady(input: {
 }): { subject: string; html: string; text: string; pageUrl: string } | null {
   const ready = sharedReady(input)
   const pageUrl = portalCasePage(input.origin, input.caseRef, "documents")
-  if (!ready || !pageUrl) return null
   const replyTo = validReplyMailbox(input.replyTo)
+  if (!ready || !pageUrl || !replyTo) return null
   const subject = `Your ${ready.serviceName} submission pack is ready — ${ready.caseRef}`
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
@@ -103,9 +101,7 @@ export function renderPackReady(input: {
     { type: "paragraph", text: guidedCustomerSubmitsSentence },
     { type: "button", label: packReadyButton, url: pageUrl },
     { type: "paragraph", text: "If something in the pack needs a correction, use the button above and ask us before you submit it to Google." },
-    { type: "paragraph", text: replyTo
-      ? "Reply to this email if you need help. Keep the case reference in the subject."
-      : "If you need help, contact us through the ProfileRelaunch website." },
+    { type: "paragraph", text: "Reply to this email if you need help. Keep the case reference in the subject." },
   ]
   const rendered = renderCustomerEmail({ title: "Your submission pack is ready", blocks, caseRef: ready.caseRef })
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null

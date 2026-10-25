@@ -39,7 +39,8 @@ async function queueGuidedPaymentConfirmation(
   if (context.status !== "applicable" || context.alreadyQueued) return null
   const origin = customerPortalOrigin()
   const from = outgoingFromAddress(env)
-  const replyTo = confirmedReplyMailbox()
+  const replyTo = confirmedReplyMailbox(env)
+  if (!replyTo) return null
   if (!origin || !from || !context.caseRef || !context.orderRef || !context.serviceCode || !context.serviceName || context.amountMinor == null || !context.currency) {
     return { ok: false, retryable: true, error: "Payment confirmation email is not ready." }
   }
@@ -63,7 +64,7 @@ async function queueGuidedPaymentConfirmation(
       bodyHtml: rendered.html,
       fromAddress: from,
       customerOrigin: origin,
-      ...(replyTo ? { replyTo } : {}),
+      replyTo,
     },
   })
   if (queued.status === "success" || queued.status === "not_applicable") return null

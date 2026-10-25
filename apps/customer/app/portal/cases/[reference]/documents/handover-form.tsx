@@ -49,11 +49,13 @@ export function GuidedHandoverForm({ reference, submitted, correctionRequested }
   function onReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    void send("report_submission", {
+    const fields: Record<string, string> = {
       note: String(form.get("note") ?? ""),
       submittedOn: String(form.get("submittedOn") ?? ""),
-      googleReference: String(form.get("googleReference") ?? ""),
-    })
+    }
+    const reference = String(form.get("googleReference") ?? "").trim()
+    if (reference) fields.googleReference = reference
+    void send("report_submission", fields)
   }
 
   return (
@@ -61,11 +63,12 @@ export function GuidedHandoverForm({ reference, submitted, correctionRequested }
       <form onSubmit={onCorrection}>
         <h3>Ask for a correction</h3>
         <p>Tell us what to change before you submit this pack to Google. ProfileRelaunch does not submit Guided work for you.</p>
-        {correctionRequested ? <p>A correction request is already with ProfileRelaunch.</p> : null}
-        <label>What should we change?
-          <textarea name="note" required minLength={10} maxLength={2000} rows={4} />
-        </label>
-        <button type="submit" disabled={busy}>Request a correction</button>
+        {correctionRequested ? <p>A correction request is already with ProfileRelaunch.</p> : <>
+          <label>What should we change?
+            <textarea name="note" required minLength={10} maxLength={2000} rows={4} />
+          </label>
+          <button type="submit" disabled={busy}>Request a correction</button>
+        </>}
       </form>
       <form onSubmit={onReport}>
         <h3>I submitted this to Google</h3>
@@ -75,8 +78,8 @@ export function GuidedHandoverForm({ reference, submitted, correctionRequested }
             <label>Date you submitted it
               <input name="submittedOn" type="date" required />
             </label>
-            <label>Google reference
-              <input name="googleReference" required maxLength={200} autoComplete="off" />
+            <label>Google reference, if Google gave you one
+              <input name="googleReference" maxLength={200} autoComplete="off" />
             </label>
             <label>What did you submit?
               <textarea name="note" required minLength={10} maxLength={2000} rows={3} />

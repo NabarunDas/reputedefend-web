@@ -57,12 +57,14 @@ export async function portalGuidedHandover(request: NextRequest) {
   if (!written) return reply(CHECK, 400)
   const data: Record<string, string> = { note: written }
   if (operation === "report_submission") {
-    if (typeof body.googleReference !== "string" || !REFERENCE.test(body.googleReference.trim()) || body.googleReference.trim().toLowerCase().includes("http")) {
-      return reply(CHECK, 400)
-    }
     if (typeof body.submittedOn !== "string" || !DAY.test(body.submittedOn)) return reply(CHECK, 400)
-    data.googleReference = body.googleReference.trim()
     data.submittedOn = body.submittedOn
+    if ("googleReference" in body && body.googleReference != null && body.googleReference !== "") {
+      if (typeof body.googleReference !== "string") return reply(CHECK, 400)
+      const reference = body.googleReference.trim()
+      if (!reference || !REFERENCE.test(reference) || reference.toLowerCase().includes("http")) return reply(CHECK, 400)
+      data.googleReference = reference
+    }
   } else if ("googleReference" in body || "submittedOn" in body) {
     return reply(CHECK, 400)
   }
@@ -76,7 +78,11 @@ export async function portalGuidedHandover(request: NextRequest) {
     })
     if (result == null) return reply(SIGN_IN)
     if (result.status === "success") return reply(operation === "request_correction" ? SAVED_CORRECTION : SAVED_REPORT, 200)
-    if (result.status === "conflict") return reply("That report is already on this case.", 409)
+    if (result.status === "conflict") {
+      return reply(operation === "request_correction"
+        ? "A correction request is already open for this pack."
+        : "That report is already on this case.", 409)
+    }
     if (result.status === "invalid") return reply(CHECK, 400)
     return reply(UNAVAILABLE, 403)
   } catch {

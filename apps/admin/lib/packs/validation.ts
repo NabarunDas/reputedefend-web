@@ -8,7 +8,8 @@ export type PackMoveArgs = PackItemArgs & { direction: "up" | "down" }
 export type PackApproveArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
 export type PackPublishArgs = { caseId: string; packId: string; recordVersion: number; note: string; confirmed: true }
 export type PackUnpublishArgs = { caseId: string; packId: string; recordVersion: number; reason: string; confirmed: true }
-export type PackArgs = PackCreateArgs | PackItemArgs | PackMoveArgs | PackApproveArgs | PackPublishArgs | PackUnpublishArgs
+export type PackEmailArgs = { caseId: string; packId: string; recordVersion: number }
+export type PackArgs = PackCreateArgs | PackItemArgs | PackMoveArgs | PackApproveArgs | PackPublishArgs | PackUnpublishArgs | PackEmailArgs
 
 function asRecord(raw: unknown): Record<string, unknown> | null {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null
@@ -30,6 +31,10 @@ export function packArgs(operation: PackOperation, raw: unknown): PackArgs | nul
     return { caseId: body.caseId }
   }
   if (!isUuid(body.caseId) || !isUuid(body.packId) || !Number.isSafeInteger(body.recordVersion) || (body.recordVersion as number) < 1) return null
+  if (operation === "send_pack_email") {
+    if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion"])) return null
+    return { caseId: body.caseId, packId: body.packId, recordVersion: body.recordVersion as number }
+  }
   if (operation === "approve" || operation === "publish") {
     if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "note", "confirmed"])) return null
     const supporting = note(body.note)
@@ -79,6 +84,9 @@ export function isPackUnpublishArgs(args: PackArgs): args is PackUnpublishArgs {
 }
 export function isPackMoveArgs(args: PackArgs): args is PackMoveArgs {
   return "direction" in args
+}
+export function isPackEmailArgs(args: PackArgs): args is PackEmailArgs {
+  return "packId" in args && !("versionId" in args) && !("confirmed" in args)
 }
 export function isPackItemArgs(args: PackArgs): args is PackItemArgs {
   return "versionId" in args && !("direction" in args)

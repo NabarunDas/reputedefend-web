@@ -8,7 +8,7 @@ import { privateResponseHeaders } from "../access"
 import { confirmedReplyMailbox } from "../communications/brand-email"
 import { communicationsSendEnabled, outgoingFromAddress } from "../communications/gate"
 import { isUuid } from "../records/model"
-import { packArgs, isPackApproveArgs, isPackItemArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
+import { packArgs, isPackApproveArgs, isPackEmailArgs, isPackItemArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
 import { packOperations, type PackOperation } from "./model"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
@@ -60,6 +60,7 @@ const successMessage: Record<PackOperation, string> = {
   approve: "The prepared pack has been approved. This does not confirm payment, permission or submission to Google.",
   publish: "The approved pack is now available in the customer portal. This does not submit anything to Google.",
   unpublish: "The pack is no longer published. The customer cannot view these files until it is published again.",
+  send_pack_email: "The pack-ready email is queued. Queued is not delivered.",
 }
 
 export async function packCommand(request: NextRequest) {
@@ -82,7 +83,8 @@ export async function packCommand(request: NextRequest) {
     const args = packArgs(operation, body)
     if (!args) return reply("Check the fields before saving.", 400)
     let email: Record<string, unknown> = {}
-    if (operation === "publish" && isPackApproveArgs(args) && communicationsSendEnabled()) {
+    if ((operation === "publish" || operation === "send_pack_email") && (operation === "send_pack_email" || communicationsSendEnabled()) && ("packId" in args)) {
+      if (operation === "send_pack_email" && !communicationsSendEnabled()) return reply("Outgoing email is switched off. The pack stays available in the portal and no email was queued.", 403)
       const context = await backend().rpc<{
         status?: string
         caseRef?: string
@@ -95,10 +97,11 @@ export async function packCommand(request: NextRequest) {
         p_case: args.caseId,
         p_pack: args.packId,
       })
-      if (context.status === "applicable") {
+      if (context.status === "applicable" && (operation === "send_pack_email" || communicationsSendEnabled())) {
         const origin = customerPortalOrigin()
         const from = outgoingFromAddress()
         const replyTo = confirmedReplyMailbox()
+        if (!replyTo) return reply("The pack notification was not queued. A monitored reply address is not confirmed.", operation === "publish" ? 409 : 409)
         const rendered = origin && from && context.caseRef && context.serviceCode && context.serviceName && context.amountMinor != null && context.currency
           ? renderPackReady({
             serviceCode: context.serviceCode,
@@ -110,7 +113,11 @@ export async function packCommand(request: NextRequest) {
             replyTo,
           })
           : null
-        if (!rendered || !from || !origin) return reply("The pack was not published. The customer email could not be prepared.", 503)
+        if (!rendered || !from || !origin) {
+          return reply(operation === "publish"
+            ? "The pack was not published. The customer email could not be prepared."
+            : "The pack notification was not queued. The customer email could not be prepared.", 503)
+        }
         email = {
           subject: rendered.subject,
           bodyText: rendered.text,
@@ -118,18 +125,21 @@ export async function packCommand(request: NextRequest) {
           fromAddress: from,
           customerOrigin: origin,
           sendEnabled: true,
-          ...(replyTo ? { replyTo } : {}),
+          replyTo,
         }
+      } else if (operation === "send_pack_email") {
+        return reply("This pack is not ready for a customer notification. No email was queued.", 409)
       }
     }
     const payload = operation === "create" ? {}
+      : operation === "send_pack_email" && isPackEmailArgs(args) ? email
       : operation === "publish" && isPackApproveArgs(args) ? { note: args.note, confirmed: true as const, ...email }
       : operation === "approve" && isPackApproveArgs(args) ? { note: args.note, confirmed: true as const }
       : operation === "unpublish" && isPackUnpublishArgs(args) ? { reason: args.reason, confirmed: true as const }
       : operation === "move_item" && isPackMoveArgs(args) ? { versionId: args.versionId, direction: args.direction }
       : isPackItemArgs(args) ? { versionId: args.versionId, ...(args.role ? { role: args.role } : {}) }
       : {}
-    const result = await backend().rpc<{ status: string; id?: string; packNumber?: number; packStatus?: string; recordVersion?: number; itemId?: string; reason?: string }>("admin_prepared_pack_command_v1", {
+    const result = await backend().rpc<{ status: string; id?: string; packNumber?: number; packStatus?: string; recordVersion?: number; itemId?: string; reason?: string; packEmail?: string }>("admin_prepared_pack_command_v1", {
       p_token: tokenHash(token),
       p_request: key,
       p_case: args.caseId,
@@ -139,7 +149,10 @@ export async function packCommand(request: NextRequest) {
       p_data: payload,
     })
     if (result.status !== "success") return reply(commandMessage(result.status, "The prepared pack could not be updated.", result.reason), mapStatus(result.status))
-    return reply(successMessage[operation], 200, {
+    const message = operation === "send_pack_email" && result.packEmail === "already_queued"
+      ? "The pack notification was already queued. Another copy was not sent."
+      : successMessage[operation]
+    return reply(message, 200, {
       id: result.id, packNumber: result.packNumber, packStatus: result.packStatus, recordVersion: result.recordVersion, itemId: result.itemId,
     })
   } catch {

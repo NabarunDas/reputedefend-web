@@ -111,9 +111,9 @@ function draft(overrides: Partial<PreparedPack> = {}): PreparedPack {
   }
 }
 
-function show(source: CaseFlowFacts, packs: PreparedPackCase | null, options: { recordsConflict?: boolean } = {}) {
+function show(source: CaseFlowFacts, packs: PreparedPackCase | null, options: { recordsConflict?: boolean; mailRecovery?: boolean } = {}) {
   const now = "2026-10-03T12:00:00.000Z"
-  const panel = buildJourneyPreparationPanel({ facts: source, packs, recordsConflict: !!options.recordsConflict })
+  const panel = buildJourneyPreparationPanel({ facts: source, packs, recordsConflict: !!options.recordsConflict, mailRecovery: options.mailRecovery })
   const journey = presentCaseJourney(source, now, [], {
     ...(packs !== null && panel.headline === "Pack records disagree" ? { packRecordsDisagree: true } : {}),
     ...(options.recordsConflict ? { authorityRecordsDisagree: true } : {}),
@@ -213,7 +213,11 @@ describe("guided case preparation", () => {
     expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Available in portal; email not sent")
     expect(screen.getByText(/Publication: Met/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Unpublish pack", hidden: true })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send pack-ready email" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+    cleanup()
+    show(facts({ packs: { packs: [row], eligibleCount: 0 } }), { caseId: CASE_ID, packs: [published], eligible: [] }, { mailRecovery: true })
+    expect(screen.getByRole("button", { name: "Send pack-ready email" })).toBeTruthy()
 
     cleanup()
     show(facts({

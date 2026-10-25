@@ -234,9 +234,9 @@ async function settle(caseId: string, suffix: string, eventId: string) {
   return { order, obligationId, unpaid, unknown, settled, replay, receiptsBeforeSuccess, stateBeforeSuccess }
 }
 
-async function acceptedFile(caseId: string, filename: string, scan: "NO_THREATS_FOUND" | "THREATS_FOUND" = "NO_THREATS_FOUND") {
+async function acceptedFile(caseId: string, filename: string, scan: "NO_THREATS_FOUND" | "THREATS_FOUND" = "NO_THREATS_FOUND", documentId: string | null = null) {
   const created = await rpc<Json>("admin_evidence_begin_v1", [
-    adminToken, key(), caseId, null, filename, "application/pdf", 1024, "Completed statement", "test-evidence", null,
+    adminToken, key(), caseId, documentId, filename, "application/pdf", 1024, "Completed statement", "test-evidence", null,
   ])
   if (!created.versionId) throw new Error(`begin ${JSON.stringify(created)}`)
   await rpc("admin_evidence_finalize_v1", [adminToken, key(), caseId, created.versionId])
@@ -294,6 +294,7 @@ function mailPayload(rendered: { subject: string; text: string; html: string }, 
     bodyHtml: rendered.html,
     fromAddress,
     customerOrigin: origin,
+    replyTo: "cases@profilerelaunch.com",
     sendEnabled: true,
     ...extra,
   }
@@ -414,6 +415,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: 9900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     expect(rendered).not.toBeNull()
     const queued = await rpc<Json>("payment_queue_confirmation_v1", [{
@@ -479,8 +481,17 @@ describe("guided fulfilment handover", () => {
     expect(await count("select count(*)::int as n from public.guided_pack_item_roles where item_id not in (select id from public.case_prepared_pack_items)")).toBe(0)
     const restored = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, removed.recordVersion)
     expect(restored.status).toBe("success")
+    const statementDocument = (await rows<{ document_id: string }>("select document_id from public.case_document_versions where id = $1", [statement.versionId]))[0].document_id
+    const sameDocument = await acceptedFile(caseId, "statement-again.pdf", "NO_THREATS_FOUND", statementDocument)
+    await db.exec(`begin; set local session_replication_role = replica; update public.case_document_versions set review_status = 'ACCEPTED' where id = '${statement.versionId}'; commit;`)
+    const withoutDistinct = await packCmd(caseId, "remove_item", { versionId: instructions.versionId }, draft.id, restored.recordVersion)
+    const duplicated = await packCmd(caseId, "add_item", { versionId: sameDocument.versionId, role: "INSTRUCTIONS" }, draft.id, withoutDistinct.recordVersion)
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, duplicated.recordVersion)).toMatchObject({ status: "denied", reason: "document" })
+    const withoutDuplicate = await packCmd(caseId, "remove_item", { versionId: sameDocument.versionId }, draft.id, duplicated.recordVersion)
+    const distinctAgain = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, withoutDuplicate.recordVersion)
+    expect(distinctAgain.status).toBe("success")
     const loose = await acceptedFile(caseId, "loose.pdf")
-    const untagged = await packCmd(caseId, "add_item", { versionId: loose.versionId }, draft.id, restored.recordVersion)
+    const untagged = await packCmd(caseId, "add_item", { versionId: loose.versionId }, draft.id, distinctAgain.recordVersion)
     expect(untagged.status).toBe("success")
     expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, untagged.recordVersion)).toMatchObject({ status: "denied", reason: "role" })
     const withoutLoose = await packCmd(caseId, "remove_item", { versionId: loose.versionId }, draft.id, untagged.recordVersion)
@@ -534,6 +545,23 @@ describe("guided fulfilment handover", () => {
     const silent = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
     expect(silent, JSON.stringify(silent)).toMatchObject({ status: "success", packEmail: "skipped" })
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
+    const recoveredMail = renderPackReady({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: order.amount_minor,
+      currency: "GBP",
+      origin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const withheld = await packCmd(caseId, "send_pack_email", { ...mailPayload(recoveredMail!, "documents"), replyTo: "" }, draft.id, silent.recordVersion)
+    expect(withheld).toMatchObject({ status: "denied", reason: "reply_to" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
+    const recovered = await packCmd(caseId, "send_pack_email", mailPayload(recoveredMail!, "documents"), draft.id, silent.recordVersion)
+    expect(recovered, JSON.stringify(recovered)).toMatchObject({ status: "success", packEmail: "success", published: true })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+    expect(await packCmd(caseId, "send_pack_email", mailPayload(recoveredMail!, "documents"), draft.id, silent.recordVersion)).toMatchObject({ status: "success", packEmail: "already_queued" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
     const withdrawn = await packCmd(caseId, "unpublish", { confirmed: true, reason: packNote }, draft.id, silent.recordVersion)
     expect(withdrawn.status, JSON.stringify(withdrawn)).toBe("success")
 
@@ -544,6 +572,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: order.amount_minor,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     expect(rendered).not.toBeNull()
     const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true, ...mailPayload(rendered!, "documents") }, draft.id, withdrawn.recordVersion)
@@ -602,14 +631,36 @@ describe("guided fulfilment handover", () => {
       alexSession, key(), reference, "request_correction", { note: "Please correct the opening date in the statement." },
     ])
     expect(correction).toMatchObject({ status: "success", kind: "CORRECTION" })
-    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN' and owner = 'ADMIN'", [caseId])).toBeGreaterThan(0)
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN' and owner = 'ADMIN' and title = 'Review a correction to the Guided pack'", [caseId])).toBe(1)
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "request_correction", { note: "Please also correct the town name in the statement." },
+    ])).toMatchObject({ status: "conflict" })
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and title = 'Review a correction to the Guided pack'", [caseId])).toBe(1)
+    await db.query(
+      `update public.case_tasks set status = 'DONE', resolved_at = now(), resolution = 'Corrected the opening date in the statement.'
+       where case_id = $1 and status = 'OPEN' and title = 'Review a correction to the Guided pack'`,
+      [caseId],
+    )
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "request_correction", { note: "Please also correct the town name in the statement." },
+    ])).toMatchObject({ status: "success", kind: "CORRECTION" })
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_submission", {
+        note: "I sent this pack through the Google appeals tool.",
+        submittedOn: "2026-10-20",
+        googleReference: "https://google.example/appeal",
+      },
+    ])).toMatchObject({ status: "invalid" })
     const reported = await rpc<Json>("customer_portal_guided_handover_v1", [
       alexSession, key(), reference, "report_submission", {
         note: "I sent this pack through the Google appeals tool.",
         submittedOn: "2026-10-20",
-        googleReference: "GOOGLE-FULFIL-1",
       },
     ])
+    expect((await rows<{ google_reference: string | null }>(
+      "select google_reference from public.guided_customer_reports where pack_id = $1 and kind = 'GOOGLE_SUBMISSION'",
+      [draft.id],
+    ))[0].google_reference).toBeNull()
     expect(reported).toMatchObject({ status: "success", kind: "GOOGLE_SUBMISSION" })
     expect(await rpc<Json>("customer_portal_guided_handover_v1", [
       alexSession, key(), reference, "report_submission", {
@@ -636,6 +687,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: order.amount_minor,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     const nextPublished = await packCmd(caseId, "publish", {
       note: packNote, confirmed: true, ...mailPayload(nextRendered!, "documents"),
@@ -732,6 +784,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: 5900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     const version = (await rows<{ record_version: number }>("select record_version from public.case_prepared_packs where id = $1", [draft.id]))[0].record_version
     const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true, ...mailPayload(rendered!, "documents") }, draft.id, version)

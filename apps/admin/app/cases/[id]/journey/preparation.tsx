@@ -1,5 +1,5 @@
 import type { JourneyPreparationPanel } from "@/lib/case-journey/preparation"
-import { PreparedPackPanel } from "../evidence/forms"
+import { PreparedPackPanel, RecoverPackEmailForm } from "../evidence/forms"
 
 /**
  * Step 8 reuses the existing pack commands.
@@ -18,6 +18,7 @@ export function PreparationPanel({ caseId, panel }: { caseId: string; panel: Jou
     </ul>
     <p><strong>Who must act.</strong> {panel.who}</p>
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
+    {panel.packEmailRecovery && <RecoverPackEmailForm caseId={caseId} pack={panel.packEmailRecovery} />}
     {panel.commands && <PreparedPackPanel caseId={caseId} packs={panel.commands} />}
     <p>Saving a draft, approving it, or publishing it does not submit anything to Google and does not make the files available without the existing case-access check.</p>
   </div>

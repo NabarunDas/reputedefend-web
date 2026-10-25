@@ -233,7 +233,7 @@ export const journeyCatalogue: readonly JourneyStepDefinition[] = [
     dataDependencies: ["cases.status", "cases.outcome", "cases.closure_summary", "open tasks", "submission results", "reopen events"],
     completionEvidence: "The case status, outcome, customer summary and finished stage agree, and the loaded case record matches that projection. CLOSED holds a non-withdrawal. CANCELLED holds a withdrawal. A status that contradicts the outcome, a stage other than FINISHED, a missing summary, or a loaded record that disagrees is not completion. Guard is optional and is not part of this evidence. A reopened case is open again. A recorded outcome on an open case is not closure.",
     applicability: "UNIVERSAL",
-    unsupported: "This step uses the existing close and reopen commands. It does not send a closure email, submit anything to Google, collect a payment, enrol Guard, or apply a Guard discount. Guard can stay unset and cannot block closure.",
+    unsupported: "A Guided preparation closes from the published pack without a Google decision. A completion summary is queued only when outgoing mail is on, and queued is not delivered. Managed closure still uses the recorded outcome and the success-fee rules. This step does not enrol Guard, apply a discount, or collect a payment. Guard can stay unset and cannot block closure.",
     laterWork: "ADMIN-JOURNEY-11",
     unlocksNext: "Closure is the last step. Optional Guard can be offered later and must not hold the case open.",
   },

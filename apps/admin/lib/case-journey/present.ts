@@ -179,6 +179,7 @@ const stepForAction: Record<CaseNextActionId, JourneyStepId | null> = {
   APPROVE_PREPARED_PACK: "PREPARATION",
   PUBLISH_PREPARED_PACK: "PREPARATION",
   ADVANCE_TO_READY_TO_SUBMIT: "PREPARATION",
+  CLOSE_GUIDED_PREPARATION: "CLOSURE",
   RECORD_EXTERNAL_SUBMISSION: "SUBMISSION",
   MOVE_TO_WAITING_GOOGLE: "SUBMISSION",
   WAIT_FOR_GOOGLE: "SUBMISSION",
@@ -1224,7 +1225,28 @@ function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptio
   }
 }
 
+function guidedPackDelivered(facts: CaseFlowFacts, options: JourneyPresentationOptions): boolean {
+  if (facts.serviceTrack !== "GUIDED") return false
+  const readiness = preparationReadiness(facts.packs.packs, {
+    packRecordsDisagree: !!options.packRecordsDisagree,
+    recordsConflict: recordsConflict(options),
+  })
+  return readiness.latestPublished && !readiness.stale && !readiness.otherPublished && !options.packRecordsDisagree
+}
+
 function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOptions): Reading {
+  if (facts.submissions.length === 0 && guidedPackDelivered(facts, options) && !options.submissionRecordsDisagree) {
+    return {
+      proof: "not_applicable",
+      known: [
+        "No submission is recorded.",
+        "The customer submits this pack to Google. ProfileRelaunch does not submit Guided work.",
+        "A customer report is optional. It is not a Google decision, and it does not come from a download or an opened email.",
+      ],
+      missing: [],
+      who: "Nothing is waiting on Google. The customer can submit the pack when they are ready.",
+    }
+  }
   const unresolved = facts.submissions.filter(item => !item.result)
   const unrecognised = facts.submissions.filter(item => item.result !== null && !authoritativeSubmissionResult(item.result))
   const partyConflict = facts.submissions.some(item => !submissionPartyMatches(facts.serviceTrack, item.actor))
@@ -1274,6 +1296,18 @@ function readSubmission(facts: CaseFlowFacts, options: JourneyPresentationOption
 }
 
 function readOutcome(facts: CaseFlowFacts, now: string, events: readonly JourneyWorkEvent[], options: JourneyPresentationOptions): Reading {
+  if (!facts.outcome && guidedPackDelivered(facts, options) && !options.outcomeRecordsDisagree) {
+    return {
+      proof: "not_applicable",
+      known: [
+        "No Google outcome is recorded.",
+        "Guided preparation does not wait for Google's decision. A later report can be recorded without a second charge.",
+        "The upfront fee stays the fee already settled. This step does not create another one.",
+      ],
+      missing: [],
+      who: "Nothing further is billed. Closure does not need a Google decision.",
+    }
+  }
   const judged = judgeOutcomeBilling(facts, now, options.outcomeEvents ?? events)
   if (!options.outcomeRecordsDisagree) return judged
   const known = judged.known.some(line => /do not agree|is incomplete/.test(line))
@@ -1307,6 +1341,7 @@ function readClosure(facts: CaseFlowFacts, options: JourneyPresentationOptions):
     status: facts.caseStatus,
     outcome: facts.outcome,
     summary: facts.outcomeSummary,
+    serviceTrack: facts.serviceTrack,
   })
   if (coherent) {
     const known = [

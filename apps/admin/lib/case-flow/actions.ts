@@ -173,9 +173,9 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     owner: "ADMIN",
     state: "ACTION_REQUIRED",
     surface: "CASE_EVIDENCE",
-    label: "Approve the evidence pack",
+    label: "Approve the completed pack",
     description:
-      "The draft pack holds the evidence it needs and is waiting for approval. Approving does not make it visible to the customer; publishing does that.",
+      "The draft is ready for approval. Approval does not send it to the customer and does not submit anything to Google.",
   },
   FIX_PREPARED_PACK: {
     band: "ADMIN_ACTION",
@@ -525,8 +525,8 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     owner: "ADMIN",
     state: "READY",
     surface: "CASE_EVIDENCE",
-    label: "Start the evidence pack",
-    description: "Prerequisites are met and there is no pack for this case yet.",
+    label: "Prepare the submission materials",
+    description: "There is no pack yet. Add the completed statement, the supporting evidence and the customer's own instructions.",
   },
   ADD_PREPARED_PACK_ITEMS: {
     band: "PROGRESSION",
@@ -541,9 +541,9 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     owner: "ADMIN",
     state: "READY",
     surface: "CASE_EVIDENCE",
-    label: "Publish the pack to the customer",
+    label: "Send the completed pack",
     description:
-      "The pack is approved but the customer cannot see it. Approval and publication are separate, and the case cannot be marked ready to submit until a pack is published.",
+      "The pack is approved. Sending it makes the completed pack available in the Customer Portal. It does not submit anything to Google.",
   },
   ADVANCE_TO_PREPARATION: {
     band: "PROGRESSION",
@@ -552,6 +552,15 @@ export const actionCatalogue: Record<CaseNextActionId, ActionDefinition> = {
     surface: "CASE",
     label: "Move the case to preparation",
     description: "Every prerequisite is satisfied and work on the submission can begin.",
+  },
+  CLOSE_GUIDED_PREPARATION: {
+    band: "PROGRESSION",
+    owner: "ADMIN",
+    state: "READY",
+    surface: "CASE",
+    label: "Close the Guided preparation",
+    description:
+      "The completed pack is available to the customer. Google's later decision is not required. Relaunch Guard stays optional and is not started from here.",
   },
   ADVANCE_TO_READY_TO_SUBMIT: {
     band: "PROGRESSION",

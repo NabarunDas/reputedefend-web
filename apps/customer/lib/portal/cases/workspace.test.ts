@@ -192,6 +192,10 @@ describe("what happens next", () => {
       title: "Your case is complete",
       body: "No further action is currently needed for this case.",
     })
+    expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", serviceTrack: "GUIDED" })).toMatchObject({
+      title: "Your Guided preparation is complete",
+    })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED", serviceTrack: "GUIDED" }).body).toMatch(/does not submit it/)
     expect(presentNextStep({ ...base, status: "CANCELLED", workStage: "FINISHED" })).toMatchObject({
       title: "This case was cancelled",
       body: "No further action is currently available for this case.",

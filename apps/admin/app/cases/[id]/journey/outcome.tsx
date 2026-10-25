@@ -3,6 +3,7 @@ import { ukDate } from "@/lib/admin/activity"
 import type { CaseDetail } from "@/lib/cases/model"
 import { RecordOutcomeForm } from "../../forms"
 import { ApproveSuccessFeeForm, IssuePaymentActionForm, PauseSuccessFeeForm, RecordSuccessBaselineForm, RecordSuccessObservationForm, WithdrawSuccessCheckForm } from "../../../money/forms"
+import { ManagedNoticeForm } from "./managed-notice-form"
 
 /**
  * Step 10 records an outcome without closing the case, then reuses the existing
@@ -53,6 +54,10 @@ export function OutcomePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
       <summary>Issue success-fee invoice</summary>
       <IssuePaymentActionForm serviceOrderId={panel.order.orderId} version={panel.order.version} operation="issue_invoice_fallback" label="Issue success-fee invoice" obligationId={panel.order.obligationId} />
     </details>}
-    <p>Recording an outcome does not close the case, approve a success fee, create an invoice, or take a payment. Approving a success fee does not take payment. An invoice link, a saved card and a checkout return are not settlement. This step does not send email or submit anything to Google.</p>
+    {panel.invoiceRecovery && <details>
+      <summary>Send the invoice update</summary>
+      <ManagedNoticeForm c={caseDetail} kind="invoice" />
+    </details>}
+    <p>Recording an outcome does not close the case, approve a success fee, create an invoice, or take a payment. Approving a success fee does not take payment. An invoice link, a saved card and a checkout return are not settlement. Issuing the invoice can queue one email when outgoing mail is on. The customer opens it from the signed-in portal. Queued is not delivered. This step does not submit anything to Google and does not charge a card.</p>
   </div>
 }

@@ -17,6 +17,7 @@ import { outcomes, type Submission } from "../cases/model"
 import { formatGbp, type ServiceOrder } from "../commerce/model"
 import { obligationLabel, type MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
+import { customerMailStatus } from "./customer-mail"
 import { acceptedServiceProjection, activationOrderLink } from "./activation"
 import { readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { submissionPartyMatches, submissionRecordsDisagree } from "./submission"
@@ -91,6 +92,8 @@ export type JourneyOutcomePanel = {
   collectionPause: "OPEN" | "UPHELD" | "NOT_UPHELD" | null
   /** Present when a success-fee obligation can be paused or decided. */
   pauseOrder: { orderId: string; obligationId: string } | null
+  /** An issued success-fee invoice has no customer email yet. */
+  invoiceRecovery: boolean
   order: {
     orderId: string
     version: number
@@ -484,6 +487,11 @@ export function presentJourneyOutcome(input: {
   }
   if (paired?.invoiceStatus === "DRAFT" && position !== "disagree") notices.push("A draft invoice is not an issued invoice and it is not payment.")
   if (position === "invoiced") notices.push("An issued invoice is not payment. Returning from the invoice page does not settle it.")
+  const invoiceMail = input.facts.serviceTrack === "MANAGED" && (paired?.invoiceStatus === "ISSUED" || paired?.invoiceStatus === "PAID")
+    ? customerMailStatus(input.facts.communications, "MANAGED_INVOICE", "invoice email")
+    : null
+  if (invoiceMail) notices.push(invoiceMail)
+  const invoiceRecovery = invoiceMail?.startsWith("No invoice email") === true
   if (position === "settled") notices.push("Settlement is the provider receipt. An approval, an invoice link, a saved card and a checkout return are not that receipt.")
   const canPauseCollection = input.facts.serviceTrack === "MANAGED"
     && !!paired?.obligationId
@@ -557,6 +565,7 @@ export function presentJourneyOutcome(input: {
       pauseOrder: canPauseCollection && paired?.obligationId
         ? { orderId: paired.orderId, obligationId: paired.obligationId }
         : null,
+      invoiceRecovery,
       order: commandOrder ?? (recordObservation && paired
         ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
         : null),

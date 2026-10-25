@@ -42,6 +42,7 @@ import { journeyStepIds } from "./catalogue"
 import type { JourneyWorkEvent } from "./decisions"
 import { presentJourneyOutcome } from "./outcome"
 import { presentCaseJourney } from "./present"
+import { renderManagedNotice, type ManagedNoticeVariant } from "../../../../lib/email/managed-journey"
 
 const db = new PGlite()
 const admin = "11111111-1111-4111-8111-111111111111"
@@ -248,6 +249,43 @@ async function rpc<T = Json>(name: string, args: unknown[]): Promise<T> {
   const value = (await db.query<{ value: T }>(`select public.${name}(${placeholders}) as value`, args)).rows[0].value
   if (value === undefined || value === null) throw new Error(`${name} returned null`)
   return value
+}
+
+const mailOrigin = "https://customer.example.test"
+const mailFrom = "ops@example.com"
+const mailReply = "cases@profilerelaunch.com"
+
+async function drainManagedMail(caseId: string, kind: string) {
+  const queued: string[] = []
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const ctx = await rpc<Json>("admin_managed_notice_context_v1", [token, kind, caseId])
+    if (ctx.status === "already_queued" || ctx.status === "not_applicable") return { status: ctx.status, queued }
+    expect(ctx.status, JSON.stringify(ctx)).toBe("applicable")
+    const rendered = renderManagedNotice({
+      variant: ctx.variant as ManagedNoticeVariant,
+      serviceCode: String(ctx.serviceCode),
+      serviceName: String(ctx.serviceName),
+      caseRef: String(ctx.caseRef),
+      amountMinor: ctx.amountMinor == null ? null : Number(ctx.amountMinor),
+      currency: "GBP",
+      origin: mailOrigin,
+      replyTo: mailReply,
+    })
+    expect(rendered, JSON.stringify(ctx)).not.toBeNull()
+    const request = key()
+    const payload = {
+      subject: rendered!.subject,
+      bodyText: rendered!.text,
+      bodyHtml: rendered!.html,
+      fromAddress: mailFrom,
+      replyTo: mailReply,
+      customerOrigin: mailOrigin,
+    }
+    expectOk(await rpc("admin_queue_managed_notice_v1", [token, request, caseId, kind, payload]), `${kind} email`)
+    expect(await rpc("admin_queue_managed_notice_v1", [token, request, caseId, kind, payload])).toMatchObject({ status: "success", replay: true })
+    queued.push(String(ctx.variant))
+  }
+  throw new Error(`too many ${kind} emails for ${caseId}`)
 }
 
 function expectOk(value: { status?: string }, label: string) {
@@ -793,6 +831,8 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expect(openAttempt?.id).toBeTruthy()
   expect(openAttempt?.actor).toBe("ADMIN")
   expectOk(await caseCommand(caseId, "resolve_submission", { submissionId: openAttempt?.id, result: "DECIDED" }), "later result")
+  expect((await drainManagedMail(caseId, "submission")).queued).toEqual(["submitted", "follow_up"])
+  expect((await drainManagedMail(caseId, "result")).queued).toEqual(["google_reply", "google_reply"])
   await move(caseId, "OUTCOME_REVIEW")
   expect(await stageOf(caseId)).toBe("OUTCOME_REVIEW")
   expect(await stepState(caseId, "SUBMISSION")).toBe("COMPLETED")
@@ -1052,6 +1092,15 @@ describe("composed Managed acceptance walks", () => {
     const hosted = "https://invoice.stripe.test/in_managedwalk1"
     expectOk(await rpc("payment_record_invoice_v1", [prepared.providerOperationId, "in_managedwalk1", hosted, recordedOrder.amount_minor, "gbp"]), "record invoice")
     expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+    expect(await rpc("admin_queue_managed_notice_v1", [token, key(), successCase, "invoice", {
+      subject: "Invoice",
+      bodyText: "This is not the approved wording.",
+      bodyHtml: "<p>This is not the approved wording.</p>",
+      fromAddress: mailFrom,
+      replyTo: mailReply,
+      customerOrigin: mailOrigin,
+    }])).toMatchObject({ status: "denied", reason: "snapshot" })
+    expect((await drainManagedMail(successCase, "invoice")).queued).toEqual(["invoice"])
     expect((await caseCommand(successCase, "close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
     const invoiced = await outcomePanel(successCase)
     expect(invoiced.panel.headline).toBe("Invoiced")
@@ -1113,6 +1162,23 @@ describe("composed Managed acceptance walks", () => {
     expect(beforeClose.steps.map(step => step.id)).toEqual([...journeyStepIds])
 
     expectOk(await caseCommand(successCase, "close", { outcome: "RESTORED", summary }), "close")
+    expect((await drainManagedMail(successCase, "completion")).queued).toEqual(["complete_paid"])
+    expect((await drainManagedMail(successCase, "submission")).queued).toEqual([])
+    const mailed = await db.query<{ template_key: string; lifecycle: string; delivery_status: string; recipient: string; body_text: string }>(
+      "select template_key, lifecycle, delivery_status, recipient, body_text from public.communications where case_id = $1 and template_key like 'MANAGED_%' order by created_at",
+      [successCase],
+    )
+    expect(mailed.rows.map(row => row.template_key)).toEqual([
+      "MANAGED_PROGRESS", "MANAGED_PROGRESS", "MANAGED_RESULT", "MANAGED_RESULT", "MANAGED_INVOICE", "MANAGED_COMPLETION",
+    ])
+    for (const row of mailed.rows) {
+      expect(row.lifecycle).toBe("QUEUED")
+      expect(row.delivery_status).toBe("NONE")
+      expect(row.recipient).toBe("alex@example.com")
+      expect(row.body_text).not.toMatch(/invoice\.stripe|pi_|cus_|SUCCESS_FEE|[0-9a-f]{8}-[0-9a-f]{4}-/)
+    }
+    expect(mailed.rows[0].body_text).toContain("does not mean Google has made a decision")
+    expect(mailed.rows.at(-1)?.body_text).toContain("Relaunch Guard is optional")
     const closed = (await db.query<{ status: string; work_stage: string; outcome: string; closure_summary: string }>(
       "select status, work_stage, outcome, closure_summary from public.cases where id = $1",
       [successCase],
@@ -1192,6 +1258,12 @@ describe("composed Managed acceptance walks", () => {
     expect(beforeClose.steps.find(step => step.id === "CLOSURE")?.state).not.toBe("COMPLETED")
 
     expectOk(await caseCommand(unsuccessfulCase, "close", { outcome: "NOT_RESTORED", summary }), "close")
+    expect((await drainManagedMail(unsuccessfulCase, "completion")).queued).toEqual(["complete_no_fee"])
+    expect((await drainManagedMail(unsuccessfulCase, "invoice")).queued).toEqual([])
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.communications where case_id = $1 and template_key = 'MANAGED_INVOICE'",
+      [unsuccessfulCase],
+    )).rows[0].n).toBe(0)
     expect(await approvalCount(after.id)).toBe(0)
     expect(await chargeCounts(unsuccessfulCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
     const closed = (await db.query<{ status: string; work_stage: string; outcome: string; closure_summary: string }>(
@@ -1298,6 +1370,35 @@ describe("composed Managed acceptance walks", () => {
     expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 1, receipts: 0 })
     expect((await caseCommand(reviewCase, "close", { outcome: "REMOVED", summary })).status).toBe("prerequisite")
     expect(await approvalCount(order.id)).toBe(1)
+    const hostedReview = "https://invoice.stripe.test/in_managedreview1"
+    expectOk(await rpc("payment_record_invoice_v1", [prepared.providerOperationId, "in_managedreview1", hostedReview, 14900, "gbp"]), "record review invoice")
+    expect((await drainManagedMail(reviewCase, "invoice")).queued).toEqual(["invoice"])
+    const reviewOrder = await orderRow(reviewCase)
+    expectOk(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
+      serviceOrderId: reviewOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
+    }, reviewOrder.record_version]), "review invoice link")
+    expectOk(await rpc("payment_apply_provider_event_v1", ["evt_managed_review_paid", "invoice.paid", "in_managedreview1", {
+      amountPaidMinor: 14900,
+      amountMinor: 14900,
+      currency: "gbp",
+      stripeCustomerId: "cus_managedwalk",
+      customerId: customer,
+      serviceOrderId: reviewOrder.id,
+      obligationId: approved.obligationId,
+      providerOperationId: prepared.providerOperationId,
+      hostedInvoiceUrl: hostedReview,
+    }]), "review settlement")
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 1, receipts: 1 })
+    expectOk(await caseCommand(reviewCase, "close", { outcome: "REMOVED", summary }), "review close")
+    expect((await drainManagedMail(reviewCase, "completion")).queued).toEqual(["complete_paid"])
+    const reviewMail = await db.query<{ body_text: string }>(
+      "select body_text from public.communications where case_id = $1 and template_key = 'MANAGED_COMPLETION'",
+      [reviewCase],
+    )
+    expect(reviewMail.rows).toHaveLength(1)
+    expect(reviewMail.rows[0].body_text).toContain("exact review")
+    expect(reviewMail.rows[0].body_text).toContain("£149.00 GBP")
+    expect(reviewMail.rows[0].body_text).not.toContain("profile restriction")
   }, 120000)
 
   it("refuses a first Managed submission from FURTHER_REVIEW when none has been recorded", async () => {
@@ -1320,6 +1421,11 @@ describe("composed Managed acceptance walks", () => {
     expectOk(await caseCommand(caseId, "close", {
       outcome: "WITHDRAWN", summary: "The customer withdrew before any submission was recorded.",
     }), "withdraw")
+    expect((await drainManagedMail(caseId, "completion")).queued).toEqual(["withdrawn"])
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.communications where case_id = $1 and template_key = 'MANAGED_COMPLETION'",
+      [caseId],
+    )).rows[0].n).toBe(1)
     expect(await stageOf(caseId)).toBe("FINISHED")
     expectOk(await caseCommand(caseId, "reopen", {
       title: "Review the withdrawn case again",

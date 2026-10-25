@@ -15,6 +15,7 @@ import type { MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
 import { presentJourneyOutcome } from "./outcome"
 import { assessProposedClose, coherentTerminalClosure, readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
+import { customerMailStatus } from "./customer-mail"
 import { submissionRecordsDisagree } from "./submission"
 
 export type JourneyClosureHistory = {
@@ -68,6 +69,8 @@ export type JourneyClosurePanel = {
   fulfilmentClose: boolean
   /** A closed Guided case can queue the completion email that was never sent. */
   completionRecovery: boolean
+  /** A closed Managed case can queue the completion email that was never sent. */
+  managedCompletionRecovery: boolean
   /** Exact stored values. Present only when the close form is shown. */
   locked: { outcome: string; summary: string } | null
   commands: JourneyClosureCommands | null
@@ -77,19 +80,7 @@ export type JourneyClosurePanel = {
 const GUARD_HREF = "/guard" as const
 
 export function guidedCompletionNotice(communications: CaseFlowFacts["communications"]): string {
-  const row = communications
-    .filter(item => item.templateKey === "GUIDED_COMPLETION" && item.lifecycle !== "CANCELLED")
-    .sort((left, right) => left.draftedAt.localeCompare(right.draftedAt))
-    .at(-1)
-  if (!row) return "No completion email has been queued. The notification is pending, and pending is not delivered."
-  if (row.deliveryStatus === "DELIVERED") return "The provider reported delivery of the completion email. That is not a download."
-  if (row.deliveryStatus === "PROVIDER_ACCEPTED") return "The email provider accepted the completion email. That is not proof the customer received it."
-  if (row.deliveryStatus === "ACCEPTANCE_UNKNOWN") return "Provider acceptance of the completion email is unknown, so another copy was not sent."
-  if (row.deliveryStatus === "BOUNCED" || row.deliveryStatus === "FAILED" || row.deliveryStatus === "SUPPRESSED") {
-    return "The completion email was not delivered. Resume the same communication only when that is safe."
-  }
-  if (row.lifecycle === "QUEUED") return "The completion email is queued. Queued is not delivered."
-  return "The completion email status is not confirmed, so another copy was not sent."
+  return customerMailStatus(communications, "GUIDED_COMPLETION", "completion email")
 }
 
 function outcomeLabel(value: string | null | undefined): string {
@@ -301,15 +292,30 @@ export function presentJourneyClosure(input: {
     && completionStatus.startsWith("No completion email")
     && facts.outcomeSummary.trim().length >= 10
     && facts.outcomeSummary.length <= 2000
+  const managedClose = close && facts.serviceTrack === "MANAGED" && !fulfilment
+  const managedCompletionRecovery = !!input.mailRecovery
+    && verified
+    && (facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED")
+    && facts.serviceTrack === "MANAGED"
+    && customerMailStatus(facts.communications, "MANAGED_COMPLETION", "completion email").startsWith("No completion email")
   const notices = [
     "Optional Guard is not required to close this case.",
-    completionStatus,
+  ]
+  if (facts.serviceTrack === "GUIDED") notices.push(completionStatus)
+  if (facts.serviceTrack === "MANAGED" && (databaseClosed || managedClose)) {
+    notices.push(customerMailStatus(facts.communications, "MANAGED_COMPLETION", "completion email"))
+  }
+  notices.push(
     fulfilment
       ? "Closing can queue one completion summary. Queued is not delivered. If outgoing mail is off, the notification stays pending. It does not submit anything to Google, collect another payment, or enrol Relaunch Guard."
-      : completionRecovery
-        ? "The completion update has not been queued. Sending it does not close the case again, submit anything to Google, or collect a payment. Queued is not delivered."
-        : "Closing does not send email, submit anything to Google, or collect a payment.",
-  ]
+      : managedClose
+        ? "Closing can queue one completion summary. Queued is not delivered. If outgoing mail is off, the notification stays pending. It does not submit anything to Google, collect a payment, or enrol Relaunch Guard."
+        : completionRecovery
+          ? "The completion update has not been queued. Sending it does not close the case again, submit anything to Google, or collect a payment. Queued is not delivered."
+          : managedCompletionRecovery
+            ? "The completion update has not been queued. Sending it does not close the case again, submit anything to Google, or collect a payment. Queued is not delivered."
+            : "Closing does not send email, submit anything to Google, or collect a payment.",
+  )
   if (facts.reopened && !databaseClosed) notices.push("This case was reopened. It is not complete. Earlier outcomes stay in the history.")
   if (!summaryAgrees) notices.push("The stored customer summary and the case record do not agree. Neither value is changed from here.")
   if (!identityAgrees && summaryAgrees) notices.push("The case record and the case projection do not agree, so this step does not confirm closure.")
@@ -399,6 +405,7 @@ export function presentJourneyClosure(input: {
       locked,
       fulfilmentClose: fulfilment,
       completionRecovery,
+      managedCompletionRecovery,
       commands: close || reopen ? { close, reopen } : null,
       version: detail.version,
     },

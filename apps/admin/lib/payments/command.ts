@@ -9,6 +9,7 @@ import { paymentProvider, paymentProviderWithLane } from "../../../../lib/paymen
 import { declaredLivemodeArgument, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
+import { queueManagedNotice } from "../cases/managed-notice"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
 import { isPaymentOperation, paymentArgs } from "./validation"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
@@ -171,10 +172,16 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
     })
     if (result.status !== "success") return reply(result.message || commandMessage(result.status), mapStatus(result.status))
     if (operation === "issue_invoice_fallback") {
+      const notice = await queueManagedNotice({
+        token,
+        requestId: key,
+        orderId: typeof payload.serviceOrderId === "string" ? payload.serviceOrderId : null,
+        kind: "invoice",
+      })
       return reply(
-        result.replay
+        `${result.replay
           ? "This invoice was already issued. The customer opens it from the signed-in portal. No bearer secret was emailed and no card was charged."
-          : "The invoice is issued and is due within 14 days. The customer opens it from the signed-in portal. In a development workspace this is test mode. This did not email a bearer secret or charge a card.",
+          : "The invoice is issued and is due within 14 days. The customer opens it from the signed-in portal. In a development workspace this is test mode. This did not email a bearer secret or charge a card."}${notice}`,
         200,
         { id: result.id, obligationId: result.obligationId },
       )

@@ -10,6 +10,8 @@
 -- Approval pins the pair. A new hosted invoice is refused without that pair,
 -- and while a success-fee dispute is open or upheld.
 -- A saved card is not required and nothing here charges one.
+-- Progress, invoice and completion emails reuse the existing outbound queue.
+-- Recording a submission does not submit anything to Google. Queued is not delivered.
 -- Do not apply this file to DEV or Production from the change that adds it.
 
 BEGIN;
@@ -1071,5 +1073,553 @@ $$;
 
 REVOKE ALL ON FUNCTION public.admin_success_fee_dispute_v1(text, uuid, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_success_fee_dispute_v1(text, uuid, jsonb) TO service_role;
+
+ALTER TABLE public.communications DROP CONSTRAINT communications_template_check;
+ALTER TABLE public.communications ADD CONSTRAINT communications_template_check CHECK (
+  (lifecycle IS NULL AND template_key IS NULL AND template_version IS NULL)
+  OR (lifecycle IS NOT NULL AND template_key IN (
+    'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+    'GUIDED_PAYMENT_REQUEST', 'PAYMENT_CONFIRMATION', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION',
+    'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
+  ) AND template_version >= 1)
+);
+ALTER TABLE admin_private.communication_templates DROP CONSTRAINT communication_templates_key_check;
+ALTER TABLE admin_private.communication_templates ADD CONSTRAINT communication_templates_key_check
+  CHECK (template_key IN (
+    'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+    'GUIDED_PAYMENT_REQUEST', 'PAYMENT_CONFIRMATION', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION',
+    'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
+  ));
+
+INSERT INTO admin_private.communication_templates (
+  template_key, version, name, subject_template, body_text_template, status, reason
+) VALUES
+  ('MANAGED_PROGRESS', 1, 'Managed progress', 'Managed case update', 'The live progress email is composed by the server.', 'DRAFT', 'Catalogue row for the server-composed Managed progress email.'),
+  ('MANAGED_RESULT', 1, 'Managed result', 'Managed case result', 'The live result email is composed by the server.', 'DRAFT', 'Catalogue row for the server-composed Managed result email.'),
+  ('MANAGED_INVOICE', 1, 'Managed invoice', 'Managed success-fee invoice', 'The live invoice email is composed by the server.', 'DRAFT', 'Catalogue row for the server-composed Managed invoice email.'),
+  ('MANAGED_COMPLETION', 1, 'Managed completion', 'Managed case complete', 'The live completion email is composed by the server.', 'DRAFT', 'Catalogue row for the server-composed Managed completion email.');
+UPDATE admin_private.communication_templates
+SET status = 'APPROVED', approval_source = 'MIGRATED_EXISTING',
+    reason = 'Server-composed snapshot. The approved row documents the key and is not the live email.',
+    record_version = record_version + 1
+WHERE template_key IN ('MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION')
+  AND version = 1 AND status = 'DRAFT';
+
+CREATE OR REPLACE FUNCTION admin_private.refuse_closed_case_customer_send_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  case_status text;
+  case_track text;
+  case_outcome text;
+BEGIN
+  IF NEW.lifecycle IS DISTINCT FROM 'QUEUED' THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND OLD.lifecycle = 'QUEUED' THEN RETURN NEW; END IF;
+  SELECT status, service_track, outcome INTO case_status, case_track, case_outcome
+  FROM public.cases WHERE id = NEW.case_id;
+  IF case_status = 'CANCELLED' THEN
+    IF case_track = 'MANAGED' AND case_outcome = 'WITHDRAWN' AND NEW.template_key = 'MANAGED_COMPLETION' THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'closed_case_send_refused' USING ERRCODE = 'P0001';
+  END IF;
+  IF case_status = 'CLOSED' THEN
+    IF case_track = 'GUIDED'
+      AND case_outcome IS NULL
+      AND NEW.template_key IN ('GUIDED_PACK_READY', 'GUIDED_COMPLETION')
+    THEN
+      RETURN NEW;
+    END IF;
+    IF case_track = 'MANAGED' AND NEW.template_key IN ('MANAGED_INVOICE', 'MANAGED_COMPLETION') THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'closed_case_send_refused' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TABLE public.managed_customer_notices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id uuid UNIQUE,
+  case_id uuid NOT NULL REFERENCES public.cases(id) ON DELETE RESTRICT,
+  kind text NOT NULL CHECK (kind IN ('SUBMISSION', 'RESULT', 'INVOICE', 'COMPLETION')),
+  submission_id uuid REFERENCES public.case_submissions(id) ON DELETE RESTRICT,
+  invoice_id uuid REFERENCES public.payment_invoices(id) ON DELETE RESTRICT,
+  communication_id uuid NOT NULL UNIQUE REFERENCES public.communications(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (kind = 'SUBMISSION' AND submission_id IS NOT NULL AND invoice_id IS NULL)
+    OR (kind = 'RESULT' AND submission_id IS NOT NULL AND invoice_id IS NULL)
+    OR (kind = 'INVOICE' AND invoice_id IS NOT NULL AND submission_id IS NULL)
+    OR (kind = 'COMPLETION' AND submission_id IS NULL AND invoice_id IS NULL)
+  )
+);
+CREATE UNIQUE INDEX managed_customer_notices_submission_idx
+  ON public.managed_customer_notices (submission_id) WHERE kind = 'SUBMISSION';
+CREATE UNIQUE INDEX managed_customer_notices_result_idx
+  ON public.managed_customer_notices (submission_id) WHERE kind = 'RESULT';
+CREATE UNIQUE INDEX managed_customer_notices_invoice_idx
+  ON public.managed_customer_notices (invoice_id) WHERE kind = 'INVOICE';
+CREATE UNIQUE INDEX managed_customer_notices_completion_idx
+  ON public.managed_customer_notices (case_id) WHERE kind = 'COMPLETION';
+ALTER TABLE public.managed_customer_notices ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.managed_customer_notices FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.managed_notice_target_v1(p_case uuid, p_kind text)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SET search_path = ''
+AS $$
+DECLARE
+  c public.cases;
+  cust public.customers;
+  ord public.service_orders;
+  sub public.case_submissions;
+  result_row public.case_submission_results;
+  inv public.payment_invoices;
+  chosen_service text;
+  chosen_label text;
+  notice_kind text;
+  variant text;
+  amount integer;
+  receipt_amount integer;
+BEGIN
+  IF p_kind NOT IN ('submission', 'result', 'invoice', 'completion') THEN RETURN NULL; END IF;
+  SELECT * INTO c FROM public.cases WHERE id = p_case;
+  IF c.id IS NULL OR c.service_track IS DISTINCT FROM 'MANAGED' THEN RETURN NULL; END IF;
+  IF c.case_type = 'PROFILE_RECOVERY' THEN
+    chosen_service := 'MANAGED_RELAUNCH';
+    chosen_label := 'Managed Profile Recovery';
+  ELSIF c.case_type = 'REVIEW_PROTECTION' THEN
+    chosen_service := 'MANAGED_REVIEW';
+    chosen_label := 'Managed Review Protection';
+  ELSE
+    RETURN NULL;
+  END IF;
+  IF c.public_ref !~ '^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN RETURN NULL; END IF;
+  SELECT * INTO cust FROM public.customers WHERE id = c.customer_id;
+  IF cust.id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM auth.users u
+    WHERE admin_private.normalize_email_v1(u.email) = admin_private.normalize_email_v1(cust.email)
+      AND u.email_confirmed_at IS NOT NULL
+      AND u.deleted_at IS NULL
+  ) THEN
+    RETURN NULL;
+  END IF;
+  SELECT * INTO ord FROM public.service_orders candidate
+  WHERE candidate.case_id = c.id
+    AND candidate.service_code = chosen_service
+    AND candidate.payment_model = 'SUCCESS_FEE'
+  ORDER BY candidate.created_at, candidate.id
+  LIMIT 1;
+  IF NOT FOUND THEN
+    ord := NULL;
+  END IF;
+
+  IF p_kind = 'submission' THEN
+    IF ord.id IS NULL THEN RETURN NULL; END IF;
+    SELECT * INTO sub FROM public.case_submissions s
+    WHERE s.case_id = c.id AND s.track = 'MANAGED'
+      AND NOT EXISTS (
+        SELECT 1 FROM public.managed_customer_notices n
+        WHERE n.kind = 'SUBMISSION' AND n.submission_id = s.id
+      )
+    ORDER BY s.created_at, s.id
+    LIMIT 1;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    variant := CASE
+      WHEN sub.id = (
+        SELECT earliest.id FROM public.case_submissions earliest
+        WHERE earliest.case_id = c.id ORDER BY earliest.created_at, earliest.id LIMIT 1
+      ) THEN 'submitted' ELSE 'follow_up'
+    END;
+    RETURN jsonb_build_object(
+      'variant', variant, 'submissionId', sub.id, 'invoiceId', NULL,
+      'amountMinor', ord.amount_minor, 'serviceCode', chosen_service,
+      'serviceName', chosen_label, 'caseRef', c.public_ref, 'kind', 'SUBMISSION'
+    );
+  END IF;
+
+  IF p_kind = 'result' THEN
+    IF ord.id IS NULL THEN RETURN NULL; END IF;
+    SELECT r.* INTO result_row
+    FROM public.case_submission_results r
+    JOIN public.case_submissions s ON s.id = r.submission_id
+    WHERE s.case_id = c.id
+      AND NOT EXISTS (
+        SELECT 1 FROM public.managed_customer_notices n
+        WHERE n.kind = 'RESULT' AND n.submission_id = s.id
+      )
+    ORDER BY r.created_at, s.id
+    LIMIT 1;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    variant := CASE result_row.result WHEN 'DECIDED' THEN 'google_reply' WHEN 'WITHDRAWN' THEN 'unsuccessful_reply' ELSE NULL END;
+    IF variant IS NULL THEN RETURN NULL; END IF;
+    RETURN jsonb_build_object(
+      'variant', variant, 'submissionId', result_row.submission_id, 'invoiceId', NULL,
+      'amountMinor', ord.amount_minor, 'serviceCode', chosen_service,
+      'serviceName', chosen_label, 'caseRef', c.public_ref, 'kind', 'RESULT'
+    );
+  END IF;
+
+  IF p_kind = 'invoice' THEN
+    IF ord.id IS NULL THEN RETURN NULL; END IF;
+    SELECT * INTO inv FROM public.payment_invoices candidate
+    WHERE candidate.service_order_id = ord.id
+      AND candidate.status IN ('ISSUED', 'PAID')
+      AND candidate.amount_minor = ord.amount_minor
+      AND NOT EXISTS (
+        SELECT 1 FROM public.managed_customer_notices n
+        WHERE n.kind = 'INVOICE' AND n.invoice_id = candidate.id
+      )
+    ORDER BY candidate.created_at, candidate.id
+    LIMIT 1;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    RETURN jsonb_build_object(
+      'variant', 'invoice', 'submissionId', NULL, 'invoiceId', inv.id,
+      'amountMinor', inv.amount_minor, 'serviceCode', chosen_service,
+      'serviceName', chosen_label, 'caseRef', c.public_ref, 'kind', 'INVOICE'
+    );
+  END IF;
+
+  notice_kind := 'COMPLETION';
+  IF EXISTS (
+    SELECT 1 FROM public.managed_customer_notices n
+    WHERE n.case_id = c.id AND n.kind = notice_kind
+  ) THEN
+    RETURN NULL;
+  END IF;
+  IF c.status = 'CANCELLED' AND c.outcome = 'WITHDRAWN' THEN
+    IF ord.id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.payment_receipts receipt
+      JOIN public.payment_obligations obligation ON obligation.id = receipt.obligation_id
+      WHERE obligation.service_order_id = ord.id AND obligation.kind = 'SUCCESS_FEE'
+    ) THEN
+      RETURN NULL;
+    END IF;
+    RETURN jsonb_build_object(
+      'variant', 'withdrawn', 'submissionId', NULL, 'invoiceId', NULL,
+      'amountMinor', NULL, 'serviceCode', chosen_service,
+      'serviceName', chosen_label, 'caseRef', c.public_ref, 'kind', 'COMPLETION'
+    );
+  END IF;
+  IF c.status IS DISTINCT FROM 'CLOSED' OR ord.id IS NULL THEN RETURN NULL; END IF;
+  SELECT receipt.amount_minor INTO receipt_amount
+  FROM public.payment_receipts receipt
+  JOIN public.payment_obligations obligation ON obligation.id = receipt.obligation_id
+  WHERE obligation.service_order_id = ord.id AND obligation.kind = 'SUCCESS_FEE'
+  LIMIT 1;
+  IF c.outcome IN ('RESTORED', 'REMOVED') THEN
+    IF receipt_amount IS NULL OR receipt_amount IS DISTINCT FROM ord.amount_minor THEN RETURN NULL; END IF;
+    variant := 'complete_paid';
+    amount := ord.amount_minor;
+  ELSIF c.outcome IN ('NOT_RESTORED', 'PARTIALLY_RESTORED', 'NOT_REMOVED', 'RESPONSE_RECOMMENDED') THEN
+    IF receipt_amount IS NOT NULL THEN RETURN NULL; END IF;
+    variant := 'complete_no_fee';
+    amount := NULL;
+  ELSE
+    RETURN NULL;
+  END IF;
+  RETURN jsonb_build_object(
+    'variant', variant, 'submissionId', NULL, 'invoiceId', NULL,
+    'amountMinor', amount, 'serviceCode', chosen_service,
+    'serviceName', chosen_label, 'caseRef', c.public_ref, 'kind', 'COMPLETION'
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION admin_private.managed_notice_target_v1(uuid, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.managed_snapshot_reason_v1(
+  p_case uuid, p_template text, p_subject text, p_text text, p_html text, p_origin text
+) RETURNS text
+LANGUAGE plpgsql STABLE SET search_path = ''
+AS $$
+DECLARE
+  target jsonb;
+  kind text;
+  page text;
+  button text;
+  expected text;
+  amount_label text;
+  amount integer;
+  stripped text;
+  sentence text;
+BEGIN
+  kind := CASE p_template
+    WHEN 'MANAGED_PROGRESS' THEN 'submission'
+    WHEN 'MANAGED_RESULT' THEN 'result'
+    WHEN 'MANAGED_INVOICE' THEN 'invoice'
+    WHEN 'MANAGED_COMPLETION' THEN 'completion'
+    ELSE NULL
+  END;
+  IF kind IS NULL THEN RETURN 'template'; END IF;
+  target := admin_private.managed_notice_target_v1(p_case, kind);
+  IF target IS NULL THEN RETURN 'target'; END IF;
+  page := CASE WHEN p_template = 'MANAGED_INVOICE' THEN '/payments' ELSE '' END;
+  button := CASE WHEN p_template = 'MANAGED_INVOICE' THEN 'View your invoice' ELSE 'Open your case' END;
+  expected := p_origin || '/portal/cases/' || (target->>'caseRef') || page;
+  sentence := CASE target->>'variant'
+    WHEN 'submitted' THEN 'We have submitted your case to Google through Google''s own process. This email is our note of that submission. It does not mean Google has made a decision.'
+    WHEN 'follow_up' THEN 'We have sent Google the further information they asked for. This email is our note of that follow-up. It does not mean Google has made a decision.'
+    WHEN 'google_reply' THEN 'Google has sent a reply. A reply is not the same as the agreed successful outcome. We still check the original profile or review ourselves before any success fee is discussed.'
+    WHEN 'unsuccessful_reply' THEN 'The response does not meet the agreed success criteria, so no success fee is payable for this request.'
+    WHEN 'invoice' THEN 'Your success fee invoice is ready. It is payable within 14 days from the signed-in Customer Portal. We do not charge a saved card.'
+    WHEN 'complete_paid' THEN 'Your case is complete. The agreed outcome was checked and the success fee has been paid.'
+    WHEN 'complete_no_fee' THEN 'We have closed this case. The agreed successful outcome was not shown, so no success fee is payable.'
+    WHEN 'withdrawn' THEN 'This service has been withdrawn. No success fee is payable.'
+    ELSE NULL
+  END;
+  IF sentence IS NULL OR p_origin !~ '^https://[A-Za-z0-9.-]+$' THEN RETURN 'snapshot'; END IF;
+  IF p_subject IS NULL OR length(btrim(p_subject)) NOT BETWEEN 8 AND 200
+    OR position(target->>'caseRef' IN p_subject) = 0
+    OR position(target->>'serviceName' IN coalesce(p_text, '')) = 0
+    OR position(sentence IN coalesce(p_text, '')) = 0
+    OR position(button IN coalesce(p_text, '')) = 0
+    OR position(button IN coalesce(p_html, '')) = 0
+    OR position('For your security, please never share passwords, verification codes or sign-in credentials.' IN coalesce(p_text, '')) = 0
+    OR position('For your security, please never share passwords, verification codes or sign-in credentials.' IN coalesce(p_html, '')) = 0
+    OR position('reply to this email' IN lower(coalesce(p_text, ''))) = 0
+    OR position('reply to this email' IN lower(coalesce(p_html, ''))) = 0
+    OR position('#t=' IN coalesce(p_subject, '') || coalesce(p_text, '') || coalesce(p_html, '')) > 0
+    OR position('/action/' IN coalesce(p_text, '') || coalesce(p_html, '')) > 0
+    OR position('pi_' IN lower(coalesce(p_text, '') || coalesce(p_html, ''))) > 0
+    OR position('cus_' IN lower(coalesce(p_text, '') || coalesce(p_html, ''))) > 0
+    OR (coalesce(p_subject, '') || coalesce(p_text, '') || coalesce(p_html, '')) ~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    OR position('SUCCESS_FEE' IN coalesce(p_text, '') || coalesce(p_html, '')) > 0
+    OR (length(coalesce(p_text, '')) - length(replace(coalesce(p_text, ''), expected, ''))) IS DISTINCT FROM length(expected)
+    OR (length(coalesce(p_html, '')) - length(replace(coalesce(p_html, ''), expected, ''))) IS DISTINCT FROM length(expected)
+    OR position(expected || '/' IN coalesce(p_text, '')) > 0
+    OR position(expected || '/' IN coalesce(p_html, '')) > 0
+  THEN
+    RETURN 'snapshot';
+  END IF;
+  IF target->>'variant' IN ('submitted', 'follow_up', 'google_reply', 'unsuccessful_reply')
+    AND position('This note does not finish the case and it does not create a fee.' IN coalesce(p_text, '')) = 0
+  THEN
+    RETURN 'snapshot';
+  END IF;
+  IF target->>'variant' = 'complete_paid' AND target->>'serviceCode' = 'MANAGED_RELAUNCH'
+    AND position('We checked the original profile restriction named in your agreement.' IN coalesce(p_text, '')) = 0
+  THEN
+    RETURN 'snapshot';
+  END IF;
+  IF target->>'variant' = 'complete_paid' AND target->>'serviceCode' = 'MANAGED_REVIEW'
+    AND position('We checked the exact review named in your agreement.' IN coalesce(p_text, '')) = 0
+  THEN
+    RETURN 'snapshot';
+  END IF;
+  IF target->>'variant' IN ('complete_paid', 'complete_no_fee', 'withdrawn')
+    AND position('Relaunch Guard is optional. This email does not enrol you or charge you.' IN coalesce(p_text, '')) = 0
+  THEN
+    RETURN 'snapshot';
+  END IF;
+  IF target->>'variant' IN ('invoice', 'complete_paid') THEN
+    amount := (target->>'amountMinor')::integer;
+    amount_label := '£' || (amount / 100)::text || '.' || lpad((amount % 100)::text, 2, '0') || ' GBP';
+    IF position(amount_label IN coalesce(p_text, '')) = 0
+      OR position('No additional taxes or mandatory fees charged by ProfileRelaunch.' IN coalesce(p_text, '')) = 0
+    THEN
+      RETURN 'snapshot';
+    END IF;
+  END IF;
+  stripped := replace(replace(coalesce(p_text, ''), expected, ''), 'https://profilerelaunch.com', '');
+  IF position('https://' IN stripped) > 0 OR position('http://' IN stripped) > 0 THEN RETURN 'snapshot'; END IF;
+  stripped := replace(replace(coalesce(p_html, ''), expected, ''), 'https://profilerelaunch.com', '');
+  IF position('https://' IN stripped) > 0 OR position('http://' IN stripped) > 0 THEN RETURN 'snapshot'; END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION admin_private.managed_snapshot_reason_v1(uuid, text, text, text, text, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.protect_managed_email_v1()
+RETURNS trigger LANGUAGE plpgsql SET search_path = ''
+AS $$
+DECLARE reason text; upload text; origin text;
+BEGIN
+  IF NEW.template_key IS NULL OR NEW.template_key NOT IN ('MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION') THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.lifecycle IS DISTINCT FROM 'QUEUED' OR NEW.content_locked IS NOT TRUE OR NEW.template_version IS DISTINCT FROM 1
+    OR NEW.case_id IS NULL OR NEW.reply_to_address IS NULL
+  THEN
+    RAISE EXCEPTION 'managed_email:invalid' USING ERRCODE = 'P0001';
+  END IF;
+  IF NEW.template_key = 'MANAGED_INVOICE' THEN
+    upload := substring(NEW.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/payments');
+  ELSE
+    upload := substring(NEW.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}');
+  END IF;
+  origin := regexp_replace(coalesce(upload, ''), '/portal/cases/.*$', '');
+  reason := admin_private.managed_snapshot_reason_v1(
+    NEW.case_id, NEW.template_key, NEW.subject, NEW.body_text, NEW.body_html, origin
+  );
+  IF reason IS NOT NULL THEN
+    RAISE EXCEPTION 'managed_email:%', reason USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION admin_private.protect_managed_email_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS communications_managed_email_guard ON public.communications;
+CREATE TRIGGER communications_managed_email_guard
+  BEFORE INSERT ON public.communications
+  FOR EACH ROW
+  EXECUTE FUNCTION admin_private.protect_managed_email_v1();
+
+CREATE FUNCTION public.admin_managed_notice_context_v1(
+  p_token text, p_kind text, p_case uuid, p_order uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  target jsonb;
+  notice_kind text;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  IF (s->>'createdAt')::timestamptz < now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  IF p_case IS NULL AND p_order IS NOT NULL THEN
+    SELECT case_id INTO p_case FROM public.service_orders WHERE id = p_order;
+  END IF;
+  IF p_kind NOT IN ('submission', 'result', 'invoice', 'completion') OR p_case IS NULL THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  target := admin_private.managed_notice_target_v1(p_case, p_kind);
+  notice_kind := CASE p_kind
+    WHEN 'submission' THEN 'SUBMISSION'
+    WHEN 'result' THEN 'RESULT'
+    WHEN 'invoice' THEN 'INVOICE'
+    ELSE 'COMPLETION'
+  END;
+  IF target IS NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.managed_customer_notices n
+      WHERE n.case_id = p_case AND n.kind = notice_kind
+    ) THEN
+      RETURN jsonb_build_object('status', 'already_queued');
+    END IF;
+    RETURN jsonb_build_object('status', 'not_applicable');
+  END IF;
+  RETURN jsonb_build_object(
+    'status', 'applicable',
+    'variant', target->>'variant',
+    'caseRef', target->>'caseRef',
+    'serviceCode', target->>'serviceCode',
+    'serviceName', target->>'serviceName',
+    'amountMinor', target->'amountMinor',
+    'currency', 'GBP'
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.admin_managed_notice_context_v1(text, text, uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_managed_notice_context_v1(text, text, uuid, uuid) TO service_role;
+
+CREATE FUNCTION public.admin_queue_managed_notice_v1(
+  p_token text, p_request uuid, p_case uuid, p_kind text, p_data jsonb, p_order uuid DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+  target jsonb;
+  existing public.managed_customer_notices;
+  comm uuid;
+  notice_kind text;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF (s->>'createdAt')::timestamptz < now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  IF p_case IS NULL AND p_order IS NOT NULL THEN
+    SELECT case_id INTO p_case FROM public.service_orders WHERE id = p_order;
+  END IF;
+  IF p_request IS NULL OR p_case IS NULL OR p_kind NOT IN ('submission', 'result', 'invoice', 'completion')
+    OR p_data IS NULL OR jsonb_typeof(p_data) <> 'object'
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  SELECT * INTO existing FROM public.managed_customer_notices WHERE request_id = p_request;
+  IF existing.id IS NOT NULL THEN
+    IF existing.case_id IS DISTINCT FROM p_case THEN
+      RETURN jsonb_build_object('status', 'conflict');
+    END IF;
+    RETURN jsonb_build_object('status', 'success', 'replay', true);
+  END IF;
+  IF coalesce(p_data->>'fromAddress', '') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+    OR coalesce(p_data->>'replyTo', '') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+    OR coalesce(p_data->>'customerOrigin', '') !~ '^https://[A-Za-z0-9.-]+$'
+    OR coalesce(p_data->>'subject', '') = ''
+    OR coalesce(p_data->>'bodyText', '') = ''
+    OR coalesce(p_data->>'bodyHtml', '') = ''
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  target := admin_private.managed_notice_target_v1(p_case, p_kind);
+  notice_kind := CASE p_kind
+    WHEN 'submission' THEN 'SUBMISSION'
+    WHEN 'result' THEN 'RESULT'
+    WHEN 'invoice' THEN 'INVOICE'
+    ELSE 'COMPLETION'
+  END;
+  IF target IS NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.managed_customer_notices n
+      WHERE n.case_id = p_case AND n.kind = notice_kind
+    ) THEN
+      RETURN jsonb_build_object('status', 'success', 'replay', true);
+    END IF;
+    RETURN jsonb_build_object('status', 'not_applicable');
+  END IF;
+  BEGIN
+    comm := admin_private.queue_fulfilment_email_v1(
+      p_case,
+      CASE notice_kind
+        WHEN 'SUBMISSION' THEN 'MANAGED_PROGRESS'
+        WHEN 'RESULT' THEN 'MANAGED_RESULT'
+        WHEN 'INVOICE' THEN 'MANAGED_INVOICE'
+        ELSE 'MANAGED_COMPLETION'
+      END,
+      actor,
+      p_data->>'subject',
+      p_data->>'bodyText',
+      p_data->>'bodyHtml',
+      p_data->>'fromAddress',
+      p_data->>'replyTo',
+      p_data->>'customerOrigin'
+    );
+    INSERT INTO public.managed_customer_notices(
+      request_id, case_id, kind, submission_id, invoice_id, communication_id
+    ) VALUES (
+      p_request, p_case, notice_kind,
+      NULLIF(target->>'submissionId', '')::uuid,
+      NULLIF(target->>'invoiceId', '')::uuid,
+      comm
+    );
+  EXCEPTION
+    WHEN unique_violation THEN
+      RETURN jsonb_build_object('status', 'success', 'replay', true);
+    WHEN SQLSTATE 'P0001' THEN
+      RETURN jsonb_build_object(
+        'status', 'denied',
+        'reason', CASE WHEN position(':' IN SQLERRM) > 0 THEN split_part(SQLERRM, ':', 2) ELSE SQLERRM END
+      );
+  END;
+  RETURN jsonb_build_object('status', 'success', 'replay', false);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.admin_queue_managed_notice_v1(text, uuid, uuid, text, jsonb, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_queue_managed_notice_v1(text, uuid, uuid, text, jsonb, uuid) TO service_role;
 
 COMMIT;

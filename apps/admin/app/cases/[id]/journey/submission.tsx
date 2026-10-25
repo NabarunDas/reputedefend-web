@@ -2,6 +2,7 @@ import type { JourneySubmissionPanel } from "@/lib/case-journey/submission"
 import { ukDate } from "@/lib/admin/activity"
 import type { CaseDetail } from "@/lib/cases/model"
 import { ResolveSubmission, SubmissionForm } from "../../forms"
+import { ManagedNoticeForm } from "./managed-notice-form"
 
 /**
  * Step 9 reuses the existing submission commands.
@@ -34,6 +35,10 @@ export function SubmissionPanel({ caseDetail, panel }: { caseDetail: CaseDetail;
       <summary>Record an externally completed submission</summary>
       <SubmissionForm c={caseDetail} />
     </details>}
-    <p>Record the date, the channel, any Google reference, and the evidence that the submission was made outside ProfileRelaunch. An open attempt means a response is still pending. If Google asks for more information, record a follow-up submission rather than treating the attempt as successful. An unsuccessful response is a withdrawal or a later outcome that does not meet the success definition. A favourable reply still needs its own checks before any fee is approved. Saving this record does not submit anything to Google, does not send email, and does not record the case outcome.</p>
+    {panel.noticeRecovery && <details>
+      <summary>Send the customer update</summary>
+      <ManagedNoticeForm c={caseDetail} kind={panel.noticeRecovery} />
+    </details>}
+    <p>Record the date, the channel, any Google reference, and the evidence that the submission was made outside ProfileRelaunch. An open attempt means a response is still pending. If Google asks for more information, record a follow-up submission rather than treating the attempt as successful. An unsuccessful response is a withdrawal or a later outcome that does not meet the success definition. A favourable reply still needs its own checks before any fee is approved. Saving this record does not submit anything to Google and does not record the case outcome. When outgoing mail is on, saving can queue one progress email. Queued is not delivered.</p>
   </div>
 }

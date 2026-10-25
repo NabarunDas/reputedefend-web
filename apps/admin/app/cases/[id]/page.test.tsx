@@ -172,7 +172,7 @@ describe("blockers, attention and prerequisites", () => {
   it("lists the Managed prerequisite groups with their individual items", async () => {
     await show("managedWaitingForAgreement")
     const section = screen.getByRole("heading", { name: "Case prerequisites" }).closest("section")!
-    expect(within(section).getAllByRole("listitem")).toHaveLength(9)
+    expect(within(section).getAllByRole("listitem")).toHaveLength(8)
     expect(within(section).getByText("The service agreement is accepted")).toBeInTheDocument()
   })
 

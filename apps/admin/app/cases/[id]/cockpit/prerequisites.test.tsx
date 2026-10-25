@@ -41,7 +41,7 @@ describe("case prerequisites", () => {
     prerequisitesFor("managedWaitingForAgreement")
     expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(2)
     const items = screen.getAllByRole("listitem")
-    expect(items).toHaveLength(9)
+    expect(items).toHaveLength(8)
     expect(items[2]).toHaveTextContent("In progress")
     expect(items[3]).toHaveTextContent("Not started")
   })

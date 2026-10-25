@@ -486,11 +486,11 @@ describe("payment job handlers", () => {
       expect(off.rpc.mock.calls.map(call => call[0])).not.toContain("payment_queue_confirmation_v1")
 
       const on = rpcMock()
-      on.rpc.mockImplementation(async (name: string) => {
+      on.rpc.mockImplementation((async (name: string) => {
         if (name === "payment_confirmation_context_v1") return context
         if (name === "payment_queue_confirmation_v1") return { status: "success" }
         return { status: "success" }
-      })
+      }) as typeof on.rpc)
       const queued = await processStripeEventHandler(mailEnv).execute({
         idempotencyKey: key,
         payload: { eventId: "evt_mail_on", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
@@ -515,10 +515,10 @@ describe("payment job handlers", () => {
       expect(`${payload.subject}\n${payload.bodyText}\n${payload.bodyHtml}`).not.toMatch(/pi_|cus_|#t=|\/action\//)
 
       const replay = rpcMock()
-      replay.rpc.mockImplementation(async (name: string) => {
+      replay.rpc.mockImplementation((async (name: string) => {
         if (name === "payment_confirmation_context_v1") return { ...context, alreadyQueued: true }
         return { status: "success" }
-      })
+      }) as typeof replay.rpc)
       const again = await processStripeEventHandler(mailEnv).execute({
         idempotencyKey: key,
         payload: { eventId: "evt_mail_replay", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
@@ -528,11 +528,11 @@ describe("payment job handlers", () => {
       expect(replay.rpc.mock.calls.map(call => call[0])).not.toContain("payment_queue_confirmation_v1")
 
       const refused = rpcMock()
-      refused.rpc.mockImplementation(async (name: string) => {
+      refused.rpc.mockImplementation((async (name: string) => {
         if (name === "payment_confirmation_context_v1") return context
         if (name === "payment_queue_confirmation_v1") return { status: "denied", reason: "snapshot" }
         return { status: "success" }
-      })
+      }) as typeof refused.rpc)
       expect(await processStripeEventHandler(mailEnv).execute({
         idempotencyKey: key,
         payload: { eventId: "evt_mail_denied", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },
@@ -540,11 +540,11 @@ describe("payment job handlers", () => {
       })).toEqual({ ok: false, retryable: false, error: "Payment confirmation email was refused." })
 
       const retry = rpcMock()
-      retry.rpc.mockImplementation(async (name: string) => {
+      retry.rpc.mockImplementation((async (name: string) => {
         if (name === "payment_confirmation_context_v1") return context
         if (name === "payment_queue_confirmation_v1") return { status: "error" }
         return { status: "success" }
-      })
+      }) as typeof retry.rpc)
       expect(await processStripeEventHandler(mailEnv).execute({
         idempotencyKey: key,
         payload: { eventId: "evt_mail_retry", eventType: "payment_intent.succeeded", objectId: "pi_guided_mail" },

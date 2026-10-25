@@ -7,6 +7,7 @@ import type { CaseAuthorization } from "@/lib/authorization/model"
 import type { CaseFlowFacts } from "@/lib/case-flow/model"
 import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { buildJourneyActivationPanel } from "@/lib/case-journey/activation"
+import type { PaymentRequestEmailView } from "@/lib/case-journey/payment-request-email"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import type { ServiceOrder } from "@/lib/commerce/model"
 import type { MoneyOrder } from "@/lib/payments/model"
@@ -20,8 +21,14 @@ vi.mock("next/link", () => ({
 }))
 
 const NOW = "2026-10-03T12:00:00.000Z"
+const FUTURE = "2026-11-03T12:00:00.000Z"
+const PAST = "2026-09-03T12:00:00.000Z"
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
 const ORDER_ID = "66666666-6666-4666-8666-666666666666"
+
+function openPayment(expiresAt = FUTURE) {
+  return { id: "action-pay", kind: "GUIDED_PAYMENT", agreementKind: null, status: "OPEN", expiresAt }
+}
 
 const brief = {
   message: "The listing was suspended.",
@@ -159,7 +166,12 @@ function loadedOrder(source: CaseFlowFacts): ServiceOrder {
   }
 }
 
-function show(source: CaseFlowFacts, authorizationRecord: CaseAuthorization | null = null, moneyOrders: MoneyOrder[] = [money()]) {
+function show(
+  source: CaseFlowFacts,
+  authorizationRecord: CaseAuthorization | null = null,
+  moneyOrders: MoneyOrder[] = [money()],
+  options: { mailReady?: boolean; paymentEmail?: PaymentRequestEmailView } = {},
+) {
   const journey = presentCaseJourney(source, NOW)
   const panel = buildJourneyActivationPanel({
     facts: source,
@@ -169,6 +181,7 @@ function show(source: CaseFlowFacts, authorizationRecord: CaseAuthorization | nu
     moneyOrders,
     authorization: authorizationRecord,
     recordsConflict: false,
+    mailReady: options.mailReady,
   })
   return render(<CaseJourneyView
     reference="PR-1"
@@ -180,6 +193,7 @@ function show(source: CaseFlowFacts, authorizationRecord: CaseAuthorization | nu
     brief={brief}
     version={3}
     documents={null}
+    paymentEmail={options.paymentEmail}
     activation={journey.steps.find(step => step.id === "SERVICE_ACTIVATION")?.state === "LOCKED" ? null : panel}
   />)
 }
@@ -228,7 +242,7 @@ describe("guided service activation", () => {
   it("sends one payment request without a bearer link and does not mark the obligation paid", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The payment-request email is queued. The email provider has not accepted it yet, and queued is not delivered. The payment stays outstanding until Stripe confirms settlement and a receipt is stored." }) })
     vi.stubGlobal("fetch", fetchMock)
-    show(facts())
+    show(facts({ customerActions: [openPayment()] }), null, [money()], { mailReady: true })
     expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).not.toHaveAttribute("data-state", "COMPLETED")
     expect(screen.getAllByText(/Returning from Checkout is not payment/).length).toBeGreaterThan(0)
     expect(screen.getByText(/Email status: No payment-request email has been queued/)).toBeTruthy()
@@ -243,6 +257,48 @@ describe("guided service activation", () => {
     expect(payload).not.toHaveProperty("actionUrl")
     expect(fetchMock.mock.calls[0][0]).toBe("/api/cases/journey/payment-request")
     expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).not.toHaveAttribute("data-state", "COMPLETED")
+  })
+
+  it("does not offer a payment-request email when no open action can be reused", () => {
+    show(facts(), null, [money()], { mailReady: true })
+    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
+    expect(screen.getByText(/No open payment action is available to reuse/)).toBeTruthy()
+    expect(screen.queryByText(/Email status:/)).toBeNull()
+  })
+
+  it("does not replace an expired payment action from this step", () => {
+    show(facts({ customerActions: [openPayment(PAST)] }), null, [money()], { mailReady: true })
+    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
+    expect(screen.getByText(/expired, so this step does not send the payment-request email or create a replacement link/)).toBeTruthy()
+  })
+
+  it("withholds the send button when mail is not ready or the email is already queued", () => {
+    show(facts({ customerActions: [openPayment()] }))
+    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
+    expect(screen.getByText(/monitored Reply-To/)).toBeTruthy()
+    expect(screen.getByText(/Email status: No payment-request email has been queued/)).toBeTruthy()
+    cleanup()
+
+    const queued: PaymentRequestEmailView = {
+      phase: "queued",
+      communicationId: "comm-1",
+      detail: "The payment-request email is queued. The email provider has not accepted it, and queued is not delivered.",
+      canProcessPending: false,
+    }
+    show(facts({ customerActions: [openPayment()] }), null, [money()], { mailReady: true, paymentEmail: queued })
+    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
+    expect(screen.getByText(/Email status: The payment-request email is queued/)).toBeTruthy()
+    cleanup()
+
+    const unavailable: PaymentRequestEmailView = {
+      phase: "unavailable",
+      communicationId: null,
+      detail: "The payment email history could not be confirmed.",
+      canProcessPending: false,
+    }
+    show(facts({ customerActions: [openPayment()] }), null, [money()], { mailReady: true, paymentEmail: unavailable })
+    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
+    expect(screen.getByText(/Email status: The payment email history could not be confirmed/)).toBeTruthy()
   })
 
   it("shows Managed authorisation without a saved-card or case-access control", () => {

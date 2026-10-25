@@ -29,10 +29,10 @@ export function ActivationPanel({
     <p><strong>Who must act.</strong> {panel.who}</p>
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     {panel.continueToPayment && <ContinueAcceptedServiceForm caseId={caseId} version={version} label={panel.continueToPayment.label} />}
-    {panel.issueUpfront && <>
+    {panel.paymentRequestStatus && <>
       <p>Payment status: outstanding. Stripe has not confirmed settlement, and a receipt is not stored. This step is not complete.</p>
       <p>Email status: {email.detail}</p>
-      {offerPaymentRequestSend(email) && <PaymentRequestForm serviceOrderId={panel.issueUpfront.serviceOrderId} version={panel.issueUpfront.version} />}
+      {panel.paymentRequest && offerPaymentRequestSend(email) && <PaymentRequestForm serviceOrderId={panel.paymentRequest.serviceOrderId} version={panel.paymentRequest.version} />}
     </>}
     {panel.track === "MANAGED" && <p>Email status: no upfront payment email is sent for a Managed success fee.</p>}
     {panel.authorization && <AuthorizationPanel caseId={caseId} data={panel.authorization} scope="activation" />}

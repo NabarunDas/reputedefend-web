@@ -275,6 +275,7 @@ async function loadJourneyActivation(
     moneyOrders: money.orders,
     authorization,
     recordsConflict: conflicts.recordConflict || conflicts.emailRecordsDisagree || conflicts.authorityRecordsDisagree,
+    mailReady: communicationsSendEnabled() && mailFromAddress() != null && confirmedReplyMailbox() != null,
   })
 }
 

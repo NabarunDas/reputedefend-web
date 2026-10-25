@@ -394,10 +394,6 @@ function openAction(facts: CaseFlowFacts, kind: string, now: string): boolean {
   )
 }
 
-function completedAction(facts: CaseFlowFacts, kind: string): boolean {
-  return facts.customerActions.some(action => action.kind === kind && action.status === "COMPLETED")
-}
-
 // ---------------------------------------------------------------------------
 // Destinations
 // ---------------------------------------------------------------------------

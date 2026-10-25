@@ -927,13 +927,13 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // ADMIN-JOURNEY-07. Records an accepted service order on the case.
-    // Not applied to DEV or Production. Do not apply it from the pull request.
+    // Applied once to DEV at ledger version 20261024233701. Never replay SQL; Production unchanged.
     // It does not edit a quotation, issue a payment link, or mark an obligation paid.
-    version: "20261024235000",
-    filename: "20261024235000_admin_reconcile_accepted_service_v1.sql",
+    version: "20261024233701",
+    filename: "20261024233701_admin_reconcile_accepted_service_v1.sql",
     step: "ADMIN-JOURNEY-07 accepted service reconciliation",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "accepted service reconciliation", probe: "public.admin_reconcile_accepted_service_v1" },
@@ -949,7 +949,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261024190832`. Source filename aligned to the generated ledger; applied SQL was not replayed.
+ * `20261024233701`. Source filename aligned to the DEV ledger; SQL was not replayed.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

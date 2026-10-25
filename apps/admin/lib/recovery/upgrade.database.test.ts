@@ -64,7 +64,7 @@ describe("upgrading a database that is already running", () => {
     // This disposable rebuild is not a live apply; older migrations are already applied.
     // Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toMatch(/admin_reconcile_accepted_service_v1\.sql$/)
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.filename).toMatch(/quote_offer_email_snapshot_v1\.sql$/)
     expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.version).toBe("20261024190832")

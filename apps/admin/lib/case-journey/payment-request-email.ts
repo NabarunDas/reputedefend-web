@@ -129,6 +129,7 @@ export function projectPaymentRequestEmail(
   return phaseFor(matched[0], options.devSend === true)
 }
 
+/** Recovery only. A queued, sent, or unreadable email is not offered again. */
 export function offerPaymentRequestSend(view: PaymentRequestEmailView): boolean {
-  return view.phase === "none" || view.phase === "unavailable" || view.canProcessPending
+  return view.phase === "none"
 }

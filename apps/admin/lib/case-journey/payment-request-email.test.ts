@@ -60,6 +60,7 @@ describe("Step 7 payment-request status", () => {
   it("shows no email until one is queued, then keeps provider states distinct from payment", () => {
     expect(projectPaymentRequestEmail(read([]), CASE_REF).phase).toBe("none")
     expect(offerPaymentRequestSend(projectPaymentRequestEmail(read([]), CASE_REF))).toBe(true)
+    expect(offerPaymentRequestSend(projectPaymentRequestEmail(read([row()]), CASE_REF, { devSend: true }))).toBe(false)
     expect(projectPaymentRequestEmail(read([row()]), CASE_REF)).toMatchObject({ phase: "queued", canProcessPending: false })
     expect(projectPaymentRequestEmail(read([row()]), CASE_REF, { devSend: true }).canProcessPending).toBe(true)
     expect(projectPaymentRequestEmail(read([row({ deliveryStatus: "PROVIDER_ACCEPTED" })]), CASE_REF).phase).toBe("submitted")

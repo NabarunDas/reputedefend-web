@@ -6,7 +6,7 @@ import { PaymentRequestForm } from "./payment-request-form"
 
 /**
  * Guided and Managed activation on Step 7.
- * Guided payment sends one portal email and reuses an open payment action.
+ * A new Guided acceptance queues one portal email. This step recovers an unpaid order that does not yet have that email.
  * Pack preparation and Google submission stay on later steps.
  */
 export function ActivationPanel({

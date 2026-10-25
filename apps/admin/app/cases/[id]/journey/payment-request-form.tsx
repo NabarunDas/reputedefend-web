@@ -37,7 +37,7 @@ export function PaymentRequestForm({ serviceOrderId, version }: { serviceOrderId
   }
 
   return <form onSubmit={submit}>
-    <p>This sends one payment-request email to the verified customer. It reuses an open payment action. It does not create another link, repeat the quotation, open Stripe, or mark the payment complete.</p>
+    <p>Use this only when an accepted Guided order is still unpaid and no payment-request email is queued. A new acceptance queues that email itself. This recovery step reuses the open payment action. It does not create another link, repeat the quotation, open Stripe, or mark the payment complete.</p>
     <button type="submit" disabled={busy}>Send payment request</button>
     <p role="status">{message}</p>
   </form>

@@ -5,7 +5,9 @@ BEGIN;
 -- Portal payments page. It does not carry a bearer secret, open Stripe, or
 -- mark an obligation paid.
 -- An existing OPEN payment action is reused. A second action is created only
--- when none is still open. This file does not email any existing case by itself.
+-- when none is still open. A new customer acceptance queues the same email and
+-- holds it for fifteen minutes so a payment in that visit can cancel it unsent.
+-- This file does not email any existing case by itself.
 -- Source only. Do not apply this file to DEV or Production from this change.
 
 ALTER TABLE public.communications DROP CONSTRAINT communications_template_check;
@@ -213,8 +215,8 @@ CREATE TRIGGER payment_receipts_cancel_guided_payment_request
   FOR EACH ROW
   EXECUTE FUNCTION admin_private.cancel_guided_payment_request_on_receipt_v1();
 
-CREATE FUNCTION public.admin_queue_guided_payment_request_v1(
-  p_token text,
+CREATE FUNCTION admin_private.queue_guided_payment_request_body_v1(
+  p_actor uuid,
   p_request uuid,
   p_payload jsonb
 ) RETURNS jsonb
@@ -223,7 +225,6 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  s jsonb;
   actor uuid;
   order_id uuid;
   expected_version integer;
@@ -244,15 +245,17 @@ DECLARE
   comm public.communications;
   open_count integer;
   reused boolean := false;
+  use_current boolean := false;
+  hold_seconds integer := 0;
+  actor_type text := 'ADMIN';
   prep text;
   secret text;
   expires timestamptz;
   reason text;
   result jsonb;
 BEGIN
-  s := public.admin_session_v1(p_token);
-  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
-  actor := (s->>'userId')::uuid;
+  IF p_actor IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := p_actor;
   IF p_request IS NULL OR p_payload IS NULL OR jsonb_typeof(p_payload) IS DISTINCT FROM 'object'
     OR octet_length(p_payload::text) > 200000
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
@@ -267,7 +270,22 @@ BEGIN
   body_text := p_payload->>'bodyText';
   body_html := p_payload->>'bodyHtml';
   from_address := lower(btrim(coalesce(p_payload->>'fromAddress', '')));
-  IF order_id IS NULL OR expected_version IS NULL OR expected_version < 1
+  use_current := coalesce(p_payload->>'useCurrentVersion', 'false') = 'true';
+  IF p_payload ? 'dispatchHoldSeconds' THEN
+    BEGIN
+      hold_seconds := (p_payload->>'dispatchHoldSeconds')::integer;
+    EXCEPTION WHEN invalid_text_representation OR datatype_mismatch THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END;
+    IF hold_seconds IS NULL OR hold_seconds < 60 OR hold_seconds > 900 THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+  END IF;
+  IF p_payload ? 'actorType' THEN
+    actor_type := p_payload->>'actorType';
+    IF actor_type NOT IN ('ADMIN', 'CUSTOMER') THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  END IF;
+  IF order_id IS NULL OR (NOT use_current AND (expected_version IS NULL OR expected_version < 1))
     OR origin !~ '^https://[A-Za-z0-9.-]+$'
     OR from_address !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$'
     OR length(from_address) > 254
@@ -296,7 +314,8 @@ BEGIN
 
   SELECT * INTO ord FROM public.service_orders WHERE id = order_id FOR UPDATE;
   IF ord.id IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
-  IF expected_version IS DISTINCT FROM ord.record_version THEN
+  IF use_current THEN expected_version := ord.record_version; END IF;
+  IF expected_version IS NULL OR expected_version < 1 OR expected_version IS DISTINCT FROM ord.record_version THEN
     RETURN jsonb_build_object('status', 'conflict', 'reason', 'stale_version');
   END IF;
   IF ord.payment_model = 'SUCCESS_FEE' OR ord.service_code IN ('MANAGED_RELAUNCH', 'MANAGED_REVIEW') THEN
@@ -416,7 +435,7 @@ BEGIN
         'GUIDED_PAYMENT', secret, admin_private.normalize_email_v1(c.email), expires, actor
       ) RETURNING * INTO action;
       INSERT INTO public.customer_action_events(action_id, case_id, actor_type, actor_id, event, details)
-      VALUES (action.id, action.case_id, 'ADMIN', actor, 'ACTION_CREATED', jsonb_build_object('kind', 'GUIDED_PAYMENT', 'source', 'payment_request'));
+      VALUES (action.id, action.case_id, actor_type, actor, 'ACTION_CREATED', jsonb_build_object('kind', 'GUIDED_PAYMENT', 'source', 'payment_request'));
     END IF;
   END IF;
 
@@ -460,7 +479,8 @@ BEGIN
     'SEND_EMAIL',
     'communication',
     comm.id,
-    jsonb_build_object('communicationId', comm.id, 'contentVersion', comm.content_version)
+    jsonb_build_object('communicationId', comm.id, 'contentVersion', comm.content_version),
+    now() + make_interval(secs => hold_seconds)
   );
   PERFORM admin_private.append_delivery_event_v1(comm.id, 'QUEUED', 'Payment-request email queued for the provider');
   PERFORM admin_private.write_record_audit_v1(
@@ -493,9 +513,91 @@ EXCEPTION
 END;
 $$;
 
+REVOKE ALL ON FUNCTION admin_private.queue_guided_payment_request_body_v1(uuid, uuid, jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION public.admin_queue_guided_payment_request_v1(
+  p_token text,
+  p_request uuid,
+  p_payload jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF jsonb_typeof(p_payload) = 'object'
+    AND (p_payload ? 'useCurrentVersion' OR p_payload ? 'actorType' OR p_payload ? 'dispatchHoldSeconds')
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  RETURN admin_private.queue_guided_payment_request_body_v1(actor, p_request, p_payload);
+END;
+$$;
 REVOKE ALL ON FUNCTION public.admin_queue_guided_payment_request_v1(text, uuid, jsonb)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_queue_guided_payment_request_v1(text, uuid, jsonb)
+  TO service_role;
+
+-- Customer acceptance queues one payment email. It does not send it, open
+-- Stripe, or create a second link when one is already open. The outbox waits
+-- fifteen minutes so a payment completed in the same visit cancels the unsent
+-- email before the provider is contacted.
+CREATE FUNCTION public.customer_queue_guided_payment_request_v1(
+  p_token_hash text,
+  p_request uuid,
+  p_payload jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_customer uuid;
+  v_auth uuid;
+  order_id uuid;
+  ord public.service_orders;
+  payload jsonb;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$' THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  SELECT customer_id, auth_user_id INTO v_customer, v_auth
+  FROM admin_private.customer_portal_actor_v1(p_token_hash);
+  IF v_customer IS NULL OR v_auth IS NULL OR p_request IS NULL OR p_payload IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  BEGIN
+    order_id := (p_payload->>'serviceOrderId')::uuid;
+  EXCEPTION WHEN invalid_text_representation OR datatype_mismatch THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END;
+  IF order_id IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  SELECT * INTO ord FROM public.service_orders WHERE id = order_id;
+  IF ord.id IS NULL OR ord.customer_id IS DISTINCT FROM v_customer THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.quote_acceptances acc
+    WHERE acc.id = ord.quote_acceptance_id
+      AND acc.quote_version_id = ord.quote_version_id
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
+  END IF;
+  payload := p_payload
+    || jsonb_build_object('useCurrentVersion', true, 'actorType', 'CUSTOMER', 'dispatchHoldSeconds', 900);
+  RETURN admin_private.queue_guided_payment_request_body_v1(v_auth, p_request, payload);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.customer_queue_guided_payment_request_v1(text, uuid, jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.customer_queue_guided_payment_request_v1(text, uuid, jsonb)
   TO service_role;
 
 CREATE OR REPLACE FUNCTION public.communication_load_send_v1(p_communication uuid, p_content_version integer)
@@ -518,7 +620,7 @@ BEGIN
     END IF;
     origin := regexp_replace(upload, '/action/.*$', '');
   ELSIF row.template_key = 'GUIDED_PAYMENT_REQUEST' THEN
-    upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/payments');
+    upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/payments');
     IF upload IS NULL
       OR position('#t=' in row.body_text) > 0
       OR position('#t=' in coalesce(row.body_html, '')) > 0

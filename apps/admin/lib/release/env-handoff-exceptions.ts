@@ -151,6 +151,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     reason: "The payment-confirmation email snapshots the same From address the outgoing gate already validated. The webhook handler is driven by the worker environment.",
   },
   {
+    helper: "queueGuidedPaymentConfirmation",
+    files: ["apps/admin/lib/payments/handlers.ts"],
+    reason: "The webhook queues the payment-confirmation email only when the injected worker environment has outgoing mail enabled. The handler tests drive that with a synthetic environment, and the helper reads the same send gate and From address.",
+  },
+  {
     helper: "webhookSecret",
     files: ["apps/admin/lib/communications/webhook.ts"],
     reason: "Reads RESEND_WEBHOOK_SECRET in a handler whose environment is injected so the signature path can be tested.",

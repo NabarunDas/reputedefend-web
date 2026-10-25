@@ -204,6 +204,13 @@ export type JourneyActivationPanel = {
   notices: string[]
   who: string
   issueUpfront: { serviceOrderId: string; version: number } | null
+  /**
+   * Reuses one open Guided payment action to queue the missing payment-request email.
+   * It is not the recommendation to issue a new payment action.
+   */
+  paymentRequest: { serviceOrderId: string; version: number } | null
+  /** The payment email status is relevant, even when the send button is withheld. */
+  paymentRequestStatus: boolean
   /** Confirms the accepted order. It does not issue a payment link. */
   continueToPayment: JourneyActivationContinue | null
   /** The accepted order, shown separately from the stored track until Continue succeeds. */
@@ -223,6 +230,8 @@ export function buildJourneyActivationPanel(input: {
   moneyOrders: MoneyOrder[]
   authorization: CaseAuthorization | null
   recordsConflict: boolean
+  /** Outgoing mail is enabled, a sender is configured, and a monitored Reply-To is confirmed. */
+  mailReady?: boolean
 }): JourneyActivationPanel {
   const facts = input.facts
   const payment = summarisePayment(facts)
@@ -313,12 +322,45 @@ export function buildJourneyActivationPanel(input: {
       ]
       : []
 
+  const openGuidedPayments = facts.customerActions.filter(action =>
+    action.kind === "GUIDED_PAYMENT" && action.status === "OPEN" && action.expiresAt > input.now)
+  const expiredGuidedPayments = facts.customerActions.filter(action =>
+    action.kind === "GUIDED_PAYMENT" && action.status === "OPEN" && action.expiresAt <= input.now)
   const canIssue = flow.primaryAction?.id === "START_UPFRONT_PAYMENT" && flow.primaryAction.state === "ACTION_REQUIRED"
-  const identityProblem = canIssue && facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !moneyDisagrees
+  const identityCandidate = facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !moneyDisagrees
+    && (canIssue || openGuidedPayments.length > 0 || expiredGuidedPayments.length > 0)
+  const identityProblem = identityCandidate
     ? paymentLinkProblem(facts, link, moneyOrder, loadedOrder, input.orderDetailMissing)
     : null
   if (identityProblem) notices.push(identityProblem)
   const issueUpfront = canIssue && facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !input.orderDetailMissing && !moneyDisagrees && !identityProblem && moneyOrder && link.quoteOrderId
+    ? { serviceOrderId: link.quoteOrderId, version: moneyOrder.version }
+    : null
+  const obligationDue = !!moneyOrder
+    && moneyOrder.obligationKind === "UPFRONT"
+    && moneyOrder.obligationState === "DUE"
+    && !moneyOrder.receiptRecorded
+    && link.trackOrder?.paymentModel === "UPFRONT"
+    && link.trackOrder.orderState === "ACCEPTED_AWAITING_PAYMENT"
+    && !payment.upfrontPaid
+  const trustReady = facts.authorization.customerEmailVerified && facts.authorization.businessAuthorityVerified
+  const paymentRequestBase = facts.serviceTrack === "GUIDED"
+    && listsComplete && !tied && !linkProblem && !input.recordsConflict && !input.orderDetailMissing && !moneyDisagrees
+    && !identityProblem && obligationDue && trustReady && !!link.quoteOrderId && !!moneyOrder
+    && openGuidedPayments.length === 1 && expiredGuidedPayments.length === 0
+  if (paymentRequestBase && !input.mailReady) {
+    notices.push("Outgoing mail or the monitored Reply-To is not confirmed, so the payment-request email is not queued from here.")
+  }
+  if (obligationDue && !identityProblem && expiredGuidedPayments.length > 0 && openGuidedPayments.length === 0) {
+    notices.push("The open payment action has expired, so this step does not send the payment-request email or create a replacement link.")
+  }
+  if (issueUpfront && openGuidedPayments.length === 0) {
+    notices.push("No open payment action is available to reuse, so the payment-request email is not sent from here.")
+  }
+  if (openGuidedPayments.length > 1 && obligationDue) {
+    notices.push("More than one payment action is open, so no payment-request email is queued from here.")
+  }
+  const paymentRequest = paymentRequestBase && input.mailReady && link.quoteOrderId && moneyOrder
     ? { serviceOrderId: link.quoteOrderId, version: moneyOrder.version }
     : null
 
@@ -425,6 +467,8 @@ export function buildJourneyActivationPanel(input: {
       ? "ProfileRelaunch confirms the accepted order. The customer has already chosen the service."
       : who,
     issueUpfront,
+    paymentRequest,
+    paymentRequestStatus: paymentRequestBase,
     continueToPayment,
     projectedOrderLabel: continueToPayment?.headline ?? null,
     authorization: facts.serviceTrack === "MANAGED" ? input.authorization : null,

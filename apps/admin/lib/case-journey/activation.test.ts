@@ -3,6 +3,7 @@ import type { CaseAuthorization } from "../authorization/model"
 import type { CaseFlowAuthorizationFact, CaseFlowFacts, CaseFlowOrderFact, CaseFlowQuoteFact } from "../case-flow/model"
 import type { ServiceOrder } from "../commerce/model"
 import type { MoneyOrder } from "../payments/model"
+import { resolveCaseFlow } from "../case-flow/resolve"
 import { buildJourneyActivationPanel } from "./activation"
 
 const NOW = "2026-06-01T12:00:00.000Z"
@@ -161,7 +162,7 @@ function serviceOrder(overrides: Partial<ServiceOrder> = {}): ServiceOrder {
 
 function panel(
   overrides: Partial<CaseFlowFacts> = {},
-  extra: { recordsConflict?: boolean; moneyOrders?: MoneyOrder[]; authorization?: CaseAuthorization | null; order?: ServiceOrder | null; orderDetailMissing?: boolean } = {},
+  extra: { recordsConflict?: boolean; moneyOrders?: MoneyOrder[]; authorization?: CaseAuthorization | null; order?: ServiceOrder | null; orderDetailMissing?: boolean; mailReady?: boolean } = {},
 ) {
   const source = facts(overrides)
   return buildJourneyActivationPanel({
@@ -172,7 +173,12 @@ function panel(
     moneyOrders: extra.moneyOrders ?? [money()],
     authorization: extra.authorization ?? null,
     recordsConflict: extra.recordsConflict ?? false,
+    mailReady: extra.mailReady,
   })
+}
+
+function openPayment(expiresAt = FUTURE) {
+  return { id: "action-pay", kind: "GUIDED_PAYMENT", agreementKind: null, status: "OPEN", expiresAt }
 }
 
 describe("accepted order reconciliation", () => {
@@ -240,10 +246,66 @@ describe("guided service activation", () => {
     expect(view.track).toBe("GUIDED")
     expect(view.headline).toBe("Guided payment outstanding")
     expect(view.issueUpfront).toEqual({ serviceOrderId: ORDER_ID, version: 3 })
+    expect(view.paymentRequest).toBeNull()
+    expect(view.paymentRequestStatus).toBe(false)
+    expect(view.notices.join(" ")).toMatch(/No open payment action is available to reuse/)
     expect(view.continueToPayment).toBeNull()
     expect(view.requirements.find(item => item.label === "Upfront obligation PAID")?.state).toBe("Not met")
     expect(view.detail).toMatch(/not the selected track/)
     expect(view.authorization).toBeNull()
+  })
+
+  it("offers the payment-request email for an open action while the case flow waits for payment", () => {
+    const source = {
+      customerActions: [openPayment()],
+    }
+    const view = panel(source, { mailReady: true })
+    expect(resolveCaseFlow(facts(source), NOW).primaryAction?.id).toBe("WAIT_FOR_UPFRONT_PAYMENT")
+    expect(view.issueUpfront).toBeNull()
+    expect(view.paymentRequest).toEqual({ serviceOrderId: ORDER_ID, version: 3 })
+    expect(view.paymentRequestStatus).toBe(true)
+    expect(view.notices.join(" ")).not.toMatch(/not sent from here/)
+
+    const withheld = panel(source)
+    expect(withheld.paymentRequest).toBeNull()
+    expect(withheld.paymentRequestStatus).toBe(true)
+    expect(withheld.notices.join(" ")).toMatch(/monitored Reply-To/)
+
+    const expired = panel({ customerActions: [openPayment(PAST)] }, { mailReady: true })
+    expect(expired.paymentRequest).toBeNull()
+    expect(expired.paymentRequestStatus).toBe(false)
+    expect(expired.notices.join(" ")).toMatch(/expired, so this step does not send/)
+
+    const paid = panel({
+      customerActions: [openPayment()],
+      payment: { complete: true, orders: [upfront({ obligationState: "PAID", receiptRecorded: true })] },
+    }, { mailReady: true, moneyOrders: [money({ obligationState: "PAID", receiptId: "receipt-1" })] })
+    expect(paid.paymentRequest).toBeNull()
+
+    const foreign = panel({
+      customerActions: [openPayment()],
+      commercial: { complete: true, quotes: [quote({ orderId: OTHER_ORDER_ID })] },
+    }, { mailReady: true })
+    expect(foreign.paymentRequest).toBeNull()
+
+    const several = panel({
+      customerActions: [openPayment(), { ...openPayment(), id: "action-pay-2" }],
+    }, { mailReady: true })
+    expect(several.paymentRequest).toBeNull()
+    expect(several.notices.join(" ")).toMatch(/More than one payment action is open/)
+
+    const unverified = panel({
+      customerActions: [openPayment()],
+      authorization: authorization({ customerEmailVerified: false }),
+    }, { mailReady: true })
+    expect(unverified.paymentRequest).toBeNull()
+    expect(unverified.paymentRequestStatus).toBe(false)
+
+    const unauthorised = panel({
+      customerActions: [openPayment()],
+      authorization: authorization({ businessAuthorityVerified: false }),
+    }, { mailReady: true })
+    expect(unauthorised.paymentRequest).toBeNull()
   })
 
   it("does not start a payment when collection is switched off, the list is incomplete, or the records disagree", () => {

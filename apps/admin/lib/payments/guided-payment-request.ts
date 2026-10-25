@@ -11,7 +11,7 @@ import { settleDevSendEmailClaim, type DevSendClaim } from "../communications/de
 import { communicationsSendEnabled, sendDisabledReason } from "../communications/gate"
 import { deriveQuoteAcceptanceActionId } from "../communications/link"
 import { confirmedReplyMailbox } from "../communications/brand-email"
-import { mailFromAddress, resolveMailProvider, type OutgoingMailProvider } from "../communications/mail"
+import { mailFromAddress, resolveMailProvider } from "../communications/mail"
 import { renderPaymentRequest } from "../../../../lib/email/payment-request"
 import type { ServiceOrder } from "../commerce/model"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
@@ -113,12 +113,11 @@ async function submitDevelopmentPayment(input: {
   token: string
   key: string
   communicationId: string
-  provider?: OutgoingMailProvider
 }): Promise<NextResponse> {
   const portal = devCustomerPortalOrigin()
   const queued = { id: input.communicationId, lifecycle: "QUEUED", deliveryStatus: "NONE" }
   if (!portal) return reply(stillQueued, 503, queued)
-  const provider = input.provider ?? resolveMailProvider()
+  const provider = resolveMailProvider()
   if (provider === "disabled") return reply(`${stillQueued} Outgoing mail is not enabled.`, 403, queued)
   let claimed: DevSendClaim
   try {
@@ -158,7 +157,7 @@ function localRefusal(order: ServiceOrder): { message: string; status: number } 
 }
 
 /** Queues one Guided payment-request email and reuses an open payment action. It does not return a bearer link. */
-export async function queueGuidedPaymentRequest(request: NextRequest, deps: { provider?: OutgoingMailProvider } = {}): Promise<NextResponse> {
+export async function queueGuidedPaymentRequest(request: NextRequest): Promise<NextResponse> {
   if (!devCaseJourneyPreviewEnabled()) return reply("Unavailable.", 404)
   const config = authConfig()
   if (!config) return reply("The workspace is unavailable. Please try again shortly.", 503)
@@ -238,7 +237,6 @@ export async function queueGuidedPaymentRequest(request: NextRequest, deps: { pr
         token,
         key,
         communicationId: result.id,
-        provider: deps.provider,
       })
     }
     if (result?.status === "success") {

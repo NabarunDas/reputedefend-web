@@ -93,6 +93,12 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
         text = nextText
         html = nextHtml
       }
+      if (loaded.templateKey === "GUIDED_PAYMENT_REQUEST") {
+        const body = `${text}\n${html ?? ""}`
+        if (body.includes("#t=") || body.includes("/action/") || !loaded.customerOrigin || !body.includes(`${loaded.customerOrigin}/portal/cases/`)) {
+          return { ok: false, retryable: false, error: "Secure payment page cannot be confirmed" }
+        }
+      }
       const begun = await input.rpc.rpc<BeginAttempt>("communication_begin_provider_attempt_v1", {
         p_communication: communicationId,
         p_content_version: contentVersion,

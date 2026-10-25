@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -63,6 +64,7 @@ describe("portal service command", () => {
     const response = await portalServiceCommand(req(accept))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "success" })
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
     expect(mocks.rpc).toHaveBeenCalledWith("customer_portal_service_command_v1", {
       p_token_hash: `hash-${token.slice(0, 8)}`,
       p_request: key,
@@ -152,5 +154,100 @@ describe("portal service command", () => {
     const wrong = await portalServiceCommand(req({ ...accept, confirmation: { confirmed: true } }))
     expect(wrong.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("queues one Guided payment email after acceptance and still accepts when that queue fails", async () => {
+    const orderId = "44444444-4444-4444-8444-444444444444"
+    const accepted = {
+      status: "success",
+      orderId,
+      orderRef: "SO-26-ABCDEF",
+      snapshot: {
+        serviceCode: "GUIDED_RELAUNCH",
+        paymentModel: "UPFRONT",
+        amountMinor: 9900,
+        currency: "GBP",
+        quotationSnapshot: { serviceName: "Guided Relaunch", caseReference: "PR-26-ABCDEF" },
+      },
+    }
+    const hash = createHash("sha1").update(`guided-payment-request:${key}`).digest()
+    hash[6] = (hash[6] & 0x0f) | 0x50
+    hash[8] = (hash[8] & 0x3f) | 0x80
+    const requestId = hash.subarray(0, 16).toString("hex")
+    const paymentRequest = `${requestId.slice(0, 8)}-${requestId.slice(8, 12)}-${requestId.slice(12, 16)}-${requestId.slice(16, 20)}-${requestId.slice(20, 32)}`
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
+    const response = await portalServiceCommand(req(accept))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "success" })
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    const queued = mocks.rpc.mock.calls[1]
+    expect(queued[0]).toBe("customer_queue_guided_payment_request_v1")
+    expect(queued[1]).toMatchObject({
+      p_token_hash: `hash-${token.slice(0, 8)}`,
+      p_request: paymentRequest,
+      p_payload: {
+        serviceOrderId: orderId,
+        customerOrigin: origin,
+        fromAddress: "ops@example.com",
+        replyTo: "cases@profilerelaunch.com",
+        sendEnabled: true,
+      },
+    })
+    const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
+    const paymentsUrl = `${origin}/portal/cases/PR-26-ABCDEF/payments`
+    expect(payload.subject).toContain("SO-26-ABCDEF")
+    expect(payload.bodyText).toContain("Pay £99.00 securely")
+    expect(payload.bodyText).toContain("£99.00 GBP")
+    expect(payload.bodyText).toContain(paymentsUrl)
+    expect(payload.bodyText).toContain("simply reply to this email")
+    expect(payload.bodyHtml).toContain(paymentsUrl)
+    expect(`${payload.bodyText}\n${payload.bodyHtml}`).not.toMatch(/#t=|\/action\//)
+    expect(JSON.stringify(queued[1])).not.toMatch(/useCurrentVersion|dispatchHoldSeconds|RESEND|actionUrl/)
+    mocks.rpc.mockClear()
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success", replay: true })
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc.mock.calls[1][1].p_request).toBe(paymentRequest)
+
+    mocks.rpc.mockReset()
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
+    mocks.rpc.mockResolvedValueOnce(accepted)
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(3)
+
+    mocks.rpc.mockReset()
+    vi.stubEnv("VERCEL_ENV", "")
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co")
+    mocks.rpc.mockResolvedValueOnce({
+      ...accepted,
+      snapshot: { ...accepted.snapshot, serviceCode: "MANAGED_RELAUNCH", paymentModel: "SUCCESS_FEE", amountMinor: 29900 },
+    })
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+
+    mocks.rpc.mockReset()
+    mocks.rpc.mockResolvedValueOnce(accepted).mockRejectedValueOnce(new Error("relation communications does not exist"))
+    const failedQueue = await portalServiceCommand(req(accept))
+    const failedBody = await failedQueue.json()
+    expect(failedQueue.status).toBe(200)
+    expect(failedBody).toEqual({ status: "success" })
+    expect(JSON.stringify(failedBody)).not.toMatch(/communications|SQL/)
+
+    mocks.rpc.mockReset()
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
+    mocks.rpc.mockResolvedValueOnce({
+      ...accepted,
+      snapshot: { ...accepted.snapshot, amountMinor: 7920 },
+    })
+    expect((await portalServiceCommand(req(accept))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 })

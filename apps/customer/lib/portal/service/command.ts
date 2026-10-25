@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
@@ -5,6 +6,8 @@ import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/confi
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { eligibilityEnquiryMessage } from "../../../../../lib/commercial/eligibility-message"
+import { renderPaymentRequest } from "../../../../../lib/email/payment-request"
+import { confirmedReplyMailbox, validReplyMailbox } from "../../../../../lib/email/reply-mailbox"
 import { isUuid } from "@/lib/uuid"
 
 const SIGN_IN = "Sign in again to continue."
@@ -83,6 +86,61 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function paymentRequestId(acceptanceKey: string): string {
+  const hash = createHash("sha1").update(`guided-payment-request:${acceptanceKey}`).digest()
+  hash[6] = (hash[6] & 0x0f) | 0x50
+  hash[8] = (hash[8] & 0x3f) | 0x80
+  const id = hash.subarray(0, 16).toString("hex")
+  return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`
+}
+
+function automaticPaymentMail(): { origin: string; from: string; replyTo: string | null } | null {
+  if (process.env.COMMUNICATIONS_SEND_ENABLED !== "true") return null
+  if (process.env.VERCEL_ENV === "production" && process.env.JOB_WORKER_ENABLED !== "true") return null
+  const from = validReplyMailbox(process.env.COMMUNICATIONS_FROM_EMAIL)
+  const origin = (process.env.CUSTOMER_ORIGIN ?? "").trim().replace(/\/$/, "")
+  if (!from || !/^https:\/\/[A-Za-z0-9.-]+$/.test(origin)) return null
+  return { origin, from, replyTo: confirmedReplyMailbox() }
+}
+
+/** Queues one portal payment email after Guided acceptance. Failure leaves acceptance intact. */
+async function queueAcceptedGuidedPayment(token: string, acceptanceKey: string, result: Record<string, unknown>) {
+  const mail = automaticPaymentMail()
+  const snapshot = isRecord(result.snapshot) ? result.snapshot : null
+  const quotation = snapshot && isRecord(snapshot.quotationSnapshot) ? snapshot.quotationSnapshot : null
+  const serviceCode = typeof snapshot?.serviceCode === "string" ? snapshot.serviceCode : ""
+  const paymentModel = typeof snapshot?.paymentModel === "string" ? snapshot.paymentModel : ""
+  if (!mail || (serviceCode !== "GUIDED_RELAUNCH" && serviceCode !== "GUIDED_REVIEW") || paymentModel !== "UPFRONT") return
+  if (typeof result.orderId !== "string" || typeof result.orderRef !== "string") return
+  if (typeof snapshot?.amountMinor !== "number" || typeof snapshot.currency !== "string") return
+  if (typeof quotation?.serviceName !== "string" || typeof quotation.caseReference !== "string") return
+  const rendered = renderPaymentRequest({
+    serviceCode,
+    serviceName: quotation.serviceName,
+    orderRef: result.orderRef,
+    caseRef: quotation.caseReference,
+    amountMinor: snapshot.amountMinor,
+    currency: snapshot.currency,
+    origin: mail.origin,
+    replyTo: mail.replyTo,
+  })
+  if (!rendered) return
+  await backend().rpc("customer_queue_guided_payment_request_v1", {
+    p_token_hash: tokenHash(token),
+    p_request: paymentRequestId(acceptanceKey),
+    p_payload: {
+      serviceOrderId: result.orderId,
+      customerOrigin: mail.origin,
+      subject: rendered.subject,
+      bodyText: rendered.text,
+      bodyHtml: rendered.html,
+      fromAddress: mail.from,
+      replyTo: mail.replyTo,
+      sendEnabled: true,
+    },
+  })
+}
+
 export async function portalServiceCommand(request: NextRequest) {
   if (!portalAvailable()) return reply(NOT_READY, 404)
   if (!originOk(request) || request.headers.get("content-type")?.split(";")[0] !== "application/json") {
@@ -111,7 +169,12 @@ export async function portalServiceCommand(request: NextRequest) {
     })
     if (result == null) return reply(SIGN_IN)
     if (!isRecord(result) || typeof result.status !== "string") return reply(RETRY, 503)
-    if (result.status === "success") return NextResponse.json({ status: "success" }, { headers: privateResponseHeaders })
+    if (result.status === "success") {
+      if (operation === "accept_quote") {
+        try { await queueAcceptedGuidedPayment(token, key, result) } catch { /* Acceptance stands. Step 7 can queue the email once. */ }
+      }
+      return NextResponse.json({ status: "success" }, { headers: privateResponseHeaders })
+    }
     if (result.status === "not_found") return reply(MISSING, 404)
     if (result.status === "invalid") return reply(CONFIRM, 400)
     if (result.status === "eligibility_blocked") return reply(eligibilityEnquiryMessage, 403)

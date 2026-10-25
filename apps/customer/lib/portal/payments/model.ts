@@ -33,6 +33,16 @@ export function obligationDetail(state: ObligationState): string {
   return "This payment was voided."
 }
 
+function upfrontPayLabel(order: PaymentOrder): string {
+  if (order.currency !== "GBP" || order.paymentModel !== "UPFRONT") return "Continue to secure checkout"
+  if (!Number.isInteger(order.amountMinor) || order.amountMinor < 1 || order.amountMinor > 100_000_000) {
+    return "Continue to secure checkout"
+  }
+  const pounds = Math.floor(order.amountMinor / 100)
+  const pence = String(order.amountMinor % 100).padStart(2, "0")
+  return `Pay £${pounds}.${pence} securely`
+}
+
 export function checkoutControl(
   order: PaymentOrder,
   actions: PaymentAction[],
@@ -52,7 +62,7 @@ export function checkoutControl(
   if ((obligation.state === "DUE" || obligation.state === "COLLECTING") && guided && obligation.kind === "upfront") {
     return {
       selector: guided.selector,
-      label: obligation.state === "COLLECTING" ? "Continue secure checkout" : "Continue to secure checkout",
+      label: obligation.state === "COLLECTING" ? "Continue secure checkout" : upfrontPayLabel(order),
     }
   }
   return null

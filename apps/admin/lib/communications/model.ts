@@ -1,4 +1,4 @@
-export const TEMPLATE_KEYS = ["EVIDENCE_REQUEST", "CASE_UPDATE", "CONVERSATION_REPLY", "GUARD_ALERT", "QUOTE_OFFER"] as const
+export const TEMPLATE_KEYS = ["EVIDENCE_REQUEST", "CASE_UPDATE", "CONVERSATION_REPLY", "GUARD_ALERT", "QUOTE_OFFER", "GUIDED_PAYMENT_REQUEST"] as const
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number]
 export const LIFECYCLES = ["DRAFT", "REVIEWED", "QUEUED", "CANCELLED"] as const
 export type CommunicationLifecycle = (typeof LIFECYCLES)[number]
@@ -109,5 +109,6 @@ export function templateLabel(key: string | null): string {
   if (key === "CONVERSATION_REPLY") return "Conversation reply"
   if (key === "GUARD_ALERT") return "Guard alert"
   if (key === "QUOTE_OFFER") return "Quotation"
+  if (key === "GUIDED_PAYMENT_REQUEST") return "Payment request"
   return key || "Intake"
 }

@@ -1,14 +1,17 @@
 import type { JourneyActivationPanel } from "@/lib/case-journey/activation"
-import { IssuePaymentActionForm } from "../../../money/forms"
+import { emptyPaymentRequestEmail, offerPaymentRequestSend, type PaymentRequestEmailView } from "@/lib/case-journey/payment-request-email"
 import { AuthorizationPanel } from "../authorization-forms"
 import { ContinueAcceptedServiceForm } from "./continue-payment"
+import { PaymentRequestForm } from "./payment-request-form"
 
 /**
  * Guided and Managed activation on Step 7.
- * The payment link and the authorisation forms are the existing commands.
+ * A new Guided acceptance queues one portal email. This step recovers an unpaid order that does not yet have that email.
  * Pack preparation and Google submission stay on later steps.
  */
-export function ActivationPanel({ caseId, version, panel }: { caseId: string; version: number; panel: JourneyActivationPanel }) {
+export function ActivationPanel({
+  caseId, version, panel, email = emptyPaymentRequestEmail,
+}: { caseId: string; version: number; panel: JourneyActivationPanel; email?: PaymentRequestEmailView }) {
   const order = panel.order
   return <div className="guided-facts" data-activation={panel.headline}>
     <p>{panel.trackNote}</p>
@@ -27,14 +30,11 @@ export function ActivationPanel({ caseId, version, panel }: { caseId: string; ve
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     {panel.continueToPayment && <ContinueAcceptedServiceForm caseId={caseId} version={version} label={panel.continueToPayment.label} />}
     {panel.issueUpfront && <>
-      <p>Issuing this link uses the existing payment command. It does not mark the obligation paid, and it does not start a live charge from this page. Collection stays on the existing payment gate.</p>
-      <IssuePaymentActionForm
-        serviceOrderId={panel.issueUpfront.serviceOrderId}
-        version={panel.issueUpfront.version}
-        operation="issue_guided_payment_action"
-        label="Issue upfront payment link"
-      />
+      <p>Payment status: outstanding. Stripe has not confirmed settlement, and a receipt is not stored. This step is not complete.</p>
+      <p>Email status: {email.detail}</p>
+      {offerPaymentRequestSend(email) && <PaymentRequestForm serviceOrderId={panel.issueUpfront.serviceOrderId} version={panel.issueUpfront.version} />}
     </>}
+    {panel.track === "MANAGED" && <p>Email status: no upfront payment email is sent for a Managed success fee.</p>}
     {panel.authorization && <AuthorizationPanel caseId={caseId} data={panel.authorization} scope="activation" />}
     <p>Saving a link or recording manager access does not prepare a pack, submit anything to Google, or change the commercial agreement.</p>
   </div>

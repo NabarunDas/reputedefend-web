@@ -83,7 +83,7 @@ afterEach(() => {
 describe("payments screens", () => {
   it("renders each supported payment state with the matching next action", () => {
     const states = [
-      ["DUE", "Payment required", "Continue to secure checkout"],
+      ["DUE", "Payment required", "Pay £99.00 securely"],
       ["COLLECTING", "Payment pending", "Continue secure checkout"],
       ["FAILED", "Payment was not completed", "Try secure checkout again"],
       ["PAID", "Paid", null],
@@ -127,6 +127,19 @@ describe("payments screens", () => {
     expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
   })
 
+  it("labels the stored Guided amount, including a discounted total", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ serviceName: "Guided Review", amountMinor: 5900, obligations: [{ ...order().obligations[0], amountMinor: 5900 }] })],
+    })]} />)
+    expect(screen.getByRole("button", { name: "Pay £59.00 securely" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Pay £99.00 securely" })).toBeNull()
+    cleanup()
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ amountMinor: 7920, obligations: [{ ...order().obligations[0], amountMinor: 7920 }] })],
+    })]} />)
+    expect(screen.getByRole("button", { name: "Pay £79.20 securely" })).toBeTruthy()
+  })
+
   it("does not offer Managed off-session card setup", () => {
     render(<PaymentsView focused cases={[item({
       serviceTrack: "MANAGED",
@@ -152,7 +165,7 @@ describe("payments screens", () => {
     let release: (value: unknown) => void = () => {}
     fetchMock.mockImplementation(() => new Promise(resolve => { release = resolve }))
     render(<PaymentsView focused cases={[item()]} />)
-    const button = screen.getByRole("button", { name: "Continue to secure checkout" })
+    const button = screen.getByRole("button", { name: "Pay £99.00 securely" })
     fireEvent.submit(button.closest("form")!)
     await waitFor(() => expect(button).toBeDisabled())
     fireEvent.submit(button.closest("form")!)
@@ -162,7 +175,7 @@ describe("payments screens", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Secure Stripe Checkout is not available yet."))
     expect(screen.getByRole("heading", { name: "Payment required" })).toBeTruthy()
     expect(screen.queryByText(/payment successful/i)).toBeNull()
-    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
+    fireEvent.submit(screen.getByRole("button", { name: "Pay £99.00 securely" }).closest("form")!)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(fetchMock.mock.calls[1][1].headers["idempotency-key"]).toBe(firstKey)
   })
@@ -175,7 +188,7 @@ describe("payments screens", () => {
       json: async () => ({ status: "ok", checkoutUrl: "https://evil.example/checkout.stripe.com" }),
     })
     render(<PaymentsView focused cases={[item()]} />)
-    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
+    fireEvent.submit(screen.getByRole("button", { name: "Pay £99.00 securely" }).closest("form")!)
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Secure Stripe Checkout is not available yet."))
     expect(navigation.urls).toEqual([])
     expect(document.body.innerHTML).not.toContain("evil.example")
@@ -185,7 +198,7 @@ describe("payments screens", () => {
       status: 200,
       json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay_test" }),
     })
-    fireEvent.submit(screen.getByRole("button", { name: "Continue to secure checkout" }).closest("form")!)
+    fireEvent.submit(screen.getByRole("button", { name: "Pay £99.00 securely" }).closest("form")!)
     await waitFor(() => expect(navigation.urls).toEqual(["https://checkout.stripe.com/c/pay_test"]))
   })
 

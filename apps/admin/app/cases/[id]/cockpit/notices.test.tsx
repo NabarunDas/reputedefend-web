@@ -29,10 +29,8 @@ describe("blockers", () => {
     expect(screen.getByText("To be resolved by Customer.")).toBeInTheDocument()
   })
 
-  it("attributes a deployment capability to the system rather than to a person", () => {
-    render(<CaseBlockers blockers={flowFrom(cockpitScenarios.readyToSubmitRecordSubmission).blockers} />)
-    expect(screen.getByRole("heading", { name: "There is no automated Google submission in this deployment" })).toBeInTheDocument()
-    expect(screen.getByText("To be resolved by System.")).toBeInTheDocument()
+  it("does not block a published Guided pack on the missing Google transport", () => {
+    expect(flowFrom(cockpitScenarios.readyToSubmitRecordSubmission).blockers).toEqual([])
   })
 
   it("keeps blocker codes out of the interface", () => {

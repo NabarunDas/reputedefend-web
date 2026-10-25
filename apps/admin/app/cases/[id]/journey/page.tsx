@@ -330,6 +330,7 @@ async function loadJourneyClosure(
       moneyOrders: money.orders,
     },
     precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
+    mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
   }
   const presented = presentJourneyClosure(input)
   return { disagreed: presented.disagreed, closureRecordsDisagree: presented.closureRecordsDisagree, input }

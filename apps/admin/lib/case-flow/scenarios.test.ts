@@ -900,10 +900,11 @@ const scenarios: Scenario[] = [
   {
     name: "a Guided case whose payment the provider has confirmed",
     facts: guided({ technicalStage: "PAYMENT_REQUIRED", payment: { complete: true, orders: [order({ obligationState: "PAID", receiptRecorded: true })] } }),
-    primary: "ADVANCE_TO_PREPARATION",
+    primary: "CREATE_PREPARED_PACK",
     check: model => {
       const group = model.prerequisites.find(entry => entry.id === "GUIDED_PAYMENT")
       expect(group?.satisfied).toBe(true)
+      expect(model.primaryAction?.description).toContain("completed statement")
     },
   },
 
@@ -1168,8 +1169,8 @@ const scenarios: Scenario[] = [
   {
     name: "a published pack, so the case is internally ready",
     facts: prepared({ packs: { packs: [pack({ status: "APPROVED", published: true, everPublished: true })], eligibleCount: 1 } }),
-    primary: "ADVANCE_TO_READY_TO_SUBMIT",
-    check: model => expect(model.primaryAction?.description).toContain("does not mean Google has received anything"),
+    primary: "CLOSE_GUIDED_PREPARATION",
+    check: model => expect(model.primaryAction?.description).toContain("Google's later decision is not required"),
   },
   {
     name: "a pack that went stale after approval",
@@ -1245,9 +1246,8 @@ const scenarios: Scenario[] = [
       technicalStage: "READY_TO_SUBMIT",
       packs: { packs: [pack({ status: "APPROVED", published: true, everPublished: true })], eligibleCount: 1 },
     }),
-    primary: "RECORD_EXTERNAL_SUBMISSION",
+    primary: "CLOSE_GUIDED_PREPARATION",
     phase: "SUBMISSION",
-    blockers: ["GOOGLE_SUBMISSION_NOT_LIVE"],
   },
   {
     name: "a case ready to submit with an earlier submission still open",
@@ -1808,7 +1808,7 @@ describe("a case marked ready to submit, at every pack state", () => {
     for (const rung of ladder) {
       expect(resolve(rung.packs).primaryAction?.id, rung.state).not.toBe("RECORD_EXTERNAL_SUBMISSION")
     }
-    expect(resolve(usable).primaryAction?.id).toBe("RECORD_EXTERNAL_SUBMISSION")
+    expect(resolve(usable).primaryAction?.id).toBe("CLOSE_GUIDED_PREPARATION")
   })
 
   it("leaves the stage alone and flags preparation instead", () => {

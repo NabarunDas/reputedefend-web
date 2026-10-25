@@ -15,6 +15,7 @@ const originPattern = /^https:\/\/[A-Za-z0-9.-]+$/
 export const paymentConfirmationButton = "View your receipt"
 export const packReadyButton = "View your completed pack"
 export const guidedCustomerSubmitsSentence = "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you."
+export const guidedCompletionGuardSentence = "Relaunch Guard is optional. This email does not enrol you."
 
 export function fulfilmentServiceName(serviceCode: string): string | null {
   if (serviceCode === "GUIDED_RELAUNCH") return "Guided Relaunch"
@@ -107,5 +108,37 @@ export function renderPackReady(input: {
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null
   if (!rendered.text.includes(pageUrl) || !rendered.html.includes(pageUrl)) return null
   if (!rendered.text.includes(packReadyButton) || !rendered.text.includes(guidedCustomerSubmitsSentence)) return null
+  return { subject, html: rendered.html, text: rendered.text, pageUrl }
+}
+
+export function renderGuidedCompletion(input: {
+  serviceCode: string
+  serviceName: string
+  caseRef: string
+  amountMinor: number
+  currency: string
+  origin: string
+  replyTo?: string | null
+}): { subject: string; html: string; text: string; pageUrl: string } | null {
+  const ready = sharedReady(input)
+  const pageUrl = portalCasePage(input.origin, input.caseRef, "documents")
+  const replyTo = validReplyMailbox(input.replyTo)
+  if (!ready || !pageUrl || !replyTo) return null
+  const subject = `Your ${ready.serviceName} preparation is complete — ${ready.caseRef}`
+  const blocks: CustomerEmailBlock[] = [
+    { type: "paragraph", text: "Hello," },
+    { type: "paragraph", text: `Your ${ready.serviceName} preparation for case ${ready.caseRef} is complete. The completed statement, supporting evidence and submission instructions are in the Customer Portal.` },
+    { type: "paragraph", text: `Amount paid: ${ready.amountLabel}` },
+    { type: "paragraph", text: customerPriceBoundary },
+    { type: "paragraph", text: guidedCustomerSubmitsSentence },
+    { type: "paragraph", text: "Google's later decision is separate from this completed preparation. You can tell us if you submit the pack, and you can ask for a correction from the pack page." },
+    { type: "paragraph", text: `${guidedCompletionGuardSentence} It does not apply a discount or charge you.` },
+    { type: "button", label: packReadyButton, url: pageUrl },
+    { type: "paragraph", text: "Reply to this email if you need a correction. Keep the case reference in the subject." },
+  ]
+  const rendered = renderCustomerEmail({ title: "Your Guided preparation is complete", blocks, caseRef: ready.caseRef })
+  if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null
+  if (!rendered.text.includes(pageUrl) || !rendered.html.includes(pageUrl)) return null
+  if (!rendered.text.includes(packReadyButton) || !rendered.text.includes(guidedCustomerSubmitsSentence) || !rendered.text.includes(guidedCompletionGuardSentence)) return null
   return { subject, html: rendered.html, text: rendered.text, pageUrl }
 }

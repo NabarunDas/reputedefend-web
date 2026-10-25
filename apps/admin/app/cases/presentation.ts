@@ -180,6 +180,7 @@ const caseActionSections: Partial<Record<CaseNextActionId, CaseSectionId>> = {
   ADVANCE_TO_PREREQUISITES: "case-progress",
   ADVANCE_TO_PREPARATION: "case-progress",
   ADVANCE_TO_READY_TO_SUBMIT: "case-progress",
+  CLOSE_GUIDED_PREPARATION: "case-closure",
   MOVE_TO_WAITING_GOOGLE: "case-progress",
   RETURN_TO_PREPARATION: "case-progress",
   PERFORM_FURTHER_REVIEW: "case-progress",

@@ -25,7 +25,7 @@ function cardFor(facts: CaseFlowFacts) {
 describe("the next action card", () => {
   it("shows the model's own label and explanation", () => {
     const flow = cardFor(cockpitScenarios.preparationApprovePack)
-    expect(screen.getByRole("heading", { name: "Approve the evidence pack" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Approve the completed pack" })).toBeInTheDocument()
     expect(screen.getByText(flow.primaryAction!.description)).toBeInTheDocument()
   })
 
@@ -41,8 +41,11 @@ describe("the next action card", () => {
     expect(screen.getByText("Waiting")).toBeInTheDocument()
   })
 
-  it("names Google when Google is the one holding the case up", () => {
-    cardFor(cockpitScenarios.waitingForGoogle)
+  it("names Google when an open follow-up is still with Google", () => {
+    cardFor({
+      ...cockpitScenarios.waitingForGoogle,
+      tasks: [{ id: "task-google", title: "Chase the submission", owner: "ADMIN", kind: "FOLLOW_UP", status: "OPEN", dueAt: "2026-12-01T12:00:00.000Z" }],
+    })
     expect(screen.getByText("Waiting on: Google")).toBeInTheDocument()
   })
 
@@ -73,7 +76,7 @@ describe("the next action card", () => {
 
   it("labels the button with the action rather than with 'continue'", () => {
     cardFor(cockpitScenarios.readyToSubmitRecordSubmission)
-    expect(screen.getByRole("link", { name: "Submit externally, then record the submission" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Close the Guided preparation" })).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: /^(Continue|Go|Open)$/ })).toBeNull()
   })
 
@@ -83,14 +86,14 @@ describe("the next action card", () => {
     expect(link).toHaveAttribute("href", "#case-authorisation")
   })
 
-  it("sends a submission recommendation to the submission section", () => {
+  it("sends a published Guided pack to the closure section", () => {
     cardFor(cockpitScenarios.readyToSubmitRecordSubmission)
-    expect(screen.getByRole("link", { name: /^Submit externally/ })).toHaveAttribute("href", "#case-submissions")
+    expect(screen.getByRole("link", { name: "Close the Guided preparation" })).toHaveAttribute("href", "#case-closure")
   })
 
   it("sends a closure recommendation to the closure section", () => {
     cardFor(cockpitScenarios.outcomeReview)
-    expect(screen.getByRole("link", { name: "Close the case" })).toHaveAttribute("href", "#case-closure")
+    expect(screen.getByRole("link", { name: "Close the Guided preparation" })).toHaveAttribute("href", "#case-closure")
   })
 
   it("links straight out to another workspace when the work happens there", () => {

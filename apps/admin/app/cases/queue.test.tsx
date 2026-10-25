@@ -70,9 +70,10 @@ describe("what to do next", () => {
     expect(screen.getByText("Waiting on: Customer")).toBeInTheDocument()
   })
 
-  it("names Google when Google is holding the case up", () => {
+  it("offers closure once a Guided pack is with the customer", () => {
     renderItem(queueScenarios.waitingForGoogle)
-    expect(screen.getByText("Waiting on: Google")).toBeInTheDocument()
+    expect(screen.getByText("Close the Guided preparation")).toBeInTheDocument()
+    expect(screen.queryByText("Waiting on: Google")).toBeNull()
   })
 
   it("says a blocked step is blocked and names what is blocking it", () => {

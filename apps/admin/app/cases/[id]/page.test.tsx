@@ -91,12 +91,12 @@ describe("the case cockpit, across the states operators see", () => {
     ["managedWaitingForAgreement", "Waiting for the service agreement"],
     ["managedPermissionInReview", "Re-establish an invalidated permission"],
     ["guidedWaitingForPayment", "Waiting for the upfront payment"],
-    ["preparationApprovePack", "Approve the evidence pack"],
-    ["readyToSubmitNeedsPublish", "Publish the pack to the customer"],
-    ["readyToSubmitRecordSubmission", "Submit externally, then record the submission"],
-    ["waitingForGoogle", "Waiting for Google"],
-    ["furtherReview", "Do the further work this case needs"],
-    ["outcomeReview", "Close the case"],
+    ["preparationApprovePack", "Approve the completed pack"],
+    ["readyToSubmitNeedsPublish", "Send the completed pack"],
+    ["readyToSubmitRecordSubmission", "Close the Guided preparation"],
+    ["waitingForGoogle", "Close the Guided preparation"],
+    ["furtherReview", "Close the Guided preparation"],
+    ["outcomeReview", "Close the Guided preparation"],
   ]
 
   it.each(expected)("%s leads with the one thing to do next", async (name, label) => {

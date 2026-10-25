@@ -172,7 +172,14 @@ export function coherentTerminalClosure(input: {
   status: string
   outcome: string | null
   summary: string
+  serviceTrack?: string
 }): boolean {
   if (!summaryOk(input.summary)) return false
+  if (
+    input.serviceTrack === "GUIDED"
+    && input.status === "CLOSED"
+    && input.stage === "FINISHED"
+    && !input.outcome
+  ) return true
   return readStoredOutcome({ ...input, reopened: false }) === "closed"
 }

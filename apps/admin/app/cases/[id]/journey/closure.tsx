@@ -3,6 +3,7 @@ import type { JourneyClosurePanel } from "@/lib/case-journey/closure"
 import { ukDate } from "@/lib/admin/activity"
 import type { CaseDetail } from "@/lib/cases/model"
 import { CloseForm, TaskForm } from "../../forms"
+import { GuidedCloseForm, RecoverCompletionForm } from "./guided-close-form"
 
 /**
  * Step 11 closes or reopens with the existing case commands.
@@ -51,6 +52,14 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     <p><strong>Who must act.</strong> {panel.who}</p>
     <p>Case version {panel.version}. A newer version is refused, and the case stays as the database left it.</p>
+    {panel.commands?.close && panel.fulfilmentClose && <details>
+      <summary>Close the Guided preparation</summary>
+      <GuidedCloseForm c={caseDetail} />
+    </details>}
+    {panel.completionRecovery && <details>
+      <summary>Send the completion update</summary>
+      <RecoverCompletionForm c={caseDetail} summary={panel.summary} />
+    </details>}
     {panel.commands?.close && panel.locked && <details>
       <summary>Close with the recorded outcome</summary>
       <CloseForm c={caseDetail} locked={panel.locked} />
@@ -64,6 +73,10 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
       <p>{panel.guard.text}</p>
       <p><Link href={panel.guard.href}>Open the Guard workspace</Link></p>
     </section>
-    <p>This step does not send a closure email, submit anything to Google, or collect a payment.</p>
+    <p>{panel.completionRecovery
+      ? "The Guided preparation is already closed. This queues the completion update that was not sent. Queued is not delivered. It does not close the case again, record a Google decision, or enrol Relaunch Guard."
+      : panel.fulfilmentClose
+      ? "Closing records the Guided preparation as delivered. A completion email is queued only when outgoing mail is on, and queued is not delivered. If mail is off, the notification stays pending. Nothing here submits work to Google, and Relaunch Guard stays optional."
+      : "This step does not send a closure email, submit anything to Google, or collect a payment."}</p>
   </div>
 }

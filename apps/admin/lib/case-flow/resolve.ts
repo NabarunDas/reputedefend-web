@@ -956,9 +956,13 @@ function guidedPrerequisiteRules(collector: Collector): void {
     return
   }
   if (payment.upfrontPaid) {
-    if (allows(collector, "PREPARATION")) {
-      propose(collector, { id: "ADVANCE_TO_PREPARATION", reasonCodes: ["GUIDED_PAYMENT_COLLECTED"] })
+    if (collector.evidence.accepted === 0) {
+      block(collector, "NO_ACCEPTED_EVIDENCE", "evidence")
+      if (!collector.evidence.anyRequest) propose(collector, { id: "REQUEST_EVIDENCE", reasonCodes: ["NO_EVIDENCE_REQUEST"] })
+      return
     }
+    if (packRules(collector)) return
+    propose(collector, { id: "CLOSE_GUIDED_PREPARATION", reasonCodes: ["GUIDED_PACK_PUBLISHED"] })
     return
   }
 
@@ -1104,6 +1108,10 @@ function preparationRules(collector: Collector): void {
   }
 
   if (packRules(collector)) return
+  if (facts.serviceTrack === "GUIDED") {
+    if (prerequisitesHold) propose(collector, { id: "CLOSE_GUIDED_PREPARATION", reasonCodes: ["GUIDED_PACK_PUBLISHED"] })
+    return
+  }
   if (prerequisitesHold && allows(collector, "READY_TO_SUBMIT")) {
     propose(collector, { id: "ADVANCE_TO_READY_TO_SUBMIT", reasonCodes: ["PACK_PUBLISHED"] })
   }
@@ -1165,6 +1173,10 @@ function packRules(collector: Collector): boolean {
 function submissionRules(collector: Collector, stage: string): void {
   const { facts, packs } = collector
   const unresolved = facts.submissions.filter(entry => entry.result === null)
+  if (facts.serviceTrack === "GUIDED" && packs.publishedUsable && unresolved.length === 0) {
+    propose(collector, { id: "CLOSE_GUIDED_PREPARATION", reasonCodes: ["GUIDED_PACK_PUBLISHED"] })
+    return
+  }
 
   if (stage === "READY_TO_SUBMIT") {
     if (packRules(collector)) {
@@ -1192,6 +1204,17 @@ function submissionRules(collector: Collector, stage: string): void {
 function decisionRules(collector: Collector, stage: string): void {
   const { facts, now } = collector
   const unresolved = facts.submissions.filter(entry => entry.result === null)
+  const openTasks = facts.tasks.filter(task => task.status === "OPEN")
+  if (
+    facts.serviceTrack === "GUIDED"
+    && collector.packs.publishedUsable
+    && !facts.outcome
+    && unresolved.length === 0
+    && openTasks.length === 0
+  ) {
+    propose(collector, { id: "CLOSE_GUIDED_PREPARATION", reasonCodes: ["GUIDED_PACK_PUBLISHED"] })
+    return
+  }
 
   if (stage === "WAITING_GOOGLE") {
     const followUp = facts.tasks
@@ -1240,7 +1263,6 @@ function decisionRules(collector: Collector, stage: string): void {
     block(collector, "OPEN_SUBMISSION_UNRESOLVED")
     return
   }
-  const openTasks = facts.tasks.filter(task => task.status === "OPEN")
   if (openTasks.length > 0) {
     propose(collector, { id: "REVIEW_OUTCOME", reasonCodes: ["OPEN_TASKS_BLOCK_CLOSURE"] })
     block(collector, "OPEN_TASKS_BLOCK_CLOSURE", "tasks")

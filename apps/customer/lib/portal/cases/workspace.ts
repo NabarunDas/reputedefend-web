@@ -157,6 +157,7 @@ export function presentNextStep(input: {
   status: CaseStatus
   workStage: WorkStage
   caseType: CaseType
+  serviceTrack?: string
   outcomeCode: OutcomeCode | null
   attentionItems: CustomerCaseDetail["case"]["attentionItems"]
 }): PresentedNextStep {
@@ -204,6 +205,18 @@ export function presentNextStep(input: {
       remaining: [],
     }
   }
+  if (state === "SUBMITTED" && input.serviceTrack === "GUIDED") {
+    return {
+      title: "A submission has been recorded",
+      body: "You submit a Guided pack to Google yourself. ProfileRelaunch does not submit it. A report from you is not a Google decision.",
+      timing: null,
+      support: null,
+      href: null,
+      actionLabel: null,
+      alsoWaiting: null,
+      remaining: [],
+    }
+  }
   if (state === "SUBMITTED") {
     return {
       title: "Your case has been submitted",
@@ -231,6 +244,18 @@ export function presentNextStep(input: {
   const outcome = terminalOutcome(input.status, input.workStage, input.outcomeCode)
   if (outcome) {
     return { title: outcome.title, body: outcome.body, timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
+  }
+  if (input.status === "CLOSED" && input.workStage === "FINISHED" && !input.outcomeCode && input.serviceTrack === "GUIDED") {
+    return {
+      title: "Your Guided preparation is complete",
+      body: "Your submission pack is in the Customer Portal. You submit it to Google yourself. ProfileRelaunch does not submit Guided work. Google's later decision is separate, and Relaunch Guard is optional.",
+      timing: null,
+      support: null,
+      href: null,
+      actionLabel: null,
+      alsoWaiting: null,
+      remaining: [],
+    }
   }
   if (state === "CANCELLED") {
     return {

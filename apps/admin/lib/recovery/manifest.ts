@@ -964,6 +964,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided fulfilment handover", probe: "public.customer_portal_guided_handover_v1" },
   },
+  {
+    // GUIDED-FULFILMENT closure. Source only. Do not apply to DEV or Production
+    // from this change. It does not send mail, charge a card, or edit an existing case.
+    version: "20261025160000",
+    filename: "20261025160000_guided_fulfilment_closure_v1.sql",
+    step: "GUIDED-FULFILMENT closure",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided fulfilment closure", probe: "public.admin_guided_fulfilment_close_v1" },
+  },
 ]
 
 /**

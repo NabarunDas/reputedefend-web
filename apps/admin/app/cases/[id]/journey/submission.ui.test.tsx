@@ -8,6 +8,7 @@ import type { JourneyIntakeBrief } from "@/lib/case-journey/intake"
 import { buildJourneySubmissionPanel } from "@/lib/case-journey/submission"
 import { presentCaseJourney } from "@/lib/case-journey/present"
 import type { CaseDetail, Submission } from "@/lib/cases/model"
+import { SubmissionPanel } from "./submission"
 import { CaseJourneyView } from "./view"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
@@ -177,9 +178,20 @@ describe("guided submission tracking", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "Saved. The case history has been updated." }) })
     vi.stubGlobal("fetch", fetchMock)
     show(facts(), [], "READY_TO_SUBMIT")
-    expect(document.querySelector("[data-submission]")).toHaveAttribute("data-submission", "Not submitted")
-    expect(document.querySelector("[data-step='SUBMISSION']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(document.querySelector("[data-step='SUBMISSION']")).toHaveAttribute("data-state", "NOT_APPLICABLE")
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
+    expect(screen.queryByText("Record an externally completed submission")).toBeNull()
+    cleanup()
+    const source = facts()
+    const panel = buildJourneySubmissionPanel({
+      facts: source,
+      submissions: [],
+      status: source.caseStatus,
+      track: source.serviceTrack,
+      stage: "READY_TO_SUBMIT",
+    })
+    render(<SubmissionPanel caseDetail={detail(source, [], "READY_TO_SUBMIT")} panel={panel} />)
+    expect(document.querySelector("[data-submission]")).toHaveAttribute("data-submission", "Not submitted")
     fireEvent.click(screen.getByText("Record an externally completed submission"))
     fireEvent.change(screen.getByLabelText("Submission date and time (UTC)"), { target: { value: "2026-06-01T12:00" } })
     fireEvent.change(screen.getByLabelText("Google reference or submission receipt reference"), { target: { value: "GOOGLE-123" } })
@@ -195,7 +207,7 @@ describe("guided submission tracking", () => {
     expect(payload.data.reference).toBe("GOOGLE-123")
     expect(payload.data.evidence).toMatch(/receipt/)
     expect(payload.operation).not.toBe("resolve_submission")
-    expect(document.querySelector("[data-step='SUBMISSION']")).not.toHaveAttribute("data-state", "COMPLETED")
+    expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
   })
 
   it("records a withdrawal on an open attempt and does not start another", async () => {

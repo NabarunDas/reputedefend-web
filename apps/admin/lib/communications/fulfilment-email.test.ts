@@ -4,6 +4,8 @@ import {
   guidedCustomerSubmitsSentence,
   packReadyButton,
   paymentConfirmationButton,
+  guidedCompletionGuardSentence,
+  renderGuidedCompletion,
   renderPackReady,
   renderPaymentConfirmation,
 } from "../../../../lib/email/fulfilment"
@@ -66,7 +68,28 @@ describe("guided fulfilment email", () => {
     expect(rendered!.text).toContain("£79.20 GBP")
     expect(rendered!.text).not.toContain("£99.00 GBP")
     expect(renderPackReady({ ...relaunch, amountMinor: 7920 })!.text).toContain("£79.20 GBP")
+    expect(renderGuidedCompletion({ ...relaunch, amountMinor: 7920 })!.text).toContain("£79.20 GBP")
     expect(renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 0 })).toBeNull()
+  })
+
+  it("summarises a completed £99 preparation with one pack button and optional Guard", () => {
+    const rendered = renderGuidedCompletion(relaunch)
+    expect(rendered).not.toBeNull()
+    expect(rendered!.subject).toBe("Your Guided Relaunch preparation is complete — PR-26-FULF99")
+    expect(rendered!.text).toContain("£99.00 GBP")
+    expect(rendered!.text).toContain(guidedCustomerSubmitsSentence)
+    expect(rendered!.text).toContain(guidedCompletionGuardSentence)
+    expect(rendered!.text).toContain("Reply to this email if you need a correction")
+    expect(rendered!.text).not.toContain("contact us through the ProfileRelaunch website")
+    expect(rendered!.text).toContain("Google's later decision is separate")
+    expect(rendered!.text).not.toMatch(/enrol you in|ProfileRelaunch submits|we have submitted/i)
+    expect(renderGuidedCompletion({ ...relaunch, replyTo: null })).toBeNull()
+    expect(rendered!.text.match(new RegExp(packReadyButton, "g"))).toHaveLength(1)
+    expect(rendered!.pageUrl).toBe(`${origin}/portal/cases/PR-26-FULF99/documents`)
+    expect(`${rendered!.text}\n${rendered!.html}`).not.toMatch(/pi_|cus_|#t=|\/action\//)
+  })
+
+  it("refuses a Managed service name, a zero amount, and a token", () => {
     expect(renderPackReady({ ...relaunch, serviceName: "Managed Relaunch" })).toBeNull()
     expect(renderPaymentConfirmation({
       ...relaunch,

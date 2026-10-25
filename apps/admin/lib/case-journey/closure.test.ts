@@ -198,6 +198,7 @@ function show(
     submissions?: Submission[] | null
     detail?: Partial<CaseDetail>
     precedingComplete?: boolean
+    mailRecovery?: boolean
     events?: { id: string; event: string; details: Record<string, unknown> }[]
   } = {},
 ) {
@@ -234,6 +235,7 @@ function show(
     events: options.events ?? [],
     detail,
     precedingComplete: options.precedingComplete ?? true,
+    mailRecovery: options.mailRecovery,
   })
   return { ...presented.panel, closureRecordsDisagree: presented.closureRecordsDisagree, billingDisagreed: presented.disagreed }
 }
@@ -253,7 +255,83 @@ describe("guided closure", () => {
     expect(panel.guard.href).toBe("/guard")
     expect(panel.guard.text).toMatch(/not required/)
     expect(panel.notices.join(" ")).toMatch(/does not send email/)
+    expect(panel.fulfilmentClose).toBe(false)
+    expect(panel.completionRecovery).toBe(false)
     expect(panel.version).toBe(4)
+  })
+
+  it("offers Guided closure from a settled pack without a Google outcome", () => {
+    const panel = show(facts({
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      technicalStage: "PAYMENT_REQUIRED",
+    }), { submissions: [] })
+    expect(panel.fulfilmentClose).toBe(true)
+    expect(panel.completionRecovery).toBe(false)
+    expect(panel.commands).toEqual({ close: true, reopen: false })
+    expect(panel.locked).toBeNull()
+    expect(panel.who).toMatch(/Google's later decision is not required/)
+    expect(panel.notices.join(" ")).toMatch(/completion summary/)
+    expect(panel.guard.offered).toBe(false)
+    expect(panel.guard.text).toMatch(/does not enrol/)
+  })
+
+  it("verifies a closed Guided preparation that has no Google outcome", () => {
+    const panel = show(facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: null,
+      outcomeSummary: "The Guided preparation was handed to the customer.",
+      submissions: [],
+    }), { submissions: [] })
+    expect(panel.headline).toBe("Closed")
+    expect(panel.outcomeLabel).toBe("Guided preparation delivered")
+    expect(panel.detail).toMatch(/not a Google decision/)
+    expect(panel.guard.offered).toBe(false)
+    expect(panel.completionRecovery).toBe(false)
+    expect(panel.notices.join(" ")).toMatch(/No completion email/)
+  })
+
+  it("offers one completion update when a closed Guided case has no completion email", () => {
+    const source = facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: null,
+      outcomeSummary: "The Guided preparation was handed to the customer.",
+      submissions: [],
+    })
+    const panel = show(source, { submissions: [], mailRecovery: true })
+    expect(panel.completionRecovery).toBe(true)
+    expect(panel.fulfilmentClose).toBe(false)
+    expect(panel.commands?.close).toBeFalsy()
+    const queued = show({
+      ...source,
+      communications: [{
+        id: "comm-1",
+        templateKey: "GUIDED_COMPLETION",
+        lifecycle: "QUEUED",
+        deliveryStatus: "NONE",
+        legacyStatus: null,
+        draftedAt: WHEN,
+      }],
+    }, { submissions: [], mailRecovery: true })
+    expect(queued.completionRecovery).toBe(false)
+    expect(queued.notices.join(" ")).toMatch(/queued/)
+    expect(queued.notices.join(" ")).not.toMatch(/The provider reported delivery/)
+    const accepted = show({
+      ...source,
+      communications: [{
+        id: "comm-1",
+        templateKey: "GUIDED_COMPLETION",
+        lifecycle: "SENT",
+        deliveryStatus: "PROVIDER_ACCEPTED",
+        legacyStatus: null,
+        draftedAt: WHEN,
+      }],
+    }, { submissions: [], mailRecovery: true })
+    expect(accepted.completionRecovery).toBe(false)
+    expect(accepted.notices.join(" ")).toMatch(/not proof the customer received it/)
   })
 
   it("keeps a Guided case open while the upfront fee is pending", () => {

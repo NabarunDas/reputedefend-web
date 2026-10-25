@@ -49,9 +49,9 @@ describe("the case snapshot's ownership row", () => {
     expect(screen.queryByText("Action owner")).toBeNull()
   })
 
-  it("names Google when Google is the party being waited on", () => {
+  it("does not leave a delivered Guided pack waiting on Google", () => {
     snapshotFor(cockpitScenarios.waitingForGoogle)
-    expect(rowLabelled("Waiting on")).toBe("Google")
+    expect(screen.queryByText("Waiting on")).toBeNull()
   })
 
   it("says what a blocked case is blocked by", () => {

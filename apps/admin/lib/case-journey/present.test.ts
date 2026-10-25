@@ -803,6 +803,23 @@ describe("journey status from authoritative records", () => {
     const none = show({ technicalStage: "READY_TO_SUBMIT", serviceTrack: "GUIDED", submissions: [] })
     expect(step(none, "SUBMISSION").state).not.toBe("COMPLETED")
 
+    const handedOver = show({
+      technicalStage: "PAYMENT_REQUIRED",
+      serviceTrack: "GUIDED",
+      submissions: [],
+      outcome: null,
+      commercial: { complete: true, quotes: [quote({ status: "ACCEPTED", orderId: "order-1" })] },
+      payment: { complete: true, orders: [order({ obligationState: "PAID", orderState: "ACCEPTED_AWAITING_PAYMENT", receiptRecorded: true })] },
+      evidence: reviewedEvidence,
+      communications: [delivered()],
+      packs: { packs: [{ id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 2 }], eligibleCount: 2 },
+    })
+    expect(step(handedOver, "SUBMISSION").state).toBe("NOT_APPLICABLE")
+    expect(step(handedOver, "OUTCOME_BILLING").state).toBe("NOT_APPLICABLE")
+    expect(step(handedOver, "SUBMISSION").known.join(" ")).toMatch(/does not submit Guided work/)
+    expect(handedOver.nextAction?.id).toBe("CLOSE_GUIDED_PREPARATION")
+    expect(handedOver.focusStepId).toBe("CLOSURE")
+
     const wrongParty = show({
       technicalStage: "WAITING_GOOGLE",
       serviceTrack: "GUIDED",

@@ -952,6 +952,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "guided payment request", probe: "public.admin_queue_guided_payment_request_v1" },
   },
+  {
+    // GUIDED-FULFILMENT handover. Source only. Do not apply to DEV or Production
+    // from this change. It does not send mail, charge a card, or edit an existing case.
+    version: "20261025140000",
+    filename: "20261025140000_guided_fulfilment_handover_v1.sql",
+    step: "GUIDED-FULFILMENT handover",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided fulfilment handover", probe: "public.customer_portal_guided_handover_v1" },
+  },
 ]
 
 /**

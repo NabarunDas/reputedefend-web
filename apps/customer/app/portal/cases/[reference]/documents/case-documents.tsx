@@ -2,6 +2,7 @@ import { caseTypeLabel, formatPortalDate, serviceLabel } from "@/lib/portal/case
 import { evidenceStateLabel, publishedFileDetail } from "@/lib/portal/documents/model"
 import type { CustomerCaseDocuments } from "@/lib/portal/documents/parse"
 import { EvidenceUploadForm } from "../../../documents/upload-form"
+import { GuidedHandoverForm } from "./handover-form"
 
 export function CaseDocumentsUnavailable() {
   return (
@@ -71,6 +72,19 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
         )}
       </section>
 
+      {documents.pack ? (
+        <section aria-labelledby="guided-pack-heading">
+          <h2 id="guided-pack-heading">{documents.pack.title}</h2>
+          <p>{documents.pack.instructions}</p>
+          <p>Download the files below. The instructions file is marked for you. You submit this pack to Google yourself.</p>
+          <GuidedHandoverForm
+            reference={item.reference}
+            submitted={documents.pack.customerSubmitted}
+            correctionRequested={documents.pack.correctionRequested}
+          />
+        </section>
+      ) : null}
+
       <section aria-labelledby="case-published-heading">
         <h2 id="case-published-heading">Documents from ProfileRelaunch</h2>
         {documents.documents.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for this case yet.</p> : (
@@ -79,6 +93,7 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
               <li key={file.selector}>
                 <article className="case-card">
                   <h3>{file.title}</h3>
+                  {documents.pack?.instructionSelectors.includes(file.selector) ? <p>Customer submission instructions</p> : null}
                   <p>{file.filename}</p>
                   <p>{publishedFileDetail(file)}</p>
                   <p>

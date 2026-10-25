@@ -172,11 +172,34 @@ describe("a synthetic Admin working day", () => {
     ])).requestStatus).toBe("FULFILLED")
 
     // 11. A prepared pack is assembled from the accepted evidence.
+    // The customer bill stays supporting evidence. Guided approval also needs
+    // one staff-authored statement and one staff-authored instruction file.
     const packCmd = (operation: string, data: Record<string, unknown> = {}, pack: string | null = null, version: number | null = null) =>
       rpc("admin_prepared_pack_command_v1", [token, key(), caseId, pack, version, operation, data])
+    const staffFile = async (filename: string) => {
+      const created = await rpc("admin_evidence_begin_v1", [
+        token, key(), caseId, null, filename, "application/pdf", 1024, filename, "test-evidence", null,
+      ])
+      expect(created.status).toBe("success")
+      expect((await rpc("admin_evidence_finalize_v1", [token, key(), caseId, created.versionId])).status).toBe("success")
+      expect((await rpc("admin_evidence_refresh_scan_v1", [
+        token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null,
+      ])).status).toBe("success")
+      const meta = await rpc("admin_evidence_version_v1", [token, caseId, created.versionId])
+      expect((await rpc("admin_evidence_review_v1", [
+        token, key(), caseId, created.versionId, meta.recordVersion, "accept", "Accepted after a clean scan.", null,
+      ])).status).toBe("success")
+      return created
+    }
     const pack = await packCmd("create")
     expect(pack.status).toBe("success")
-    expect((await packCmd("add_item", { versionId: upload.versionId }, pack.id, pack.recordVersion)).status).toBe("success")
+    const supporting = await packCmd("add_item", { versionId: upload.versionId, role: "EVIDENCE" }, pack.id, pack.recordVersion)
+    expect(supporting.status).toBe("success")
+    const statement = await staffFile("appeal-statement.pdf")
+    const withStatement = await packCmd("add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, pack.id, supporting.recordVersion)
+    expect(withStatement.status).toBe("success")
+    const instructions = await staffFile("submission-instructions.pdf")
+    expect((await packCmd("add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, pack.id, withStatement.recordVersion)).status).toBe("success")
 
     // 12. The pack is approved. Approval is deliberate: it needs an explicit
     // confirmation as well as a reason.
@@ -294,6 +317,6 @@ describe("a synthetic Admin working day", () => {
     expect(evidence.documents[0].versions[0].reviewStatus).toBe("ACCEPTED")
     const packs = await rpc("admin_prepared_pack_case_v1", [token, caseId])
     expect(packs.packs[0]).toMatchObject({ status: "APPROVED" })
-    expect(packs.packs[0].items).toHaveLength(1)
+    expect(packs.packs[0].items).toHaveLength(3)
   }, 120000)
 })

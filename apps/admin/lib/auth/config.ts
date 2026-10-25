@@ -21,7 +21,7 @@ function adminOrigins(): string[] {
   return origin ? [origin] : []
 }
 
-function adminCustomerOrigin(): string | null {
+export function customerPortalOrigin(): string | null {
   if (process.env.VERCEL_ENV === "production") return PROD_CUSTOMER_ORIGIN
   return parseOrigin(process.env.CUSTOMER_ORIGIN)
 }
@@ -53,7 +53,7 @@ export function authConfig() {
       url: supabase.origin,
       secret: SUPABASE_SECRET_KEY,
       publishable: SUPABASE_PUBLISHABLE_KEY,
-      customerOrigin: adminCustomerOrigin(),
+      customerOrigin: customerPortalOrigin(),
     }
   } catch { return null }
 }

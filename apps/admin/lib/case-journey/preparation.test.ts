@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
 import type { EligiblePackVersion, PreparedPack, PreparedPackCase } from "../packs/model"
-import { buildJourneyPreparationPanel, preparationReadiness } from "./preparation"
+import { buildJourneyPreparationPanel, packReadyNotification, preparationReadiness } from "./preparation"
 
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
 const VERSION_ID = "66666666-6666-4666-8666-666666666666"
@@ -116,7 +116,7 @@ describe("prepared pack panel", () => {
       packs: loaded([pack()], [eligible()]),
       recordsConflict: false,
     })
-    expect(view.headline).toBe("Prepared pack needs approval")
+    expect(view.headline).toBe("Approve the completed pack")
     expect(view.commands?.packs[0]?.id).toBe("pack-1")
     expect(view.commands?.eligible).toHaveLength(1)
     expect(view.requirements.find(item => item.label === "Approval")?.state).toBe("Not met")
@@ -148,6 +148,21 @@ describe("prepared pack panel", () => {
     })
     expect(view.commands?.eligible.map(item => item.versionId)).toEqual([VERSION_ID])
     expect(view.notices.join(" ")).toMatch(/not offered/)
+    expect(view.requirements.find(item => item.label === "Eligible evidence")?.detail).toMatch(/staff document does not need an evidence request/)
+  })
+
+  it("offers a staff document that has no evidence request", () => {
+    const staff = eligible({ versionId: "staff-letter", documentId: "document-staff" })
+    const view = buildJourneyPreparationPanel({
+      facts: facts(
+        { packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 0 }], eligibleCount: 1 },
+        [version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" })],
+      ),
+      packs: loaded([pack({ items: [] })], [staff]),
+      recordsConflict: false,
+    })
+    expect(view.commands?.eligible.map(item => item.versionId)).toEqual(["staff-letter"])
+    expect(view.headline).toBe("Add the statement, evidence and customer instructions")
   })
 
   it("withholds commands when the pack record is missing or does not match", () => {
@@ -172,7 +187,7 @@ describe("prepared pack panel", () => {
       packs: loaded([pack({ status: "STALE", approvedAt: "2026-06-02T12:00:00.000Z" })]),
       recordsConflict: false,
     })
-    expect(stale.headline).toBe("Prepared pack is stale")
+    expect(stale.headline).toBe("Replace the stale pack before sending it")
     expect(stale.commands).not.toBeNull()
     expect(stale.requirements.find(item => item.label === "Current pack")?.detail).toMatch(/replaced by a new draft/)
 
@@ -190,7 +205,7 @@ describe("prepared pack panel", () => {
       ]),
       recordsConflict: false,
     })
-    expect(history.headline).toBe("Prepared pack is current")
+    expect(history.headline).toBe("Available in portal; email not sent")
     expect(history.packs.map(item => item.state)).toEqual(["Superseded", "Published"])
     expect(history.packs[0]?.history).toBe(true)
   })
@@ -212,7 +227,7 @@ describe("prepared pack panel", () => {
     expect(readiness.ready).toBe(false)
     expect(readiness.otherPublished).toBe(true)
     expect(view.headline).toBe("Another pack is still published")
-    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.headline).not.toBe("The completed pack is available to the customer")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.detail).toMatch(/still published/)
@@ -255,8 +270,9 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(rows).ready).toBe(true)
-    expect(view.headline).toBe("Prepared pack is current")
-    expect(view.who).toBe("The published pack is current.")
+    expect(view.headline).toBe("Available in portal; email not sent")
+    expect(view.who).toBe("Available in portal; email not sent.")
+    expect(view.requirements.find(item => item.label === "Customer notification")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Met")
     expect(view.commands?.packs.map(item => item.id)).toEqual(["pack-1", "pack-2"])
@@ -268,7 +284,7 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(alone).ready).toBe(true)
-    expect(single.headline).toBe("Prepared pack is current")
+    expect(single.headline).toBe("Available in portal; email not sent")
     expect(single.commands).not.toBeNull()
   })
 
@@ -281,11 +297,41 @@ describe("prepared pack panel", () => {
     })
     expect(preparationReadiness(rows, { recordsConflict: true }).ready).toBe(false)
     expect(view.headline).toBe("Case records disagree")
-    expect(view.headline).not.toBe("Prepared pack is current")
+    expect(view.headline).not.toBe("The completed pack is available to the customer")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Not met")
     expect(view.notices.join(" ")).toMatch(/authority records disagree/)
     expect(view.who).toMatch(/authority records/)
     expect(view.commands).toBeNull()
+  })
+
+  it("keeps publication separate from queued, accepted, delivered and unknown mail", () => {
+    const rows = [{ id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }]
+    const packs = loaded([pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" })])
+    const show = (deliveryStatus: string | null, lifecycle = "QUEUED") => buildJourneyPreparationPanel({
+      facts: {
+        ...facts({ packs: rows, eligibleCount: 0 }),
+        communications: [{
+          id: "mail-1",
+          templateKey: "GUIDED_PACK_READY",
+          lifecycle,
+          deliveryStatus,
+          legacyStatus: null,
+          draftedAt: "2026-06-02T12:00:00.000Z",
+        }],
+      },
+      packs,
+      recordsConflict: false,
+    })
+    expect(show("NONE").headline).toBe("Pack available; notification queued")
+    expect(show("NONE").who).toBe("The notification is queued. Queued is not delivered.")
+    expect(show("PROVIDER_ACCEPTED").headline).toBe("Pack available; the provider accepted the notification")
+    expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.state).toBe("Not met")
+    expect(show("DELIVERED").headline).toBe("Pack available; the provider reported delivery")
+    expect(show("DELIVERED").who).toMatch(/not a download/)
+    expect(show("BOUNCED").headline).toBe("Pack available; the notification was not delivered")
+    expect(show("ACCEPTANCE_UNKNOWN").headline).toBe("Pack available; provider acceptance is unknown")
+    expect(show("ACCEPTANCE_UNKNOWN").who).toMatch(/another copy was not sent/)
+    expect(packReadyNotification([]).headline).toBe("Available in portal; email not sent")
   })
 })

@@ -83,7 +83,7 @@ describe("prepared pack commands", () => {
       operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
     }))
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ message: expect.stringMatching(/published for customer case access/) })
+    expect(await response.json()).toMatchObject({ message: expect.stringMatching(/available in the customer portal/) })
     expect(mocks.rpc).toHaveBeenCalledWith("admin_prepared_pack_command_v1", expect.objectContaining({
       p_operation: "publish", p_data: { note: "Publish this pack for the customer case-access view.", confirmed: true },
     }))

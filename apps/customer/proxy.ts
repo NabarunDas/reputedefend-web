@@ -27,8 +27,9 @@ export async function proxy(request: NextRequest) {
   const portalMutation = method === "POST" && (
     pathname === "/api/portal/evidence"
     || pathname === "/api/portal/service"
-    || pathname === "/api/portal/payments"
+    ||     pathname === "/api/portal/payments"
     || pathname === "/api/portal/guard"
+    || pathname === "/api/portal/documents/handover"
   )
   const portalRead = method === "GET" && (
     pathname === "/api/portal/payments/receipt"

@@ -679,7 +679,7 @@ describe("journey status from authoritative records", () => {
       packs: { packs: [{ ...published, status: "DRAFT", published: false, itemCount: 0 }], eligibleCount: 1 },
     })
     expect(step(draft, "PREPARATION").state).not.toBe("COMPLETED")
-    expect(step(draft, "PREPARATION").missing.join(" ")).toMatch(/not eligible/)
+    expect(step(draft, "PREPARATION").missing.join(" ")).toMatch(/staff document does not need an evidence request/)
 
     const history = show({
       technicalStage: "PREPARATION",
@@ -747,7 +747,8 @@ describe("journey status from authoritative records", () => {
       },
     })
     expect(step(supersededHistory, "PREPARATION").state).toBe("COMPLETED")
-    expect(step(supersededHistory, "PREPARATION").whoMustAct).toBe("The published pack is current.")
+    expect(step(supersededHistory, "PREPARATION").whoMustAct).toBe("The completed pack is available to the customer.")
+    expect(step(supersededHistory, "PREPARATION").known.join(" ")).toMatch(/Available in portal; email not sent/)
 
     const authority = show({
       technicalStage: "PREPARATION",

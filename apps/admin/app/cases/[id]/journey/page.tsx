@@ -17,7 +17,8 @@ import { presentJourneyClosure } from "@/lib/case-journey/closure"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
 import { authConfig } from "@/lib/auth/config"
-import { sendDisabledReason } from "@/lib/communications/gate"
+import { communicationsSendEnabled, sendDisabledReason } from "@/lib/communications/gate"
+import { confirmedReplyMailbox } from "@/lib/communications/brand-email"
 import { linkSecret } from "@/lib/communications/link"
 import { mailFromAddress } from "@/lib/communications/mail"
 import { monitoredReplyMailbox } from "@/lib/communications/brand-email"
@@ -357,7 +358,12 @@ async function loadJourneyPreparation(
   const packs = await getPreparedPackCase(facts.caseId)
   return {
     disagreed: preparationRecordsDisagree(facts, packs),
-    panel: buildJourneyPreparationPanel({ facts, packs, recordsConflict }),
+    panel: buildJourneyPreparationPanel({
+      facts,
+      packs,
+      recordsConflict,
+      mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
+    }),
   }
 }
 

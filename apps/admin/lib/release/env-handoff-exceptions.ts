@@ -74,6 +74,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
       "apps/admin/lib/communications/gate.ts",
       "apps/admin/lib/communications/handler.ts",
       "apps/admin/lib/communications/mail.ts",
+      "apps/admin/lib/payments/handlers.ts",
       "apps/admin/lib/release/gates.ts",
       "apps/admin/lib/settings/system-status.ts",
     ],
@@ -143,6 +144,21 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     helper: "mailFromAddress",
     files: ["apps/admin/lib/communications/mail.ts"],
     reason: "Reads COMMUNICATIONS_FROM_EMAIL inside the provider construction, where the environment is already in hand.",
+  },
+  {
+    helper: "outgoingFromAddress",
+    files: ["apps/admin/lib/payments/handlers.ts"],
+    reason: "The payment-confirmation email snapshots the same From address the outgoing gate already validated. The webhook handler is driven by the worker environment.",
+  },
+  {
+    helper: "confirmedReplyMailbox",
+    files: ["apps/admin/lib/payments/handlers.ts"],
+    reason: "The payment-confirmation email snapshots a monitored Reply-To from the same injected worker environment. A missing mailbox withholds the email and must not fail the settled webhook.",
+  },
+  {
+    helper: "queueGuidedPaymentConfirmation",
+    files: ["apps/admin/lib/payments/handlers.ts"],
+    reason: "The webhook queues the payment-confirmation email only when the injected worker environment has outgoing mail enabled. The handler tests drive that with a synthetic environment, and the helper reads the same send gate and From address.",
   },
   {
     helper: "webhookSecret",

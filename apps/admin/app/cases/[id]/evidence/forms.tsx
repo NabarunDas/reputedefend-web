@@ -260,9 +260,21 @@ function EligibleVersionRow({ caseId, pack, version }: { caseId: string; pack: P
     <strong>{version.documentTitle}</strong> · {version.originalFilename} · {fileTypeLabel(version.contentType)} · {formatBytes(version.sizeBytes)} · version {version.versionNumber}
     <div className="evidence-actions">
       <AccessButtons caseId={caseId} versionId={version.versionId} actions={actions} />
-      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={() => ({
-        operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
-      })} />
+      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={form => {
+        const role = form.get("role")
+        return {
+          operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
+          ...(role === "DELIVERABLE" || role === "EVIDENCE" || role === "INSTRUCTIONS" ? { role } : {}),
+        }
+      }}>
+        <label>Role in the Guided pack
+          <select name="role" defaultValue="DELIVERABLE">
+            <option value="DELIVERABLE">Completed statement</option>
+            <option value="EVIDENCE">Supporting evidence</option>
+            <option value="INSTRUCTIONS">Customer submission instructions</option>
+          </select>
+        </label>
+      </CommandForm>
     </div>
   </li>
 }
@@ -306,6 +318,14 @@ export function UnpublishPackForm({ caseId, pack }: { caseId: string; pack: Prep
       <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm this pack should no longer be published.</label>
     </CommandForm>
   </details>
+}
+
+export function RecoverPackEmailForm({ caseId, pack }: { caseId: string; pack: { packId: string; recordVersion: number } }) {
+  return <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Send pack-ready email" payload={() => ({
+    operation: "send_pack_email", caseId, packId: pack.packId, recordVersion: pack.recordVersion,
+  })}>
+    <p>The pack is already in the portal. This queues the notification that was not sent. It does not publish the pack again, and it does not send another copy if the provider has already accepted one.</p>
+  </CommandForm>
 }
 
 export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: PreparedPackCase }) {

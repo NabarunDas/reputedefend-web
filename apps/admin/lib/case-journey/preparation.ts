@@ -6,7 +6,7 @@
  * to Google. This module does not create a second pack command.
  */
 
-import type { CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
+import type { CaseFlowCommunicationFact, CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
 import type { EligiblePackVersion, PreparedPackCase } from "../packs/model"
 
 export type JourneyPreparationPack = {
@@ -32,6 +32,8 @@ export type JourneyPreparationPanel = {
   who: string
   /** The existing pack panel. Null withholds every pack command. */
   commands: PreparedPackCase | null
+  /** One recovery for a published pack whose announcement was never queued. */
+  packEmailRecovery: { packId: string; recordVersion: number } | null
 }
 
 export function packDisplayState(pack: { status: string; published?: boolean }): JourneyPreparationPack["state"] {
@@ -44,13 +46,11 @@ export function packDisplayState(pack: { status: string; published?: boolean }):
 }
 
 function safeVersion(version: CaseFlowEvidenceVersionFact | undefined, documentId: string): boolean {
-  return !!version
-    && version.documentId === documentId
-    && version.uploadStatus === "UPLOADED"
-    && version.scanStatus === "NO_THREATS_FOUND"
-    && version.validationStatus === "VALID"
-    && version.reviewStatus === "ACCEPTED"
-    && !!version.evidenceRequestId
+  if (!version || version.documentId !== documentId) return false
+  if (version.uploadStatus !== "UPLOADED" || version.scanStatus !== "NO_THREATS_FOUND") return false
+  if (version.validationStatus !== "VALID" || version.reviewStatus !== "ACCEPTED") return false
+  if (version.submissionSource === "ADMIN") return true
+  return !!version.evidenceRequestId
 }
 
 export function preparationRecordsDisagree(facts: CaseFlowFacts, packs: PreparedPackCase): boolean {
@@ -70,6 +70,71 @@ export function preparationRecordsDisagree(facts: CaseFlowFacts, packs: Prepared
 export function provenEligible(facts: CaseFlowFacts, packs: PreparedPackCase): EligiblePackVersion[] {
   const versions = new Map(facts.evidence.versions.map(version => [version.versionId, version]))
   return packs.eligible.filter(item => safeVersion(versions.get(item.versionId), item.documentId))
+}
+
+export type PackReadyNotification = {
+  headline: string
+  detail: string
+  state: "Met" | "Not met"
+}
+
+const failedDelivery = new Set(["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "SUPPRESSED", "FAILED"])
+
+/**
+ * Publication makes the pack available. It does not prove the customer was told.
+ * Provider acceptance and a reported delivery stay separate from a download.
+ */
+export function packReadyNotification(communications: CaseFlowCommunicationFact[]): PackReadyNotification {
+  const rows = communications.filter(row => row.templateKey === "GUIDED_PACK_READY" && row.lifecycle !== "CANCELLED")
+  const row = [...rows].sort((left, right) => left.draftedAt.localeCompare(right.draftedAt)).at(-1)
+  if (!row) {
+    return {
+      headline: "Available in portal; email not sent",
+      detail: "Available in portal; email not sent.",
+      state: "Not met",
+    }
+  }
+  const delivery = row.deliveryStatus
+  if (delivery === "ACCEPTANCE_UNKNOWN") {
+    return {
+      headline: "Pack available; provider acceptance is unknown",
+      detail: "Provider acceptance is unknown, so another copy was not sent.",
+      state: "Not met",
+    }
+  }
+  if (delivery === "DELIVERED") {
+    return {
+      headline: "Pack available; the provider reported delivery",
+      detail: "The provider reported delivery. That is not a download.",
+      state: "Met",
+    }
+  }
+  if (delivery === "PROVIDER_ACCEPTED") {
+    return {
+      headline: "Pack available; the provider accepted the notification",
+      detail: "The email provider accepted the notification. That is not proof the customer received it.",
+      state: "Not met",
+    }
+  }
+  if (delivery && failedDelivery.has(delivery)) {
+    return {
+      headline: "Pack available; the notification was not delivered",
+      detail: "The notification was not delivered. Resume the same communication only when that is safe.",
+      state: "Not met",
+    }
+  }
+  if (row.lifecycle === "QUEUED" && (delivery === "NONE" || delivery == null)) {
+    return {
+      headline: "Pack available; notification queued",
+      detail: "The notification is queued. Queued is not delivered.",
+      state: "Not met",
+    }
+  }
+  return {
+    headline: "Pack available; provider acceptance is unknown",
+    detail: "The notification status is not confirmed, so another copy was not sent.",
+    state: "Not met",
+  }
 }
 
 export type PreparationReadiness = {
@@ -117,6 +182,7 @@ export function buildJourneyPreparationPanel(input: {
   facts: CaseFlowFacts
   packs: PreparedPackCase | null
   recordsConflict: boolean
+  mailRecovery?: boolean
 }): JourneyPreparationPanel {
   const facts = input.facts
   const loaded = input.packs
@@ -135,7 +201,7 @@ export function buildJourneyPreparationPanel(input: {
   const current = readiness.current
   const eligible = loaded ? provenEligible(facts, loaded) : []
   if (loaded && eligible.length !== loaded.eligible.length) {
-    notices.push("A listed file is not an accepted, validated, clean version linked to a request. It is not offered for this pack.")
+    notices.push("A listed file is not an accepted, validated, clean version. A customer upload still has to be linked to its request. It is not offered for this pack.")
   }
   if (readiness.otherPublished) {
     notices.push("More than one pack is published, or an earlier pack is still published. These records disagree, so no pack command is offered from here. Resolve the extra published pack on the evidence workspace.")
@@ -145,25 +211,26 @@ export function buildJourneyPreparationPanel(input: {
     ? { ...loaded, eligible }
     : null
 
+  const notification = packReadyNotification(facts.communications)
   const headline = disagreed
     ? "Pack records disagree"
     : readiness.stale
-      ? "Prepared pack is stale"
+      ? "Replace the stale pack before sending it"
       : readiness.otherPublished
         ? "Another pack is still published"
         : input.recordsConflict
           ? "Case records disagree"
           : !current
-            ? "No prepared pack"
+            ? "Prepare the submission materials"
             : current.status === "DRAFT" && current.itemCount === 0
-              ? "Prepared pack needs evidence"
+              ? "Add the statement, evidence and customer instructions"
               : current.status === "DRAFT"
-                ? "Prepared pack needs approval"
+                ? "Approve the completed pack"
                 : current.status === "APPROVED" && !current.published
-                  ? "Prepared pack needs publication"
+                  ? "Send the completed pack"
                   : readiness.ready
-                    ? "Prepared pack is current"
-                    : "Prepared pack is not ready"
+                    ? notification.headline
+                    : "The completed pack is not ready"
 
   const detail = "Case preparation is the current approved pack after it has been published. Approval does not publish it. Publication uses the existing customer case-access rule and does not submit anything to Google."
 
@@ -171,7 +238,7 @@ export function buildJourneyPreparationPanel(input: {
     {
       label: "Eligible evidence",
       state: !disagreed && ((current?.itemCount ?? 0) > 0 || eligible.length > 0) ? "Met" : "Not met",
-      detail: "Only an accepted, validated, clean file linked to a request can be added. An unscanned, rejected, superseded or unlinked file is not a substitute.",
+      detail: "A staff document does not need an evidence request. A customer upload still has to be linked to its request. An unscanned, rejected or superseded file is not a substitute.",
     },
     {
       label: "Approval",
@@ -182,6 +249,13 @@ export function buildJourneyPreparationPanel(input: {
       label: "Publication",
       state: readiness.ready ? "Met" : "Not met",
       detail: "Publication makes the approved pack available through the existing secure case-access link. It does not create an open document link.",
+    },
+    {
+      label: "Customer notification",
+      state: readiness.ready ? notification.state : "Not met",
+      detail: readiness.ready
+        ? notification.detail
+        : "Publishing the pack does not by itself tell the customer. The notification is recorded separately and is not treated as received.",
     },
     {
       label: "Current pack",
@@ -203,12 +277,17 @@ export function buildJourneyPreparationPanel(input: {
         : readiness.stale
           ? "ProfileRelaunch creates a new draft from the current accepted evidence and approves it again."
           : current?.status === "APPROVED" && !current.published
-            ? "ProfileRelaunch publishes the approved pack. Publication does not submit anything to Google."
+            ? "Send the completed pack. Sending it does not submit anything to Google."
             : current?.status === "DRAFT"
-              ? "ProfileRelaunch adds accepted evidence and approves the draft. Approval does not publish it."
+              ? "Approve the completed pack. Sending it comes after approval."
               : readiness.ready
-                ? "The published pack is current."
-                : "ProfileRelaunch creates a draft pack."
+                ? notification.detail
+                : "Prepare the submission materials."
 
-  return { headline, detail, packs: display, requirements, notices, who, commands }
+  const stored = source?.packs.find(pack => pack.id === current?.id)
+  const packEmailRecovery = input.mailRecovery && readiness.ready && notification.headline === "Available in portal; email not sent" && stored
+    ? { packId: stored.id, recordVersion: stored.recordVersion }
+    : null
+
+  return { headline, detail, packs: display, requirements, notices, who, commands, packEmailRecovery }
 }

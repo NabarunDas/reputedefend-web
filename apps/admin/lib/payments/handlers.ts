@@ -1,15 +1,76 @@
 import "server-only"
+import { renderPaymentConfirmation } from "../../../../lib/email/fulfilment"
+import { confirmedReplyMailbox } from "../../../../lib/email/reply-mailbox"
 import { paymentProvider } from "../../../../lib/payments"
 import { expectedLivemode } from "../../../../lib/payments/config"
 import { guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
+import { customerPortalOrigin } from "../auth/config"
+import { communicationsSendEnabled, outgoingFromAddress } from "../communications/gate"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 
 function applyResult(result: { status?: string }): JobHandlerResult {
   if (result.status === "unmatched") return { ok: false, retryable: true, error: "correlation_pending" }
   if (result.status === "success" || result.status === "denied") return { ok: true }
   return { ok: false, retryable: true, error: "Provider event could not be applied." }
+}
+
+/**
+ * Queues one payment-confirmation email after a verified settlement.
+ * Mail that is switched off does not call the database and does not fail the webhook.
+ */
+async function queueGuidedPaymentConfirmation(
+  env: Record<string, string | undefined>,
+  rpc: NonNullable<JobHandlerInput["rpc"]>,
+  paymentIntentId: string | null,
+): Promise<JobHandlerResult | null> {
+  if (!paymentIntentId || !communicationsSendEnabled(env)) return null
+  const context = await rpc.rpc<{
+    status?: string
+    alreadyQueued?: boolean
+    caseRef?: string
+    orderRef?: string
+    amountMinor?: number
+    currency?: string
+    serviceCode?: string
+    serviceName?: string
+  }>("payment_confirmation_context_v1", { p_payment_intent: paymentIntentId })
+  if (context.status !== "applicable" || context.alreadyQueued) return null
+  const origin = customerPortalOrigin()
+  const from = outgoingFromAddress(env)
+  const replyTo = confirmedReplyMailbox(env)
+  if (!replyTo) return null
+  if (!origin || !from || !context.caseRef || !context.orderRef || !context.serviceCode || !context.serviceName || context.amountMinor == null || !context.currency) {
+    return { ok: false, retryable: true, error: "Payment confirmation email is not ready." }
+  }
+  const rendered = renderPaymentConfirmation({
+    serviceCode: context.serviceCode,
+    serviceName: context.serviceName,
+    orderRef: context.orderRef,
+    caseRef: context.caseRef,
+    amountMinor: context.amountMinor,
+    currency: context.currency,
+    origin,
+    replyTo,
+  })
+  if (!rendered) return { ok: false, retryable: false, error: "Payment confirmation email could not be prepared." }
+  const queued = await rpc.rpc<{ status?: string; reason?: string }>("payment_queue_confirmation_v1", {
+    p_payload: {
+      sendEnabled: true,
+      paymentIntentId,
+      subject: rendered.subject,
+      bodyText: rendered.text,
+      bodyHtml: rendered.html,
+      fromAddress: from,
+      customerOrigin: origin,
+      replyTo,
+    },
+  })
+  if (queued.status === "success" || queued.status === "not_applicable") return null
+  if (queued.status === "denied" && queued.reason === "suppressed") return null
+  if (queued.status === "denied") return { ok: false, retryable: false, error: "Payment confirmation email was refused." }
+  return { ok: false, retryable: true, error: "Payment confirmation email was not queued." }
 }
 
 export function collectPaymentHandler(env: Record<string, string | undefined> = process.env): JobHandler {
@@ -78,6 +139,10 @@ export function processStripeEventHandler(env: Record<string, string | undefined
           const correlated = await rpc.rpc<{ status?: string }>("payment_apply_provider_event_v1", {
             p_event_id: eventId, p_type: eventType, p_object_id: objectId, p_payload: applyPayload,
           })
+          if (correlated.status === "success" && session.paymentStatus === "paid") {
+            const mail = await queueGuidedPaymentConfirmation(env, rpc, session.paymentIntentId)
+            if (mail) return mail
+          }
           return applyResult(correlated)
         }
         if (eventType.startsWith("payment_intent.") && objectId) {
@@ -106,6 +171,10 @@ export function processStripeEventHandler(env: Record<string, string | undefined
               orderRef: intent.metadata.orderRef,
             },
           })
+          if (result.status === "success" && type === "payment_intent.succeeded") {
+            const mail = await queueGuidedPaymentConfirmation(env, rpc, intent.id)
+            if (mail) return mail
+          }
           return applyResult(result)
         }
         if (eventType.startsWith("setup_intent.") && objectId) {

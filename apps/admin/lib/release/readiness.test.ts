@@ -154,9 +154,10 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261025020000_guided_payment_request_email_v1.sql",
+      "20261025140000_guided_fulfilment_handover_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261024233701")
-    expect(migrationHead.filename).toMatch(/guided_payment_request_email_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/guided_fulfilment_handover_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")

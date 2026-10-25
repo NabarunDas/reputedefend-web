@@ -189,10 +189,30 @@ describe("eleven-step Guided acceptance walk", () => {
       token, key(), caseId, request.id, request.version, "fulfill", null, null, null, "Completed after the customer sent the letter.",
     ]), "fulfill")
 
+    const staffFile = async (filename: string) => {
+      const created = await rpc("admin_evidence_begin_v1", [
+        token, key(), caseId, null, filename, "application/pdf", 1024, filename, "test-evidence", null,
+      ])
+      expect(created.versionId, JSON.stringify(created)).toBeTruthy()
+      expectOk(await rpc("admin_evidence_finalize_v1", [token, key(), caseId, created.versionId]), filename)
+      expectOk(await rpc("admin_evidence_refresh_scan_v1", [token, key(), caseId, created.versionId, "NO_THREATS_FOUND", "VALID", null]), filename)
+      const fileMeta = await rpc("admin_evidence_version_v1", [token, caseId, created.versionId])
+      expectOk(await rpc("admin_evidence_review_v1", [
+        token, key(), caseId, created.versionId, fileMeta.recordVersion, "accept", "Accepted after a clean scan.", null,
+      ]), filename)
+      const shown = await rpc("admin_evidence_version_v1", [token, caseId, created.versionId])
+      expectOk(await rpc("admin_evidence_review_v1", [
+        token, key(), caseId, created.versionId, shown.recordVersion, "set_visibility", "Customer may see this accepted file.", true,
+      ]), filename)
+      return created
+    }
+    const statement = await staffFile("appeal-statement.pdf")
+    const instructions = await staffFile("submission-instructions.pdf")
+
     const draft = {
       recordVersion: 0,
       findings: "The profile was suspended and the ownership letter matches the bakery account.",
-      evidenceConsidered: "One accepted ownership letter on a fulfilled request.",
+      evidenceConsidered: "One accepted ownership letter, plus the staff statement and submission instructions.",
       profileIssue: "The Google listing is suspended.",
       policyConcerns: "Ownership of the profile is the policy concern in view.",
       recommendedAction: "Recommend Guided recovery and leave the quote for a later step.",
@@ -303,9 +323,17 @@ describe("eleven-step Guided acceptance walk", () => {
 
     const pack = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, null, null, "create", {}])
     expectOk(pack, "pack")
-    const added = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, pack.id, pack.recordVersion, "add_item", { versionId: begun.versionId }])
+    const added = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, pack.id, pack.recordVersion, "add_item", { versionId: begun.versionId, role: "EVIDENCE" }])
     expectOk(added, "pack item")
-    const approvedPack = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, pack.id, added.recordVersion ?? 2, "approve", { note: packNote, confirmed: true }])
+    const withStatement = await rpc("admin_prepared_pack_command_v1", [
+      token, key(), caseId, pack.id, added.recordVersion, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" },
+    ])
+    expectOk(withStatement, "statement")
+    const withInstructions = await rpc("admin_prepared_pack_command_v1", [
+      token, key(), caseId, pack.id, withStatement.recordVersion, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" },
+    ])
+    expectOk(withInstructions, "instructions")
+    const approvedPack = await rpc("admin_prepared_pack_command_v1", [token, key(), caseId, pack.id, withInstructions.recordVersion, "approve", { note: packNote, confirmed: true }])
     expectOk(approvedPack, "pack approval")
     expectOk(await rpc("admin_prepared_pack_command_v1", [
       token, key(), caseId, pack.id, approvedPack.recordVersion, "publish", { note: publishNote, confirmed: true },

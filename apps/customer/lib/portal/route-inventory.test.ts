@@ -88,6 +88,7 @@ describe("customer portal route inventory", () => {
       "lib/portal/http.ts",
       "lib/portal/documents/upload.ts",
       "lib/portal/documents/download.ts",
+      "lib/portal/documents/handover.ts",
       "lib/portal/service/command.ts",
       "lib/portal/payments/command.ts",
       "lib/portal/payments/receipt.ts",

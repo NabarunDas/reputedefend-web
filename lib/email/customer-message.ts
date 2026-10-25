@@ -17,8 +17,6 @@ export const customerEmailSecurityNote =
   "For your security, please never share passwords, verification codes or sign-in credentials."
 
 const actionUrlPattern = /^https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const portalPaymentsPattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}\/payments$/
-
 export type CustomerEmailBlock =
   | { type: "paragraph"; text: string }
   | { type: "heading"; text: string }
@@ -45,14 +43,16 @@ function safeText(value: string): boolean {
   return trimmed.length > 0 && trimmed.length <= 2000 && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(trimmed)
 }
 
+const portalCasePagePattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}\/(?:payments|documents)$/
+
 export function trustedActionUrl(value: string): boolean {
   return actionUrlPattern.test(value) && !value.includes("#") && !value.includes("?")
 }
 
-/** An action URL, or the authenticated case Payments page. No query, fragment, or token. */
+/** An action URL, or the authenticated case Payments or Documents page. No query, fragment, or token. */
 export function trustedCustomerLink(value: string): boolean {
   if (value.includes("#") || value.includes("?") || value.includes("#t=")) return false
-  return trustedActionUrl(value) || portalPaymentsPattern.test(value)
+  return trustedActionUrl(value) || portalCasePagePattern.test(value)
 }
 
 function blockText(block: CustomerEmailBlock): string | null {
@@ -99,7 +99,7 @@ function blockHtml(block: CustomerEmailBlock): string | null {
 
 /**
  * Email-client HTML and the matching plain-text alternative.
- * Button addresses must already be server-generated action URLs or the case Payments page, with no token.
+ * Button addresses must already be server-generated action URLs or an authenticated case page, with no token.
  */
 export function renderCustomerEmail(content: CustomerEmailContent): { html: string; text: string } | null {
   if (!safeText(content.title)) return null

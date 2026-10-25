@@ -342,7 +342,7 @@ function StepWorkspace({
                 : step.id === "SERVICE_ACTIVATION"
                   ? <p>Issuing a payment link or an authorisation link uses the existing commands. Neither marks an obligation paid, grants Google access, prepares a pack, or submits anything to Google. A saved card is not required for Managed activation. Live payment collection stays on the existing provider gate.</p>
                   : step.id === "PREPARATION"
-                    ? <p>Creating a draft, changing its evidence, approving it, and publishing or unpublishing it use the existing pack commands. Approval does not publish the pack. Publication does not submit anything to Google and does not create an open document link. An unscanned, rejected, superseded or unlinked file is not offered.</p>
+                    ? <p>Creating a draft, changing its evidence, approving it, and publishing or unpublishing it use the existing pack commands. Approval does not publish the pack. Publication does not submit anything to Google and does not create an open document link. A staff document does not need an evidence request. A customer upload still has to be linked to its request. An unscanned, rejected or superseded file is not offered.</p>
                     : step.id === "SUBMISSION"
                       ? <p>Recording an attempt, a decision or a withdrawal uses the existing case commands. None of those submits anything to Google. A Guided attempt is the customer&apos;s and a Managed attempt is ProfileRelaunch&apos;s. An open attempt does not finish this step. Outcome review, billing and closure stay on later steps.</p>
                       : step.id === "OUTCOME_BILLING"

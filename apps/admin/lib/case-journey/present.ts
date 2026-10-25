@@ -25,7 +25,7 @@ import type {
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { ACTIVATION_ORDER_DISAGREE_WHO, acceptedServiceProjection, activationLinkProblem, activationOrderLink } from "./activation"
-import { preparationReadiness } from "./preparation"
+import { packReadyNotification, preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
 import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
@@ -1200,15 +1200,15 @@ function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptio
   if (currentPublished) {
     return {
       proof: "complete",
-      known: [...known, "Superseded packs stay read-only. Publishing did not create an open document link."],
+      known: [...known, "Superseded packs stay read-only. Publishing did not create an open document link.", packReadyNotification(facts.communications).detail],
       missing: [],
-      who: "The published pack is current.",
+      who: "The completed pack is available to the customer.",
     }
   }
   const missing = !current
     ? ["A prepared pack."]
     : current.status === "DRAFT" && current.itemCount === 0
-      ? ["Accepted, validated, clean evidence in the current draft. An unscanned, rejected or unlinked file is not eligible."]
+      ? ["The completed statement, supporting evidence and customer instructions. A staff document does not need an evidence request. A customer upload still has to be linked to its request."]
       : current.status === "DRAFT"
         ? ["Approval of the current draft. Approval does not publish it."]
         : current.status === "APPROVED" && !current.published

@@ -22,12 +22,6 @@ export function fulfilmentServiceName(serviceCode: string): string | null {
   return null
 }
 
-export function fulfilmentAmountMinor(serviceCode: string): number | null {
-  if (serviceCode === "GUIDED_RELAUNCH") return 9900
-  if (serviceCode === "GUIDED_REVIEW") return 5900
-  return null
-}
-
 export function portalCasePage(origin: string, caseRef: string, page: "payments" | "documents"): string | null {
   const root = origin.trim().replace(/\/$/, "")
   if (!originPattern.test(root) || !caseRefPattern.test(caseRef)) return null
@@ -43,10 +37,9 @@ function sharedReady(input: {
   origin: string
 }): { serviceName: string; amountLabel: string; caseRef: string } | null {
   const serviceName = fulfilmentServiceName(input.serviceCode)
-  const expected = fulfilmentAmountMinor(input.serviceCode)
   const amountLabel = quoteMoneyLabel(input.amountMinor, input.currency)
   const caseRef = input.caseRef.trim()
-  if (!serviceName || input.serviceName.trim() !== serviceName || expected !== input.amountMinor || !amountLabel) return null
+  if (!serviceName || input.serviceName.trim() !== serviceName || !amountLabel || input.amountMinor <= 0) return null
   if (!caseRefPattern.test(caseRef) || input.currency !== "GBP") return null
   if (!originPattern.test(input.origin.trim().replace(/\/$/, ""))) return null
   return { serviceName, amountLabel, caseRef }

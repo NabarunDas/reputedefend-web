@@ -748,6 +748,7 @@ describe("journey status from authoritative records", () => {
     })
     expect(step(supersededHistory, "PREPARATION").state).toBe("COMPLETED")
     expect(step(supersededHistory, "PREPARATION").whoMustAct).toBe("The completed pack is available to the customer.")
+    expect(step(supersededHistory, "PREPARATION").known.join(" ")).toMatch(/Available in portal; email not sent/)
 
     const authority = show({
       technicalStage: "PREPARATION",

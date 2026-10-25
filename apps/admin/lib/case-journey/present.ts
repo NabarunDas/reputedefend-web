@@ -25,7 +25,7 @@ import type {
 import { isTechnicalStage, stageLabel, type TechnicalStage } from "../case-flow/phases"
 import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePayment } from "../case-flow/resolve"
 import { ACTIVATION_ORDER_DISAGREE_WHO, acceptedServiceProjection, activationLinkProblem, activationOrderLink } from "./activation"
-import { preparationReadiness } from "./preparation"
+import { packReadyNotification, preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
 import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
@@ -1200,7 +1200,7 @@ function readPreparation(facts: CaseFlowFacts, options: JourneyPresentationOptio
   if (currentPublished) {
     return {
       proof: "complete",
-      known: [...known, "Superseded packs stay read-only. Publishing did not create an open document link."],
+      known: [...known, "Superseded packs stay read-only. Publishing did not create an open document link.", packReadyNotification(facts.communications).detail],
       missing: [],
       who: "The completed pack is available to the customer.",
     }

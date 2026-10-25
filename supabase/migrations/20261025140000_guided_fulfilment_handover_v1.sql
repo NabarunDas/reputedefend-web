@@ -68,7 +68,7 @@ CREATE TABLE public.guided_customer_reports (
   )
 );
 CREATE UNIQUE INDEX guided_customer_reports_one_submission_idx
-  ON public.guided_customer_reports (case_id) WHERE kind = 'GOOGLE_SUBMISSION';
+  ON public.guided_customer_reports (pack_id) WHERE kind = 'GOOGLE_SUBMISSION';
 CREATE TABLE admin_private.guided_handover_receipts (
   request_id uuid PRIMARY KEY,
   actor_id uuid NOT NULL,
@@ -118,15 +118,52 @@ BEGIN
     AND candidate.payment_model = 'UPFRONT'
     AND (candidate.location_id IS NULL OR candidate.location_id = c.location_id);
   IF ord.currency IS DISTINCT FROM 'GBP'
-    OR (ord.service_code = 'GUIDED_RELAUNCH' AND ord.amount_minor IS DISTINCT FROM 9900)
-    OR (ord.service_code = 'GUIDED_REVIEW' AND ord.amount_minor IS DISTINCT FROM 5900)
-    OR NOT EXISTS (SELECT 1 FROM public.quote_acceptances qa WHERE qa.id = ord.quote_acceptance_id)
+    OR ord.payment_model IS DISTINCT FROM 'UPFRONT'
+    OR ord.tax_behaviour NOT IN ('INCLUSIVE', 'NOT_APPLICABLE')
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.quote_acceptances qa
+      INNER JOIN public.quote_versions qv ON qv.id = qa.quote_version_id
+      WHERE qa.id = ord.quote_acceptance_id
+        AND qv.id = ord.quote_version_id
+        AND qa.quote_id = ord.quote_id
+        AND qv.quote_id = ord.quote_id
+        AND qv.status = 'ACCEPTED'
+        AND qv.customer_id = c.customer_id
+        AND qv.business_id = c.business_id
+        AND qv.case_id = c.id
+        AND (qv.location_id IS NULL OR qv.location_id = c.location_id)
+        AND (ord.location_id IS NULL OR ord.location_id = c.location_id)
+        AND qv.service_code = ord.service_code
+        AND qv.payment_model = 'UPFRONT'
+        AND qv.currency = 'GBP'
+        AND qa.currency = 'GBP'
+        AND qv.tax_behaviour = ord.tax_behaviour
+        AND qa.tax_behaviour = ord.tax_behaviour
+        AND qv.total_amount_minor = ord.amount_minor
+        AND qa.total_amount_minor = ord.amount_minor
+        AND qv.tax_amount_minor = ord.tax_amount_minor
+        AND qa.tax_amount_minor = ord.tax_amount_minor
+        AND qv.standard_amount_minor = qv.discount_amount_minor + qv.quoted_subtotal_minor
+        AND (
+          (qv.discount_policy_id = 'NONE' AND qv.discount_bps = 0 AND qv.discount_amount_minor = 0)
+          OR (
+            qv.discount_policy_id = 'PAID_GUARD_MANAGED_20'
+            AND qv.discount_bps = 2000
+            AND qv.service_code IN ('MANAGED_RELAUNCH', 'MANAGED_REVIEW')
+          )
+        )
+    )
   THEN RETURN 'order'; END IF;
   IF NOT EXISTS (
     SELECT 1 FROM public.business_memberships m
     WHERE m.customer_id = c.customer_id AND m.business_id = c.business_id AND m.status = 'verified'
   ) OR NOT admin_private.contact_verified_v1(c.customer_id, 'email')
   THEN RETURN 'authority'; END IF;
+  IF (SELECT count(*)::int FROM public.payment_obligations obligation
+      WHERE obligation.service_order_id = ord.id AND obligation.kind = 'UPFRONT' AND obligation.state <> 'VOID')
+    IS DISTINCT FROM 1
+  THEN RETURN 'unpaid'; END IF;
   SELECT * INTO ob FROM public.payment_obligations obligation
   WHERE obligation.service_order_id = ord.id AND obligation.kind = 'UPFRONT' AND obligation.state <> 'VOID';
   IF ob.id IS NULL THEN
@@ -140,15 +177,85 @@ BEGIN
     OR ob.case_id IS DISTINCT FROM c.id OR ob.amount_minor IS DISTINCT FROM ord.amount_minor
     OR ob.currency IS DISTINCT FROM 'GBP'
   THEN RETURN 'unpaid'; END IF;
+  IF (SELECT count(*)::int FROM public.payment_receipts candidate WHERE candidate.obligation_id = ob.id) IS DISTINCT FROM 1
+  THEN RETURN 'receipt'; END IF;
   SELECT * INTO receipt FROM public.payment_receipts WHERE obligation_id = ob.id;
   IF receipt.id IS NULL OR receipt.amount_minor IS DISTINCT FROM ob.amount_minor
     OR receipt.currency IS DISTINCT FROM 'GBP' OR receipt.customer_id IS DISTINCT FROM c.customer_id
     OR receipt.service_order_id IS DISTINCT FROM ord.id
+    OR receipt.tax_behaviour IS DISTINCT FROM ord.tax_behaviour
+    OR receipt.tax_amount_minor IS DISTINCT FROM ord.tax_amount_minor
   THEN RETURN 'receipt'; END IF;
   RETURN NULL;
 END;
 $$;
 REVOKE ALL ON FUNCTION admin_private.guided_settlement_reason_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- NULL means a Guided pack has one staff-authored statement and one staff-authored
+-- instruction document. Other tracks are not judged here.
+CREATE FUNCTION admin_private.guided_pack_materials_reason_v1(p_pack uuid)
+RETURNS text
+LANGUAGE plpgsql STABLE SET search_path = ''
+AS $$
+DECLARE
+  p public.case_prepared_packs;
+  track text;
+  deliverables integer;
+  instructions integer;
+  untagged integer;
+  bad_author integer;
+  bad_evidence integer;
+BEGIN
+  SELECT * INTO p FROM public.case_prepared_packs WHERE id = p_pack;
+  IF p.id IS NULL THEN RETURN 'pack'; END IF;
+  SELECT service_track INTO track FROM public.cases WHERE id = p.case_id;
+  IF track IS DISTINCT FROM 'GUIDED' THEN RETURN NULL; END IF;
+  SELECT count(*)::int INTO untagged
+  FROM public.case_prepared_pack_items i
+  LEFT JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+  WHERE i.pack_id = p.id AND r.item_id IS NULL;
+  IF untagged > 0 THEN RETURN 'role'; END IF;
+  SELECT count(*)::int INTO deliverables
+  FROM public.case_prepared_pack_items i
+  INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+  WHERE i.pack_id = p.id AND r.role = 'DELIVERABLE';
+  SELECT count(*)::int INTO instructions
+  FROM public.case_prepared_pack_items i
+  INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+  WHERE i.pack_id = p.id AND r.role = 'INSTRUCTIONS';
+  IF deliverables IS DISTINCT FROM 1 THEN RETURN 'deliverable'; END IF;
+  IF instructions IS DISTINCT FROM 1 THEN RETURN 'instructions'; END IF;
+  SELECT count(*)::int INTO bad_author
+  FROM public.case_prepared_pack_items i
+  INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+  INNER JOIN public.case_document_versions v ON v.id = i.version_id
+  INNER JOIN public.case_documents d ON d.id = i.document_id
+  WHERE i.pack_id = p.id
+    AND r.role IN ('DELIVERABLE', 'INSTRUCTIONS')
+    AND (
+      v.submission_source IS DISTINCT FROM 'ADMIN'
+      OR v.customer_evidence_request_id IS NOT NULL
+      OR d.case_id IS DISTINCT FROM p.case_id
+    );
+  IF bad_author > 0 THEN RETURN 'author'; END IF;
+  SELECT count(*)::int INTO bad_evidence
+  FROM public.case_prepared_pack_items i
+  INNER JOIN public.guided_pack_item_roles r ON r.item_id = i.id
+  INNER JOIN public.case_document_versions v ON v.id = i.version_id
+  INNER JOIN public.case_documents d ON d.id = i.document_id
+  WHERE i.pack_id = p.id
+    AND r.role = 'EVIDENCE'
+    AND (
+      d.case_id IS DISTINCT FROM p.case_id
+      OR v.submission_source NOT IN ('ADMIN', 'CUSTOMER')
+      OR (v.submission_source = 'CUSTOMER' AND v.customer_evidence_request_id IS NULL)
+    );
+  IF bad_evidence > 0 THEN RETURN 'evidence'; END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION admin_private.guided_pack_materials_reason_v1(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION admin_private.pack_publishable_v1(p_pack uuid) RETURNS boolean
@@ -171,6 +278,7 @@ BEGIN
       OR v.customer_visible IS DISTINCT FROM true
     )
   ) THEN RETURN false; END IF;
+  IF admin_private.guided_pack_materials_reason_v1(p.id) IS NOT NULL THEN RETURN false; END IF;
   reason := admin_private.guided_settlement_reason_v1(p.case_id);
   RETURN reason IS NULL OR reason = 'not_guided';
 END; $$;
@@ -479,14 +587,14 @@ DECLARE
   comm uuid;
   reply_to text;
 BEGIN
+  SELECT * INTO existing FROM public.guided_pack_announcements WHERE pack_id = p_pack;
+  IF existing.pack_id IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'success', 'id', existing.communication_id, 'replay', true);
+  END IF;
   SELECT count(*)::int INTO present FROM unnest(keys) key WHERE p_data ? key;
   IF present = 0 THEN RETURN jsonb_build_object('status', 'skipped'); END IF;
   IF present IS DISTINCT FROM array_length(keys, 1) OR p_data->>'sendEnabled' IS DISTINCT FROM 'true' THEN
     RETURN jsonb_build_object('status', 'invalid');
-  END IF;
-  SELECT * INTO existing FROM public.guided_pack_announcements WHERE pack_id = p_pack;
-  IF existing.pack_id IS NOT NULL THEN
-    RETURN jsonb_build_object('status', 'success', 'id', existing.communication_id, 'replay', true);
   END IF;
   reply_to := NULLIF(btrim(coalesce(p_data->>'replyTo', '')), '');
   reason := admin_private.fulfilment_snapshot_reason_v1(
@@ -557,7 +665,7 @@ DECLARE
   data jsonb; target_version uuid; item public.case_prepared_pack_items; doc public.case_documents; ver public.case_document_versions;
   next_no integer; next_pos integer; item_count integer; old_pos integer; new_pos integer; note text;
   prev public.case_prepared_packs; ids uuid[]; idx integer; n integer; i integer;
-  commercial text; mail jsonb;
+  commercial text; mail jsonb; materials text;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -606,6 +714,8 @@ BEGIN
     IF commercial IS NOT NULL AND commercial IS DISTINCT FROM 'not_guided' THEN
       RETURN jsonb_build_object('status', 'denied', 'reason', commercial);
     END IF;
+    materials := admin_private.guided_pack_materials_reason_v1(p.id);
+    IF materials IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied', 'reason', materials); END IF;
     IF NOT admin_private.pack_publishable_v1(p.id) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
     IF EXISTS (
       SELECT 1 FROM public.case_prepared_packs x
@@ -755,6 +865,8 @@ BEGIN
         OR v.validation_status <> 'VALID' OR v.review_status <> 'ACCEPTED'
       )
     ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    materials := admin_private.guided_pack_materials_reason_v1(p.id);
+    IF materials IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied', 'reason', materials); END IF;
     FOR prev IN SELECT * FROM public.case_prepared_packs WHERE case_id = c.id AND status = 'APPROVED' AND id <> p.id FOR UPDATE LOOP
       PERFORM admin_private.end_pack_publication_v1(
         prev.id, actor, 'This pack was superseded by a later approved pack.',
@@ -806,6 +918,17 @@ BEGIN
       RETURN jsonb_build_object('status', 'unavailable');
     END IF;
     origin := regexp_replace(upload, '/action/.*$', '');
+  ELSIF row.template_key = 'GUIDED_PAYMENT_REQUEST' THEN
+    upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/payments');
+    IF upload IS NULL
+      OR position('#t=' in row.body_text) > 0
+      OR position('#t=' in coalesce(row.body_html, '')) > 0
+      OR position('/action/' in row.body_text) > 0
+      OR position('/action/' in coalesce(row.body_html, '')) > 0
+    THEN
+      RETURN jsonb_build_object('status', 'unavailable');
+    END IF;
+    origin := regexp_replace(upload, '/portal/cases/.*$', '');
   ELSIF row.template_key IN ('PAYMENT_CONFIRMATION', 'GUIDED_PACK_READY') THEN
     upload := substring(row.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/(?:payments|documents)');
     IF upload IS NULL OR position('#t=' in row.body_text) > 0 OR position('#t=' in coalesce(row.body_html, '')) > 0
@@ -872,6 +995,7 @@ DECLARE
   row admin_private.jobs;
   token uuid;
   attempt_no integer;
+  case_ref text;
   result jsonb;
 BEGIN
   s := public.admin_session_v1(p_token);
@@ -926,6 +1050,29 @@ BEGIN
       PERFORM admin_private.write_record_audit_v1(
         actor, 'OPERATIONS_CHANGED', 'denied', comm.id, p_request, 'communication',
         'DEV email processing left an evidence request whose upload link is not the development customer portal',
+        jsonb_build_object('operation', 'dev_send_email', 'reason', 'origin')
+      );
+      result := jsonb_build_object('status', 'denied', 'reason', 'origin');
+      INSERT INTO admin_private.job_command_receipts VALUES (p_request, actor, fp, result, now());
+      RETURN result;
+    END IF;
+  ELSIF comm.template_key = 'GUIDED_PAYMENT_REQUEST' THEN
+    SELECT cs.public_ref INTO case_ref FROM public.cases cs WHERE cs.id = comm.case_id;
+    expected := coalesce(p_customer_origin, '') || '/portal/cases/' || coalesce(case_ref, '') || '/payments';
+    IF comm.body_html IS NULL
+      OR case_ref IS NULL
+      OR position(expected IN comm.body_text) = 0
+      OR position(expected IN comm.body_html) = 0
+      OR (length(comm.body_text) - length(replace(comm.body_text, expected, ''))) IS DISTINCT FROM length(expected)
+      OR (length(comm.body_html) - length(replace(comm.body_html, expected, ''))) IS DISTINCT FROM length(expected)
+      OR position('#t=' IN comm.body_text) > 0
+      OR position('#t=' IN comm.body_html) > 0
+      OR position('/action/' IN comm.body_text) > 0
+      OR position('/action/' IN comm.body_html) > 0
+    THEN
+      PERFORM admin_private.write_record_audit_v1(
+        actor, 'OPERATIONS_CHANGED', 'denied', comm.id, p_request, 'communication',
+        'DEV email processing left a payment request whose portal link is not the development customer portal',
         jsonb_build_object('operation', 'dev_send_email', 'reason', 'origin')
       );
       result := jsonb_build_object('status', 'denied', 'reason', 'origin');
@@ -1142,11 +1289,11 @@ BEGIN
         'instructionSelectors', coalesce(selectors, '[]'::jsonb),
         'customerSubmitted', EXISTS (
           SELECT 1 FROM public.guided_customer_reports report
-          WHERE report.case_id = cs.id AND report.kind = 'GOOGLE_SUBMISSION'
+          WHERE report.pack_id = p.id AND report.kind = 'GOOGLE_SUBMISSION'
         ),
         'correctionRequested', EXISTS (
           SELECT 1 FROM public.guided_customer_reports report
-          WHERE report.case_id = cs.id AND report.kind = 'CORRECTION'
+          WHERE report.pack_id = p.id AND report.kind = 'CORRECTION'
         )
       );
     END IF;
@@ -1194,7 +1341,7 @@ BEGIN
   v_case := admin_private.customer_portal_owned_case_v1(v_customer, p_reference);
   IF v_case IS NULL THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
   SELECT * INTO cs FROM public.cases WHERE id = v_case AND customer_id = v_customer FOR UPDATE;
-  IF cs.id IS NULL OR cs.service_track IS DISTINCT FROM 'GUIDED' OR cs.status IN ('CLOSED', 'CANCELLED') THEN
+  IF cs.id IS NULL OR cs.service_track IS DISTINCT FROM 'GUIDED' OR cs.status = 'CANCELLED' THEN
     RETURN jsonb_build_object('status', 'unavailable');
   END IF;
   IF admin_private.guided_settlement_reason_v1(cs.id) IS NOT NULL THEN
@@ -1232,7 +1379,7 @@ BEGIN
       OR position('http' IN lower(reference)) > 0
       OR submitted IS NULL OR submitted > current_date OR submitted < DATE '2020-01-01'
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-    IF EXISTS (SELECT 1 FROM public.guided_customer_reports report WHERE report.case_id = cs.id AND report.kind = 'GOOGLE_SUBMISSION') THEN
+    IF EXISTS (SELECT 1 FROM public.guided_customer_reports report WHERE report.pack_id = p.id AND report.kind = 'GOOGLE_SUBMISSION') THEN
       RETURN jsonb_build_object('status', 'conflict');
     END IF;
     INSERT INTO public.guided_customer_reports(

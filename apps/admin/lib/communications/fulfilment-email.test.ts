@@ -55,8 +55,13 @@ describe("guided fulfilment email", () => {
     expect(rendered!.text).not.toMatch(/ProfileRelaunch submits|we have submitted/i)
   })
 
-  it("refuses a Managed amount, a token, and a mismatched service name", () => {
-    expect(renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 29900 })).toBeNull()
+  it("uses the accepted amount, including one that is not the catalogue list price", () => {
+    const rendered = renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 7920 })
+    expect(rendered).not.toBeNull()
+    expect(rendered!.text).toContain("£79.20 GBP")
+    expect(rendered!.text).not.toContain("£99.00 GBP")
+    expect(renderPackReady({ ...relaunch, amountMinor: 7920 })!.text).toContain("£79.20 GBP")
+    expect(renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 0 })).toBeNull()
     expect(renderPackReady({ ...relaunch, serviceName: "Managed Relaunch" })).toBeNull()
     expect(renderPaymentConfirmation({
       ...relaunch,

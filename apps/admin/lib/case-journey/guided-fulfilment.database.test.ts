@@ -8,6 +8,9 @@ import { PGlite } from "@electric-sql/pglite"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
+import { settleDevSendEmailClaim, type DevSendClaim } from "../communications/dev-send"
+import { sendEmailHandler } from "../communications/handler"
+import { createIdempotentMailProvider } from "../communications/mail"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import {
   guidedCustomerSubmitsSentence,
@@ -264,6 +267,26 @@ async function packCmd(caseId: string, operation: string, data: Record<string, u
   return rpc<Json>("admin_prepared_pack_command_v1", [adminToken, key(), caseId, pack, version, operation, data])
 }
 
+const sendSignatures: Record<string, string[]> = {
+  communication_load_send_v1: ["p_communication", "p_content_version"],
+  communication_begin_provider_attempt_v1: ["p_communication", "p_content_version", "p_idempotency_key"],
+  communication_mark_provider_accepted_v1: ["p_communication", "p_provider", "p_provider_message_id", "p_idempotency_key"],
+  communication_mark_acceptance_unknown_v1: ["p_communication", "p_idempotency_key"],
+  communication_mark_provider_rejected_v1: ["p_communication", "p_error", "p_retryable", "p_idempotency_key"],
+  job_complete_v1: ["p_job", "p_lease"],
+  job_fail_v1: ["p_job", "p_lease", "p_error", "p_retryable"],
+}
+
+function namedRpc() {
+  return {
+    async rpc<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
+      const order = sendSignatures[name] ?? Object.keys(args)
+      const values = order.map(item => args[item] ?? null)
+      return rpc<T>(name, values)
+    },
+  }
+}
+
 function mailPayload(rendered: { subject: string; text: string; html: string }, page: "payments" | "documents", extra: Record<string, unknown> = {}) {
   return {
     subject: rendered.subject,
@@ -307,6 +330,55 @@ beforeAll(async () => {
 afterAll(async () => { await db.close() })
 
 describe("guided fulfilment handover", () => {
+  it("settles the accepted quote total and rejects a forged amount, currency, version or discount", async () => {
+    const reference = "PR-26-FULAMT"
+    const caseId = await insertCase(reference)
+    expect((await acceptQuote(caseId)).status).toBe("success")
+    await guidedToPaymentRequired(caseId)
+    const payment = await settle(caseId, "fulamt", "evt_fulamt")
+    expect(payment.order.amount_minor).toBe(9900)
+    expect(await rows<{ reason: string | null }>("select admin_private.guided_settlement_reason_v1($1) as reason", [caseId])).toEqual([{ reason: null }])
+    const orderId = payment.order.id
+    const quoteVersionId = (await rows<{ quote_version_id: string }>("select quote_version_id from public.service_orders where id = $1", [orderId]))[0].quote_version_id
+    const acceptanceId = (await rows<{ quote_acceptance_id: string }>("select quote_acceptance_id from public.service_orders where id = $1", [orderId]))[0].quote_acceptance_id
+    const obligationId = payment.obligationId
+
+    async function reason(): Promise<string | null> {
+      return (await rows<{ reason: string | null }>("select admin_private.guided_settlement_reason_v1($1) as reason", [caseId]))[0].reason
+    }
+
+    await db.exec("begin")
+    try {
+      await db.exec("set local session_replication_role = replica")
+      await db.query("update public.service_orders set amount_minor = 1 where id = $1", [orderId])
+      expect(await reason()).toBe("order")
+      await db.query(`
+        update public.quote_versions set total_amount_minor = 7920, quoted_subtotal_minor = 7920, standard_amount_minor = 7920 where id = $1
+      `, [quoteVersionId])
+      await db.query("update public.quote_acceptances set total_amount_minor = 7920 where id = $1", [acceptanceId])
+      await db.query("update public.service_orders set amount_minor = 7920 where id = $1", [orderId])
+      await db.query("update public.payment_obligations set amount_minor = 7920 where id = $1", [obligationId])
+      await db.query("update public.payment_receipts set amount_minor = 7920 where obligation_id = $1", [obligationId])
+      expect(await reason()).toBeNull()
+      await db.query("update public.service_orders set currency = 'USD' where id = $1", [orderId])
+      expect(await reason()).toBe("order")
+      await db.query("update public.service_orders set currency = 'GBP' where id = $1", [orderId])
+      await db.query("update public.quote_versions set status = 'OFFERED' where id = $1", [quoteVersionId])
+      expect(await reason()).toBe("order")
+      await db.query("update public.quote_versions set status = 'ACCEPTED' where id = $1", [quoteVersionId])
+      await db.query("update public.cases set service_track = 'MANAGED' where id = $1", [caseId])
+      expect(await reason()).toBe("not_guided")
+      await expect(db.query(
+        "update public.quote_versions set discount_policy_id = 'PAID_GUARD_MANAGED_20', discount_bps = 2000 where id = $1",
+        [quoteVersionId],
+      )).rejects.toThrow(/discount|check/i)
+    } finally {
+      await db.exec("rollback")
+    }
+    expect(await reason()).toBeNull()
+    expect(payment.order.amount_minor).toBe(9900)
+  })
+
   it("settles £99 once, queues one receipt email, and keeps checkout and a failed webhook unpaid", async () => {
     const reference = "PR-26-FULF99"
     const caseId = await insertCase(reference)
@@ -361,8 +433,16 @@ describe("guided fulfilment handover", () => {
     expect(loaded.customerOrigin).toBe(origin)
     expect(String(loaded.bodyText)).toContain("£99.00 GBP")
     expect(String(loaded.bodyText)).not.toMatch(/pi_|cus_/)
-    const claimed = await rpc<Json>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.id, true, origin])
+    const claimed = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.id, true, origin])
     expect(claimed.status, JSON.stringify(claimed)).toBe("success")
+    const provider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed, provider })).toBe("succeeded")
+    expect(provider.effects).toBe(1)
+    expect(provider.payloads[0].text).toContain(`${origin}/portal/cases/${reference}/payments`)
+    expect(provider.payloads[0].text.match(/\/portal\/cases\//g)).toHaveLength(1)
+    expect(`${provider.payloads[0].text}\n${provider.payloads[0].html}`).not.toMatch(/#t=|\/action\/|pi_|cus_/)
+    expect((await rows<{ delivery_status: string }>("select delivery_status from public.communications where id = $1", [queued.id]))[0].delivery_status).toBe("PROVIDER_ACCEPTED")
+    expect(await rpc<Json>("admin_dev_send_email_claim_v1", [adminToken, key(), queued.id, true, origin])).toMatchObject({ status: "denied", reason: "already_processed" })
     await expect(db.query(
       `insert into public.payment_receipts(
         obligation_id, service_order_id, customer_id, payment_attempt_id, amount_minor, currency, tax_behaviour, tax_amount_minor
@@ -389,6 +469,7 @@ describe("guided fulfilment handover", () => {
     expect(source).toEqual({ source: "ADMIN", request: null })
     const added = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
     expect(added.status, JSON.stringify(added)).toBe("success")
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, added.recordVersion)).toMatchObject({ status: "denied", reason: "instructions" })
     const instructions = await acceptedFile(caseId, "instructions.pdf")
     const withRole = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, added.recordVersion)
     expect(withRole.status).toBe("success")
@@ -398,7 +479,37 @@ describe("guided fulfilment handover", () => {
     expect(await count("select count(*)::int as n from public.guided_pack_item_roles where item_id not in (select id from public.case_prepared_pack_items)")).toBe(0)
     const restored = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, removed.recordVersion)
     expect(restored.status).toBe("success")
-    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, restored.recordVersion)
+    const loose = await acceptedFile(caseId, "loose.pdf")
+    const untagged = await packCmd(caseId, "add_item", { versionId: loose.versionId }, draft.id, restored.recordVersion)
+    expect(untagged.status).toBe("success")
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, untagged.recordVersion)).toMatchObject({ status: "denied", reason: "role" })
+    const withoutLoose = await packCmd(caseId, "remove_item", { versionId: loose.versionId }, draft.id, untagged.recordVersion)
+    const otherCase = await insertCase("PR-26-FULFRN")
+    const foreign = await acceptedFile(otherCase, "foreign.pdf")
+    expect((await packCmd(caseId, "add_item", { versionId: foreign.versionId, role: "EVIDENCE" }, draft.id, withoutLoose.recordVersion)).status).toBe("denied")
+    const customerRequest = randomUUID()
+    await db.query(
+      `insert into public.evidence_requests(id, case_id, title, request_text, status, created_by)
+       values ($1,$2,'Customer photo','Upload a photo of the premises.','OPEN',$3)`,
+      [customerRequest, caseId, admin],
+    )
+    await db.query(
+      `update public.case_document_versions
+       set submission_source = 'CUSTOMER', customer_evidence_request_id = $2, portal_submission = true
+       where id = $1`,
+      [statement.versionId, customerRequest],
+    )
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withoutLoose.recordVersion)).toMatchObject({ status: "denied", reason: "author" })
+    await db.query(
+      `update public.case_document_versions
+       set submission_source = 'ADMIN', customer_evidence_request_id = null, portal_submission = false
+       where id = $1`,
+      [statement.versionId],
+    )
+    const withoutStatement = await packCmd(caseId, "remove_item", { versionId: statement.versionId }, draft.id, withoutLoose.recordVersion)
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withoutStatement.recordVersion)).toMatchObject({ status: "denied", reason: "deliverable" })
+    const statementBack = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, withoutStatement.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, statementBack.recordVersion)
     expect(approved.status, JSON.stringify(approved)).toBe("success")
 
     const membershipVersion = (await rows<{ record_version: number }>(
@@ -420,6 +531,11 @@ describe("guided fulfilment handover", () => {
     const partial = await packCmd(caseId, "publish", { note: packNote, confirmed: true, subject: "Only a subject" }, draft.id, approved.recordVersion)
     expect(partial.status).toBe("denied")
     expect((await rows<{ published_at: string | null }>("select published_at from public.case_prepared_packs where id = $1", [draft.id]))[0].published_at).toBeNull()
+    const silent = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
+    expect(silent, JSON.stringify(silent)).toMatchObject({ status: "success", packEmail: "skipped" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
+    const withdrawn = await packCmd(caseId, "unpublish", { confirmed: true, reason: packNote }, draft.id, silent.recordVersion)
+    expect(withdrawn.status, JSON.stringify(withdrawn)).toBe("success")
 
     const rendered = renderPackReady({
       serviceCode: "GUIDED_RELAUNCH",
@@ -430,7 +546,7 @@ describe("guided fulfilment handover", () => {
       origin,
     })
     expect(rendered).not.toBeNull()
-    const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true, ...mailPayload(rendered!, "documents") }, draft.id, approved.recordVersion)
+    const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true, ...mailPayload(rendered!, "documents") }, draft.id, withdrawn.recordVersion)
     expect(published, JSON.stringify(published)).toMatchObject({ status: "success", published: true, packEmail: "success" })
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
     const announcement = await rpc<Json>("communication_load_send_v1", [
@@ -438,8 +554,27 @@ describe("guided fulfilment handover", () => {
       1,
     ])
     expect(announcement.status).toBe("success")
+    expect(announcement.customerOrigin).toBe(origin)
     expect(String(announcement.bodyText)).toContain(guidedCustomerSubmitsSentence)
     expect(String(announcement.bodyText).match(/\/portal\/cases\//g)).toHaveLength(1)
+    const packClaim = await rpc<DevSendClaim>("admin_dev_send_email_claim_v1", [adminToken, key(), announcement.communicationId, true, origin])
+    expect(packClaim.status, JSON.stringify(packClaim)).toBe("success")
+    let packSends = 0
+    const unknownPack = await sendEmailHandler({}, {
+      async send() {
+        packSends += 1
+        return { ok: false, retryable: true, acceptanceUnknown: true, error: "provider timed out" }
+      },
+    }).execute({
+      idempotencyKey: String(packClaim.idempotencyKey),
+      payload: packClaim.payload ?? {},
+      rpc: namedRpc(),
+    })
+    expect(unknownPack.ok).toBe(false)
+    expect(packSends).toBe(1)
+    await db.query("update admin_private.jobs set lease_expires_at = now() - interval '1 second' where id = $1", [packClaim.jobId])
+    expect(await rpc<Json>("admin_dev_send_email_claim_v1", [adminToken, key(), announcement.communicationId, true, origin])).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+    expect(packSends).toBe(1)
 
     const documents = await rpc<{
       found: boolean
@@ -454,13 +589,13 @@ describe("guided fulfilment handover", () => {
       customerSubmitted: false,
       correctionRequested: false,
     })
-    expect(documents.pack?.instructionSelectors).toEqual(["pd-2"])
+    expect(documents.pack?.instructionSelectors).toEqual(["pd-1"])
     expect(documents.documents.map(item => item.filename).sort()).toEqual(["instructions.pdf", "statement.pdf"])
-    const resolved = await rpc<{ found: boolean; available: boolean; storageKey?: string }>("customer_portal_document_resolve_v1", [alexSession, reference, "pd-1"])
+    const resolved = await rpc<{ found: boolean; available: boolean; storageKey?: string }>("customer_portal_document_resolve_v1", [alexSession, reference, "pd-2"])
     expect(resolved).toMatchObject({ found: true, available: true })
     expect(resolved.storageKey).toContain(String(statement.versionId))
-    expect(await rpc("customer_portal_document_access_v1", [alexSession, key(), reference, "pd-1"])).toEqual({ status: "success" })
-    expect(await rpc("customer_portal_document_resolve_v1", [samSession, reference, "pd-1"])).toEqual({ found: false })
+    expect(await rpc("customer_portal_document_access_v1", [alexSession, key(), reference, "pd-2"])).toEqual({ status: "success" })
+    expect(await rpc("customer_portal_document_resolve_v1", [samSession, reference, "pd-2"])).toEqual({ found: false })
     expect(JSON.stringify(documents)).not.toMatch(/pi_|cus_|storage_key|amazonaws/i)
 
     const correction = await rpc<Json>("customer_portal_guided_handover_v1", [
@@ -489,9 +624,11 @@ describe("guided fulfilment handover", () => {
     expect(afterReport.pack).toMatchObject({ customerSubmitted: true, correctionRequested: true })
 
     const replacementFile = await acceptedFile(caseId, "statement-v2.pdf")
+    const replacementInstructions = await acceptedFile(caseId, "instructions-v2.pdf")
     const next = await packCmd(caseId, "create", {})
     const nextItem = await packCmd(caseId, "add_item", { versionId: replacementFile.versionId, role: "DELIVERABLE" }, next.id, next.recordVersion)
-    const nextApproved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, next.id, nextItem.recordVersion)
+    const nextInstructions = await packCmd(caseId, "add_item", { versionId: replacementInstructions.versionId, role: "INSTRUCTIONS" }, next.id, nextItem.recordVersion)
+    const nextApproved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, next.id, nextInstructions.recordVersion)
     const nextRendered = renderPackReady({
       serviceCode: "GUIDED_RELAUNCH",
       serviceName: "Guided Relaunch",
@@ -506,11 +643,33 @@ describe("guided fulfilment handover", () => {
     expect(nextPublished, JSON.stringify(nextPublished)).toMatchObject({ status: "success", packEmail: "success" })
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(2)
     expect(await count("select count(*)::int as n from public.case_prepared_packs where id = $1 and unpublished_at is not null", [draft.id])).toBe(1)
-    const current = await rpc<{ documents: Array<{ filename: string }>; pack: { packNumber: number } }>("customer_portal_case_documents_v1", [alexSession, reference])
-    expect(current.documents.map(item => item.filename)).toEqual(["statement-v2.pdf"])
+    const current = await rpc<{ documents: Array<{ filename: string }>; pack: { packNumber: number; customerSubmitted: boolean; correctionRequested: boolean } }>("customer_portal_case_documents_v1", [alexSession, reference])
+    expect(current.documents.map(item => item.filename).sort()).toEqual(["instructions-v2.pdf", "statement-v2.pdf"])
     expect(current.pack.packNumber).toBeGreaterThan(1)
-    const oldDownload = await rpc<{ available: boolean }>("customer_portal_document_resolve_v1", [alexSession, reference, "pd-2"])
-    expect(oldDownload.available).toBe(false)
+    expect(current.pack).toMatchObject({ customerSubmitted: false, correctionRequested: false })
+    const currentStatement = await rpc<{ available: boolean; storageKey?: string }>("customer_portal_document_resolve_v1", [alexSession, reference, "pd-1"])
+    expect(currentStatement.available).toBe(true)
+    expect(currentStatement.storageKey).toContain(String(replacementFile.versionId))
+    expect(currentStatement.storageKey).not.toContain(String(statement.versionId))
+    const receiptsBeforeReport = await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [order.id])
+    const reportedAgain = await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_submission", {
+        note: "I sent the corrected pack through the Google appeals tool.",
+        submittedOn: "2026-10-21",
+        googleReference: "GOOGLE-FULFIL-2",
+      },
+    ])
+    expect(reportedAgain).toMatchObject({ status: "success", kind: "GOOGLE_SUBMISSION" })
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_submission", {
+        note: "I sent the corrected pack through the Google appeals tool.",
+        submittedOn: "2026-10-21",
+        googleReference: "GOOGLE-FULFIL-3",
+      },
+    ])).toMatchObject({ status: "conflict" })
+    expect(await count("select count(*)::int as n from public.guided_customer_reports where case_id = $1 and kind = 'GOOGLE_SUBMISSION'", [caseId])).toBe(2)
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [order.id])).toBe(receiptsBeforeReport)
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
   })
 
   it("settles Guided Review at £59 and still hides a pack that has not been paid", async () => {
@@ -539,7 +698,10 @@ describe("guided fulfilment handover", () => {
     const hiddenPack = await packCmd(declined, "create", {})
     const hiddenFile = await acceptedFile(declined, "declined.pdf")
     const hiddenItem = await packCmd(declined, "add_item", { versionId: hiddenFile.versionId, role: "DELIVERABLE" }, hiddenPack.id, hiddenPack.recordVersion)
-    const hiddenApproved = await packCmd(declined, "approve", { note: packNote, confirmed: true }, hiddenPack.id, hiddenItem.recordVersion)
+    expect(await packCmd(declined, "approve", { note: packNote, confirmed: true }, hiddenPack.id, hiddenItem.recordVersion)).toMatchObject({ status: "denied", reason: "instructions" })
+    const hiddenInstructions = await acceptedFile(declined, "declined-instructions.pdf")
+    const hiddenWithInstructions = await packCmd(declined, "add_item", { versionId: hiddenInstructions.versionId, role: "INSTRUCTIONS" }, hiddenPack.id, hiddenItem.recordVersion)
+    const hiddenApproved = await packCmd(declined, "approve", { note: packNote, confirmed: true }, hiddenPack.id, hiddenWithInstructions.recordVersion)
     expect(await packCmd(declined, "publish", { note: packNote, confirmed: true }, hiddenPack.id, hiddenApproved.recordVersion)).toMatchObject({ status: "denied", reason: "unpaid" })
 
     const reference = "RV-26-FULF59"
@@ -547,9 +709,11 @@ describe("guided fulfilment handover", () => {
     expect((await acceptQuote(caseId, "GUIDED_REVIEW")).status).toBe("success")
     await guidedToPaymentRequired(caseId)
     const file = await acceptedFile(caseId, "review-notes.pdf")
+    const reviewInstructions = await acceptedFile(caseId, "review-instructions.pdf")
     const draft = await packCmd(caseId, "create", {})
     const added = await packCmd(caseId, "add_item", { versionId: file.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
-    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, added.recordVersion)
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: reviewInstructions.versionId, role: "INSTRUCTIONS" }, draft.id, added.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withInstructions.recordVersion)
     const early = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
     expect(early).toMatchObject({ status: "denied", reason: "unpaid" })
     expect(await rpc("customer_portal_case_documents_v1", [alexSession, reference])).toMatchObject({

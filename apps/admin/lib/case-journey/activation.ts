@@ -339,7 +339,7 @@ export function buildJourneyActivationPanel(input: {
   const obligationDue = !!moneyOrder
     && moneyOrder.obligationKind === "UPFRONT"
     && moneyOrder.obligationState === "DUE"
-    && !moneyOrder.receiptRecorded
+    && !moneyOrder.receiptId
     && link.trackOrder?.paymentModel === "UPFRONT"
     && link.trackOrder.orderState === "ACCEPTED_AWAITING_PAYMENT"
     && !payment.upfrontPaid

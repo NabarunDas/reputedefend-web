@@ -1363,7 +1363,7 @@ BEGIN
   expected := p_origin || '/portal/cases/' || (target->>'caseRef') || page;
   sentence := CASE target->>'variant'
     WHEN 'submitted' THEN 'We have submitted your case to Google through Google''s own process. This email is our note of that submission. It does not mean Google has made a decision.'
-    WHEN 'follow_up' THEN 'We have sent Google the further information they asked for. This email is our note of that follow-up. It does not mean Google has made a decision.'
+    WHEN 'follow_up' THEN 'We have sent Google a further update on your case. This email is our note of that follow-up. It does not mean Google has made a decision.'
     WHEN 'google_reply' THEN 'Google has sent a reply. A reply is not the same as the agreed successful outcome. We still check the original profile or review ourselves before any success fee is discussed.'
     WHEN 'unsuccessful_reply' THEN 'The response does not meet the agreed success criteria, so no success fee is payable for this request.'
     WHEN 'invoice' THEN 'Your success fee invoice is ready. It is payable within 14 days from the signed-in Customer Portal. We do not charge a saved card.'

@@ -9,7 +9,7 @@ const originPattern = /^https:\/\/[A-Za-z0-9.-]+$/
 export const managedCaseButton = "Open your case"
 export const managedInvoiceButton = "View your invoice"
 export const managedSubmittedSentence = "We have submitted your case to Google through Google's own process. This email is our note of that submission. It does not mean Google has made a decision."
-export const managedFollowUpSentence = "We have sent Google the further information they asked for. This email is our note of that follow-up. It does not mean Google has made a decision."
+export const managedFollowUpSentence = "We have sent Google a further update on your case. This email is our note of that follow-up. It does not mean Google has made a decision."
 export const managedGoogleReplySentence = "Google has sent a reply. A reply is not the same as the agreed successful outcome. We still check the original profile or review ourselves before any success fee is discussed."
 export const managedUnsuccessfulReplySentence = "The response does not meet the agreed success criteria, so no success fee is payable for this request."
 export const managedOpenCaseSentence = "This note does not finish the case and it does not create a fee."
@@ -47,7 +47,7 @@ export function managedPortalPage(origin: string, caseRef: string, page: "case" 
 
 function subjectFor(variant: ManagedNoticeVariant, serviceName: string, caseRef: string): string {
   if (variant === "submitted") return `We have submitted your ${serviceName} case — ${caseRef}`
-  if (variant === "follow_up") return `We have sent Google more information — ${caseRef}`
+  if (variant === "follow_up") return `We have sent Google a further update — ${caseRef}`
   if (variant === "google_reply") return `Google has replied about your case — ${caseRef}`
   if (variant === "unsuccessful_reply") return `No success fee is payable for this request — ${caseRef}`
   if (variant === "invoice") return `Your success fee invoice is ready — ${caseRef}`

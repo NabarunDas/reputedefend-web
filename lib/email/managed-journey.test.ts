@@ -10,6 +10,7 @@ import {
   managedPaidSentence,
   managedProfileCheckedSentence,
   managedReviewCheckedSentence,
+  managedFollowUpSentence,
   managedSubmittedSentence,
   renderManagedNotice,
 } from "./managed-journey"
@@ -38,6 +39,15 @@ describe("managed customer email", () => {
     expect(rendered!.html.match(/\/portal\/cases\//g)).toHaveLength(1)
     expect(`${rendered!.text}\n${rendered!.html}`).not.toMatch(/pi_|cus_|#t=|\/action\/|SUCCESS_FEE|ABSENT/)
     expect(rendered!.text).not.toMatch(/Google has restored|we have removed the review/i)
+  })
+
+  it("describes a later submission as a further update without claiming Google asked for it", () => {
+    const rendered = renderManagedNotice({ ...shared, variant: "follow_up" })
+    expect(rendered).not.toBeNull()
+    expect(rendered!.subject).toBe("We have sent Google a further update — PR-26-MANAGE")
+    expect(rendered!.text).toContain(managedFollowUpSentence)
+    expect(rendered!.text).not.toMatch(/they asked|requested more information/i)
+    expect(rendered!.text).toContain(managedOpenCaseSentence)
   })
 
   it("sends the invoice through the signed-in payments page", () => {

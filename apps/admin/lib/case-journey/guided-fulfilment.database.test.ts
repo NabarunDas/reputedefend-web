@@ -837,8 +837,9 @@ describe("guided fulfilment handover", () => {
       amountMinor: order.amount_minor,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
-    expect(paymentRequest?.buttonLabel).toBe("Pay £99 securely")
+    expect(paymentRequest?.buttonLabel).toBe("Pay £99.00 securely")
     const paymentBody = {
       serviceOrderId: order.id,
       version: payable.record_version,
@@ -902,6 +903,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: 9900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     const queuedConfirmation = await rpc<Json>("payment_queue_confirmation_v1", [{
       ...mailPayload(confirmation!, "payments"),
@@ -940,6 +942,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: 9900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     const published = await packCmd(caseId, "publish", {
       note: packNote, confirmed: true, ...mailPayload(packMail!, "documents"),
@@ -1027,8 +1030,17 @@ describe("guided fulfilment handover", () => {
       amountMinor: 9900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     expect(rendered).not.toBeNull()
+    expect(rendered!.text).toContain("Reply to this email")
+    const missingReply = await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId),
+      { note, summary, ...mailPayload(rendered!, "documents"), replyTo: "" },
+    ])
+    expect(missingReply, JSON.stringify(missingReply)).toMatchObject({ status: "denied", reason: "reply_to" })
+    expect((await rows<{ status: string }>("select status from public.cases where id = $1", [caseId]))[0].status).toBe("CLOSED")
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_COMPLETION'", [caseId])).toBe(0)
     const payload = { note, summary, ...mailPayload(rendered!, "documents") }
     const recoveryVersion = await caseVersion(caseId)
     const recoveryId = key()
@@ -1046,7 +1058,7 @@ describe("guided fulfilment handover", () => {
     expect(recoveryReplay).toMatchObject({ status: "success", completionEmail: "success", recovered: true })
     expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
       adminToken, key(), caseId, await caseVersion(caseId), payload,
-    ])).toMatchObject({ status: "success", completionEmail: "success", recovered: true })
+    ])).toMatchObject({ status: "success", completionEmail: "already_queued", recovered: true })
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_COMPLETION'", [caseId])).toBe(1)
     expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
       adminToken, quietRequest, caseId, quietVersion, { note, summary },
@@ -1113,6 +1125,7 @@ describe("guided fulfilment handover", () => {
       amountMinor: 9900,
       currency: "GBP",
       origin,
+      replyTo: "cases@profilerelaunch.com",
     })
     const nextPublished = await packCmd(caseId, "publish", {
       note: packNote, confirmed: true, ...mailPayload(nextRendered!, "documents"),

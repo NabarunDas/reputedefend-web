@@ -66,7 +66,7 @@ export async function guidedFulfilmentClose(request: NextRequest) {
       const origin = customerPortalOrigin()
       const from = outgoingFromAddress()
       const replyTo = confirmedReplyMailbox()
-      const rendered = origin && from && context.caseRef && context.serviceCode && context.serviceName && context.amountMinor != null && context.currency
+      const rendered = origin && from && replyTo && context.caseRef && context.serviceCode && context.serviceName && context.amountMinor != null && context.currency
         ? renderGuidedCompletion({
           serviceCode: context.serviceCode,
           serviceName: context.serviceName,
@@ -77,18 +77,19 @@ export async function guidedFulfilmentClose(request: NextRequest) {
           replyTo,
         })
         : null
-      if (!rendered || !from || !origin) return reply("The case was not closed. The completion email could not be prepared.", 503)
-      email = {
-        subject: rendered.subject,
-        bodyText: rendered.text,
-        bodyHtml: rendered.html,
-        fromAddress: from,
-        customerOrigin: origin,
-        sendEnabled: true,
-        ...(replyTo ? { replyTo } : {}),
+      if (rendered && from && origin && replyTo) {
+        email = {
+          subject: rendered.subject,
+          bodyText: rendered.text,
+          bodyHtml: rendered.html,
+          fromAddress: from,
+          replyTo,
+          customerOrigin: origin,
+          sendEnabled: true,
+        }
       }
     }
-    const result = await backend().rpc<{ status?: string; reason?: string; completionEmail?: string }>("admin_guided_fulfilment_close_v1", {
+    const result = await backend().rpc<{ status?: string; reason?: string; completionEmail?: string; recovered?: boolean }>("admin_guided_fulfilment_close_v1", {
       p_token: tokenHash(token),
       p_request: key,
       p_case: fields.id,
@@ -96,9 +97,20 @@ export async function guidedFulfilmentClose(request: NextRequest) {
       p_data: { note, summary, ...email },
     })
     if (result.status === "success") {
+      if (result.recovered) {
+        if (result.completionEmail === "already_queued") {
+          return reply("The completion update was already queued. Another copy was not sent. The case stays closed.", 200)
+        }
+        if (result.completionEmail === "success") {
+          return reply("The completion update is queued. Queued is not delivered. The case was already closed. This does not record a Google decision and it does not enrol Relaunch Guard.", 200)
+        }
+        return reply("The completion update was not sent. The case stays closed. This does not record a Google decision and it does not enrol Relaunch Guard.", 200)
+      }
       const queued = result.completionEmail === "success"
         ? "The completion email is queued. Queued is not delivered."
-        : "The completion email was not sent, so the notification is pending."
+        : result.completionEmail === "already_queued"
+          ? "The completion email was already queued. Another copy was not sent."
+          : "The completion email was not sent, so the notification is pending."
       return reply(`The Guided preparation is closed. ${queued} This does not record a Google decision and it does not enrol Relaunch Guard.`, 200)
     }
     if (result.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)

@@ -27,6 +27,7 @@ import { commercialQuotesTied, resolveCaseFlow, summariseCommercial, summarisePa
 import { ACTIVATION_ORDER_DISAGREE_WHO, acceptedServiceProjection, activationLinkProblem, activationOrderLink } from "./activation"
 import { packReadyNotification, preparationReadiness } from "./preparation"
 import { judgeOutcomeBilling } from "./outcome"
+import { guidedCompletionNotice } from "./closure"
 import { coherentTerminalClosure, type OutcomeProofEvent } from "./outcome-proposal"
 import { authoritativeSubmissionResult, submissionPartyMatches } from "./submission"
 import { evidenceReadyForAssessment, type AssessmentJudgement } from "./assessment"
@@ -1351,6 +1352,9 @@ function readClosure(facts: CaseFlowFacts, options: JourneyPresentationOptions):
         : "This is a closure. It is not a CANCELLED result.",
     ]
     if (facts.outcome === "WITHDRAWN") known.push("The withdrawal keeps the CANCELLED status.")
+    if (facts.serviceTrack === "GUIDED" && facts.caseStatus === "CLOSED" && !facts.outcome) {
+      known.push(guidedCompletionNotice(facts.communications))
+    }
     known.push("Optional Guard was not required and did not block closure.")
     return {
       proof: "complete",

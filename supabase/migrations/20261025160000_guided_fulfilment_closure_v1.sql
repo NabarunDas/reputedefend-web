@@ -135,6 +135,8 @@ BEGIN
     OR admin_private.fulfilment_page_count_v1(p_html, page) IS DISTINCT FROM 1
     OR position(expected IN coalesce(p_text, '')) = 0
     OR position(expected IN coalesce(p_html, '')) = 0
+    OR position('reply to this email' IN lower(coalesce(p_text, ''))) = 0
+    OR position('reply to this email' IN lower(coalesce(p_html, ''))) = 0
   THEN RETURN 'snapshot'; END IF;
   IF p_template IN ('GUIDED_PACK_READY', 'GUIDED_COMPLETION') AND position(
     'You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.'
@@ -198,7 +200,10 @@ BEGIN
   IF present IS DISTINCT FROM array_length(keys, 1) OR p_data->>'sendEnabled' IS DISTINCT FROM 'true' THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
-  reply_to := NULLIF(btrim(coalesce(p_data->>'replyTo', '')), '');
+  reply_to := NULLIF(lower(btrim(coalesce(p_data->>'replyTo', ''))), '');
+  IF reply_to IS NULL OR length(reply_to) > 254 OR reply_to !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'reply_to');
+  END IF;
   reason := admin_private.fulfilment_snapshot_reason_v1(
     p_case, 'GUIDED_COMPLETION', p_data->>'subject', p_data->>'bodyText', p_data->>'bodyHtml', p_data->>'customerOrigin'
   );
@@ -329,7 +334,12 @@ BEGIN
         SET communication_id = comm
         WHERE case_id = c.id AND communication_id IS NULL;
     END IF;
-    result := jsonb_build_object('status', 'success', 'id', c.id, 'completionEmail', mail->>'status', 'recovered', true);
+    result := jsonb_build_object(
+      'status', 'success',
+      'id', c.id,
+      'completionEmail', CASE WHEN mail->>'replay' = 'true' THEN 'already_queued' ELSE mail->>'status' END,
+      'recovered', true
+    );
     INSERT INTO admin_private.case_command_receipts VALUES (p_request, actor, fp, result, now_time);
     RETURN result;
   END IF;
@@ -758,10 +768,10 @@ BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
   actor := (s->>'userId')::uuid;
-  IF p_request IS NULL OR p_case IS NULL OR p_operation IS NULL OR p_operation NOT IN ('create','add_item','remove_item','move_item','approve','publish','unpublish')
+  IF p_request IS NULL OR p_case IS NULL OR p_operation IS NULL OR p_operation NOT IN ('create','add_item','remove_item','move_item','approve','publish','unpublish','send_pack_email')
     OR p_data IS NULL OR jsonb_typeof(p_data) <> 'object'
-    OR (p_operation = 'publish' AND octet_length(p_data::text) > 65536)
-    OR (p_operation IS DISTINCT FROM 'publish' AND octet_length(p_data::text) > 4096)
+    OR (p_operation IN ('publish', 'send_pack_email') AND octet_length(p_data::text) > 65536)
+    OR (p_operation NOT IN ('publish', 'send_pack_email') AND octet_length(p_data::text) > 4096)
     THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   data := coalesce(p_data, '{}'::jsonb);
   fp := md5(jsonb_build_array(p_case, p_pack, p_version, p_operation, data)::text);
@@ -837,6 +847,39 @@ BEGIN
     PERFORM admin_private.write_record_audit_v1(actor, 'EVIDENCE_CHANGED', 'success', c.id, p_request, 'case', 'Prepared pack unpublished',
       jsonb_build_object('operation', 'unpublish', 'packId', p.id, 'packNumber', p.pack_number));
     result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', false);
+    INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
+    RETURN result;
+  END IF;
+
+  IF p_operation = 'send_pack_email' THEN
+    IF (data - 'subject' - 'bodyText' - 'bodyHtml' - 'fromAddress' - 'replyTo' - 'customerOrigin' - 'sendEnabled') <> '{}'::jsonb THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF p.status IS DISTINCT FROM 'APPROVED' OR p.published_at IS NULL OR p.unpublished_at IS NOT NULL THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    commercial := admin_private.guided_settlement_reason_v1(c.id);
+    IF commercial IS NOT NULL AND commercial IS DISTINCT FROM 'not_guided' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', commercial);
+    END IF;
+    materials := admin_private.guided_pack_materials_reason_v1(p.id);
+    IF materials IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied', 'reason', materials); END IF;
+    IF NOT admin_private.pack_publishable_v1(p.id) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF EXISTS (SELECT 1 FROM public.guided_pack_announcements existing WHERE existing.pack_id = p.id) THEN
+      result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', true, 'packEmail', 'already_queued');
+      INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
+      RETURN result;
+    END IF;
+    IF data->>'sendEnabled' IS DISTINCT FROM 'true' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'send_disabled');
+    END IF;
+    mail := admin_private.queue_guided_pack_ready_v1(c.id, p.id, actor, data);
+    IF mail->>'status' IS DISTINCT FROM 'success' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', coalesce(mail->>'reason', 'mail'));
+    END IF;
+    PERFORM admin_private.write_record_audit_v1(actor, 'COMMUNICATION_CHANGED', 'success', c.id, p_request, 'case', 'Queued the pack-ready email. The provider has not accepted it.',
+      jsonb_build_object('operation', 'send_pack_email', 'packId', p.id, 'communicationId', mail->>'id'));
+    result := jsonb_build_object('status', 'success', 'id', p.id, 'packNumber', p.pack_number, 'packStatus', p.status, 'recordVersion', p.record_version, 'published', true, 'packEmail', 'success');
     INSERT INTO admin_private.pack_command_receipts VALUES (p_request, actor, fp, result, now());
     RETURN result;
   END IF;

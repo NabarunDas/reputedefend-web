@@ -66,6 +66,8 @@ export type JourneyClosurePanel = {
   guard: { offered: boolean; text: string; href: "/guard" }
   /** Guided preparation can close without a stored Google outcome. */
   fulfilmentClose: boolean
+  /** A closed Guided case can queue the completion email that was never sent. */
+  completionRecovery: boolean
   /** Exact stored values. Present only when the close form is shown. */
   locked: { outcome: string; summary: string } | null
   commands: JourneyClosureCommands | null
@@ -74,7 +76,7 @@ export type JourneyClosurePanel = {
 
 const GUARD_HREF = "/guard" as const
 
-function completionNotice(communications: CaseFlowFacts["communications"]): string {
+export function guidedCompletionNotice(communications: CaseFlowFacts["communications"]): string {
   const row = communications
     .filter(item => item.templateKey === "GUIDED_COMPLETION" && item.lifecycle !== "CANCELLED")
     .sort((left, right) => left.draftedAt.localeCompare(right.draftedAt))
@@ -196,6 +198,8 @@ export function presentJourneyClosure(input: {
   detail: CaseDetail
   /** Every earlier guided step is complete or does not apply. */
   precedingComplete: boolean
+  /** Outgoing mail is enabled and a monitored Reply-To is confirmed. */
+  mailRecovery?: boolean
 }): { disagreed: boolean; closureRecordsDisagree: boolean; panel: JourneyClosurePanel } {
   const outcomeView = presentJourneyOutcome({
     facts: input.facts,
@@ -285,12 +289,23 @@ export function presentJourneyClosure(input: {
     && facts.caseType === "PROFILE_RECOVERY"
     && facts.outcome === "RESTORED"
     && isQualifyingSuccessFeeOutcome(facts.caseType, facts.outcome)
+  const completionStatus = guidedCompletionNotice(facts.communications)
+  const completionRecovery = !!input.mailRecovery
+    && verified
+    && facts.caseStatus === "CLOSED"
+    && facts.serviceTrack === "GUIDED"
+    && !facts.outcome
+    && completionStatus.startsWith("No completion email")
+    && facts.outcomeSummary.trim().length >= 10
+    && facts.outcomeSummary.length <= 2000
   const notices = [
     "Optional Guard is not required to close this case.",
-    completionNotice(facts.communications),
+    completionStatus,
     fulfilment
       ? "Closing can queue one completion summary. Queued is not delivered. If outgoing mail is off, the notification stays pending. It does not submit anything to Google, collect another payment, or enrol Relaunch Guard."
-      : "Closing does not send email, submit anything to Google, or collect a payment.",
+      : completionRecovery
+        ? "The completion update has not been queued. Sending it does not close the case again, submit anything to Google, or collect a payment. Queued is not delivered."
+        : "Closing does not send email, submit anything to Google, or collect a payment.",
   ]
   if (facts.reopened && !databaseClosed) notices.push("This case was reopened. It is not complete. Earlier outcomes stay in the history.")
   if (!summaryAgrees) notices.push("The stored customer summary and the case record do not agree. Neither value is changed from here.")
@@ -380,6 +395,7 @@ export function presentJourneyClosure(input: {
       },
       locked,
       fulfilmentClose: fulfilment,
+      completionRecovery,
       commands: close || reopen ? { close, reopen } : null,
       version: detail.version,
     },

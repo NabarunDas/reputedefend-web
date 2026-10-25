@@ -122,8 +122,8 @@ export function renderGuidedCompletion(input: {
 }): { subject: string; html: string; text: string; pageUrl: string } | null {
   const ready = sharedReady(input)
   const pageUrl = portalCasePage(input.origin, input.caseRef, "documents")
-  if (!ready || !pageUrl) return null
   const replyTo = validReplyMailbox(input.replyTo)
+  if (!ready || !pageUrl || !replyTo) return null
   const subject = `Your ${ready.serviceName} preparation is complete — ${ready.caseRef}`
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
@@ -134,9 +134,7 @@ export function renderGuidedCompletion(input: {
     { type: "paragraph", text: "Google's later decision is separate from this completed preparation. You can tell us if you submit the pack, and you can ask for a correction from the pack page." },
     { type: "paragraph", text: `${guidedCompletionGuardSentence} It does not apply a discount or charge you.` },
     { type: "button", label: packReadyButton, url: pageUrl },
-    { type: "paragraph", text: replyTo
-      ? "Reply to this email if you need a correction. Keep the case reference in the subject."
-      : "If you need a correction, contact us through the ProfileRelaunch website." },
+    { type: "paragraph", text: "Reply to this email if you need a correction. Keep the case reference in the subject." },
   ]
   const rendered = renderCustomerEmail({ title: "Your Guided preparation is complete", blocks, caseRef: ready.caseRef })
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null

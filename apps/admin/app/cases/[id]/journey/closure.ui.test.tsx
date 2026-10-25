@@ -166,7 +166,7 @@ function caseDetail(overrides: Partial<CaseDetail> = {}): CaseDetail {
   }
 }
 
-function panelFor(source: CaseFlowFacts, detail: CaseDetail, precedingComplete = true) {
+function panelFor(source: CaseFlowFacts, detail: CaseDetail, precedingComplete = true, mailRecovery = false) {
   return presentJourneyClosure({
     facts: source,
     now: NOW,
@@ -180,6 +180,7 @@ function panelFor(source: CaseFlowFacts, detail: CaseDetail, precedingComplete =
     events: detail.events,
     detail,
     precedingComplete,
+    mailRecovery,
   }).panel
 }
 
@@ -424,5 +425,32 @@ describe("the closure step", () => {
     expect(screen.queryByText("Cancelled.")).toBeNull()
     expect(screen.queryByRole("heading", { name: "Closure record" })).toBeNull()
     expect(screen.getByText("Reopen with a follow-up task")).toBeTruthy()
+  })
+
+  it("offers one completion update on a closed Guided case that has no completion email", () => {
+    const summary = "The Guided preparation was handed to the customer."
+    const source = facts({
+      caseStatus: "CLOSED",
+      technicalStage: "FINISHED",
+      outcome: null,
+      outcomeSummary: summary,
+      submissions: [],
+    })
+    const detail = caseDetail({
+      status: "CLOSED",
+      stage: "FINISHED",
+      outcome: null,
+      summary,
+      submissions: [],
+    })
+    render(<ClosurePanel caseDetail={detail} panel={panelFor(source, detail, true, false)} />)
+    expect(screen.getByText(/No completion email has been queued/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send completion update" })).toBeNull()
+    cleanup()
+    render(<ClosurePanel caseDetail={detail} panel={panelFor(source, detail, true, true)} />)
+    expect(screen.getByText("Send the completion update")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Send completion update" })).toBeTruthy()
+    expect(screen.getAllByText(/The Guided preparation is already closed/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/The provider reported delivery/)).toBeNull()
   })
 })

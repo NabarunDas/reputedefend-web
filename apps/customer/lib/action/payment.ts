@@ -116,19 +116,23 @@ export async function openCustomerCheckout(origin: string, result: {
   if (result.status !== "success") return reply()
   const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
   const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
+  const reuseOpen = (session: { url: string | null; status: string; mode: string } | null | undefined) => {
+    if (!session?.url || session.status !== "open") return null
+    const trusted = trustedStripeUrl(session.url, "checkout")
+    if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
+    return NextResponse.json({ status: "ok", checkoutUrl: trusted, mode: session.mode, confirming: true }, { headers: privateResponseHeaders })
+  }
   if (result.checkoutSessionId) {
     const existing = await provider.retrieveCheckout(result.checkoutSessionId)
-    if (existing?.url && existing.status === "open") {
-      const trusted = trustedStripeUrl(existing.url, "checkout")
-      if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
-      return NextResponse.json({ status: "ok", checkoutUrl: trusted, mode: existing.mode, confirming: true }, { headers: privateResponseHeaders })
-    }
+    const reused = reuseOpen(existing)
+    if (reused) return reused
     if (existing && existing.status !== "open") {
       const replaced = await backend().rpc<{
         status?: string
         providerOperationId?: string
         idempotencyKey?: string
         attemptId?: string
+        checkoutSessionId?: string
       }>("payment_replace_expired_checkout_v1", { p_operation: result.providerOperationId, ...declaredLivemodeArgument() })
       if (replaced.status !== "success" || !replaced.providerOperationId || !replaced.idempotencyKey) return reply()
       result = {
@@ -136,8 +140,12 @@ export async function openCustomerCheckout(origin: string, result: {
         providerOperationId: replaced.providerOperationId,
         idempotencyKey: replaced.idempotencyKey,
         attemptId: replaced.attemptId,
-        checkoutSessionId: undefined,
+        checkoutSessionId: replaced.checkoutSessionId,
       }
+      const successor = result.checkoutSessionId
+        ? reuseOpen(await provider.retrieveCheckout(result.checkoutSessionId))
+        : null
+      if (successor) return successor
     }
   }
   const rpc = (name: string, args?: Record<string, unknown>) => backend().rpc(name, args ?? {})

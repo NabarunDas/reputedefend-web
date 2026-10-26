@@ -3,6 +3,7 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openCustomerCheckout, settleRecoveryCancel } from "@/lib/action/payment"
+import { refreshPortalCheckout } from "./refresh"
 import { declaredLivemodeField, guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
 import { CheckoutEmailUnverifiedError, CHECKOUT_EMAIL_UNVERIFIED_MESSAGE } from "../../../../../lib/payments/checkout-presentation"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
@@ -25,7 +26,7 @@ const CONSENT = "Consent recorded. No fee is due today."
 const CANNOT_CLOSE = "The previous payment attempt cannot be closed yet."
 
 const SELECTOR = /^ca-[a-f0-9]{64}$/
-const OPERATIONS = ["confirm_consent", "start_checkout"] as const
+const OPERATIONS = ["confirm_consent", "start_checkout", "refresh_checkout"] as const
 type Operation = (typeof OPERATIONS)[number]
 
 const reply = (message: string, http = 401) =>
@@ -140,6 +141,18 @@ export async function portalPaymentCommand(request: NextRequest) {
   })
 
   try {
+    if (operation === "refresh_checkout") {
+      const response = await refreshPortalCheckout({
+        origin: config.origin,
+        tokenHash: tokenHash(token),
+        requestId: key,
+        reference: body.reference,
+        selector: body.selector,
+      })
+      const payload = await response.clone().json().catch(() => null) as { checkoutUrl?: string } | null
+      if (payload?.checkoutUrl) return presentCheckout(response)
+      return response
+    }
     if (operation === "start_checkout") {
       await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
     }

@@ -85,6 +85,16 @@ export type RetrievedCheckout = {
   url: string | null
   metadata: Record<string, string>
   livemode: boolean
+  /** Present when the provider returned the Checkout total. A refresh refuses a session without it. */
+  amountMinor?: number | null
+  currency?: string | null
+}
+
+export type ExpiredCheckout = {
+  id: string
+  status: string
+  paymentStatus: string | null
+  livemode: boolean
 }
 
 export type RetrievedPaymentIntent = {

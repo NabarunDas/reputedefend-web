@@ -16,6 +16,7 @@ import type {
   ProviderPaymentIntent,
   ProviderRecurringPrice,
   ProviderSchedule,
+  ExpiredCheckout,
   RetrievedCheckout,
   RetrievedDispute,
   RetrievedInvoice,
@@ -49,6 +50,12 @@ export interface PaymentProvider {
   createSetupCheckout(input: CreateSetupInput): Promise<ProviderCheckout>
   createOffSessionPayment(input: CreateOffSessionInput): Promise<ProviderPaymentIntent>
   retrieveCheckout(id: string): Promise<RetrievedCheckout | null>
+  /**
+   * Expire one open Checkout Session. The id comes from the owned attempt,
+   * never from the browser. Callers must confirm `status === "expired"`
+   * before they replace the attempt.
+   */
+  expireCheckout(input: { id: string; idempotencyKey: string }): Promise<ExpiredCheckout>
   retrievePaymentIntent(id: string): Promise<RetrievedPaymentIntent | null>
   retrieveSetupIntent(id: string): Promise<RetrievedSetupIntent | null>
   retrievePaymentMethod(id: string): Promise<SafePaymentMethod | null>
@@ -101,6 +108,7 @@ export function disabledPaymentProvider(): PaymentProvider {
     createSetupCheckout: deny,
     createOffSessionPayment: deny,
     retrieveCheckout: deny,
+    expireCheckout: deny,
     retrievePaymentIntent: deny,
     retrieveSetupIntent: deny,
     retrievePaymentMethod: deny,

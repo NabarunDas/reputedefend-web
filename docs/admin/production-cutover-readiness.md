@@ -141,7 +141,7 @@ capability gate is expected to be missing.
 | `DEV_STRIPE_ONE_SHOT_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | The DEV Stripe one-shot endpoint refuses every request. The production worker stays unchanged. |
 | `DEV_PAYMENT_EVENT_WORKER_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | The DEV payment event route refuses every request before it reads the queue. The production worker stays unchanged. |
 | `DEV_PAYMENT_EVENT_WORKER_SECRET` | admin | PROVIDER_SECRET | secret | ABSENT | The DEV payment event route refuses every request. The production cron route does not read this secret. |
-| `DEV_PAYMENT_EVENT_WORKER_CADENCE_SECONDS` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The DEV payment heartbeat expects a run every five minutes. The production worker cadence is unchanged. |
+| `DEV_PAYMENT_EVENT_WORKER_CADENCE_SECONDS` | admin | NON_SECRET_CONFIGURATION | non-secret | ABSENT | The DEV payment heartbeat expects a run every 300 seconds. The production worker cadence is unchanged. |
 | `STRIPE_SECRET_KEY` | admin, customer | PROVIDER_SECRET | secret | ABSENT | No Stripe client is constructed. |
 | `STRIPE_WEBHOOK_SECRET` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The Stripe webhook rejects every request. |
 | `GUARD_ACTIVATION_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | Activation stays manual and direct billing stays PENDING. |

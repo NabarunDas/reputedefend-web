@@ -374,15 +374,9 @@ describe("DEV payment event worker", () => {
     expect(await count("select count(*)::int as n from admin_private.job_outbox where event_key = 'email-ahead-0001' and promoted_at is null")).toBe(1)
     expect(await count("select count(*)::int as n from admin_private.job_outbox where event_key in ('process-stripe-event:evt_wkrinv', 'process-stripe-event:evt_wkrset') and promoted_at is null")).toBe(2)
 
-    await db.query(`
-      insert into admin_private.stripe_event_receipts(provider_event_id, event_type, provider_object_id, livemode)
-      values ('evt_wkrlive', 'payment_intent.succeeded', 'pi_wkrlive', true);
-    `)
+    expect(await receive("evt_wkrlive", "payment_intent.succeeded", "pi_wkrlive")).toMatchObject({ status: "success" })
     await db.query(
-      `select admin_private.enqueue_outbox_v1($1, 'PROCESS_STRIPE_EVENT', 'operator', null, $2::jsonb, now())`,
-      ["process-stripe-event:evt_wkrlive", JSON.stringify({
-        eventId: "evt_wkrlive", eventType: "payment_intent.succeeded", objectId: "pi_wkrlive", livemode: true,
-      })],
+      `update admin_private.job_outbox set payload = jsonb_set(payload, '{livemode}', 'true'::jsonb) where event_key = 'process-stripe-event:evt_wkrlive'`,
     )
     expect(await rpc("dev_payment_event_claim_v1", ["evt_wkrlive", false])).toMatchObject({ status: "denied", reason: "not_stripe_test" })
     const afterLive = await rpc<{ events: Array<{ eventId: string }> }>("dev_payment_event_candidates_v1", [20])
@@ -485,7 +479,7 @@ describe("DEV payment event worker", () => {
   })
 
   it("completes a lease lost after the handler without a second receipt or email", async () => {
-    const opened = await openGuided("PR-26-WKRLOS")
+    const opened = await openGuided("PR-26-WKRLSE")
     pin(opened, "cs_wkrlos", "pi_wkrlos")
     expect(await rpc("payment_record_provider_refs_v1", [opened.providerOperationId, "cs_wkrlos", "checkout.session"])).toMatchObject({ status: "success" })
     expect(await receive("evt_wkrloscs", "checkout.session.completed", "cs_wkrlos")).toMatchObject({ status: "success" })

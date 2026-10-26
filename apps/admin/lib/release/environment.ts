@@ -723,7 +723,7 @@ export const environmentContract: readonly EnvVariable[] = [
     scope: "PREVIEW_AND_DEVELOPMENT_ONLY",
     atAdminCutover: "ABSENT",
     controls: "Expected interval for the DEV payment event heartbeat. The default is 300 seconds. Values outside 60 to 900 seconds fall back to 300.",
-    whenAbsent: "The DEV payment heartbeat expects a run every five minutes. The production worker cadence is unchanged.",
+    whenAbsent: "The DEV payment heartbeat expects a run every 300 seconds. The production worker cadence is unchanged.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
     readBy: ["apps/admin/lib/jobs/dev-payment-events.ts"],
@@ -765,7 +765,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "The Stripe webhook rejects every request, and deployed Preview and Production keep payments disabled.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["lib/payments/config.ts"],
+    readBy: ["apps/admin/lib/jobs/dev-payment-events.ts", "lib/payments/config.ts"],
   },
 
   {

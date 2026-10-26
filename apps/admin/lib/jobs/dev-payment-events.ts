@@ -1,6 +1,6 @@
 import "server-only"
 import { NextRequest, NextResponse } from "next/server"
-import { isStripeLiveSecret, isStripeTestSecret, paymentsEnabled, type PaymentEnv } from "../../../../lib/payments/config"
+import { isStripeLiveSecret, isStripeTestSecret, isStripeWebhookSecret, type PaymentEnv } from "../../../../lib/payments/config"
 import type { PaymentProvider } from "../../../../lib/payments/provider"
 import { processStripeEventHandler } from "../payments/handlers"
 import { backend } from "../auth/backend"
@@ -33,7 +33,7 @@ export function devPaymentEventWorkerBlock(env: PaymentEnv = process.env): strin
   if (env.PAYMENTS_PROVIDER_MODE !== "stripe_test") return "wrong_mode"
   if (env.STRIPE_LIVE_ACTIVATION) return "live_activation"
   if (!isStripeTestSecret(env.STRIPE_SECRET_KEY) || isStripeLiveSecret(env.STRIPE_SECRET_KEY)) return "wrong_key"
-  if (!paymentsEnabled(env)) return "payments_disabled"
+  if (!isStripeWebhookSecret(env.STRIPE_WEBHOOK_SECRET)) return "payments_disabled"
   if (!env.DEV_PAYMENT_EVENT_WORKER_SECRET || env.DEV_PAYMENT_EVENT_WORKER_SECRET.length < 32) return "missing_secret"
   return null
 }
@@ -122,17 +122,17 @@ const emptyCounts = (): DevPaymentRunCounts => ({
 
 async function heartbeat(
   rpc: JobRpc,
-  env: PaymentEnv,
   phase: "start" | "complete" | "success" | "error",
   error: string | null,
 ) {
-  const cadence = parseDevPaymentCadenceSeconds(env)
+  const cadence = parseDevPaymentCadenceSeconds()
+  const deployment = process.env.VERCEL_DEPLOYMENT_ID
   await rpc.rpc("job_heartbeat_v1", {
     p_worker: DEV_PAYMENT_EVENT_WORKER_NAME,
     p_environment: "preview",
     p_phase: phase,
     p_error: error,
-    p_deployment: env.VERCEL_DEPLOYMENT_ID ? env.VERCEL_DEPLOYMENT_ID.slice(0, 80) : null,
+    p_deployment: deployment ? deployment.slice(0, 80) : null,
     p_expected_interval: cadence,
     p_late_after: cadence + 300,
   })
@@ -199,17 +199,15 @@ async function settleClaim(input: {
 
 export async function runDevPaymentEventWorker(options: {
   rpc: JobRpc
-  env?: PaymentEnv
   handler?: JobHandler
   abandonAfterHandler?: boolean
 }): Promise<{ status: "disabled" | "success" | "error"; reason?: string; counts: DevPaymentRunCounts }> {
-  const env = options.env ?? process.env
-  const block = devPaymentEventWorkerBlock(env)
+  const block = devPaymentEventWorkerBlock()
   if (block) return { status: "disabled", reason: block, counts: emptyCounts() }
   const counts = emptyCounts()
-  const handler = options.handler ?? processStripeEventHandler(env)
+  const handler = options.handler ?? processStripeEventHandler()
   try {
-    await heartbeat(options.rpc, env, "start", null)
+    await heartbeat(options.rpc, "start", null)
     const listed = await options.rpc.rpc<{ status?: string; events?: Candidate[] }>("dev_payment_event_candidates_v1", {
       p_limit: 20,
     })
@@ -227,7 +225,7 @@ export async function runDevPaymentEventWorker(options: {
       let settlementClear = false
       if (eventType.startsWith("checkout.session.")) {
         try {
-          provider ??= await devStripeClassificationProvider(options.rpc, env)
+          provider ??= await devStripeClassificationProvider(options.rpc)
           if (await checkoutSessionIsGuard(provider, objectId)) {
             counts.skipped += 1
             continue
@@ -262,12 +260,12 @@ export async function runDevPaymentEventWorker(options: {
       else if (outcome === "released") counts.released += 1
       else counts.skipped += 1
     }
-    await heartbeat(options.rpc, env, "complete", null)
-    await heartbeat(options.rpc, env, "success", null)
+    await heartbeat(options.rpc, "complete", null)
+    await heartbeat(options.rpc, "success", null)
     return { status: "success", counts }
   } catch {
     try {
-      await heartbeat(options.rpc, env, "error", "Payment event worker failed.")
+      await heartbeat(options.rpc, "error", "Payment event worker failed.")
     } catch {
       // The queue remains leased until the lease expires. A later run can reclaim it.
     }

@@ -55,7 +55,7 @@ describe("DEV payment event worker gate", () => {
     expect(jobWorkerConfig({ ...preview, JOB_WORKER_ENABLED: "true", CRON_SECRET: "c".repeat(32) }).enabled).toBe(false)
   })
 
-  it("defaults the DEV cadence to five minutes and ignores the production daily default", () => {
+  it("defaults the DEV cadence to 300 seconds and ignores the production daily default", () => {
     expect(parseDevPaymentCadenceSeconds({})).toBe(300)
     expect(parseDevPaymentCadenceSeconds({ DEV_PAYMENT_EVENT_WORKER_CADENCE_SECONDS: "120" })).toBe(120)
     expect(parseDevPaymentCadenceSeconds({ DEV_PAYMENT_EVENT_WORKER_CADENCE_SECONDS: "30" })).toBe(300)

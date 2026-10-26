@@ -27,6 +27,7 @@ const reply = (body: Record<string, unknown>, status = 200) =>
 /**
  * Closed unless every DEV Preview condition is present. Absence is refusal.
  * The worker's branch-specific secrets are loaded only on a fresh develop deployment.
+ * Rotating the worker key requires a new DEV deployment; previous deployments retain the prior key.
  * This does not read or enable the production worker.
  */
 export function devPaymentEventWorkerBlock(env: PaymentEnv = process.env): string | null {

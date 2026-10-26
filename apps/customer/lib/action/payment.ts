@@ -10,6 +10,7 @@ import { declaredLivemodeArgument, declaredLivemodeField, guardExternalPayment }
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
+import { paymentReturnUrl } from "@/lib/portal/payments/return-view"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
   NextResponse.json({ message: ACTION_UNAVAILABLE, ...extra }, { status: http, headers: privateResponseHeaders })
@@ -161,8 +162,8 @@ export async function openCustomerCheckout(origin: string, result: {
     customerId: result.customerId || "",
     verifiedEmail: presentation.verifiedEmail,
   })
-  const successUrl = `${origin}/pay/return`
-  const cancelUrl = `${origin}/pay/return`
+  const successUrl = paymentReturnUrl(origin, result.orderRef)
+  const cancelUrl = paymentReturnUrl(origin, result.orderRef)
   const metadata = {
     customerId: result.customerId || "",
     serviceOrderId: result.serviceOrderId || "",

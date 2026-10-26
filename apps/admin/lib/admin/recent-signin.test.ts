@@ -46,6 +46,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       "20261025163000_managed_success_verification_v1.sql",
       "20261026140000_checkout_presentation_v1.sql",
       "20261026170000_checkout_refresh_v1.sql",
+      "20261026180000_dev_payment_event_worker_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

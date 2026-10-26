@@ -378,8 +378,8 @@ describe("synthetic Checkout creation", () => {
     expect(bridge.sessions[0].params).toEqual({
       mode: "payment",
       customer: "cus_synthcreate",
-      success_url: `${origin}/pay/return`,
-      cancel_url: `${origin}/pay/return`,
+      success_url: `${origin}/pay/return?order=${order.public_ref}`,
+      cancel_url: `${origin}/pay/return?order=${order.public_ref}`,
       client_reference_id: attempt.id,
       payment_method_types: ["card"],
       payment_intent_data: { metadata },

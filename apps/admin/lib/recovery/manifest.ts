@@ -1018,6 +1018,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Checkout refresh", probe: "public.customer_portal_checkout_refresh_v1" },
   },
+  {
+    // PAYMENTS-E2E-POSTCHECKOUT-01. Lets a closed DEV Preview worker claim
+    // test-mode settlement events. Source only. Do not apply to DEV or
+    // Production from this change. It does not send mail, charge a card, or
+    // edit an existing case.
+    version: "20261026180000",
+    filename: "20261026180000_dev_payment_event_worker_v1.sql",
+    step: "PAYMENTS-E2E-POSTCHECKOUT-01 payment event worker",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "DEV payment event worker", probe: "public.dev_payment_event_claim_v1" },
+  },
 ]
 
 /**
@@ -1032,8 +1046,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261025160000`. Guided `20261025020000`, `20261025140000` and
  * `20261025160000` are already in the DEV ledger and must not be replayed.
  * Managed success verification `20261025163000`, checkout presentation
- * `20261026140000` and checkout refresh `20261026170000` are unapplied.
- * Do not apply them from this change.
+ * `20261026140000`, checkout refresh `20261026170000` and the DEV payment
+ * event worker `20261026180000` are unapplied. Do not apply them from this
+ * change.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

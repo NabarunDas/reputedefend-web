@@ -54,6 +54,7 @@ const upgradedFiles = [
   "20261025160000_guided_fulfilment_closure_v1.sql",
   "20261025163000_managed_success_verification_v1.sql",
   "20261026140000_checkout_presentation_v1.sql",
+  "20261026170000_checkout_refresh_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()

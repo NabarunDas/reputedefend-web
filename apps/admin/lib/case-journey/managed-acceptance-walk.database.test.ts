@@ -1175,7 +1175,7 @@ describe("composed Managed acceptance walks", () => {
     expect(await rpc("payment_ensure_customer_map_v1", [customer, "cus_managedwalk"])).toMatchObject({ status: "success" })
     const currentOrder = await orderRow(successCase)
     await rolledBack(async () => {
-      const opened = await rpc<{ hold?: string; providerInvoiceId?: string; invoiceStatus?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+      const opened = await rpc<{ status?: string; hold?: string; providerInvoiceId?: string; invoiceStatus?: string }>("admin_success_fee_dispute_v1", [token, key(), {
         serviceOrderId: currentOrder.id,
         action: "open",
         reason: "The customer disputed the issued invoice before paying it.",

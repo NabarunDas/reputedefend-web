@@ -3,8 +3,11 @@
 -- contracted review is absent on two trustworthy checks at least 48 hours
 -- apart, with no return or ambiguity between that pair.
 -- The target is frozen from the quote acceptance, not from a later edit of the
--- case or location. A blank listing freezes the case reference. A changed
--- address after acceptance is refused until the customer accepts again.
+-- case or location. A blank listing freezes the case reference so the case can
+-- continue. That reference is not a Google profile or an exact review, and a
+-- business profile address is not an exact review. Neither can approve a
+-- success fee or create an invoice. A changed address after acceptance is
+-- refused until the customer accepts it on a new quotation.
 -- An open or upheld dispute blocks a new invoice, an existing invoice action,
 -- and the hosted payment link. The local invoice becomes void only after the
 -- provider confirms that void. A paid invoice is not voided and is not refunded here.
@@ -500,6 +503,34 @@ $$;
 
 REVOKE ALL ON FUNCTION admin_private.observation_qualifying_at_v1(public.success_observations) FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE FUNCTION admin_private.success_fee_target_identified_v1(p_service_code text, p_target text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT p_target ~ '^https://'
+    AND char_length(p_target) BETWEEN 12 AND 500
+    AND CASE p_service_code
+      WHEN 'MANAGED_RELAUNCH' THEN true
+      WHEN 'MANAGED_REVIEW' THEN p_target ~ '/reviews?(/|$)'
+      ELSE false
+    END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.success_fee_target_identified_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.success_fee_target_unidentified_message_v1()
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT 'A case reference is not the original Google profile or the exact review, and a business profile address is not an exact review. Verify and capture that original profile or review, have the customer accept it on a new quotation, then record the frozen target. No success fee was approved and no invoice was created.';
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.success_fee_target_unidentified_message_v1() FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION admin_private.success_verification_pair_v1(p_case uuid, p_order uuid)
 RETURNS TABLE(ready boolean, first_id uuid, second_id uuid)
 LANGUAGE plpgsql
@@ -540,6 +571,12 @@ BEGIN
     OR baseline.customer_id IS DISTINCT FROM ord.customer_id
     OR baseline.success_definition IS DISTINCT FROM qv.success_definition
   THEN RETURN NEXT; RETURN; END IF;
+  -- A case reference preserves the case. It does not identify the Google
+  -- profile or the exact review, so two checks of it cannot earn the fee.
+  IF NOT admin_private.success_fee_target_identified_v1(ord.service_code, baseline.target_ref) THEN
+    RETURN NEXT;
+    RETURN;
+  END IF;
   -- The frozen baseline is the contracted target. A later edit to the live
   -- profile or review address does not retarget these checks.
   visibility := CASE WHEN cs.case_type = 'REVIEW_PROTECTION' THEN 'NOT_SHOWN' ELSE 'NOT_APPLICABLE' END;
@@ -640,7 +677,17 @@ SET search_path = ''
 AS $$
 DECLARE
   pair record;
+  ord public.service_orders;
+  baseline public.success_baselines;
 BEGIN
+  SELECT * INTO ord FROM public.service_orders WHERE id = NEW.service_order_id;
+  SELECT * INTO baseline FROM public.success_baselines WHERE service_order_id = NEW.service_order_id;
+  IF baseline.id IS NOT NULL AND (
+    ord.id IS NULL
+    OR NOT admin_private.success_fee_target_identified_v1(ord.service_code, baseline.target_ref)
+  ) THEN
+    RAISE EXCEPTION 'success_verification:target_unidentified' USING ERRCODE = 'P0001';
+  END IF;
   SELECT ready, first_id, second_id INTO pair
   FROM admin_private.success_verification_pair_v1(NEW.case_id, NEW.service_order_id);
   IF pair.ready IS NOT TRUE OR pair.first_id IS NULL OR pair.second_id IS NULL THEN
@@ -700,6 +747,13 @@ BEGIN
         'status', 'denied',
         'reason', split_part(SQLERRM, ':', 2),
         'message', 'The quoted total is the final customer price. Tax cannot be added on top.'
+      );
+    END IF;
+    IF SQLERRM LIKE 'success_verification:target_unidentified%' THEN
+      RETURN jsonb_build_object(
+        'status', 'denied',
+        'reason', 'target_unidentified',
+        'message', admin_private.success_fee_target_unidentified_message_v1()
       );
     END IF;
     IF SQLERRM LIKE 'success_verification:%' THEN
@@ -781,6 +835,17 @@ BEGIN
     );
   END IF;
   IF ob.kind = 'SUCCESS_FEE' AND NOT admin_private.success_verification_ready_v1(ord.case_id, ord.id) THEN
+    IF EXISTS (
+      SELECT 1 FROM public.success_baselines baseline
+      WHERE baseline.service_order_id = ord.id
+        AND NOT admin_private.success_fee_target_identified_v1(ord.service_code, baseline.target_ref)
+    ) THEN
+      RETURN jsonb_build_object(
+        'status', 'denied',
+        'reason', 'target_unidentified',
+        'message', admin_private.success_fee_target_unidentified_message_v1()
+      );
+    END IF;
     RETURN jsonb_build_object('status','denied','reason','success_verification');
   END IF;
   INSERT INTO public.provider_operations(idempotency_key, kind, purpose, customer_id, service_order_id, obligation_id, status)

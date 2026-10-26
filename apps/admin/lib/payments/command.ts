@@ -109,6 +109,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         invoiceId?: string
         amountMinor?: number
         hostedInvoiceUrl?: string
+        message?: string
         customerId?: string
         serviceOrderId?: string
         obligationId?: string
@@ -116,6 +117,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
       }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId, ...declaredLivemodeArgument() })
       if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
       if (prepared.status !== "success") {
+        if (prepared.reason === "target_unidentified") return reply(prepared.message || "A case reference is not the original Google profile or the exact review, and a business profile address is not an exact review. Verify and capture that original profile or review, have the customer accept it on a new quotation, then record the frozen target. No success fee was approved and no invoice was created.", 403)
         if (prepared.reason === "success_verification") return reply("The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart.", 403)
         if (prepared.reason === "collection_paused") return reply("Collection is paused while this success fee is disputed. No new invoice was created and no card was charged.", 403)
         return reply(commandMessage(prepared.status), mapStatus(prepared.status))

@@ -362,6 +362,14 @@ function partyLabel(actor: string): string {
   return "an unrecognised party"
 }
 
+/** A case reference keeps the enquiry. It does not identify the Google object a success fee requires. */
+export function successFeeTargetIdentified(caseType: string, target: string): boolean {
+  if (!/^https:\/\//.test(target) || target.length < 12 || target.length > 500) return false
+  if (caseType === "PROFILE_RECOVERY") return true
+  if (caseType === "REVIEW_PROTECTION") return /\/reviews?(?:\/|$)/.test(target)
+  return false
+}
+
 /** An open case with no stored outcome can record one. Billing stays separate. */
 function canRecordOutcome(facts: CaseFlowFacts, position: OutcomeBillingPosition): boolean {
   if (position === "disagree" || position === "incomplete") return false
@@ -480,7 +488,11 @@ export function presentJourneyOutcome(input: {
   }
   const recordObservation = canBill && position === "pending" && !paired?.approvalId && evidenceReady && !verificationReady && !!paired
   if (recordObservation) {
-    notices.push("The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
+    const target = input.baseline?.targetRef ?? ""
+    const identified = successFeeTargetIdentified(input.facts.caseType, target)
+    notices.push(input.baseline && !identified
+      ? "A case reference is not the original Google profile or the exact review, and a business profile address is not an exact review. Verify and capture that original profile or review, have the customer accept it on a new quotation, then record the frozen target. No success fee can be approved and no invoice can be created from the current reference."
+      : "The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
   }
   if (canBill && !!paired?.approvalId && !paired.receiptId && !input.facts.capabilities.paymentsEnabled && paired.obligationState !== "PAID") {
     notices.push("A TEST-MODE hosted invoice is not offered because payment collection is not enabled. This step does not create one.")

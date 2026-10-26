@@ -150,7 +150,7 @@ export function RecordSuccessBaselineForm({ serviceOrderId, evidence }: { servic
     }
   }
   return <form onSubmit={submit}>
-    <p>Freeze the profile or review already saved on this case. The address is copied from the case. You do not type a different one. Choose accepted evidence that identifies that exact target. This does not approve a fee, create an invoice, or charge a card. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
+    <p>Freeze the profile or review the customer already accepted. A case reference keeps the case until the original Google profile or exact review is known. It does not identify that Google object, and a business profile address is not an exact review. If the address was missing or has changed, capture it and have the customer accept it on a new quotation, then record that frozen target. You do not type a different address here. This does not approve a fee, create an invoice, or charge a card. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
     <label>Evidence that identifies the contracted target
       <select name="evidenceVersionId" required>{evidenceOptions(evidence)}</select>
     </label>

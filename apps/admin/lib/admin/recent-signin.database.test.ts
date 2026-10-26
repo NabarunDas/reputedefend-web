@@ -556,6 +556,73 @@ describe("Admin recent sign-in is 30 minutes after the follow-up migration", () 
     await age(0)
     await seedQualifyingChecks(String(blank.orderId), blankTarget)
     expect((await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id=$1", [blank.orderId])).rows[0].target_ref).toBe(blankTarget)
+    await db.exec("alter table public.cases disable trigger cases_workflow_version")
+    await db.query("update public.cases set outcome='RESTORED', work_stage='OUTCOME_REVIEW' where id=$1", [blankCase])
+    await db.exec("alter table public.cases enable trigger cases_workflow_version")
+    const blankEvidence = crypto.randomUUID()
+    const blankDocument = crypto.randomUUID()
+    await db.query("insert into public.case_documents(id, case_id, title, created_by) values ($1,$2,'Placeholder outcome',$3)", [blankDocument, blankCase, uid])
+    await db.query(
+      `insert into public.case_document_versions(
+        id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+        storage_bucket, storage_key, upload_status, scan_status, validation_status, review_status, created_by
+      ) values ($1,$2,1,'outcome.png','image/png',2048,'test-evidence',$3,'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)`,
+      [blankEvidence, blankDocument, `cases/${blankCase}/documents/${blankDocument}/versions/${blankEvidence}`, uid],
+    )
+    const blankFee = {
+      serviceOrderId: String(blank.orderId), outcomeEvidenceVersionId: blankEvidence,
+      evidenceNote: "Two screenshots of a case reference, not of a Google listing.",
+      approvalReason: "The checks are dated, but the target is only the case reference.",
+    }
+    const blankDenied = await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", blankFee, await orderVersion(String(blank.orderId))])
+    expect(blankDenied).toMatchObject({ status: "denied", reason: "target_unidentified" })
+    expect(String(blankDenied?.message)).toMatch(/new quotation/)
+    expect((await db.query<{ ready: boolean }>("select admin_private.success_verification_ready_v1($1::uuid, $2::uuid) as ready", [blankCase, blank.orderId])).rows[0].ready).toBe(false)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.success_fee_approvals where service_order_id=$1", [blank.orderId])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_obligations where service_order_id=$1", [blank.orderId])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where service_order_id=$1", [blank.orderId])).rows[0].n).toBe(0)
+
+    const reviewLocation = crypto.randomUUID()
+    const reviewCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.locations(id,business_id,country,location_name,business_profile_url) values($1,$2,'UK','Review place','https://maps.google.com/?cid=review-place')",
+      [reviewLocation, business],
+    )
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,review_url,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'REVIEW_PROTECTION',$2,$3,$4,'The named review was still visible.','https://maps.google.com/?cid=not-a-review','2026-01-01',now(),now(),'MANAGED')",
+      [reviewCase, customer, business, reviewLocation],
+    )
+    const reviewOrder = await offerQuote("MANAGED_REVIEW", reviewCase, reviewLocation)
+    const reviewTarget = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [reviewOrder.orderId])).rows[0].accepted_target_ref
+    expect(reviewTarget).toBe("https://maps.google.com/?cid=not-a-review")
+    await seedQualifyingChecks(String(reviewOrder.orderId), reviewTarget)
+    await db.exec("alter table public.cases disable trigger cases_workflow_version")
+    await db.query("update public.cases set outcome='REMOVED', work_stage='OUTCOME_REVIEW' where id=$1", [reviewCase])
+    await db.exec("alter table public.cases enable trigger cases_workflow_version")
+    const reviewEvidence = crypto.randomUUID()
+    const reviewDocument = crypto.randomUUID()
+    await db.query("insert into public.case_documents(id, case_id, title, created_by) values ($1,$2,'Review outcome',$3)", [reviewDocument, reviewCase, uid])
+    await db.query(
+      `insert into public.case_document_versions(
+        id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+        storage_bucket, storage_key, upload_status, scan_status, validation_status, review_status, created_by
+      ) values ($1,$2,1,'outcome.png','image/png',2048,'test-evidence',$3,'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4)`,
+      [reviewEvidence, reviewDocument, `cases/${reviewCase}/documents/${reviewDocument}/versions/${reviewEvidence}`, uid],
+    )
+    const reviewDenied = await rpc("admin_payment_command_v1", [token, key(), "approve_success_fee", {
+      serviceOrderId: String(reviewOrder.orderId), outcomeEvidenceVersionId: reviewEvidence,
+      evidenceNote: "Two screenshots of the business profile, not of the named review.",
+      approvalReason: "The address is a business profile, not the exact review.",
+    }, await orderVersion(String(reviewOrder.orderId))])
+    expect(reviewDenied).toMatchObject({ status: "denied", reason: "target_unidentified" })
+    expect((await db.query<{ ready: boolean }>("select admin_private.success_verification_ready_v1($1::uuid, $2::uuid) as ready", [reviewCase, reviewOrder.orderId])).rows[0].ready).toBe(false)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.success_fee_approvals where service_order_id=$1", [reviewOrder.orderId])).rows[0].n).toBe(0)
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where service_order_id=$1", [reviewOrder.orderId])).rows[0].n).toBe(0)
     await db.query("update public.locations set business_profile_url='https://maps.google.com/?cid=appeared-later' where id=$1", [blankLocation])
     await db.exec("begin")
     try {

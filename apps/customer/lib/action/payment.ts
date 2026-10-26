@@ -4,6 +4,8 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerConfig, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { isUuid } from "../uuid"
 import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { CheckoutEmailUnverifiedError, CHECKOUT_EMAIL_UNVERIFIED_MESSAGE, readCheckoutPresentation } from "../../../../lib/payments/checkout-presentation"
+import { ensureMappedStripeCustomer } from "../../../../lib/payments/customer-email"
 import { declaredLivemodeArgument, declaredLivemodeField, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { eligibilityEnquiryMessage } from "../../../../lib/commercial/eligibility-message"
@@ -88,6 +90,9 @@ export async function paymentCommand(request: NextRequest) {
     }
     return await openCustomerCheckout(config.origin, result)
   } catch (error) {
+    if (error instanceof CheckoutEmailUnverifiedError) {
+      return NextResponse.json({ status: "disabled", message: CHECKOUT_EMAIL_UNVERIFIED_MESSAGE }, { status: 503, headers: privateResponseHeaders })
+    }
     if (error instanceof PaymentsDisabledError) {
       return NextResponse.json({ status: "disabled", message: "Secure Stripe Checkout is not available yet." }, { status: 503, headers: privateResponseHeaders })
     }
@@ -135,7 +140,19 @@ export async function openCustomerCheckout(origin: string, result: {
       }
     }
   }
-  const stripeCustomer = await ensureCustomer(result.customerId || "")
+  const rpc = (name: string, args?: Record<string, unknown>) => backend().rpc(name, args ?? {})
+  const mode = result.mode === "setup" ? "setup" : "payment"
+  const presentation = await readCheckoutPresentation(rpc, {
+    customerId: result.customerId || "",
+    serviceOrderId: result.serviceOrderId || "",
+    amountMinor: result.amountMinor || 0,
+    mode,
+  })
+  const stripeCustomer = await ensureMappedStripeCustomer({
+    rpc,
+    customerId: result.customerId || "",
+    verifiedEmail: presentation.verifiedEmail,
+  })
   const successUrl = `${origin}/pay/return`
   const cancelUrl = `${origin}/pay/return`
   const metadata = {
@@ -146,7 +163,7 @@ export async function openCustomerCheckout(origin: string, result: {
     orderRef: result.orderRef,
     providerOperationId: result.providerOperationId,
   }
-  const checkout = result.mode === "setup"
+  const checkout = mode === "setup"
     ? await provider.createSetupCheckout({
       idempotencyKey: result.idempotencyKey || "",
       stripeCustomerId: stripeCustomer,
@@ -159,6 +176,7 @@ export async function openCustomerCheckout(origin: string, result: {
       stripeCustomerId: stripeCustomer,
       amountMinor: result.amountMinor || 0,
       currency: "GBP",
+      serviceCode: presentation.serviceCode,
       successUrl,
       cancelUrl,
       metadata,
@@ -169,28 +187,6 @@ export async function openCustomerCheckout(origin: string, result: {
   const trusted = trustedStripeUrl(checkout.url, "checkout")
   if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
   return NextResponse.json({ status: "ok", checkoutUrl: trusted, mode: checkout.mode, confirming: true }, { headers: privateResponseHeaders })
-}
-
-async function ensureCustomer(customerId: string): Promise<string> {
-  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
-  const prepared = await backend().rpc<{
-    status?: string
-    stripeCustomerId?: string
-    needsCreate?: boolean
-    providerOperationId?: string
-    idempotencyKey?: string
-  }>("payment_prepare_customer_v1", { p_customer: customerId, ...declaredLivemodeArgument() })
-  if (prepared.stripeCustomerId) return prepared.stripeCustomerId
-  const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
-  const created = await provider.createCustomer({
-    idempotencyKey: prepared.idempotencyKey || "",
-    customerId,
-  })
-  const mapped = await backend().rpc<{ status?: string; stripeCustomerId?: string }>("payment_record_customer_map_v1", {
-    p_operation: prepared.providerOperationId, p_stripe_customer_id: created.id,
-  })
-  if (mapped.status !== "success" || !mapped.stripeCustomerId) throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
-  return mapped.stripeCustomerId
 }
 
 export async function settleRecoveryCancel(result: {

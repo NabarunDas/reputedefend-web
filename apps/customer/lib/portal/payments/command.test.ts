@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     provider: {
       mode: "disabled" as string,
       createCustomer: vi.fn(async () => { throw new Disabled() }),
+      syncCustomerEmail: vi.fn(async (): Promise<{ id: string; email: string; livemode: false }> => { throw new Disabled() }),
       createPaymentCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "payment"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async () => { throw new Disabled() }),
       retrieveCheckout: vi.fn(async () => null),
@@ -63,6 +64,7 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
   mocks.rpc.mockReset()
   mocks.provider.createPaymentCheckout.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.syncCustomerEmail.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.cancelPaymentIntent.mockReset().mockResolvedValue({ cancelled: false, alreadySucceeded: false, status: "open" })
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -128,9 +130,13 @@ describe("portal payment command", () => {
           obligationId: key,
         }
       }
+      if (name === "payment_checkout_presentation_v1") {
+        return { status: "success", serviceCode: "GUIDED_RELAUNCH", amountMinor: 9900, currency: "GBP", verifiedEmail: "buyer@example.com" }
+      }
       if (name === "payment_prepare_customer_v1") return { stripeCustomerId: "cus_test" }
       return { status: "success" }
     })
+    mocks.provider.syncCustomerEmail.mockResolvedValue({ id: "cus_test", email: "buyer@example.com", livemode: false })
     const response = await portalPaymentCommand(req(checkout))
     expect(response.status).toBe(503)
     expect(response.headers.get("location")).toBeNull()
@@ -138,6 +144,37 @@ describe("portal payment command", () => {
     expect(text).not.toContain("evil.example")
     expect(text).not.toContain("checkoutUrl")
     expect(text).not.toMatch(/paid|successful/i)
+    expect(mocks.provider.createPaymentCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      amountMinor: 9900,
+      serviceCode: "GUIDED_RELAUNCH",
+    }))
+  })
+
+  it("rejects a browser service name before any payment command", async () => {
+    const extra = await portalPaymentCommand(req({ ...checkout, productName: "ProfileRelaunch service", email: "attacker@example.com" }))
+    expect(extra.status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
+  })
+
+  it("shows that Checkout cannot open until the account email is verified", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 9900, customerId: key,
+          providerOperationId: key, idempotencyKey: key, serviceOrderId: key, obligationId: key,
+        }
+      }
+      if (name === "payment_checkout_presentation_v1") return { status: "denied", reason: "email_unverified" }
+      return { status: "success" }
+    })
+    const response = await portalPaymentCommand(req(checkout))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      status: "disabled",
+      message: "Checkout cannot open until the email on this account is verified.",
+    })
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
   })
 
   it("rejects mark_paid, a stale replay and a signed-out session", async () => {

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     provider: {
       mode: "disabled" as string,
       createCustomer: vi.fn(async (): Promise<{ id: string; livemode: false }> => { throw new Disabled() }),
+      syncCustomerEmail: vi.fn(async (): Promise<{ id: string; email: string; livemode: false }> => { throw new Disabled() }),
       createPaymentCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "payment"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "setup"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
       retrieveCheckout: vi.fn(async (): Promise<{
@@ -64,6 +65,7 @@ beforeEach(() => {
   mocks.rpc.mockReset()
   mocks.provider.mode = "disabled"
   mocks.provider.createCustomer.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
+  mocks.provider.syncCustomerEmail.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.createPaymentCheckout.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.createSetupCheckout.mockReset().mockImplementation(async () => { throw new mocks.Disabled() })
   mocks.provider.retrieveCheckout.mockReset().mockResolvedValue(null)
@@ -114,15 +116,21 @@ describe("customer payment command", () => {
       if (name === "payment_replace_expired_checkout_v1") {
         return { status: "success", providerOperationId: replacementOp, idempotencyKey: replacementKey, attemptId: key }
       }
+      if (name === "payment_checkout_presentation_v1") {
+        return { status: "success", serviceCode: "GUIDED_RELAUNCH", amountMinor: 9900, currency: "GBP", verifiedEmail: "buyer@example.com" }
+      }
       if (name === "payment_prepare_customer_v1") return { status: "success", stripeCustomerId: "cus_test" }
       return { status: "success" }
     })
+    mocks.provider.syncCustomerEmail.mockResolvedValue({ id: "cus_test", email: "buyer@example.com", livemode: false })
     const response = await paymentCommand(req({ operation: "start_checkout" }))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ status: "ok", checkoutUrl: "https://checkout.stripe.test/new" })
     expect(mocks.rpc).toHaveBeenCalledWith("payment_replace_expired_checkout_v1", { p_operation: key })
     expect(mocks.provider.createPaymentCheckout).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: replacementKey,
+      amountMinor: 9900,
+      serviceCode: "GUIDED_RELAUNCH",
     }))
     expect(mocks.rpc).toHaveBeenCalledWith("payment_record_provider_refs_v1", expect.objectContaining({
       p_operation: replacementOp, p_object_id: "cs_new",
@@ -170,9 +178,13 @@ describe("customer payment command", () => {
           obligationId: key, idempotencyKey: key, providerOperationId: key,
         }
       }
+      if (name === "payment_checkout_presentation_v1") {
+        return { status: "success", serviceCode: "GUIDED_RELAUNCH", amountMinor: 9900, currency: "GBP", verifiedEmail: "buyer@example.com" }
+      }
       if (name === "payment_prepare_customer_v1") return { status: "success", stripeCustomerId: "cus_test" }
       return { status: "success" }
     })
+    mocks.provider.syncCustomerEmail.mockResolvedValue({ id: "cus_test", email: "buyer@example.com", livemode: false })
     const response = await paymentCommand(req({ operation: "start_checkout" }))
     expect(response.status).toBe(503)
     expect(response.headers.get("location")).toBeNull()
@@ -180,5 +192,85 @@ describe("customer payment command", () => {
     expect(body).not.toContain("javascript:")
     expect(body).not.toContain("checkoutUrl")
     expect(JSON.parse(body)).toMatchObject({ status: "disabled" })
+  })
+
+  it("labels Checkout from the accepted order and prefills only the verified email", async () => {
+    mocks.provider.mode = "fake"
+    mocks.provider.createPaymentCheckout.mockResolvedValue({
+      id: "cs_new", url: "https://checkout.stripe.com/c/pay/cs_new", mode: "payment", amountMinor: 5900, livemode: false,
+    })
+    mocks.provider.syncCustomerEmail.mockResolvedValue({ id: "cus_test", email: "buyer@example.com", livemode: false })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 5900, customerId: key, serviceOrderId: key,
+          obligationId: key, idempotencyKey: key, providerOperationId: key,
+        }
+      }
+      if (name === "payment_checkout_presentation_v1") {
+        return { status: "success", serviceCode: "GUIDED_REVIEW", amountMinor: 5900, currency: "GBP", verifiedEmail: "buyer@example.com" }
+      }
+      if (name === "payment_prepare_customer_v1") return { status: "success", stripeCustomerId: "cus_test" }
+      return { status: "success" }
+    })
+    const response = await paymentCommand(req({
+      operation: "start_checkout", productName: "ProfileRelaunch service", email: "attacker@example.com", amountMinor: 1,
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.provider.syncCustomerEmail).toHaveBeenCalledWith(expect.objectContaining({
+      stripeCustomerId: "cus_test", customerId: key, email: "buyer@example.com",
+    }))
+    expect(JSON.stringify(mocks.provider.syncCustomerEmail.mock.calls)).not.toContain("attacker@example.com")
+    expect(mocks.provider.createPaymentCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      amountMinor: 5900, currency: "GBP", serviceCode: "GUIDED_REVIEW",
+    }))
+    const checkoutCalls = JSON.stringify(mocks.provider.createPaymentCheckout.mock.calls)
+    expect(checkoutCalls).not.toContain("\"email\"")
+    expect(checkoutCalls).not.toContain("attacker@example.com")
+    expect(checkoutCalls).not.toContain("ProfileRelaunch service")
+    expect(mocks.rpc).toHaveBeenCalledWith("payment_checkout_presentation_v1", {
+      p_customer: key, p_service_order: key,
+    })
+  })
+
+  it("fails visibly when the account email is not verified and does not open Checkout", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 9900, customerId: key, serviceOrderId: key,
+          obligationId: key, idempotencyKey: key, providerOperationId: key,
+        }
+      }
+      if (name === "payment_checkout_presentation_v1") return { status: "denied", reason: "email_unverified" }
+      return { status: "success" }
+    })
+    const response = await paymentCommand(req({ operation: "start_checkout", email: "attacker@example.com" }))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      status: "disabled",
+      message: "Checkout cannot open until the email on this account is verified.",
+    })
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
+    expect(mocks.provider.createCustomer).not.toHaveBeenCalled()
+    expect(mocks.provider.syncCustomerEmail).not.toHaveBeenCalled()
+  })
+
+  it("refuses a Checkout whose amount does not match the accepted order", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 9900, customerId: key, serviceOrderId: key,
+          obligationId: key, idempotencyKey: key, providerOperationId: key,
+        }
+      }
+      if (name === "payment_checkout_presentation_v1") {
+        return { status: "success", serviceCode: "GUIDED_RELAUNCH", amountMinor: 100, currency: "GBP", verifiedEmail: "buyer@example.com" }
+      }
+      return { status: "success" }
+    })
+    const response = await paymentCommand(req({ operation: "start_checkout" }))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ status: "disabled", message: "Secure Stripe Checkout is not available yet." })
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
   })
 })

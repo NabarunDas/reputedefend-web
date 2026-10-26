@@ -27,6 +27,9 @@ const bridge = vi.hoisted(() => ({
   calls: [] as string[],
   constructed: [] as string[],
   customers: [] as Array<{ params: Record<string, unknown>; options: Record<string, unknown> }>,
+  customerReads: [] as string[],
+  customerUpdates: [] as Array<{ id: string; params: { email?: string }; options: Record<string, unknown> }>,
+  customerRecord: null as { id: string; email: string | null; metadata: Record<string, string>; livemode: boolean } | null,
   sessions: [] as Array<{ params: Record<string, unknown>; options: Record<string, unknown> }>,
   stored: null as Record<string, unknown> | null,
   rpc: (async () => {
@@ -40,9 +43,25 @@ vi.mock("stripe", () => ({
       bridge.constructed.push(key)
     }
     customers = {
-      create: async (params: Record<string, unknown>, options: Record<string, unknown>) => {
+      create: async (params: { email?: string; metadata?: Record<string, string> }, options: Record<string, unknown>) => {
         bridge.customers.push({ params, options })
-        return { id: "cus_synthcreate", livemode: false, metadata: params.metadata }
+        bridge.customerRecord = {
+          id: "cus_synthcreate",
+          email: params.email ?? null,
+          metadata: params.metadata ?? {},
+          livemode: false,
+        }
+        return { ...bridge.customerRecord }
+      },
+      retrieve: async (id: string) => {
+        bridge.customerReads.push(id)
+        if (!bridge.customerRecord || bridge.customerRecord.id !== id) throw new Error(`missing customer ${id}`)
+        return { ...bridge.customerRecord }
+      },
+      update: async (id: string, params: { email?: string }, options: Record<string, unknown>) => {
+        bridge.customerUpdates.push({ id, params, options })
+        bridge.customerRecord = { ...bridge.customerRecord!, email: params.email ?? null }
+        return { ...bridge.customerRecord }
       },
     }
     checkout = {
@@ -96,6 +115,7 @@ const named: Record<string, string[]> = {
   payment_provider_lane_status_v1: [],
   customer_payment_command_v1: ["p_token_hash", "p_request", "p_operation", "p_data"],
   payment_prepare_customer_v1: ["p_customer", "p_livemode"],
+  payment_checkout_presentation_v1: ["p_customer", "p_service_order"],
   payment_record_customer_map_v1: ["p_operation", "p_stripe_customer_id"],
   payment_record_provider_refs_v1: ["p_operation", "p_object_id", "p_object_type", "p_status"],
 }
@@ -156,6 +176,9 @@ beforeEach(() => {
   bridge.calls.length = 0
   bridge.constructed.length = 0
   bridge.customers.length = 0
+  bridge.customerReads.length = 0
+  bridge.customerUpdates.length = 0
+  bridge.customerRecord = null
   bridge.sessions.length = 0
   bridge.stored = null
   vi.stubEnv("CUSTOMER_AUTH_ENABLED", "true")
@@ -178,7 +201,12 @@ function pay(rawSession: string, idempotency: string) {
       "idempotency-key": idempotency,
       cookie: `${sessionCookie}=${rawSession}`,
     },
-    body: JSON.stringify({ operation: "start_checkout" }),
+    body: JSON.stringify({
+      operation: "start_checkout",
+      productName: "ProfileRelaunch service",
+      email: "attacker@example.com",
+      amountMinor: 1,
+    }),
   })
 }
 
@@ -232,11 +260,36 @@ describe("synthetic Checkout creation", () => {
       [caseId],
     ))[0]
     expect(order.amount_minor).toBeGreaterThan(0)
-    const obligationId = (await rows<{ id: string; state: string }>(
-      "select id, state from public.payment_obligations where service_order_id = $1 and kind = 'UPFRONT'",
+    const obligationId = (await rows<{ id: string; state: string; amount_minor: number }>(
+      "select id, state, amount_minor from public.payment_obligations where service_order_id = $1 and kind = 'UPFRONT'",
       [order.id],
     ))[0]
     expect(obligationId.state).toBe("DUE")
+    expect(obligationId.amount_minor).toBe(order.amount_minor)
+    const shown = await rpc<{ status: string; serviceCode: string; amountMinor: number; currency: string; verifiedEmail: string }>(
+      "payment_checkout_presentation_v1", [alex, order.id],
+    )
+    expect(shown).toEqual({
+      status: "success",
+      serviceCode: "GUIDED_RELAUNCH",
+      amountMinor: order.amount_minor,
+      currency: "GBP",
+      verifiedEmail: "alex@example.com",
+    })
+    const foreign = await rpc<Record<string, unknown>>("payment_checkout_presentation_v1", [
+      "77777777-7777-4777-8777-777777777777", order.id,
+    ])
+    expect(foreign).toEqual({ status: "denied", reason: "order_mismatch" })
+    expect(JSON.stringify(foreign)).not.toContain("alex@")
+    await db.query("delete from public.customer_contact_verifications where customer_id = $1 and channel = 'email'", [alex])
+    const hidden = await rpc<Record<string, unknown>>("payment_checkout_presentation_v1", [alex, order.id])
+    expect(hidden).toEqual({ status: "denied", reason: "email_unverified" })
+    expect(JSON.stringify(hidden)).not.toContain("@")
+    await db.query(
+      `insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
+       values ($1,'email',$2,$3,$4)`,
+      [alex, "alex@example.com", admin, "Verified from a live call with the customer."],
+    )
     const paymentSecret = hash(token())
     const issued = await rpc<Json>("admin_payment_command_v1", [adminToken, requestId(), "issue_guided_payment_action", {
       serviceOrderId: order.id, expiresAt: actionExpiry(), secretHash: paymentSecret,
@@ -257,6 +310,7 @@ describe("synthetic Checkout creation", () => {
       "payment_provider_lane_status_v1",
       "customer_payment_command_v1",
       "payment_provider_lane_status_v1",
+      "payment_checkout_presentation_v1",
       "payment_provider_lane_status_v1",
       "payment_prepare_customer_v1",
       "payment_record_customer_map_v1",
@@ -274,6 +328,9 @@ describe("synthetic Checkout creation", () => {
     bridge.failSessions = false
     bridge.calls.length = 0
     bridge.sessions.length = 0
+    if (bridge.customerRecord) bridge.customerRecord.email = null
+    bridge.customerReads.length = 0
+    bridge.customerUpdates.length = 0
     const created = await paymentCommand(pay(raw, requestId()))
     expect(created.status).toBe(200)
     await expect(created.json()).resolves.toMatchObject({ status: "ok", checkoutUrl, mode: "payment" })
@@ -283,6 +340,7 @@ describe("synthetic Checkout creation", () => {
       "payment_provider_lane_status_v1",
       "customer_payment_command_v1",
       "payment_provider_lane_status_v1",
+      "payment_checkout_presentation_v1",
       "payment_provider_lane_status_v1",
       "payment_prepare_customer_v1",
       "payment_record_provider_refs_v1",
@@ -305,9 +363,17 @@ describe("synthetic Checkout creation", () => {
       orderRef: order.public_ref,
     }
     expect(bridge.customers[0]).toEqual({
-      params: { metadata: { customerId: alex } },
+      params: { email: "alex@example.com", metadata: { customerId: alex } },
       options: { idempotencyKey: expect.any(String) },
     })
+    expect(JSON.stringify(bridge.customers[0].params)).not.toContain("attacker@")
+    expect(bridge.customerUpdates).toEqual([{
+      id: "cus_synthcreate",
+      params: { email: "alex@example.com" },
+      options: { idempotencyKey: expect.stringMatching(/^cus-email-[a-f0-9]{40}$/) },
+    }])
+    expect(String(bridge.customerUpdates[0].options.idempotencyKey)).not.toContain("alex@")
+    expect(bridge.customerReads).toEqual(["cus_synthcreate"])
     expect(bridge.sessions[0].options).toEqual({ idempotencyKey: operation.idempotency_key })
     expect(bridge.sessions[0].params).toEqual({
       mode: "payment",
@@ -322,11 +388,17 @@ describe("synthetic Checkout creation", () => {
         price_data: {
           currency: "gbp",
           unit_amount: order.amount_minor,
-          product_data: { name: "ProfileRelaunch service" },
+          product_data: {
+            name: "Guided Relaunch",
+            description: expect.stringContaining("One-time upfront fee"),
+          },
         },
       }],
       metadata,
     })
+    expect(JSON.stringify(bridge.sessions[0].params)).not.toContain("attacker@")
+    expect(JSON.stringify(bridge.sessions[0].params)).not.toContain("ProfileRelaunch service")
+    expect(JSON.stringify(bridge.sessions[0].params)).not.toMatch(/reinstate|£99/)
     expect(attempt.stripe_checkout_session_id).toBe("cs_synthcreate")
     expect(await rows<{ n: number }>("select count(*)::int as n from public.stripe_customer_maps where customer_id = $1", [alex])).toEqual([{ n: 1 }])
     expect(await rows<{ state: string }>("select state from public.payment_obligations where id = $1", [obligationId.id])).toEqual([{ state: "DUE" }])
@@ -343,6 +415,9 @@ describe("synthetic Checkout creation", () => {
       "customer_payment_command_v1",
       "payment_provider_lane_status_v1",
     ])
+    expect(bridge.sessions).toHaveLength(1)
+    expect(bridge.customerUpdates).toHaveLength(1)
+    expect(bridge.customerReads).toEqual(["cus_synthcreate"])
     expect(await rows<{ n: number }>("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [order.id])).toEqual([{ n: 0 }])
     expect(await rows<{ n: number }>("select count(*)::int as n from public.payment_attempts where obligation_id = $1", [obligationId.id])).toEqual([{ n: 1 }])
   })

@@ -154,9 +154,10 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261025163000_managed_success_verification_v1.sql",
+      "20261026140000_checkout_presentation_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261025160000")
-    expect(migrationHead.filename).toMatch(/managed_success_verification_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/checkout_presentation_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -165,6 +166,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Observed DEV ledger head and repository applied-file head are 20261025160000")
     expect(supabase?.requirement).toContain("must not be replayed")
     expect(supabase?.requirement).toContain("20261025163000 remains unapplied")
+    expect(supabase?.requirement).toContain("20261026140000 remains unapplied")
     expect(supabase?.requirement).toContain("ADMIN-JOURNEY-E2E-03 20261020150000 admin_journey_e2e_03_success_fee_guard_v1 was independently applied to DEV only")
     expect(supabase?.requirement).toContain("ADMIN-JOURNEY-E2E-04 20261020210000 admin_journey_e2e_04_customer_outcome_v1 was independently applied to DEV only")
     expect(supabase?.requirement).toContain("recorded without replay")

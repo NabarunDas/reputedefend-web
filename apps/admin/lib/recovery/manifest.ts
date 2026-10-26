@@ -990,6 +990,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Managed success verification", probe: "admin_private.success_verification_ready_v1" },
   },
+  {
+    // PAYMENT-CHECKOUT-BRANDING-DEV-01. Reads the accepted service and the
+    // verified customer email for Checkout and hosted invoices. Source only.
+    // Do not apply to DEV or Production from this change. It does not send
+    // mail, charge a card, or edit an existing case.
+    version: "20261026140000",
+    filename: "20261026140000_checkout_presentation_v1.sql",
+    step: "PAYMENT-CHECKOUT-BRANDING-DEV-01 checkout presentation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Checkout presentation", probe: "public.payment_checkout_presentation_v1" },
+  },
 ]
 
 /**
@@ -1003,7 +1017,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * Newest DEV-applied migration is the verified DEV ledger head
  * `20261025160000`. Guided `20261025020000`, `20261025140000` and
  * `20261025160000` are already in the DEV ledger and must not be replayed.
- * Managed success verification `20261025163000` is the only unapplied file.
+ * Managed success verification `20261025163000` and checkout presentation
+ * `20261026140000` are unapplied. Do not apply either from this change.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

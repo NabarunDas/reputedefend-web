@@ -32,6 +32,8 @@ export type CreateCheckoutInput = {
   currency: "GBP"
   successUrl: string
   cancelUrl: string
+  /** Accepted order service code. The provider maps it to the customer-facing name. */
+  serviceCode: string
   metadata: PaymentMetadata
 }
 
@@ -275,6 +277,8 @@ export type CreateHostedInvoiceInput = {
   stripeCustomerId: string
   amountMinor: number
   currency: "GBP"
+  /** Accepted order service code. The provider maps it to the customer-facing name. */
+  serviceCode: string
   metadata: PaymentMetadata
 }
 

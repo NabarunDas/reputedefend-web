@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   constructed: [] as string[],
   invoices: [] as Array<Record<string, unknown>>,
+  lines: [] as Array<Record<string, unknown>>,
+  checkouts: [] as Array<Record<string, unknown>>,
+  customerUpdates: [] as Array<Record<string, unknown>>,
   paymentIntents: 0,
+  customer: null as { id: string; email: string | null; metadata: Record<string, string>; livemode: boolean } | null,
 }))
 
 vi.mock("stripe", () => ({
@@ -12,14 +16,40 @@ vi.mock("stripe", () => ({
       mocks.constructed.push(key)
     }
     customers = {
-      create: async () => ({ id: "cus_lane", livemode: mocks.constructed.at(-1)?.includes("live") === true }),
+      create: async (params: { email?: string; metadata?: Record<string, string> }) => {
+        const livemode = mocks.constructed.at(-1)?.includes("live") === true
+        mocks.customer = { id: "cus_lane", email: params.email ?? null, metadata: params.metadata ?? {}, livemode }
+        return { id: "cus_lane", livemode, email: params.email ?? null, metadata: params.metadata ?? {} }
+      },
+      retrieve: async () => mocks.customer,
+      update: async (_id: string, params: { email?: string }) => {
+        mocks.customerUpdates.push(params)
+        mocks.customer = { ...mocks.customer!, email: params.email ?? null }
+        return { ...mocks.customer, livemode: mocks.customer.livemode }
+      },
+    }
+    checkout = {
+      sessions: {
+        create: async (params: Record<string, unknown>) => {
+          mocks.checkouts.push(params)
+          return {
+            id: "cs_lane",
+            url: "https://checkout.stripe.com/c/pay/cs_lane",
+            livemode: mocks.constructed.at(-1)?.includes("live") === true,
+            mode: "payment",
+          }
+        },
+      },
     }
     invoices = {
       create: async (body: Record<string, unknown>, options: { idempotencyKey: string }) => {
         mocks.invoices.push({ ...body, idempotencyKey: options.idempotencyKey })
         return { id: "in_lane", livemode: mocks.constructed.at(-1)?.includes("live") === true }
       },
-      addLines: async () => ({ id: "in_lane" }),
+      addLines: async (_id: string, body: Record<string, unknown>) => {
+        mocks.lines.push(body)
+        return { id: "in_lane" }
+      },
       finalizeInvoice: async () => ({
         id: "in_lane",
         livemode: mocks.constructed.at(-1)?.includes("live") === true,
@@ -63,7 +93,11 @@ const liveLane = { configured: true, mode: "stripe_live" as const, expectedLivem
 beforeEach(() => {
   mocks.constructed.length = 0
   mocks.invoices.length = 0
+  mocks.lines.length = 0
+  mocks.checkouts.length = 0
+  mocks.customerUpdates.length = 0
   mocks.paymentIntents = 0
+  mocks.customer = null
 })
 
 describe("payment lanes", () => {
@@ -231,11 +265,18 @@ describe("payment lanes", () => {
       stripeCustomerId: "cus_lane",
       amountMinor: 29900,
       currency: "GBP",
+      serviceCode: "MANAGED_RELAUNCH",
       metadata,
     })
     expect(first.dueAt).toBe(new Date(1_779_000_000 * 1000).toISOString())
     expect(first.livemode).toBe(false)
     expect(mocks.invoices[0]).toMatchObject({ days_until_due: HOSTED_INVOICE_DAYS_UNTIL_DUE, idempotencyKey: "11111111-1111-4111-8111-111111111111" })
+    expect(mocks.invoices[0].metadata).not.toHaveProperty("email")
+    expect(mocks.lines[0]).toMatchObject({
+      lines: [{
+        price_data: { unit_amount: 29900, product_data: { name: "Managed Profile Recovery" } },
+      }],
+    })
     await expect(preview.createOffSessionPayment({
       idempotencyKey: "11111111-1111-4111-8111-111111111111",
       stripeCustomerId: "cus_lane",
@@ -258,10 +299,105 @@ describe("payment lanes", () => {
       stripeCustomerId: "cus_lane",
       amountMinor: 29900,
       currency: "GBP",
+      serviceCode: "MANAGED_REVIEW",
       metadata,
     })
     expect(liveInvoice.livemode).toBe(true)
     expect(mocks.invoices[1]).toMatchObject({ days_until_due: 14 })
+    expect(mocks.lines[1]).toMatchObject({
+      lines: [{
+        price_data: { unit_amount: 29900, product_data: { name: "Managed Review Protection" } },
+      }],
+    })
     expect(mocks.paymentIntents).toBe(0)
+  })
+
+  it("names Checkout from the accepted service and updates only the mapped customer email", async () => {
+    const customerId = "22222222-2222-4222-8222-222222222222"
+    const preview = createStripePaymentProvider({
+      NODE_ENV: "production",
+      VERCEL_ENV: "preview",
+      PAYMENTS_PROVIDER_MODE: "stripe_test",
+      STRIPE_SECRET_KEY: testKey,
+      ...webhook,
+      ...devPins,
+    }, testLane)
+    await preview.createCustomer({
+      customerId,
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      email: "buyer@example.com",
+    })
+    expect(mocks.customer).toMatchObject({ email: "buyer@example.com", metadata: { customerId } })
+    expect(mocks.customer?.metadata).not.toHaveProperty("email")
+    mocks.customer = { ...mocks.customer!, email: null }
+    await preview.syncCustomerEmail({
+      idempotencyKey: "cus-email-repeat",
+      stripeCustomerId: "cus_lane",
+      customerId,
+      email: "buyer@example.com",
+    })
+    expect(mocks.customerUpdates).toEqual([{ email: "buyer@example.com" }])
+    await preview.syncCustomerEmail({
+      idempotencyKey: "cus-email-repeat",
+      stripeCustomerId: "cus_lane",
+      customerId,
+      email: "buyer@example.com",
+    })
+    expect(mocks.customerUpdates).toHaveLength(1)
+    await expect(preview.syncCustomerEmail({
+      idempotencyKey: "cus-email-other",
+      stripeCustomerId: "cus_lane",
+      customerId: "33333333-3333-4333-8333-333333333333",
+      email: "other@example.com",
+    })).rejects.toThrow(/mapping/)
+    expect(mocks.customer?.email).toBe("buyer@example.com")
+    const checkout = await preview.createPaymentCheckout({
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+      stripeCustomerId: "cus_lane",
+      amountMinor: 5900,
+      currency: "GBP",
+      serviceCode: "GUIDED_REVIEW",
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId,
+        serviceOrderId: "33333333-3333-4333-8333-333333333333",
+        orderRef: "SO-26-ABCDE2",
+      },
+    })
+    expect(checkout.amountMinor).toBe(5900)
+    expect(checkout.livemode).toBe(false)
+    expect(mocks.checkouts[0]).toMatchObject({
+      line_items: [{ price_data: { unit_amount: 5900, product_data: { name: "Guided Review" } } }],
+    })
+    expect(JSON.stringify(mocks.checkouts[0])).not.toContain("buyer@example.com")
+    expect(JSON.stringify(mocks.checkouts[0])).not.toContain("ProfileRelaunch service")
+    await expect(preview.createPaymentCheckout({
+      idempotencyKey: "55555555-5555-4555-8555-555555555555",
+      stripeCustomerId: "cus_lane",
+      amountMinor: 5900,
+      currency: "GBP",
+      serviceCode: "RELAUNCH_GUARD",
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: { customerId, serviceOrderId: "33333333-3333-4333-8333-333333333333" },
+    })).rejects.toThrow(/not recognised/)
+    expect(mocks.checkouts).toHaveLength(1)
+    const production = createStripePaymentProvider({
+      NODE_ENV: "production",
+      VERCEL_ENV: "production",
+      PAYMENTS_PROVIDER_MODE: "stripe_live",
+      STRIPE_LIVE_ACTIVATION: "enabled",
+      STRIPE_SECRET_KEY: liveKey,
+      ...webhook,
+      ...prodPins,
+    }, liveLane)
+    await expect(production.syncCustomerEmail({
+      idempotencyKey: "cus-email-live",
+      stripeCustomerId: "cus_lane",
+      customerId,
+      email: "buyer@example.com",
+    })).rejects.toThrow(/lane/)
+    expect(mocks.customerUpdates).toHaveLength(1)
   })
 })

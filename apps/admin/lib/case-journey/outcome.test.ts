@@ -164,7 +164,13 @@ function shown(
   source: CaseFlowFacts,
   orders: MoneyOrder[] | null = [money()],
   submissions: Submission[] | null = [submission()],
-  detail: { order?: ServiceOrder | null; orderDetailMissing?: boolean; events?: { id: string; event: string; details: Record<string, unknown> }[] } = {},
+  detail: {
+    order?: ServiceOrder | null
+    orderDetailMissing?: boolean
+    verificationReady?: boolean
+    baseline?: { targetRef: string; restrictionRef: string } | null
+    events?: { id: string; event: string; details: Record<string, unknown> }[]
+  } = {},
 ) {
   const events = (detail.events ?? []).map(event => ({ ...event, createdAt: WHEN }))
   const presented = presentJourneyOutcome({
@@ -179,6 +185,8 @@ function shown(
     },
     order: detail.order ?? null,
     orderDetailMissing: detail.orderDetailMissing === true,
+    verificationReady: detail.verificationReady !== false,
+    baseline: detail.baseline ?? null,
     events,
   })
   const journey = presentCaseJourney(source, NOW, events, {
@@ -219,7 +227,7 @@ describe("outcome verification and billing", () => {
     const source = facts({
       serviceTrack: "MANAGED",
       submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
-      payment: { complete: true, orders: [success()] },
+      payment: { complete: true, orders: [success({ setupReady: false, consentRecorded: false })] },
       evidence: { requests: [], versions: [version] },
       capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
     })
@@ -230,8 +238,8 @@ describe("outcome verification and billing", () => {
       obligationId: null,
       obligationKind: null,
       obligationState: null,
-      setupReady: true,
-      consentId: "consent-1",
+      setupReady: false,
+      consentId: null,
       receiptId: null,
       acceptedEvidence: [{ id: version.versionId, filename: "outcome.png", versionNumber: 1 }],
     })
@@ -241,6 +249,47 @@ describe("outcome verification and billing", () => {
     expect(presented.panel.evidence).toEqual(["outcome.png · v1"])
     expect(step?.state).toBe("WAITING")
     expect(step?.state).not.toBe("COMPLETED")
+
+    const unverified = shown(source, [row], [submission({ actor: "ADMIN", track: "MANAGED" })], { order: serviceOrder(), verificationReady: false })
+    expect(unverified.presented.panel.commands).toBeNull()
+    expect(unverified.presented.panel.recordObservation).toBe(true)
+    expect(unverified.presented.panel.notices.join(" ")).toMatch(/48 hours/)
+
+    const placeholder = shown(source, [row], [submission({ actor: "ADMIN", track: "MANAGED" })], {
+      order: serviceOrder(),
+      verificationReady: false,
+      baseline: { targetRef: "case:PR-26-ABCDEF", restrictionRef: "Listing was not available." },
+    })
+    expect(placeholder.presented.panel.commands).toBeNull()
+    expect(placeholder.presented.panel.notices.join(" ")).toMatch(/new quotation/)
+    expect(placeholder.presented.panel.notices.join(" ")).not.toMatch(/48 hours/)
+
+    const profileAsReview = shown(facts({
+      caseType: "REVIEW_PROTECTION",
+      outcome: "REMOVED",
+      serviceTrack: "MANAGED",
+      submissions: [{ id: "submission-1", actor: "ADMIN", submittedAt: WHEN, result: "DECIDED" }],
+      payment: { complete: true, orders: [success({ setupReady: false, consentRecorded: false })] },
+      evidence: { requests: [], versions: [version] },
+      capabilities: { liveMailEnabled: false, paymentsEnabled: true, googleSubmissionLive: false },
+    }), [money({
+      serviceCode: "MANAGED_REVIEW",
+      paymentModel: "SUCCESS_FEE",
+      orderState: "ACCEPTED_SUCCESS_FEE",
+      obligationId: null,
+      obligationKind: null,
+      obligationState: null,
+      setupReady: false,
+      consentId: null,
+      receiptId: null,
+      acceptedEvidence: [{ id: version.versionId, filename: "outcome.png", versionNumber: 1 }],
+    })], [submission({ actor: "ADMIN", track: "MANAGED" })], {
+      order: serviceOrder({ serviceCode: "MANAGED_REVIEW", amountMinor: 14900 }),
+      verificationReady: false,
+      baseline: { targetRef: "https://maps.google.com/?cid=not-a-review", restrictionRef: "The named review was still visible." },
+    })
+    expect(profileAsReview.presented.panel.commands).toBeNull()
+    expect(profileAsReview.presented.panel.notices.join(" ")).toMatch(/exact review/)
 
     const missing = shown(facts({
       serviceTrack: "MANAGED",

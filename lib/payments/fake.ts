@@ -37,6 +37,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   nextIntentStatus: string
   nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
   nextRecurringInvoiceError: Error | null
+  nextVoidError: Error | null
   objects: Map<string, Record<string, unknown>>
 } {
   const customers = new Map<string, string>()
@@ -59,6 +60,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     nextIntentStatus: "succeeded",
     nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
     nextRecurringInvoiceError: null as Error | null,
+    nextVoidError: null as Error | null,
   }
 
   return {
@@ -78,6 +80,8 @@ export function createFakePaymentProvider(): PaymentProvider & {
     set nextOffSessionError(value) { state.nextOffSessionError = value },
     get nextRecurringInvoiceError() { return state.nextRecurringInvoiceError },
     set nextRecurringInvoiceError(value) { state.nextRecurringInvoiceError = value },
+    get nextVoidError() { return state.nextVoidError },
+    set nextVoidError(value) { state.nextVoidError = value },
     get objects() { return objects },
     async createCustomer({ idempotencyKey, customerId }) {
       state.idempotency.add(idempotencyKey)
@@ -319,6 +323,32 @@ export function createFakePaymentProvider(): PaymentProvider & {
         livemode: false as const,
         dueAt: created.dueAt,
       }
+    },
+    async voidHostedInvoice(input) {
+      if (state.nextVoidError) {
+        const error = state.nextVoidError
+        state.nextVoidError = null
+        throw error
+      }
+      let found: { id: string; status: string; amountPaidMinor?: number } | undefined
+      for (const invoice of invoices.values()) {
+        if (invoice.id === input.id) found = invoice
+      }
+      if (!found) {
+        const stored = objects.get(input.id) as { id?: string; status?: string; amountPaidMinor?: number } | undefined
+        if (stored?.id) found = { id: stored.id, status: stored.status || "open", amountPaidMinor: stored.amountPaidMinor }
+      }
+      if (!found) throw new PaymentsDisabledError("Hosted invoice was not found.")
+      if (found.status === "paid" || (found.amountPaidMinor ?? 0) > 0) {
+        return { id: found.id, status: found.status || "paid", voided: false, alreadyPaid: true, livemode: false as const }
+      }
+      if (found.status === "void") {
+        return { id: found.id, status: "void", voided: true, alreadyPaid: false, livemode: false as const }
+      }
+      found.status = "void"
+      const stored = objects.get(input.id)
+      if (stored) stored.status = "void"
+      return { id: found.id, status: "void", voided: true, alreadyPaid: false, livemode: false as const }
     },
     async retrievePaymentMethod(id) {
       if (!id.startsWith("pm_")) return null

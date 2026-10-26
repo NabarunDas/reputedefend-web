@@ -16,6 +16,7 @@ import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { presentJourneyClosure } from "@/lib/case-journey/closure"
 import { getCaseAuthorization } from "@/lib/authorization/queries"
 import { loadMoney } from "@/lib/payments/queries"
+import { loadSuccessVerification } from "@/lib/payments/success-fee-cases"
 import { authConfig } from "@/lib/auth/config"
 import { communicationsSendEnabled, sendDisabledReason } from "@/lib/communications/gate"
 import { confirmedReplyMailbox } from "@/lib/communications/brand-email"
@@ -285,15 +286,21 @@ async function loadJourneyOutcome(
   now: string,
 ) {
   const orderId = activationOrderLink(facts, now).quoteOrderId
-  const [money, order] = await Promise.all([
+  const [money, order, verified] = await Promise.all([
     loadMoney(),
     orderId ? loadOrder(orderId) : Promise.resolve(null),
+    loadSuccessVerification(orderId ? [orderId] : []),
   ])
   return presentJourneyOutcome({
     facts,
     now,
     order,
     orderDetailMissing: !!orderId && order?.id !== orderId,
+    verificationReady: !!orderId && verified?.ready.has(orderId) === true,
+    verificationKnown: verified !== null,
+    baseline: orderId ? verified?.baselines.get(orderId) ?? null : null,
+    checks: orderId ? verified?.checks.get(orderId) ?? [] : [],
+    collectionPause: orderId ? verified?.pauses.get(orderId) ?? null : null,
     events: detail.events.map(event => ({ id: event.id, event: event.event, details: event.details })),
     recorded: {
       submissions: detail.submissions,
@@ -312,9 +319,10 @@ async function loadJourneyClosure(
   journey: ReturnType<typeof presentCaseJourney>,
 ) {
   const orderId = activationOrderLink(facts, now).quoteOrderId
-  const [money, order] = await Promise.all([
+  const [money, order, verified] = await Promise.all([
     loadMoney(),
     orderId ? loadOrder(orderId) : Promise.resolve(null),
+    loadSuccessVerification(orderId ? [orderId] : []),
   ])
   const input = {
     facts,
@@ -332,6 +340,7 @@ async function loadJourneyClosure(
     },
     precedingComplete: journey.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED" || step.state === "NOT_APPLICABLE"),
     mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
+    verificationReady: !!orderId && verified?.ready.has(orderId) === true,
   }
   const presented = presentJourneyClosure(input)
   return { disagreed: presented.disagreed, closureRecordsDisagree: presented.closureRecordsDisagree, input }

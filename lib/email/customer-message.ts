@@ -43,7 +43,7 @@ function safeText(value: string): boolean {
   return trimmed.length > 0 && trimmed.length <= 2000 && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(trimmed)
 }
 
-const portalCasePagePattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}\/(?:payments|documents)$/
+const portalCasePagePattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}(?:\/(?:payments|documents))?$/
 
 export function trustedActionUrl(value: string): boolean {
   return actionUrlPattern.test(value) && !value.includes("#") && !value.includes("?")

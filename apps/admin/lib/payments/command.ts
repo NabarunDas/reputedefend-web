@@ -9,6 +9,7 @@ import { paymentProvider, paymentProviderWithLane } from "../../../../lib/paymen
 import { declaredLivemodeArgument, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
+import { queueManagedNotice } from "../cases/managed-notice"
 import { LOST_PAYMENT_LINK_NOTE } from "./model"
 import { isPaymentOperation, paymentArgs } from "./validation"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
@@ -108,13 +109,19 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         invoiceId?: string
         amountMinor?: number
         hostedInvoiceUrl?: string
+        message?: string
         customerId?: string
         serviceOrderId?: string
         obligationId?: string
         orderRef?: string
       }>("payment_prepare_invoice_v1", { p_token: tokenHash(token), p_obligation: payload.obligationId, ...declaredLivemodeArgument() })
       if (prepared.status === "reauth_required") return reply(commandMessage("reauth_required"), 403)
-      if (prepared.status !== "success") return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      if (prepared.status !== "success") {
+        if (prepared.reason === "target_unidentified") return reply(prepared.message || "A case reference is not the original Google profile or the exact review, and a business profile address is not an exact review. Verify and capture that original profile or review, have the customer accept it on a new quotation, then record the frozen target. No success fee was approved and no invoice was created.", 403)
+        if (prepared.reason === "success_verification") return reply("The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart.", 403)
+        if (prepared.reason === "collection_paused") return reply("Collection is paused while this success fee is disputed. No new invoice was created and no card was charged.", 403)
+        return reply(commandMessage(prepared.status), mapStatus(prepared.status))
+      }
       if (prepared.replay && prepared.hostedInvoiceUrl && !trustedStripeUrl(prepared.hostedInvoiceUrl, "invoice")) {
         return reply("TEST-MODE FOUNDATION: a hosted invoice cannot be issued until Stripe test payments and seller/tax configuration are enabled.", 503)
       }
@@ -162,15 +169,28 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
         }
       }
     }
-    const result = await backend().rpc<{ status?: string; id?: string; obligationId?: string; expiresAt?: string; replay?: boolean }>("admin_payment_command_v1", {
+    const result = await backend().rpc<{ status?: string; id?: string; obligationId?: string; expiresAt?: string; replay?: boolean; message?: string }>("admin_payment_command_v1", {
       p_token: tokenHash(token), p_request: key, p_operation: operation, p_payload: payload, p_version: version,
     })
-    if (result.status !== "success") return reply(commandMessage(result.status), mapStatus(result.status))
+    if (result.status !== "success") return reply(result.message || commandMessage(result.status), mapStatus(result.status))
+    if (operation === "issue_invoice_fallback") {
+      const notice = await queueManagedNotice({
+        token,
+        requestId: key,
+        orderId: typeof payload.serviceOrderId === "string" ? payload.serviceOrderId : null,
+        kind: "invoice",
+      })
+      return reply(
+        `${result.replay
+          ? "This invoice was already issued. The customer opens it from the signed-in portal. No bearer secret was emailed and no card was charged."
+          : "The invoice is issued and is due within 14 days. The customer opens it from the signed-in portal. In a development workspace this is test mode. This did not email a bearer secret or charge a card."}${notice}`,
+        200,
+        { id: result.id, obligationId: result.obligationId },
+      )
+    }
     const issued = issuesLink && result.replay !== true && result.id && config.customerOrigin
     return reply(
-      issued ? (operation === "issue_invoice_fallback"
-        ? `TEST-MODE hosted invoice fallback is ready. Returning from the invoice page does not mark this paid. ${LOST_PAYMENT_LINK_NOTE}`
-        : `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`)
+      issued ? `The secure customer payment action is ready. ${LOST_PAYMENT_LINK_NOTE}`
         : issuesLink ? "This payment action was already created. The secret cannot be shown again."
         : operation === "approve_success_fee" ? "The success fee is approved. It is collected by a hosted invoice after verified success. This did not charge a saved card."
         : "The payment record has been updated.",

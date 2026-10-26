@@ -17,6 +17,7 @@ import { outcomes, type Submission } from "../cases/model"
 import { formatGbp, type ServiceOrder } from "../commerce/model"
 import { obligationLabel, type MoneyOrder } from "../payments/model"
 import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
+import { customerMailStatus } from "./customer-mail"
 import { acceptedServiceProjection, activationOrderLink } from "./activation"
 import { readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { submissionPartyMatches, submissionRecordsDisagree } from "./submission"
@@ -82,6 +83,17 @@ export type JourneyOutcomePanel = {
   who: string
   /** Null withholds every billing command. */
   commands: JourneyOutcomeCommands | null
+  /** The operator can record one success observation. Approval stays hidden until the pair qualifies. */
+  recordObservation: boolean
+  /** False when the verification read failed, so a target is not frozen from a blank screen. */
+  verificationKnown: boolean
+  baseline: { targetRef: string; restrictionRef: string } | null
+  checks: Array<{ id: string; finding: string; qualifying: boolean; invalidated: boolean }>
+  collectionPause: "OPEN" | "UPHELD" | "NOT_UPHELD" | null
+  /** Present when a success-fee obligation can be paused or decided. */
+  pauseOrder: { orderId: string; obligationId: string } | null
+  /** An issued success-fee invoice has no customer email yet. */
+  invoiceRecovery: boolean
   order: {
     orderId: string
     version: number
@@ -181,7 +193,6 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
     ? facts.payment.orders.some(row => row.paymentModel !== expectedModel)
     : facts.payment.orders.length > 0 && !pendingAccepted
   const incomplete = !facts.commercial.complete || !facts.payment.complete || commercialQuotesTied(facts)
-  const setupConflict = track === "MANAGED" && !!order?.setupReady && !order.consentRecorded
   const paidWithoutReceipt = !!order && order.obligationState === "PAID" && !order.receiptRecorded
   const receiptWithoutPaid = !!order && order.receiptRecorded && order.obligationState !== "PAID"
   const wrongGuidedObligation = track === "GUIDED" && !!order && order.obligationKind !== "UPFRONT"
@@ -197,7 +208,7 @@ function projectOutcome(facts: CaseFlowFacts, now: string, events?: readonly Out
   const badResult = facts.submissions.some(item => item.result !== null && item.result !== "DECIDED" && item.result !== "WITHDRAWN")
   const brokenLink = link.reason === "mismatch" || link.reason === "ambiguous_orders" || duplicateIds(facts.payment.orders.map(row => row.orderId))
   const outcomeWithoutOrder = !!facts.outcome && !link.linked
-  const conflict = foreign || setupConflict || paidWithoutReceipt || receiptWithoutPaid || wrongGuidedObligation
+  const conflict = foreign || paidWithoutReceipt || receiptWithoutPaid || wrongGuidedObligation
     || wrongManagedObligation || wrongState || feeOnUnsuccessful || outcomeConflict
     || undecidedOutcome || partyConflict || badResult || brokenLink || outcomeWithoutOrder
 
@@ -351,6 +362,14 @@ function partyLabel(actor: string): string {
   return "an unrecognised party"
 }
 
+/** A case reference keeps the enquiry. It does not identify the Google object a success fee requires. */
+export function successFeeTargetIdentified(caseType: string, target: string): boolean {
+  if (!/^https:\/\//.test(target) || target.length < 12 || target.length > 500) return false
+  if (caseType === "PROFILE_RECOVERY") return true
+  if (caseType === "REVIEW_PROTECTION") return /\/reviews?(?:\/|$)/.test(target)
+  return false
+}
+
 /** An open case with no stored outcome can record one. Billing stays separate. */
 function canRecordOutcome(facts: CaseFlowFacts, position: OutcomeBillingPosition): boolean {
   if (position === "disagree" || position === "incomplete") return false
@@ -387,6 +406,15 @@ export function presentJourneyOutcome(input: {
   orderDetailMissing?: boolean
   /** Case-detail work events. Required to accept an outcome after reopen. */
   events?: readonly OutcomeProofEvent[] | null
+  /**
+   * True only when the database has a trustworthy pair for the contracted target
+   * at least 48 hours apart. A missing read stays false, so approval and invoicing are withheld.
+   */
+  verificationReady?: boolean
+  verificationKnown?: boolean
+  baseline?: { targetRef: string; restrictionRef: string } | null
+  checks?: Array<{ id: string; finding: string; qualifying: boolean; invalidated: boolean }>
+  collectionPause?: "OPEN" | "UPHELD" | "NOT_UPHELD" | null
 }): { disagreed: boolean; panel: JourneyOutcomePanel } {
   const projected = projectOutcome(input.facts, input.now, input.events)
   const recorded = input.recorded
@@ -430,13 +458,13 @@ export function presentJourneyOutcome(input: {
     order: input.order ?? null,
     orderDetailMissing: input.orderDetailMissing === true,
   })
+  const verificationReady = input.verificationReady === true
   const approveRequested = !!canBill
     && position === "pending"
     && !paired?.approvalId
     && !paired?.obligationId
-    && paired?.setupReady === true
-    && !!paired?.consentId
     && evidenceReady
+    && verificationReady
   const invoiceRequested = !!canBill
     && !!paired?.approvalId
     && !!paired?.obligationId
@@ -446,6 +474,7 @@ export function presentJourneyOutcome(input: {
     && paired.invoiceStatus !== "PAID"
     && !paired.receiptId
     && input.facts.capabilities.paymentsEnabled
+    && verificationReady
   const identityBlocks = (approveRequested || invoiceRequested) && !identityOk
   if (identityBlocks && (position === "pending" || position === "approved")) position = "disagree"
   const approve = approveRequested && identityOk && position === "pending"
@@ -457,12 +486,30 @@ export function presentJourneyOutcome(input: {
   if (identityBlocks && (position === "disagree" || position === "failed")) {
     notices.push("The accepted quote, the service order and the money record do not name the same case and customer, so no billing command is offered from here.")
   }
+  const recordObservation = canBill && position === "pending" && !paired?.approvalId && evidenceReady && !verificationReady && !!paired
+  if (recordObservation) {
+    const target = input.baseline?.targetRef ?? ""
+    const identified = successFeeTargetIdentified(input.facts.caseType, target)
+    notices.push(input.baseline && !identified
+      ? "A case reference is not the original Google profile or the exact review, and a business profile address is not an exact review. Verify and capture that original profile or review, have the customer accept it on a new quotation, then record the frozen target. No success fee can be approved and no invoice can be created from the current reference."
+      : "The success fee stays pending until two trustworthy checks of the contracted profile or review are at least 48 hours apart, and the original issue is not known to have returned between them. A recorded result and one attachment are not that verification. Nothing is charged automatically.")
+  }
   if (canBill && !!paired?.approvalId && !paired.receiptId && !input.facts.capabilities.paymentsEnabled && paired.obligationState !== "PAID") {
     notices.push("A TEST-MODE hosted invoice is not offered because payment collection is not enabled. This step does not create one.")
   }
   if (paired?.invoiceStatus === "DRAFT" && position !== "disagree") notices.push("A draft invoice is not an issued invoice and it is not payment.")
   if (position === "invoiced") notices.push("An issued invoice is not payment. Returning from the invoice page does not settle it.")
+  const invoiceMail = input.facts.serviceTrack === "MANAGED" && (paired?.invoiceStatus === "ISSUED" || paired?.invoiceStatus === "PAID")
+    ? customerMailStatus(input.facts.communications, "MANAGED_INVOICE", "invoice email")
+    : null
+  if (invoiceMail) notices.push(invoiceMail)
+  const invoiceRecovery = invoiceMail?.startsWith("No invoice email") === true
   if (position === "settled") notices.push("Settlement is the provider receipt. An approval, an invoice link, a saved card and a checkout return are not that receipt.")
+  const canPauseCollection = input.facts.serviceTrack === "MANAGED"
+    && !!paired?.obligationId
+    && !paired.receiptId
+    && paired.obligationState !== "PAID"
+    && paired.obligationState !== "VOID"
   const offeredEvidence = evidenceReady ? listedEvidence : []
   const commandOrder = paired && (approve || invoice)
     ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
@@ -522,7 +569,18 @@ export function presentJourneyOutcome(input: {
           ? "The provider has not confirmed payment. ProfileRelaunch does not treat an invoice link as settlement."
           : projected.who,
       commands: commandOrder || record ? { approve, invoice, record } : null,
-      order: commandOrder,
+      recordObservation,
+      verificationKnown: input.verificationKnown === true,
+      baseline: input.baseline ?? null,
+      checks: input.checks ?? [],
+      collectionPause: input.collectionPause ?? null,
+      pauseOrder: canPauseCollection && paired?.obligationId
+        ? { orderId: paired.orderId, obligationId: paired.obligationId }
+        : null,
+      invoiceRecovery,
+      order: commandOrder ?? (recordObservation && paired
+        ? { orderId: paired.orderId, version: paired.version, obligationId: paired.obligationId, evidence: offeredEvidence }
+        : null),
     },
   }
 }

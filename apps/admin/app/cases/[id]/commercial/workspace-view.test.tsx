@@ -77,7 +77,7 @@ function facts(overrides: Partial<CaseFlowFacts> = {}): CaseFlowFacts {
 function renderWorkspace(
   overrides: Partial<CaseFlowFacts> = {},
   prices: Array<{ id: string; serviceCode: string; displayName: string; amountMinor: number; paymentModel: string; status: string; effectiveFrom: string; effectiveTo: null }> = [],
-  options: { evidence?: boolean } = {},
+  options: { evidence?: boolean; verificationReady?: boolean } = {},
 ) {
   const loaded = facts(overrides)
   const flow = resolveCaseFlow(loaded, NOW)
@@ -170,6 +170,7 @@ function renderWorkspace(
       acceptedEvidence: options.evidence ? [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }] : [],
     }] : [],
     prices: prices as never,
+    verificationReady: options.verificationReady,
   })
   render(<CommercialWorkspace model={model} caseDetail={caseDetail} />)
   return model
@@ -224,7 +225,8 @@ describe("commercial workspace view", () => {
       payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: true, consentRecorded: true, receiptRecorded: false }] },
     })
     expect(screen.getAllByText(/£0 collected now/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Payment method saved for the agreed success fee/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Not required/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Payment method saved for the agreed success fee/)).toBeNull()
     expect(screen.queryByRole("button", { name: /issue upfront payment link/i })).toBeNull()
     expect(screen.queryByText("Paid")).toBeNull()
   })
@@ -245,50 +247,42 @@ describe("commercial workspace view", () => {
     vi.unstubAllGlobals()
   })
 
-  it("shows a Managed setup link only when that is the next action", () => {
+  it("does not offer a Managed payment-method setup link", () => {
     const quote = { id: QUOTE_ID, status: "ACCEPTED", taxBehaviour: "INCLUSIVE", validUntil: "2026-11-03T12:00:00.000Z", actionStatus: null, actionExpiresAt: null, orderId: ORDER_ID }
     const payment = { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: false, consentRecorded: false, receiptRecorded: false }] }
+    const authorization = {
+      membershipStatus: "verified",
+      customerEmailVerified: true,
+      businessAuthorityVerified: true,
+      serviceAgreementAccepted: true,
+      caseManagementPermissionActive: true,
+      managerAccessVerified: true,
+      authorizationReady: true,
+      reviewRequired: [],
+      agreementKinds: ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"],
+      hasLocation: true,
+    }
     renderWorkspace({
       serviceTrack: "MANAGED",
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: {
-        membershipStatus: "verified",
-        customerEmailVerified: true,
-        businessAuthorityVerified: true,
-        serviceAgreementAccepted: true,
-        caseManagementPermissionActive: true,
-        managerAccessVerified: true,
-        authorizationReady: true,
-        reviewRequired: [],
-        agreementKinds: ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"],
-        hasLocation: true,
-      },
+      authorization,
       commercial: { complete: true, quotes: [quote] },
       payment,
     })
-    expect(screen.getByRole("button", { name: "Issue payment-method setup link" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Issue payment-method setup link" })).toBeNull()
+    expect(screen.getByText("Move the case to preparation")).toBeInTheDocument()
     cleanup()
     renderWorkspace({
       serviceTrack: "MANAGED",
       technicalStage: "AUTHORIZATION_REQUIRED",
-      authorization: {
-        membershipStatus: "verified",
-        customerEmailVerified: true,
-        businessAuthorityVerified: true,
-        serviceAgreementAccepted: true,
-        caseManagementPermissionActive: true,
-        managerAccessVerified: true,
-        authorizationReady: true,
-        reviewRequired: [],
-        agreementKinds: ["SERVICE_AGREEMENT", "CASE_MANAGEMENT_PERMISSION"],
-        hasLocation: true,
-      },
+      authorization,
       commercial: { complete: true, quotes: [quote] },
       payment,
       customerActions: [{ id: "setup-1", kind: "MANAGED_PAYMENT_SETUP", agreementKind: null, status: "OPEN", expiresAt: "2026-11-03T12:00:00.000Z" }],
     })
     expect(screen.queryByRole("button", { name: "Issue payment-method setup link" })).toBeNull()
-    expect(screen.getByText(/open until/i)).toBeInTheDocument()
+    expect(screen.queryByText(/open until/i)).toBeNull()
+    expect(screen.getAllByText(/saved card is not required/i).length).toBeGreaterThan(0)
   })
 
   it("routes an unverified offered quote to verification instead of an acceptance link", () => {
@@ -372,13 +366,22 @@ describe("commercial workspace view", () => {
     expect(screen.queryByRole("link", { name: "Open evidence" })).toBeNull()
     cleanup()
 
-    renderWorkspace({ ...ready, outcome: "RESTORED" })
+    renderWorkspace({ ...ready, outcome: "RESTORED" }, [], { verificationReady: true })
     expect(screen.getByText(/needs accepted evidence/i)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open evidence" })).toHaveAttribute("href", `/cases/${CASE_ID}/evidence`)
     expect(screen.queryByRole("button", { name: "Approve success fee" })).toBeNull()
     cleanup()
 
     renderWorkspace({ ...ready, outcome: "RESTORED" }, [], { evidence: true })
+    expect(screen.getAllByText(/48 hours/).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Approve success fee" })).toBeNull()
+    cleanup()
+
+    renderWorkspace({
+      ...ready,
+      outcome: "RESTORED",
+      payment: { complete: true, orders: [{ orderId: ORDER_ID, paymentModel: "SUCCESS_FEE", orderState: "ACCEPTED_SUCCESS_FEE", obligationKind: null, obligationState: null, setupReady: false, consentRecorded: false, receiptRecorded: false }] },
+    }, [], { evidence: true, verificationReady: true })
     expect(screen.getByRole("button", { name: "Approve success fee" })).toBeInTheDocument()
     expect(screen.getByText(/more than 30 minutes ago/i)).toBeInTheDocument()
     expect(screen.getByText(/immutable accepted order total/i)).toBeInTheDocument()

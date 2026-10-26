@@ -5,6 +5,7 @@ import { resolveCaseFlow, summariseCommercial } from "@/lib/case-flow/resolve"
 import { buildCommercialWorkspaceModel } from "@/lib/commercial-workspace/model"
 import { loadCatalogue, loadOrder, loadQuote } from "@/lib/commerce/queries"
 import { loadMoney } from "@/lib/payments/queries"
+import { loadSuccessVerification } from "@/lib/payments/success-fee-cases"
 import { PageHeader } from "../../../ui"
 import { CommercialWorkspace } from "./workspace-view"
 
@@ -34,6 +35,7 @@ export default async function CaseCommercialPage({ params }: { params: Promise<{
   ])
   const quoteDetailMissing = !!quoteId && quote?.id !== quoteId
   const orderDetailMissing = !!orderId && order?.id !== orderId
+  const verified = await loadSuccessVerification(orderId ? [orderId] : [])
   const model = buildCommercialWorkspaceModel({
     facts,
     primaryAction: flow.primaryAction,
@@ -44,6 +46,7 @@ export default async function CaseCommercialPage({ params }: { params: Promise<{
     orderDetailMissing,
     money: orderId ? money.orders.filter(row => row.orderId === orderId) : [],
     prices: catalogue.prices,
+    verificationReady: !!orderId && verified?.ready.has(orderId) === true,
   })
   return <section className="page case-workspace commercial-workspace">
     <Link className="back-link" href={`/cases/${caseDetail.id}`}>Back to case {caseDetail.reference}</Link>

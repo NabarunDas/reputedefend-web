@@ -234,6 +234,24 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         dueAt: finalized.due_date ? new Date(finalized.due_date * 1000).toISOString() : null,
       }
     },
+    async voidHostedInvoice(input) {
+      const stripe = client(env)
+      const current = await stripe.invoices.retrieve(input.id)
+      lane(current, "Stripe object")
+      const paid = current.status === "paid" || (current.amount_paid ?? 0) > 0
+      if (paid) {
+        return { id: current.id, status: current.status || "paid", voided: false, alreadyPaid: true, livemode: expectedLivemode }
+      }
+      if (current.status === "void") {
+        return { id: current.id, status: "void", voided: true, alreadyPaid: false, livemode: expectedLivemode }
+      }
+      const voided = await stripe.invoices.voidInvoice(input.id, {}, { idempotencyKey: input.idempotencyKey })
+      lane(voided, "Stripe object")
+      if (voided.status !== "void") {
+        throw new PaymentsDisabledError("Stripe did not confirm the invoice was void.")
+      }
+      return { id: voided.id, status: "void", voided: true, alreadyPaid: false, livemode: expectedLivemode }
+    },
     async createRecurringPrice(input) {
       const meta = { priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId }
       assertSafeGuardMetadata(meta)

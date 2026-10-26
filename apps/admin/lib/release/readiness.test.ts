@@ -153,18 +153,18 @@ describe("readiness model", () => {
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261025020000_guided_payment_request_email_v1.sql",
-      "20261025140000_guided_fulfilment_handover_v1.sql",
-      "20261025160000_guided_fulfilment_closure_v1.sql",
+      "20261025163000_managed_success_verification_v1.sql",
     ])
-    expect(appliedMigrationHead.version).toBe("20261024233701")
-    expect(migrationHead.filename).toMatch(/guided_fulfilment_closure_v1\.sql$/)
+    expect(appliedMigrationHead.version).toBe("20261025160000")
+    expect(migrationHead.filename).toMatch(/managed_success_verification_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
-    expect(supabase?.requirement).toContain("Observed DEV ledger head and repository applied-file head are 20261024233701")
+    expect(supabase?.requirement).toContain("Observed DEV ledger head and repository applied-file head are 20261025160000")
+    expect(supabase?.requirement).toContain("must not be replayed")
+    expect(supabase?.requirement).toContain("20261025163000 remains unapplied")
     expect(supabase?.requirement).toContain("ADMIN-JOURNEY-E2E-03 20261020150000 admin_journey_e2e_03_success_fee_guard_v1 was independently applied to DEV only")
     expect(supabase?.requirement).toContain("ADMIN-JOURNEY-E2E-04 20261020210000 admin_journey_e2e_04_customer_outcome_v1 was independently applied to DEV only")
     expect(supabase?.requirement).toContain("recorded without replay")
@@ -188,7 +188,8 @@ describe("readiness model", () => {
     expect(supabase?.externalAction).toContain("genuine new-head SEC-08 archive 20261014T213909Z")
     expect(supabase?.verification).toContain("COM-13A/COM-13B/COM-14A/PAY-ENV-01/PAY-ENV-04 each appears once in DEV only")
     expect(supabase?.verification).toContain("SEC-08 appears once in both migration ledgers")
-    expect(supabase?.stopCondition).toContain("If DEV head differs from canonical 20261024233701")
+    expect(supabase?.stopCondition).toContain("If DEV head differs from canonical 20261025160000")
+    expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261025020000, 20261025140000 or 20261025160000")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021155147")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021214813 or apply it to Production")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261020210000 or apply it to Production")

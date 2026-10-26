@@ -42,6 +42,9 @@ import { journeyStepIds } from "./catalogue"
 import type { JourneyWorkEvent } from "./decisions"
 import { presentJourneyOutcome } from "./outcome"
 import { presentCaseJourney } from "./present"
+import { renderManagedNotice, type ManagedNoticeVariant } from "../../../../lib/email/managed-journey"
+import { createFakePaymentProvider } from "../../../../lib/payments/fake"
+import { reconcileDisputedInvoice } from "../payments/invoice-hold"
 
 const db = new PGlite()
 const admin = "11111111-1111-4111-8111-111111111111"
@@ -52,8 +55,10 @@ const otherCustomer = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const business = "33333333-3333-4333-8333-333333333333"
 const successLocation = "b2000000-0000-4000-8000-0000000000b2"
 const unsuccessfulLocation = "c2000000-0000-4000-8000-0000000000c2"
+const reviewLocation = "e2000000-0000-4000-8000-0000000000e2"
 const successCase = "b1000000-0000-4000-8000-0000000000b1"
 const unsuccessfulCase = "c1000000-0000-4000-8000-0000000000c1"
+const reviewCase = "e1000000-0000-4000-8000-0000000000e1"
 const token = "b".repeat(64)
 const note = "Reviewed the caller’s request and confirmed the details."
 const staffNote = "Staff intake note stays off the customer record."
@@ -88,12 +93,229 @@ const key = () => crypto.randomUUID()
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const secret = () => hash(randomBytes(32).toString("hex"))
 const ahead = (hours: number) => new Date(Date.now() + hours * 3600 * 1000).toISOString()
+const historicReason = "Disposable synthetic evidence was accepted at the stated check time."
+
+async function orderBasis(orderId: string) {
+  return (await db.query<{
+    success_definition: string
+    customer_id: string
+    case_id: string
+    case_type: string
+    issue_description: string
+    target_ref: string
+  }>(`
+    select qv.success_definition, so.customer_id, so.case_id, cs.case_type, cs.issue_description,
+      qa.accepted_target_ref as target_ref
+    from public.service_orders so
+    join public.quote_versions qv on qv.id = so.quote_version_id
+    join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+    join public.cases cs on cs.id = so.case_id
+    where so.id = $1
+  `, [orderId])).rows[0]
+}
+
+async function insertAcceptedFile(caseId: string, createdAt: string) {
+  const documentId = key()
+  const versionId = key()
+  await db.query(
+    "insert into public.case_documents(id, case_id, title, created_by) values ($1,$2,'Check screenshot',$3)",
+    [documentId, caseId, admin],
+  )
+  await db.query(`
+    insert into public.case_document_versions(
+      id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+      storage_bucket, storage_key, upload_status, scan_status, validation_status, review_status, created_by, created_at
+    ) values ($1,$2,1,'check.png','image/png',2048,'test-evidence',$3,'UPLOADED','NO_THREATS_FOUND','VALID','ACCEPTED',$4,$5::timestamptz)
+  `, [versionId, documentId, `cases/${caseId}/documents/${documentId}/versions/${versionId}`, admin, createdAt])
+  return versionId
+}
+
+/**
+ * Reuse an accepted file that already belonged to the case when the assessment
+ * was approved. Changing its upload time does not change the assessment basis.
+ * A brand-new file is only for a rolled-back negative, where it cannot reopen
+ * the approved assessment.
+ */
+async function acceptedEvidence(caseId: string, createdAt: string) {
+  const free = await db.query<{ id: string }>(`
+    select v.id
+    from public.case_document_versions v
+    join public.case_documents d on d.id = v.document_id
+    where d.case_id = $1
+      and v.upload_status = 'UPLOADED'
+      and v.scan_status = 'NO_THREATS_FOUND'
+      and v.validation_status = 'VALID'
+      and v.review_status = 'ACCEPTED'
+      and not exists (select 1 from public.success_baselines b where b.evidence_version_id = v.id)
+      and not exists (select 1 from public.success_observations o where o.evidence_version_id = v.id)
+    order by v.created_at, v.id
+    limit 1
+  `, [caseId])
+  if (!free.rows[0]) return insertAcceptedFile(caseId, createdAt)
+  await db.query("update public.case_document_versions set created_at = $2::timestamptz where id = $1", [free.rows[0].id, createdAt])
+  return free.rows[0].id
+}
+
+async function ensureBaseline(orderId: string) {
+  const existing = await db.query<{ id: string }>("select id from public.success_baselines where service_order_id = $1", [orderId])
+  if (existing.rows[0]) return existing.rows[0].id
+  const basis = await orderBasis(orderId)
+  const evidenceId = await acceptedEvidence(basis.case_id, "2025-12-01T00:00:00.000Z")
+  const inserted = await db.query<{ id: string }>(`
+    insert into public.success_baselines(
+      request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+      evidence_version_id, recorded_by
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    returning id
+  `, [
+    key(), basis.case_id, basis.customer_id, orderId, basis.target_ref, basis.issue_description,
+    basis.success_definition, evidenceId, admin,
+  ])
+  return inserted.rows[0].id
+}
+
+function visibilityFor(caseType: string, finding: string) {
+  if (caseType !== "REVIEW_PROTECTION") return "NOT_APPLICABLE"
+  return finding === "PRESENT" || finding === "RECURRENCE" ? "VISIBLE" : "NOT_SHOWN"
+}
+
+/**
+ * Historic checks use disposable evidence whose created_at is the check time.
+ * They are not a backdate of a real DEV observation.
+ */
+async function insertObservation(orderId: string, input: {
+  observedAt: string
+  finding?: string
+  customerId?: string
+  visibility?: string
+  successDefinition?: string
+  historic?: boolean
+  evidenceVersionId?: string
+  sourceAccess?: string
+}) {
+  const basis = await orderBasis(orderId)
+  const baselineId = await ensureBaseline(orderId)
+  const finding = input.finding ?? "ABSENT"
+  const historic = input.historic !== false
+  const evidenceVersionId = input.evidenceVersionId ?? await acceptedEvidence(basis.case_id, historic ? input.observedAt : new Date().toISOString())
+  const inserted = await db.query<{ id: string }>(`
+    insert into public.success_observations(
+      request_id, baseline_id, case_id, customer_id, service_order_id, evidence_version_id, success_definition,
+      observed_at, finding, review_visibility, source_access, historic_exception, historic_reason,
+      observer_ref, note, approved_by, approved_at
+    ) values (
+      $1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11,$12,$13,$14,$15,$16, now()
+    ) returning id
+  `, [
+    key(),
+    baselineId,
+    basis.case_id,
+    input.customerId ?? basis.customer_id,
+    orderId,
+    evidenceVersionId,
+    input.successDefinition ?? basis.success_definition,
+    input.observedAt,
+    finding,
+    input.visibility ?? visibilityFor(basis.case_type, finding),
+    input.sourceAccess ?? "ACCESSIBLE",
+    historic,
+    historic ? historicReason : null,
+    "staff-observer-live-check",
+    "Checked the contracted target on the accepted evidence.",
+    admin,
+  ])
+  return inserted.rows[0].id
+}
+
+async function verificationReady(caseId: string, orderId: string) {
+  return (await db.query<{ ready: boolean }>(
+    "select admin_private.success_verification_ready_v1($1::uuid, $2::uuid) as ready",
+    [caseId, orderId],
+  )).rows[0].ready
+}
+
+async function invoicePortal(caseId: string) {
+  const reference = (await db.query<{ public_ref: string }>("select public_ref from public.cases where id = $1", [caseId])).rows[0].public_ref
+  const action = (await db.query<{ id: string }>(`
+    select id from public.customer_actions
+    where case_id = $1 and customer_id = $2 and kind = 'INVOICE_PAYMENT'
+    order by created_at desc limit 1
+  `, [caseId, customer])).rows[0]
+  const selector = (await db.query<{ selector: string }>(
+    "select admin_private.customer_portal_action_selector_v1($1::uuid) as selector",
+    [action.id],
+  )).rows[0].selector
+  const target = await rpc<{ status?: string; hostedInvoiceUrl?: string }>("customer_portal_invoice_target_v1", [alexSession, reference, selector])
+  return { reference, selector, target }
+}
+
+async function recordInvoiceHold(
+  pauseId: string,
+  invoiceId: string,
+  state: "VOID_CONFIRMED" | "ALREADY_PAID" | "VOID_UNCONFIRMED",
+  providerStatus: string | null,
+) {
+  const detail = state === "VOID_CONFIRMED"
+    ? "The fake provider confirmed this hosted invoice is void."
+    : state === "ALREADY_PAID"
+      ? "The fake provider reported this invoice paid. No refund was created."
+      : "The fake provider did not confirm a void. The local invoice was left unchanged."
+  return rpc<{ status?: string; hold?: string; invoiceStatus?: string }>("admin_record_success_fee_invoice_hold_v1", [token, key(), {
+    pauseId, invoiceId, state, providerStatus, detail,
+  }])
+}
+
+async function rolledBack(seed: () => Promise<void>) {
+  await db.exec("begin")
+  try {
+    await seed()
+  } finally {
+    await db.exec("rollback")
+  }
+}
 
 async function rpc<T = Json>(name: string, args: unknown[]): Promise<T> {
   const placeholders = args.map((_, index) => `$${index + 1}`).join(",")
   const value = (await db.query<{ value: T }>(`select public.${name}(${placeholders}) as value`, args)).rows[0].value
   if (value === undefined || value === null) throw new Error(`${name} returned null`)
   return value
+}
+
+const mailOrigin = "https://customer.example.test"
+const mailFrom = "ops@example.com"
+const mailReply = "cases@profilerelaunch.com"
+
+async function drainManagedMail(caseId: string, kind: string) {
+  const queued: string[] = []
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const ctx = await rpc<Json>("admin_managed_notice_context_v1", [token, kind, caseId])
+    if (ctx.status === "already_queued" || ctx.status === "not_applicable") return { status: ctx.status, queued }
+    expect(ctx.status, JSON.stringify(ctx)).toBe("applicable")
+    const rendered = renderManagedNotice({
+      variant: ctx.variant as ManagedNoticeVariant,
+      serviceCode: String(ctx.serviceCode),
+      serviceName: String(ctx.serviceName),
+      caseRef: String(ctx.caseRef),
+      amountMinor: ctx.amountMinor == null ? null : Number(ctx.amountMinor),
+      currency: "GBP",
+      origin: mailOrigin,
+      replyTo: mailReply,
+    })
+    expect(rendered, JSON.stringify(ctx)).not.toBeNull()
+    const request = key()
+    const payload = {
+      subject: rendered!.subject,
+      bodyText: rendered!.text,
+      bodyHtml: rendered!.html,
+      fromAddress: mailFrom,
+      replyTo: mailReply,
+      customerOrigin: mailOrigin,
+    }
+    expectOk(await rpc("admin_queue_managed_notice_v1", [token, request, caseId, kind, payload]), `${kind} email`)
+    expect(await rpc("admin_queue_managed_notice_v1", [token, request, caseId, kind, payload])).toMatchObject({ status: "success", replay: true })
+    queued.push(String(ctx.variant))
+  }
+  throw new Error(`too many ${kind} emails for ${caseId}`)
 }
 
 function expectOk(value: { status?: string }, label: string) {
@@ -338,8 +560,9 @@ async function approveFee(orderId: string, evidenceVersionId: string, recordVers
   }, recordVersion])
 }
 
-async function walkToReadyForOutcome(input: { caseId: string; locationId: string; marker: string; closeOutcome: string }) {
+async function walkToReadyForOutcome(input: { caseId: string; locationId: string; marker: string; closeOutcome: string; serviceCode?: string }) {
   const { caseId, locationId, marker, closeOutcome } = input
+  const serviceCode = input.serviceCode ?? "MANAGED_RELAUNCH"
   expectOk(await rpc("admin_case_journey_decision_v1", [token, key(), caseId, await versionOf(caseId), "intake", {
     outcome: "REVIEWED", nextAction: "", note: staffNote,
   }]), "intake")
@@ -375,6 +598,7 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expectOk(await rpc("admin_evidence_request_v1", [
     token, key(), caseId, request.id, request.version, "fulfill", null, null, null, "Completed after the customer sent the letter.",
   ]), "fulfill")
+  for (let spare = 0; spare < 8; spare += 1) await insertAcceptedFile(caseId, "2025-11-01T00:00:00.000Z")
 
   const draft = {
     recordVersion: 0,
@@ -404,14 +628,15 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   await move(caseId, "SERVICE_SELECTION")
 
   const price = (await db.query<{ id: string }>(
-    "select id from public.price_versions where service_code = 'MANAGED_RELAUNCH' and seed_key is not null",
+    "select id from public.price_versions where service_code = $1 and seed_key is not null",
+    [serviceCode],
   )).rows[0].id
   const quote = await rpc("admin_quote_command_v1", [token, key(), "create_draft", {
     customerId: customer, businessId: business, caseId, locationId,
     scope: "Prepare the agreed recovery pack for this location only.",
     exclusions: "Google decisions and later success-fee collection are excluded.",
     validUntil: ahead(24 * 30),
-    applyDiscount: false, priceVersionId: price, serviceCode: "MANAGED_RELAUNCH",
+    applyDiscount: false, priceVersionId: price, serviceCode,
   }, null])
   expectOk(quote, "quote draft")
   expectOk(await rpc("admin_quote_command_v1", [token, key(), "set_draft_tax", {
@@ -636,6 +861,8 @@ async function walkToReadyForOutcome(input: { caseId: string; locationId: string
   expect(openAttempt?.id).toBeTruthy()
   expect(openAttempt?.actor).toBe("ADMIN")
   expectOk(await caseCommand(caseId, "resolve_submission", { submissionId: openAttempt?.id, result: "DECIDED" }), "later result")
+  expect((await drainManagedMail(caseId, "submission")).queued).toEqual(["submitted", "follow_up"])
+  expect((await drainManagedMail(caseId, "result")).queued).toEqual(["google_reply", "google_reply"])
   await move(caseId, "OUTCOME_REVIEW")
   expect(await stageOf(caseId)).toBe("OUTCOME_REVIEW")
   expect(await stepState(caseId, "SUBMISSION")).toBe("COMPLETED")
@@ -658,21 +885,28 @@ beforeAll(async () => {
       ('${customer}', 'Alex', 'alex@example.com'),
       ('${otherCustomer}', 'Sam', 'sam@example.com');
     insert into public.businesses(id, display_name) values ('${business}', 'Bakery');
-    insert into public.locations(id, business_id, country) values
-      ('${successLocation}', '${business}', 'United Kingdom'),
-      ('${unsuccessfulLocation}', '${business}', 'United Kingdom');
+    insert into public.locations(id, business_id, country, business_profile_url) values
+      ('${successLocation}', '${business}', 'United Kingdom', 'https://maps.google.com/?cid=managed-success'),
+      ('${unsuccessfulLocation}', '${business}', 'United Kingdom', 'https://maps.google.com/?cid=managed-unsuccessful'),
+      ('${reviewLocation}', '${business}', 'United Kingdom', 'https://maps.google.com/?cid=managed-review-place');
     insert into public.cases(
-      id, case_type, customer_id, business_id, location_id, issue_description, intake_snapshot, created_at,
+      id, case_type, customer_id, business_id, location_id, issue_description, review_url, intake_snapshot, created_at,
       information_accurate_at, privacy_accepted_at
     ) values
       (
-        '${successCase}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${successLocation}', 'The profile disappeared.',
+        '${successCase}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${successLocation}', 'The profile disappeared.', null,
         '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"The profile disappeared."}'::jsonb,
         '2026-01-01', now(), now()
       ),
       (
-        '${unsuccessfulCase}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${unsuccessfulLocation}', 'The profile disappeared.',
+        '${unsuccessfulCase}', 'PROFILE_RECOVERY', '${customer}', '${business}', '${unsuccessfulLocation}', 'The profile disappeared.', null,
         '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"The profile disappeared."}'::jsonb,
+        '2026-01-01', now(), now()
+      ),
+      (
+        '${reviewCase}', 'REVIEW_PROTECTION', '${customer}', '${business}', '${reviewLocation}', 'A review should be removed.',
+        'https://maps.google.com/maps/reviews/managed-review-1',
+        '{"fullName":"Alex","email":"alex@example.com","businessName":"Bakery","country":"United Kingdom","details":"A review should be removed."}'::jsonb,
         '2026-01-01', now(), now()
       );
     insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values
@@ -728,9 +962,163 @@ describe("composed Managed acceptance walks", () => {
     }
     expect(await approvalCount(recordedOrder.id)).toBe(0)
     expect(await chargeCounts(successCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
+    const unverifiedRequest = key()
+    expect(await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, unverifiedRequest)).toMatchObject({
+      status: "denied", reason: "success_verification",
+    })
+    expect(await commandReceiptCount(unverifiedRequest)).toBe(0)
+    expect(await approvalCount(recordedOrder.id)).toBe(0)
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-02T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await expect(insertObservation(recordedOrder.id, { observedAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(), historic: false })).rejects.toThrow(/timestamp/)
+    })
+    await rolledBack(async () => {
+      await expect(insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", historic: false })).rejects.toThrow(/timestamp/)
+    })
+    await rolledBack(async () => {
+      const shared = await acceptedEvidence(successCase, "2026-01-01T00:00:00.000Z")
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", evidenceVersionId: shared })
+      await expect(insertObservation(recordedOrder.id, { observedAt: "2026-01-03T00:00:00.000Z", evidenceVersionId: shared })).rejects.toThrow(/timestamp/)
+    })
+    await rolledBack(async () => {
+      const shared = await acceptedEvidence(successCase, "2026-01-01T00:00:00.000Z")
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", evidenceVersionId: shared })
+      await expect(insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", evidenceVersionId: shared })).rejects.toThrow(/duplicate|unique/i)
+    })
+    const acceptedTarget = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [recordedOrder.id])).rows[0].accepted_target_ref
+    expect(acceptedTarget).toBe("https://maps.google.com/?cid=managed-success")
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = 'https://maps.google.com/?cid=changed-before-baseline' where id = $1", [successLocation])
+      const basis = await orderBasis(recordedOrder.id)
+      const evidenceId = await acceptedEvidence(successCase, "2025-12-02T00:00:00.000Z")
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        ) values ($1,$2,$3,$4,'https://maps.google.com/?cid=changed-before-baseline',$5,$6,$7,$8)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = 'https://maps.google.com/?cid=changed-before-baseline' where id = $1", [successLocation])
+      const basis = await orderBasis(recordedOrder.id)
+      const evidenceId = await acceptedEvidence(successCase, "2025-12-03T00:00:00.000Z")
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, acceptedTarget, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = null where id = $1", [successLocation])
+      const baselineId = await ensureBaseline(recordedOrder.id)
+      expect(baselineId).toBeTruthy()
+      expect((await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where id = $1", [baselineId])).rows[0].target_ref).toBe(acceptedTarget)
+    })
+    await rolledBack(async () => {
+      await ensureBaseline(recordedOrder.id)
+      const frozen = (await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id = $1", [recordedOrder.id])).rows[0].target_ref
+      await db.query("update public.locations set business_profile_url = 'https://maps.google.com/?cid=other-bakery' where id = $1", [successLocation])
+      const still = (await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id = $1", [recordedOrder.id])).rows[0].target_ref
+      expect(still).toBe(frozen)
+      expect(still).not.toBe("https://maps.google.com/?cid=other-bakery")
+      const basis = await orderBasis(recordedOrder.id)
+      const evidenceId = await acceptedEvidence(successCase, "2025-12-02T00:00:00.000Z")
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        ) values ($1,$2,$3,$4,'https://maps.google.com/?cid=managed-success',$5,$6,$7,$8)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await expect(insertObservation(recordedOrder.id, { customerId: otherCustomer, observedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow(/baseline/)
+    })
+    expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { finding: "AMBIGUOUS", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { finding: "RECURRENCE", observedAt: "2026-01-02T12:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      const first = await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+      const spoiler = await insertObservation(recordedOrder.id, { finding: "AMBIGUOUS", observedAt: "2026-01-02T00:00:00.000Z" })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+      await db.query(
+        "insert into public.success_observation_invalidations(observation_id, request_id, reason, invalidated_by) values ($1,$2,$3,$4)",
+        [spoiler, key(), "The ambiguous check was a different incident and is withdrawn.", admin],
+      )
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(true)
+      const kept = (await db.query<{ id: string }>("select id from public.success_observations where id = $1", [first])).rows[0]
+      expect(kept.id).toBe(first)
+      const original = (await db.query<{ finding: string }>("select finding from public.success_observations where id = $1", [spoiler])).rows[0]
+      expect(original.finding).toBe("AMBIGUOUS")
+    })
+    await rolledBack(async () => {
+      await expect(insertObservation(recordedOrder.id, { visibility: "VISIBLE", observedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow(/visibility/)
+    })
+    await rolledBack(async () => {
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(recordedOrder.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+      const spoiler = await insertObservation(recordedOrder.id, { finding: "AMBIGUOUS", observedAt: "2026-01-02T00:00:00.000Z" })
+      const evidenceId = (await db.query<{ evidence_version_id: string }>(
+        "select evidence_version_id from public.success_observations where id = $1",
+        [spoiler],
+      )).rows[0].evidence_version_id
+      await db.query("update public.case_document_versions set review_status = 'REJECTED' where id = $1", [evidenceId])
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+      await db.query(
+        "insert into public.success_observation_invalidations(observation_id, request_id, reason, invalidated_by) values ($1,$2,$3,$4)",
+        [spoiler, key(), "The check's evidence is no longer accepted, so it is withdrawn.", admin],
+      )
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(true)
+    })
+    await rolledBack(async () => {
+      const liveAt = new Date().toISOString()
+      await insertObservation(recordedOrder.id, { observedAt: liveAt, historic: false })
+      await insertObservation(recordedOrder.id, { observedAt: liveAt, historic: false })
+      expect(await verificationReady(successCase, recordedOrder.id)).toBe(false)
+    })
+    const firstCheck = await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+    const secondCheck = await insertObservation(recordedOrder.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+    await insertObservation(recordedOrder.id, { observedAt: "2026-01-05T00:00:00.000Z" })
+    await insertObservation(recordedOrder.id, { observedAt: "2026-01-07T00:00:00.000Z" })
+    expect(await verificationReady(successCase, recordedOrder.id)).toBe(true)
+    const snapshot = await rpc<{ status?: string; ready?: string[] }>("admin_success_verification_v1", [token, [recordedOrder.id]])
+    expect(snapshot.status).toBe("success")
+    expect(snapshot.ready).toContain(recordedOrder.id)
     const approvalRequest = key()
     const approved = await approveFee(recordedOrder.id, walked.evidenceVersionId, recordedOrder.record_version, approvalRequest)
     expectOk(approved, "success fee")
+    expect((await db.query<{ first_observation_id: string; second_observation_id: string }>(
+      "select first_observation_id, second_observation_id from public.success_fee_approvals where service_order_id = $1",
+      [recordedOrder.id],
+    )).rows[0]).toEqual({ first_observation_id: firstCheck, second_observation_id: secondCheck })
     expect((await db.query<{ kind: string; state: string; amount_minor: number }>(
       "select kind, state, amount_minor from public.payment_obligations where id = $1",
       [approved.obligationId],
@@ -750,11 +1138,34 @@ describe("composed Managed acceptance walks", () => {
     expect((await outcomePanel(successCase)).panel.headline).toBe("Approved fee")
     expect((await journeyFor(successCase)).steps.find(step => step.id === "OUTCOME_BILLING")?.state).not.toBe("COMPLETED")
 
+    const opened = await rpc("admin_success_fee_dispute_v1", [token, key(), {
+      serviceOrderId: recordedOrder.id,
+      action: "open",
+      reason: "The customer wrote that the original restriction still appeared after the first check.",
+    }])
+    expectOk(opened, "pause collection")
+    expect(await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])).toMatchObject({ status: "denied", reason: "collection_paused" })
+    const decided = await rpc("admin_success_fee_dispute_v1", [token, key(), {
+      serviceOrderId: recordedOrder.id,
+      action: "resolve",
+      outcome: "NOT_UPHELD",
+      resolution: "The contracted listing was still clear on both recorded checks.",
+    }])
+    expectOk(decided, "dispute not upheld")
     const prepared = await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])
     expectOk(prepared, "prepare invoice")
     const hosted = "https://invoice.stripe.test/in_managedwalk1"
     expectOk(await rpc("payment_record_invoice_v1", [prepared.providerOperationId, "in_managedwalk1", hosted, recordedOrder.amount_minor, "gbp"]), "record invoice")
     expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+    expect(await rpc("admin_queue_managed_notice_v1", [token, key(), successCase, "invoice", {
+      subject: "Invoice",
+      bodyText: "This is not the approved wording.",
+      bodyHtml: "<p>This is not the approved wording.</p>",
+      fromAddress: mailFrom,
+      replyTo: mailReply,
+      customerOrigin: mailOrigin,
+    }])).toMatchObject({ status: "denied", reason: "snapshot" })
+    expect((await drainManagedMail(successCase, "invoice")).queued).toEqual(["invoice"])
     expect((await caseCommand(successCase, "close", { outcome: "RESTORED", summary })).status).toBe("prerequisite")
     const invoiced = await outcomePanel(successCase)
     expect(invoiced.panel.headline).toBe("Invoiced")
@@ -763,9 +1174,188 @@ describe("composed Managed acceptance walks", () => {
 
     expect(await rpc("payment_ensure_customer_map_v1", [customer, "cus_managedwalk"])).toMatchObject({ status: "success" })
     const currentOrder = await orderRow(successCase)
+    await rolledBack(async () => {
+      const opened = await rpc<{ status?: string; hold?: string; providerInvoiceId?: string; invoiceStatus?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice before paying it.",
+      }])
+      expectOk(opened, "pause issued invoice")
+      expect(opened).toMatchObject({ hold: "void_required", providerInvoiceId: "in_managedwalk1", invoiceStatus: "ISSUED" })
+      const preparedWhilePaused = await rpc<{ status?: string; reason?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expect(preparedWhilePaused).toMatchObject({ status: "denied", reason: "collection_paused" })
+      expect(preparedWhilePaused.hostedInvoiceUrl).toBeUndefined()
+      expect(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
+        serviceOrderId: currentOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
+      }, currentOrder.record_version])).toMatchObject({ status: "denied", reason: "collection_paused" })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await db.query<{ state: string }>("select state from public.success_fee_invoice_holds where provider_invoice_id = 'in_managedwalk1'")).rows[0].state).toBe("VOID_REQUIRED")
+    })
     expectOk(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
       serviceOrderId: currentOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
     }, currentOrder.record_version]), "invoice link")
+    const portal = await invoicePortal(successCase)
+    expect(portal.target).toMatchObject({ status: "redirect", hostedInvoiceUrl: hosted })
+    expect(await rpc("customer_portal_invoice_target_v1", [samSession, portal.reference, portal.selector])).toEqual({ status: "not_found" })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string; hold?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice before the provider void could be confirmed.",
+      }])
+      expect(opened.hold).toBe("void_required")
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      provider.nextVoidError = new Error("provider unavailable")
+      const unconfirmed = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(unconfirmed).toEqual({ hold: "void_unconfirmed", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await invoicePortal(successCase)).target).toEqual({ status: "collection_paused" })
+      expect(JSON.stringify((await invoicePortal(successCase)).target)).not.toContain("invoice.stripe")
+      expect(await rpc("customer_portal_invoice_target_v1", [samSession, portal.reference, portal.selector])).toEqual({ status: "not_found" })
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the provider reported it paid.",
+      }])
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "paid", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: recordedOrder.amount_minor,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const paid = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(paid).toEqual({ hold: "already_paid", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice after the provider confirmed a void.",
+      }])
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const confirmed = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(confirmed).toEqual({ hold: "void_confirmed", stripeCollectionStopped: true })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("VOID")
+      expect((await invoicePortal(successCase)).target).toEqual({ status: "collection_paused" })
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+      const upheld = await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "UPHELD",
+        resolution: "The original restriction was still present, so the fee is not payable.",
+      }])
+      expectOk(upheld, "upheld after void")
+      expect(await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])).toMatchObject({ status: "denied", reason: "collection_paused" })
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status in ('DRAFT','ISSUED')", [approved.obligationId])).rows[0].n).toBe(0)
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the provider then confirmed a void.",
+      }])
+      expectOk(await recordInvoiceHold(opened.id!, opened.invoiceId!, "VOID_CONFIRMED", "void"), "confirm void")
+      expect((await db.query<{ status: string }>(
+        "select status from public.payment_attempts where obligation_id = $1 order by attempt_number",
+        [approved.obligationId],
+      )).rows.map(row => row.status)).toEqual(["CANCELLED"])
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "NOT_UPHELD",
+        resolution: "The contracted listing was still clear, so the fee can be invoiced again.",
+      }]), "reissue after void")
+      const reissued = await rpc<{ status?: string; replay?: boolean; invoiceId?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expectOk(reissued, "reissue invoice")
+      expect(reissued.replay).toBe(false)
+      expect(reissued.invoiceId).not.toBe(opened.invoiceId)
+      expect(reissued.hostedInvoiceUrl).toBeUndefined()
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status in ('DRAFT','ISSUED')", [approved.obligationId])).rows[0].n).toBe(1)
+    })
+    await rolledBack(async () => {
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the dispute was not upheld.",
+      }]), "pause before resume")
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "NOT_UPHELD",
+        resolution: "The contracted listing was still clear, so the issued invoice remains payable.",
+      }]), "resume issued invoice")
+      const resumed = await rpc<{ status?: string; replay?: boolean; invoiceId?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expect(resumed).toMatchObject({ status: "success", replay: true, hostedInvoiceUrl: hosted })
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status = 'ISSUED'", [approved.obligationId])).rows[0].n).toBe(1)
+      expect((await invoicePortal(successCase)).target).toMatchObject({ status: "redirect", hostedInvoiceUrl: hosted })
+    })
+    await rolledBack(async () => {
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the invoice while the provider payment was also arriving.",
+      }]), "pause during payment")
+      expectOk(await rpc("payment_apply_provider_event_v1", ["evt_managed_race", "invoice.paid", "in_managedwalk1", {
+        amountPaidMinor: recordedOrder.amount_minor,
+        amountMinor: recordedOrder.amount_minor,
+        currency: "gbp",
+        stripeCustomerId: "cus_managedwalk",
+        customerId: customer,
+        serviceOrderId: currentOrder.id,
+        obligationId: approved.obligationId,
+        providerOperationId: prepared.providerOperationId,
+        hostedInvoiceUrl: hosted,
+      }]), "webhook during dispute")
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("PAID")
+      expect((await chargeCounts(successCase)).receipts).toBe(1)
+      const hold = (await db.query<{ pause_id: string; invoice_id: string }>("select pause_id, invoice_id from public.success_fee_invoice_holds where provider_invoice_id = 'in_managedwalk1'")).rows[0]
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const kept = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(hold.pause_id, hold.invoice_id, state, providerStatus),
+      })
+      expect(kept).toEqual({ hold: "already_paid", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("PAID")
+      expect((await db.query<{ status: string }>("select status from public.payment_attempts where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("SUCCEEDED")
+      expect((await chargeCounts(successCase)).receipts).toBe(1)
+    })
     const settled = await rpc("payment_apply_provider_event_v1", ["evt_managed_paid", "invoice.paid", "in_managedwalk1", {
       amountPaidMinor: recordedOrder.amount_minor,
       amountMinor: recordedOrder.amount_minor,
@@ -805,6 +1395,23 @@ describe("composed Managed acceptance walks", () => {
     expect(beforeClose.steps.map(step => step.id)).toEqual([...journeyStepIds])
 
     expectOk(await caseCommand(successCase, "close", { outcome: "RESTORED", summary }), "close")
+    expect((await drainManagedMail(successCase, "completion")).queued).toEqual(["complete_paid"])
+    expect((await drainManagedMail(successCase, "submission")).queued).toEqual([])
+    const mailed = await db.query<{ template_key: string; lifecycle: string; delivery_status: string; recipient: string; body_text: string }>(
+      "select template_key, lifecycle, delivery_status, recipient, body_text from public.communications where case_id = $1 and template_key like 'MANAGED_%' order by created_at",
+      [successCase],
+    )
+    expect(mailed.rows.map(row => row.template_key)).toEqual([
+      "MANAGED_PROGRESS", "MANAGED_PROGRESS", "MANAGED_RESULT", "MANAGED_RESULT", "MANAGED_INVOICE", "MANAGED_COMPLETION",
+    ])
+    for (const row of mailed.rows) {
+      expect(row.lifecycle).toBe("QUEUED")
+      expect(row.delivery_status).toBe("NONE")
+      expect(row.recipient).toBe("alex@example.com")
+      expect(row.body_text).not.toMatch(/invoice\.stripe|pi_|cus_|SUCCESS_FEE|[0-9a-f]{8}-[0-9a-f]{4}-/)
+    }
+    expect(mailed.rows[0].body_text).toContain("does not mean Google has made a decision")
+    expect(mailed.rows.at(-1)?.body_text).toContain("Relaunch Guard is optional")
     const closed = (await db.query<{ status: string; work_stage: string; outcome: string; closure_summary: string }>(
       "select status, work_stage, outcome, closure_summary from public.cases where id = $1",
       [successCase],
@@ -866,6 +1473,9 @@ describe("composed Managed acceptance walks", () => {
       [unsuccessfulCase],
     )).rows[0]).toMatchObject({ status: "UNDER_REVIEW", work_stage: "OUTCOME_REVIEW", outcome: "NOT_RESTORED" })
     const after = await orderRow(unsuccessfulCase)
+    await insertObservation(after.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+    await insertObservation(after.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+    expect(await verificationReady(unsuccessfulCase, after.id)).toBe(true)
     const refusedRequest = key()
     expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
     expect((await approveFee(after.id, walked.evidenceVersionId, after.record_version, refusedRequest)).status).toBe("denied")
@@ -877,10 +1487,16 @@ describe("composed Managed acceptance walks", () => {
     expect(panel.panel.requirements.find(item => item.label === "Billing position")?.state).toBe("Met")
     const beforeClose = await journeyFor(unsuccessfulCase)
     expect(beforeClose.steps.map(step => step.id)).toEqual([...journeyStepIds])
-    expect(beforeClose.steps.filter(step => step.id !== "CLOSURE").every(step => step.state === "COMPLETED")).toBe(true)
+    expect(beforeClose.steps.filter(step => step.id !== "CLOSURE" && step.state !== "COMPLETED").map(step => `${step.id}:${step.state}`)).toEqual([])
     expect(beforeClose.steps.find(step => step.id === "CLOSURE")?.state).not.toBe("COMPLETED")
 
     expectOk(await caseCommand(unsuccessfulCase, "close", { outcome: "NOT_RESTORED", summary }), "close")
+    expect((await drainManagedMail(unsuccessfulCase, "completion")).queued).toEqual(["complete_no_fee"])
+    expect((await drainManagedMail(unsuccessfulCase, "invoice")).queued).toEqual([])
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.communications where case_id = $1 and template_key = 'MANAGED_INVOICE'",
+      [unsuccessfulCase],
+    )).rows[0].n).toBe(0)
     expect(await approvalCount(after.id)).toBe(0)
     expect(await chargeCounts(unsuccessfulCase)).toEqual({ obligations: 0, invoices: 0, receipts: 0 })
     const closed = (await db.query<{ status: string; work_stage: string; outcome: string; closure_summary: string }>(
@@ -925,6 +1541,110 @@ describe("composed Managed acceptance walks", () => {
     expect(writers.rows, "a composed voided-fee close needs a command that writes VOID").toEqual([])
   }, 120000)
 
+  it("approves a Managed Review fee only after two visible observations and withholds it when the review reappears", async () => {
+    const summary = "The review was removed and the success fee was approved in test mode."
+    const walked = await walkToReadyForOutcome({
+      caseId: reviewCase, locationId: reviewLocation, marker: "managedreview", closeOutcome: "REMOVED", serviceCode: "MANAGED_REVIEW",
+    })
+    expectOk(await caseCommand(reviewCase, "record_outcome", { outcome: "REMOVED", summary }), "record outcome")
+    const order = await orderRow(reviewCase)
+    expect(order.amount_minor).toBe(14900)
+    const earlyRequest = key()
+    expect(await approveFee(order.id, walked.evidenceVersionId, order.record_version, earlyRequest)).toMatchObject({
+      status: "denied", reason: "success_verification",
+    })
+    expect(await commandReceiptCount(earlyRequest)).toBe(0)
+    const acceptedReview = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [order.id])).rows[0].accepted_target_ref
+    expect(acceptedReview).toBe("https://maps.google.com/maps/reviews/managed-review-1")
+    await rolledBack(async () => {
+      await db.query("update public.cases set review_url = 'https://maps.google.com/maps/reviews/wrong-review-id' where id = $1", [reviewCase])
+      await expect(ensureBaseline(order.id)).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await expect(insertObservation(order.id, { visibility: "VISIBLE", observedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow(/visibility/)
+    })
+    await rolledBack(async () => {
+      await insertObservation(order.id, { finding: "UNRELATED", observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(order.id, { finding: "UNRELATED", observedAt: "2026-01-03T00:00:00.000Z" })
+      expect(await verificationReady(reviewCase, order.id)).toBe(false)
+    })
+    await rolledBack(async () => {
+      await insertObservation(order.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+      await insertObservation(order.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+      await insertObservation(order.id, { finding: "RECURRENCE", observedAt: "2026-01-02T12:00:00.000Z" })
+      expect(await verificationReady(reviewCase, order.id)).toBe(false)
+    })
+    await insertObservation(order.id, { observedAt: "2026-01-01T00:00:00.000Z" })
+    await insertObservation(order.id, { observedAt: "2026-01-03T00:00:00.000Z" })
+    expect(await verificationReady(reviewCase, order.id)).toBe(true)
+    const frozenReview = (await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id = $1", [order.id])).rows[0].target_ref
+    expect(frozenReview).toBe("https://maps.google.com/maps/reviews/managed-review-1")
+    const approved = await approveFee(order.id, walked.evidenceVersionId, order.record_version)
+    expectOk(approved, "review success fee")
+    expect((await db.query<{ kind: string; state: string; amount_minor: number }>(
+      "select kind, state, amount_minor from public.payment_obligations where id = $1",
+      [approved.obligationId],
+    )).rows[0]).toEqual({ kind: "SUCCESS_FEE", state: "DUE", amount_minor: 14900 })
+    await insertObservation(order.id, { finding: "RECURRENCE", observedAt: "2026-10-01T00:00:00.000Z" })
+    expect(await verificationReady(reviewCase, order.id)).toBe(true)
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 0, receipts: 0 })
+    await rolledBack(async () => {
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: order.id,
+        action: "open",
+        reason: "The customer wrote that a different review was the one removed.",
+      }]), "open review dispute")
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: order.id,
+        action: "resolve",
+        outcome: "UPHELD",
+        resolution: "The removed text was not the contracted review.",
+      }]), "uphold review dispute")
+      expect(await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])).toMatchObject({ status: "denied", reason: "collection_paused" })
+    })
+    const prepared = await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])
+    expectOk(prepared, "review invoice")
+    const again = await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])
+    expect(again).toMatchObject({ status: "success", invoiceId: prepared.invoiceId })
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 1, receipts: 0 })
+    expect((await caseCommand(reviewCase, "close", { outcome: "REMOVED", summary })).status).toBe("prerequisite")
+    expect(await approvalCount(order.id)).toBe(1)
+    const hostedReview = "https://invoice.stripe.test/in_managedreview1"
+    expectOk(await rpc("payment_record_invoice_v1", [prepared.providerOperationId, "in_managedreview1", hostedReview, 14900, "gbp"]), "record review invoice")
+    expect((await drainManagedMail(reviewCase, "invoice")).queued).toEqual(["invoice"])
+    const reviewOrder = await orderRow(reviewCase)
+    expectOk(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
+      serviceOrderId: reviewOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
+    }, reviewOrder.record_version]), "review invoice link")
+    expectOk(await rpc("payment_apply_provider_event_v1", ["evt_managed_review_paid", "invoice.paid", "in_managedreview1", {
+      amountPaidMinor: 14900,
+      amountMinor: 14900,
+      currency: "gbp",
+      stripeCustomerId: "cus_managedwalk",
+      customerId: customer,
+      serviceOrderId: reviewOrder.id,
+      obligationId: approved.obligationId,
+      providerOperationId: prepared.providerOperationId,
+      hostedInvoiceUrl: hostedReview,
+    }]), "review settlement")
+    expect(await chargeCounts(reviewCase)).toEqual({ obligations: 1, invoices: 1, receipts: 1 })
+    expectOk(await caseCommand(reviewCase, "close", { outcome: "REMOVED", summary }), "review close")
+    expect((await drainManagedMail(reviewCase, "completion")).queued).toEqual(["complete_paid"])
+    const reviewMail = await db.query<{ body_text: string }>(
+      "select body_text from public.communications where case_id = $1 and template_key = 'MANAGED_COMPLETION'",
+      [reviewCase],
+    )
+    expect(reviewMail.rows).toHaveLength(1)
+    expect(reviewMail.rows[0].body_text).toContain("exact review")
+    expect(reviewMail.rows[0].body_text).toContain("£149.00 GBP")
+    expect(reviewMail.rows[0].body_text).not.toContain("profile restriction")
+  }, 120000)
+
   it("refuses a first Managed submission from FURTHER_REVIEW when none has been recorded", async () => {
     const caseId = "d1000000-0000-4000-8000-0000000000d1"
     const locationId = "d2000000-0000-4000-8000-0000000000d2"
@@ -945,6 +1665,11 @@ describe("composed Managed acceptance walks", () => {
     expectOk(await caseCommand(caseId, "close", {
       outcome: "WITHDRAWN", summary: "The customer withdrew before any submission was recorded.",
     }), "withdraw")
+    expect((await drainManagedMail(caseId, "completion")).queued).toEqual(["withdrawn"])
+    expect((await db.query<{ n: number }>(
+      "select count(*)::int as n from public.communications where case_id = $1 and template_key = 'MANAGED_COMPLETION'",
+      [caseId],
+    )).rows[0].n).toBe(1)
     expect(await stageOf(caseId)).toBe("FINISHED")
     expectOk(await caseCommand(caseId, "reopen", {
       title: "Review the withdrawn case again",

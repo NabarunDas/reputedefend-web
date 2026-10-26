@@ -3,7 +3,6 @@ import { successFeeApprovalOffer, type SuccessFeeCaseOutcome } from "./success-f
 
 const caseId = "55555555-5555-4555-8555-555555555555"
 const evidence = [{ id: "99999999-9999-4999-8999-999999999999", filename: "outcome.png", versionNumber: 1 }]
-const consentId = "88888888-8888-4888-8888-888888888888"
 
 function order(overrides: Record<string, unknown> = {}) {
   return {
@@ -11,8 +10,6 @@ function order(overrides: Record<string, unknown> = {}) {
     approvalId: null,
     caseId,
     acceptedEvidence: evidence,
-    setupReady: true,
-    consentId,
     ...overrides,
   }
 }
@@ -26,55 +23,40 @@ function message(result: ReturnType<typeof successFeeApprovalOffer>): string {
 }
 
 describe("success-fee approval on the Money page", () => {
-  it("offers approval when the outcome, evidence, setup and consent all hold", () => {
-    expect(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "RESTORED")).kind).toBe("approve")
-    expect(successFeeApprovalOffer(order(), outcomes("REVIEW_PROTECTION", "REMOVED")).kind).toBe("approve")
+  it("offers approval for a verified Profile Recovery or Review Protection outcome without a saved card", () => {
+    expect(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "RESTORED"), true).kind).toBe("approve")
+    expect(successFeeApprovalOffer(order(), outcomes("REVIEW_PROTECTION", "REMOVED"), true).kind).toBe("approve")
   })
 
-  it("does not offer approval when setup is not ready", () => {
-    const waiting = successFeeApprovalOffer(order({ setupReady: false, consentId: null }), outcomes("PROFILE_RECOVERY", "RESTORED"))
+  it("explains the 48-hour rule when the two observations are not ready", () => {
+    const waiting = successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "RESTORED"), false)
     expect(waiting.kind).toBe("explain")
-    expect(message(waiting)).toMatch(/setup is not complete/i)
+    expect(message(waiting)).toMatch(/48 hours/)
+    expect(message(waiting)).toMatch(/saved card is not required/i)
+    expect(message(waiting)).not.toMatch(/setup is not complete|later-charge consent|usable payment method/i)
   })
 
-  it("does not offer approval when consent is missing", () => {
-    const waiting = successFeeApprovalOffer(order({ setupReady: false, consentId: null }), outcomes("PROFILE_RECOVERY", "RESTORED"))
-    expect(waiting.kind).toBe("explain")
-    expect(message(waiting)).toMatch(/setup is not complete/i)
-  })
-
-  it("fails closed when a payment method is saved without later-charge consent", () => {
-    const conflict = successFeeApprovalOffer(order({ setupReady: true, consentId: null }), outcomes("PROFILE_RECOVERY", "RESTORED"))
-    expect(conflict.kind).toBe("explain")
-    expect(message(conflict)).toMatch(/without later-charge consent/)
-  })
-
-  it("does not offer approval when consent is recorded but no usable payment method is saved", () => {
-    const waiting = successFeeApprovalOffer(order({ setupReady: false, consentId }), outcomes("PROFILE_RECOVERY", "RESTORED"))
-    expect(waiting.kind).toBe("explain")
-    expect(message(waiting)).toMatch(/no usable payment method/)
-  })
-
-  it("still requires accepted evidence after the outcome and setup qualify", () => {
-    const waiting = successFeeApprovalOffer(order({ acceptedEvidence: [] }), outcomes("PROFILE_RECOVERY", "RESTORED"))
+  it("still requires accepted evidence after the outcome and the observations qualify", () => {
+    const waiting = successFeeApprovalOffer(order({ acceptedEvidence: [] }), outcomes("PROFILE_RECOVERY", "RESTORED"), true)
     expect(waiting.kind).toBe("explain")
     expect(message(waiting)).toMatch(/accepted evidence/)
   })
 
   it("does not offer approval before the qualifying outcome", () => {
-    expect(message(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", null)))).toMatch(/not due yet/)
-    expect(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "WITHDRAWN")).kind).toBe("explain")
-    expect(successFeeApprovalOffer(order(), outcomes("REVIEW_PROTECTION", "RESTORED")).kind).toBe("explain")
+    expect(message(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", null), true))).toMatch(/not due yet/)
+    expect(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "WITHDRAWN"), true).kind).toBe("explain")
+    expect(successFeeApprovalOffer(order(), outcomes("REVIEW_PROTECTION", "RESTORED"), true).kind).toBe("explain")
+    expect(message(successFeeApprovalOffer(order(), outcomes("PROFILE_RECOVERY", "NOT_RESTORED"), true))).toMatch(/not due yet/)
   })
 
   it("withholds approval when the case outcome cannot be confirmed", () => {
-    expect(message(successFeeApprovalOffer(order(), null))).toMatch(/could not be confirmed/)
-    expect(message(successFeeApprovalOffer(order(), new Map()))).toMatch(/could not be confirmed/)
-    expect(message(successFeeApprovalOffer(order({ caseId: null }), outcomes("PROFILE_RECOVERY", "RESTORED")))).toMatch(/not linked to a case/)
+    expect(message(successFeeApprovalOffer(order(), null, true))).toMatch(/could not be confirmed/)
+    expect(message(successFeeApprovalOffer(order(), new Map(), true))).toMatch(/could not be confirmed/)
+    expect(message(successFeeApprovalOffer(order({ caseId: null }), outcomes("PROFILE_RECOVERY", "RESTORED"), true))).toMatch(/not linked to a case/)
   })
 
   it("hides the approval form for an upfront order and for an approval that already exists", () => {
-    expect(successFeeApprovalOffer(order({ paymentModel: "UPFRONT" }), null).kind).toBe("hidden")
-    expect(successFeeApprovalOffer(order({ approvalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }), null).kind).toBe("hidden")
+    expect(successFeeApprovalOffer(order({ paymentModel: "UPFRONT" }), null, true).kind).toBe("hidden")
+    expect(successFeeApprovalOffer(order({ approvalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }), null, false).kind).toBe("hidden")
   })
 })

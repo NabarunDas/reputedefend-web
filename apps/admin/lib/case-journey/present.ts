@@ -441,7 +441,7 @@ function projectionNote(facts: CaseFlowFacts): string | null {
 }
 
 function incompatibleNotes(facts: CaseFlowFacts, suppressed: boolean): string[] {
-  if (facts.serviceTrack === "MANAGED" || suppressed) return [savedCardReason]
+  if (suppressed && facts.serviceTrack === "MANAGED") return [savedCardReason]
   return []
 }
 

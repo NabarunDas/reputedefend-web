@@ -351,42 +351,24 @@ function managedPayment(payment: PaymentView, destinations: Destinations): CaseP
       label: "There is an accepted success-fee order",
       state: hasOrder ? "SATISFIED" : "NOT_STARTED",
       detail: hasOrder
-        ? "The accepted quote has created the order the success fee will be charged against."
-        : "Payment setup happens against an order, which exists once the customer accepts the quote.",
+        ? "The accepted quote names the order. The fee is invoiced only after the two success checks."
+        : "The success fee needs the order created when the customer accepts the quote.",
       owner: hasOrder ? "ADMIN" : "CUSTOMER",
       destination: destinations.commercial,
     },
     {
-      id: "LATER_CHARGE_CONSENT",
-      label: "The customer has consented to a later charge",
-      state: payment.managedConsentRecorded ? "SATISFIED" : "NOT_STARTED",
-      detail: payment.managedConsentRecorded
-        ? "Consent to charge on success is recorded."
-        : "A Managed case is charged when it succeeds, so the customer has to agree to that in advance.",
-      owner: "CUSTOMER",
-      destination: destinations.money,
-    },
-    {
       id: "SAVED_PAYMENT_METHOD",
-      label: "A usable payment method is saved",
-      state:
-        payment.managedSetupReady ? "SATISFIED"
-        : payment.managedConsentRecorded ? "ATTENTION"
-        : "NOT_STARTED",
-      detail:
-        payment.managedSetupReady
-          ? "A usable saved payment method is on file for this order."
-          : payment.managedConsentRecorded
-            ? "Consent was given but no usable payment method was saved, so the setup did not finish."
-            : "No payment method has been saved for this order.",
-      owner: "CUSTOMER",
-      destination: destinations.money,
+      label: "A saved card is not required",
+      state: "SATISFIED",
+      detail: "This agreement does not collect a card in advance and does not charge one automatically. A saved method is not authority to start work.",
+      owner: "ADMIN",
+      destination: destinations.case,
     },
   ]
   return {
     id: "MANAGED_PAYMENT",
-    label: "Before a Managed case can be prepared",
-    satisfied: payment.managedSetupReady,
+    label: "Managed success fee",
+    satisfied: hasOrder,
     items,
   }
 }
@@ -410,10 +392,6 @@ function openAction(facts: CaseFlowFacts, kind: string, now: string): boolean {
   return facts.customerActions.some(
     action => action.kind === kind && action.status === "OPEN" && action.expiresAt > now,
   )
-}
-
-function completedAction(facts: CaseFlowFacts, kind: string): boolean {
-  return facts.customerActions.some(action => action.kind === kind && action.status === "COMPLETED")
 }
 
 // ---------------------------------------------------------------------------
@@ -598,12 +576,6 @@ function collectSafety(collector: Collector): void {
   if (payment.upfrontAuthenticationRequired) {
     propose(collector, { id: "RESOLVE_PAYMENT_EXCEPTION", reasonCodes: ["PAYMENT_AUTHENTICATION_REQUIRED"] })
     notice(collector, "PAYMENT_AUTHENTICATION_REQUIRED", { where: "money" })
-  }
-  if (payment.successFeeOrder && payment.managedConsentRecorded && !payment.managedSetupReady) {
-    propose(collector, {
-      id: "RESOLVE_MANAGED_PAYMENT_EXCEPTION",
-      reasonCodes: ["MANAGED_SETUP_INCOMPLETE_AFTER_CONSENT"],
-    })
   }
   if (evidence.contact === "FAILED" && evidence.openRequests.length > 0) {
     propose(collector, { id: "RECOVER_CUSTOMER_CONTACT", reasonCodes: ["EVIDENCE_REQUEST_UNDELIVERED"] })
@@ -989,7 +961,7 @@ function guidedPrerequisiteRules(collector: Collector): void {
  *
  * The canonical operator journey is sequential: verify the contact, verify
  * the authority, get the service agreement accepted, get the case-management
- * permission accepted, record Manager access, then set payment up. Each rung
+ * permission accepted, then record Manager access. A saved card is not a rung. Each rung
  * returns, so a request that is already out with the customer produces a wait
  * rather than the next request. Some of this work could technically happen in
  * parallel, and deliberately does not: one clear next step is worth more to
@@ -1044,17 +1016,6 @@ function managedPrerequisiteRules(collector: Collector): void {
     return
   }
 
-  managedPaymentRules(collector)
-
-  if (authorization.authorizationReady && payment.managedSetupReady && allows(collector, "PREPARATION")) {
-    propose(collector, { id: "ADVANCE_TO_PREPARATION", reasonCodes: ["MANAGED_PREREQUISITES_MET"] })
-  }
-}
-
-function managedPaymentRules(collector: Collector): void {
-  const { facts, payment } = collector
-  if (payment.managedSetupReady) return
-
   if (!payment.successFeeOrder) {
     if (payment.truncated) {
       propose(collector, { id: "CONFIRM_PAYMENT_STATE", reasonCodes: ["PAYMENT_LIST_TRUNCATED"] })
@@ -1066,26 +1027,9 @@ function managedPaymentRules(collector: Collector): void {
     return
   }
 
-  block(collector, "MANAGED_PAYMENT_SETUP_INCOMPLETE", "money")
-  if (payment.managedConsentRecorded) return
-  if (openAction(facts, "MANAGED_PAYMENT_SETUP", collector.now)) {
-    propose(collector, { id: "WAIT_FOR_MANAGED_PAYMENT_SETUP", reasonCodes: ["MANAGED_SETUP_LINK_OPEN"] })
-    return
+  if (authorization.authorizationReady && allows(collector, "PREPARATION")) {
+    propose(collector, { id: "ADVANCE_TO_PREPARATION", reasonCodes: ["MANAGED_PREREQUISITES_MET"] })
   }
-  if (completedAction(facts, "MANAGED_PAYMENT_SETUP")) {
-    propose(collector, { id: "RESOLVE_MANAGED_PAYMENT_EXCEPTION", reasonCodes: ["MANAGED_SETUP_DID_NOT_COMPLETE"] })
-    return
-  }
-  const enabled = facts.capabilities.paymentsEnabled
-  propose(collector, {
-    id: "START_MANAGED_PAYMENT_SETUP",
-    state: enabled ? "ACTION_REQUIRED" : "BLOCKED",
-    reasonCodes: enabled ? ["MANAGED_SETUP_NOT_STARTED"] : ["MANAGED_SETUP_NOT_STARTED", "PAYMENTS_NOT_ENABLED"],
-    description: enabled
-      ? undefined
-      : "Payment setup has not been started and cannot be: payment collection is switched off in this deployment, so no setup link can be issued. This is a capability of the deployment, not a problem with the case.",
-  })
-  if (!enabled) block(collector, "PAYMENTS_NOT_ENABLED", "money")
 }
 
 function preparationRules(collector: Collector): void {
@@ -1094,7 +1038,7 @@ function preparationRules(collector: Collector): void {
   // Prerequisites were met to arrive here, and can be undone afterwards.
   const prerequisitesHold =
     facts.serviceTrack === "MANAGED"
-      ? facts.authorization.authorizationReady && collector.payment.managedSetupReady
+      ? facts.authorization.authorizationReady
       : collector.payment.upfrontPaid
   if (!prerequisitesHold) prerequisiteRules(collector)
 

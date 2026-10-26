@@ -5,6 +5,7 @@ import { authConfig, sessionCookie } from "../auth/config"
 import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
+import { queueManagedNotice } from "./managed-notice"
 import { caseArgs } from "./validation"
 const reply=(message:string,status:number,id?:string)=>NextResponse.json({message,...(id?{id}:{})},{status,headers:privateResponseHeaders})
 export async function caseCommand(request:NextRequest) {
@@ -25,7 +26,11 @@ export async function caseCommand(request:NextRequest) {
   if(!args) return reply("Check the fields, follow-up date and supporting note before saving.",400)
   const result=await backend().rpc<{status:string;id?:string}>("admin_case_command_v1",{...args,p_token:tokenHash(token),p_request:key})
   switch(result.status){
-   case "success":return reply("Saved. The case history has been updated.",200,result.id)
+   case "success":{
+    const kind=args.p_operation==="submission"?"submission":args.p_operation==="resolve_submission"?"result":args.p_operation==="close"?"completion":null
+    const notice=kind?await queueManagedNotice({token,requestId:key,caseId:args.p_case,kind}):""
+    return reply(`Saved. The case history has been updated.${notice}`,200,result.id)
+   }
    case "unauthorized":return reply("Your session has ended. Please sign in again.",401)
    case "conflict":return reply("This case has changed. Reload it before trying again.",409)
    case "denied":return reply("This action is not available at the current case stage. Reload and check the case.",403)

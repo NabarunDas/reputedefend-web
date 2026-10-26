@@ -7,6 +7,7 @@
 
 import type { CaseFlowFacts } from "../case-flow/model"
 import type { Submission } from "../cases/model"
+import { customerMailStatus } from "./customer-mail"
 
 /** Stages `admin_case_command_v1` already allows for operation `submission`. */
 const recordingStages = ["SERVICE_SELECTION", "PAYMENT_REQUIRED", "AUTHORIZATION_REQUIRED", "READY_TO_SUBMIT", "FURTHER_REVIEW"]
@@ -48,6 +49,8 @@ export type JourneySubmissionPanel = {
   who: string
   /** Null withholds every submission command. */
   commands: JourneySubmissionCommands | null
+  /** The next Managed progress or result email that has not been queued. */
+  noticeRecovery: "submission" | "result" | null
 }
 
 export function authoritativeSubmissionResult(result: string | null): boolean {
@@ -134,6 +137,20 @@ export function buildJourneySubmissionPanel(input: {
   if (!disagreed && trackReady && !closed && unresolved.length === 0 && !stageReady) {
     notices.push("A new attempt can be recorded only at the stages the case command already allows.")
   }
+  const progressMail = loaded ? input.facts.communications.filter(item => item.templateKey === "MANAGED_PROGRESS" && item.lifecycle !== "CANCELLED").length : 0
+  const resultMail = loaded ? input.facts.communications.filter(item => item.templateKey === "MANAGED_RESULT" && item.lifecycle !== "CANCELLED").length : 0
+  const resultCount = rows.filter(row => row.result !== null).length
+  const noticeRecovery = input.track === "MANAGED" && loaded && !disagreed
+    ? progressMail < rows.length
+      ? "submission"
+      : resultMail < resultCount
+        ? "result"
+        : null
+    : null
+  if (input.track === "MANAGED" && loaded && !disagreed && rows.length > 0) {
+    notices.push(customerMailStatus(input.facts.communications, "MANAGED_PROGRESS", "progress email"))
+    if (resultCount > 0) notices.push(customerMailStatus(input.facts.communications, "MANAGED_RESULT", "result email"))
+  }
 
   const commands = loaded && !disagreed && !unrecognised
     ? {
@@ -205,5 +222,6 @@ export function buildJourneySubmissionPanel(input: {
     notices,
     who,
     commands,
+    noticeRecovery,
   }
 }

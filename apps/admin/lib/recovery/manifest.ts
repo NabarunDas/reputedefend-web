@@ -939,42 +939,56 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "accepted service reconciliation", probe: "public.admin_reconcile_accepted_service_v1" },
   },
   {
-    // Guided payment request. Queues one portal payment email for an accepted
-    // Guided upfront order and reuses an open payment action. Not applied to
-    // DEV or Production. Do not apply it from the pull request. It does not
-    // send mail, open Stripe, or mark an obligation paid.
+    // Guided payment request. Already in the DEV ledger at 20261025020000.
+    // Do not replay it. Production is unchanged. It does not send mail, open
+    // Stripe, or mark an obligation paid.
     version: "20261025020000",
     filename: "20261025020000_guided_payment_request_email_v1.sql",
     step: "Guided payment-request email",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "guided payment request", probe: "public.admin_queue_guided_payment_request_v1" },
   },
   {
-    // GUIDED-FULFILMENT handover. Source only. Do not apply to DEV or Production
-    // from this change. It does not send mail, charge a card, or edit an existing case.
+    // GUIDED-FULFILMENT handover. Already in the DEV ledger at 20261025140000.
+    // Do not replay it. Production is unchanged. It does not send mail, charge
+    // a card, or edit an existing case.
     version: "20261025140000",
     filename: "20261025140000_guided_fulfilment_handover_v1.sql",
     step: "GUIDED-FULFILMENT handover",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided fulfilment handover", probe: "public.customer_portal_guided_handover_v1" },
   },
   {
-    // GUIDED-FULFILMENT closure. Source only. Do not apply to DEV or Production
-    // from this change. It does not send mail, charge a card, or edit an existing case.
+    // GUIDED-FULFILMENT closure. Already in the DEV ledger at 20261025160000.
+    // This is the observed DEV head. Do not replay it. Production is unchanged.
     version: "20261025160000",
     filename: "20261025160000_guided_fulfilment_closure_v1.sql",
     step: "GUIDED-FULFILMENT closure",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided fulfilment closure", probe: "public.admin_guided_fulfilment_close_v1" },
+  },
+  {
+    // MANAGED-JOURNEY-E2E. Records two observations at least 48 hours apart
+    // before a success fee can be approved or a new success-fee invoice prepared.
+    // Source only. Do not apply to DEV or Production from this change.
+    // It can queue a customer notice. It does not deliver mail, charge a card, or edit an existing case.
+    version: "20261025163000",
+    filename: "20261025163000_managed_success_verification_v1.sql",
+    step: "MANAGED-JOURNEY-E2E success verification",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Managed success verification", probe: "admin_private.success_verification_ready_v1" },
   },
 ]
 
@@ -987,7 +1001,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261024233701`. Source filename aligned to the DEV ledger; SQL was not replayed.
+ * `20261025160000`. Guided `20261025020000`, `20261025140000` and
+ * `20261025160000` are already in the DEV ledger and must not be replayed.
+ * Managed success verification `20261025163000` is the only unapplied file.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

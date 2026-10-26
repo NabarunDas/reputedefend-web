@@ -20,6 +20,7 @@ import type {
   RetrievedDispute,
   RetrievedInvoice,
   RetrievedPaymentIntent,
+  VoidHostedInvoiceResult,
   RetrievedRefund,
   RetrievedSetupIntent,
   RetrievedSubscription,
@@ -52,6 +53,7 @@ export interface PaymentProvider {
   retrievePaymentMethod(id: string): Promise<SafePaymentMethod | null>
   retrieveInvoice(id: string): Promise<RetrievedInvoice | null>
   createHostedInvoice(input: CreateHostedInvoiceInput): Promise<ProviderInvoice>
+  voidHostedInvoice(input: { id: string; idempotencyKey: string }): Promise<VoidHostedInvoiceResult>
   cancelPaymentIntent(input: { id: string; idempotencyKey: string }): Promise<CancelPaymentResult>
   createRecurringPrice(input: CreateRecurringPriceInput): Promise<ProviderRecurringPrice>
   createSubscriptionCheckout(input: CreateSubscriptionCheckoutInput): Promise<ProviderCheckout>
@@ -102,6 +104,7 @@ export function disabledPaymentProvider(): PaymentProvider {
     retrievePaymentMethod: deny,
     retrieveInvoice: deny,
     createHostedInvoice: deny,
+    voidHostedInvoice: deny,
     cancelPaymentIntent: deny,
     createRecurringPrice: deny,
     createSubscriptionCheckout: deny,

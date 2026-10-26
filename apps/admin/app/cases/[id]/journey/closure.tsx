@@ -4,6 +4,7 @@ import { ukDate } from "@/lib/admin/activity"
 import type { CaseDetail } from "@/lib/cases/model"
 import { CloseForm, TaskForm } from "../../forms"
 import { GuidedCloseForm, RecoverCompletionForm } from "./guided-close-form"
+import { ManagedNoticeForm } from "./managed-notice-form"
 
 /**
  * Step 11 closes or reopens with the existing case commands.
@@ -60,6 +61,10 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
       <summary>Send the completion update</summary>
       <RecoverCompletionForm c={caseDetail} summary={panel.summary} />
     </details>}
+    {panel.managedCompletionRecovery && <details>
+      <summary>Send the completion update</summary>
+      <ManagedNoticeForm c={caseDetail} kind="completion" />
+    </details>}
     {panel.commands?.close && panel.locked && <details>
       <summary>Close with the recorded outcome</summary>
       <CloseForm c={caseDetail} locked={panel.locked} />
@@ -77,6 +82,6 @@ export function ClosurePanel({ caseDetail, panel }: { caseDetail: CaseDetail; pa
       ? "The Guided preparation is already closed. This queues the completion update that was not sent. Queued is not delivered. It does not close the case again, record a Google decision, or enrol Relaunch Guard."
       : panel.fulfilmentClose
       ? "Closing records the Guided preparation as delivered. A completion email is queued only when outgoing mail is on, and queued is not delivered. If mail is off, the notification stays pending. Nothing here submits work to Google, and Relaunch Guard stays optional."
-      : "This step does not send a closure email, submit anything to Google, or collect a payment."}</p>
+      : "A verified success is closed only after the success fee is settled. An unsuccessful or withdrawn case can close with no fee. An unpaid invoice, a disputed fee, a pending Google response, or outstanding customer action stays open. Closing can queue one completion summary when outgoing mail is on, and queued is not delivered. This step does not submit anything to Google, collect a payment, or enrol Relaunch Guard."}</p>
   </div>
 }

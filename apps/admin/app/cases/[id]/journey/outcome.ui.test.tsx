@@ -194,6 +194,7 @@ function show(
   order: ServiceOrder | null = null,
   detail: CaseDetail = caseDetail({ stage: source.technicalStage === "OUTCOME_REVIEW" ? "OUTCOME_REVIEW" : "INITIAL_REVIEW", type: source.caseType, track: source.serviceTrack === "MANAGED" ? "MANAGED" : source.serviceTrack === "GUIDED" ? "GUIDED" : "UNDECIDED", status: source.caseStatus, outcome: source.outcome as CaseDetail["outcome"] }),
   events: { id: string; event: string; details: Record<string, unknown> }[] = [],
+  verificationReady = true,
 ) {
   const work = events.map(event => ({ ...event, createdAt: WHEN }))
   const presented = presentJourneyOutcome({
@@ -208,6 +209,7 @@ function show(
     },
     order,
     events: work,
+    verificationReady,
   })
   const journey = presentCaseJourney(source, NOW, work, {
     ...(presented.disagreed ? { outcomeRecordsDisagree: true } : {}),

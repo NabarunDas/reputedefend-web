@@ -9,6 +9,7 @@ const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}
 const ACTION_SELECTOR = /^ca-[a-f0-9]{64}$/
 const RECEIPT_SELECTOR = /^rc-[a-f0-9]{64}$/
 const ORDER_REF = /^SO-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
+const RECEIPT_REF = /^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 const CURRENCY = /^[A-Z]{3}$/
 
 const TAX = ["INCLUSIVE", "EXCLUSIVE", "NOT_APPLICABLE"] as const
@@ -269,27 +270,43 @@ export function parseCasePayments(value: unknown): CustomerCasePayments | "not_f
 }
 
 export function parseReceiptDownload(value: unknown): {
+  receiptRef: string
   reference: string
   orderRef: string
+  serviceName: string
   amountMinor: number
   currency: string
   taxBehaviour: PaymentTax
   taxAmountMinor: number
   paidAt: string
+  paymentStatus: "Paid"
+  providerLabel: "Card payment through Stripe"
 } | "not_found" | null {
   const row = record(value)
   if (!row) return null
   if (sameKeys(row, ["status"]) && row.status === "not_found") return "not_found"
-  if (!sameKeys(row, ["status", "reference", "orderRef", "amountMinor", "currency", "taxBehaviour", "taxAmountMinor", "paidAt"])) return null
+  if (!sameKeys(row, [
+    "status", "receiptRef", "reference", "orderRef", "serviceName", "amountMinor", "currency",
+    "taxBehaviour", "taxAmountMinor", "paidAt", "paymentStatus", "providerLabel",
+  ])) return null
   if (row.status !== "ok") return null
+  const receiptRef = text(row.receiptRef, 16)
   const reference = text(row.reference, 16)
   const orderRef = text(row.orderRef, 16)
+  const serviceName = text(row.serviceName, 80)
   const amountMinor = minor(row.amountMinor)
   const unit = currency(row.currency)
   const taxBehaviour = oneOf(row.taxBehaviour, TAX)
   const taxAmountMinor = minor(row.taxAmountMinor)
   const paidAt = timestamp(row.paidAt)
-  if (!reference || !isPublicCaseReference(reference) || !orderRef || !ORDER_REF.test(orderRef)
-    || amountMinor === null || !unit || !taxBehaviour || taxAmountMinor === null || !paidAt) return null
-  return { reference, orderRef, amountMinor, currency: unit, taxBehaviour, taxAmountMinor, paidAt }
+  const paymentStatus = oneOf(row.paymentStatus, ["Paid"] as const)
+  const providerLabel = oneOf(row.providerLabel, ["Card payment through Stripe"] as const)
+  if (!receiptRef || !RECEIPT_REF.test(receiptRef) || !reference || !isPublicCaseReference(reference)
+    || !orderRef || !ORDER_REF.test(orderRef) || receiptRef === orderRef || !serviceName
+    || amountMinor === null || !unit || !taxBehaviour || taxAmountMinor === null || !paidAt
+    || !paymentStatus || !providerLabel) return null
+  return {
+    receiptRef, reference, orderRef, serviceName, amountMinor, currency: unit,
+    taxBehaviour, taxAmountMinor, paidAt, paymentStatus, providerLabel,
+  }
 }

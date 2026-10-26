@@ -95,10 +95,11 @@ try {
       assert.equal(response.status, 200)
       const html = await response.text()
       assert.match(html, /Payment is being confirmed/)
-      assert.match(html, /does not mark a payment as paid/)
+      assert.match(html, /Sign in to see whether your payment has been recorded/)
       assert.match(html, /href="\/login"/)
       assertCustomerBrand(html)
-      assert.doesNotMatch(html, /Payment successful|£|checkout\.stripe|invoice\.stripe/)
+      assert.doesNotMatch(html, /does not mark a payment as paid/)
+      assert.doesNotMatch(html, /Payment successful|£|checkout\.stripe|invoice\.stripe|Guard/)
     } else {
       assert.equal(response.status, 200)
       const html = await response.text()

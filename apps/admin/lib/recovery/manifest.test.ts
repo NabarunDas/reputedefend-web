@@ -18,9 +18,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261025160000_guided_fulfilment_closure_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261026170000_checkout_refresh_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toMatch(/dev_payment_event_worker_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/dev_payment_receipt_delivery_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -35,11 +35,12 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261025163000_managed_success_verification_v1.sql",
-      "20261026140000_checkout_presentation_v1.sql",
-      "20261026170000_checkout_refresh_v1.sql",
       "20261026180000_dev_payment_event_worker_v1.sql",
+      "20261026190000_dev_payment_receipt_delivery_v1.sql",
     ])
+    expect(findMigration("20261025163000_managed_success_verification_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261026140000_checkout_presentation_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261026170000_checkout_refresh_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)

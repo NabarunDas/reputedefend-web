@@ -3,8 +3,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { isStripeLiveSecret, isStripeTestSecret, isStripeWebhookSecret, type PaymentEnv } from "../../../../lib/payments/config"
 import type { PaymentProvider } from "../../../../lib/payments/provider"
 import { processStripeEventHandler } from "../payments/handlers"
+import { customerPortalOrigin } from "../auth/config"
 import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
+import { communicationsSendEnabled } from "../communications/gate"
+import { settleDevSendEmailClaim, type DevSendClaim } from "../communications/dev-send"
+import type { OutgoingMailProvider } from "../communications/mail"
 import { cronAuthorized } from "./config"
 import type { JobHandler, JobHandlerResult, JobRpc } from "./model"
 import { devStripeClassificationProvider } from "./dev-stripe-one-shot"
@@ -114,10 +118,11 @@ export type DevPaymentRunCounts = {
   deadLettered: number
   released: number
   skipped: number
+  confirmationSent: number
 }
 
 const emptyCounts = (): DevPaymentRunCounts => ({
-  claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, released: 0, skipped: 0,
+  claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, released: 0, skipped: 0, confirmationSent: 0,
 })
 
 async function heartbeat(
@@ -197,10 +202,26 @@ async function settleClaim(input: {
   return "skipped"
 }
 
+async function deliverQueuedPaymentConfirmation(
+  rpc: JobRpc,
+  provider?: OutgoingMailProvider,
+): Promise<number> {
+  if (!communicationsSendEnabled()) return 0
+  const origin = customerPortalOrigin()
+  if (!origin) return 0
+  const claimed = await rpc.rpc<DevSendClaim>("dev_payment_confirmation_claim_v1", {
+    p_customer_origin: origin,
+  })
+  if (claimed.status !== "success" || claimed.replay === true) return 0
+  const settled = await settleDevSendEmailClaim({ rpc, claim: claimed, provider })
+  return settled === "succeeded" ? 1 : 0
+}
+
 export async function runDevPaymentEventWorker(options: {
   rpc: JobRpc
   handler?: JobHandler
   abandonAfterHandler?: boolean
+  mailProvider?: OutgoingMailProvider
 }): Promise<{ status: "disabled" | "success" | "error"; reason?: string; counts: DevPaymentRunCounts }> {
   const block = devPaymentEventWorkerBlock()
   if (block) return { status: "disabled", reason: block, counts: emptyCounts() }
@@ -260,6 +281,7 @@ export async function runDevPaymentEventWorker(options: {
       else if (outcome === "released") counts.released += 1
       else counts.skipped += 1
     }
+    counts.confirmationSent += await deliverQueuedPaymentConfirmation(options.rpc, options.mailProvider)
     await heartbeat(options.rpc, "complete", null)
     await heartbeat(options.rpc, "success", null)
     return { status: "success", counts }

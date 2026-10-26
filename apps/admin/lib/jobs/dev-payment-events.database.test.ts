@@ -10,6 +10,9 @@ import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-es
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
+import { narrowCaseFlowFacts, requiredCase } from "../case-flow/projection"
+import { presentCaseJourney } from "../case-journey/present"
+import type { OutgoingMailMessage } from "../communications/mail"
 import { jobWorkerConfig } from "./config"
 import type { JobRpc } from "./model"
 
@@ -116,6 +119,12 @@ function dbRpc(calls: string[]): JobRpc {
     payment_apply_provider_event_v1: ["p_event_id", "p_type", "p_object_id", "p_payload"],
     payment_confirmation_context_v1: ["p_payment_intent"],
     payment_queue_confirmation_v1: ["p_payload"],
+    dev_payment_confirmation_claim_v1: ["p_customer_origin"],
+    communication_load_send_v1: ["p_communication", "p_content_version"],
+    communication_begin_provider_attempt_v1: ["p_communication", "p_content_version", "p_idempotency_key"],
+    communication_mark_provider_accepted_v1: ["p_communication", "p_provider", "p_provider_message_id", "p_idempotency_key"],
+    communication_mark_acceptance_unknown_v1: ["p_communication", "p_idempotency_key"],
+    communication_mark_provider_rejected_v1: ["p_communication", "p_error", "p_retryable", "p_idempotency_key"],
   }
   return {
     async rpc<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -127,9 +136,23 @@ function dbRpc(calls: string[]): JobRpc {
   }
 }
 
+const sentMail: OutgoingMailMessage[] = []
+let mailSerial = 0
+const mailProvider = {
+  async send(message: OutgoingMailMessage) {
+    sentMail.push(message)
+    mailSerial += 1
+    return { ok: true as const, providerMessageId: `re_test_payment_${mailSerial}`, replay: false }
+  },
+}
+
 async function runWorker(abandonAfterHandler = false) {
   const calls: string[] = []
-  const result = await runDevPaymentEventWorker({ rpc: dbRpc(calls), abandonAfterHandler })
+  const result = await runDevPaymentEventWorker({
+    rpc: dbRpc(calls),
+    abandonAfterHandler,
+    mailProvider,
+  })
   return { result, calls }
 }
 
@@ -253,6 +276,7 @@ afterAll(async () => { await db.close() })
 beforeEach(async () => {
   stripeState.checkout = {}
   stripeState.intent = {}
+  sentMail.length = 0
   vi.unstubAllEnvs()
   for (const [name, value] of Object.entries(workerEnv)) vi.stubEnv(name, value)
   await db.exec(`
@@ -397,6 +421,14 @@ describe("DEV payment event worker", () => {
       where n.nspname = 'public' and p.proname like 'dev_payment_event_%'
     `)
     expect(source[0].src).not.toMatch(/job_promote_outbox_v1|job_claim_batch_v1|processed\s*=\s*true|payment_receipts/)
+    const confirmation = await rows<{ src: string }>(`
+      select p.prosrc as src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'dev_payment_confirmation_claim_v1'
+    `)
+    expect(confirmation[0].src).not.toMatch(/job_promote_outbox_v1|job_claim_batch_v1/)
+    expect((await rows<{ ok: boolean }>(
+      "select has_function_privilege('anon', 'public.dev_payment_confirmation_claim_v1(text)', 'EXECUTE') as ok",
+    ))[0].ok).toBe(false)
   })
 
   it("settles both event orders once, ignores a duplicate, and queues one confirmation", async () => {
@@ -427,7 +459,13 @@ describe("DEV payment event worker", () => {
     expect(letter).toContain(opened.orderRef)
     expect(letter).toContain("Guided Relaunch")
     expect(letter).not.toMatch(/pi_|cs_|cus_|ch_/)
-    expect(await count("select count(*)::int as n from admin_private.jobs where job_type = 'SEND_EMAIL'")).toBe(0)
+    expect(sentMail).toHaveLength(1)
+    expect(sentMail[0].to).toBe("alex@example.com")
+    expect(sentMail[0].text).toContain("£99.00 GBP")
+    expect(sentMail[0].text).toContain(opened.orderRef)
+    expect(await count("select count(*)::int as n from admin_private.jobs where job_type = 'SEND_EMAIL' and status = 'SUCCEEDED'")).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'PAYMENT_CONFIRMATION' and status = 'SENT' and delivery_status = 'PROVIDER_ACCEPTED'", [opened.caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and delivery_status = 'DELIVERED'", [opened.caseId])).toBe(0)
     expect(await count("select count(*)::int as n from admin_private.job_outbox where event_key = 'email-wkrpay-0001' and promoted_at is null")).toBe(1)
     const heartbeat = await rows<{ worker_name: string; environment: string }>(
       "select worker_name, environment from admin_private.job_worker_heartbeats",
@@ -436,11 +474,13 @@ describe("DEV payment event worker", () => {
 
     const replay = await runWorker()
     expect(replay.result.counts.claimed).toBe(0)
+    expect(sentMail).toHaveLength(1)
     expect(await receive("evt_wkrpayp2", "payment_intent.succeeded", "pi_wkrpay")).toMatchObject({ status: "success" })
     const duplicate = await runWorker()
     expect(duplicate.result).toMatchObject({ status: "success", counts: { claimed: 1, succeeded: 1 } })
     expect(await receiptCount(opened.orderId)).toBe(1)
     expect(await confirmationCount(opened.caseId)).toBe(1)
+    expect(sentMail).toHaveLength(1)
 
     const view = await rpc<{ case: { orders: Array<{ obligations: Array<{ state: string }>; receipts: Array<{ selector: string }> }>; actions: Array<{ kind: string }> } }>(
       "customer_portal_case_payments_v1",
@@ -451,7 +491,56 @@ describe("DEV payment event worker", () => {
     expect(view.case.actions.map(action => action.kind)).not.toContain("guided_payment")
     expect(JSON.stringify(view)).not.toMatch(/cus_|pi_|cs_|sk_|whsec_|ch_/)
     const download = await rpc<Record<string, unknown>>("customer_portal_receipt_v1", [alexSession, view.case.orders[0].receipts[0].selector])
-    expect(download).toMatchObject({ status: "ok", reference: opened.reference, orderRef: opened.orderRef, amountMinor: 9900, currency: "GBP" })
+    expect(download).toMatchObject({
+      status: "ok",
+      receiptRef: expect.stringMatching(/^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/),
+      reference: opened.reference,
+      orderRef: opened.orderRef,
+      serviceName: "Guided Relaunch",
+      amountMinor: 9900,
+      currency: "GBP",
+      paymentStatus: "Paid",
+      providerLabel: "Card payment through Stripe",
+    })
+    expect(download.receiptRef).not.toBe(opened.orderRef)
+    expect(JSON.stringify(download).replaceAll("Card payment through Stripe", "")).not.toMatch(/pi_|cs_|cus_|ch_|stripe/)
+    const requestId = randomUUID()
+    const documentId = randomUUID()
+    const versionId = randomUUID()
+    await db.query(
+      `insert into public.evidence_requests(id, case_id, title, request_text, status, created_by)
+       values ($1, $2, 'Ownership letter', 'Upload the ownership letter.', 'OPEN', $3)`,
+      [requestId, opened.caseId, admin],
+    )
+    await db.query(
+      `insert into public.case_documents(id, case_id, evidence_request_id, title, created_by)
+       values ($1, $2, $3, 'Ownership letter', $4)`,
+      [documentId, opened.caseId, requestId, admin],
+    )
+    await db.query(
+      `insert into public.case_document_versions(
+         id, document_id, version_number, original_filename, declared_content_type, declared_size_bytes,
+         storage_bucket, storage_key, upload_status, scan_status, validation_status, review_status, created_by
+       ) values ($1, $2, 1, 'letter.pdf', 'application/pdf', 1024, 'evidence', $3,
+         'UPLOADED', 'NO_THREATS_FOUND', 'VALID', 'ACCEPTED', $4)`,
+      [versionId, documentId, `cases/${opened.caseId}/documents/${documentId}/versions/${versionId}`, admin],
+    )
+    await db.query("update public.evidence_requests set status = 'FULFILLED', fulfilled_at = now() where id = $1", [requestId])
+    const factsPayload = (await db.query<{ value: unknown }>(
+      "select public.admin_case_flow_facts_v1($1, $2::uuid[]) as value",
+      [adminToken, [opened.caseId]],
+    )).rows[0].value
+    const facts = requiredCase(narrowCaseFlowFacts(factsPayload, [opened.caseId], {
+      liveMailEnabled: false,
+      paymentsEnabled: true,
+      googleSubmissionLive: false,
+    }), opened.caseId)
+    const journey = presentCaseJourney(facts, "2026-10-26T16:40:00.000Z")
+    expect(journey.steps.find(step => step.id === "SERVICE_ACTIVATION")?.state).toBe("COMPLETED")
+    expect(journey.focusStepId).toBe("PREPARATION")
+    expect(journey.steps.find(step => step.id === "PREPARATION")?.focus).toBe(true)
+    const portalCase = await rpc<{ case: { attentionItems: Array<{ code: string }> } }>("customer_portal_case_v1", [alexSession, opened.reference])
+    expect(portalCase.case.attentionItems.map(item => item.code)).not.toContain("GUIDED_PAYMENT")
     const ownList = JSON.stringify(await rpc("customer_portal_payments_v1", [alexSession]))
     expect(ownList).toContain(opened.orderRef)
     expect(ownList).not.toMatch(/cus_|pi_|cs_|sk_|whsec_|ch_/)
@@ -496,6 +585,7 @@ describe("DEV payment event worker", () => {
     const recovered = await runWorker()
     expect(recovered.result).toMatchObject({ status: "success" })
     expect(recovered.result.counts.succeeded).toBeGreaterThanOrEqual(1)
+    expect(sentMail).toHaveLength(1)
     expect(await rows<{ status: string }>("select status from admin_private.jobs where job_type = 'PROCESS_STRIPE_EVENT' order by idempotency_key")).toEqual([
       { status: "SUCCEEDED" },
       { status: "SUCCEEDED" },

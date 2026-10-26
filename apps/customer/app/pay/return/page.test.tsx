@@ -71,7 +71,8 @@ describe("payment return page", () => {
     expect(screen.getByRole("heading", { name: "Payment is being confirmed" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login")
     expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull()
-    expect(document.body.textContent).toMatch(/does not mark a payment as paid/)
+    expect(document.body.textContent).toMatch(/Sign in to see whether your payment has been recorded/)
+    expect(document.body.textContent).not.toMatch(/does not mark a payment as paid/)
     expect(document.body.textContent).not.toMatch(/£|SO-|PR-|Guard|pi_|cs_|payment successful/i)
     expect(document.body.innerHTML).not.toMatch(/checkout\.stripe|invoice\.stripe|javascript:/)
   })
@@ -89,7 +90,7 @@ describe("payment return page", () => {
     expect(document.body.textContent).toMatch(/not a VAT invoice/)
     expect(document.body.textContent).toMatch(/prepare your Guided pack/)
     expect(document.body.textContent).toMatch(/does not mean Google has reinstated/)
-    expect(screen.getByRole("link", { name: "View your receipt" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View or print your receipt" })).toHaveAttribute(
       "href",
       `/api/portal/payments/receipt?selector=${selector}`,
     )
@@ -103,7 +104,8 @@ describe("payment return page", () => {
     loadCustomerPayments.mockResolvedValue({ status: "ready", payments: payments("DUE") })
     render(await PaymentReturnPage())
     expect(screen.getByRole("heading", { name: "Payment is being confirmed" })).toBeInTheDocument()
-    expect(document.body.textContent).toMatch(/does not start another charge/)
+    expect(document.body.textContent).toMatch(/do not need to pay again/)
+    expect(document.body.textContent).not.toMatch(/does not mark a payment as paid/)
     expect(document.body.textContent).toMatch(/will not be charged again/)
     expect(document.body.textContent).not.toMatch(/Guard|payment successful/i)
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }))

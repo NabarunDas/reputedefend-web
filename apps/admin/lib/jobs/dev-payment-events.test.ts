@@ -126,7 +126,7 @@ describe("DEV payment event route", () => {
     const response = await runDevPaymentEventRequest(req(`Bearer ${secret}`))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      status: "success", claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, released: 0, skipped: 0,
+      status: "success", claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, released: 0, skipped: 0, confirmationSent: 0,
     })
     const names = mocks.rpc.mock.calls.map(call => call[0])
     expect(names).toEqual([

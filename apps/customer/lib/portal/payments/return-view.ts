@@ -131,7 +131,7 @@ function paidView(item: Owned): PaymentReturnView {
     nextStep(item.case.serviceTrack, item.order.paymentModel, item.order.serviceName),
   ].filter(paragraph => paragraph.length > 0)
   const links = caseLinks(item.case)
-  if (receipt) links.unshift({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View your receipt" })
+  if (receipt) links.unshift({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View or print your receipt" })
   return { tone: "paid", heading: "Payment received", paragraphs, links, refresh: false }
 }
 
@@ -140,8 +140,8 @@ function pendingView(item: Owned): PaymentReturnView {
     tone: "pending",
     heading: "Payment is being confirmed",
     paragraphs: [
-      `We are confirming ${item.order.serviceName} for order ${item.order.orderRef}. This page does not mark a payment as paid and it does not start another charge.`,
-      "If this takes longer than a few minutes, open your case. You will not be charged again for a payment that has already succeeded.",
+      `We are confirming your ${item.order.serviceName} payment for order ${item.order.orderRef}. You do not need to pay again while we finish this.`,
+      "This usually finishes within a few minutes. You can open your case and come back. You will not be charged again for a payment that has already succeeded.",
     ],
     links: caseLinks(item.case),
     refresh: true,
@@ -173,7 +173,7 @@ export function paymentReturnView(
       tone: "signed_out",
       heading: "Payment is being confirmed",
       paragraphs: [
-        "Sign in to see the status of your payment. This page reads your account after you sign in. It does not mark a payment as paid.",
+        "Sign in to see whether your payment has been recorded.",
       ],
       links: [{ href: "/login", label: "Sign in" }],
       refresh: false,
@@ -184,7 +184,7 @@ export function paymentReturnView(
       tone: "unavailable",
       heading: "Payment is being confirmed",
       paragraphs: [
-        "We could not load your payment status. Refresh this page in a moment. This page does not mark a payment as paid.",
+        "We could not load your payment status just now. Refresh this page in a moment and we will check again.",
       ],
       links: [],
       refresh: true,
@@ -196,7 +196,7 @@ export function paymentReturnView(
       tone: "empty",
       heading: "Payment is being confirmed",
       paragraphs: [
-        "We could not find a payment on your account yet. This page does not mark a payment as paid.",
+        "We could not find a payment on your account yet. If you have just paid, wait a moment and refresh this page.",
       ],
       links: [{ href: "/portal", label: "Open your portal" }],
       refresh: true,

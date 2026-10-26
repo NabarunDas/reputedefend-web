@@ -977,43 +977,37 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided fulfilment closure", probe: "public.admin_guided_fulfilment_close_v1" },
   },
   {
-    // MANAGED-JOURNEY-E2E. Records two observations at least 48 hours apart
-    // before a success fee can be approved or a new success-fee invoice prepared.
-    // Source only. Do not apply to DEV or Production from this change.
-    // It can queue a customer notice. It does not deliver mail, charge a card, or edit an existing case.
+    // MANAGED-JOURNEY-E2E. Already in the DEV ledger at 20261025163000.
+    // Do not replay it. It was not applied to Production.
     version: "20261025163000",
     filename: "20261025163000_managed_success_verification_v1.sql",
     step: "MANAGED-JOURNEY-E2E success verification",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Managed success verification", probe: "admin_private.success_verification_ready_v1" },
   },
   {
-    // PAYMENT-CHECKOUT-BRANDING-DEV-01. Reads the accepted service and the
-    // verified customer email for Checkout and hosted invoices. Source only.
-    // Do not apply to DEV or Production from this change. It does not send
-    // mail, charge a card, or edit an existing case.
+    // PAYMENT-CHECKOUT-BRANDING-DEV-01. Already in the DEV ledger at 20261026140000.
+    // Do not replay it. It was not applied to Production.
     version: "20261026140000",
     filename: "20261026140000_checkout_presentation_v1.sql",
     step: "PAYMENT-CHECKOUT-BRANDING-DEV-01 checkout presentation",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Checkout presentation", probe: "public.payment_checkout_presentation_v1" },
   },
   {
-    // CUSTOMER-CHECKOUT-REFRESH-DEV-02. Expires one owned unpaid Checkout and
-    // opens a replacement for the same obligation. Source only. Do not apply
-    // to DEV or Production from this change. It does not send mail, charge a
-    // card, or edit an existing case.
+    // CUSTOMER-CHECKOUT-REFRESH-DEV-02. Already in the DEV ledger at 20261026170000.
+    // This is the observed DEV head. Do not replay it. Production is unchanged.
     version: "20261026170000",
     filename: "20261026170000_checkout_refresh_v1.sql",
     step: "CUSTOMER-CHECKOUT-REFRESH-DEV-02 checkout refresh",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Checkout refresh", probe: "public.customer_portal_checkout_refresh_v1" },
@@ -1032,6 +1026,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "DEV payment event worker", probe: "public.dev_payment_event_claim_v1" },
   },
+  {
+    // PAYMENTS-E2E-POSTCHECKOUT-01. Customer receipt reference and one DEV
+    // payment-confirmation claim. Source only. Do not apply to DEV or
+    // Production from this change. It does not charge a card or edit a Stripe event.
+    version: "20261026190000",
+    filename: "20261026190000_dev_payment_receipt_delivery_v1.sql",
+    step: "PAYMENTS-E2E-POSTCHECKOUT-01 receipt delivery",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "DEV payment receipt delivery", probe: "public.dev_payment_confirmation_claim_v1" },
+  },
 ]
 
 /**
@@ -1043,12 +1050,12 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261025160000`. Guided `20261025020000`, `20261025140000` and
- * `20261025160000` are already in the DEV ledger and must not be replayed.
- * Managed success verification `20261025163000`, checkout presentation
- * `20261026140000`, checkout refresh `20261026170000` and the DEV payment
- * event worker `20261026180000` are unapplied. Do not apply them from this
- * change.
+ * `20261026170000`. Guided `20261025020000`, `20261025140000` and
+ * `20261025160000`, managed success verification `20261025163000`, checkout
+ * presentation `20261026140000` and checkout refresh `20261026170000` are
+ * already in the DEV ledger and must not be replayed. The DEV payment event
+ * worker `20261026180000` and receipt delivery `20261026190000` are unapplied.
+ * Do not apply them from this change.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

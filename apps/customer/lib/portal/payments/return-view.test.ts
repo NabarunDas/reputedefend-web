@@ -58,7 +58,8 @@ describe("payment return view", () => {
     expect(view.links).toEqual([{ href: "/login", label: "Sign in" }])
     expect(view.refresh).toBe(false)
     const text = view.paragraphs.join(" ")
-    expect(text).toMatch(/does not mark a payment as paid/)
+    expect(text).toMatch(/Sign in to see whether your payment has been recorded/)
+    expect(text).not.toMatch(/does not mark a payment as paid/)
     expect(text).not.toMatch(/£|SO-|PR-|Guard|pi_|cs_/)
   })
 
@@ -81,7 +82,7 @@ describe("payment return view", () => {
     expect(text).toMatch(/prepare your Guided pack/)
     expect(text).toMatch(/does not mean Google has reinstated/)
     expect(text).not.toMatch(/Guard subscription|pi_|cs_|checkout\.stripe/)
-    expect(view.links[0]).toEqual({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View your receipt" })
+    expect(view.links[0]).toEqual({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View or print your receipt" })
     expect(view.links.map(link => link.href)).toEqual([
       `/api/portal/payments/receipt?selector=${receipt.selector}`,
       "/portal/cases/PR-26-GHNLB9",
@@ -95,8 +96,8 @@ describe("payment return view", () => {
     expect(view.tone).toBe("pending")
     expect(view.refresh).toBe(true)
     const text = view.paragraphs.join(" ")
-    expect(text).toMatch(/does not mark a payment as paid/)
-    expect(text).toMatch(/does not start another charge/)
+    expect(text).toMatch(/do not need to pay again/)
+    expect(text).not.toMatch(/does not mark a payment as paid/)
     expect(text).toMatch(/will not be charged again/)
     expect(text).not.toMatch(/Guard|reinstated|payment successful/)
     expect(view.links.map(link => link.label)).toEqual(["Open your case", "View payments"])

@@ -14,6 +14,7 @@ type StoredCheckout = {
   customerId: string
   metadata: Record<string, string>
   livemode: false
+  currency: string
 }
 
 type StoredIntent = {
@@ -36,6 +37,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   lastInvoice: { amountMinor: number; idempotencyKey: string; metadata: Record<string, string>; productName?: string; productDescription?: string } | null
   lastCustomer: { id: string; customerId: string; email: string | null } | null
   customerEmailUpdates: number
+  expires: number
   idempotency: Set<string>
   nextIntentStatus: string
   nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
@@ -61,6 +63,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     lastInvoice: null as { amountMinor: number; idempotencyKey: string; metadata: Record<string, string>; productName?: string; productDescription?: string } | null,
     lastCustomer: null as { id: string; customerId: string; email: string | null } | null,
     customerEmailUpdates: 0,
+    expires: 0,
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
     nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
@@ -80,6 +83,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     get lastInvoice() { return state.lastInvoice },
     get lastCustomer() { return state.lastCustomer },
     get customerEmailUpdates() { return state.customerEmailUpdates },
+    get expires() { return state.expires },
     get idempotency() { return state.idempotency },
     get nextIntentStatus() { return state.nextIntentStatus },
     set nextIntentStatus(value: string) { state.nextIntentStatus = value },
@@ -136,6 +140,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: input.stripeCustomerId,
         metadata: meta,
         livemode: false,
+        currency: input.currency.toLowerCase(),
       }
       sessions.set(input.idempotencyKey, created)
       objects.set(created.id, created)
@@ -177,6 +182,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: input.stripeCustomerId,
         metadata: paymentMetadata(input.metadata),
         livemode: false,
+        currency: "gbp",
       }
       sessions.set(input.idempotencyKey, created)
       setups.set(setupId, {
@@ -264,6 +270,17 @@ export function createFakePaymentProvider(): PaymentProvider & {
     async retrieveCheckout(id) {
       const found = [...sessions.values()].find(session => session.id === id) || objects.get(id) as StoredCheckout | undefined
       return found ? { ...found, metadata: found.metadata ?? {}, livemode: false as const } : null
+    },
+    async expireCheckout(input) {
+      state.idempotency.add(input.idempotencyKey)
+      const found = [...sessions.values()].find(session => session.id === input.id) || objects.get(input.id) as StoredCheckout | undefined
+      if (!found) throw new PaymentsDisabledError("Stripe Checkout session was not found.")
+      const blocked = found.status === "complete" || found.paymentStatus === "paid" || found.paymentStatus === "processing"
+      if (!blocked && found.status === "open") {
+        found.status = "expired"
+        state.expires += 1
+      }
+      return { id: found.id, status: found.status, paymentStatus: found.paymentStatus, livemode: false as const }
     },
     async retrievePaymentIntent(id) {
       const found = [...intents.values()].find(intent => intent.id === id) || objects.get(id) as StoredIntent | undefined
@@ -429,6 +446,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: input.stripeCustomerId,
         metadata: meta,
         livemode: false,
+        currency: "gbp",
       }
       sessions.set(input.idempotencyKey, created)
       objects.set(created.id, { ...created, stripePriceId: input.stripePriceId, quantity: 1, trialEnd: input.trialEnd ?? null })
@@ -453,6 +471,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         customerId: input.stripeCustomerId,
         metadata: meta,
         livemode: false,
+        currency: "gbp",
       }
       sessions.set(input.idempotencyKey, created)
       setups.set(setupId, {
@@ -640,10 +659,6 @@ export function createFakePaymentProvider(): PaymentProvider & {
       setup.paymentMethodId = paymentMethodId
       methods.set(paymentMethodId, { id: paymentMethodId, brand: "visa", last4: "4242", expMonth: 12, expYear: 2030, fingerprint: "fp_test" })
     },
-    expireCheckout(id: string) {
-      const found = [...sessions.values()].find(session => session.id === id)
-      if (found) found.status = "expired"
-    },
     markInvoicePaid(id: string) {
       const found = invoices.get(id) || objects.get(id) as { status?: string; amountPaidMinor?: number; amountDueMinor?: number } | undefined
       if (!found) return
@@ -652,7 +667,6 @@ export function createFakePaymentProvider(): PaymentProvider & {
     },
   } as ReturnType<typeof createFakePaymentProvider> & {
     succeedSetup(id: string, paymentMethodId?: string): void
-    expireCheckout(id: string): void
     markInvoicePaid(id: string): void
   }
 }

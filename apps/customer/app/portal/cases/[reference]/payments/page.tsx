@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
-import { loadCustomerCasePayments } from "@/lib/portal/payments/queries"
+import { loadCustomerCasePayments, loadFreshCheckoutOrderRefs } from "@/lib/portal/payments/queries"
 import { PaymentsUnavailable, PaymentsView } from "../../../payments/payments-view"
 
 export const metadata = { title: "Payments" }
@@ -14,5 +14,6 @@ export default async function CustomerCasePaymentsPage({ params }: { params: Pro
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "not_found") notFound()
   if (loaded.status === "unavailable") return <PaymentsUnavailable />
-  return <PaymentsView cases={[loaded.payments.case]} focused />
+  const freshOrders = await loadFreshCheckoutOrderRefs(loaded.payments.case)
+  return <PaymentsView cases={[loaded.payments.case]} focused freshOrders={freshOrders} />
 }

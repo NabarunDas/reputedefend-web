@@ -32,6 +32,7 @@ describe("the migration history validator", () => {
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261025163000_managed_success_verification_v1.sql",
       "20261026140000_checkout_presentation_v1.sql",
+      "20261026170000_checkout_refresh_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261025160000",

@@ -1147,6 +1147,14 @@ main.customer-main > section .document-list a {
   background: var(--warm);
 }
 .payments-order-ref { margin: 0; color: var(--muted); }
+.payments-amount { margin: 0; font-size: 1.75rem; font-variant-numeric: tabular-nums; }
+.payments-refresh { display: grid; gap: 0.35rem; }
+.payments-refresh p { margin: 0; color: var(--muted); }
+.payments-page button:focus-visible,
+.payments-page a:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
 .payments-notice {
   margin: 0;
   padding: 0.75rem 1rem;

@@ -2,7 +2,11 @@ import "server-only"
 import { cookies } from "next/headers"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { portalSessionCookieName } from "../config"
-import { parseCasePayments, parsePayments, type CustomerCasePayments, type CustomerPayments } from "./parse"
+import { paymentProvider, paymentProviderWithLane } from "../../../../../lib/payments"
+import { decideCheckoutRefresh } from "../../../../../lib/payments/checkout-refresh"
+import { expectedLivemode } from "../../../../../lib/payments/config"
+import { guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
+import { parseCasePayments, parsePayments, type CustomerCasePayments, type CustomerPayments, type PaymentCase } from "./parse"
 
 export type PaymentsLoad =
   | { status: "ready"; payments: CustomerPayments }
@@ -52,4 +56,49 @@ export async function loadCustomerCasePayments(reference: string): Promise<CaseP
   } catch {
     return { status: "unavailable" }
   }
+}
+
+/**
+ * Order references whose Guided Checkout is still open and unpaid.
+ * The session id stays on the server. A Checkout replaced in the last two
+ * minutes is not offered for another refresh.
+ */
+export async function loadFreshCheckoutOrderRefs(item: PaymentCase): Promise<string[]> {
+  const token = await portalToken()
+  if (!token) return []
+  const refs: string[] = []
+  for (const action of item.actions) {
+    if (action.kind !== "guided_payment") continue
+    try {
+      const loaded = await backend().rpc<Record<string, unknown> | null>("customer_portal_checkout_attempt_v1", {
+        p_token_hash: tokenHash(token),
+        p_reference: item.reference,
+        p_selector: action.selector,
+      })
+      if (!loaded || loaded.status !== "recorded" || typeof loaded.checkoutSessionId !== "string") continue
+      const rpc = (name: string, args?: Record<string, unknown>) => backend().rpc(name, args ?? {})
+      const lane = await guardExternalPayment(rpc)
+      const provider = lane ? paymentProviderWithLane(lane) : paymentProvider()
+      const session = await provider.retrieveCheckout(loaded.checkoutSessionId)
+      const intent = session?.paymentIntentId ? await provider.retrievePaymentIntent(session.paymentIntentId) : null
+      const decision = decideCheckoutRefresh({
+        attempt: {
+          providerOperationId: String(loaded.providerOperationId || ""),
+          customerId: String(loaded.customerId || ""),
+          serviceOrderId: String(loaded.serviceOrderId || ""),
+          obligationId: String(loaded.obligationId || ""),
+          amountMinor: typeof loaded.amountMinor === "number" ? loaded.amountMinor : -1,
+          currency: typeof loaded.currency === "string" ? loaded.currency : "",
+          mode: "payment",
+        },
+        session,
+        paymentIntentStatus: intent?.status ?? null,
+        expectedLivemode: lane ? lane.expectedLivemode : expectedLivemode(),
+      })
+      if (decision === "expire") refs.push(action.orderRef)
+    } catch {
+      continue
+    }
+  }
+  return refs
 }

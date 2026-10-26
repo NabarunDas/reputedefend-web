@@ -166,6 +166,18 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         url: session.url,
         metadata: metadataOf(session),
         livemode: expectedLivemode,
+        amountMinor: typeof session.amount_total === "number" ? session.amount_total : null,
+        currency: session.currency ?? null,
+      }
+    },
+    async expireCheckout(input) {
+      const session = await client(env).checkout.sessions.expire(input.id, {}, { idempotencyKey: input.idempotencyKey })
+      lane(session, "Stripe object")
+      return {
+        id: session.id,
+        status: session.status || "unknown",
+        paymentStatus: session.payment_status ?? null,
+        livemode: expectedLivemode,
       }
     },
     async retrievePaymentIntent(id) {

@@ -15,7 +15,7 @@ import {
 import type { PaymentAction, PaymentCase, PaymentObligation, PaymentOrder } from "@/lib/portal/payments/parse"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
-type Operation = "confirm_consent" | "start_checkout"
+type Operation = "confirm_consent" | "start_checkout" | "refresh_checkout"
 
 function actionFor(actions: PaymentAction[], kind: PaymentAction["kind"], orderRef: string) {
   return actions.find(item => item.kind === kind && item.orderRef === orderRef) ?? null
@@ -32,7 +32,15 @@ export function PaymentsUnavailable() {
   )
 }
 
-export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused: boolean }) {
+export function PaymentsView({
+  cases,
+  focused,
+  freshOrders = [],
+}: {
+  cases: PaymentCase[]
+  focused: boolean
+  freshOrders?: string[]
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -102,6 +110,7 @@ export function PaymentsView({ cases, focused }: { cases: PaymentCase[]; focused
           item={item}
           focused={focused}
           busy={busy}
+          freshOrders={freshOrders}
           onSubmit={submit}
         />
       ))}
@@ -113,11 +122,13 @@ function PaymentCaseSection({
   item,
   focused,
   busy,
+  freshOrders,
   onSubmit,
 }: {
   item: PaymentCase
   focused: boolean
   busy: string | null
+  freshOrders: string[]
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
   const track = trackLabel(item.serviceTrack)
@@ -138,6 +149,7 @@ function PaymentCaseSection({
           item={item}
           order={order}
           busy={busy}
+          fresh={freshOrders.includes(order.orderRef)}
           onSubmit={onSubmit}
         />
       ))}
@@ -149,35 +161,26 @@ function OrderSection({
   item,
   order,
   busy,
+  fresh,
   onSubmit,
 }: {
   item: PaymentCase
   order: PaymentOrder
   busy: string | null
+  fresh: boolean
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
   const invoiceAction = actionFor(item.actions, "invoice", order.orderRef)
+  const priceNote = order.taxBehaviour === "EXCLUSIVE"
+    ? "The total shown is the amount recorded on this quote."
+    : "The total includes any applicable taxes. ProfileRelaunch does not add a further fee."
   return (
     <article className="payments-order">
       <h3>{order.serviceName}</h3>
       <p className="payments-order-ref">Order {order.orderRef}</p>
-      <dl className="service-facts">
-        <div>
-          <dt>Amount</dt>
-          <dd>{moneyLabel(order.amountMinor, order.currency)}</dd>
-        </div>
-        <div>
-          <dt>Currency</dt>
-          <dd>{order.currency}</dd>
-        </div>
-        <div>
-          <dt>Price</dt>
-          <dd>
-            {taxNote(order.taxBehaviour)}
-            {order.taxAmountMinor > 0 ? ` ${order.taxBehaviour === "EXCLUSIVE" ? "Recorded tax" : "Included in the total"} ${moneyLabel(order.taxAmountMinor, order.currency)}.` : ""}
-          </dd>
-        </div>
-      </dl>
+      <p className="payments-amount">{moneyLabel(order.amountMinor, order.currency)}</p>
+      {order.paymentModel === "UPFRONT" ? <p>One-time payment</p> : null}
+      <p>{priceNote}</p>
       {order.paymentModel === "SUCCESS_FEE" ? (
         <div className="payments-authority">
           <h4>Managed service payment</h4>
@@ -192,6 +195,7 @@ function OrderSection({
           obligation={obligation}
           invoiceAction={invoiceAction}
           busy={busy}
+          fresh={fresh && obligation.kind === "upfront" && (obligation.state === "DUE" || obligation.state === "COLLECTING")}
           onSubmit={onSubmit}
         />
       ))}
@@ -219,6 +223,7 @@ function ObligationBlock({
   obligation,
   invoiceAction,
   busy,
+  fresh,
   onSubmit,
 }: {
   item: PaymentCase
@@ -226,16 +231,18 @@ function ObligationBlock({
   obligation: PaymentObligation
   invoiceAction: PaymentAction | null
   busy: string | null
+  fresh: boolean
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
   const control = checkoutControl(order, item.actions, obligation)
   const slot = control ? `start_checkout:${control.selector}` : ""
+  const refreshSlot = control ? `refresh_checkout:${control.selector}` : ""
+  const repeatAmount = obligation.amountMinor !== order.amountMinor || obligation.currency !== order.currency
   return (
     <div className="payments-obligation">
       <h4>{obligationHeadline(obligation.kind, obligation.state)}</h4>
-      <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p>
-      <p>{obligationDetail(obligation.state)}</p>
-      <p>{taxNote(obligation.taxBehaviour)}</p>
+      {repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
+      {obligation.state === "DUE" ? null : <p>{obligationDetail(obligation.state)}</p>}
       {control ? (
         <form
           className="service-confirm"
@@ -246,6 +253,20 @@ function ObligationBlock({
         >
           <button type="submit" disabled={busy !== null} aria-busy={busy === slot}>
             {busy === slot ? "Opening secure checkout" : control.label}
+          </button>
+        </form>
+      ) : null}
+      {control && fresh ? (
+        <form
+          className="payments-refresh"
+          onSubmit={event => {
+            event.preventDefault()
+            onSubmit(item.reference, control.selector, "refresh_checkout")
+          }}
+        >
+          <p id={`refresh-${order.orderRef}`}>The old payment page will be closed and a new one opened. No payment has been taken.</p>
+          <button type="submit" className="secondary" disabled={busy !== null} aria-busy={busy === refreshSlot} aria-describedby={`refresh-${order.orderRef}`}>
+            {busy === refreshSlot ? "Starting a fresh checkout" : "Start a fresh secure checkout"}
           </button>
         </form>
       ) : null}

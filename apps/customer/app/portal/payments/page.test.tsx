@@ -12,6 +12,7 @@ vi.mock("@/lib/portal/config", () => ({ portalAvailable: gate }))
 vi.mock("@/lib/portal/payments/queries", () => ({
   loadCustomerPayments: load,
   loadCustomerCasePayments: caseLoad,
+  loadFreshCheckoutOrderRefs: vi.fn(async () => []),
 }))
 
 const ready = {

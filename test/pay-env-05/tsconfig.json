@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "paths": { "@/*": ["../../apps/customer/*"] }
   },
-  "include": ["checkout-creation.database.test.ts"]
+  "include": ["checkout-creation.database.test.ts", "checkout-refresh.database.test.ts"]
 }

@@ -227,4 +227,44 @@ describe("payments screens", () => {
     )
     expect(document.body.innerHTML).not.toMatch(/storage|provider_receipt|stripe_/i)
   })
+
+  it("shows one compact summary and a fresh checkout action only for an open unpaid session", async () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ serviceName: "Guided Relaunch" })],
+    })]} />)
+    expect(screen.getByRole("heading", { name: "Guided Relaunch" })).toBeTruthy()
+    expect(screen.getByText("Order SO-26-ABCDEF")).toBeTruthy()
+    expect(screen.getAllByText("£99.00")).toHaveLength(1)
+    expect(screen.getByText("One-time payment")).toBeTruthy()
+    expect(screen.getByText("The total includes any applicable taxes. ProfileRelaunch does not add a further fee.")).toBeTruthy()
+    expect(screen.queryByText("The amount shown is the amount recorded for this order.")).toBeNull()
+    expect(screen.queryByText("Amount")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Start a fresh secure checkout" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Pay £99.00 securely" })).toBeTruthy()
+    cleanup()
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay/cs_fresh" }),
+    })
+    render(<PaymentsView focused freshOrders={["SO-26-ABCDEF"]} cases={[item({
+      orders: [order({ serviceName: "Guided Relaunch" })],
+    })]} />)
+    expect(screen.getByText("The old payment page will be closed and a new one opened. No payment has been taken.")).toBeTruthy()
+    fireEvent.submit(screen.getByRole("button", { name: "Start a fresh secure checkout" }).closest("form")!)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const posted = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(posted).toEqual({
+      reference: "PR-26-ABCDEF",
+      selector,
+      operation: "refresh_checkout",
+      confirmation: {},
+    })
+    expect(JSON.stringify(posted)).not.toMatch(/cs_|pi_/)
+    fireEvent.submit(screen.getByRole("button", { name: "Pay £99.00 securely" }).closest("form")!)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).operation).toBe("start_checkout")
+    expect(fetchMock.mock.calls[0][1].headers["idempotency-key"]).not.toBe(fetchMock.mock.calls[1][1].headers["idempotency-key"])
+  })
 })

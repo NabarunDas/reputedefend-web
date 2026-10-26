@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
       syncCustomerEmail: vi.fn(async (): Promise<{ id: string; email: string; livemode: false }> => { throw new Disabled() }),
       createPaymentCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "payment"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
       createSetupCheckout: vi.fn(async (): Promise<{ id: string; url: string; mode: "setup"; amountMinor: number; livemode: false }> => { throw new Disabled() }),
-      retrieveCheckout: vi.fn(async (): Promise<{
+      retrieveCheckout: vi.fn(async (_id?: string): Promise<{
         id: string
         mode: "payment" | "setup"
         status: string
@@ -135,6 +135,44 @@ describe("customer payment command", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("payment_record_provider_refs_v1", expect.objectContaining({
       p_operation: replacementOp, p_object_id: "cs_new",
     }))
+  })
+
+  it("reuses the successor session from an idempotent replacement instead of creating another", async () => {
+    mocks.provider.mode = "fake"
+    mocks.provider.retrieveCheckout.mockImplementation(async (id?: string) => {
+      const sessionId = id ?? "cs_missing"
+      if (sessionId === "cs_old") {
+        return {
+          id: sessionId, mode: "payment" as const, status: "expired", paymentStatus: "unpaid", paymentIntentId: null,
+          setupIntentId: null, customerId: "cus_test", url: null, metadata: {}, livemode: false as const,
+        }
+      }
+      return {
+        id: sessionId, mode: "payment" as const, status: "open", paymentStatus: "unpaid", paymentIntentId: null,
+        setupIntentId: null, customerId: "cus_test", url: "https://checkout.stripe.com/c/pay/cs_next",
+        metadata: {}, livemode: false as const,
+      }
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_payment_command_v1") {
+        return {
+          status: "success", mode: "payment", amountMinor: 9900, customerId: key, serviceOrderId: key,
+          obligationId: key, idempotencyKey: key, providerOperationId: key, checkoutSessionId: "cs_old",
+        }
+      }
+      if (name === "payment_replace_expired_checkout_v1") {
+        return {
+          status: "success", providerOperationId: replacementOp, idempotencyKey: replacementKey,
+          attemptId: key, checkoutSessionId: "cs_next",
+        }
+      }
+      return { status: "success" }
+    })
+    const response = await paymentCommand(req({ operation: "start_checkout" }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ status: "ok", checkoutUrl: "https://checkout.stripe.com/c/pay/cs_next" })
+    expect(mocks.provider.createPaymentCheckout).not.toHaveBeenCalled()
+    expect(mocks.provider.retrieveCheckout).toHaveBeenCalledWith("cs_next")
   })
 
   it("does not return, redirect, or replace an open Checkout session whose URL is untrusted", async () => {

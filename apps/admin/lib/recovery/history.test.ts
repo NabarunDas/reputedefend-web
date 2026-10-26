@@ -30,14 +30,11 @@ describe("the migration history validator", () => {
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
-      "20261025020000_guided_payment_request_email_v1.sql",
-      "20261025140000_guided_fulfilment_handover_v1.sql",
-      "20261025160000_guided_fulfilment_closure_v1.sql",
       "20261025163000_managed_success_verification_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261024233701",
-      name: "admin_reconcile_accepted_service_v1",
+      version: "20261025160000",
+      name: "guided_fulfilment_closure_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })

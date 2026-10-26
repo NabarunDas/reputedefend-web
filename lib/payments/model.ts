@@ -291,6 +291,14 @@ export type ProviderInvoice = {
   dueAt?: string | null
 }
 
+export type VoidHostedInvoiceResult = {
+  id: string
+  status: string
+  voided: boolean
+  alreadyPaid: boolean
+  livemode: boolean
+}
+
 export type RetrievedSetupIntent = {
   id: string
   status: string

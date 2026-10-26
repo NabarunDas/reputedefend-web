@@ -2,7 +2,12 @@
 -- A success fee is earned only when the contracted profile or the exact
 -- contracted review is absent on two trustworthy checks at least 48 hours
 -- apart, with no return or ambiguity between that pair.
--- The target is frozen from the case. An operator cannot type a different one.
+-- The target is frozen from the quote acceptance, not from a later edit of the
+-- case or location. A blank listing freezes the case reference. A changed
+-- address after acceptance is refused until the customer accepts again.
+-- An open or upheld dispute blocks a new invoice, an existing invoice action,
+-- and the hosted payment link. The local invoice becomes void only after the
+-- provider confirms that void. A paid invoice is not voided and is not refunded here.
 -- A check time is the recording clock, or the accepted evidence upload time
 -- when a reviewed historic exception is explicit. Extra checks stay in the
 -- history and do not block the qualifying pair. A check is corrected by an
@@ -22,7 +27,10 @@ CREATE TABLE public.success_baselines (
   case_id uuid NOT NULL REFERENCES public.cases(id) ON DELETE RESTRICT,
   customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
   service_order_id uuid NOT NULL UNIQUE REFERENCES public.service_orders(id) ON DELETE RESTRICT,
-  target_ref text NOT NULL CHECK (target_ref ~ '^https://' AND char_length(target_ref) BETWEEN 12 AND 500),
+  target_ref text NOT NULL CHECK (
+    (target_ref ~ '^https://' AND char_length(target_ref) BETWEEN 12 AND 500)
+    OR target_ref ~ '^case:(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$'
+  ),
   restriction_ref text NOT NULL CHECK (char_length(restriction_ref) BETWEEN 8 AND 500),
   success_definition text NOT NULL CHECK (char_length(btrim(success_definition)) BETWEEN 10 AND 5000),
   evidence_version_id uuid NOT NULL REFERENCES public.case_document_versions(id) ON DELETE RESTRICT,
@@ -115,6 +123,82 @@ CREATE UNIQUE INDEX success_fee_collection_pauses_one_open
 ALTER TABLE public.success_fee_collection_pauses ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.success_fee_collection_pauses FROM PUBLIC, anon, authenticated;
 
+-- Provider reconciliation for an invoice that already exists when a dispute opens.
+-- VOID_REQUIRED and VOID_UNCONFIRMED leave the invoice issued. VOID_CONFIRMED is
+-- written only after the provider status is void. ALREADY_PAID never voids or refunds.
+CREATE TABLE public.success_fee_invoice_holds (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  pause_id uuid NOT NULL REFERENCES public.success_fee_collection_pauses(id) ON DELETE RESTRICT,
+  invoice_id uuid NOT NULL REFERENCES public.payment_invoices(id) ON DELETE RESTRICT,
+  service_order_id uuid NOT NULL REFERENCES public.service_orders(id) ON DELETE RESTRICT,
+  customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
+  provider_invoice_id text,
+  state text NOT NULL CHECK (state IN ('VOID_REQUIRED', 'VOID_CONFIRMED', 'ALREADY_PAID', 'VOID_UNCONFIRMED')),
+  provider_status text,
+  detail text CHECK (detail IS NULL OR char_length(btrim(detail)) BETWEEN 20 AND 2000),
+  reconcile_request_id uuid UNIQUE,
+  recorded_by uuid NOT NULL,
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (pause_id, invoice_id)
+);
+
+ALTER TABLE public.success_fee_invoice_holds ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.success_fee_invoice_holds FROM PUBLIC, anon, authenticated;
+
+-- The accepted address is copied by the database at acceptance and cannot be edited.
+ALTER TABLE public.quote_acceptances
+  ADD COLUMN accepted_target_ref text,
+  ADD CONSTRAINT quote_acceptances_accepted_target_ref_check CHECK (
+    accepted_target_ref IS NULL
+    OR (accepted_target_ref ~ '^https://' AND char_length(accepted_target_ref) BETWEEN 12 AND 500)
+    OR accepted_target_ref ~ '^case:(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$'
+  );
+
+CREATE FUNCTION admin_private.quote_acceptances_bind_target_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  qv public.quote_versions;
+  cs public.cases;
+  live text;
+BEGIN
+  SELECT * INTO qv FROM public.quote_versions WHERE id = NEW.quote_version_id;
+  IF qv.id IS NULL OR qv.case_id IS NULL THEN
+    NEW.accepted_target_ref := NULL;
+    RETURN NEW;
+  END IF;
+  SELECT * INTO cs FROM public.cases WHERE id = qv.case_id;
+  IF cs.id IS NULL THEN
+    RAISE EXCEPTION 'acceptance_target:case' USING ERRCODE = 'P0001';
+  END IF;
+  IF cs.case_type = 'REVIEW_PROTECTION' THEN
+    live := btrim(coalesce(cs.review_url, ''));
+  ELSE
+    live := btrim(coalesce((SELECT business_profile_url FROM public.locations WHERE id = cs.location_id), ''));
+  END IF;
+  IF live ~ '^https://' AND char_length(live) BETWEEN 12 AND 500 THEN
+    NEW.accepted_target_ref := live;
+  ELSIF live = '' THEN
+    IF cs.public_ref !~ '^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
+      RAISE EXCEPTION 'acceptance_target:ref' USING ERRCODE = 'P0001';
+    END IF;
+    NEW.accepted_target_ref := 'case:' || cs.public_ref;
+  ELSE
+    RAISE EXCEPTION 'acceptance_target:target' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER quote_acceptances_bind_target
+  BEFORE INSERT ON public.quote_acceptances
+  FOR EACH ROW EXECUTE FUNCTION admin_private.quote_acceptances_bind_target_v1();
+
+REVOKE ALL ON FUNCTION admin_private.quote_acceptances_bind_target_v1() FROM PUBLIC, anon, authenticated, service_role;
+
 ALTER TABLE public.success_fee_approvals
   ADD COLUMN first_observation_id uuid REFERENCES public.success_observations(id),
   ADD COLUMN second_observation_id uuid REFERENCES public.success_observations(id),
@@ -137,6 +221,54 @@ $$;
 CREATE TRIGGER success_baselines_immutable
   BEFORE UPDATE OR DELETE ON public.success_baselines
   FOR EACH ROW EXECUTE FUNCTION admin_private.success_baselines_immutable_v1();
+
+CREATE FUNCTION admin_private.accepted_success_target_v1(p_order_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $$
+DECLARE
+  ord public.service_orders;
+  cs public.cases;
+  accepted text;
+  live text;
+BEGIN
+  SELECT * INTO ord FROM public.service_orders WHERE id = p_order_id;
+  IF ord.id IS NULL THEN
+    RAISE EXCEPTION 'success_baseline:order' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT * INTO cs FROM public.cases WHERE id = ord.case_id;
+  IF cs.id IS NULL THEN
+    RAISE EXCEPTION 'success_baseline:order' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT accepted_target_ref INTO accepted
+  FROM public.quote_acceptances
+  WHERE id = ord.quote_acceptance_id;
+  IF accepted IS NULL OR btrim(accepted) = '' THEN
+    RAISE EXCEPTION 'success_baseline:acceptance_target' USING ERRCODE = 'P0001';
+  END IF;
+  IF cs.case_type = 'REVIEW_PROTECTION' THEN
+    live := btrim(coalesce(cs.review_url, ''));
+  ELSE
+    live := btrim(coalesce((SELECT business_profile_url FROM public.locations WHERE id = cs.location_id), ''));
+  END IF;
+  IF accepted ~ '^https://' THEN
+    IF live ~ '^https://' AND live IS DISTINCT FROM accepted THEN
+      RAISE EXCEPTION 'success_baseline:target_changed' USING ERRCODE = 'P0001';
+    END IF;
+  ELSIF accepted ~ '^case:(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
+    IF live ~ '^https://' THEN
+      RAISE EXCEPTION 'success_baseline:target_changed' USING ERRCODE = 'P0001';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'success_baseline:acceptance_target' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN accepted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.accepted_success_target_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION admin_private.success_baselines_bind_v1()
 RETURNS trigger
@@ -171,14 +303,7 @@ BEGIN
   IF ord.service_code = 'MANAGED_REVIEW' AND cs.case_type IS DISTINCT FROM 'REVIEW_PROTECTION' THEN
     RAISE EXCEPTION 'success_baseline:order' USING ERRCODE = 'P0001';
   END IF;
-  IF cs.case_type = 'REVIEW_PROTECTION' THEN
-    source := btrim(coalesce(cs.review_url, ''));
-  ELSE
-    source := btrim(coalesce((SELECT business_profile_url FROM public.locations WHERE id = cs.location_id), ''));
-  END IF;
-  IF source !~ '^https://' OR char_length(source) NOT BETWEEN 12 AND 500 THEN
-    RAISE EXCEPTION 'success_baseline:target' USING ERRCODE = 'P0001';
-  END IF;
+  source := admin_private.accepted_success_target_v1(ord.id);
   IF btrim(NEW.target_ref) IS DISTINCT FROM source THEN
     RAISE EXCEPTION 'success_baseline:mismatch' USING ERRCODE = 'P0001';
   END IF;
@@ -537,7 +662,7 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 BEGIN
-  IF NEW.kind = 'INVOICE_PAYMENT' AND EXISTS (
+  IF NEW.kind IN ('INVOICE_PAYMENT', 'PAYMENT_RECOVERY') AND EXISTS (
     SELECT 1
     FROM public.payment_obligations ob
     JOIN public.success_fee_collection_pauses pause ON pause.service_order_id = ob.service_order_id
@@ -637,6 +762,12 @@ BEGIN
   END IF;
   SELECT * INTO inv FROM public.payment_invoices
     WHERE obligation_id = ob.id AND status IN ('DRAFT','ISSUED') ORDER BY created_at ASC LIMIT 1;
+  IF ob.kind = 'SUCCESS_FEE' AND EXISTS (
+    SELECT 1 FROM public.success_fee_collection_pauses pause
+    WHERE pause.service_order_id = ord.id AND pause.status IN ('OPEN', 'UPHELD')
+  ) THEN
+    RETURN jsonb_build_object('status','denied','reason','collection_paused');
+  END IF;
   IF inv.id IS NOT NULL THEN
     SELECT * INTO op FROM public.provider_operations WHERE id = inv.provider_operation_id;
     SELECT * INTO att FROM public.payment_attempts WHERE provider_operation_id = inv.provider_operation_id;
@@ -651,12 +782,6 @@ BEGIN
   END IF;
   IF ob.kind = 'SUCCESS_FEE' AND NOT admin_private.success_verification_ready_v1(ord.case_id, ord.id) THEN
     RETURN jsonb_build_object('status','denied','reason','success_verification');
-  END IF;
-  IF ob.kind = 'SUCCESS_FEE' AND EXISTS (
-    SELECT 1 FROM public.success_fee_collection_pauses pause
-    WHERE pause.service_order_id = ord.id AND pause.status IN ('OPEN', 'UPHELD')
-  ) THEN
-    RETURN jsonb_build_object('status','denied','reason','collection_paused');
   END IF;
   INSERT INTO public.provider_operations(idempotency_key, kind, purpose, customer_id, service_order_id, obligation_id, status)
   VALUES (extensions.gen_random_uuid(), 'CREATE_INVOICE', 'INVOICE', ob.customer_id, ob.service_order_id, ob.id, 'PENDING')
@@ -779,11 +904,11 @@ BEGIN
   SELECT * INTO cs FROM public.cases WHERE id = ord.case_id;
   SELECT * INTO qv FROM public.quote_versions WHERE id = ord.quote_version_id;
   IF cs.id IS NULL OR qv.id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
-  IF cs.case_type = 'REVIEW_PROTECTION' THEN
-    source := btrim(coalesce(cs.review_url, ''));
-  ELSE
-    source := btrim(coalesce((SELECT business_profile_url FROM public.locations WHERE id = cs.location_id), ''));
-  END IF;
+  BEGIN
+    source := admin_private.accepted_success_target_v1(ord.id);
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', split_part(SQLERRM, ':', 2));
+  END;
   IF coalesce(btrim(p_payload->>'targetRef'), '') <> '' AND btrim(p_payload->>'targetRef') IS DISTINCT FROM source THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'baseline_mismatch');
   END IF;
@@ -994,6 +1119,45 @@ $$;
 REVOKE ALL ON FUNCTION public.admin_invalidate_success_observation_v1(text, uuid, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_invalidate_success_observation_v1(text, uuid, jsonb) TO service_role;
 
+CREATE FUNCTION admin_private.success_fee_dispute_view_v1(p_pause public.success_fee_collection_pauses)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $$
+DECLARE
+  inv public.payment_invoices;
+  hold public.success_fee_invoice_holds;
+  hold_code text;
+BEGIN
+  SELECT * INTO hold FROM public.success_fee_invoice_holds WHERE pause_id = p_pause.id;
+  SELECT invoice.* INTO inv
+  FROM public.payment_invoices invoice
+  JOIN public.payment_obligations ob ON ob.id = invoice.obligation_id
+  WHERE ob.service_order_id = p_pause.service_order_id
+    AND ob.customer_id = p_pause.customer_id
+    AND ob.kind = 'SUCCESS_FEE'
+    AND invoice.status <> 'DRAFT'
+  ORDER BY invoice.created_at DESC
+  LIMIT 1;
+  hold_code := CASE hold.state
+    WHEN 'VOID_REQUIRED' THEN 'void_required'
+    WHEN 'VOID_CONFIRMED' THEN 'void_confirmed'
+    WHEN 'ALREADY_PAID' THEN 'already_paid'
+    WHEN 'VOID_UNCONFIRMED' THEN 'void_unconfirmed'
+    ELSE 'none'
+  END;
+  RETURN jsonb_build_object(
+    'invoiceId', inv.id,
+    'invoiceStatus', inv.status,
+    'providerInvoiceId', inv.provider_invoice_id,
+    'hold', hold_code
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.success_fee_dispute_view_v1(public.success_fee_collection_pauses) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION public.admin_success_fee_dispute_v1(p_token text, p_request uuid, p_payload jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1005,8 +1169,10 @@ DECLARE
   actor uuid;
   ord public.service_orders;
   existing public.success_fee_collection_pauses;
+  inv public.payment_invoices;
   action text;
   outcome text;
+  paid boolean;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
@@ -1022,7 +1188,8 @@ BEGIN
   SELECT * INTO existing FROM public.success_fee_collection_pauses
   WHERE request_id = p_request OR resolve_request_id = p_request;
   IF existing.id IS NOT NULL THEN
-    RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', true, 'pauseStatus', existing.status);
+    RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', true, 'pauseStatus', existing.status)
+      || admin_private.success_fee_dispute_view_v1(existing);
   END IF;
   BEGIN
     SELECT * INTO ord FROM public.service_orders WHERE id = NULLIF(p_payload->>'serviceOrderId', '')::uuid FOR UPDATE;
@@ -1047,7 +1214,46 @@ BEGIN
     ) VALUES (
       p_request, ord.id, ord.case_id, ord.customer_id, 'OPEN', btrim(p_payload->>'reason'), actor
     ) RETURNING * INTO existing;
-    RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', false, 'pauseStatus', existing.status);
+    SELECT invoice.* INTO inv
+    FROM public.payment_invoices invoice
+    JOIN public.payment_obligations ob ON ob.id = invoice.obligation_id
+    WHERE ob.service_order_id = ord.id
+      AND ob.customer_id = ord.customer_id
+      AND ob.kind = 'SUCCESS_FEE'
+      AND invoice.status IN ('ISSUED', 'PAID')
+    ORDER BY invoice.created_at DESC
+    LIMIT 1
+    FOR UPDATE OF invoice;
+    IF inv.id IS NOT NULL THEN
+      paid := inv.status = 'PAID' OR EXISTS (
+        SELECT 1 FROM public.payment_receipts receipt WHERE receipt.obligation_id = inv.obligation_id
+      );
+      IF paid THEN
+        INSERT INTO public.success_fee_invoice_holds(
+          pause_id, invoice_id, service_order_id, customer_id, provider_invoice_id, state, provider_status, detail, recorded_by
+        ) VALUES (
+          existing.id, inv.id, ord.id, ord.customer_id, inv.provider_invoice_id, 'ALREADY_PAID', 'paid',
+          'The invoice was already paid when the dispute opened. It was not voided and no refund was created.',
+          actor
+        );
+      ELSIF inv.provider_invoice_id IS NULL THEN
+        INSERT INTO public.success_fee_invoice_holds(
+          pause_id, invoice_id, service_order_id, customer_id, provider_invoice_id, state, detail, recorded_by
+        ) VALUES (
+          existing.id, inv.id, ord.id, ord.customer_id, NULL, 'VOID_UNCONFIRMED',
+          'The issued invoice has no provider id, so the provider void cannot be confirmed.',
+          actor
+        );
+      ELSE
+        INSERT INTO public.success_fee_invoice_holds(
+          pause_id, invoice_id, service_order_id, customer_id, provider_invoice_id, state, recorded_by
+        ) VALUES (
+          existing.id, inv.id, ord.id, ord.customer_id, inv.provider_invoice_id, 'VOID_REQUIRED', actor
+        );
+      END IF;
+    END IF;
+    RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', false, 'pauseStatus', existing.status)
+      || admin_private.success_fee_dispute_view_v1(existing);
   END IF;
   outcome := p_payload->>'outcome';
   IF outcome NOT IN ('UPHELD', 'NOT_UPHELD')
@@ -1067,12 +1273,317 @@ BEGIN
       resolve_request_id = p_request
   WHERE id = existing.id
   RETURNING * INTO existing;
-  RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', false, 'pauseStatus', existing.status);
+  RETURN jsonb_build_object('status', 'success', 'id', existing.id, 'replay', false, 'pauseStatus', existing.status)
+    || admin_private.success_fee_dispute_view_v1(existing);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.admin_success_fee_dispute_v1(text, uuid, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_success_fee_dispute_v1(text, uuid, jsonb) TO service_role;
+
+CREATE FUNCTION public.admin_record_success_fee_invoice_hold_v1(p_token text, p_request uuid, p_payload jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+  hold public.success_fee_invoice_holds;
+  inv public.payment_invoices;
+  requested text;
+  reported_status text;
+  note text;
+  paid boolean;
+  hold_code text;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF (s->>'createdAt')::timestamptz < now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  IF p_request IS NULL OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  requested := p_payload->>'state';
+  reported_status := NULLIF(btrim(coalesce(p_payload->>'providerStatus', '')), '');
+  note := NULLIF(btrim(coalesce(p_payload->>'detail', '')), '');
+  IF requested NOT IN ('VOID_CONFIRMED', 'ALREADY_PAID', 'VOID_UNCONFIRMED') THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF note IS NOT NULL AND char_length(note) NOT BETWEEN 20 AND 2000 THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  BEGIN
+    SELECT * INTO hold FROM public.success_fee_invoice_holds
+    WHERE pause_id = NULLIF(p_payload->>'pauseId', '')::uuid
+      AND invoice_id = NULLIF(p_payload->>'invoiceId', '')::uuid
+    FOR UPDATE;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END;
+  IF hold.id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF hold.reconcile_request_id = p_request AND (
+    hold.state IN ('VOID_CONFIRMED', 'ALREADY_PAID')
+    OR (hold.state = 'VOID_UNCONFIRMED' AND requested = 'VOID_UNCONFIRMED')
+  ) THEN
+    hold_code := CASE hold.state
+      WHEN 'VOID_CONFIRMED' THEN 'void_confirmed'
+      WHEN 'ALREADY_PAID' THEN 'already_paid'
+      ELSE 'void_unconfirmed'
+    END;
+    RETURN jsonb_build_object('status', 'success', 'replay', true, 'hold', hold_code, 'invoiceStatus', (
+      SELECT status FROM public.payment_invoices WHERE id = hold.invoice_id
+    ));
+  END IF;
+  IF hold.state IN ('VOID_CONFIRMED', 'ALREADY_PAID') AND hold.reconcile_request_id IS DISTINCT FROM p_request THEN
+    hold_code := CASE hold.state WHEN 'VOID_CONFIRMED' THEN 'void_confirmed' ELSE 'already_paid' END;
+    RETURN jsonb_build_object('status', 'success', 'replay', true, 'hold', hold_code, 'invoiceStatus', (
+      SELECT status FROM public.payment_invoices WHERE id = hold.invoice_id
+    ));
+  END IF;
+  SELECT * INTO inv FROM public.payment_invoices WHERE id = hold.invoice_id FOR UPDATE;
+  IF inv.id IS NULL OR inv.customer_id IS DISTINCT FROM hold.customer_id THEN
+    RETURN jsonb_build_object('status', 'denied');
+  END IF;
+  paid := inv.status = 'PAID' OR EXISTS (
+    SELECT 1 FROM public.payment_receipts receipt WHERE receipt.obligation_id = inv.obligation_id
+  );
+  IF paid OR requested = 'ALREADY_PAID' THEN
+    UPDATE public.success_fee_invoice_holds
+    SET state = 'ALREADY_PAID',
+        provider_status = coalesce(reported_status, 'paid'),
+        detail = coalesce(note, 'The provider reported the invoice paid. It was not voided and no refund was created.'),
+        reconcile_request_id = p_request,
+        updated_at = now()
+    WHERE id = hold.id;
+    RETURN jsonb_build_object('status', 'success', 'replay', false, 'hold', 'already_paid', 'invoiceStatus', inv.status);
+  END IF;
+  IF requested = 'VOID_CONFIRMED' AND reported_status = 'void' AND inv.status = 'VOID' THEN
+    UPDATE public.payment_attempts
+    SET status = 'CANCELLED', failed_at = now(), failure_category = 'PROVIDER', failure_code = 'invoice_void_confirmed'
+    WHERE provider_operation_id = inv.provider_operation_id
+      AND status IN ('CREATED', 'SUBMITTED', 'REQUIRES_ACTION');
+    UPDATE public.success_fee_invoice_holds
+    SET state = 'VOID_CONFIRMED', provider_status = 'void', detail = note,
+        reconcile_request_id = p_request, updated_at = now()
+    WHERE id = hold.id;
+    RETURN jsonb_build_object('status', 'success', 'replay', false, 'hold', 'void_confirmed', 'invoiceStatus', 'VOID');
+  END IF;
+  IF requested = 'VOID_CONFIRMED' AND reported_status = 'void' AND inv.status = 'ISSUED' THEN
+    UPDATE public.payment_invoices SET status = 'VOID' WHERE id = inv.id AND status = 'ISSUED';
+    UPDATE public.payment_attempts
+    SET status = 'CANCELLED', failed_at = now(), failure_category = 'PROVIDER', failure_code = 'invoice_void_confirmed'
+    WHERE provider_operation_id = inv.provider_operation_id
+      AND status IN ('CREATED', 'SUBMITTED', 'REQUIRES_ACTION');
+    UPDATE public.success_fee_invoice_holds
+    SET state = 'VOID_CONFIRMED', provider_status = 'void', detail = note,
+        reconcile_request_id = p_request, updated_at = now()
+    WHERE id = hold.id;
+    RETURN jsonb_build_object('status', 'success', 'replay', false, 'hold', 'void_confirmed', 'invoiceStatus', 'VOID');
+  END IF;
+  UPDATE public.success_fee_invoice_holds
+  SET state = 'VOID_UNCONFIRMED',
+      provider_status = reported_status,
+      detail = coalesce(note, 'The provider did not confirm a void. The invoice was left issued.'),
+      reconcile_request_id = p_request,
+      updated_at = now()
+  WHERE id = hold.id;
+  RETURN jsonb_build_object('status', 'success', 'replay', false, 'hold', 'void_unconfirmed', 'invoiceStatus', inv.status);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_record_success_fee_invoice_hold_v1(text, uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_record_success_fee_invoice_hold_v1(text, uuid, jsonb) TO service_role;
+
+CREATE OR REPLACE FUNCTION admin_private.customer_action_eligible_v1(p_action public.customer_actions)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE
+  c public.customers; b public.businesses; loc public.locations; cs public.cases;
+  qv public.quote_versions; q public.quotes; ord public.service_orders; ob public.payment_obligations;
+  cov public.guard_coverages; off public.guard_included_offers; sub public.guard_subscriptions;
+  offer public.guard_price_change_offers; cont public.guard_continuations;
+BEGIN
+  IF p_action.id IS NULL OR p_action.status <> 'OPEN' THEN RETURN false; END IF;
+  IF p_action.expires_at IS NOT NULL AND p_action.expires_at <= now() THEN RETURN false; END IF;
+  IF p_action.revoked_at IS NOT NULL THEN RETURN false; END IF;
+  IF lower(p_action.expected_email_snapshot) = 'admin@profilerelaunch.com' THEN RETURN false; END IF;
+  SELECT * INTO c FROM public.customers WHERE id = p_action.customer_id;
+  IF c.id IS NULL OR lower(c.email) IS DISTINCT FROM lower(p_action.expected_email_snapshot) THEN RETURN false; END IF;
+  IF NOT admin_private.contact_verified_v1(c.id, 'email') THEN RETURN false; END IF;
+  IF p_action.kind = 'COMMUNICATION_ACCESS' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.business_memberships m
+      WHERE m.customer_id = p_action.customer_id AND m.business_id = p_action.business_id AND m.status = 'revoked'
+    ) THEN RETURN false; END IF;
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM public.business_memberships m
+      WHERE m.customer_id = p_action.customer_id AND m.business_id = p_action.business_id AND m.status = 'verified'
+    ) THEN RETURN false; END IF;
+  END IF;
+  SELECT * INTO b FROM public.businesses WHERE id = p_action.business_id;
+  IF b.id IS NULL THEN RETURN false; END IF;
+  IF p_action.location_id IS NOT NULL THEN
+    SELECT * INTO loc FROM public.locations WHERE id = p_action.location_id;
+    IF loc.id IS NULL OR loc.business_id <> p_action.business_id THEN RETURN false; END IF;
+  END IF;
+  IF p_action.case_id IS NOT NULL THEN
+    SELECT * INTO cs FROM public.cases WHERE id = p_action.case_id;
+    IF cs.id IS NULL OR cs.customer_id <> p_action.customer_id OR cs.business_id <> p_action.business_id THEN RETURN false; END IF;
+    IF p_action.location_id IS NOT NULL AND cs.location_id IS DISTINCT FROM p_action.location_id THEN RETURN false; END IF;
+    IF cs.status IN ('CLOSED','CANCELLED') THEN RETURN false; END IF;
+  END IF;
+  IF p_action.kind = 'AGREEMENT_ACCEPTANCE' AND EXISTS (
+    SELECT 1 FROM public.agreement_versions v
+    WHERE v.id = p_action.agreement_version_id AND v.agreement_kind = 'CASE_MANAGEMENT_PERMISSION'
+  ) AND (cs.id IS NULL OR cs.service_track IS DISTINCT FROM 'MANAGED') THEN
+    RETURN false;
+  END IF;
+  IF p_action.kind = 'QUOTE_ACCEPTANCE' THEN
+    SELECT * INTO qv FROM public.quote_versions WHERE id = p_action.quote_version_id;
+    SELECT * INTO q FROM public.quotes WHERE id = qv.quote_id;
+    IF qv.id IS NULL OR q.id IS NULL OR qv.status <> 'OFFERED' OR q.status <> 'OFFERED' THEN RETURN false; END IF;
+    IF qv.valid_until <= now() THEN RETURN false; END IF;
+    IF qv.customer_id IS DISTINCT FROM p_action.customer_id OR qv.business_id IS DISTINCT FROM p_action.business_id
+      OR qv.location_id IS DISTINCT FROM p_action.location_id OR qv.case_id IS DISTINCT FROM p_action.case_id
+    THEN RETURN false; END IF;
+  END IF;
+  IF p_action.kind IN ('GUIDED_PAYMENT','MANAGED_PAYMENT_SETUP','PAYMENT_RECOVERY','INVOICE_PAYMENT') THEN
+    SELECT * INTO ord FROM public.service_orders WHERE id = p_action.service_order_id;
+    IF ord.id IS NULL OR ord.customer_id IS DISTINCT FROM p_action.customer_id THEN RETURN false; END IF;
+    IF p_action.payment_obligation_id IS NOT NULL THEN
+      SELECT * INTO ob FROM public.payment_obligations WHERE id = p_action.payment_obligation_id;
+      IF ob.id IS NULL OR ob.service_order_id IS DISTINCT FROM ord.id OR ob.state = 'VOID' THEN RETURN false; END IF;
+    END IF;
+    IF p_action.kind = 'INVOICE_PAYMENT' THEN
+      IF p_action.payment_invoice_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.payment_invoices i
+        WHERE i.id = p_action.payment_invoice_id AND i.obligation_id = p_action.payment_obligation_id
+          AND i.status IN ('ISSUED','PAID')
+      ) THEN RETURN false; END IF;
+    END IF;
+    IF p_action.kind IN ('INVOICE_PAYMENT', 'PAYMENT_RECOVERY') AND EXISTS (
+      SELECT 1
+      FROM public.payment_obligations paused_ob
+      JOIN public.success_fee_collection_pauses pause ON pause.service_order_id = paused_ob.service_order_id
+      WHERE paused_ob.id = p_action.payment_obligation_id
+        AND paused_ob.kind = 'SUCCESS_FEE'
+        AND pause.status IN ('OPEN', 'UPHELD')
+    ) THEN RETURN false; END IF;
+  END IF;
+  IF p_action.kind = 'GUARD_PERMISSION' THEN
+    SELECT * INTO cov FROM public.guard_coverages WHERE id = p_action.guard_coverage_id;
+    IF cov.id IS NULL OR cov.state IN ('ENDED') THEN RETURN false; END IF;
+    IF cov.customer_id IS DISTINCT FROM p_action.customer_id OR cov.business_id IS DISTINCT FROM p_action.business_id
+      OR cov.location_id IS DISTINCT FROM p_action.location_id THEN RETURN false; END IF;
+    IF NOT admin_private.guard_location_authorized_v1(cov.customer_id, cov.business_id, cov.location_id) THEN
+      RETURN false;
+    END IF;
+    IF cov.coverage_basis = 'INCLUDED' THEN
+      SELECT * INTO off FROM public.guard_included_offers WHERE id = p_action.guard_included_offer_id;
+      IF off.id IS NULL OR off.status NOT IN ('ELIGIBLE','OFFERED') OR off.coverage_id IS DISTINCT FROM cov.id THEN
+        RETURN false;
+      END IF;
+      IF NOT admin_private.included_guard_eligible_v1(
+        cov.customer_id, cov.business_id, cov.location_id, cov.source_recovery_case_id, cov.source_managed_order_id
+      ) THEN RETURN false; END IF;
+    END IF;
+  END IF;
+  IF p_action.kind = 'GUARD_SUBSCRIPTION_START' THEN
+    SELECT * INTO ord FROM public.service_orders WHERE id = p_action.service_order_id;
+    IF ord.id IS NULL OR ord.state <> 'ACCEPTED_RECURRING' THEN RETURN false; END IF;
+    IF NOT admin_private.guard_location_authorized_v1(p_action.customer_id, p_action.business_id, p_action.location_id) THEN
+      RETURN false;
+    END IF;
+    IF p_action.guard_coverage_id IS NOT NULL THEN
+      SELECT * INTO cov FROM public.guard_coverages WHERE id = p_action.guard_coverage_id;
+      IF cov.id IS NULL OR cov.state = 'ENDED' OR cov.coverage_basis <> 'DIRECT_GUARD' THEN RETURN false; END IF;
+    END IF;
+    IF p_action.guard_continuation_id IS NOT NULL THEN
+      SELECT * INTO cont FROM public.guard_continuations WHERE id = p_action.guard_continuation_id;
+      IF cont.id IS NULL OR cont.status NOT IN ('PENDING_CONSENT','PENDING_CHECKOUT','SCHEDULED') THEN RETURN false; END IF;
+    END IF;
+  END IF;
+  IF p_action.kind = 'GUARD_PRICE_CHANGE_ACCEPTANCE' THEN
+    SELECT * INTO sub FROM public.guard_subscriptions WHERE id = p_action.guard_subscription_id;
+    SELECT * INTO offer FROM public.guard_price_change_offers WHERE id = p_action.guard_price_change_offer_id;
+    IF sub.id IS NULL OR offer.id IS NULL OR offer.status <> 'OFFERED' THEN RETURN false; END IF;
+    IF sub.customer_id IS DISTINCT FROM p_action.customer_id OR sub.location_id IS DISTINCT FROM p_action.location_id THEN
+      RETURN false;
+    END IF;
+  END IF;
+  RETURN true;
+END; $$;
+
+REVOKE ALL ON FUNCTION admin_private.customer_action_eligible_v1(public.customer_actions) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.customer_portal_invoice_target_v1(
+  p_token_hash text, p_reference text, p_selector text
+) RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path=''
+AS $invoice$
+DECLARE
+  v_customer uuid;
+  v_auth uuid;
+  v_email text;
+  v_case uuid;
+  a public.customer_actions;
+  inv public.payment_invoices;
+  matches integer;
+BEGIN
+  SELECT customer_id, auth_user_id, email INTO v_customer, v_auth, v_email
+  FROM admin_private.customer_portal_actor_v1(p_token_hash);
+  IF v_customer IS NULL OR v_auth IS NULL OR v_email IS NULL THEN RETURN NULL; END IF;
+  IF p_reference IS NULL OR p_selector IS NULL
+    OR p_reference !~ '^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$'
+    OR p_selector !~ '^ca-[a-f0-9]{64}$'
+  THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
+  v_case := admin_private.customer_portal_owned_case_v1(v_customer, p_reference);
+  IF v_case IS NULL THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
+  SELECT count(*) INTO matches
+  FROM public.customer_actions action
+  WHERE action.case_id = v_case AND action.customer_id = v_customer
+    AND admin_private.customer_portal_action_selector_v1(action.id) = p_selector;
+  IF matches <> 1 THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
+  SELECT * INTO a
+  FROM public.customer_actions action
+  WHERE action.case_id = v_case AND action.customer_id = v_customer
+    AND admin_private.customer_portal_action_selector_v1(action.id) = p_selector;
+  IF a.id IS NULL OR a.kind <> 'INVOICE_PAYMENT'
+    OR lower(a.expected_email_snapshot) IS DISTINCT FROM lower(v_email)
+  THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM public.payment_obligations ob
+    JOIN public.success_fee_collection_pauses pause ON pause.service_order_id = ob.service_order_id
+    WHERE ob.id = a.payment_obligation_id
+      AND ob.customer_id = v_customer
+      AND ob.kind = 'SUCCESS_FEE'
+      AND pause.status IN ('OPEN', 'UPHELD')
+  ) THEN
+    RETURN jsonb_build_object('status', 'collection_paused');
+  END IF;
+  IF NOT admin_private.customer_action_eligible_v1(a) THEN
+    RETURN jsonb_build_object('status', 'not_found');
+  END IF;
+  SELECT * INTO inv FROM public.payment_invoices
+  WHERE id = a.payment_invoice_id AND customer_id = v_customer AND obligation_id = a.payment_obligation_id;
+  IF inv.id IS NULL OR inv.status <> 'ISSUED' THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
+  IF inv.hosted_invoice_url IS NULL OR btrim(inv.hosted_invoice_url) = '' THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  RETURN jsonb_build_object('status', 'redirect', 'hostedInvoiceUrl', inv.hosted_invoice_url);
+END;
+$invoice$;
+
+REVOKE ALL ON FUNCTION public.customer_portal_invoice_target_v1(text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.customer_portal_invoice_target_v1(text, text, text) TO service_role;
 
 ALTER TABLE public.communications DROP CONSTRAINT communications_template_check;
 ALTER TABLE public.communications ADD CONSTRAINT communications_template_check CHECK (

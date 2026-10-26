@@ -322,12 +322,12 @@ export function PauseSuccessFeeForm({
     }
   }
   if (collectionPause === "UPHELD") {
-    return <p>The dispute was upheld. This success fee stays not payable. No card is charged.</p>
+    return <p>The dispute was upheld. This success fee stays not payable and the customer payment link stays blocked. Provider collection has stopped only when a void was confirmed. No card is charged and no refund was created here.</p>
   }
   return <form onSubmit={submit}>
     {collectionPause === "OPEN"
       ? <>
-        <p>Collection is paused. Decide the written dispute before a new invoice can be issued. An invoice that was already issued is not cancelled here, and no card is charged.</p>
+        <p>Collection is paused and the customer payment link is blocked. Decide the written dispute before a new invoice can be issued. An issued invoice is marked void only after the payment provider confirms that void. If that confirmation is missing, provider collection has not stopped. No card is charged and no refund is created here.</p>
         <label>Decision
           <select name="outcome" required defaultValue="">
             <option value="">Choose the decision</option>
@@ -339,7 +339,7 @@ export function PauseSuccessFeeForm({
         <button type="submit" disabled={busy}>Record the dispute decision</button>
       </>
       : <>
-        <p>Pause collection when the customer disputes the outcome in writing. This does not create an invoice, cancel one that was already issued, or charge a card. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
+        <p>Pause collection when the customer disputes the outcome in writing. The customer payment link is blocked. An issued invoice is voided only after the payment provider confirms the void. No card is charged and no refund is created here. {ADMIN_RECENT_SIGN_IN_MESSAGE}</p>
         <label>Customer’s dispute<textarea name="reason" required minLength={20} maxLength={2000} /></label>
         <button type="submit" disabled={busy}>Pause collection</button>
       </>}

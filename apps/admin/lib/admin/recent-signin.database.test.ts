@@ -70,13 +70,14 @@ async function seedQualifyingChecks(orderId: string, profileUrl: string) {
     join public.cases cs on cs.id = so.case_id
     where so.id = $1
   `, [orderId])).rows[0]
-  if (basis.case_type === "REVIEW_PROTECTION") {
-    await db.query("update public.cases set review_url = $2 where id = $1", [basis.case_id, profileUrl])
-  } else {
-    await db.query(
-      "update public.locations set business_profile_url = $2 where id = (select location_id from public.cases where id = $1)",
-      [basis.case_id, profileUrl],
-    )
+  const accepted = (await db.query<{ accepted_target_ref: string | null }>(`
+    select qa.accepted_target_ref
+    from public.service_orders so
+    join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+    where so.id = $1
+  `, [orderId])).rows[0].accepted_target_ref
+  if (accepted !== profileUrl) {
+    throw new Error("The qualifying checks must use the target frozen at quote acceptance.")
   }
   async function evidence(hoursAgo: number) {
     const documentId = crypto.randomUUID()
@@ -99,7 +100,7 @@ async function seedQualifyingChecks(orderId: string, profileUrl: string) {
       request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
       evidence_version_id, recorded_by
     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-  `, [crypto.randomUUID(), basis.case_id, basis.customer_id, orderId, profileUrl, basis.issue_description, basis.success_definition, baselineEvidence, uid])
+  `, [crypto.randomUUID(), basis.case_id, basis.customer_id, orderId, accepted, basis.issue_description, basis.success_definition, baselineEvidence, uid])
   for (const hours of [72, 12]) {
     const versionId = await evidence(hours)
     await db.query(`
@@ -231,7 +232,7 @@ beforeAll(async () => {
     insert into public.admin_sessions(id,token_hash,auth_user_id,created_at) values('${otherSession}','${"b".repeat(64)}','${uid}',now());
     insert into public.customers(id,full_name,email,phone) values('${customer}','Alex','alex@example.com','+441234567890');
     insert into public.businesses(id,display_name) values('${business}','Bakery');
-    insert into public.locations(id,business_id,country,location_name) values('${location}','${business}','UK','High Street');
+    insert into public.locations(id,business_id,country,location_name,business_profile_url) values('${location}','${business}','UK','High Street','https://maps.google.com/?cid=bakery');
     insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track)
       values('${caseId}','PROFILE_RECOVERY','${customer}','${business}','${location}','Profile suspended','2026-01-01',now(),now(),'MANAGED');
   `)
@@ -532,6 +533,48 @@ describe("Admin recent sign-in is 30 minutes after the follow-up migration", () 
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.customer_actions where kind='INVOICE_PAYMENT' and service_order_id=$1", [guidedOrder])).rows[0].n).toBe(0)
     await age(29)
     expect((await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", fallback, await orderVersion(guidedOrder)]))?.status).toBe("success")
+    const blankLocation = crypto.randomUUID()
+    const blankCase = crypto.randomUUID()
+    await db.query(
+      "insert into public.locations(id,business_id,country,location_name) values($1,$2,'UK','Missing listing')",
+      [blankLocation, business],
+    )
+    await db.query(
+      "insert into public.cases(id,case_type,customer_id,business_id,location_id,issue_description,created_at,information_accurate_at,privacy_accepted_at,service_track) values($1,'PROFILE_RECOVERY',$2,$3,$4,'Listing was not available.','2026-01-01',now(),now(),'MANAGED')",
+      [blankCase, customer, business, blankLocation],
+    )
+    const blank = await offerQuote("MANAGED_RELAUNCH", blankCase, blankLocation)
+    const blankRef = (await db.query<{ public_ref: string }>("select public_ref from public.cases where id=$1", [blankCase])).rows[0].public_ref
+    const blankTarget = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [blank.orderId])).rows[0].accepted_target_ref
+    expect(blankTarget).toBe(`case:${blankRef}`)
+    expect(blankTarget).not.toMatch(/^https:\/\//)
+    await age(0)
+    await seedQualifyingChecks(String(blank.orderId), blankTarget)
+    expect((await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id=$1", [blank.orderId])).rows[0].target_ref).toBe(blankTarget)
+    await db.query("update public.locations set business_profile_url='https://maps.google.com/?cid=appeared-later' where id=$1", [blankLocation])
+    await db.exec("begin")
+    try {
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        )
+        select $1, so.case_id, so.customer_id, so.id, qa.accepted_target_ref, left(cs.issue_description, 500), qv.success_definition, b.evidence_version_id, $2
+        from public.service_orders so
+        join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+        join public.cases cs on cs.id = so.case_id
+        join public.quote_versions qv on qv.id = so.quote_version_id
+        join public.success_baselines b on b.service_order_id = so.id
+        where so.id = $3
+      `, [crypto.randomUUID(), uid, blank.orderId])).rejects.toThrow(/target_changed/)
+    } finally {
+      await db.exec("rollback")
+    }
     await expireSession()
     expect(await rpc("payment_prepare_invoice_v1", [token, obligationId, false])).toMatchObject({ status: "unauthorized" })
     await revokeSession()

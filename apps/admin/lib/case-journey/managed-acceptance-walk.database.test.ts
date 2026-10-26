@@ -43,6 +43,8 @@ import type { JourneyWorkEvent } from "./decisions"
 import { presentJourneyOutcome } from "./outcome"
 import { presentCaseJourney } from "./present"
 import { renderManagedNotice, type ManagedNoticeVariant } from "../../../../lib/email/managed-journey"
+import { createFakePaymentProvider } from "../../../../lib/payments/fake"
+import { reconcileDisputedInvoice } from "../payments/invoice-hold"
 
 const db = new PGlite()
 const admin = "11111111-1111-4111-8111-111111111111"
@@ -103,14 +105,11 @@ async function orderBasis(orderId: string) {
     target_ref: string
   }>(`
     select qv.success_definition, so.customer_id, so.case_id, cs.case_type, cs.issue_description,
-      case
-        when cs.case_type = 'REVIEW_PROTECTION' then btrim(coalesce(cs.review_url, ''))
-        else btrim(coalesce(l.business_profile_url, ''))
-      end as target_ref
+      qa.accepted_target_ref as target_ref
     from public.service_orders so
     join public.quote_versions qv on qv.id = so.quote_version_id
+    join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
     join public.cases cs on cs.id = so.case_id
-    left join public.locations l on l.id = cs.location_id
     where so.id = $1
   `, [orderId])).rows[0]
 }
@@ -233,6 +232,37 @@ async function verificationReady(caseId: string, orderId: string) {
     "select admin_private.success_verification_ready_v1($1::uuid, $2::uuid) as ready",
     [caseId, orderId],
   )).rows[0].ready
+}
+
+async function invoicePortal(caseId: string) {
+  const reference = (await db.query<{ public_ref: string }>("select public_ref from public.cases where id = $1", [caseId])).rows[0].public_ref
+  const action = (await db.query<{ id: string }>(`
+    select id from public.customer_actions
+    where case_id = $1 and customer_id = $2 and kind = 'INVOICE_PAYMENT'
+    order by created_at desc limit 1
+  `, [caseId, customer])).rows[0]
+  const selector = (await db.query<{ selector: string }>(
+    "select admin_private.customer_portal_action_selector_v1($1::uuid) as selector",
+    [action.id],
+  )).rows[0].selector
+  const target = await rpc<{ status?: string; hostedInvoiceUrl?: string }>("customer_portal_invoice_target_v1", [alexSession, reference, selector])
+  return { reference, selector, target }
+}
+
+async function recordInvoiceHold(
+  pauseId: string,
+  invoiceId: string,
+  state: "VOID_CONFIRMED" | "ALREADY_PAID" | "VOID_UNCONFIRMED",
+  providerStatus: string | null,
+) {
+  const detail = state === "VOID_CONFIRMED"
+    ? "The fake provider confirmed this hosted invoice is void."
+    : state === "ALREADY_PAID"
+      ? "The fake provider reported this invoice paid. No refund was created."
+      : "The fake provider did not confirm a void. The local invoice was left unchanged."
+  return rpc<{ status?: string; hold?: string; invoiceStatus?: string }>("admin_record_success_fee_invoice_hold_v1", [token, key(), {
+    pauseId, invoiceId, state, providerStatus, detail,
+  }])
 }
 
 async function rolledBack(seed: () => Promise<void>) {
@@ -968,6 +998,41 @@ describe("composed Managed acceptance walks", () => {
       await insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", evidenceVersionId: shared })
       await expect(insertObservation(recordedOrder.id, { observedAt: "2026-01-01T00:00:00.000Z", evidenceVersionId: shared })).rejects.toThrow(/duplicate|unique/i)
     })
+    const acceptedTarget = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [recordedOrder.id])).rows[0].accepted_target_ref
+    expect(acceptedTarget).toBe("https://maps.google.com/?cid=managed-success")
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = 'https://maps.google.com/?cid=changed-before-baseline' where id = $1", [successLocation])
+      const basis = await orderBasis(recordedOrder.id)
+      const evidenceId = await acceptedEvidence(successCase, "2025-12-02T00:00:00.000Z")
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        ) values ($1,$2,$3,$4,'https://maps.google.com/?cid=changed-before-baseline',$5,$6,$7,$8)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = 'https://maps.google.com/?cid=changed-before-baseline' where id = $1", [successLocation])
+      const basis = await orderBasis(recordedOrder.id)
+      const evidenceId = await acceptedEvidence(successCase, "2025-12-03T00:00:00.000Z")
+      await expect(db.query(`
+        insert into public.success_baselines(
+          request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
+          evidence_version_id, recorded_by
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, acceptedTarget, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
+    })
+    await rolledBack(async () => {
+      await db.query("update public.locations set business_profile_url = null where id = $1", [successLocation])
+      const baselineId = await ensureBaseline(recordedOrder.id)
+      expect(baselineId).toBeTruthy()
+      expect((await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where id = $1", [baselineId])).rows[0].target_ref).toBe(acceptedTarget)
+    })
     await rolledBack(async () => {
       await ensureBaseline(recordedOrder.id)
       const frozen = (await db.query<{ target_ref: string }>("select target_ref from public.success_baselines where service_order_id = $1", [recordedOrder.id])).rows[0].target_ref
@@ -982,7 +1047,7 @@ describe("composed Managed acceptance walks", () => {
           request_id, case_id, customer_id, service_order_id, target_ref, restriction_ref, success_definition,
           evidence_version_id, recorded_by
         ) values ($1,$2,$3,$4,'https://maps.google.com/?cid=managed-success',$5,$6,$7,$8)
-      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/mismatch/)
+      `, [key(), basis.case_id, basis.customer_id, recordedOrder.id, basis.issue_description, basis.success_definition, evidenceId, admin])).rejects.toThrow(/target_changed/)
     })
     await rolledBack(async () => {
       await expect(insertObservation(recordedOrder.id, { customerId: otherCustomer, observedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow(/baseline/)
@@ -1110,19 +1175,187 @@ describe("composed Managed acceptance walks", () => {
     expect(await rpc("payment_ensure_customer_map_v1", [customer, "cus_managedwalk"])).toMatchObject({ status: "success" })
     const currentOrder = await orderRow(successCase)
     await rolledBack(async () => {
-      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+      const opened = await rpc<{ hold?: string; providerInvoiceId?: string; invoiceStatus?: string }>("admin_success_fee_dispute_v1", [token, key(), {
         serviceOrderId: currentOrder.id,
         action: "open",
         reason: "The customer disputed the issued invoice before paying it.",
-      }]), "pause issued invoice")
+      }])
+      expectOk(opened, "pause issued invoice")
+      expect(opened).toMatchObject({ hold: "void_required", providerInvoiceId: "in_managedwalk1", invoiceStatus: "ISSUED" })
+      const preparedWhilePaused = await rpc<{ status?: string; reason?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expect(preparedWhilePaused).toMatchObject({ status: "denied", reason: "collection_paused" })
+      expect(preparedWhilePaused.hostedInvoiceUrl).toBeUndefined()
       expect(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
         serviceOrderId: currentOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
       }, currentOrder.record_version])).toMatchObject({ status: "denied", reason: "collection_paused" })
       expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await db.query<{ state: string }>("select state from public.success_fee_invoice_holds where provider_invoice_id = 'in_managedwalk1'")).rows[0].state).toBe("VOID_REQUIRED")
     })
     expectOk(await rpc("admin_payment_command_v1", [token, key(), "issue_invoice_fallback", {
       serviceOrderId: currentOrder.id, obligationId: approved.obligationId, expiresAt: ahead(48), secretHash: secret(),
     }, currentOrder.record_version]), "invoice link")
+    const portal = await invoicePortal(successCase)
+    expect(portal.target).toMatchObject({ status: "redirect", hostedInvoiceUrl: hosted })
+    expect(await rpc("customer_portal_invoice_target_v1", [samSession, portal.reference, portal.selector])).toEqual({ status: "not_found" })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string; hold?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice before the provider void could be confirmed.",
+      }])
+      expect(opened.hold).toBe("void_required")
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      provider.nextVoidError = new Error("provider unavailable")
+      const unconfirmed = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(unconfirmed).toEqual({ hold: "void_unconfirmed", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await invoicePortal(successCase)).target).toEqual({ status: "collection_paused" })
+      expect(JSON.stringify((await invoicePortal(successCase)).target)).not.toContain("invoice.stripe")
+      expect(await rpc("customer_portal_invoice_target_v1", [samSession, portal.reference, portal.selector])).toEqual({ status: "not_found" })
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the provider reported it paid.",
+      }])
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "paid", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: recordedOrder.amount_minor,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const paid = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(paid).toEqual({ hold: "already_paid", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("ISSUED")
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice after the provider confirmed a void.",
+      }])
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const confirmed = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(opened.id!, opened.invoiceId!, state, providerStatus),
+      })
+      expect(confirmed).toEqual({ hold: "void_confirmed", stripeCollectionStopped: true })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("VOID")
+      expect((await invoicePortal(successCase)).target).toEqual({ status: "collection_paused" })
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+      const upheld = await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "UPHELD",
+        resolution: "The original restriction was still present, so the fee is not payable.",
+      }])
+      expectOk(upheld, "upheld after void")
+      expect(await rpc("payment_prepare_invoice_v1", [token, approved.obligationId])).toMatchObject({ status: "denied", reason: "collection_paused" })
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status in ('DRAFT','ISSUED')", [approved.obligationId])).rows[0].n).toBe(0)
+    })
+    await rolledBack(async () => {
+      const opened = await rpc<{ id?: string; invoiceId?: string }>("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the provider then confirmed a void.",
+      }])
+      expectOk(await recordInvoiceHold(opened.id!, opened.invoiceId!, "VOID_CONFIRMED", "void"), "confirm void")
+      expect((await db.query<{ status: string }>(
+        "select status from public.payment_attempts where obligation_id = $1 order by attempt_number",
+        [approved.obligationId],
+      )).rows.map(row => row.status)).toEqual(["CANCELLED"])
+      expect((await chargeCounts(successCase)).receipts).toBe(0)
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "NOT_UPHELD",
+        resolution: "The contracted listing was still clear, so the fee can be invoiced again.",
+      }]), "reissue after void")
+      const reissued = await rpc<{ status?: string; replay?: boolean; invoiceId?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expectOk(reissued, "reissue invoice")
+      expect(reissued.replay).toBe(false)
+      expect(reissued.invoiceId).not.toBe(opened.invoiceId)
+      expect(reissued.hostedInvoiceUrl).toBeUndefined()
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status in ('DRAFT','ISSUED')", [approved.obligationId])).rows[0].n).toBe(1)
+    })
+    await rolledBack(async () => {
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the issued invoice and the dispute was not upheld.",
+      }]), "pause before resume")
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "resolve",
+        outcome: "NOT_UPHELD",
+        resolution: "The contracted listing was still clear, so the issued invoice remains payable.",
+      }]), "resume issued invoice")
+      const resumed = await rpc<{ status?: string; replay?: boolean; invoiceId?: string; hostedInvoiceUrl?: string }>("payment_prepare_invoice_v1", [token, approved.obligationId])
+      expect(resumed).toMatchObject({ status: "success", replay: true, hostedInvoiceUrl: hosted })
+      expect((await db.query<{ n: number }>("select count(*)::int as n from public.payment_invoices where obligation_id = $1 and status = 'ISSUED'", [approved.obligationId])).rows[0].n).toBe(1)
+      expect((await invoicePortal(successCase)).target).toMatchObject({ status: "redirect", hostedInvoiceUrl: hosted })
+    })
+    await rolledBack(async () => {
+      expectOk(await rpc("admin_success_fee_dispute_v1", [token, key(), {
+        serviceOrderId: currentOrder.id,
+        action: "open",
+        reason: "The customer disputed the invoice while the provider payment was also arriving.",
+      }]), "pause during payment")
+      expectOk(await rpc("payment_apply_provider_event_v1", ["evt_managed_race", "invoice.paid", "in_managedwalk1", {
+        amountPaidMinor: recordedOrder.amount_minor,
+        amountMinor: recordedOrder.amount_minor,
+        currency: "gbp",
+        stripeCustomerId: "cus_managedwalk",
+        customerId: customer,
+        serviceOrderId: currentOrder.id,
+        obligationId: approved.obligationId,
+        providerOperationId: prepared.providerOperationId,
+        hostedInvoiceUrl: hosted,
+      }]), "webhook during dispute")
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("PAID")
+      expect((await chargeCounts(successCase)).receipts).toBe(1)
+      const hold = (await db.query<{ pause_id: string; invoice_id: string }>("select pause_id, invoice_id from public.success_fee_invoice_holds where provider_invoice_id = 'in_managedwalk1'")).rows[0]
+      const provider = createFakePaymentProvider()
+      provider.objects.set("in_managedwalk1", {
+        id: "in_managedwalk1", status: "open", amountDueMinor: recordedOrder.amount_minor, amountPaidMinor: 0,
+        currency: "gbp", hostedInvoiceUrl: hosted,
+      })
+      const kept = await reconcileDisputedInvoice({
+        provider,
+        hold: "void_required",
+        providerInvoiceId: "in_managedwalk1",
+        idempotencyKey: key(),
+        record: (state, providerStatus) => recordInvoiceHold(hold.pause_id, hold.invoice_id, state, providerStatus),
+      })
+      expect(kept).toEqual({ hold: "already_paid", stripeCollectionStopped: false })
+      expect((await db.query<{ status: string }>("select status from public.payment_invoices where provider_invoice_id = 'in_managedwalk1'")).rows[0].status).toBe("PAID")
+      expect((await db.query<{ status: string }>("select status from public.payment_attempts where obligation_id = $1", [approved.obligationId])).rows[0].status).toBe("SUCCEEDED")
+      expect((await chargeCounts(successCase)).receipts).toBe(1)
+    })
     const settled = await rpc("payment_apply_provider_event_v1", ["evt_managed_paid", "invoice.paid", "in_managedwalk1", {
       amountPaidMinor: recordedOrder.amount_minor,
       amountMinor: recordedOrder.amount_minor,
@@ -1321,6 +1554,17 @@ describe("composed Managed acceptance walks", () => {
       status: "denied", reason: "success_verification",
     })
     expect(await commandReceiptCount(earlyRequest)).toBe(0)
+    const acceptedReview = (await db.query<{ accepted_target_ref: string }>(`
+      select qa.accepted_target_ref
+      from public.service_orders so
+      join public.quote_acceptances qa on qa.id = so.quote_acceptance_id
+      where so.id = $1
+    `, [order.id])).rows[0].accepted_target_ref
+    expect(acceptedReview).toBe("https://maps.google.com/maps/reviews/managed-review-1")
+    await rolledBack(async () => {
+      await db.query("update public.cases set review_url = 'https://maps.google.com/maps/reviews/wrong-review-id' where id = $1", [reviewCase])
+      await expect(ensureBaseline(order.id)).rejects.toThrow(/target_changed/)
+    })
     await rolledBack(async () => {
       await expect(insertObservation(order.id, { visibility: "VISIBLE", observedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow(/visibility/)
     })

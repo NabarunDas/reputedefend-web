@@ -95,9 +95,6 @@ function normalized(sql: string): string {
 describe("DEV-HISTORY-01 recovered statements", () => {
   it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261025020000_guided_payment_request_email_v1.sql",
-      "20261025140000_guided_fulfilment_handover_v1.sql",
-      "20261025160000_guided_fulfilment_closure_v1.sql",
       "20261025163000_managed_success_verification_v1.sql",
     ])
     expect(manifestVersions().at(-1)).toBe(migrationHead.version)

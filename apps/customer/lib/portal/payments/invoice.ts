@@ -9,6 +9,7 @@ import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 const UNAVAILABLE = "The hosted invoice link is not available yet."
 const MISSING = "This invoice is no longer available."
 const RETRY = "This invoice can't be opened right now. Please try again shortly."
+const PAUSED = "Collection of this success fee is paused while the outcome is disputed. This payment link is withheld. This does not say the payment provider has cancelled the invoice."
 const SELECTOR = /^ca-[a-f0-9]{64}$/
 
 function textReply(message: string, http: number) {
@@ -41,6 +42,7 @@ export async function portalInvoiceOpen(request: NextRequest) {
     })
     if (resolved == null) return textReply("Sign in again to open this invoice.", 401)
     if (!isRecord(resolved) || typeof resolved.status !== "string") return textReply(RETRY, 503)
+    if (resolved.status === "collection_paused") return textReply(PAUSED, 409)
     if (resolved.status === "unavailable") return textReply(UNAVAILABLE, 404)
     if (resolved.status !== "redirect" || typeof resolved.hostedInvoiceUrl !== "string") return textReply(MISSING, 404)
     const target = trustedStripeUrl(resolved.hostedInvoiceUrl, "invoice")

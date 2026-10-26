@@ -102,6 +102,20 @@ describe("portal receipt download", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 
+  it("withholds the hosted invoice while collection is paused", async () => {
+    mocks.rpc.mockResolvedValue({ status: "collection_paused", hostedInvoiceUrl: hosted })
+    const response = await portalInvoiceOpen(new NextRequest(
+      `${origin}/api/portal/payments/invoice?reference=PR-26-ABCDEF&selector=${actionSelector}`,
+      { headers: { cookie: `${portalSessionCookieName()}=${token}` } },
+    ))
+    expect(response.status).toBe(409)
+    expect(response.headers.get("location")).toBeNull()
+    const text = await response.text()
+    expect(text).toContain("payment link is withheld")
+    expect(text).toContain("does not say the payment provider has cancelled")
+    expect(text).not.toContain(hosted)
+  })
+
   it("does not redirect a hosted invoice to an untrusted address", async () => {
     const rejected = [
       "https://invoice.stripe.com.evil.example/i/x",

@@ -6,6 +6,8 @@ import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
+import { paymentProvider } from "../../../../lib/payments"
+import { reconcileDisputedInvoice, type DisputeHold } from "./invoice-hold"
 
 const findings = ["ABSENT", "PRESENT", "RECURRENCE", "AMBIGUOUS", "UNRELATED"] as const
 const visibilities = ["VISIBLE", "NOT_SHOWN", "NOT_APPLICABLE"] as const
@@ -20,7 +22,18 @@ function text(value: unknown, min: number, max: number): string | null {
   return trimmed.length >= min && trimmed.length <= max ? trimmed : null
 }
 
-type RpcResult = { status?: string; replay?: boolean; reason?: string; message?: string }
+type RpcResult = {
+  status?: string
+  replay?: boolean
+  reason?: string
+  message?: string
+  id?: string
+  pauseStatus?: string
+  hold?: string
+  invoiceId?: string
+  invoiceStatus?: string
+  providerInvoiceId?: string
+}
 
 function sessionProblem(result: RpcResult): NextResponse | null {
   if (result.status === "reauth_required") return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
@@ -102,6 +115,12 @@ async function recordBaseline(token: string, key: string, serviceOrderId: string
   })
   const blocked = sessionProblem(result)
   if (blocked) return blocked
+  if (result.reason === "target_changed") {
+    return reply("The profile or review address changed after the customer accepted the quotation. Record the original accepted target again only after the customer accepts the changed target.", 403)
+  }
+  if (result.reason === "acceptance_target") {
+    return reply("This acceptance has no frozen profile or review, so a success target cannot be recorded.", 403)
+  }
   if (result.reason === "baseline_mismatch" || result.reason === "mismatch") {
     return reply("The saved profile or review address does not match this order, so it was not frozen.", 403)
   }
@@ -200,11 +219,71 @@ async function recordDispute(token: string, key: string, serviceOrderId: string 
   if (result.status === "invalid") return reply("Check the fields before saving.", 400)
   if (result.status === "denied") return reply("That dispute could not be recorded for this success-fee order.", 403)
   if (result.status !== "success") return reply("The dispute could not be recorded.", 503)
-  if (result.replay) return reply("That dispute update was already recorded. It was not recorded again.")
-  if (disputeAction === "open") {
-    return reply("Collection is paused. No new invoice or payment action will be created while the dispute is open, and no card is charged. An invoice that was already issued is not cancelled here.")
+  const reconciled = await finishDisputeHold(token, key, result)
+  if (result.replay && reconciled.hold !== "void_required" && reconciled.hold !== "void_unconfirmed") {
+    return reply("That dispute update was already recorded. It was not recorded again.")
   }
-  return reply(body.outcome === "UPHELD"
-    ? "The dispute is upheld. The success fee stays not payable. No card was charged."
-    : "The dispute is not upheld. A hosted invoice can be issued when the checks still qualify. No card was charged.")
+  return reply(disputeSentence(disputeAction, body.outcome, result.invoiceStatus, reconciled))
+}
+
+async function finishDisputeHold(token: string, key: string, result: RpcResult) {
+  const hold = result.hold || "none"
+  if (hold !== "void_required" && hold !== "void_unconfirmed") {
+    return { hold: hold as DisputeHold, stripeCollectionStopped: hold === "void_confirmed" }
+  }
+  return reconcileDisputedInvoice({
+    provider: paymentProvider(),
+    hold,
+    providerInvoiceId: typeof result.providerInvoiceId === "string" ? result.providerInvoiceId : null,
+    idempotencyKey: key,
+    record: async (state, providerStatus) => {
+      const detail = state === "VOID_CONFIRMED"
+        ? "The payment provider confirmed this hosted invoice is void."
+        : state === "ALREADY_PAID"
+          ? "The payment provider reported this invoice paid. No refund was created."
+          : "The payment provider did not confirm a void. The local invoice was left unchanged."
+      const recorded = await backend().rpc<{ status?: string; hold?: string }>("admin_record_success_fee_invoice_hold_v1", {
+        p_token: tokenHash(token),
+        p_request: key,
+        p_payload: {
+          pauseId: result.id,
+          invoiceId: result.invoiceId,
+          state,
+          providerStatus,
+          detail,
+        },
+      })
+      if (recorded.status !== "success") throw new Error("invoice hold was not recorded")
+      return recorded
+    },
+  })
+}
+
+function disputeSentence(
+  disputeAction: "open" | "resolve",
+  outcome: unknown,
+  invoiceStatus: string | undefined,
+  reconciled: { hold: DisputeHold; stripeCollectionStopped: boolean },
+) {
+  if (disputeAction === "resolve") {
+    if (outcome === "UPHELD") {
+      return reconciled.stripeCollectionStopped
+        ? "The dispute is upheld. The payment provider confirmed the invoice is void. The customer payment link stays blocked. No card was charged and no refund was created."
+        : "The dispute is upheld. The customer payment link stays blocked and the success fee is not payable. Stripe collection has stopped only when a void was confirmed. No card was charged and no refund was created."
+    }
+    if (invoiceStatus === "VOID" || reconciled.hold === "void_confirmed") {
+      return "The dispute is not upheld. The voided invoice is not reopened. A new hosted invoice can be issued when the checks still qualify. No card was charged."
+    }
+    return "The dispute is not upheld. The existing issued invoice can be used again. No second invoice was created and no card was charged."
+  }
+  if (reconciled.stripeCollectionStopped) {
+    return "Collection is paused. The payment provider confirmed the issued invoice is void, and the customer payment link is blocked. No card was charged and no refund was created."
+  }
+  if (reconciled.hold === "already_paid") {
+    return "Collection is paused and the customer payment link is blocked. The provider reports this invoice is already paid. The receipt stays. No refund was created."
+  }
+  if (reconciled.hold === "none") {
+    return "Collection is paused. No hosted invoice is open, so there is no payment link to block. No card was charged."
+  }
+  return "Collection is paused and the customer payment link is blocked. The payment provider has not confirmed that collection stopped. This is a finance exception. The invoice was not marked void and no refund was created."
 }

@@ -119,6 +119,7 @@ describe("payment job handlers", () => {
       stripeCustomerId: "cus_test",
       amountMinor: 9900,
       currency: "GBP",
+      serviceCode: "GUIDED_RELAUNCH",
       successUrl: "https://customer.example/pay/return",
       cancelUrl: "https://customer.example/pay/return",
       metadata: { customerId, serviceOrderId: orderId, obligationId, providerOperationId: operationId },

@@ -2,6 +2,7 @@ import "server-only"
 import Stripe from "stripe"
 import { isStripeLiveSecret, isStripeTestSecret, paymentLane, resolvePaymentProviderMode, type PaymentEnv } from "./config"
 import { databaseLaneAgrees, type DatabasePaymentLane } from "./lane-agreement"
+import { GUARD_PRODUCT_NAME, normalisedCheckoutEmail, requireCheckoutPresentation } from "./checkout-presentation"
 import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { trustedStripeUrl } from "./stripe-url"
@@ -70,14 +71,46 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
   return {
     mode,
     async createCustomer(input) {
+      const email = input.email == null || input.email === "" ? undefined : normalisedCheckoutEmail(input.email)
+      if (input.email && !email) throw new PaymentsDisabledError("Stripe customer email was rejected.")
       const created = await client(env).customers.create(
-        { metadata: { customerId: input.customerId } },
+        {
+          ...(email ? { email } : {}),
+          metadata: { customerId: input.customerId },
+        },
         { idempotencyKey: input.idempotencyKey },
       )
       lane(created, "Stripe object")
+      if (created.metadata?.customerId !== input.customerId) {
+        throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
+      }
+      if (email && (created.email || "").toLowerCase() !== email) {
+        throw new PaymentsDisabledError("Stripe customer email was not saved.")
+      }
       return { id: created.id, livemode: expectedLivemode }
     },
+    async syncCustomerEmail(input) {
+      const email = normalisedCheckoutEmail(input.email)
+      if (!email) throw new PaymentsDisabledError("Stripe customer email was rejected.")
+      const stripe = client(env)
+      const current = await stripe.customers.retrieve(input.stripeCustomerId)
+      if (current.deleted) throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
+      lane(current, "Stripe object")
+      if (current.metadata?.customerId !== input.customerId) {
+        throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
+      }
+      if ((current.email || "").trim().toLowerCase() === email) {
+        return { id: current.id, email, livemode: expectedLivemode }
+      }
+      const updated = await stripe.customers.update(input.stripeCustomerId, { email }, { idempotencyKey: input.idempotencyKey })
+      lane(updated, "Stripe object")
+      if (updated.metadata?.customerId !== input.customerId || (updated.email || "").trim().toLowerCase() !== email) {
+        throw new PaymentsDisabledError("Stripe customer email was not updated.")
+      }
+      return { id: updated.id, email, livemode: expectedLivemode }
+    },
     async createPaymentCheckout(input) {
+      const presentation = requireCheckoutPresentation(input.serviceCode)
       const meta = paymentMetadata(input.metadata)
       assertSafeMetadata(meta)
       const session = await client(env).checkout.sessions.create({
@@ -93,7 +126,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
           price_data: {
             currency: input.currency.toLowerCase(),
             unit_amount: input.amountMinor,
-            product_data: { name: "ProfileRelaunch service" },
+            product_data: { name: presentation.name, description: presentation.description },
           },
         }],
         metadata: meta,
@@ -194,6 +227,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
       }
     },
     async createHostedInvoice(input) {
+      const presentation = requireCheckoutPresentation(input.serviceCode)
       const meta = paymentMetadata(input.metadata)
       assertSafeMetadata(meta)
       const stripe = client(env)
@@ -210,11 +244,11 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
       lane(created, "Stripe object")
       await stripe.invoices.addLines(created.id, {
         lines: [{
-          description: "ProfileRelaunch service",
+          description: presentation.description,
           quantity: 1,
           price_data: {
             currency: input.currency.toLowerCase(),
-            product_data: { name: "ProfileRelaunch service" },
+            product_data: { name: presentation.name, description: presentation.description },
             unit_amount: input.amountMinor,
           },
         }],
@@ -257,7 +291,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
       assertSafeGuardMetadata(meta)
       const stripe = client(env)
       const product = await stripe.products.create({
-        name: "Relaunch Guard",
+        name: GUARD_PRODUCT_NAME,
         metadata: meta,
       }, { idempotencyKey: `${input.idempotencyKey}:product` })
       lane(product, "Stripe object")

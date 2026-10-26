@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { openCustomerCheckout, settleRecoveryCancel } from "@/lib/action/payment"
 import { declaredLivemodeField, guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
+import { CheckoutEmailUnverifiedError, CHECKOUT_EMAIL_UNVERIFIED_MESSAGE } from "../../../../../lib/payments/checkout-presentation"
 import { PaymentsDisabledError } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
@@ -89,7 +90,8 @@ function confirmationFor(operation: Operation, value: unknown, key: string): Rec
 async function presentCheckout(response: NextResponse) {
   const payload = await response.json().catch(() => null) as { status?: string; checkoutUrl?: string; message?: string } | null
   if (response.status === 503 && payload?.status === "disabled") {
-    return NextResponse.json({ status: "disabled", message: DISABLED }, { status: 503, headers: privateResponseHeaders })
+    const message = payload.message === CHECKOUT_EMAIL_UNVERIFIED_MESSAGE ? CHECKOUT_EMAIL_UNVERIFIED_MESSAGE : DISABLED
+    return NextResponse.json({ status: "disabled", message }, { status: 503, headers: privateResponseHeaders })
   }
   const trusted = payload?.status === "ok" ? trustedStripeUrl(payload.checkoutUrl, "checkout") : null
   if (trusted) {
@@ -161,6 +163,9 @@ export async function portalPaymentCommand(request: NextRequest) {
     if (result.status === "success") return presentCheckout(await openCustomerCheckout(config.origin, result))
     return mapStatus(result.status, 503)
   } catch (error) {
+    if (error instanceof CheckoutEmailUnverifiedError || (error instanceof PaymentsDisabledError && error.message === CHECKOUT_EMAIL_UNVERIFIED_MESSAGE)) {
+      return NextResponse.json({ status: "disabled", message: CHECKOUT_EMAIL_UNVERIFIED_MESSAGE }, { status: 503, headers: privateResponseHeaders })
+    }
     if (error instanceof PaymentsDisabledError) {
       return NextResponse.json({ status: "disabled", message: DISABLED }, { status: 503, headers: privateResponseHeaders })
     }

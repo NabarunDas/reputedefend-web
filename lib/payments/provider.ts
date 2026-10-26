@@ -43,7 +43,8 @@ export class LiveStripeKeyError extends PaymentsDisabledError {
 
 export interface PaymentProvider {
   readonly mode: "disabled" | "stripe_test" | "stripe_live" | "fake"
-  createCustomer(input: { idempotencyKey: string; customerId: string }): Promise<ProviderCustomer>
+  createCustomer(input: { idempotencyKey: string; customerId: string; email?: string }): Promise<ProviderCustomer>
+  syncCustomerEmail(input: { idempotencyKey: string; stripeCustomerId: string; customerId: string; email: string }): Promise<{ id: string; email: string; livemode: boolean }>
   createPaymentCheckout(input: CreateCheckoutInput): Promise<ProviderCheckout>
   createSetupCheckout(input: CreateSetupInput): Promise<ProviderCheckout>
   createOffSessionPayment(input: CreateOffSessionInput): Promise<ProviderPaymentIntent>
@@ -95,6 +96,7 @@ export function disabledPaymentProvider(): PaymentProvider {
   return {
     mode: "disabled",
     createCustomer: deny,
+    syncCustomerEmail: deny,
     createPaymentCheckout: deny,
     createSetupCheckout: deny,
     createOffSessionPayment: deny,

@@ -29,6 +29,7 @@ describe("payment provider contract", () => {
       currency: "GBP",
       successUrl: "https://customer.example/pay/return",
       cancelUrl: "https://customer.example/pay/return",
+      serviceCode: "GUIDED_RELAUNCH",
       metadata: { customerId: "22222222-2222-4222-8222-222222222222", serviceOrderId: "33333333-3333-4333-8333-333333333333" },
     })).rejects.toBeInstanceOf(PaymentsDisabledError)
   })
@@ -40,6 +41,7 @@ describe("payment provider contract", () => {
       stripeCustomerId: "cus_testabc",
       amountMinor: 9900,
       currency: "GBP" as const,
+      serviceCode: "GUIDED_RELAUNCH",
       successUrl: "https://customer.example/pay/return",
       cancelUrl: "https://customer.example/pay/return",
       metadata: {
@@ -60,6 +62,7 @@ describe("payment provider contract", () => {
     expect(provider.lastCheckout).toMatchObject({
       amountMinor: 9900,
       mode: "payment",
+      productName: "Guided Relaunch",
       idempotencyKey: input.idempotencyKey,
       paymentMethodTypes: ["card"],
       paymentIntentMetadata: {
@@ -155,6 +158,7 @@ describe("payment provider contract", () => {
     const second = await provider.createRecurringPrice(priceInput)
     expect(first.priceId).toBe(second.priceId)
     expect(first.amountMinor).toBe(999)
+    expect(provider.objects.get(priceInput.idempotencyKey)).toMatchObject({ productName: "Relaunch Guard", amountMinor: 999 })
     await expect(disabledPaymentProvider().createRecurringPrice(priceInput)).rejects.toBeInstanceOf(PaymentsDisabledError)
     const checkout = await provider.createSubscriptionCheckout({
       idempotencyKey: "ffffffff-ffff-4fff-8fff-ffffffffffff",
@@ -301,6 +305,7 @@ describe("payment provider contract", () => {
       stripeCustomerId: "cus_invoice",
       amountMinor: 29900,
       currency: "GBP" as const,
+      serviceCode: "MANAGED_RELAUNCH",
       metadata: {
         customerId: "22222222-2222-4222-8222-222222222222",
         serviceOrderId: "33333333-3333-4333-8333-333333333333",
@@ -312,6 +317,11 @@ describe("payment provider contract", () => {
     const second = await provider.createHostedInvoice(input)
     expect(first.id).toBe(second.id)
     expect(first.dueAt).toBe(second.dueAt)
+    expect(provider.lastInvoice).toMatchObject({
+      amountMinor: 29900,
+      productName: "Managed Profile Recovery",
+    })
+    expect(provider.lastInvoice?.metadata).not.toHaveProperty("email")
     const due = Date.parse(first.dueAt || "")
     expect(due).toBeGreaterThan(Date.now() + (HOSTED_INVOICE_DAYS_UNTIL_DUE - 1) * 86400000)
     expect(due).toBeLessThan(Date.now() + (HOSTED_INVOICE_DAYS_UNTIL_DUE + 1) * 86400000)

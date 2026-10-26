@@ -6,6 +6,8 @@ import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { paymentProvider, paymentProviderWithLane } from "../../../../lib/payments"
+import { CheckoutEmailUnverifiedError, HOSTED_INVOICE_EMAIL_UNVERIFIED_MESSAGE, readCheckoutPresentation } from "../../../../lib/payments/checkout-presentation"
+import { ensureMappedStripeCustomer } from "../../../../lib/payments/customer-email"
 import { declaredLivemodeArgument, guardExternalPayment } from "../../../../lib/payments/lane-agreement"
 import { PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../lib/payments/stripe-url"
@@ -50,27 +52,6 @@ function commandMessage(status: string | undefined): string {
   if (status === "invalid") return "Check the fields before saving."
   if (status === "reauth_required") return ADMIN_RECENT_SIGN_IN_MESSAGE
   return "The payment record could not be updated."
-}
-
-async function ensureStripeCustomer(customerId: string): Promise<string> {
-  const lane = await guardExternalPayment((name, args) => backend().rpc(name, args ?? {}))
-  const prepared = await backend().rpc<{
-    status?: string
-    stripeCustomerId?: string
-    needsCreate?: boolean
-    providerOperationId?: string
-    idempotencyKey?: string
-  }>("payment_prepare_customer_v1", { p_customer: customerId, ...declaredLivemodeArgument() })
-  if (prepared.stripeCustomerId) return prepared.stripeCustomerId
-  const created = await (lane ? paymentProviderWithLane(lane) : paymentProvider()).createCustomer({
-    idempotencyKey: prepared.idempotencyKey || "",
-    customerId,
-  })
-  const mapped = await backend().rpc<{ status?: string; stripeCustomerId?: string }>("payment_record_customer_map_v1", {
-    p_operation: prepared.providerOperationId, p_stripe_customer_id: created.id,
-  })
-  if (mapped.status !== "success" || !mapped.stripeCustomerId) throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
-  return mapped.stripeCustomerId
 }
 
 export async function paymentCommand(request: NextRequest): Promise<NextResponse> {
@@ -127,12 +108,24 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
       }
       if (!prepared.replay || !prepared.hostedInvoiceUrl) {
         try {
-          const stripeCustomer = await ensureStripeCustomer(prepared.customerId || "")
+          const rpc = (name: string, args?: Record<string, unknown>) => backend().rpc(name, args ?? {})
+          const presentation = await readCheckoutPresentation(rpc, {
+            customerId: prepared.customerId || "",
+            serviceOrderId: prepared.serviceOrderId || "",
+            amountMinor: prepared.amountMinor || 0,
+            mode: "payment",
+          })
+          const stripeCustomer = await ensureMappedStripeCustomer({
+            rpc,
+            customerId: prepared.customerId || "",
+            verifiedEmail: presentation.verifiedEmail,
+          })
           const invoice = await (lane ? paymentProviderWithLane(lane) : paymentProvider()).createHostedInvoice({
             idempotencyKey: prepared.idempotencyKey || "",
             stripeCustomerId: stripeCustomer,
             amountMinor: prepared.amountMinor || 0,
             currency: "GBP",
+            serviceCode: presentation.serviceCode,
             metadata: {
               customerId: prepared.customerId || "",
               serviceOrderId: prepared.serviceOrderId || "",
@@ -162,6 +155,7 @@ export async function paymentCommand(request: NextRequest): Promise<NextResponse
             })
           if (recorded.status !== "success") return reply("The TEST-MODE hosted invoice could not be recorded.", 409)
         } catch (error) {
+          if (error instanceof CheckoutEmailUnverifiedError) return reply(HOSTED_INVOICE_EMAIL_UNVERIFIED_MESSAGE, 503)
           if (error instanceof PaymentsDisabledError) {
             return reply("TEST-MODE FOUNDATION: a hosted invoice cannot be issued until Stripe test payments and seller/tax configuration are enabled.", 503)
           }

@@ -1,3 +1,4 @@
+import { GUARD_PRODUCT_NAME, normalisedCheckoutEmail, requireCheckoutPresentation } from "./checkout-presentation"
 import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
 import { PaymentsDisabledError, type PaymentProvider } from "./provider"
 
@@ -30,9 +31,11 @@ export function createFakePaymentProvider(): PaymentProvider & {
   setups: number
   intents: number
   cancels: number
-  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"]; paymentIntentMetadata?: Record<string, string> } | null
+  lastCheckout: { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"]; paymentIntentMetadata?: Record<string, string>; productName?: string; productDescription?: string } | null
   lastIntent: { amountMinor: number; idempotencyKey: string; offSession: true } | null
-  lastInvoice: { amountMinor: number; idempotencyKey: string; metadata: Record<string, string> } | null
+  lastInvoice: { amountMinor: number; idempotencyKey: string; metadata: Record<string, string>; productName?: string; productDescription?: string } | null
+  lastCustomer: { id: string; customerId: string; email: string | null } | null
+  customerEmailUpdates: number
   idempotency: Set<string>
   nextIntentStatus: string
   nextOffSessionError: { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null
@@ -40,7 +43,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
   nextVoidError: Error | null
   objects: Map<string, Record<string, unknown>>
 } {
-  const customers = new Map<string, string>()
+  const customers = new Map<string, { id: string; customerId: string; email: string | null }>()
   const sessions = new Map<string, StoredCheckout>()
   const intents = new Map<string, StoredIntent>()
   const invoices = new Map<string, { id: string; status: string; amountDueMinor: number; amountPaidMinor: number; currency: string; customerId: string; hostedInvoiceUrl: string; metadata: Record<string, string>; dueAt: string }>()
@@ -53,9 +56,11 @@ export function createFakePaymentProvider(): PaymentProvider & {
     setups: 0,
     intents: 0,
     cancels: 0,
-    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"]; paymentIntentMetadata?: Record<string, string> } | null,
+    lastCheckout: null as { amountMinor: number; mode: "payment" | "setup"; idempotencyKey: string; setupUsage?: "off_session"; paymentMethodTypes: ["card"]; paymentIntentMetadata?: Record<string, string>; productName?: string; productDescription?: string } | null,
     lastIntent: null as { amountMinor: number; idempotencyKey: string; offSession: true } | null,
-    lastInvoice: null as { amountMinor: number; idempotencyKey: string; metadata: Record<string, string> } | null,
+    lastInvoice: null as { amountMinor: number; idempotencyKey: string; metadata: Record<string, string>; productName?: string; productDescription?: string } | null,
+    lastCustomer: null as { id: string; customerId: string; email: string | null } | null,
+    customerEmailUpdates: 0,
     idempotency: new Set<string>(),
     nextIntentStatus: "succeeded",
     nextOffSessionError: null as { type?: string; code?: string; statusCode?: number; rawType?: string; payment_intent?: { id?: string; status?: string } } | null,
@@ -73,6 +78,8 @@ export function createFakePaymentProvider(): PaymentProvider & {
     get lastCheckout() { return state.lastCheckout },
     get lastIntent() { return state.lastIntent },
     get lastInvoice() { return state.lastInvoice },
+    get lastCustomer() { return state.lastCustomer },
+    get customerEmailUpdates() { return state.customerEmailUpdates },
     get idempotency() { return state.idempotency },
     get nextIntentStatus() { return state.nextIntentStatus },
     set nextIntentStatus(value: string) { state.nextIntentStatus = value },
@@ -83,16 +90,36 @@ export function createFakePaymentProvider(): PaymentProvider & {
     get nextVoidError() { return state.nextVoidError },
     set nextVoidError(value) { state.nextVoidError = value },
     get objects() { return objects },
-    async createCustomer({ idempotencyKey, customerId }) {
+    async createCustomer({ idempotencyKey, customerId, email }) {
       state.idempotency.add(idempotencyKey)
-      const existing = customers.get(customerId)
-      if (existing) return { id: existing, livemode: false as const }
+      const existing = [...customers.values()].find(row => row.customerId === customerId)
+      if (existing) return { id: existing.id, livemode: false as const }
+      const normalised = email == null || email === "" ? null : normalisedCheckoutEmail(email)
+      if (email && !normalised) throw new PaymentsDisabledError("Stripe customer email was rejected.")
       const id = `cus_test_${customerId.replace(/-/g, "").slice(0, 14)}`
-      customers.set(customerId, id)
+      const record = { id, customerId, email: normalised }
+      customers.set(id, record)
       state.customers += 1
+      state.lastCustomer = record
       return { id, livemode: false as const }
     },
+    async syncCustomerEmail(input) {
+      const email = normalisedCheckoutEmail(input.email)
+      if (!email) throw new PaymentsDisabledError("Stripe customer email was rejected.")
+      const record = customers.get(input.stripeCustomerId)
+      if (!record || record.customerId !== input.customerId) {
+        throw new PaymentsDisabledError("Stripe customer mapping was rejected.")
+      }
+      state.idempotency.add(input.idempotencyKey)
+      if (record.email !== email) {
+        record.email = email
+        state.customerEmailUpdates += 1
+      }
+      state.lastCustomer = { ...record }
+      return { id: record.id, email, livemode: false as const }
+    },
     async createPaymentCheckout(input) {
+      const presentation = requireCheckoutPresentation(input.serviceCode)
       const meta = paymentMetadata(input.metadata)
       assertSafeMetadata(meta)
       if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
@@ -128,6 +155,8 @@ export function createFakePaymentProvider(): PaymentProvider & {
         idempotencyKey: input.idempotencyKey,
         paymentMethodTypes: ["card"],
         paymentIntentMetadata: meta,
+        productName: presentation.name,
+        productDescription: presentation.description,
       }
       state.idempotency.add(input.idempotencyKey)
       return { id: created.id, url: created.url, mode: "payment", amountMinor: input.amountMinor, livemode: false as const }
@@ -284,6 +313,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
       }
     },
     async createHostedInvoice(input) {
+      const presentation = requireCheckoutPresentation(input.serviceCode)
       const meta = paymentMetadata(input.metadata)
       assertSafeMetadata(meta)
       if (invoices.has(input.idempotencyKey)) {
@@ -312,7 +342,13 @@ export function createFakePaymentProvider(): PaymentProvider & {
       }
       invoices.set(input.idempotencyKey, created)
       objects.set(created.id, created)
-      state.lastInvoice = { amountMinor: input.amountMinor, idempotencyKey: input.idempotencyKey, metadata: meta }
+      state.lastInvoice = {
+        amountMinor: input.amountMinor,
+        idempotencyKey: input.idempotencyKey,
+        metadata: meta,
+        productName: presentation.name,
+        productDescription: presentation.description,
+      }
       state.idempotency.add(input.idempotencyKey)
       return {
         id: created.id,
@@ -367,6 +403,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
         productId: `prod_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
         priceId: `price_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
         amountMinor: input.amountMinor,
+        productName: GUARD_PRODUCT_NAME,
       }
       objects.set(input.idempotencyKey, created)
       objects.set(created.priceId, created)

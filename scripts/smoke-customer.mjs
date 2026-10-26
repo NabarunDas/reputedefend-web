@@ -94,9 +94,11 @@ try {
     } else if (path === "/pay/return") {
       assert.equal(response.status, 200)
       const html = await response.text()
-      assert.match(html, /confirming your payment/i)
+      assert.match(html, /Payment is being confirmed/)
+      assert.match(html, /does not mark a payment as paid/)
+      assert.match(html, /href="\/login"/)
       assertCustomerBrand(html)
-      assert.doesNotMatch(html, /Payment successful/)
+      assert.doesNotMatch(html, /Payment successful|£|checkout\.stripe|invoice\.stripe/)
     } else {
       assert.equal(response.status, 200)
       const html = await response.text()

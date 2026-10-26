@@ -16,6 +16,24 @@ describe("job worker environment safety", () => {
     expect(canRegisterLiveProvider("production", { VERCEL_ENV: "production" })).toBe(true)
   })
 
+  it("does not let the DEV payment event flag enable the production worker", () => {
+    expect(jobWorkerConfig({
+      JOB_WORKER_ENABLED: "true",
+      VERCEL_ENV: "preview",
+      CRON_SECRET: "a".repeat(32),
+      DEV_PAYMENT_EVENT_WORKER_ENABLED: "true",
+      DEV_PAYMENT_EVENT_WORKER_SECRET: "b".repeat(32),
+      PAYMENTS_PROVIDER_MODE: "stripe_test",
+    })).toMatchObject({ enabled: false, environment: "preview", workerName: "admin-jobs" })
+    expect(jobWorkerConfig({
+      JOB_WORKER_ENABLED: "true",
+      VERCEL_ENV: "production",
+      CRON_SECRET: "a".repeat(32),
+      DEV_PAYMENT_EVENT_WORKER_ENABLED: "true",
+      DEV_PAYMENT_EVENT_WORKER_SECRET: "b".repeat(32),
+    })).toMatchObject({ enabled: true, environment: "production", workerName: "admin-jobs" })
+  })
+
   it("does not let the DEV Stripe one-shot flag enable the production worker", () => {
     expect(jobWorkerConfig({
       JOB_WORKER_ENABLED: "true",

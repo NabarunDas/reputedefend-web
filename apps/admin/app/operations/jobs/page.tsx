@@ -1,7 +1,7 @@
 import { ukDate } from "@/lib/admin/activity"
 import { devStripeOneShotBlock } from "@/lib/jobs/dev-stripe-one-shot"
 import { heartbeatLabel, isDailyHobbyCadence, jobStatusLabel, workerCadenceLabel } from "@/lib/jobs/model"
-import { loadJobHealth } from "@/lib/jobs/queries"
+import { loadJobHealth, loadPaymentEventQueue } from "@/lib/jobs/queries"
 import { Badge, EmptyState, PageHeader } from "../../ui"
 import { DevStripeOneShotForm, EnqueueProbeForm, ReplayJobForm } from "./forms"
 
@@ -22,8 +22,10 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
 
 export default async function JobsPage() {
   const health = await loadJobHealth()
+  const paymentEvents = await loadPaymentEventQueue()
   const heartbeat = health.heartbeat
   const oneShotOpen = devStripeOneShotBlock() === null
+  const paymentWaiting = paymentEvents !== null && paymentEvents.unprocessed > 0
   const description = oneShotOpen
     ? "Durable job queue, worker heartbeat and dead-letter replay. This page does not send customer email or call Google. The control below processes one selected test-mode Stripe event."
     : "Durable job queue, worker heartbeat and dead-letter replay. This page does not send customer email, call Google or process a Stripe event."
@@ -45,6 +47,14 @@ export default async function JobsPage() {
       </p>
       {heartbeat.lastError && <p>Last worker error: {heartbeat.lastError}</p>}
       <p>Pending {health.counts.pending} · Running {health.counts.running} · Retry {health.counts.retry} · Dead letter {health.counts.deadLetter}</p>
+      {paymentEvents ? <section>
+        <h3>Payment events</h3>
+        {paymentWaiting ? <>
+          <p>Unprocessed test-mode payment events: {paymentEvents.unprocessed}. Oldest queued {paymentEvents.oldestAvailableAt ? ukDate(paymentEvents.oldestAvailableAt) : "unknown"}.</p>
+          <p>Signed provider delivery is not complete while these events are unprocessed. A receipt is created only after the worker applies the signed event.</p>
+          {(heartbeat.status === "LATE" || heartbeat.status === "NEVER_RUN") && <p>The latest worker heartbeat is {heartbeatLabel(heartbeat.status).toLowerCase()}. A late heartbeat does not freeze a real receipt. The next successful worker run can still apply a signed event.</p>}
+        </> : <p>No unprocessed test-mode payment events.</p>}
+      </section> : null}
       <EnqueueProbeForm />
       {oneShotOpen ? <DevStripeOneShotForm /> : null}
     </section>

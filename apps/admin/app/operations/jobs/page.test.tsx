@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
 const loadJobHealth = vi.fn()
+const loadPaymentEventQueue = vi.fn()
 vi.mock("@/lib/jobs/queries", () => ({
   loadJobHealth: (...args: unknown[]) => loadJobHealth(...args),
+  loadPaymentEventQueue: (...args: unknown[]) => loadPaymentEventQueue(...args),
 }))
 
 import JobsPage from "./page"
@@ -26,7 +28,11 @@ afterEach(() => {
   cleanup()
   vi.unstubAllEnvs()
 })
-beforeEach(() => loadJobHealth.mockReset())
+beforeEach(() => {
+  loadJobHealth.mockReset()
+  loadPaymentEventQueue.mockReset()
+  loadPaymentEventQueue.mockResolvedValue(null)
+})
 
 function health() {
   return {
@@ -108,5 +114,26 @@ describe("operations jobs page", () => {
     render(await JobsPage())
     expect(screen.queryByText("Process one DEV Stripe event")).toBeNull()
     expect(document.body.textContent).not.toMatch(/CRON_SECRET|SUPABASE_SECRET|payload|secretHash|otp/i)
+  })
+
+  it("shows an alarm while signed test-mode payment events are still unprocessed", async () => {
+    const late = health()
+    late.heartbeat.status = "LATE"
+    loadJobHealth.mockResolvedValue(late)
+    loadPaymentEventQueue.mockResolvedValue({ unprocessed: 2, oldestAvailableAt: "2026-10-26T16:40:00.000Z" })
+    render(await JobsPage())
+    expect(screen.getByRole("heading", { name: "Payment events" })).toBeTruthy()
+    expect(screen.getByText(/Unprocessed test-mode payment events: 2/)).toBeTruthy()
+    expect(screen.getByText(/Signed provider delivery is not complete/)).toBeTruthy()
+    expect(screen.getByText(/does not freeze a real receipt/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/evt_|CRON_SECRET|whsec_|sk_|payload/)
+  })
+
+  it("reports a clear queue without claiming provider delivery was skipped", async () => {
+    loadJobHealth.mockResolvedValue(health())
+    loadPaymentEventQueue.mockResolvedValue({ unprocessed: 0, oldestAvailableAt: null })
+    render(await JobsPage())
+    expect(screen.getByText("No unprocessed test-mode payment events.")).toBeTruthy()
+    expect(screen.queryByText(/Signed provider delivery is not complete/)).toBeNull()
   })
 })

@@ -65,23 +65,35 @@ describe("portal receipt download", () => {
   it("downloads an owned receipt without provider references", async () => {
     mocks.rpc.mockResolvedValue({
       status: "ok",
+      receiptRef: "RC-26-ABCDEF",
       reference: "PR-26-ABCDEF",
       orderRef: "SO-26-ABCDEF",
+      serviceName: "Guided Relaunch",
       amountMinor: 9900,
       currency: "GBP",
       taxBehaviour: "NOT_APPLICABLE",
       taxAmountMinor: 0,
       paidAt: "2026-10-04T12:00:00.000Z",
+      paymentStatus: "Paid",
+      providerLabel: "Card payment through Stripe",
     })
     const response = await portalReceiptDownload(receiptRequest(`?selector=${selector}`))
     expect(response.status).toBe(200)
-    expect(response.headers.get("content-disposition")).toBe('attachment; filename="receipt-SO-26-ABCDEF.txt"')
+    expect(response.headers.get("content-type")).toContain("text/html")
+    expect(response.headers.get("content-disposition")).toBe('inline; filename="receipt-RC-26-ABCDEF.html"')
     expect(response.headers.get("cache-control")).toContain("no-store")
     const text = await response.text()
     expect(text).toContain("£99.00")
+    expect(text).toContain("RC-26-ABCDEF")
     expect(text).toContain("PR-26-ABCDEF")
     expect(text).toContain("SO-26-ABCDEF")
-    expect(text).not.toMatch(/pi_|cus_|cs_|pm_|stripe|storage|secret|receipts\//i)
+    expect(text).toContain("Guided Relaunch")
+    expect(text).toContain("Paid")
+    expect(text).toContain("Card payment through Stripe")
+    expect(text).toContain("not a VAT invoice")
+    expect(text).toContain("Save as PDF")
+    expect(text).not.toContain(selector)
+    expect(text.replaceAll("Card payment through Stripe", "")).not.toMatch(/pi_|cus_|cs_|pm_|sk_|whsec_|stripe|storage|secret|receipts\//i)
   })
 
   it("does not redirect an invoice page at a provider address stored in HTML", async () => {

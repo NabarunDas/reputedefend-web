@@ -82,9 +82,9 @@ describe("payment return view", () => {
     expect(text).toMatch(/prepare your Guided pack/)
     expect(text).toMatch(/does not mean Google has reinstated/)
     expect(text).not.toMatch(/Guard subscription|pi_|cs_|checkout\.stripe/)
-    expect(view.links[0]).toEqual({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View or print your receipt" })
+    expect(view.links[0]).toEqual({ href: `/portal/payments/receipt?selector=${receipt.selector}`, label: "View your receipt" })
     expect(view.links.map(link => link.href)).toEqual([
-      `/api/portal/payments/receipt?selector=${receipt.selector}`,
+      `/portal/payments/receipt?selector=${receipt.selector}`,
       "/portal/cases/PR-26-GHNLB9",
       "/portal/cases/PR-26-GHNLB9/payments",
     ])

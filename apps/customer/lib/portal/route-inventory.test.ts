@@ -93,6 +93,9 @@ describe("customer portal route inventory", () => {
       "lib/portal/payments/command.ts",
       "lib/portal/payments/receipt.ts",
       "lib/portal/payments/invoice.ts",
+      "lib/portal/billing/invoice-document.ts",
+      "lib/portal/billing/quotation-document.ts",
+      "lib/portal/billing/guard-document.ts",
       "lib/portal/guard/command.ts",
     ]
     for (const file of handlers) {

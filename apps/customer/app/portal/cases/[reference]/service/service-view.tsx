@@ -226,6 +226,13 @@ function QuoteSection({
             validUntilIso={quote.validUntil}
             sectionHeading="h3"
           />
+          {quote.status === "offered" || quote.status === "accepted" ? (
+            <p>
+              <a href={`/portal/cases/${reference}/quotation`}>View quotation</a>
+              {" · "}
+              <a href={`/api/portal/service/quotation?reference=${reference}`}>Download quotation PDF</a>
+            </p>
+          ) : null}
           {agreementReady(quote) ? (
             <PaidServiceAgreementDocument
               version={quote.commercialAgreementVersion}

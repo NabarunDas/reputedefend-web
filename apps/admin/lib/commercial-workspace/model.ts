@@ -864,6 +864,9 @@ function technicalRows(
   const orderId = serviceOrder?.id || moneyOrder?.orderId || commercial.quote?.orderId
   if (orderId) rows.push({ label: "Service order id", value: orderId })
   if (moneyOrder?.obligationId) rows.push({ label: "Obligation id", value: `${moneyOrder.obligationId} · ${moneyOrder.obligationState ?? "none"}` })
+  if (moneyOrder?.receiptRef && /^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/.test(moneyOrder.receiptRef)) {
+    rows.push({ label: "Receipt reference", value: moneyOrder.receiptRef })
+  }
   if (moneyOrder?.receiptId) rows.push({ label: "Receipt id", value: moneyOrder.receiptId })
   return rows
 }

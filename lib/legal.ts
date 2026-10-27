@@ -9,7 +9,7 @@
  * Historical customer records and previously accepted agreements are not
  * rewritten by this identity. Public pages read only this object.
  */
-import { brandName, brandSiteUrl } from "@/lib/brand"
+import { brandName, brandSiteUrl } from "./brand"
 
 export type BusinessStructure = "private-limited-company"
 

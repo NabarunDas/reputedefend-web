@@ -26,6 +26,7 @@ export type MoneyOrder = {
   consentId: string | null
   approvalId: string | null
   receiptId: string | null
+  receiptRef?: string | null
   invoiceId?: string | null
   invoiceStatus?: string | null
   acceptedEvidence?: Array<{ id: string; filename: string; versionNumber: number }>

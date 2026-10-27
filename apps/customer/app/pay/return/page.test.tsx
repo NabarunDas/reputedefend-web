@@ -90,9 +90,9 @@ describe("payment return page", () => {
     expect(document.body.textContent).toMatch(/not a VAT invoice/)
     expect(document.body.textContent).toMatch(/prepare your Guided pack/)
     expect(document.body.textContent).toMatch(/does not mean Google has reinstated/)
-    expect(screen.getByRole("link", { name: "View or print your receipt" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View your receipt" })).toHaveAttribute(
       "href",
-      `/api/portal/payments/receipt?selector=${selector}`,
+      `/portal/payments/receipt?selector=${selector}`,
     )
     expect(screen.getByRole("link", { name: "Open your case" })).toHaveAttribute("href", "/portal/cases/PR-26-GHNLB9")
     expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull()

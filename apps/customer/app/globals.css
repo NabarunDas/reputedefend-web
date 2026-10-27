@@ -1250,6 +1250,131 @@ main.customer-main > section .document-list a {
   outline-offset: 3px;
 }
 
+.billing-page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+.billing-page-tools {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  font: 600 0.95rem/1.4 system-ui, sans-serif;
+}
+.billing-document {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid #d5e0d8;
+  padding: 2.25rem 2rem 2.5rem;
+}
+.billing-document-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: flex-start;
+  padding-bottom: 1.25rem;
+  border-bottom: 3px solid var(--green);
+}
+.billing-document-header img {
+  width: 11.5rem;
+  height: auto;
+}
+.billing-document-header div {
+  text-align: right;
+}
+.billing-document-status {
+  margin: 0;
+  color: var(--green);
+  font: 700 0.75rem/1.2 system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+.billing-document h1 {
+  margin: 0.2rem 0 0;
+  font-size: 1.85rem;
+}
+.billing-document-header p {
+  margin: 0.15rem 0 0;
+}
+.billing-document-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+.billing-document h2 {
+  margin: 0 0 0.35rem;
+  font: 700 0.72rem/1.2 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5d6d64;
+}
+.billing-document-parties p,
+.billing-document-note {
+  margin: 0.1rem 0;
+}
+.billing-document-lines,
+.billing-document-totals {
+  width: 100%;
+  border-collapse: collapse;
+}
+.billing-document-lines th,
+.billing-document-lines td,
+.billing-document-totals th,
+.billing-document-totals td {
+  padding: 0.55rem 0.4rem;
+  vertical-align: top;
+}
+.billing-document-lines th {
+  text-align: left;
+  font: 700 0.72rem/1.2 system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5d6d64;
+  border-bottom: 1px solid #d5e0d8;
+}
+.billing-document-lines th:nth-child(n + 2),
+.billing-document-lines td:nth-child(n + 2),
+.billing-document-totals td {
+  text-align: right;
+  white-space: nowrap;
+}
+.billing-document-lines td {
+  border-bottom: 1px solid #e6eee8;
+}
+.billing-document-lines td span {
+  display: block;
+  margin-top: 0.2rem;
+  color: #5d6d64;
+  font-size: 0.92rem;
+}
+.billing-document-totals {
+  width: 18rem;
+  margin-left: auto;
+  margin-top: 0.75rem;
+}
+.billing-document-totals th {
+  text-align: left;
+  font-weight: 600;
+}
+.billing-document-details {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.35rem 1rem;
+  margin: 1.5rem 0 0;
+}
+.billing-document-details div { display: contents; }
+.billing-document-details dt { color: #5d6d64; }
+.billing-document-details dd { margin: 0; }
+.billing-document-note { margin-top: 1rem; }
+@media (max-width: 640px) {
+  .billing-document { padding: 1.25rem 1rem 1.5rem; }
+  .billing-document-header,
+  .billing-document-parties { display: block; }
+  .billing-document-header div { text-align: left; margin-top: 1rem; }
+  .billing-document-details { grid-template-columns: 1fr; }
+}
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

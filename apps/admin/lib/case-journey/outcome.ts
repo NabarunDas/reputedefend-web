@@ -525,8 +525,9 @@ export function presentJourneyOutcome(input: {
     resultNote: row.resultNote,
   }))
   const decisionMet = attempts.length > 0 && attempts.every(row => row.state === "Decision recorded" || row.state === "Withdrawn")
+  const receiptRef = paired?.receiptRef && /^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/.test(paired.receiptRef) ? ` ${paired.receiptRef}` : ""
   const billingLabel = paired
-    ? `${obligationLabel(paired.obligationState)}${paired.receiptId ? ", receipt recorded" : ""}${paired.invoiceStatus ? `, invoice ${paired.invoiceStatus}` : ""}. ${formatGbp(paired.amountMinor)} ${paired.currency}.`
+    ? `${obligationLabel(paired.obligationState)}${paired.receiptId ? `, receipt recorded${receiptRef}` : ""}${paired.invoiceStatus ? `, invoice ${paired.invoiceStatus}` : ""}. ${formatGbp(paired.amountMinor)} ${paired.currency}.`
     : projected.order
       ? `${obligationLabel(projected.order.obligationState)}${projected.order.receiptRecorded ? ", receipt recorded" : ""}.`
       : "No service order is linked."

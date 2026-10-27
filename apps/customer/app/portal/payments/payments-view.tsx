@@ -207,6 +207,7 @@ function OrderSection({
               <li key={receipt.selector}>
                 <p>{moneyLabel(receipt.amountMinor, receipt.currency)} · {paidOn(receipt.paidAt)}</p>
                 <p>{taxNote(receipt.taxBehaviour)}</p>
+                <p><a href={`/portal/payments/receipt?selector=${receipt.selector}`}>View receipt for {order.orderRef}</a></p>
                 <p><a href={`/api/portal/payments/receipt?selector=${receipt.selector}`}>Download receipt for {order.orderRef}</a></p>
               </li>
             ))}
@@ -273,6 +274,20 @@ function ObligationBlock({
       {obligation.invoice ? (
         <div className="payments-invoice">
           <p>{invoiceSentence(obligation.invoice.status, obligation.invoice.hostedAvailable)}</p>
+          {obligation.invoice.status === "ISSUED" && invoiceAction ? (
+            <>
+              <p>
+                <a href={`/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>
+                  View payment request for {order.orderRef}
+                </a>
+              </p>
+              <p>
+                <a href={`/api/portal/payments/invoice-document?reference=${item.reference}&selector=${invoiceAction.selector}`}>
+                  Download invoice PDF for {order.orderRef}
+                </a>
+              </p>
+            </>
+          ) : null}
           {obligation.invoice.hostedAvailable && invoiceAction ? (
             <p>
               <a href={`/api/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>

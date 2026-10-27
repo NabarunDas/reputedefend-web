@@ -371,8 +371,23 @@ describe("customer portal payments and receipts", () => {
     expect(paid.case.orders[0].receipts).toHaveLength(1)
     leak(paid)
     const download = await rpc<Record<string, unknown>>("customer_portal_receipt_v1", [alexSession, paid.case.orders[0].receipts[0].selector])
-    expect(download).toMatchObject({ status: "ok", reference, orderRef: order.public_ref, amountMinor: order.amount_minor, currency: "GBP" })
+    expect(download).toMatchObject({
+      status: "ok",
+      reference,
+      orderRef: order.public_ref,
+      amountMinor: order.amount_minor,
+      currency: "GBP",
+      billToName: "Synthetic Purchasing Business Ltd",
+      contactName: "Alex",
+      sellerVatRegistered: false,
+      sellerVatNumber: null,
+      paymentModel: "UPFRONT",
+    })
+    expect(download.receiptRef).toMatch(/^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/)
+    expect(JSON.stringify(download)).not.toContain("Harbour Bakery")
+    expect(JSON.stringify(download)).not.toContain("High Street")
     leak(download)
+    expect(await rpc("customer_portal_guard_documents_v1", [alexSession])).toEqual({ documents: [] })
     expect(await rpc("customer_portal_receipt_v1", [samSession, paid.case.orders[0].receipts[0].selector])).toEqual({ status: "not_found" })
     expect(await rpc("customer_portal_receipt_v1", [hash(token()), paid.case.orders[0].receipts[0].selector])).toBeNull()
     await db.query("update public.cases set status = 'CLOSED', closed_at = now() where id = $1", [caseId])

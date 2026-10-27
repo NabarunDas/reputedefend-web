@@ -1039,6 +1039,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "DEV payment receipt delivery", probe: "public.dev_payment_confirmation_claim_v1" },
   },
+  {
+    // PROFILERELAUNCH-UNIFIED-BILLING-DOCUMENTS-01. Customer billing documents.
+    // Source only. Do not apply to DEV or Production from this change.
+    // It does not charge a card, send mail, or update payment_receipts.
+    version: "20261027120000",
+    filename: "20261027120000_billing_documents_v1.sql",
+    step: "PROFILERELAUNCH-UNIFIED-BILLING-DOCUMENTS-01 billing documents",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Billing documents", probe: "public.customer_portal_invoice_document_v1" },
+  },
 ]
 
 /**
@@ -1054,8 +1067,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261025160000`, managed success verification `20261025163000`, checkout
  * presentation `20261026140000` and checkout refresh `20261026170000` are
  * already in the DEV ledger and must not be replayed. The DEV payment event
- * worker `20261026180000` and receipt delivery `20261026190000` are unapplied.
- * Do not apply them from this change.
+ * worker `20261026180000`, receipt delivery `20261026190000` and billing
+ * documents `20261027120000` are unapplied. Do not apply them from this change.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

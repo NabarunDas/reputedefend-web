@@ -131,7 +131,7 @@ function paidView(item: Owned): PaymentReturnView {
     nextStep(item.case.serviceTrack, item.order.paymentModel, item.order.serviceName),
   ].filter(paragraph => paragraph.length > 0)
   const links = caseLinks(item.case)
-  if (receipt) links.unshift({ href: `/api/portal/payments/receipt?selector=${receipt.selector}`, label: "View or print your receipt" })
+  if (receipt) links.unshift({ href: `/portal/payments/receipt?selector=${receipt.selector}`, label: "View your receipt" })
   return { tone: "paid", heading: "Payment received", paragraphs, links, refresh: false }
 }
 

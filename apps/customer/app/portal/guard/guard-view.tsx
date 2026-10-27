@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import type { GuardDocumentSummary } from "@/lib/portal/billing/parse"
 import { guardMoney, guardTaxNote, guardWhen } from "@/lib/portal/guard/model"
 import type { GuardAction, GuardLocation, GuardSubscriptionAction } from "@/lib/portal/guard/parse"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
@@ -22,7 +23,15 @@ export function GuardUnavailable() {
   )
 }
 
-export function GuardView({ locations, focused }: { locations: GuardLocation[]; focused: boolean }) {
+export function GuardView({
+  locations,
+  focused,
+  documents = [],
+}: {
+  locations: GuardLocation[]
+  focused: boolean
+  documents?: GuardDocumentSummary[]
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -76,6 +85,21 @@ export function GuardView({ locations, focused }: { locations: GuardLocation[]; 
           </li>
         ))}
       </ul>
+      {documents.length > 0 ? (
+        <section className="guard-documents" aria-labelledby="guard-documents-heading">
+          <h2 id="guard-documents-heading">Billing documents</h2>
+          <ul className="document-list">
+            {documents.map(document => (
+              <li key={document.selector}>
+                <p>{document.kind === "credit_note" ? "Credit note" : "Receipt"} {document.reference}</p>
+                <p>{guardMoney(document.amountMinor, document.currency)} · {guardWhen(document.issuedAt)}</p>
+                <p><a href={`/portal/guard/document?selector=${document.selector}`}>View {document.reference}</a></p>
+                <p><a href={`/api/portal/guard/document?selector=${document.selector}`}>Download {document.reference} PDF</a></p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {focused ? <p className="case-back"><a href="/portal/guard">All Guard locations</a></p> : null}
     </div>
   )

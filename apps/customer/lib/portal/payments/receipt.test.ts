@@ -8,6 +8,7 @@ vi.mock("@/lib/backend", async original => ({
   tokenHash: (value: string) => `hash-${value.slice(0, 8)}`,
 }))
 
+import { billingPdfText } from "../../../../../lib/billing/document-pdf"
 import { portalReceiptDownload } from "./receipt"
 import { portalInvoiceOpen } from "./invoice"
 import { portalSessionCookieName } from "@/lib/portal/config"
@@ -76,13 +77,25 @@ describe("portal receipt download", () => {
       paidAt: "2026-10-04T12:00:00.000Z",
       paymentStatus: "Paid",
       providerLabel: "Card payment through Stripe",
+      billToName: "Synthetic Purchasing Business Ltd",
+      billToEmail: "alex@example.com",
+      billToCountry: "GB",
+      contactName: "Alex",
+      paymentModel: "UPFRONT",
+      standardAmountMinor: null,
+      discountAmountMinor: null,
+      quotedSubtotalMinor: null,
+      sellerVatRegistered: false,
+      sellerVatNumber: null,
     })
     const response = await portalReceiptDownload(receiptRequest(`?selector=${selector}`))
     expect(response.status).toBe(200)
-    expect(response.headers.get("content-type")).toContain("text/html")
-    expect(response.headers.get("content-disposition")).toBe('inline; filename="receipt-RC-26-ABCDEF.html"')
+    expect(response.headers.get("content-type")).toContain("application/pdf")
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="receipt-RC-26-ABCDEF.pdf"')
     expect(response.headers.get("cache-control")).toContain("no-store")
-    const text = await response.text()
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    expect(Buffer.from(bytes.subarray(0, 5)).toString()).toBe("%PDF-")
+    const text = billingPdfText(bytes)
     expect(text).toContain("£99.00")
     expect(text).toContain("RC-26-ABCDEF")
     expect(text).toContain("PR-26-ABCDEF")
@@ -91,8 +104,11 @@ describe("portal receipt download", () => {
     expect(text).toContain("Paid")
     expect(text).toContain("Card payment through Stripe")
     expect(text).toContain("not a VAT invoice")
-    expect(text).toContain("Save as PDF")
+    expect(text).toContain("Synthetic Purchasing Business Ltd")
+    expect(text).toContain("Page 1 of 1")
+    expect(text).not.toContain("Save as PDF")
     expect(text).not.toContain(selector)
+    expect(text).not.toContain("Harbour Bakery")
     expect(text.replaceAll("Card payment through Stripe", "")).not.toMatch(/pi_|cus_|cs_|pm_|sk_|whsec_|stripe|storage|secret|receipts\//i)
   })
 

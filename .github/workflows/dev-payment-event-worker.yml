@@ -54,6 +54,41 @@ jobs:
             echo "Deployment protection did not intercept the unauthenticated request"
             exit 1
           fi
+          # Use an intentionally invalid application bearer to distinguish
+          # Vercel Deployment Protection from ProfileRelaunch authentication.
+          # This probe cannot run the worker, change payments, or disclose secrets.
+          probe_body="$(mktemp)"
+          probe_code="$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 20 --output "$probe_body" --write-out '%{http_code}' \
+            --header "Authorization: Bearer invalid-diagnostic-probe" \
+            --header "x-vercel-protection-bypass: ${BYPASS}" \
+            "${PREVIEW_ORIGIN}${path}")"
+          probe_result="$(python3 - "$probe_body" "$probe_code" <<'PY'
+          import json, sys
+          path, code = sys.argv[1:]
+          try:
+              payload = json.load(open(path, encoding="utf-8"))
+          except (OSError, ValueError, UnicodeError):
+              payload = {}
+          if code == "401" and payload.get("status") == "unauthorized":
+              print("application_auth_reached")
+          elif code == "403" and payload.get("status") == "disabled":
+              print("application_worker_disabled")
+          elif code == "503" and payload.get("status") == "disabled":
+              print("application_worker_configuration_missing")
+          elif code in ("401", "302", "307", "308"):
+              print("deployment_protection_or_gateway_rejected")
+          elif code == "200":
+              print("unsafe_invalid_bearer_accepted")
+          else:
+              print("unexpected_probe_response")
+          PY
+          )"
+          rm -f "$probe_body"
+          echo "safe authentication probe: ${probe_result}"
+          if [ "$probe_result" != "application_auth_reached" ]; then
+            echo "DEV worker preflight did not reach the expected application authentication boundary"
+            exit 1
+          fi
           body="$(mktemp)"
           code="$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 60 --output "$body" --write-out '%{http_code}' \
             --header "Authorization: Bearer ${WORKER_SECRET}" \

@@ -7,7 +7,7 @@
  *
  * It is not Admin CaseFlow. It does not expose phases, blockers, or actions.
  */
-import { caseTypeLabel, customerCaseState, formatPortalDate, presentAttention, serviceLabel } from "./model"
+import { caseTypeLabel, customerCaseState, formatPortalDate, formatPortalDateTime, portalDayKey, presentAttention, serviceLabel, statusLabel } from "./model"
 import type { CaseStatus, CaseType, CustomerCaseDetail, CustomerTimelineCode, OutcomeCode, WorkStage } from "./parse"
 
 export const CUSTOMER_PROGRESS_STEPS = [
@@ -83,8 +83,8 @@ export function presentProgress(status: CaseStatus, workStage: WorkStage): Prese
   const index = CUSTOMER_PROGRESS_STEPS.findIndex(step => step.code === current)
   return CUSTOMER_PROGRESS_STEPS.map((step, stepIndex) => {
     const position: ProgressPosition = stepIndex < index ? "earlier" : stepIndex === index ? "current" : "upcoming"
-    const state = position === "earlier" ? "earlier step" : position === "current" ? "current step" : "upcoming step"
-    return { code: step.code, label: step.label, position, text: `${step.label} — ${state}` }
+    const state = position === "earlier" ? "Completed" : position === "current" ? "Now" : "Upcoming"
+    return { code: step.code, label: step.label, position, text: `${step.label}. ${state}.` }
   })
 }
 
@@ -193,6 +193,32 @@ export function presentNextStep(input: {
       remaining: [],
     }
   }
+  if (state === "IN_PROGRESS" && (input.workStage === "PREPARATION" || input.workStage === "READY_TO_SUBMIT")) {
+    return {
+      title: "We're preparing your case",
+      body: input.serviceTrack === "GUIDED"
+        ? "Nothing is needed from you right now. You submit the finished pack to Google yourself. ProfileRelaunch does not submit Guided work."
+        : "Nothing is needed from you right now. We'll let you know when that changes.",
+      timing: null,
+      support: null,
+      href: null,
+      actionLabel: null,
+      alsoWaiting: null,
+      remaining: [],
+    }
+  }
+  if (state === "IN_PROGRESS" && (input.workStage === "SERVICE_SELECTION" || input.workStage === "PAYMENT_REQUIRED" || input.workStage === "AUTHORIZATION_REQUIRED")) {
+    return {
+      title: "We're setting up your service",
+      body: "Nothing is needed from you unless a step is shown here. An amount already recorded as paid is not charged again from this page.",
+      timing: null,
+      support: null,
+      href: null,
+      actionLabel: null,
+      alsoWaiting: null,
+      remaining: [],
+    }
+  }
   if (state === "IN_PROGRESS") {
     return {
       title: "We're working on your case",
@@ -293,29 +319,46 @@ export type PresentedTimelineEntry = {
   occurredAt: string
   dateLabel: string
   message: string
+  separate: boolean
 }
 
 export function presentTimeline(detail: CustomerCaseDetail): PresentedTimelineEntry[] {
-  return detail.timeline.map(event => ({
-    code: event.code,
-    occurredAt: event.occurredAt,
-    dateLabel: formatPortalDate(event.occurredAt),
-    message: timelineMessage(event.code, detail.case.outcomeCode),
-  }))
+  let previous: { code: CustomerTimelineCode; day: string } | null = null
+  return detail.timeline.map(event => {
+    const day = portalDayKey(event.occurredAt)
+    const separate = previous?.code === event.code && previous.day === day
+    previous = { code: event.code, day }
+    return {
+      code: event.code,
+      occurredAt: event.occurredAt,
+      dateLabel: formatPortalDateTime(event.occurredAt),
+      message: timelineMessage(event.code, detail.case.outcomeCode),
+      separate,
+    }
+  })
 }
 
 export type DetailRow = { term: string; value: string }
 
-export function presentDetailRows(detail: CustomerCaseDetail): DetailRow[] {
+export type CaseCommerce = {
+  purchasedService: string | null
+  payment: string | null
+}
+
+export function presentDetailRows(detail: CustomerCaseDetail, commerce?: CaseCommerce | null): DetailRow[] {
   const item = detail.case
+  const state = customerCaseState(item.status, item.workStage, item.attentionItems.length)
   const rows: DetailRow[] = [
     { term: "Reference", value: item.reference },
-    { term: "Service", value: caseTypeLabel(item.caseType) },
     { term: "Business", value: item.businessName },
   ]
   if (item.locationName) rows.push({ term: "Location", value: item.locationName })
+  if (commerce?.purchasedService) rows.push({ term: "Purchased service", value: commerce.purchasedService })
+  rows.push({ term: "Case", value: caseTypeLabel(item.caseType) })
   const track = serviceLabel(item.serviceTrack)
-  if (track) rows.push({ term: "Service type", value: track })
+  if (track) rows.push({ term: "Arrangement", value: track })
+  rows.push({ term: "Status", value: statusLabel(state) })
+  if (commerce?.payment) rows.push({ term: "Payment", value: commerce.payment })
   rows.push({ term: "Started", value: formatPortalDate(item.submittedAt) })
   if (item.closedAt) rows.push({ term: "Closed", value: formatPortalDate(item.closedAt) })
   return rows

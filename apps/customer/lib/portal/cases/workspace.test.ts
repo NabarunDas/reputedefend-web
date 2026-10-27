@@ -56,12 +56,12 @@ describe("customer progress presentation", () => {
     expect(presentProgress("CANCELLED", "FINISHED")).toBeNull()
     const progress = presentProgress("UNDER_REVIEW", "SERVICE_SELECTION")
     expect(progress?.map(step => step.text)).toEqual([
-      "Case received — earlier step",
-      "Information — earlier step",
-      "Service setup — current step",
-      "Preparing your case — upcoming step",
-      "Submitted to Google — upcoming step",
-      "Decision — upcoming step",
+      "Case received. Completed.",
+      "Information. Completed.",
+      "Service setup. Now.",
+      "Preparing your case. Upcoming.",
+      "Submitted to Google. Upcoming.",
+      "Decision. Upcoming.",
     ])
     expect(progress?.find(step => step.position === "current")?.code).toBe("SERVICE_SETUP")
     const source = readFileSync(new URL("./workspace.ts", import.meta.url), "utf8")
@@ -118,9 +118,10 @@ describe("what happens next", () => {
       body: "We've received your request and are reviewing the information you provided.",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "PREPARATION" })).toMatchObject({
-      title: "We're working on your case",
+      title: "We're preparing your case",
       body: "Nothing is needed from you right now. We'll let you know when that changes.",
     })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "PREPARATION", serviceTrack: "GUIDED" }).body).toMatch(/does not submit Guided work/)
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED" })).toMatchObject({
       title: "Your case has been submitted",
       body: "We've recorded the submission to Google. Nothing is needed from you right now.",
@@ -233,7 +234,7 @@ describe("timeline wording", () => {
       { code: "CASE_RECEIVED", occurredAt: submittedAt },
     ]))
     expect(presented.map(item => item.message).join(" ")).not.toMatch(/CASE_|actor|review_note|_/)
-    expect(presented[1].dateLabel).toBe("3 October 2026")
+    expect(presented[1].dateLabel).toBe("3 Oct 2026, 13:00")
   })
 
   it("keeps an earlier Google decision when the case is later withdrawn", () => {
@@ -261,10 +262,10 @@ describe("timeline wording", () => {
 describe("case detail rows", () => {
   it("omits an empty location, an undecided service, and a missing closed date", () => {
     const rows = presentDetailRows(detail({ locationName: null, serviceTrack: "UNDECIDED", closedAt: null }))
-    expect(rows.map(row => row.term)).toEqual(["Reference", "Service", "Business", "Started"])
+    expect(rows.map(row => row.term)).toEqual(["Reference", "Business", "Case", "Status", "Started"])
     const closed = presentDetailRows(detail({ closedAt, locationName: "High Street" }))
-    expect(closed.map(row => row.term)).toEqual(["Reference", "Service", "Business", "Location", "Service type", "Started", "Closed"])
+    expect(closed.map(row => row.term)).toEqual(["Reference", "Business", "Location", "Case", "Arrangement", "Status", "Started", "Closed"])
     expect(closed.find(row => row.term === "Closed")?.value).toBe("8 October 2026")
-    expect(closed.find(row => row.term === "Service type")?.value).toBe("Managed service")
+    expect(closed.find(row => row.term === "Arrangement")?.value).toBe("Managed service")
   })
 })

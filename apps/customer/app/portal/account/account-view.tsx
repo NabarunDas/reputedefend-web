@@ -1,10 +1,10 @@
 import { SignOutButton } from "../sign-out-button"
 import type { CustomerAccount } from "@/lib/portal/account/parse"
+import { legalIdentity } from "../../../../../lib/legal"
 
 export function AccountUnavailable() {
   return (
     <div className="account-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Account</h1>
       <h2>We couldn&apos;t load your account</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
@@ -15,7 +15,6 @@ export function AccountUnavailable() {
 export function AccountView({ account }: { account: CustomerAccount }) {
   return (
     <div className="account-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Account</h1>
       <p className="lead">These are the contact details on your ProfileRelaunch account.</p>
       <dl className="account-facts">
@@ -44,7 +43,11 @@ export function AccountView({ account }: { account: CustomerAccount }) {
           </div>
         ) : null}
       </dl>
-      <p>To change your name, email address, or phone number, contact ProfileRelaunch. This page cannot change those details.</p>
+      <section className="account-help" aria-labelledby="account-help-heading">
+        <h2 id="account-help-heading">Need to update your details?</h2>
+        <p>Email us and we will confirm the change before it is applied.</p>
+        <p><a href={`mailto:${legalIdentity.contactEmail}`}>{legalIdentity.contactEmail}</a></p>
+      </section>
       <SignOutButton />
     </div>
   )

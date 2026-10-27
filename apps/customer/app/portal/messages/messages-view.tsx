@@ -1,17 +1,14 @@
-import type { CustomerMessageDetail, CustomerMessagePage } from "@/lib/portal/messages/parse"
+import { formatPortalDateTime } from "@/lib/portal/cases/model"
+import { messageParagraphs, messageTitle } from "@/lib/portal/messages/present"
+import type { CustomerMessageDetail, CustomerMessagePage, CustomerMessageThread } from "@/lib/portal/messages/parse"
 
 export function formatMessageTime(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value))
+  return formatPortalDateTime(value)
 }
 
 export function MessagesUnavailable() {
   return (
     <div className="messages-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Messages</h1>
       <h2>We couldn&apos;t load your messages</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
@@ -24,6 +21,11 @@ function place(businessName: string | null, locationName: string | null) {
   return businessName || locationName
 }
 
+function context(thread: CustomerMessageThread) {
+  const where = place(thread.businessName, thread.locationName)
+  return [where, thread.caseReference ? `Case ${thread.caseReference}` : null].filter(Boolean).join(" · ")
+}
+
 export function MessagesView({ page, earlier }: { page: CustomerMessagePage; earlier: boolean }) {
   const next = page.nextCursor
   const nextHref = next
@@ -31,10 +33,8 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
     : null
   return (
     <div className="messages-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Messages</h1>
-      <p className="lead">Messages from ProfileRelaunch about your cases, and email received from the verified email address on your ProfileRelaunch account.</p>
-      <p>To reply, use the email ProfileRelaunch sent you. This page does not send messages.</p>
+      <p className="lead">Updates about your cases, kept in the order they were recorded.</p>
       {page.threads.length === 0 ? (
         earlier ? (
           <>
@@ -45,18 +45,20 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
       ) : (
         <ul className="messages-list">
           {page.threads.map(thread => {
-            const where = place(thread.businessName, thread.locationName)
+            const title = messageTitle(thread.subject)
+            const where = context(thread)
+            const href = `/portal/messages/${thread.selector}`
             return (
               <li key={thread.selector}>
-                <article className="messages-thread">
-                  <h2>{thread.subject}</h2>
-                  <p>{thread.state}</p>
-                  {thread.caseReference ? <p>Case {thread.caseReference}</p> : null}
-                  {where ? <p>{where}</p> : null}
-                  <p>{thread.preview}</p>
-                  <p><time dateTime={thread.activityAt}>{formatMessageTime(thread.activityAt)}</time></p>
-                  <p><a href={`/portal/messages/${thread.selector}`}>View conversation</a></p>
-                </article>
+                <a className="message-row" href={href}>
+                  <span className="message-row-main">
+                    <span className="message-row-title">{title}</span>
+                    {where ? <span className="message-row-context">{where}</span> : null}
+                    <span className="message-row-state">{thread.state}</span>
+                  </span>
+                  <time dateTime={thread.activityAt}>{formatMessageTime(thread.activityAt)}</time>
+                  <span className="sr-only">Open conversation</span>
+                </a>
               </li>
             )
           })}
@@ -73,28 +75,40 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
 }
 
 export function MessageView({ thread }: { thread: CustomerMessageDetail }) {
-  const where = place(thread.businessName, thread.locationName)
+  const title = messageTitle(thread.subject)
+  const where = context(thread)
   return (
     <div className="messages-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <p><a href="/portal/messages">All messages</a></p>
-      <h1>{thread.subject}</h1>
-      <p>{thread.state}</p>
-      {thread.caseReference ? <p>Case {thread.caseReference}</p> : null}
+      <h1>{title}</h1>
+      <p className="message-state">{thread.state}</p>
       {where ? <p>{where}</p> : null}
+      {title !== thread.subject ? (
+        <dl className="message-recorded">
+          <div>
+            <dt>Recorded subject</dt>
+            <dd>{thread.subject}</dd>
+          </div>
+        </dl>
+      ) : null}
       <ol className="message-entries">
         {thread.entries.map((entry, index) => (
           <li key={`${entry.at}-${index}`}>
             <article className="message-entry">
               <h2>{entry.role}</h2>
               <p><time dateTime={entry.at}>{formatMessageTime(entry.at)}</time></p>
-              {entry.subject ? <p>{entry.subject}</p> : null}
-              <p className="preserve-lines">{entry.body}</p>
-              {entry.delivery ? <p>{entry.delivery}</p> : null}
+              {entry.subject && entry.subject !== thread.subject ? <p>{entry.subject}</p> : null}
+              <div className="message-body">
+                {messageParagraphs(entry.body).map((paragraph, paragraphIndex) => (
+                  <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
+                ))}
+              </div>
+              {entry.delivery ? <p className="message-delivery">{entry.delivery}</p> : null}
             </article>
           </li>
         ))}
       </ol>
+      <p className="message-reply">To reply, use the email ProfileRelaunch sent you.</p>
       {!thread.complete ? <p>Earlier messages in this conversation are not shown here.</p> : null}
     </div>
   )

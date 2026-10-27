@@ -38,10 +38,10 @@ describe("portal shell", () => {
   it("renders the quiet welcome shell and the fixed navigation", () => {
     renderPortal()
     expect(screen.getByText("My ProfileRelaunch").tagName).not.toBe("H1")
-    expect(screen.getByText("Secure customer area")).toBeTruthy()
-    expect(screen.getByText("CUSTOMER PORTAL")).toBeTruthy()
-    expect(screen.getByRole("heading", { level: 1, name: "Welcome to My ProfileRelaunch" })).toBeTruthy()
-    expect(screen.getByText("See what needs your attention and where your cases stand.")).toBeTruthy()
+    expect(screen.queryByText("Secure customer area")).toBeNull()
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome back" })).toBeTruthy()
+    expect(screen.getByText("Here is where your cases stand, and the one step that needs you when there is one.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Tell us about your business" })).toHaveAttribute("href", "https://profilerelaunch.com/get-help")
     expect(screen.getByRole("heading", { level: 2, name: "No active cases" })).toBeTruthy()
     expect(screen.getByText("When you start a ProfileRelaunch case, it will appear here.")).toBeTruthy()
 
@@ -110,7 +110,7 @@ describe("portal shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
     expect(await screen.findByRole("button", { name: "Signing out…" })).toBeDisabled()
     expect(router.push).not.toHaveBeenCalled()
-    expect(screen.getByRole("heading", { name: "Welcome to My ProfileRelaunch" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeTruthy()
     resolveFetch({ ok: false, status: 500, json: async () => ({}) })
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We couldn't sign you out. Try again."))
     expect(router.push).not.toHaveBeenCalled()

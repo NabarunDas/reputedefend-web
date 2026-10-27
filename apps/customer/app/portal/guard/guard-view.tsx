@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import type { GuardDocumentSummary } from "@/lib/portal/billing/parse"
 import { guardMoney, guardTaxNote, guardWhen } from "@/lib/portal/guard/model"
 import type { GuardAction, GuardLocation, GuardSubscriptionAction } from "@/lib/portal/guard/parse"
+import { brandSiteUrl } from "../../../../../lib/brand"
+import { guardHeroDisclaimer, guardPrice } from "../../../../../lib/guard-offer"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
 function slotKey(keys: { current: Record<string, string> }, slot: string) {
@@ -15,7 +17,6 @@ function slotKey(keys: { current: Record<string, string> }, slot: string) {
 export function GuardUnavailable() {
   return (
     <div className="guard-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load Relaunch Guard</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>
@@ -27,10 +28,12 @@ export function GuardView({
   locations,
   focused,
   documents = [],
+  setupEnabled = false,
 }: {
   locations: GuardLocation[]
   focused: boolean
   documents?: GuardDocumentSummary[]
+  setupEnabled?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
@@ -65,11 +68,10 @@ export function GuardView({
 
   return (
     <div className="guard-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>{focused ? "Relaunch Guard location" : "Relaunch Guard"}</h1>
-      <p>Guard is monitored according to the active service arrangement. This page does not start monitoring or create a charge.</p>
+      {locations.length > 0 ? <p>Monitoring follows the arrangement recorded for each location.</p> : null}
       {notice ? <p className="guard-notice" role="alert">{notice}</p> : null}
-      {locations.length === 0 ? <p>You do not have Relaunch Guard for a location yet.</p> : null}
+      {locations.length === 0 ? <GuardIntroduction setupEnabled={setupEnabled} /> : null}
       <ul className="guard-list">
         {locations.map(location => (
           <li key={location.selector} className="guard-location">
@@ -102,6 +104,27 @@ export function GuardView({
       ) : null}
       {focused ? <p className="case-back"><a href="/portal/guard">All Guard locations</a></p> : null}
     </div>
+  )
+}
+
+function GuardIntroduction({ setupEnabled }: { setupEnabled: boolean }) {
+  return (
+    <section className="guard-intro" aria-labelledby="guard-intro-title">
+      <h2 id="guard-intro-title">Protect your Google Business Profile with Relaunch Guard</h2>
+      <p>We check your profile and reviews each morning and evening, UK time, including weekends and bank holidays. If we see a concerning change, we review it and email you with what we found and what to do next.</p>
+      <ul className="guard-benefits">
+        <li>Whether your profile appears available, and the status we can see.</li>
+        <li>Changes to the name, address or service area, opening hours and contact details.</li>
+        <li>New or changed reviews that may need your attention.</li>
+      </ul>
+      <p className="guard-price"><span>{guardPrice}</span> per month per location</p>
+      <p>Checks are scheduled, not continuous. We do not promise round-the-clock monitoring, automatic changes on Google, or that a review will be removed.</p>
+      <div className="guard-intro-actions">
+        <a className="portal-button" href={`${brandSiteUrl}/relaunch-guard`}>Learn about Relaunch Guard</a>
+        {setupEnabled ? <a className="portal-button secondary" href={`${brandSiteUrl}/start-monitoring`}>Request monitoring setup</a> : null}
+      </div>
+      <p className="guard-assurance">{guardHeroDisclaimer(setupEnabled)}</p>
+    </section>
   )
 }
 

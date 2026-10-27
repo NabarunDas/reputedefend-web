@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { presentAttention, presentCase, customerCaseState, caseTypeLabel, serviceLabel, formatPortalDate, attentionIntro, calmActiveCopy, statusLabel } from "./model"
+import { presentAttention, presentCase, customerCaseState, caseTypeLabel, serviceLabel, formatPortalDate, formatPortalDateTime, attentionIntro, calmActiveCopy, statusLabel } from "./model"
 import type { CustomerCaseRow } from "./parse"
 
 const base: CustomerCaseRow = {
@@ -26,6 +26,9 @@ describe("customer case presentation", () => {
 
   it("formats dates in UK form", () => {
     expect(formatPortalDate("2026-10-08T12:00:00.000Z")).toBe("8 October 2026")
+    expect(formatPortalDateTime("2026-10-04T12:00:00.000Z")).toBe("4 Oct 2026, 13:00")
+    expect(formatPortalDateTime("2026-01-15T00:30:00Z")).toBe("15 Jan 2026, 00:30")
+    expect(formatPortalDateTime("2026-10-25T00:30:00Z")).toBe("25 Oct 2026, 01:30")
   })
 
   it("resolves coarse state in the required order", () => {

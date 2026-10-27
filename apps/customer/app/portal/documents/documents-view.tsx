@@ -1,5 +1,5 @@
 import { caseTypeLabel, formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
-import { documentContext, evidenceStateLabel, publishedFileDetail } from "@/lib/portal/documents/model"
+import { evidenceStateLabel, publishedFileDetail } from "@/lib/portal/documents/model"
 import type { CustomerDocuments, EvidenceNeed, EvidenceSubmission, PublishedDocument } from "@/lib/portal/documents/parse"
 
 function groupByReference<T extends { reference: string }>(items: T[]) {
@@ -30,7 +30,6 @@ function CaseLine({ item }: { item: EvidenceNeed | EvidenceSubmission | Publishe
 export function DocumentsUnavailable() {
   return (
     <div className="documents-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load your documents</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>
@@ -44,19 +43,18 @@ export function DocumentsView({ documents }: { documents: CustomerDocuments }) {
   const published = groupByReference(documents.documents)
   return (
     <div className="documents-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Documents</h1>
-      <p>See what we still need from you, what you have sent, and what ProfileRelaunch has published for you.</p>
+      <p className="lead">What still needs you, what you have sent, and what is ready for you.</p>
 
       <section aria-labelledby="needs-heading">
-        <h2 id="needs-heading">Evidence we need from you</h2>
+        <h2 id="needs-heading">Action needed</h2>
         {needs.length === 0 ? <p>Nothing is waiting for you to upload.</p> : (
           <ul className="document-list">
             {needs.map(group => (
-              <li key={group.reference}>
+              <li key={group.reference} className="document-group">
+                <CaseLine item={group.items[0]} />
                 {group.items.map(item => (
-                  <article className="case-card" key={`${item.reference}-${item.selector}`}>
-                    <CaseLine item={item} />
+                  <article className="document-row" key={`${item.reference}-${item.selector}`}>
                     <h3>{item.title}</h3>
                     <p>{item.requestText}</p>
                     {item.dueAt ? <p>Requested by {formatPortalDate(item.dueAt)}</p> : null}
@@ -71,14 +69,14 @@ export function DocumentsView({ documents }: { documents: CustomerDocuments }) {
       </section>
 
       <section aria-labelledby="submitted-heading">
-        <h2 id="submitted-heading">Your submitted evidence</h2>
+        <h2 id="submitted-heading">Submitted</h2>
         {submissions.length === 0 ? <p>You haven&apos;t submitted any evidence yet.</p> : (
           <ul className="document-list">
             {submissions.map(group => (
-              <li key={group.reference}>
+              <li key={group.reference} className="document-group">
+                <CaseLine item={group.items[0]} />
                 {group.items.map(item => (
-                  <article className="case-card" key={`${item.reference}-${item.title}-${item.submittedAt}`}>
-                    <CaseLine item={item} />
+                  <article className="document-row" key={`${item.reference}-${item.title}-${item.submittedAt}`}>
                     <h3>{item.title}</h3>
                     <p>{item.filename}</p>
                     <p>Submitted {formatPortalDate(item.submittedAt)}</p>
@@ -92,15 +90,14 @@ export function DocumentsView({ documents }: { documents: CustomerDocuments }) {
       </section>
 
       <section aria-labelledby="published-heading">
-        <h2 id="published-heading">Documents from ProfileRelaunch</h2>
+        <h2 id="published-heading">Ready for you</h2>
         {published.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for you yet.</p> : (
           <ul className="document-list">
             {published.map(group => (
-              <li key={group.reference}>
+              <li key={group.reference} className="document-group">
+                <CaseLine item={group.items[0]} />
                 {group.items.map(item => (
-                  <article className="case-card" key={`${item.reference}-${item.selector}`}>
-                    <CaseLine item={item} />
-                    <p className="document-context">{documentContext(item)}</p>
+                  <article className="document-row" key={`${item.reference}-${item.selector}`}>
                     <h3>{item.title}</h3>
                     <p>{item.filename}</p>
                     <p>{publishedFileDetail(item)}</p>

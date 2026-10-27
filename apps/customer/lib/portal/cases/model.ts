@@ -51,8 +51,34 @@ const ukDate = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/London",
 })
 
+const ukDateTime = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "Europe/London",
+})
+
+const ukDay = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "Europe/London",
+})
+
 export function formatPortalDate(iso: string): string {
   return ukDate.format(new Date(iso))
+}
+
+/** UK local date and time. A date-only value must not be passed here. */
+export function formatPortalDateTime(iso: string): string {
+  return ukDateTime.format(new Date(iso)).replace(/\s*(am|pm)$/i, "")
+}
+
+export function portalDayKey(iso: string): string {
+  return ukDay.format(new Date(iso))
 }
 
 export function caseTypeLabel(caseType: CaseType): string {

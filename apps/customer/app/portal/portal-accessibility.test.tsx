@@ -60,7 +60,7 @@ describe("assembled portal accessibility", () => {
       unmount()
     }
     const emptyDashboard = { summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }
-    check("/portal", "Welcome to My ProfileRelaunch", <PortalHome dashboard={emptyDashboard} />)
+    check("/portal", "Welcome back", <PortalHome dashboard={emptyDashboard} />)
     check("/portal", "We couldn't load your customer space", <PortalUnavailable />)
     check("/portal/cases", "Cases", <CasesView view="active" page={{ cases: [], nextCursor: null }} />)
     check("/portal/cases", "Cases", <CasesUnavailable />)

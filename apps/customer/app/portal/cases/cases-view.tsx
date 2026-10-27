@@ -17,7 +17,6 @@ const EMPTY: Record<CasesView, string> = {
 export function CasesUnavailable() {
   return (
     <div className="portal-dashboard">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Cases</h1>
       <h2>We couldn&apos;t load your cases</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
@@ -33,7 +32,6 @@ export function CasesView({ view, page }: { view: CasesView; page: CustomerCaseP
     : null
   return (
     <div className="portal-dashboard">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Cases</h1>
       <p className="lead">See your active and previous ProfileRelaunch cases.</p>
       <nav aria-label="Case filters">

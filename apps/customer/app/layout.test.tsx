@@ -68,7 +68,7 @@ describe("customer layout", () => {
     nav.pathname = "/portal"
     render(<RootLayout><p>Portal</p></RootLayout>)
     expect(screen.queryByRole("link", { name: "Back to ProfileRelaunch" })).toBeNull()
-    expect(screen.getByText("Secure customer area").tagName).toBe("P")
+    expect(screen.getByText("Your account").tagName).toBe("P")
     expect(screen.getAllByRole("link", { name: "ProfileRelaunch home" }).some(link => link.getAttribute("href") === "https://profilerelaunch.com")).toBe(true)
   })
 

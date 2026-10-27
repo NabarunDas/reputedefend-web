@@ -2,10 +2,10 @@
  * Customer-facing payment wording. Amounts are formatted from stored minor
  * units. This module does not decide eligibility or change a payment.
  */
-import { formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
+import { serviceLabel } from "@/lib/portal/cases/model"
 import { formatMoney } from "../../../../../lib/money"
 import { customerFacingTaxNote } from "../../../../../lib/pricing"
-import type { ObligationState, PaymentAction, PaymentObligation, PaymentOrder, PaymentTax } from "./parse"
+import type { ObligationState, PaymentAction, PaymentCase, PaymentObligation, PaymentOrder, PaymentTax } from "./parse"
 
 export function moneyLabel(minor: number, currency: string): string {
   return formatMoney(minor, currency)
@@ -81,10 +81,44 @@ export function methodSentence(saved: boolean): string {
     : "A payment method is not saved yet."
 }
 
-export function paidOn(iso: string): string {
-  return `Paid ${formatPortalDate(iso)}`
-}
-
 export function trackLabel(track: Parameters<typeof serviceLabel>[0]): string | null {
   return serviceLabel(track)
+}
+
+/**
+ * Read-only summary of a recorded order. It does not infer a catalogue
+ * product from case status, and it does not decide whether checkout is allowed.
+ */
+export function presentCaseCommerce(item: PaymentCase): { purchasedService: string | null; payment: string | null } {
+  const paid = item.orders.find(order => order.receipts.length > 0 || order.obligations.some(obligation => obligation.state === "PAID"))
+  if (paid) {
+    const receipt = paid.receipts[0]
+    const paidObligation = paid.obligations.find(obligation => obligation.state === "PAID")
+    const amount = receipt ?? paidObligation
+    return {
+      purchasedService: paid.serviceName,
+      payment: amount ? `Paid ${moneyLabel(amount.amountMinor, amount.currency)}` : "Paid",
+    }
+  }
+  const open = item.orders.find(order => order.obligations.some(obligation =>
+    obligation.state === "DUE" || obligation.state === "COLLECTING" || obligation.state === "AUTHENTICATION_REQUIRED" || obligation.state === "FAILED",
+  ))
+  if (open) {
+    const obligation = open.obligations.find(entry =>
+      entry.state === "DUE" || entry.state === "COLLECTING" || entry.state === "AUTHENTICATION_REQUIRED" || entry.state === "FAILED",
+    )
+    return {
+      purchasedService: open.serviceName,
+      payment: obligation ? `Payment due ${moneyLabel(obligation.amountMinor, obligation.currency)}` : "Payment due",
+    }
+  }
+  const named = item.orders[0]
+  if (!named) return { purchasedService: null, payment: null }
+  if (named.paymentModel === "SUCCESS_FEE") {
+    return {
+      purchasedService: named.serviceName,
+      payment: "The success fee is charged only after a documented result",
+    }
+  }
+  return { purchasedService: named.serviceName, payment: null }
 }

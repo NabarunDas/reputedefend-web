@@ -93,7 +93,20 @@ describe("guard screens", () => {
 
   it("shows an empty state without inventing coverage", () => {
     render(<GuardView locations={[]} focused={false} />)
-    expect(screen.getByText("You do not have Relaunch Guard for a location yet.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Protect your Google Business Profile with Relaunch Guard" })).toBeTruthy()
+    expect(screen.getByText("£9.99")).toBeTruthy()
+    expect(screen.getByText(/per month per location/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Learn about Relaunch Guard" })).toHaveAttribute("href", "https://profilerelaunch.com/relaunch-guard")
+    expect(screen.queryByRole("link", { name: "Request monitoring setup" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /checkout|subscribe|pay/i })).toBeNull()
+    expect(screen.getByText("Online setup is currently unavailable. Contact us to discuss monitoring.")).toBeTruthy()
+  })
+
+  it("offers setup only when the marketing request route is enabled", () => {
+    render(<GuardView locations={[]} focused={false} setupEnabled />)
+    expect(screen.getByRole("link", { name: "Request monitoring setup" })).toHaveAttribute("href", "https://profilerelaunch.com/start-monitoring")
+    expect(screen.getByText("Requesting setup does not start monitoring or take payment.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /checkout|subscribe|pay/i })).toBeNull()
   })
 
   it("requires an explicit permission confirmation and does not treat silence as acceptance", async () => {

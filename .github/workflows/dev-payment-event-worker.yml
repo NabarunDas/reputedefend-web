@@ -1,6 +1,9 @@
 name: DEV payment event worker
 
 on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/dev-payment-event-worker.yml"]
   schedule:
     # GitHub runs this only from the default branch, which is main.
     - cron: "*/5 * * * *"

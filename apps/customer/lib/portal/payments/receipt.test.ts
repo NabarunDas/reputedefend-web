@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -117,6 +121,51 @@ describe("portal receipt download", () => {
     expect(text).not.toContain(selector)
     expect(text).not.toContain("Harbour Bakery")
     expect(text.replaceAll("Card payment through Stripe", "")).not.toMatch(/pi_|cus_|cs_|pm_|sk_|whsec_|stripe|storage|secret|receipts\//i)
+  })
+
+  it("returns a readable PDF for a non-Latin buyer name", async () => {
+    mocks.rpc.mockResolvedValue({
+      status: "ok",
+      receiptRef: "RC-26-NTLAAA",
+      reference: "PR-26-NTLAAA",
+      orderRef: "SO-26-NTLAAA",
+      serviceName: "Guided Relaunch",
+      amountMinor: 9900,
+      currency: "GBP",
+      taxBehaviour: "NOT_APPLICABLE",
+      taxAmountMinor: 0,
+      paidAt: "2026-10-04T12:00:00.000Z",
+      paymentStatus: "Paid",
+      providerLabel: "Card payment through Stripe",
+      billToName: "নীল রায়",
+      billToEmail: "alex@example.com",
+      billToCountry: "GB",
+      contactName: "राज कुमार",
+      paymentModel: "UPFRONT",
+      standardAmountMinor: null,
+      discountAmountMinor: null,
+      quotedSubtotalMinor: null,
+      sellerVatRegistered: false,
+      sellerVatNumber: null,
+      sellerLegalName: "ProfileRelaunch Ltd",
+      sellerTradingName: "ProfileRelaunch",
+      sellerAddress: "71–75 Shelton Street\nCovent Garden\nLondon\nWC2H 9JQ\nUnited Kingdom",
+      sellerEmail: "contact@profilerelaunch.com",
+      sellerRegistrationNumber: "17520826",
+      sellerPlaceOfRegistration: "England and Wales",
+      billToCaptured: true,
+    })
+    const response = await portalReceiptDownload(receiptRequest(`?selector=${selector}`))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/pdf")
+    const bytes = Buffer.from(await response.arrayBuffer())
+    const file = join(mkdtempSync(join(tmpdir(), "billing-route-")), "intl.pdf")
+    writeFileSync(file, bytes)
+    const extracted = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" })
+    expect(extracted).toContain("নীল রায়")
+    expect(extracted).toContain("राज कुमार")
+    expect(extracted).toContain("£99.00")
+    expect(response.status).not.toBe(503)
   })
 
   it("does not redirect an invoice page at a provider address stored in HTML", async () => {

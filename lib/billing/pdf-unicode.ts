@@ -24,7 +24,8 @@ type Face = {
   }
 }
 
-type Run = { face: string; glyphs: Glyph[]; positions: Position[] }
+type FaceName = "sans" | "sansBold" | "bengali" | "devanagari" | "arabic" | "chinese"
+type Run = { face: FaceName; glyphs: Glyph[]; positions: Position[] }
 
 export type EmbeddedFace = {
   resourceName: string
@@ -47,23 +48,22 @@ function utf16(point: number): string {
   const low = 0xdc00 + (shifted & 0x3ff)
   return high.toString(16).padStart(4, "0") + low.toString(16).padStart(4, "0")
 }
-const FILES = {
-  sans: "NotoSans-Regular.ttf",
-  sansBold: "NotoSans-Bold.ttf",
-  bengali: "NotoSansBengali-Regular.ttf",
-  devanagari: "NotoSansDevanagari-Regular.ttf",
-  arabic: "NotoNaskhArabic-Regular.ttf",
-  chinese: "NotoSansSC-VF.ttf",
+const FILE_URLS = {
+  sans: new URL("./fonts/NotoSans-Regular.ttf", import.meta.url),
+  sansBold: new URL("./fonts/NotoSans-Bold.ttf", import.meta.url),
+  bengali: new URL("./fonts/NotoSansBengali-Regular.ttf", import.meta.url),
+  devanagari: new URL("./fonts/NotoSansDevanagari-Regular.ttf", import.meta.url),
+  arabic: new URL("./fonts/NotoNaskhArabic-Regular.ttf", import.meta.url),
+  chinese: new URL("./fonts/NotoSansSC-VF.ttf", import.meta.url),
 } as const
 
 const loaded = new Map<string, Face>()
 const prepared = new Map<string, { mapping: Record<string, number>; embedded: EmbeddedFace }>()
 
-function load(name: string): Face {
+function load(name: FaceName): Face {
   const cached = loaded.get(name)
   if (cached) return cached
-  const filename = FILES[name as keyof typeof FILES]
-  const face = openSync(fileURLToPath(new URL(`./fonts/${filename}`, import.meta.url))) as unknown as Face
+  const face = openSync(fileURLToPath(FILE_URLS[name])) as unknown as Face
   loaded.set(name, face)
   return face
 }
@@ -72,7 +72,7 @@ function covered(face: Face, code: number): boolean {
   return face.glyphForCodePoint(code).id !== 0
 }
 
-function faceFor(code: number, bold: boolean): string | null {
+function faceFor(code: number, bold: boolean): FaceName | null {
   if (code >= 0x0980 && code <= 0x09ff) return covered(load("bengali"), code) ? "bengali" : null
   if (code >= 0x0900 && code <= 0x097f) return covered(load("devanagari"), code) ? "devanagari" : null
   if ((code >= 0x0600 && code <= 0x06ff) || (code >= 0x0750 && code <= 0x077f) || (code >= 0xfb50 && code <= 0xfdff) || (code >= 0xfe70 && code <= 0xfeff)) {
@@ -103,20 +103,20 @@ function needsUnicode(value: string): boolean {
 }
 
 function layoutRuns(value: string, bold: boolean): Run[] {
-  const groups: Array<{ face: string; text: string }> = []
+  const groups: Array<{ face: FaceName; text: string }> = []
   let text = ""
-  let face = ""
+  let face: FaceName | null = null
   for (const char of value) {
     const next = faceFor(char.codePointAt(0) ?? 0, bold)
     if (!next) throw new Error(MISSING)
-    if (next !== face && text) {
+    if (face && next !== face && text) {
       groups.push({ face, text })
       text = ""
     }
     face = next
     text += char
   }
-  if (text) groups.push({ face, text })
+  if (text && face) groups.push({ face, text })
   return groups.map(group => {
     const laid = load(group.face).layout(group.text)
     if (laid.glyphs.some(glyph => glyph.id === 0)) throw new Error(MISSING)
@@ -133,7 +133,7 @@ function hex(bytes: Uint8Array): string {
 /** Subset every character Helvetica cannot draw before the pages are painted. */
 export function prepareUnicode(samples: string[]) {
   prepared.clear()
-  const glyphs = new Map<string, Map<number, Glyph>>()
+  const glyphs = new Map<FaceName, Map<number, Glyph>>()
   const remember = (bold: boolean) => {
     for (const sample of samples) {
       if (!needsUnicode(sample)) continue

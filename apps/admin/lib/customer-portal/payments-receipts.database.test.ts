@@ -421,6 +421,43 @@ describe("customer portal payments and receipts", () => {
     expect(JSON.stringify(stable)).not.toContain("Replacement Purchasing")
     expect(JSON.stringify(stable)).not.toContain("Later ProfileRelaunch")
     expect(JSON.stringify(stable)).not.toContain("Renamed Person")
+    const captured = await rows<{ source_table: string }>(
+      `select distinct source_table
+       from public.billing_party_snapshots
+       where source_id in (
+         select $1::uuid
+         union all select $2::uuid
+         union all
+         select acceptance.quote_version_id
+         from public.service_orders ord
+         join public.quote_acceptances acceptance on acceptance.id = ord.quote_acceptance_id
+         where ord.id = $3
+       )`,
+      [receipt, invoice, order.id],
+    )
+    expect(captured.map(row => row.source_table).sort()).toEqual(["payment_invoices", "payment_receipts", "quote_versions"])
+    const quoted = await rpc<Record<string, unknown>>("customer_portal_quotation_document_v1", [alexSession, reference])
+    expect(quoted).toMatchObject({
+      status: "ok",
+      billToName: "Synthetic Purchasing Business Ltd",
+      contactName: "Alex",
+      sellerLegalName: "ProfileRelaunch Ltd",
+      sellerVatNumber: null,
+      billToCaptured: true,
+    })
+    expect(JSON.stringify(quoted)).not.toContain("Renamed Person")
+    expect(JSON.stringify(quoted)).not.toContain("Later ProfileRelaunch")
+    const invoiced = await rpc<Record<string, unknown>>("customer_portal_invoice_document_v1", [
+      alexSession, reference, await selector(invoiceAction.actionId),
+    ])
+    expect(invoiced).toMatchObject({
+      status: "ok",
+      billToName: "Synthetic Purchasing Business Ltd",
+      sellerLegalName: "ProfileRelaunch Ltd",
+      sellerVatNumber: null,
+      billToCaptured: true,
+    })
+    expect(JSON.stringify(invoiced)).not.toContain("Renamed Person")
     await db.exec("alter table public.billing_party_snapshots disable trigger billing_party_snapshots_immutable")
     await db.query("delete from public.billing_party_snapshots where source_table = 'payment_receipts' and source_id = $1", [receipt])
     await db.exec("alter table public.billing_party_snapshots enable trigger billing_party_snapshots_immutable")
@@ -433,6 +470,7 @@ describe("customer portal payments and receipts", () => {
       sellerLegalName: "ProfileRelaunch Ltd",
       billToCaptured: false,
     })
+    await db.query("update public.customers set full_name = 'Alex' where id = $1", [alex])
     const stored = (await rows<{ amount_minor: number; public_ref: string }>("select amount_minor, public_ref from public.payment_receipts where id = $1", [receipt]))[0]
     expect(stored).toEqual({ amount_minor: order.amount_minor, public_ref: download.receiptRef })
     expect(JSON.stringify(download)).not.toContain("Harbour Bakery")
@@ -464,8 +502,8 @@ describe("customer portal payments and receipts", () => {
           '2026-11-01T00:00:00Z', '2026-12-01T00:00:00Z', '2026-11-03T09:00:00Z');
       insert into public.guard_subscription_events(subscription_id, actor_type, event, details, created_at)
       values
-        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_delaypaid"}'::jsonb, '2026-10-04T15:00:00Z'),
-        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_retrypaid"}'::jsonb, '2026-11-03T15:30:00Z');
+        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_delaypaid","paidThrough":"2026-11-01T00:00:00Z"}'::jsonb, '2026-10-04T15:00:00Z'),
+        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_retrypaid","paidThrough":"2026-12-01T00:00:00Z"}'::jsonb, '2026-11-03T15:30:00Z');
       set session_replication_role = origin;
     `)
     const dated = await rows<{ stripe_invoice_id: string; status: string; created_at: string; collected_at: string | null; period_start: string; period_end: string }>(
@@ -488,6 +526,110 @@ describe("customer portal payments and receipts", () => {
     expect(paid?.collected_at).not.toBe(paid?.created_at)
     expect(retry?.period_start).toBe("2026-11-01 00:00:00+00")
     expect(retry?.collected_at).toContain("2026-11-03")
+  })
+
+  it("freezes the Guard party at collection and keeps the producer payment timestamp", async () => {
+    await db.query("update public.customers set full_name = 'Alex' where id = $1", [alex])
+    const reference = "PR-26-GRDPAY"
+    const caseId = await insertCase(reference)
+    await acceptQuote(caseId)
+    const order = (await rows<{ id: string }>("select id from public.service_orders where case_id = $1", [caseId]))[0]
+    const coverage = randomUUID()
+    const subscription = randomUUID()
+    const invoiceId = randomUUID()
+    const adjustmentId = randomUUID()
+    const refundId = randomUUID()
+    const price = await priceId("RELAUNCH_GUARD")
+    try {
+      await db.exec("set session_replication_role = replica")
+      await db.query(
+        `insert into public.guard_coverages(
+          id, customer_id, business_id, location_id, service_order_id, coverage_basis, coverage_origin, state, activated_at
+        ) values ($1,$2,$3,$4,$5,'DIRECT_GUARD','DIRECT_GUARD','ACTIVE','2026-10-01')`,
+        [coverage, alex, business, location, order.id],
+      )
+      await db.query(
+        `insert into public.guard_subscriptions(
+          id, coverage_id, location_id, customer_id, business_id, service_order_id, price_version_id,
+          lifecycle_state, amount_minor, currency, tax_behaviour
+        ) values ($1,$2,$3,$4,$5,$6,$7,'ACTIVE',999,'GBP','NOT_APPLICABLE')`,
+        [subscription, coverage, location, alex, business, order.id, price],
+      )
+    } finally {
+      await db.exec("set session_replication_role = origin")
+    }
+    const sellerBefore = (await rows<{ legal_name: string }>(
+      "select legal_name from public.seller_legal_identity where effective_from <= clock_timestamp() order by effective_from desc limit 1",
+    ))[0].legal_name
+    const buyerBefore = (await rows<{ legal_name: string }>(
+      `select legal_name from public.business_establishments
+       where business_id = $1 and verification_status = 'VERIFIED' and verified_at <= clock_timestamp() and superseded_at is null
+       order by verified_at desc limit 1`,
+      [business],
+    ))[0]?.legal_name ?? "Alex"
+    await db.query(
+      `insert into public.guard_subscription_events(subscription_id, actor_type, event, details, created_at)
+       values ($1,'PROVIDER','FIRST_INVOICE_PAID',$2::jsonb,clock_timestamp())`,
+      [subscription, JSON.stringify({ invoiceId: "in_guardpaid1", paidThrough: "2026-11-27T00:00:00Z" })],
+    )
+    await db.query(
+      `insert into public.guard_subscription_invoices(
+        id, subscription_id, stripe_invoice_id, amount_paid_minor, currency, kind, status, livemode,
+        period_start, period_end, created_at
+      ) values ($1,$2,'in_guardpaid1',999,'GBP','INITIAL','PAID',false,clock_timestamp() - interval '30 days',clock_timestamp() + interval '1 day',clock_timestamp() - interval '3 hours')`,
+      [invoiceId, subscription],
+    )
+    await db.query(
+      `insert into public.guard_billing_adjustments(
+        id, subscription_id, location_id, invoice_id, kind, status, amount_minor, approved_amount_minor,
+        currency, reason, approved_at, created_by
+      ) values ($1,$2,$3,$4,'SERVICE_CREDIT','SUCCEEDED',999,999,'GBP','Service credit for the collected period',$5,$6)`,
+      [adjustmentId, subscription, location, invoiceId, new Date().toISOString(), admin],
+    )
+    await db.query(
+      `insert into public.guard_refunds(
+        id, adjustment_id, subscription_id, invoice_id, stripe_refund_id, amount_minor, currency, status, succeeded_at
+      ) values ($1,$2,$3,$4,'re_guardpaid1',999,'GBP','SUCCEEDED',clock_timestamp())`,
+      [refundId, adjustmentId, subscription, invoiceId],
+    )
+    const snaps = await rows<{ source_table: string; name: string; seller: string }>(
+      `select source_table, bill_to->>'name' as name, seller->>'sellerLegalName' as seller
+       from public.billing_party_snapshots
+       where source_id = any($1::uuid[])
+       order by source_table`,
+      [[invoiceId, adjustmentId, refundId]],
+    )
+    expect(snaps.map(row => row.source_table)).toEqual(["guard_billing_adjustments", "guard_refunds", "guard_subscription_invoices"])
+    for (const row of snaps) {
+      expect(row.name).toBe(buyerBefore)
+      expect(row.seller).toBe(sellerBefore)
+    }
+    const listed = await rpc<{ documents: Array<{ selector: string; issuedAt: string; reference: string; kind: string }> }>("customer_portal_guard_documents_v1", [alexSession])
+    const receiptDoc = listed.documents.find(row => row.kind === "receipt" && row.reference.startsWith("RG-"))
+    const collected = (await rows<{ collected_at: string; created_at: string }>(
+      `select admin_private.guard_invoice_collected_at_v1(subscription_id, stripe_invoice_id)::text as collected_at, created_at::text
+       from public.guard_subscription_invoices where id = $1`,
+      [invoiceId],
+    ))[0]
+    expect(collected.collected_at).not.toBe(collected.created_at)
+    const minute = (value: string) => value.replace("T", " ").slice(0, 16)
+    expect(minute(String(receiptDoc?.issuedAt))).toBe(minute(collected.collected_at))
+    const document = await rpc<Record<string, unknown>>("customer_portal_guard_document_v1", [alexSession, receiptDoc?.selector])
+    expect(document).toMatchObject({
+      status: "ok",
+      paymentSettled: true,
+      billToName: buyerBefore,
+      contactName: "Alex",
+      sellerLegalName: sellerBefore,
+      sellerVatNumber: null,
+      billToCaptured: true,
+    })
+    expect(minute(String(document.issuedAt))).toBe(minute(collected.collected_at))
+    await db.query("update public.customers set full_name = 'Guard Renamed Person' where id = $1", [alex])
+    const stable = await rpc<Record<string, unknown>>("customer_portal_guard_document_v1", [alexSession, receiptDoc?.selector])
+    expect(stable).toMatchObject({ contactName: "Alex", billToCaptured: true, sellerLegalName: sellerBefore, billToName: buyerBefore })
+    expect(JSON.stringify(stable)).not.toContain("Guard Renamed Person")
+    await db.query("update public.customers set full_name = 'Alex' where id = $1", [alex])
   })
 
   it("keeps every pre-existing command-core action kind available to its own function", async () => {

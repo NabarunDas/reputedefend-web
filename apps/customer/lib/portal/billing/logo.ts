@@ -1,18 +1,13 @@
 import "server-only"
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const logoFile = fileURLToPath(new URL("../../../public/brand/profile-relaunch-logo.png", import.meta.url))
 
 export function billingLogo(): Uint8Array {
-  const candidates = [
-    join(process.cwd(), "public/brand/profile-relaunch-logo.png"),
-    join(process.cwd(), "apps/customer/public/brand/profile-relaunch-logo.png"),
-  ]
-  for (const path of candidates) {
-    try {
-      return readFileSync(path)
-    } catch {
-      // The customer app and the workspace root keep the same brand file.
-    }
+  try {
+    return readFileSync(logoFile)
+  } catch {
+    throw new Error("ProfileRelaunch logo is not available")
   }
-  throw new Error("ProfileRelaunch logo is not available")
 }

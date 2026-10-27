@@ -1,4 +1,3 @@
-/// <reference path="./fontkit.d.ts" />
 /**
  * Embeds SIL Open Font License Noto faces for characters Helvetica cannot draw.
  * A name is never rewritten, dropped, or copied into an error message.

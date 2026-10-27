@@ -18,7 +18,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261026170000_checkout_refresh_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261026190000_dev_payment_receipt_delivery_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(migrationHead.filename).toMatch(/billing_documents_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
@@ -35,13 +35,19 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261026180000_dev_payment_event_worker_v1.sql",
-      "20261026190000_dev_payment_receipt_delivery_v1.sql",
       "20261027120000_billing_documents_v1.sql",
     ])
     expect(findMigration("20261025163000_managed_success_verification_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261026140000_checkout_presentation_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261026170000_checkout_refresh_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261026180000_dev_payment_event_worker_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261026190000_dev_payment_receipt_delivery_v1.sql")?.appliedToDev).toBe(true)
+    const workerSql = readFileSync(new URL("20261026180000_dev_payment_event_worker_v1.sql", directory), "utf8")
+    const receiptSql = readFileSync(new URL("20261026190000_dev_payment_receipt_delivery_v1.sql", directory), "utf8")
+    expect(createHash("sha256").update(workerSql).digest("hex")).toBe("7cfdce15799b3d49cd356a5692d2364ff1deadf1aa039588fab9252f87c421d8")
+    expect(createHash("sha256").update(receiptSql).digest("hex")).toBe("2304f0760ad42a64f82c7cee5f8081ef5789deda3f9e3e3373691f10f1949611")
+    const billingSql = readFileSync(new URL("20261027120000_billing_documents_v1.sql", directory), "utf8")
+    expect(createHash("sha256").update(billingSql).digest("hex")).toBe("bb3ff59154e28d73208529557f67cdce144a4cf1b017257198c8be4301ab52e0")
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)

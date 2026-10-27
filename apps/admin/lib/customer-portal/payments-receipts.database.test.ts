@@ -381,9 +381,60 @@ describe("customer portal payments and receipts", () => {
       contactName: "Alex",
       sellerVatRegistered: false,
       sellerVatNumber: null,
+      sellerLegalName: "ProfileRelaunch Ltd",
+      billToCaptured: true,
       paymentModel: "UPFRONT",
     })
     expect(download.receiptRef).toMatch(/^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/)
+    expect(download.sellerAddress).toContain("71–75 Shelton Street")
+    await db.exec(`
+      do $$
+      begin
+        perform set_config('app.establishment_supersede', 'on', true);
+        update public.business_establishments
+          set superseded_at = clock_timestamp()
+          where business_id = '${business}' and legal_name = 'Synthetic Purchasing Business Ltd';
+      end $$;
+    `)
+    await db.query(
+      `insert into public.business_establishments(
+        business_id, country_code, legal_name, evidence_type, evidence_reference,
+        verification_status, verified_by, verified_at, recorded_by, request_id, payload_fingerprint
+      ) values ($1,'GB','Replacement Purchasing Ltd','OTHER',$2,'VERIFIED',$3,now(),$3,gen_random_uuid(),'replacement-purchasing-establishment')`,
+      [business, "A later purchasing establishment. It must not rewrite an issued receipt.", admin],
+    )
+    await db.query(
+      `insert into public.seller_legal_identity(
+        effective_from, legal_name, trading_name, address, email, registration_number, place_of_registration
+      ) values (now(), 'Later ProfileRelaunch Ltd', 'ProfileRelaunch', '1 Later Street', 'contact@profilerelaunch.com', '17520826', 'England and Wales')`,
+    )
+    await db.query("update public.customers set full_name = 'Renamed Person' where id = $1", [alex])
+    const stable = await rpc<Record<string, unknown>>("customer_portal_receipt_v1", [alexSession, paid.case.orders[0].receipts[0].selector])
+    expect(stable).toMatchObject({
+      receiptRef: download.receiptRef,
+      amountMinor: order.amount_minor,
+      billToName: "Synthetic Purchasing Business Ltd",
+      contactName: "Alex",
+      sellerLegalName: "ProfileRelaunch Ltd",
+      billToCaptured: true,
+    })
+    expect(JSON.stringify(stable)).not.toContain("Replacement Purchasing")
+    expect(JSON.stringify(stable)).not.toContain("Later ProfileRelaunch")
+    expect(JSON.stringify(stable)).not.toContain("Renamed Person")
+    await db.exec("alter table public.billing_party_snapshots disable trigger billing_party_snapshots_immutable")
+    await db.query("delete from public.billing_party_snapshots where source_table = 'payment_receipts' and source_id = $1", [receipt])
+    await db.exec("alter table public.billing_party_snapshots enable trigger billing_party_snapshots_immutable")
+    const fallback = await rpc<Record<string, unknown>>("customer_portal_receipt_v1", [alexSession, paid.case.orders[0].receipts[0].selector])
+    expect(fallback).toMatchObject({
+      receiptRef: download.receiptRef,
+      amountMinor: order.amount_minor,
+      billToName: "Synthetic Purchasing Business Ltd",
+      contactName: "Renamed Person",
+      sellerLegalName: "ProfileRelaunch Ltd",
+      billToCaptured: false,
+    })
+    const stored = (await rows<{ amount_minor: number; public_ref: string }>("select amount_minor, public_ref from public.payment_receipts where id = $1", [receipt]))[0]
+    expect(stored).toEqual({ amount_minor: order.amount_minor, public_ref: download.receiptRef })
     expect(JSON.stringify(download)).not.toContain("Harbour Bakery")
     expect(JSON.stringify(download)).not.toContain("High Street")
     leak(download)
@@ -395,6 +446,48 @@ describe("customer portal payments and receipts", () => {
       alexSession, key(), reference, await selector(recovery.actionId), "start_checkout", { idempotencyKey: key() },
     ])
     expect(closed.status).toBe("unavailable")
+  })
+
+  it("dates a delayed Guard collection from the paid event and keeps the retried period separate", async () => {
+    const subscription = "99999999-9999-4999-8999-999999999999"
+    await db.exec(`
+      set session_replication_role = replica;
+      insert into public.guard_subscription_invoices(
+        subscription_id, stripe_invoice_id, amount_paid_minor, currency, kind, status, livemode,
+        period_start, period_end, created_at
+      ) values
+        ('${subscription}', 'in_delayfail', 0, 'GBP', 'RENEWAL', 'FAILED', false,
+          '2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z', '2026-10-01T09:00:00Z'),
+        ('${subscription}', 'in_delaypaid', 999, 'GBP', 'RENEWAL', 'PAID', false,
+          '2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z', '2026-10-01T09:00:00Z'),
+        ('${subscription}', 'in_retrypaid', 999, 'GBP', 'RENEWAL', 'PAID', false,
+          '2026-11-01T00:00:00Z', '2026-12-01T00:00:00Z', '2026-11-03T09:00:00Z');
+      insert into public.guard_subscription_events(subscription_id, actor_type, event, details, created_at)
+      values
+        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_delaypaid"}'::jsonb, '2026-10-04T15:00:00Z'),
+        ('${subscription}', 'PROVIDER', 'RENEWAL_PAID', '{"invoiceId":"in_retrypaid"}'::jsonb, '2026-11-03T15:30:00Z');
+      set session_replication_role = origin;
+    `)
+    const dated = await rows<{ stripe_invoice_id: string; status: string; created_at: string; collected_at: string | null; period_start: string; period_end: string }>(
+      `select stripe_invoice_id, status, created_at::text, admin_private.guard_invoice_collected_at_v1(subscription_id, stripe_invoice_id)::text as collected_at,
+              period_start::text, period_end::text
+       from public.guard_subscription_invoices
+       where subscription_id = $1
+       order by period_start, status`,
+      [subscription],
+    )
+    const failed = dated.find(row => row.stripe_invoice_id === "in_delayfail")
+    const paid = dated.find(row => row.stripe_invoice_id === "in_delaypaid")
+    const retry = dated.find(row => row.stripe_invoice_id === "in_retrypaid")
+    expect(failed?.status).toBe("FAILED")
+    expect(failed?.collected_at).toBeNull()
+    expect(paid?.period_start).toBe("2026-10-01 00:00:00+00")
+    expect(paid?.period_end).toBe("2026-11-01 00:00:00+00")
+    expect(paid?.collected_at).toContain("2026-10-04")
+    expect(paid?.created_at).toContain("2026-10-01")
+    expect(paid?.collected_at).not.toBe(paid?.created_at)
+    expect(retry?.period_start).toBe("2026-11-01 00:00:00+00")
+    expect(retry?.collected_at).toContain("2026-11-03")
   })
 
   it("keeps every pre-existing command-core action kind available to its own function", async () => {

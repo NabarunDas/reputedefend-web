@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
+import { BillingDocumentError } from "../../../../../lib/billing/document"
 import { documentFromQuotation } from "./present"
 import { parseQuotationDocument } from "./parse"
 import { billingPdfResponse } from "./pdf-response"
@@ -37,7 +38,8 @@ export async function portalQuotationDocument(request: NextRequest) {
     const quote = parseQuotationDocument(resolved)
     if (quote === "not_found" || !quote) return textReply(UNAVAILABLE, 404)
     return billingPdfResponse(documentFromQuotation(quote), `quotation-${quote.quoteRef}.pdf`)
-  } catch {
+  } catch (error) {
+    if (error instanceof BillingDocumentError) return textReply(UNAVAILABLE, 404)
     return textReply(RETRY, 503)
   }
 }

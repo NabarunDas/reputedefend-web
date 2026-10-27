@@ -1,4 +1,4 @@
-import { sellerFromLegalIdentity, type BillingDocument, type SellerFacts } from "../../../../../lib/billing/document"
+import { BillingDocumentError, type BillingDocument, type SellerFacts } from "../../../../../lib/billing/document"
 import {
   creditNoteDocument,
   invoiceDocument,
@@ -8,10 +8,26 @@ import {
 import type { ReceiptDownload } from "../payments/parse"
 import type { GuardDocumentDownload, InvoiceDocumentDownload, QuotationDocumentDownload } from "./parse"
 
-function seller(record: { sellerVatRegistered: boolean; sellerVatNumber: string | null }): SellerFacts {
-  const base = sellerFromLegalIdentity()
+function seller(record: {
+  sellerLegalName: string
+  sellerTradingName: string
+  sellerAddress: string
+  sellerEmail: string | null
+  sellerRegistrationNumber: string | null
+  sellerPlaceOfRegistration: string | null
+  sellerVatRegistered: boolean
+  sellerVatNumber: string | null
+}): SellerFacts {
+  const legalName = record.sellerLegalName.trim()
+  if (!legalName) throw new BillingDocumentError("seller legal name is not recorded")
+  const tradingName = record.sellerTradingName.trim() || legalName
   return {
-    ...base,
+    legalName,
+    tradingName,
+    addressLines: record.sellerAddress.split("\n").map(line => line.trim()).filter(Boolean),
+    email: record.sellerEmail?.trim() || undefined,
+    registrationNumber: record.sellerRegistrationNumber?.trim() || undefined,
+    placeOfRegistration: record.sellerPlaceOfRegistration?.trim() || undefined,
     vatRegistered: record.sellerVatRegistered,
     vatNumber: record.sellerVatNumber ?? undefined,
   }
@@ -127,5 +143,6 @@ export function documentFromGuard(row: GuardDocumentDownload): BillingDocument |
     periodStart: row.periodStart,
     periodEnd: row.periodEnd,
     coveredLocation: row.coveredLocation,
+    paymentSettled: row.paymentSettled,
   })
 }

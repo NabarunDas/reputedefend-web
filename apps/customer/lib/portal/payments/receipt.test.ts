@@ -87,6 +87,13 @@ describe("portal receipt download", () => {
       quotedSubtotalMinor: null,
       sellerVatRegistered: false,
       sellerVatNumber: null,
+      sellerLegalName: "ProfileRelaunch Ltd",
+      sellerTradingName: "ProfileRelaunch",
+      sellerAddress: "71–75 Shelton Street\nCovent Garden\nLondon\nWC2H 9JQ\nUnited Kingdom",
+      sellerEmail: "contact@profilerelaunch.com",
+      sellerRegistrationNumber: "17520826",
+      sellerPlaceOfRegistration: "England and Wales",
+      billToCaptured: true,
     })
     const response = await portalReceiptDownload(receiptRequest(`?selector=${selector}`))
     expect(response.status).toBe(200)
@@ -103,7 +110,7 @@ describe("portal receipt download", () => {
     expect(text).toContain("Guided Relaunch")
     expect(text).toContain("Paid")
     expect(text).toContain("Card payment through Stripe")
-    expect(text).toContain("not a VAT invoice")
+    expect(text).toContain("Not a VAT invoice.")
     expect(text).toContain("Synthetic Purchasing Business Ltd")
     expect(text).toContain("Page 1 of 1")
     expect(text).not.toContain("Save as PDF")

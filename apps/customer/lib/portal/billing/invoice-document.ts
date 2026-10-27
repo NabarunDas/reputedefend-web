@@ -4,6 +4,7 @@ import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
+import { BillingDocumentError } from "../../../../../lib/billing/document"
 import { documentFromInvoice } from "./present"
 import { parseInvoiceDocument } from "./parse"
 import { billingPdfResponse } from "./pdf-response"
@@ -44,7 +45,8 @@ export async function portalInvoiceDocument(request: NextRequest) {
     const document = documentFromInvoice(invoice)
     if (!document) return textReply(UNAVAILABLE, 404)
     return billingPdfResponse(document, `invoice-${invoice.invoiceRef}.pdf`)
-  } catch {
+  } catch (error) {
+    if (error instanceof BillingDocumentError) return textReply(UNAVAILABLE, 404)
     return textReply(RETRY, 503)
   }
 }

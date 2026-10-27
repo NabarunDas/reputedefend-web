@@ -3,6 +3,7 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
+import { BillingDocumentError } from "../../../../../lib/billing/document"
 import { documentFromReceipt } from "../billing/present"
 import { billingPdfResponse } from "../billing/pdf-response"
 import { parseReceiptDownload } from "./parse"
@@ -39,7 +40,8 @@ export async function portalReceiptDownload(request: NextRequest) {
     const document = documentFromReceipt(receipt)
     if (!document) return textReply(UNAVAILABLE, 404)
     return billingPdfResponse(document, `receipt-${receipt.receiptRef}.pdf`)
-  } catch {
+  } catch (error) {
+    if (error instanceof BillingDocumentError) return textReply(UNAVAILABLE, 404)
     return textReply(RETRY, 503)
   }
 }

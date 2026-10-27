@@ -27,6 +27,13 @@ type PartyFields = {
   contactName: string | null
   sellerVatRegistered: boolean
   sellerVatNumber: string | null
+  sellerLegalName: string
+  sellerTradingName: string
+  sellerAddress: string
+  sellerEmail: string | null
+  sellerRegistrationNumber: string | null
+  sellerPlaceOfRegistration: string | null
+  billToCaptured: boolean
 }
 
 type PriceFields = {
@@ -76,6 +83,7 @@ export type GuardDocumentDownload = PartyFields & {
   relatedReference: string | null
   orderRef: string
   coveredLocation: string | null
+  paymentSettled: boolean
 }
 
 export type GuardDocumentSummary = {
@@ -166,9 +174,22 @@ function party(row: Record<string, unknown>): PartyFields | null {
   const contactName = optionalText(row.contactName, 200)
   const sellerVatRegistered = flag(row.sellerVatRegistered)
   const sellerVatNumber = optionalVatNumber(row.sellerVatNumber)
+  const sellerLegalName = text(row.sellerLegalName, 200)
+  const sellerTradingName = text(row.sellerTradingName, 200)
+  const sellerAddress = text(row.sellerAddress, 500)
+  const sellerEmail = optionalEmail(row.sellerEmail)
+  const sellerRegistrationNumber = optionalText(row.sellerRegistrationNumber, 40)
+  const sellerPlaceOfRegistration = optionalText(row.sellerPlaceOfRegistration, 80)
+  const billToCaptured = flag(row.billToCaptured)
   if (!billToName || billToEmail === undefined || billToCountry === undefined || contactName === undefined
-    || sellerVatRegistered === null || sellerVatNumber === undefined) return null
-  return { billToName, billToEmail, billToCountry, contactName, sellerVatRegistered, sellerVatNumber }
+    || sellerVatRegistered === null || sellerVatNumber === undefined || !sellerLegalName || !sellerTradingName
+    || !sellerAddress || sellerEmail === undefined || sellerRegistrationNumber === undefined
+    || sellerPlaceOfRegistration === undefined || billToCaptured === null) return null
+  return {
+    billToName, billToEmail, billToCountry, contactName, sellerVatRegistered, sellerVatNumber,
+    sellerLegalName, sellerTradingName, sellerAddress, sellerEmail, sellerRegistrationNumber,
+    sellerPlaceOfRegistration, billToCaptured,
+  }
 }
 
 function prices(row: Record<string, unknown>): PriceFields | null {
@@ -186,6 +207,8 @@ const INVOICE_KEYS = [
   "taxBehaviour", "taxAmountMinor", "issuedAt", "billToName", "billToEmail", "billToCountry",
   "contactName", "standardAmountMinor", "discountAmountMinor", "quotedSubtotalMinor",
   "sellerVatRegistered", "sellerVatNumber",
+  "sellerLegalName", "sellerTradingName", "sellerAddress", "sellerEmail",
+  "sellerRegistrationNumber", "sellerPlaceOfRegistration", "billToCaptured",
 ] as const
 
 export function parseInvoiceDocument(value: unknown): InvoiceDocumentDownload | "not_found" | "collection_paused" | null {
@@ -216,6 +239,8 @@ const QUOTATION_KEYS = [
   "taxAmountMinor", "totalMinor", "standardAmountMinor", "discountAmountMinor", "quotedSubtotalMinor",
   "paymentModel", "issuedAt", "validUntil", "billToName", "billToEmail", "billToCountry",
   "contactName", "sellerVatRegistered", "sellerVatNumber",
+  "sellerLegalName", "sellerTradingName", "sellerAddress", "sellerEmail",
+  "sellerRegistrationNumber", "sellerPlaceOfRegistration", "billToCaptured",
 ] as const
 
 export function parseQuotationDocument(value: unknown): QuotationDocumentDownload | "not_found" | null {
@@ -253,6 +278,8 @@ const GUARD_KEYS = [
   "status", "kind", "reference", "serviceName", "amountMinor", "currency", "issuedAt",
   "periodStart", "periodEnd", "relatedReference", "orderRef", "coveredLocation",
   "billToName", "billToEmail", "billToCountry", "contactName", "sellerVatRegistered", "sellerVatNumber",
+  "sellerLegalName", "sellerTradingName", "sellerAddress", "sellerEmail",
+  "sellerRegistrationNumber", "sellerPlaceOfRegistration", "billToCaptured", "paymentSettled",
 ] as const
 
 export function parseGuardDocument(value: unknown): GuardDocumentDownload | "not_found" | null {
@@ -271,16 +298,17 @@ export function parseGuardDocument(value: unknown): GuardDocumentDownload | "not
   const relatedReference = row.relatedReference === null ? null : text(row.relatedReference, 16)
   const orderRef = text(row.orderRef, 16)
   const coveredLocation = optionalText(row.coveredLocation, 200)
+  const paymentSettled = flag(row.paymentSettled)
   const who = party(row)
   const referenceOk = kind === "receipt" ? !!reference && GUARD_REF.test(reference) : !!reference && CREDIT_REF.test(reference)
   const relatedOk = relatedReference === null || (relatedReference !== undefined && GUARD_REF.test(relatedReference))
   const periodOk = (periodStart === null && periodEnd === null) || (typeof periodStart === "string" && typeof periodEnd === "string")
   if (!kind || !reference || !referenceOk || !serviceName || amountMinor === null || !unit || !issuedAt
     || periodStart === undefined || periodEnd === undefined || !periodOk || relatedReference === undefined || !relatedOk
-    || !orderRef || !ORDER_REF.test(orderRef) || coveredLocation === undefined || !who) return null
+    || !orderRef || !ORDER_REF.test(orderRef) || coveredLocation === undefined || paymentSettled === null || !who) return null
   return {
     kind, reference, serviceName, amountMinor, currency: unit, issuedAt, periodStart, periodEnd,
-    relatedReference, orderRef, coveredLocation, ...who,
+    relatedReference, orderRef, coveredLocation, paymentSettled, ...who,
   }
 }
 

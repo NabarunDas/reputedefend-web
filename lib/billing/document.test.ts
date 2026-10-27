@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { billingPdfText, buildBillingPdf } from "./document-pdf"
-import { billingComparableLines } from "./document"
+import { BillingDocumentError, billingComparableLines, buildBillingDocument, sellerFromLegalIdentity } from "./document"
 import { creditNoteDocument, invoiceDocument, paymentReceiptDocument, quotationDocument } from "./recorded"
 
 const logo = readFileSync(new URL("../../apps/customer/public/brand/profile-relaunch-logo.png", import.meta.url))
@@ -63,7 +66,7 @@ describe("shared billing documents", () => {
       expect(text).toContain("Amount paid")
       expect(text).toContain("ProfileRelaunch Ltd")
       expect(text).toContain("Company number 17520826")
-      expect(text).toContain("It is not a VAT invoice.")
+      expect(text).toContain("Not a VAT invoice.")
       expect(text).not.toContain("VAT number")
       expect(text).not.toContain("Save as PDF")
       expect(text).toContain("Page 1 of 1")
@@ -152,7 +155,8 @@ describe("shared billing documents", () => {
     expect(document?.title).toBe("Invoice")
     expect(document?.status).toBe("Payment due")
     const text = pdfText(document!)
-    expect(text).toContain("does not confirm that payment has been received")
+    expect(text).toContain("Payment has not been received.")
+    expect(text).toContain("Invoice details")
     expect(text).toContain("Amount paid")
     expect(text).toContain("£0.00")
     expect(text).toContain("Outstanding")
@@ -189,7 +193,8 @@ describe("shared billing documents", () => {
     expect(creditText).toContain("Credit note")
     expect(creditText).toContain("CN-26-CREDIT")
     expect(creditText).toContain("RG-26-ORIGIN")
-    expect(creditText).toContain("does not change the original receipt")
+    expect(creditText).toContain("Does not change the original receipt.")
+    expect(creditText).toContain("Credit details")
     expect(creditText).not.toContain("Amount paid")
   })
 
@@ -238,7 +243,8 @@ describe("shared billing documents", () => {
     expect(text).toContain("£99.00")
     expect(text).toContain("Amount due")
     expect(text).not.toContain("Amount paid")
-    expect(text).toContain("proposed service")
+    expect(text).toContain("Proposed service and agreed total.")
+    expect(text).toContain("Quotation details")
   })
 
   it("prints the same financial lines the screen is given", () => {
@@ -248,5 +254,173 @@ describe("shared billing documents", () => {
       expect(text, line).toContain(line)
     }
     expect(text).not.toMatch(/pi_|cus_|cs_|ch_/)
+    expect(text).toContain("Payment details")
+  })
+
+  it("shows included tax as part of the gross and exclusive tax as an addition", () => {
+    const seller = sellerFromLegalIdentity()
+    const inclusive = buildBillingDocument({
+      kind: "receipt",
+      reference: "RC-26-INCL01",
+      issuedOn: issued,
+      currency: "GBP",
+      seller,
+      billTo: { name: "Inclusive Buyer Ltd" },
+      lines: [{ description: "Recorded service", quantity: 1, unitAmountMinor: 12000 }],
+      taxBehaviour: "INCLUSIVE",
+      taxMinor: 2000,
+      totalMinor: 12000,
+    })
+    expect(inclusive.totals.map(row => `${row.label} ${row.value}`)).toEqual([
+      "Net £100.00",
+      "Tax included £20.00",
+      "Total £120.00",
+      "Amount paid £120.00",
+      "Outstanding £0.00",
+    ])
+    const discounted = buildBillingDocument({
+      kind: "receipt",
+      reference: "RC-26-INCL02",
+      issuedOn: issued,
+      currency: "GBP",
+      seller,
+      billTo: { name: "Inclusive Buyer Ltd" },
+      lines: [{ description: "Recorded service", quantity: 1, unitAmountMinor: 15000 }],
+      discountMinor: 3000,
+      taxBehaviour: "INCLUSIVE",
+      taxMinor: 2000,
+      totalMinor: 12000,
+    })
+    expect(discounted.totals.map(row => row.label)).toEqual(["Subtotal", "Discount", "Net", "Tax included", "Total", "Amount paid", "Outstanding"])
+    expect(discounted.totals.find(row => row.label === "Net")?.value).toBe("£100.00")
+    expect(discounted.totals.find(row => row.label === "Total")?.value).toBe("£120.00")
+    const exclusive = buildBillingDocument({
+      kind: "invoice",
+      reference: "IN-26-EXCL01",
+      issuedOn: issued,
+      currency: "GBP",
+      seller: { ...seller, vatRegistered: true, vatNumber: "GB123456789" },
+      billTo: { name: "Exclusive Buyer Ltd" },
+      lines: [{ description: "Recorded service", quantity: 1, unitAmountMinor: 10000 }],
+      taxBehaviour: "EXCLUSIVE",
+      taxMinor: 2000,
+      totalMinor: 12000,
+    })
+    expect(exclusive.title).toBe("VAT Invoice")
+    expect(exclusive.totals.map(row => `${row.label} ${row.value}`)).toEqual([
+      "Subtotal £100.00",
+      "VAT £20.00",
+      "Total £120.00",
+      "Amount paid £0.00",
+      "Outstanding £120.00",
+    ])
+    expect(exclusive.sellerMeta.join(" ")).toContain("GB123456789")
+    const plain = paid("Guided Relaunch", 9900, "RC-26-NOTAX1")!
+    expect(plain.totals.some(row => row.label.includes("Tax") || row.label.includes("VAT"))).toBe(false)
+    expect(() => buildBillingDocument({
+      kind: "invoice",
+      reference: "IN-26-NOVAT1",
+      issuedOn: issued,
+      currency: "GBP",
+      seller: { ...seller, vatRegistered: true },
+      billTo: { name: "Missing VAT Buyer Ltd" },
+      lines: [{ description: "Recorded service", quantity: 1, unitAmountMinor: 14900 }],
+      taxBehaviour: "NOT_APPLICABLE",
+      taxMinor: 0,
+      totalMinor: 14900,
+    })).toThrow(BillingDocumentError)
+  })
+
+  it("labels an unsettled Guard record without calling it the payment date", () => {
+    const recorded = paid("Relaunch Guard", 999, "RG-26-UNSET1", { paymentModel: "RECURRING_MONTHLY", ...period, paymentSettled: false })!
+    expect(recorded.details.map(row => row.label)).toContain("Recorded")
+    expect(recorded.details.map(row => row.label)).not.toContain("Payment date")
+    expect(pdfText(recorded)).toContain("Billing period")
+    const settled = paid("Relaunch Guard", 999, "RG-26-SETTL1", { paymentModel: "RECURRING_MONTHLY", ...period, paymentSettled: true })!
+    expect(settled.details.map(row => row.label)).toContain("Payment date")
+  })
+
+  it("draws international names and wraps a long detail onto later pages", () => {
+    const document = buildBillingDocument({
+      kind: "receipt",
+      reference: "RC-26-WORLD1",
+      issuedOn: issued,
+      currency: "GBP",
+      seller: sellerFromLegalIdentity(),
+      billTo: {
+        name: "নীল রায়",
+        lines: ["राज कुमार", "Αθήνα", "王伟", "نور"],
+      },
+      lines: [{ description: "Guided Relaunch", quantity: 1, unitAmountMinor: 9900 }],
+      taxBehaviour: "NOT_APPLICABLE",
+      taxMinor: 0,
+      totalMinor: 9900,
+      details: [{ label: "Buyer", value: "নীল রায়" }],
+    })
+    const pdf = buildBillingPdf(document, logo)
+    const dir = mkdtempSync(join(tmpdir(), "billing-"))
+    const file = join(dir, "world.pdf")
+    writeFileSync(file, pdf)
+    const extracted = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" })
+    expect(extracted).toContain("নীল রায়")
+    expect(extracted).toContain("राज कुमार")
+    expect(extracted).toContain("Αθήνα")
+    expect(extracted).toContain("王伟")
+    const source = Buffer.from(pdf).toString("latin1")
+    expect(source).toContain("0646")
+    try {
+      buildBillingDocument({
+        kind: "receipt",
+        reference: "RC-26-EMOJI1",
+        issuedOn: issued,
+        currency: "GBP",
+        seller: sellerFromLegalIdentity(),
+        billTo: { name: "Alex 😀" },
+        lines: [{ description: "Guided Relaunch", quantity: 1, unitAmountMinor: 9900 }],
+        taxBehaviour: "NOT_APPLICABLE",
+        taxMinor: 0,
+        totalMinor: 9900,
+      })
+      buildBillingPdf(buildBillingDocument({
+        kind: "receipt",
+        reference: "RC-26-EMOJI1",
+        issuedOn: issued,
+        currency: "GBP",
+        seller: sellerFromLegalIdentity(),
+        billTo: { name: "Alex 😀" },
+        lines: [{ description: "Guided Relaunch", quantity: 1, unitAmountMinor: 9900 }],
+        taxBehaviour: "NOT_APPLICABLE",
+        taxMinor: 0,
+        totalMinor: 9900,
+      }), logo)
+      throw new Error("emoji was accepted")
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error)
+      const message = error instanceof Error ? error.message : ""
+      expect(message).toBe("This document uses a character the PDF fonts cannot draw.")
+      expect(message).not.toContain("😀")
+    }
+    const long = buildBillingDocument({
+      kind: "invoice",
+      reference: "IN-26-LONG01",
+      issuedOn: issued,
+      currency: "GBP",
+      seller: sellerFromLegalIdentity(),
+      billTo: { name: "Long Detail Purchasing Limited" },
+      lines: Array.from({ length: 28 }, (_, index) => ({
+        description: `Service line ${index + 1} with a description long enough to wrap inside the table`,
+        quantity: 1,
+        unitAmountMinor: 100,
+      })),
+      taxBehaviour: "NOT_APPLICABLE",
+      taxMinor: 0,
+      totalMinor: 2800,
+      details: [{ label: "Narrative", value: "Warehouse ".repeat(40).trim() }],
+    })
+    const longText = pdfText(long)
+    expect(longText).toContain("Page 1 of")
+    expect(longText).not.toContain("Page 1 of 1")
+    expect(longText).toContain("Warehouse")
+    expect(longText).toContain("Invoice details")
   })
 })

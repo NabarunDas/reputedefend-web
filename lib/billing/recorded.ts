@@ -118,6 +118,8 @@ export function paymentReceiptDocument(input: {
   periodStart?: string | null
   periodEnd?: string | null
   coveredLocation?: string | null
+  /** False when the only stored time is the invoice record, not a verified collection. */
+  paymentSettled?: boolean
 }): BillingDocument | null {
   return settledReceipt(input.state, () => {
     const period = input.periodStart && input.periodEnd ? billingPeriodLabel(input.periodStart, input.periodEnd) : undefined
@@ -132,7 +134,7 @@ export function paymentReceiptDocument(input: {
       { label: "Receipt", value: input.reference },
       { label: "Order", value: input.orderReference ?? "" },
       { label: "Case", value: input.caseReference ?? "" },
-      { label: "Payment date", value: billingDateTimeLabel(input.issuedOn) },
+      { label: input.paymentSettled === false ? "Recorded" : "Payment date", value: billingDateTimeLabel(input.issuedOn) },
       { label: "Payment method", value: input.paymentMethod ?? "" },
       { label: "Billing period", value: period ?? "" },
     ]

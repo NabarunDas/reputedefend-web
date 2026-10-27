@@ -1,10 +1,19 @@
 -- PROFILERELAUNCH-UNIFIED-BILLING-DOCUMENTS-01. Source only.
 -- Do not apply this file to DEV or Production from this change.
--- Do not replay 20261026180000 or 20261026190000.
+-- 20261026180000 and 20261026190000 are already in the DEV ledger.
+-- Do not replay them. Compare their source SHA-256 with
+-- supabase_migrations.schema_migrations before applying anything further.
 -- This file does not charge a card, refund a payment, change a stored amount,
 -- or update public.payment_receipts. Existing receipt references stay as they
 -- are. New document references are assigned only to invoices, Guard billing
 -- rows and adjustments that did not have one.
+--
+-- Seller identity and the purchasing establishment are resolved as they stood
+-- at the document time. A billing_party_snapshots row is written when a new
+-- document is issued. Existing receipts are not backfilled and their rows are
+-- not rewritten. When no snapshot exists, the seller identity and purchasing
+-- establishment in force at that timestamp are used, and the customer contact
+-- name is the current account name because no earlier name was stored.
 
 BEGIN;
 
@@ -119,7 +128,99 @@ ALTER TABLE public.guard_billing_adjustments
   CHECK (public_ref ~ '^CN-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$');
 CREATE UNIQUE INDEX guard_billing_adjustments_public_ref_key ON public.guard_billing_adjustments (public_ref);
 
-CREATE FUNCTION admin_private.billing_bill_to_v1(p_business uuid, p_customer uuid, p_email text)
+CREATE TABLE public.seller_legal_identity (
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
+  effective_from timestamptz NOT NULL UNIQUE,
+  legal_name text NOT NULL,
+  trading_name text NOT NULL,
+  address text NOT NULL,
+  email text NOT NULL,
+  registration_number text NOT NULL,
+  place_of_registration text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.seller_legal_identity ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.seller_legal_identity FROM PUBLIC, anon, authenticated, service_role;
+
+INSERT INTO public.seller_legal_identity (
+  effective_from, legal_name, trading_name, address, email, registration_number, place_of_registration
+) VALUES (
+  '2026-10-14 00:00:00+00',
+  'ProfileRelaunch Ltd',
+  'ProfileRelaunch',
+  '71–75 Shelton Street' || chr(10) || 'Covent Garden' || chr(10) || 'London' || chr(10) || 'WC2H 9JQ' || chr(10) || 'United Kingdom',
+  'contact@profilerelaunch.com',
+  '17520826',
+  'England and Wales'
+);
+
+CREATE TABLE public.billing_party_snapshots (
+  source_table text NOT NULL,
+  source_id uuid NOT NULL,
+  seller jsonb NOT NULL,
+  bill_to jsonb NOT NULL,
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (source_table, source_id)
+);
+
+ALTER TABLE public.billing_party_snapshots ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.billing_party_snapshots FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.billing_records_immutable_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'billing party records are immutable' USING ERRCODE = '23514';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.billing_records_immutable_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER seller_legal_identity_immutable
+  BEFORE UPDATE OR DELETE ON public.seller_legal_identity
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_records_immutable_v1();
+
+CREATE TRIGGER billing_party_snapshots_immutable
+  BEFORE UPDATE OR DELETE ON public.billing_party_snapshots
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_records_immutable_v1();
+
+CREATE FUNCTION admin_private.billing_seller_at_v1(p_as_of timestamptz)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'sellerLegalName', identity.legal_name,
+    'sellerTradingName', identity.trading_name,
+    'sellerAddress', identity.address,
+    'sellerEmail', identity.email,
+    'sellerRegistrationNumber', identity.registration_number,
+    'sellerPlaceOfRegistration', identity.place_of_registration,
+    'sellerVatRegistered', coalesce(position.status = 'REGISTERED', false),
+    'sellerVatNumber', NULL
+  )
+  FROM public.seller_legal_identity identity
+  LEFT JOIN LATERAL (
+    SELECT status
+    FROM public.seller_vat_position
+    WHERE effective_from <= p_as_of
+    ORDER BY effective_from DESC
+    LIMIT 1
+  ) position ON true
+  WHERE identity.effective_from <= p_as_of
+  ORDER BY identity.effective_from DESC
+  LIMIT 1
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.billing_seller_at_v1(timestamptz)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.billing_bill_to_v1(p_business uuid, p_customer uuid, p_email text, p_as_of timestamptz)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -135,15 +236,202 @@ AS $$
     END
   )
   FROM public.customers cust
-  LEFT JOIN public.business_establishments est
-    ON est.business_id = p_business
-   AND est.verification_status = 'VERIFIED'
-   AND est.superseded_at IS NULL
+  LEFT JOIN LATERAL (
+    SELECT establishment.legal_name, establishment.country_code
+    FROM public.business_establishments establishment
+    WHERE establishment.business_id = p_business
+      AND establishment.verification_status = 'VERIFIED'
+      AND establishment.verified_at <= p_as_of
+      AND (establishment.superseded_at IS NULL OR establishment.superseded_at > p_as_of)
+    ORDER BY establishment.verified_at DESC
+    LIMIT 1
+  ) est ON true
   WHERE cust.id = p_customer
 $$;
 
-REVOKE ALL ON FUNCTION admin_private.billing_bill_to_v1(uuid, uuid, text)
+REVOKE ALL ON FUNCTION admin_private.billing_bill_to_v1(uuid, uuid, text, timestamptz)
   FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.billing_resolved_party_v1(
+  p_source text,
+  p_source_id uuid,
+  p_business uuid,
+  p_customer uuid,
+  p_email text,
+  p_as_of timestamptz
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_seller jsonb;
+  v_bill jsonb;
+  v_snap_seller jsonb;
+  v_snap_bill jsonb;
+BEGIN
+  SELECT seller, bill_to INTO v_snap_seller, v_snap_bill
+  FROM public.billing_party_snapshots
+  WHERE source_table = p_source AND source_id = p_source_id;
+  IF v_snap_seller IS NOT NULL AND v_snap_bill IS NOT NULL THEN
+    RETURN v_snap_seller || v_snap_bill || jsonb_build_object('billToCaptured', true);
+  END IF;
+  v_seller := admin_private.billing_seller_at_v1(p_as_of);
+  v_bill := admin_private.billing_bill_to_v1(p_business, p_customer, p_email, p_as_of);
+  IF v_seller IS NULL OR coalesce(v_seller->>'sellerLegalName', '') = '' THEN
+    RETURN NULL;
+  END IF;
+  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' THEN
+    RETURN NULL;
+  END IF;
+  RETURN v_seller || v_bill || jsonb_build_object('billToCaptured', false);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.billing_resolved_party_v1(text, uuid, uuid, uuid, text, timestamptz)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.guard_invoice_collected_at_v1(p_subscription uuid, p_invoice text)
+RETURNS timestamptz
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT event.created_at
+  FROM public.guard_subscription_events event
+  WHERE event.subscription_id = p_subscription
+    AND event.event IN ('FIRST_INVOICE_PAID', 'RENEWAL_PAID')
+    AND event.details->>'invoiceId' = p_invoice
+  ORDER BY event.created_at ASC
+  LIMIT 1
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.guard_invoice_collected_at_v1(uuid, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.billing_capture_party_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_ready boolean := false;
+  v_as_of timestamptz;
+  v_business uuid;
+  v_customer uuid;
+  v_email text;
+  v_seller jsonb;
+  v_bill jsonb;
+BEGIN
+  IF TG_TABLE_NAME = 'payment_receipts' THEN
+    v_ready := true;
+    v_as_of := NEW.paid_at;
+    v_customer := NEW.customer_id;
+    SELECT business_id INTO v_business FROM public.service_orders WHERE id = NEW.service_order_id;
+    SELECT acceptance.accepted_email_snapshot INTO v_email
+    FROM public.service_orders ord
+    JOIN public.quote_acceptances acceptance ON acceptance.id = ord.quote_acceptance_id
+    WHERE ord.id = NEW.service_order_id;
+  ELSIF TG_TABLE_NAME = 'payment_invoices' THEN
+    IF NEW.status = 'ISSUED' THEN
+      v_ready := true;
+      v_as_of := NEW.created_at;
+      v_customer := NEW.customer_id;
+      SELECT business_id INTO v_business FROM public.service_orders WHERE id = NEW.service_order_id;
+      SELECT acceptance.accepted_email_snapshot INTO v_email
+      FROM public.service_orders ord
+      JOIN public.quote_acceptances acceptance ON acceptance.id = ord.quote_acceptance_id
+      WHERE ord.id = NEW.service_order_id;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'quote_versions' THEN
+    IF NEW.status IN ('OFFERED', 'ACCEPTED') THEN
+      v_ready := true;
+      v_as_of := coalesce(NEW.offered_at, NEW.created_at);
+      v_customer := NEW.customer_id;
+      v_business := NEW.business_id;
+      SELECT coalesce(
+        (SELECT acceptance.accepted_email_snapshot FROM public.quote_acceptances acceptance WHERE acceptance.quote_version_id = NEW.id),
+        (SELECT cust.email FROM public.customers cust WHERE cust.id = NEW.customer_id)
+      ) INTO v_email;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'guard_subscription_invoices' THEN
+    IF NEW.status = 'PAID' THEN
+      v_ready := true;
+      v_as_of := coalesce(admin_private.guard_invoice_collected_at_v1(NEW.subscription_id, NEW.stripe_invoice_id), NEW.created_at);
+      SELECT sub.business_id, sub.customer_id, acceptance.accepted_email_snapshot
+        INTO v_business, v_customer, v_email
+      FROM public.guard_subscriptions sub
+      JOIN public.service_orders ord ON ord.id = sub.service_order_id
+      LEFT JOIN public.quote_acceptances acceptance ON acceptance.id = ord.quote_acceptance_id
+      WHERE sub.id = NEW.subscription_id;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'guard_refunds' THEN
+    IF NEW.status = 'SUCCEEDED' THEN
+      v_ready := true;
+      v_as_of := coalesce(NEW.succeeded_at, NEW.created_at);
+      SELECT sub.business_id, sub.customer_id, acceptance.accepted_email_snapshot
+        INTO v_business, v_customer, v_email
+      FROM public.guard_subscriptions sub
+      JOIN public.service_orders ord ON ord.id = sub.service_order_id
+      LEFT JOIN public.quote_acceptances acceptance ON acceptance.id = ord.quote_acceptance_id
+      WHERE sub.id = NEW.subscription_id;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'guard_billing_adjustments' THEN
+    IF NEW.kind = 'SERVICE_CREDIT' AND NEW.status = 'SUCCEEDED' THEN
+      v_ready := true;
+      v_as_of := coalesce(NEW.approved_at, NEW.created_at);
+      SELECT sub.business_id, sub.customer_id, acceptance.accepted_email_snapshot
+        INTO v_business, v_customer, v_email
+      FROM public.guard_subscriptions sub
+      JOIN public.service_orders ord ON ord.id = sub.service_order_id
+      LEFT JOIN public.quote_acceptances acceptance ON acceptance.id = ord.quote_acceptance_id
+      WHERE sub.id = NEW.subscription_id;
+    END IF;
+  END IF;
+  IF NOT v_ready OR v_customer IS NULL OR v_as_of IS NULL THEN
+    RETURN NEW;
+  END IF;
+  v_seller := admin_private.billing_seller_at_v1(v_as_of);
+  v_bill := admin_private.billing_bill_to_v1(v_business, v_customer, v_email, v_as_of);
+  IF v_seller IS NULL OR v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' OR coalesce(v_seller->>'sellerLegalName', '') = '' THEN
+    RETURN NEW;
+  END IF;
+  INSERT INTO public.billing_party_snapshots (source_table, source_id, seller, bill_to)
+  VALUES (TG_TABLE_NAME, NEW.id, v_seller, v_bill)
+  ON CONFLICT (source_table, source_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.billing_capture_party_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER payment_receipts_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.payment_receipts
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
+
+CREATE TRIGGER payment_invoices_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.payment_invoices
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
+
+CREATE TRIGGER quote_versions_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.quote_versions
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
+
+CREATE TRIGGER guard_subscription_invoices_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.guard_subscription_invoices
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
+
+CREATE TRIGGER guard_refunds_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.guard_refunds
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
+
+CREATE TRIGGER guard_billing_adjustments_capture_billing_party
+  AFTER INSERT OR UPDATE ON public.guard_billing_adjustments
+  FOR EACH ROW EXECUTE FUNCTION admin_private.billing_capture_party_v1();
 
 CREATE OR REPLACE FUNCTION public.customer_portal_receipt_v1(p_token_hash text, p_selector text)
 RETURNS jsonb
@@ -189,8 +477,8 @@ BEGIN
   SELECT accepted_email_snapshot INTO v_recorded_email
   FROM public.quote_acceptances
   WHERE id = v_order.quote_acceptance_id;
-  v_bill := admin_private.billing_bill_to_v1(v_order.business_id, v_customer, v_recorded_email);
-  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' THEN
+  v_bill := admin_private.billing_resolved_party_v1('payment_receipts', v_receipt.id, v_order.business_id, v_customer, v_recorded_email, v_receipt.paid_at);
+  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' OR coalesce(v_bill->>'sellerLegalName', '') = '' THEN
     RETURN jsonb_build_object('status', 'not_found');
   END IF;
   v_reconciled := v_quote.currency = v_receipt.currency
@@ -202,12 +490,6 @@ BEGIN
       (v_receipt.tax_behaviour = 'EXCLUSIVE' AND v_quote.quoted_subtotal_minor + v_quote.tax_amount_minor = v_receipt.amount_minor)
       OR (v_receipt.tax_behaviour <> 'EXCLUSIVE' AND v_quote.quoted_subtotal_minor = v_receipt.amount_minor)
     );
-  SELECT coalesce(position.status = 'REGISTERED', false) INTO v_seller
-  FROM public.seller_vat_position position
-  WHERE position.effective_from <= v_receipt.paid_at
-  ORDER BY position.effective_from DESC
-  LIMIT 1;
-  v_seller := coalesce(v_seller, false);
   RETURN jsonb_build_object(
     'status', 'ok',
     'receiptRef', v_receipt.public_ref,
@@ -229,8 +511,15 @@ BEGIN
     'standardAmountMinor', CASE WHEN v_reconciled THEN v_quote.standard_amount_minor ELSE NULL END,
     'discountAmountMinor', CASE WHEN v_reconciled THEN v_quote.discount_amount_minor ELSE NULL END,
     'quotedSubtotalMinor', CASE WHEN v_reconciled THEN v_quote.quoted_subtotal_minor ELSE NULL END,
-    'sellerVatRegistered', v_seller,
-    'sellerVatNumber', NULL
+    'sellerVatRegistered', coalesce((v_bill->>'sellerVatRegistered')::boolean, false),
+    'sellerVatNumber', v_bill->'sellerVatNumber',
+    'sellerLegalName', v_bill->>'sellerLegalName',
+    'sellerTradingName', v_bill->>'sellerTradingName',
+    'sellerAddress', v_bill->>'sellerAddress',
+    'sellerEmail', v_bill->>'sellerEmail',
+    'sellerRegistrationNumber', v_bill->>'sellerRegistrationNumber',
+    'sellerPlaceOfRegistration', v_bill->>'sellerPlaceOfRegistration',
+    'billToCaptured', coalesce((v_bill->>'billToCaptured')::boolean, false)
   );
 END;
 $receipt$;
@@ -300,8 +589,8 @@ BEGIN
   SELECT * INTO qv FROM public.quote_versions WHERE id = ord.quote_version_id;
   IF qv.id IS NULL THEN RETURN jsonb_build_object('status', 'not_found'); END IF;
   SELECT accepted_email_snapshot INTO v_recorded_email FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id;
-  v_bill := admin_private.billing_bill_to_v1(ord.business_id, v_customer, v_recorded_email);
-  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' THEN
+  v_bill := admin_private.billing_resolved_party_v1('payment_invoices', inv.id, ord.business_id, v_customer, v_recorded_email, inv.created_at);
+  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' OR coalesce(v_bill->>'sellerLegalName', '') = '' THEN
     RETURN jsonb_build_object('status', 'not_found');
   END IF;
   v_reconciled := qv.currency = inv.currency
@@ -313,12 +602,6 @@ BEGIN
       (inv.tax_behaviour = 'EXCLUSIVE' AND qv.quoted_subtotal_minor + qv.tax_amount_minor = inv.amount_minor)
       OR (inv.tax_behaviour <> 'EXCLUSIVE' AND qv.quoted_subtotal_minor = inv.amount_minor)
     );
-  SELECT coalesce(position.status = 'REGISTERED', false) INTO v_seller
-  FROM public.seller_vat_position position
-  WHERE position.effective_from <= inv.created_at
-  ORDER BY position.effective_from DESC
-  LIMIT 1;
-  v_seller := coalesce(v_seller, false);
   RETURN jsonb_build_object(
     'status', 'ok',
     'invoiceRef', inv.public_ref,
@@ -337,8 +620,15 @@ BEGIN
     'standardAmountMinor', CASE WHEN v_reconciled THEN qv.standard_amount_minor ELSE NULL END,
     'discountAmountMinor', CASE WHEN v_reconciled THEN qv.discount_amount_minor ELSE NULL END,
     'quotedSubtotalMinor', CASE WHEN v_reconciled THEN qv.quoted_subtotal_minor ELSE NULL END,
-    'sellerVatRegistered', v_seller,
-    'sellerVatNumber', NULL
+    'sellerVatRegistered', coalesce((v_bill->>'sellerVatRegistered')::boolean, false),
+    'sellerVatNumber', v_bill->'sellerVatNumber',
+    'sellerLegalName', v_bill->>'sellerLegalName',
+    'sellerTradingName', v_bill->>'sellerTradingName',
+    'sellerAddress', v_bill->>'sellerAddress',
+    'sellerEmail', v_bill->>'sellerEmail',
+    'sellerRegistrationNumber', v_bill->>'sellerRegistrationNumber',
+    'sellerPlaceOfRegistration', v_bill->>'sellerPlaceOfRegistration',
+    'billToCaptured', coalesce((v_bill->>'billToCaptured')::boolean, false)
   );
 END;
 $invoice$;
@@ -361,6 +651,7 @@ DECLARE
   v_case uuid;
   v_business uuid;
   v_view jsonb;
+  v_version uuid;
   v_offered timestamptz;
   v_recorded_email text;
   v_bill jsonb;
@@ -382,7 +673,7 @@ BEGIN
   IF v_view->>'taxBehaviour' = 'UNCONFIRMED' THEN
     RETURN jsonb_build_object('status', 'not_found');
   END IF;
-  SELECT ver.offered_at INTO v_offered
+  SELECT ver.id, ver.offered_at INTO v_version, v_offered
   FROM public.quotes q
   JOIN public.quote_versions ver ON ver.quote_id = q.id
   WHERE q.public_ref = v_view->>'reference'
@@ -406,16 +697,10 @@ BEGIN
     AND q.case_id = v_case
   ORDER BY acc.accepted_at DESC
   LIMIT 1;
-  v_bill := admin_private.billing_bill_to_v1(v_business, v_customer, coalesce(v_recorded_email, v_email));
-  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' THEN
+  v_bill := admin_private.billing_resolved_party_v1('quote_versions', v_version, v_business, v_customer, coalesce(v_recorded_email, v_email), v_offered);
+  IF v_bill IS NULL OR coalesce(v_bill->>'name', '') = '' OR coalesce(v_bill->>'sellerLegalName', '') = '' THEN
     RETURN jsonb_build_object('status', 'not_found');
   END IF;
-  SELECT coalesce(position.status = 'REGISTERED', false) INTO v_seller
-  FROM public.seller_vat_position position
-  WHERE position.effective_from <= v_offered
-  ORDER BY position.effective_from DESC
-  LIMIT 1;
-  v_seller := coalesce(v_seller, false);
   RETURN jsonb_build_object(
     'status', 'ok',
     'quoteRef', v_view->>'reference',
@@ -436,8 +721,15 @@ BEGIN
     'billToEmail', v_bill->>'email',
     'billToCountry', v_bill->>'country',
     'contactName', v_bill->>'contactName',
-    'sellerVatRegistered', v_seller,
-    'sellerVatNumber', NULL
+    'sellerVatRegistered', coalesce((v_bill->>'sellerVatRegistered')::boolean, false),
+    'sellerVatNumber', v_bill->'sellerVatNumber',
+    'sellerLegalName', v_bill->>'sellerLegalName',
+    'sellerTradingName', v_bill->>'sellerTradingName',
+    'sellerAddress', v_bill->>'sellerAddress',
+    'sellerEmail', v_bill->>'sellerEmail',
+    'sellerRegistrationNumber', v_bill->>'sellerRegistrationNumber',
+    'sellerPlaceOfRegistration', v_bill->>'sellerPlaceOfRegistration',
+    'billToCaptured', coalesce((v_bill->>'billToCaptured')::boolean, false)
   );
 END;
 $quotation$;
@@ -482,11 +774,11 @@ BEGIN
       'reference', inv.public_ref,
       'amountMinor', inv.amount_paid_minor,
       'currency', inv.currency,
-      'issuedAt', inv.created_at,
+      'issuedAt', coalesce(admin_private.guard_invoice_collected_at_v1(inv.subscription_id, inv.stripe_invoice_id), inv.created_at),
       'periodStart', inv.period_start,
       'periodEnd', inv.period_end,
       'relatedReference', NULL
-    ) AS row_value, inv.created_at AS issued_at
+    ) AS row_value, coalesce(admin_private.guard_invoice_collected_at_v1(inv.subscription_id, inv.stripe_invoice_id), inv.created_at) AS issued_at
     FROM public.guard_subscription_invoices inv
     JOIN public.guard_subscriptions sub ON sub.id = inv.subscription_id
     WHERE sub.customer_id = v_customer AND inv.status = 'PAID'
@@ -564,7 +856,7 @@ BEGIN
       'serviceName', qv.service_name,
       'amountMinor', inv.amount_paid_minor,
       'currency', inv.currency,
-      'issuedAt', inv.created_at,
+      'issuedAt', coalesce(party.collected_at, inv.created_at),
       'periodStart', inv.period_start,
       'periodEnd', inv.period_end,
       'relatedReference', NULL,
@@ -574,14 +866,16 @@ BEGIN
       'billToEmail', party.bill->>'email',
       'billToCountry', party.bill->>'country',
       'contactName', party.bill->>'contactName',
-      'sellerVatRegistered', coalesce((
-        SELECT position.status = 'REGISTERED'
-        FROM public.seller_vat_position position
-        WHERE position.effective_from <= inv.created_at
-        ORDER BY position.effective_from DESC
-        LIMIT 1
-      ), false),
-      'sellerVatNumber', NULL
+      'sellerVatRegistered', coalesce((party.bill->>'sellerVatRegistered')::boolean, false),
+      'sellerVatNumber', party.bill->'sellerVatNumber',
+      'sellerLegalName', party.bill->>'sellerLegalName',
+      'sellerTradingName', party.bill->>'sellerTradingName',
+      'sellerAddress', party.bill->>'sellerAddress',
+      'sellerEmail', party.bill->>'sellerEmail',
+      'sellerRegistrationNumber', party.bill->>'sellerRegistrationNumber',
+      'sellerPlaceOfRegistration', party.bill->>'sellerPlaceOfRegistration',
+      'billToCaptured', coalesce((party.bill->>'billToCaptured')::boolean, false),
+      'paymentSettled', party.collected_at IS NOT NULL
     ) INTO v_row
     FROM public.guard_subscription_invoices inv
     JOIN public.guard_subscriptions sub ON sub.id = inv.subscription_id AND sub.customer_id = v_customer
@@ -589,14 +883,18 @@ BEGIN
     JOIN public.quote_versions qv ON qv.id = ord.quote_version_id
     JOIN public.locations loc ON loc.id = sub.location_id
     CROSS JOIN LATERAL (
-      SELECT admin_private.billing_bill_to_v1(sub.business_id, v_customer, (
-        SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id
-      )) AS bill
+      SELECT admin_private.guard_invoice_collected_at_v1(inv.subscription_id, inv.stripe_invoice_id) AS collected_at,
+        admin_private.billing_resolved_party_v1(
+          'guard_subscription_invoices', inv.id, sub.business_id, v_customer,
+          (SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id),
+          coalesce(admin_private.guard_invoice_collected_at_v1(inv.subscription_id, inv.stripe_invoice_id), inv.created_at)
+        ) AS bill
     ) party
     WHERE inv.status = 'PAID'
       AND admin_private.guard_billing_selector_v1('rg', inv.id) = p_selector
       AND party.bill IS NOT NULL
-      AND coalesce(party.bill->>'name', '') <> '';
+      AND coalesce(party.bill->>'name', '') <> ''
+      AND coalesce(party.bill->>'sellerLegalName', '') <> '';
   ELSIF p_selector ~ '^cn-' THEN
     SELECT jsonb_build_object(
       'status', 'ok',
@@ -615,14 +913,16 @@ BEGIN
       'billToEmail', party.bill->>'email',
       'billToCountry', party.bill->>'country',
       'contactName', party.bill->>'contactName',
-      'sellerVatRegistered', coalesce((
-        SELECT position.status = 'REGISTERED'
-        FROM public.seller_vat_position position
-        WHERE position.effective_from <= coalesce(refund.succeeded_at, refund.created_at)
-        ORDER BY position.effective_from DESC
-        LIMIT 1
-      ), false),
-      'sellerVatNumber', NULL
+      'sellerVatRegistered', coalesce((party.bill->>'sellerVatRegistered')::boolean, false),
+      'sellerVatNumber', party.bill->'sellerVatNumber',
+      'sellerLegalName', party.bill->>'sellerLegalName',
+      'sellerTradingName', party.bill->>'sellerTradingName',
+      'sellerAddress', party.bill->>'sellerAddress',
+      'sellerEmail', party.bill->>'sellerEmail',
+      'sellerRegistrationNumber', party.bill->>'sellerRegistrationNumber',
+      'sellerPlaceOfRegistration', party.bill->>'sellerPlaceOfRegistration',
+      'billToCaptured', coalesce((party.bill->>'billToCaptured')::boolean, false),
+      'paymentSettled', refund.succeeded_at IS NOT NULL
     ) INTO v_row
     FROM public.guard_refunds refund
     JOIN public.guard_subscriptions sub ON sub.id = refund.subscription_id AND sub.customer_id = v_customer
@@ -630,14 +930,17 @@ BEGIN
     JOIN public.service_orders ord ON ord.id = sub.service_order_id AND ord.customer_id = v_customer
     JOIN public.quote_versions qv ON qv.id = ord.quote_version_id
     CROSS JOIN LATERAL (
-      SELECT admin_private.billing_bill_to_v1(sub.business_id, v_customer, (
-        SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id
-      )) AS bill
+      SELECT admin_private.billing_resolved_party_v1(
+        'guard_refunds', refund.id, sub.business_id, v_customer,
+        (SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id),
+        coalesce(refund.succeeded_at, refund.created_at)
+      ) AS bill
     ) party
     WHERE refund.status = 'SUCCEEDED'
       AND admin_private.guard_billing_selector_v1('cn', refund.id) = p_selector
       AND party.bill IS NOT NULL
-      AND coalesce(party.bill->>'name', '') <> '';
+      AND coalesce(party.bill->>'name', '') <> ''
+      AND coalesce(party.bill->>'sellerLegalName', '') <> '';
   ELSE
     SELECT jsonb_build_object(
       'status', 'ok',
@@ -656,14 +959,16 @@ BEGIN
       'billToEmail', party.bill->>'email',
       'billToCountry', party.bill->>'country',
       'contactName', party.bill->>'contactName',
-      'sellerVatRegistered', coalesce((
-        SELECT position.status = 'REGISTERED'
-        FROM public.seller_vat_position position
-        WHERE position.effective_from <= coalesce(adjustment.approved_at, adjustment.created_at)
-        ORDER BY position.effective_from DESC
-        LIMIT 1
-      ), false),
-      'sellerVatNumber', NULL
+      'sellerVatRegistered', coalesce((party.bill->>'sellerVatRegistered')::boolean, false),
+      'sellerVatNumber', party.bill->'sellerVatNumber',
+      'sellerLegalName', party.bill->>'sellerLegalName',
+      'sellerTradingName', party.bill->>'sellerTradingName',
+      'sellerAddress', party.bill->>'sellerAddress',
+      'sellerEmail', party.bill->>'sellerEmail',
+      'sellerRegistrationNumber', party.bill->>'sellerRegistrationNumber',
+      'sellerPlaceOfRegistration', party.bill->>'sellerPlaceOfRegistration',
+      'billToCaptured', coalesce((party.bill->>'billToCaptured')::boolean, false),
+      'paymentSettled', adjustment.approved_at IS NOT NULL
     ) INTO v_row
     FROM public.guard_billing_adjustments adjustment
     JOIN public.guard_subscriptions sub ON sub.id = adjustment.subscription_id AND sub.customer_id = v_customer
@@ -671,15 +976,18 @@ BEGIN
     JOIN public.quote_versions qv ON qv.id = ord.quote_version_id
     LEFT JOIN public.guard_subscription_invoices inv ON inv.id = adjustment.invoice_id
     CROSS JOIN LATERAL (
-      SELECT admin_private.billing_bill_to_v1(sub.business_id, v_customer, (
-        SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id
-      )) AS bill
+      SELECT admin_private.billing_resolved_party_v1(
+        'guard_billing_adjustments', adjustment.id, sub.business_id, v_customer,
+        (SELECT accepted_email_snapshot FROM public.quote_acceptances WHERE id = ord.quote_acceptance_id),
+        coalesce(adjustment.approved_at, adjustment.created_at)
+      ) AS bill
     ) party
     WHERE adjustment.kind = 'SERVICE_CREDIT'
       AND adjustment.status = 'SUCCEEDED'
       AND admin_private.guard_billing_selector_v1('sc', adjustment.id) = p_selector
       AND party.bill IS NOT NULL
       AND coalesce(party.bill->>'name', '') <> ''
+      AND coalesce(party.bill->>'sellerLegalName', '') <> ''
       AND NOT EXISTS (
         SELECT 1 FROM public.guard_refunds refund
         WHERE refund.adjustment_id = adjustment.id AND refund.status = 'SUCCEEDED'

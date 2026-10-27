@@ -1357,11 +1357,13 @@ main.customer-main > section .document-list a {
   text-align: left;
   font-weight: 600;
 }
+.billing-document-meta { margin-top: 1.5rem; }
+.billing-document-meta h2 { margin: 0 0 0.75rem; }
 .billing-document-details {
   display: grid;
   grid-template-columns: 10rem 1fr;
   gap: 0.35rem 1rem;
-  margin: 1.5rem 0 0;
+  margin: 0;
 }
 .billing-document-details div { display: contents; }
 .billing-document-details dt { color: #5d6d64; }

@@ -48,6 +48,8 @@ export type BillingDocument = {
   currency: string
   lines: BillingLine[]
   totals: BillingRow[]
+  /** Section title for the reference block. It follows the document kind. */
+  detailHeading: string
   details: BillingRow[]
   notes: string[]
 }
@@ -173,14 +175,21 @@ function statusFor(kind: BillingKind): BillingStatus {
   return "Paid"
 }
 
+function detailHeadingFor(kind: BillingKind): string {
+  if (kind === "quotation") return "Quotation details"
+  if (kind === "invoice") return "Invoice details"
+  if (kind === "credit_note") return "Credit details"
+  return "Payment details"
+}
+
 function notesFor(kind: BillingKind, seller: SellerFacts): string[] {
   const notes: string[] = []
-  if (kind === "quotation") notes.push("This quotation shows the proposed service and the agreed total.")
-  if (kind === "invoice") notes.push("This invoice requests payment of the amount due. It does not confirm that payment has been received.")
-  if (kind === "receipt") notes.push("This receipt confirms the amount received.")
-  if (kind === "credit_note") notes.push("This credit note records a refund or adjustment. It does not change the original receipt.")
+  if (kind === "quotation") notes.push("Proposed service and agreed total.")
+  if (kind === "invoice") notes.push("Payment has not been received.")
+  if (kind === "receipt") notes.push("Amount received.")
+  if (kind === "credit_note") notes.push("Does not change the original receipt.")
   if (kind === "invoice" && entitledToVatInvoice(seller)) return notes
-  if (!seller.vatRegistered) notes.push("It is not a VAT invoice.")
+  if (!seller.vatRegistered) notes.push("Not a VAT invoice.")
   return notes
 }
 
@@ -226,6 +235,9 @@ export function buildBillingDocument(input: BillingDocumentInput): BillingDocume
     throw new BillingDocumentError("tax treatment is not recorded")
   }
   const seller = input.seller
+  if (input.kind === "invoice" && seller.vatRegistered && !seller.vatNumber) {
+    throw new BillingDocumentError("VAT invoice details are not recorded")
+  }
   const billName = cleanLine(input.billTo.name, "bill to")
   if (!billName) throw new BillingDocumentError("bill to name is not recorded")
   const sellerLines = [
@@ -237,13 +249,17 @@ export function buildBillingDocument(input: BillingDocumentInput): BillingDocume
     seller.placeOfRegistration ? `Registered in ${seller.placeOfRegistration}` : "",
     entitledToVatInvoice(seller) && seller.vatNumber ? `VAT number ${seller.vatNumber}` : "",
   ].filter(Boolean)
-  const totals: BillingRow[] = [
-    { label: "Subtotal", value: money(subtotal, currency) },
-  ]
-  if (discount > 0) totals.push({ label: "Discount", value: money(discount, currency) })
-  if (tax > 0) {
-    const taxLabel = entitledToVatInvoice(seller) ? "VAT" : input.taxBehaviour === "INCLUSIVE" ? "Tax included" : "Tax recorded"
-    totals.push({ label: taxLabel, value: money(tax, currency) })
+  const totals: BillingRow[] = []
+  const taxName = entitledToVatInvoice(seller) ? "VAT" : "Tax"
+  if (input.taxBehaviour === "INCLUSIVE" && tax > 0) {
+    if (discount > 0) totals.push({ label: "Subtotal", value: money(subtotal, currency) })
+    if (discount > 0) totals.push({ label: "Discount", value: money(discount, currency) })
+    totals.push({ label: "Net", value: money(input.totalMinor - tax, currency) })
+    totals.push({ label: `${taxName} included`, value: money(tax, currency) })
+  } else {
+    totals.push({ label: "Subtotal", value: money(subtotal, currency) })
+    if (discount > 0) totals.push({ label: "Discount", value: money(discount, currency) })
+    if (tax > 0) totals.push({ label: taxName, value: money(tax, currency) })
   }
   totals.push({ label: "Total", value: money(input.totalMinor, currency) })
   if (input.kind === "receipt") {
@@ -284,6 +300,7 @@ export function buildBillingDocument(input: BillingDocumentInput): BillingDocume
     currency,
     lines,
     totals,
+    detailHeading: detailHeadingFor(input.kind),
     details,
     notes: notesFor(input.kind, seller),
   }
@@ -305,6 +322,7 @@ export function billingComparableLines(document: BillingDocument): string[] {
     document.billTo.email ?? "",
     ...document.lines.flatMap(line => [line.description, line.detail ?? "", line.quantity, line.unitAmount, line.amount]),
     ...document.totals.flatMap(row => [row.label, row.value]),
+    document.detailHeading,
     ...document.details.flatMap(row => [row.label, row.value]),
     ...document.notes,
   ].filter(line => line.length > 0)

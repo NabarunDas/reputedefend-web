@@ -100,14 +100,17 @@ export function BillingDocumentView({ document }: { document: BillingDocument })
         </tbody>
       </table>
       {document.details.length > 0 ? (
-        <dl className="billing-document-details">
-          {document.details.map(row => (
-            <div key={row.label}>
-              <dt>{row.label}</dt>
-              <dd>{row.value}</dd>
-            </div>
-          ))}
-        </dl>
+        <section className="billing-document-meta">
+          <h2>{document.detailHeading}</h2>
+          <dl className="billing-document-details">
+            {document.details.map(row => (
+              <div key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       ) : null}
       {document.notes.map(note => <p className="billing-document-note" key={note}>{note}</p>)}
     </article>

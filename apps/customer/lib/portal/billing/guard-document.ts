@@ -3,6 +3,7 @@ import { privateResponseHeaders } from "@/lib/access"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
+import { BillingDocumentError } from "../../../../../lib/billing/document"
 import { documentFromGuard } from "./present"
 import { parseGuardDocument } from "./parse"
 import { billingPdfResponse } from "./pdf-response"
@@ -40,7 +41,8 @@ export async function portalGuardDocument(request: NextRequest) {
     if (!document) return textReply(UNAVAILABLE, 404)
     const prefix = row.kind === "credit_note" ? "credit-note" : "receipt"
     return billingPdfResponse(document, `${prefix}-${row.reference}.pdf`)
-  } catch {
+  } catch (error) {
+    if (error instanceof BillingDocumentError) return textReply(UNAVAILABLE, 404)
     return textReply(RETRY, 503)
   }
 }

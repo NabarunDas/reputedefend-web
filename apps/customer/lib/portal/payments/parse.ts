@@ -319,6 +319,13 @@ export type ReceiptDownload = {
   quotedSubtotalMinor: number | null
   sellerVatRegistered: boolean
   sellerVatNumber: string | null
+  sellerLegalName: string
+  sellerTradingName: string
+  sellerAddress: string
+  sellerEmail: string | null
+  sellerRegistrationNumber: string | null
+  sellerPlaceOfRegistration: string | null
+  billToCaptured: boolean
 }
 
 const RECEIPT_DOWNLOAD_KEYS = [
@@ -327,6 +334,8 @@ const RECEIPT_DOWNLOAD_KEYS = [
   "billToName", "billToEmail", "billToCountry", "contactName", "paymentModel",
   "standardAmountMinor", "discountAmountMinor", "quotedSubtotalMinor",
   "sellerVatRegistered", "sellerVatNumber",
+  "sellerLegalName", "sellerTradingName", "sellerAddress", "sellerEmail",
+  "sellerRegistrationNumber", "sellerPlaceOfRegistration", "billToCaptured",
 ] as const
 
 export function parseReceiptDownload(value: unknown): ReceiptDownload | "not_found" | null {
@@ -356,6 +365,13 @@ export function parseReceiptDownload(value: unknown): ReceiptDownload | "not_fou
   const quotedSubtotalMinor = optionalMinor(row.quotedSubtotalMinor)
   const sellerVatRegistered = flag(row.sellerVatRegistered)
   const sellerVatNumber = optionalVatNumber(row.sellerVatNumber)
+  const sellerLegalName = text(row.sellerLegalName, 200)
+  const sellerTradingName = text(row.sellerTradingName, 200)
+  const sellerAddress = text(row.sellerAddress, 500)
+  const sellerEmail = optionalEmail(row.sellerEmail)
+  const sellerRegistrationNumber = optionalText(row.sellerRegistrationNumber, 40)
+  const sellerPlaceOfRegistration = optionalText(row.sellerPlaceOfRegistration, 80)
+  const billToCaptured = flag(row.billToCaptured)
   const prices = [standardAmountMinor, discountAmountMinor, quotedSubtotalMinor]
   const priceShape = prices.every(item => item === null) || prices.every(item => typeof item === "number")
   if (!receiptRef || !RECEIPT_REF.test(receiptRef) || !reference || !isPublicCaseReference(reference)
@@ -364,12 +380,15 @@ export function parseReceiptDownload(value: unknown): ReceiptDownload | "not_fou
     || !paymentStatus || !providerLabel || !billToName || billToEmail === undefined || billToCountry === undefined
     || contactName === undefined || !paymentModel || standardAmountMinor === undefined
     || discountAmountMinor === undefined || quotedSubtotalMinor === undefined || !priceShape || sellerVatRegistered === null
-    || sellerVatNumber === undefined) return null
+    || sellerVatNumber === undefined || !sellerLegalName || !sellerTradingName || !sellerAddress
+    || sellerEmail === undefined || sellerRegistrationNumber === undefined
+    || sellerPlaceOfRegistration === undefined || billToCaptured === null) return null
   return {
     receiptRef, reference, orderRef, serviceName, amountMinor, currency: unit,
     taxBehaviour, taxAmountMinor, paidAt, paymentStatus, providerLabel,
     billToName, billToEmail, billToCountry, contactName, paymentModel,
     standardAmountMinor, discountAmountMinor, quotedSubtotalMinor,
-    sellerVatRegistered, sellerVatNumber,
+    sellerVatRegistered, sellerVatNumber, sellerLegalName, sellerTradingName, sellerAddress,
+    sellerEmail, sellerRegistrationNumber, sellerPlaceOfRegistration, billToCaptured,
   }
 }

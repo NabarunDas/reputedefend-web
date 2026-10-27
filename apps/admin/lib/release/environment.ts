@@ -282,11 +282,11 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: false,
     scope: "PLATFORM_PROVIDED",
     atAdminCutover: "PRESENT",
-    controls: "Git branch of the deployment. The DEV Stripe one-shot, the guided case workflow and Marketing DEV mail accept only the develop branch and refuse every other ref. The purchaser establishment panel does not read the branch.",
+    controls: "Git branch of the deployment. The DEV Stripe one-shot, payment-worker proxy, guided case workflow and Marketing DEV mail accept only the develop branch and refuse every other ref. The purchaser establishment panel does not read the branch.",
     whenAbsent: "Those develop-only controls refuse the request. The guided case workflow is not served, and Marketing Preview case email stays closed.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts"],
+    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/proxy.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts"],
   },
 
   {

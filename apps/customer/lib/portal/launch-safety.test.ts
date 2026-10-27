@@ -29,11 +29,14 @@ function allowedPortalHref(href: string) {
     /^\/portal\/cases\?view=\$\{[^}]+\}$/,
     /^\/portal\/cases\?view=\$\{[^}]+\}\&before=\$\{[^}]+\}\&ref=\$\{[^}]+\}$/,
     /^\/portal\/cases\/\$\{[^}]+\}$/,
-    /^\/portal\/cases\/\$\{[^}]+\}\/(?:documents|service|payments)$/,
+    /^\/portal\/cases\/\$\{[^}]+\}\/(?:documents|service|payments|quotation)$/,
     /^\/portal\/documents$/,
     /^\/portal\/payments$/,
+    /^\/portal\/payments\/receipt\?selector=\$\{[^}]+\}$/,
+    /^\/portal\/payments\/invoice\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/portal\/guard$/,
     /^\/portal\/guard\/\$\{[^}]+\}$/,
+    /^\/portal\/guard\/document\?selector=\$\{[^}]+\}$/,
     /^\/portal\/messages$/,
     /^\/portal\/messages\?before=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/portal\/messages\/\$\{[^}]+\}$/,
@@ -41,6 +44,9 @@ function allowedPortalHref(href: string) {
     /^\/api\/portal\/documents\/download\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/receipt\?selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/invoice\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
+    /^\/api\/portal\/payments\/invoice-document\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
+    /^\/api\/portal\/service\/quotation\?reference=\$\{[^}]+\}$/,
+    /^\/api\/portal\/guard\/document\?selector=\$\{[^}]+\}$/,
   ].some(pattern => pattern.test(href))
 }
 

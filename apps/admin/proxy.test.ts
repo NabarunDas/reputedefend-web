@@ -25,7 +25,7 @@ describe("DEV public webhook-only hostname", () => {
     ["GET", "/"], ["GET", "/login"], ["POST", "/auth/send"],
     ["GET", "/api/webhooks/stripe"], ["HEAD", "/api/webhooks/stripe"],
     ["OPTIONS", "/api/webhooks/stripe"], ["POST", "/api/webhooks/resend"],
-    ["POST", "/api/internal/jobs/run"], ["POST", "/api/operations/dev-stripe-reconcile"], ["GET", "/_next/static/chunks/app.js"],
+    ["POST", "/api/internal/jobs/run"], ["GET", "/api/internal/jobs/dev-payment-events"], ["POST", "/api/operations/dev-stripe-reconcile"], ["GET", "/_next/static/chunks/app.js"],
     ["GET", "/robots.txt"], ["POST", "/api/webhooks/stripe/"],
   ])("rejects %s %s without reaching other DEV routes", (method, route) => withPreview(async () => {
     const response = await proxy(new NextRequest(`${host}${route}`, { method }))
@@ -65,6 +65,36 @@ describe("DEV public webhook-only hostname", () => {
 })
 
 describe("admin access boundary", () => {
+  it("passes only the develop Preview payment-worker route through to its own bearer check", async () => {
+    const oldEnv = process.env.VERCEL_ENV
+    const oldBranch = process.env.VERCEL_GIT_COMMIT_REF
+    const hostname = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const path = "/api/internal/jobs/dev-payment-events"
+    try {
+      process.env.VERCEL_ENV = "preview"
+      process.env.VERCEL_GIT_COMMIT_REF = "develop"
+      const accepted = await proxy(new NextRequest(hostname + path))
+      expect(accepted.headers.get("x-middleware-next")).toBe("1")
+      expect(accepted.headers.get("cache-control")).toContain("no-store")
+      for (const method of ["HEAD", "POST", "PUT", "DELETE", "OPTIONS"]) {
+        expect((await proxy(new NextRequest(hostname + path, { method }))).status).toBe(401)
+      }
+      expect((await proxy(new NextRequest("https://profilerelaunch-admin.vercel.app" + path))).status).toBe(401)
+      expect((await proxy(new NextRequest(hostname + path + "/"))).status).toBe(401)
+      expect((await proxy(new NextRequest("https://dev-hooks.profilerelaunch.com" + path))).status).toBe(404)
+      process.env.VERCEL_GIT_COMMIT_REF = "main"
+      expect((await proxy(new NextRequest(hostname + path))).status).toBe(401)
+      process.env.VERCEL_GIT_COMMIT_REF = "develop"
+      process.env.VERCEL_ENV = "production"
+      expect((await proxy(new NextRequest(hostname + path))).status).toBe(401)
+    } finally {
+      if (oldEnv === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = oldEnv
+      if (oldBranch === undefined) delete process.env.VERCEL_GIT_COMMIT_REF
+      else process.env.VERCEL_GIT_COMMIT_REF = oldBranch
+    }
+  })
+
   it("redirects Production browser traffic from Vercel aliases to the canonical Admin domain", async () => {
     const previous = process.env.VERCEL_ENV
     process.env.VERCEL_ENV = "production"

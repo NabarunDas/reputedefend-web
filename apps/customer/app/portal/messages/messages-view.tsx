@@ -54,10 +54,12 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
                   <span className="message-row-main">
                     <span className="message-row-title">{title}</span>
                     {where ? <span className="message-row-context">{where}</span> : null}
-                    <span className="message-row-state">{thread.state}</span>
+                    <span className="message-row-action">
+                      View message
+                      <span className="message-chevron" aria-hidden="true">›</span>
+                    </span>
                   </span>
                   <time dateTime={thread.activityAt}>{formatMessageTime(thread.activityAt)}</time>
-                  <span className="sr-only">Open conversation</span>
                 </a>
               </li>
             )

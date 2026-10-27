@@ -7,6 +7,7 @@ import { guardMoney, guardTaxNote, guardWhen } from "@/lib/portal/guard/model"
 import type { GuardAction, GuardLocation, GuardSubscriptionAction } from "@/lib/portal/guard/parse"
 import { brandSiteUrl } from "../../../../../lib/brand"
 import { guardHeroDisclaimer, guardPrice } from "../../../../../lib/guard-offer"
+import { legalIdentity } from "../../../../../lib/legal"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
 function slotKey(keys: { current: Record<string, string> }, slot: string) {
@@ -28,12 +29,10 @@ export function GuardView({
   locations,
   focused,
   documents = [],
-  setupEnabled = false,
 }: {
   locations: GuardLocation[]
   focused: boolean
   documents?: GuardDocumentSummary[]
-  setupEnabled?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
@@ -71,7 +70,7 @@ export function GuardView({
       <h1>{focused ? "Relaunch Guard location" : "Relaunch Guard"}</h1>
       {locations.length > 0 ? <p>Monitoring follows the arrangement recorded for each location.</p> : null}
       {notice ? <p className="guard-notice" role="alert">{notice}</p> : null}
-      {locations.length === 0 ? <GuardIntroduction setupEnabled={setupEnabled} /> : null}
+      {locations.length === 0 ? <GuardIntroduction /> : null}
       <ul className="guard-list">
         {locations.map(location => (
           <li key={location.selector} className="guard-location">
@@ -107,7 +106,8 @@ export function GuardView({
   )
 }
 
-function GuardIntroduction({ setupEnabled }: { setupEnabled: boolean }) {
+function GuardIntroduction() {
+  const contactEmail = legalIdentity.contactEmail
   return (
     <section className="guard-intro" aria-labelledby="guard-intro-title">
       <h2 id="guard-intro-title">Protect your Google Business Profile with Relaunch Guard</h2>
@@ -121,9 +121,10 @@ function GuardIntroduction({ setupEnabled }: { setupEnabled: boolean }) {
       <p>Checks are scheduled, not continuous. We do not promise round-the-clock monitoring, automatic changes on Google, or that a review will be removed.</p>
       <div className="guard-intro-actions">
         <a className="portal-button" href={`${brandSiteUrl}/relaunch-guard`}>Learn about Relaunch Guard</a>
-        {setupEnabled ? <a className="portal-button secondary" href={`${brandSiteUrl}/start-monitoring`}>Request monitoring setup</a> : null}
+        <a className="portal-button secondary" href={`${brandSiteUrl}/contact`}>Contact us about monitoring</a>
       </div>
-      <p className="guard-assurance">{guardHeroDisclaimer(setupEnabled)}</p>
+      <p className="guard-assurance">{guardHeroDisclaimer(false)}</p>
+      {contactEmail ? <p>Email <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</p> : null}
     </section>
   )
 }

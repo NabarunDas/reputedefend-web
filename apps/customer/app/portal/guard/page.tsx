@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation"
-import { isMonitoringPersistenceEnabled } from "../../../../../lib/monitoring/persistence-config"
 import { portalAvailable } from "@/lib/portal/config"
 import { loadGuardBillingDocuments } from "@/lib/portal/billing/load"
 import { loadCustomerGuard } from "@/lib/portal/guard/queries"
@@ -13,5 +12,5 @@ export default async function CustomerGuardPage() {
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "unavailable") return <GuardUnavailable />
   const documents = await loadGuardBillingDocuments()
-  return <GuardView locations={loaded.guard.locations} focused={false} documents={documents} setupEnabled={isMonitoringPersistenceEnabled()} />
+  return <GuardView locations={loaded.guard.locations} focused={false} documents={documents} />
 }

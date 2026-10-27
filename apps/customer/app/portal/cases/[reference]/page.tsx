@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { loadCustomerCase } from "@/lib/portal/cases/queries"
+import { loadCustomerCaseDocuments } from "@/lib/portal/documents/queries"
 import { presentCaseCommerce } from "@/lib/portal/payments/model"
 import { loadCustomerCasePayments } from "@/lib/portal/payments/queries"
 import { CaseUnavailable, CaseWorkspace } from "./case-workspace"
@@ -19,5 +20,16 @@ export default async function CustomerCasePage({ params }: { params: Promise<{ r
   const payments = await loadCustomerCasePayments(reference)
   if (payments.status === "unauthenticated") redirect("/login")
   const commerce = payments.status === "ready" ? presentCaseCommerce(payments.payments.case) : null
-  return <CaseWorkspace detail={loaded.detail} commerce={commerce} />
+  const item = loaded.detail.case
+  const handover = item.serviceTrack === "GUIDED" && (
+    item.workStage === "READY_TO_SUBMIT" ||
+    (item.status === "CLOSED" && item.workStage === "FINISHED" && !item.outcomeCode)
+  )
+  let packHref: string | null = null
+  if (handover) {
+    const documents = await loadCustomerCaseDocuments(reference)
+    if (documents.status === "unauthenticated") redirect("/login")
+    if (documents.status === "ready" && documents.documents.pack) packHref = `/portal/cases/${reference}/documents`
+  }
+  return <CaseWorkspace detail={loaded.detail} commerce={commerce} packHref={packHref} />
 }

@@ -82,7 +82,9 @@ describe("customer case workspace", () => {
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Information")
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Now")
     expect(screen.getByText("Case received")).toBeTruthy()
-    expect(screen.getByText("Submitted to Google")).toBeTruthy()
+    expect(screen.getByText("Pack ready for you")).toBeTruthy()
+    expect(screen.queryByText("Submitted to Google")).toBeNull()
+    expect(screen.queryByText("Decision")).toBeNull()
     expect(progress?.querySelector("a, button")).toBeNull()
     const updates = screen.getByRole("heading", { name: "Case updates" }).parentElement?.querySelector("ol")
     const times = updates?.querySelectorAll("time") ?? []
@@ -229,6 +231,19 @@ describe("customer case workspace", () => {
     expect(screen.getAllByRole("list") .length).toBeGreaterThan(0)
     expect(document.querySelectorAll(".case-timeline time")).toHaveLength(20)
     expect(screen.queryByText("Complete history")).toBeNull()
+  })
+
+  it("shows a recorded paid Guided service beside the case status", () => {
+    render(<CaseWorkspace
+      detail={detail({ attentionItems: [], status: "AWAITING_CUSTOMER", workStage: "PAYMENT_REQUIRED" })}
+      commerce={{ purchasedService: "Guided Relaunch", payment: "Paid £99.00" }}
+    />)
+    expect(screen.getByText("Guided Relaunch")).toBeTruthy()
+    expect(screen.getByText("Paid £99.00")).toBeTruthy()
+    expect(screen.getAllByText("In progress").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("link", { name: /pay £|pay now/i })).toBeNull()
+    expect(screen.queryByText("Submitted to Google")).toBeNull()
+    expect(screen.queryByText("Decision")).toBeNull()
   })
 
   it("shows a load failure that is not a missing case", () => {

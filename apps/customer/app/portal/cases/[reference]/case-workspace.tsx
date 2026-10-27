@@ -24,11 +24,23 @@ export function CaseUnavailable() {
   )
 }
 
-export function CaseWorkspace({ detail, commerce = null }: { detail: CustomerCaseDetail; commerce?: CaseCommerce | null }) {
+export function CaseWorkspace({
+  detail,
+  commerce = null,
+  packHref = null,
+}: {
+  detail: CustomerCaseDetail
+  commerce?: CaseCommerce | null
+  packHref?: string | null
+}) {
   const item = detail.case
   const state = customerCaseState(item.status, item.workStage, item.attentionItems.length)
-  const next = presentNextStep(item)
-  const progress = presentProgress(item.status, item.workStage)
+  const next = presentNextStep({ ...item, packHref })
+  const progress = presentProgress(item.status, item.workStage, {
+    serviceTrack: item.serviceTrack,
+    outcomeCode: item.outcomeCode,
+    timeline: detail.timeline,
+  })
   const timeline = presentTimeline(detail)
   const details = presentDetailRows(detail, commerce)
   const recent = timeline.slice(0, PREVIEW_UPDATES)

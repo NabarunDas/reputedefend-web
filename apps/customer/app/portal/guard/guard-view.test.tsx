@@ -98,15 +98,12 @@ describe("guard screens", () => {
     expect(screen.getByText(/per month per location/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "Learn about Relaunch Guard" })).toHaveAttribute("href", "https://profilerelaunch.com/relaunch-guard")
     expect(screen.queryByRole("link", { name: "Request monitoring setup" })).toBeNull()
+    expect(screen.queryByRole("link", { name: /start-monitoring/i })).toBeNull()
+    expect(screen.getByRole("link", { name: "Contact us about monitoring" })).toHaveAttribute("href", "https://profilerelaunch.com/contact")
+    expect(screen.getByRole("link", { name: "contact@profilerelaunch.com" })).toHaveAttribute("href", "mailto:contact@profilerelaunch.com")
     expect(screen.queryByRole("button", { name: /checkout|subscribe|pay/i })).toBeNull()
     expect(screen.getByText("Online setup is currently unavailable. Contact us to discuss monitoring.")).toBeTruthy()
-  })
-
-  it("offers setup only when the marketing request route is enabled", () => {
-    render(<GuardView locations={[]} focused={false} setupEnabled />)
-    expect(screen.getByRole("link", { name: "Request monitoring setup" })).toHaveAttribute("href", "https://profilerelaunch.com/start-monitoring")
-    expect(screen.getByText("Requesting setup does not start monitoring or take payment.")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /checkout|subscribe|pay/i })).toBeNull()
+    expect(document.body.innerHTML).not.toContain("/start-monitoring")
   })
 
   it("requires an explicit permission confirmation and does not treat silence as acceptance", async () => {

@@ -104,6 +104,7 @@ describe("customer portal launch safety", () => {
     expect(css).toContain("@media (min-width: 768px)")
     expect(css).toContain("@media (min-width: 1024px)")
     expect(css).toMatch(/\.portal-nav-list[\s\S]*overflow-x: auto/)
+    expect(css).toMatch(/@media \(max-width: 480px\) \{[\s\S]*\.portal-nav-list \{[^}]*flex-wrap: wrap/)
     expect(css).toContain("scroll-margin-inline: 1rem")
     const nav = readFileSync(new URL("app/portal/portal-nav.tsx", customerRoot), "utf8")
     expect(nav).toContain("<a ")

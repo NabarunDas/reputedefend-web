@@ -813,7 +813,7 @@ form button { margin: 1rem 0; }
 
 @media (min-width: 1024px) {
   .case-progress {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
   }
 }
 
@@ -830,7 +830,7 @@ form button { margin: 1rem 0; }
   display: flex;
   gap: 0.15rem;
   margin: 0;
-  padding: 0;
+  padding: 0.4rem 0.25rem;
   list-style: none;
   min-width: 0;
   max-width: 100%;
@@ -907,6 +907,35 @@ main.customer-main > section .document-list a {
   .portal-sign-out { align-items: stretch; }
 
   .portal-sign-out button { width: auto; }
+
+  .portal-nav-list {
+    flex-wrap: wrap;
+  }
+
+  .portal-nav-list > li {
+    flex: 1 1 calc(50% - 0.15rem);
+    min-width: 0;
+  }
+
+  .portal-nav-link,
+  .portal-nav-disabled {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+    padding: 0.45rem 0.65rem;
+  }
+
+  .case-progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .case-progress li {
+    padding: 0.45rem 0.55rem;
+  }
 }
 
 @media (min-width: 768px) {
@@ -1477,6 +1506,19 @@ main.customer-main > section .document-list a {
 .message-row-title {
   font-weight: 700;
   line-height: 1.35;
+}
+
+.message-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.message-chevron {
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
 .message-row-context,

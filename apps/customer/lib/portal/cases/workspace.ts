@@ -19,7 +19,26 @@ export const CUSTOMER_PROGRESS_STEPS = [
   { code: "DECISION", label: "Decision" },
 ] as const
 
-export type CustomerProgressStep = (typeof CUSTOMER_PROGRESS_STEPS)[number]["code"]
+const GUIDED_PROGRESS_STEPS = [
+  { code: "RECEIVED", label: "Case received" },
+  { code: "INFORMATION", label: "Information" },
+  { code: "SERVICE_SETUP", label: "Service setup" },
+  { code: "PREPARATION", label: "Preparing your pack" },
+  { code: "HANDOVER", label: "Pack ready for you" },
+] as const
+
+const GUIDED_SUBMISSION_STEP = { code: "SUBMISSION", label: "Submission recorded" } as const
+const GUIDED_DECISION_STEP = { code: "DECISION", label: "Decision" } as const
+
+export type CustomerProgressStep =
+  | (typeof CUSTOMER_PROGRESS_STEPS)[number]["code"]
+  | (typeof GUIDED_PROGRESS_STEPS)[number]["code"]
+  | "SUBMISSION"
+
+export type ProgressEvidence = {
+  outcomeCode?: OutcomeCode | null
+  timeline?: readonly { code: CustomerTimelineCode }[]
+}
 
 export type ProgressPosition = "earlier" | "current" | "upcoming"
 
@@ -46,9 +65,26 @@ const TIMELINE_MESSAGES: Record<CustomerTimelineCode, string> = {
   CASE_CANCELLED: "This ProfileRelaunch case was cancelled.",
 }
 
-export function customerProgressStep(status: CaseStatus, workStage: WorkStage): CustomerProgressStep | null {
-  if (status === "CANCELLED") return null
-  if (status === "CLOSED") return "DECISION"
+const GOOGLE_OUTCOMES = new Set<OutcomeCode>([
+  "RESTORED",
+  "PARTIALLY_RESTORED",
+  "NOT_RESTORED",
+  "REMOVED",
+  "NOT_REMOVED",
+  "RESPONSE_RECOMMENDED",
+])
+
+const SUBMISSION_STAGES = new Set<WorkStage>(["SUBMITTED", "WAITING_GOOGLE", "OWNER_ACTION", "FURTHER_REVIEW"])
+
+function recordedGoogle(evidence?: ProgressEvidence) {
+  const codes = new Set(evidence?.timeline?.map(event => event.code) ?? [])
+  return {
+    submission: codes.has("SUBMITTED_TO_GOOGLE"),
+    decision: codes.has("GOOGLE_DECISION_RECORDED") || (evidence?.outcomeCode != null && GOOGLE_OUTCOMES.has(evidence.outcomeCode)),
+  }
+}
+
+function stageStep(workStage: WorkStage): CustomerProgressStep {
   switch (workStage) {
     case "INITIAL_REVIEW":
       return "RECEIVED"
@@ -77,11 +113,50 @@ export function customerProgressStep(status: CaseStatus, workStage: WorkStage): 
   }
 }
 
-export function presentProgress(status: CaseStatus, workStage: WorkStage): PresentedProgressStep[] | null {
-  const current = customerProgressStep(status, workStage)
+export function customerProgressStep(
+  status: CaseStatus,
+  workStage: WorkStage,
+  serviceTrack?: string,
+  evidence?: ProgressEvidence,
+): CustomerProgressStep | null {
+  if (status === "CANCELLED") return null
+  if (serviceTrack === "GUIDED") {
+    const google = recordedGoogle(evidence)
+    const atOutcome = status === "CLOSED" || workStage === "OUTCOME_REVIEW" || workStage === "FINISHED"
+    if (google.decision && atOutcome) return "DECISION"
+    if (SUBMISSION_STAGES.has(workStage)) return "SUBMISSION"
+    if (workStage === "READY_TO_SUBMIT") return "HANDOVER"
+    if (workStage === "OUTCOME_REVIEW" || workStage === "FINISHED" || status === "CLOSED") {
+      return google.submission ? "SUBMISSION" : workStage === "FINISHED" || workStage === "OUTCOME_REVIEW" ? "HANDOVER" : stageStep(workStage)
+    }
+    return stageStep(workStage)
+  }
+  if (status === "CLOSED") return "DECISION"
+  return stageStep(workStage)
+}
+
+function progressList(current: CustomerProgressStep, serviceTrack: string | undefined, evidence?: ProgressEvidence) {
+  if (serviceTrack !== "GUIDED") return CUSTOMER_PROGRESS_STEPS
+  const google = recordedGoogle(evidence)
+  const steps: { code: CustomerProgressStep; label: string }[] = [...GUIDED_PROGRESS_STEPS]
+  if (current === "SUBMISSION" || google.submission) steps.push(GUIDED_SUBMISSION_STEP)
+  if (current === "DECISION") steps.push(GUIDED_DECISION_STEP)
+  return steps
+}
+
+export function presentProgress(
+  status: CaseStatus,
+  workStage: WorkStage,
+  options?: { serviceTrack?: string } & ProgressEvidence,
+): PresentedProgressStep[] | null {
+  const serviceTrack = options?.serviceTrack
+  const evidence = { outcomeCode: options?.outcomeCode, timeline: options?.timeline }
+  const current = customerProgressStep(status, workStage, serviceTrack, evidence)
   if (!current) return null
-  const index = CUSTOMER_PROGRESS_STEPS.findIndex(step => step.code === current)
-  return CUSTOMER_PROGRESS_STEPS.map((step, stepIndex) => {
+  const steps = progressList(current, serviceTrack, evidence)
+  const index = steps.findIndex(step => step.code === current)
+  if (index < 0) return null
+  return steps.map((step, stepIndex) => {
     const position: ProgressPosition = stepIndex < index ? "earlier" : stepIndex === index ? "current" : "upcoming"
     const state = position === "earlier" ? "Completed" : position === "current" ? "Now" : "Upcoming"
     return { code: step.code, label: step.label, position, text: `${step.label}. ${state}.` }
@@ -160,6 +235,8 @@ export function presentNextStep(input: {
   serviceTrack?: string
   outcomeCode: OutcomeCode | null
   attentionItems: CustomerCaseDetail["case"]["attentionItems"]
+  /** Set only after a read-only documents read finds a published pack. */
+  packHref?: string | null
 }): PresentedNextStep {
   if (input.attentionItems.length > 0) {
     const [first, ...rest] = input.attentionItems.map(item => presentAttention(item, input.reference))
@@ -193,16 +270,33 @@ export function presentNextStep(input: {
       remaining: [],
     }
   }
-  if (state === "IN_PROGRESS" && (input.workStage === "PREPARATION" || input.workStage === "READY_TO_SUBMIT")) {
+  if (state === "IN_PROGRESS" && input.workStage === "PREPARATION") {
     return {
-      title: "We're preparing your case",
+      title: input.serviceTrack === "GUIDED" ? "We're preparing your pack" : "We're preparing your case",
       body: input.serviceTrack === "GUIDED"
-        ? "Nothing is needed from you right now. You submit the finished pack to Google yourself. ProfileRelaunch does not submit Guided work."
+        ? "Nothing is needed from you right now. We'll let you know when your pack is ready."
         : "Nothing is needed from you right now. We'll let you know when that changes.",
       timing: null,
       support: null,
       href: null,
       actionLabel: null,
+      alsoWaiting: null,
+      remaining: [],
+    }
+  }
+  if (state === "IN_PROGRESS" && input.workStage === "READY_TO_SUBMIT") {
+    const packHref = input.serviceTrack === "GUIDED" ? input.packHref ?? null : null
+    return {
+      title: input.serviceTrack === "GUIDED" ? "Your pack is ready" : "We're preparing your case",
+      body: input.serviceTrack === "GUIDED"
+        ? packHref
+          ? "Your preparation pack is ready for you. You choose if and when to send it to Google."
+          : "Your preparation is ready. The pack will appear here when it is available for you."
+        : "Nothing is needed from you right now. We'll let you know when that changes.",
+      timing: null,
+      support: null,
+      href: packHref,
+      actionLabel: packHref ? "Open your pack" : null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -234,7 +328,7 @@ export function presentNextStep(input: {
   if (state === "SUBMITTED" && input.serviceTrack === "GUIDED") {
     return {
       title: "A submission has been recorded",
-      body: "You submit a Guided pack to Google yourself. ProfileRelaunch does not submit it. A report from you is not a Google decision.",
+      body: "We've recorded that this pack was sent to Google. That record is not a decision from Google.",
       timing: null,
       support: null,
       href: null,
@@ -272,13 +366,16 @@ export function presentNextStep(input: {
     return { title: outcome.title, body: outcome.body, timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
   }
   if (input.status === "CLOSED" && input.workStage === "FINISHED" && !input.outcomeCode && input.serviceTrack === "GUIDED") {
+    const packHref = input.packHref ?? null
     return {
       title: "Your Guided preparation is complete",
-      body: "Your submission pack is in the Customer Portal. You submit it to Google yourself. ProfileRelaunch does not submit Guided work. Google's later decision is separate, and Relaunch Guard is optional.",
+      body: packHref
+        ? "Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate."
+        : "Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.",
       timing: null,
       support: null,
-      href: null,
-      actionLabel: null,
+      href: packHref,
+      actionLabel: packHref ? "Open your pack" : null,
       alsoWaiting: null,
       remaining: [],
     }

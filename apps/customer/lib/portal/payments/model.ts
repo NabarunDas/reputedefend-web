@@ -85,40 +85,80 @@ export function trackLabel(track: Parameters<typeof serviceLabel>[0]): string | 
   return serviceLabel(track)
 }
 
+const OPEN_STATES = new Set<ObligationState>(["DUE", "COLLECTING", "AUTHENTICATION_REQUIRED", "FAILED"])
+const NEUTRAL_PAYMENT = "Several payments are recorded for this case. Each one is listed under Payments for this case."
+
+function openUpfront(order: PaymentOrder): PaymentObligation | null {
+  return order.obligations.find(obligation => obligation.kind === "upfront" && OPEN_STATES.has(obligation.state)) ?? null
+}
+
+function issuedSuccessFee(order: PaymentOrder): PaymentObligation | null {
+  return order.obligations.find(obligation =>
+    obligation.kind === "success_fee" &&
+    obligation.invoice?.status === "ISSUED" &&
+    OPEN_STATES.has(obligation.state),
+  ) ?? null
+}
+
+function dueNow(order: PaymentOrder): PaymentObligation | null {
+  return openUpfront(order) ?? issuedSuccessFee(order)
+}
+
+function settled(order: PaymentOrder): boolean {
+  if (dueNow(order)) return false
+  return order.receipts.length > 0 || order.obligations.some(obligation => obligation.state === "PAID")
+}
+
+function voidedOnly(order: PaymentOrder): boolean {
+  return order.receipts.length === 0
+    && order.obligations.length > 0
+    && order.obligations.every(obligation => obligation.state === "VOID")
+    && !dueNow(order)
+}
+
+function paidAmount(orders: PaymentOrder[]): { amountMinor: number; currency: string } | null {
+  const receipts = orders.flatMap(order => order.receipts)
+  if (receipts.length === 1) return receipts[0]
+  if (receipts.length > 1) return null
+  const paid = orders.flatMap(order => order.obligations.filter(obligation => obligation.state === "PAID"))
+  return paid.length === 1 ? paid[0] : null
+}
+
 /**
- * Read-only summary of a recorded order. It does not infer a catalogue
- * product from case status, and it does not decide whether checkout is allowed.
+ * Read-only summary of recorded orders. Order array order is not meaningful.
+ * This does not infer a catalogue product from case status, and it does not
+ * start or repeat a charge.
  */
 export function presentCaseCommerce(item: PaymentCase): { purchasedService: string | null; payment: string | null } {
-  const paid = item.orders.find(order => order.receipts.length > 0 || order.obligations.some(obligation => obligation.state === "PAID"))
-  if (paid) {
-    const receipt = paid.receipts[0]
-    const paidObligation = paid.obligations.find(obligation => obligation.state === "PAID")
-    const amount = receipt ?? paidObligation
-    return {
-      purchasedService: paid.serviceName,
-      payment: amount ? `Paid ${moneyLabel(amount.amountMinor, amount.currency)}` : "Paid",
-    }
+  if (item.orders.length === 0) return { purchasedService: null, payment: null }
+  const due = item.orders.filter(order => dueNow(order))
+  const paid = item.orders.filter(settled)
+  if (due.length > 1 || (due.length === 1 && paid.length > 0)) {
+    return { purchasedService: null, payment: NEUTRAL_PAYMENT }
   }
-  const open = item.orders.find(order => order.obligations.some(obligation =>
-    obligation.state === "DUE" || obligation.state === "COLLECTING" || obligation.state === "AUTHENTICATION_REQUIRED" || obligation.state === "FAILED",
-  ))
-  if (open) {
-    const obligation = open.obligations.find(entry =>
-      entry.state === "DUE" || entry.state === "COLLECTING" || entry.state === "AUTHENTICATION_REQUIRED" || entry.state === "FAILED",
-    )
+  if (due.length === 1 && paid.length === 0) {
+    const obligation = dueNow(due[0])
     return {
-      purchasedService: open.serviceName,
+      purchasedService: due[0].serviceName,
       payment: obligation ? `Payment due ${moneyLabel(obligation.amountMinor, obligation.currency)}` : "Payment due",
     }
   }
-  const named = item.orders[0]
-  if (!named) return { purchasedService: null, payment: null }
-  if (named.paymentModel === "SUCCESS_FEE") {
+  if (paid.length > 0) {
+    const names = new Set(paid.map(order => order.serviceName))
+    const amount = names.size === 1 ? paidAmount(paid) : null
+    if (names.size !== 1 || !amount) return { purchasedService: null, payment: NEUTRAL_PAYMENT }
     return {
-      purchasedService: named.serviceName,
+      purchasedService: [...names][0],
+      payment: `Paid ${moneyLabel(amount.amountMinor, amount.currency)}`,
+    }
+  }
+  if (item.orders.length === 1 && item.orders[0].paymentModel === "SUCCESS_FEE" && !voidedOnly(item.orders[0])) {
+    return {
+      purchasedService: item.orders[0].serviceName,
       payment: "The success fee is charged only after a documented result",
     }
   }
-  return { purchasedService: named.serviceName, payment: null }
+  if (item.orders.every(voidedOnly)) return { purchasedService: null, payment: "This payment was voided." }
+  if (item.orders.length === 1) return { purchasedService: item.orders[0].serviceName, payment: null }
+  return { purchasedService: null, payment: NEUTRAL_PAYMENT }
 }

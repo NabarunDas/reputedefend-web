@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { billingPdfText, buildBillingPdf } from "./document-pdf"
 import { billingComparableLines } from "./document"
@@ -248,21 +248,5 @@ describe("shared billing documents", () => {
       expect(text, line).toContain(line)
     }
     expect(text).not.toMatch(/pi_|cus_|cs_|ch_/)
-  })
-
-  it("writes synthetic PDF samples when asked", () => {
-    if (process.env.WRITE_BILLING_SAMPLES !== "1") return
-    const directory = new URL("../../docs/billing/samples/", import.meta.url)
-    mkdirSync(directory, { recursive: true })
-    const samples = [
-      ["guided-relaunch.pdf", paid("Guided Relaunch", 9900, "RC-26-GRLNCH", { paymentModel: "UPFRONT" })],
-      ["guided-review.pdf", paid("Guided Review", 5900, "RC-26-GRVWAA", { paymentModel: "UPFRONT" })],
-      ["managed-profile-recovery.pdf", paid("Managed Profile Recovery", 29900, "RC-26-MPRCVY", { paymentModel: "SUCCESS_FEE" })],
-      ["managed-review-protection.pdf", paid("Managed Review Protection", 14900, "RC-26-MRPROT", { paymentModel: "SUCCESS_FEE" })],
-      ["relaunch-guard.pdf", paid("Relaunch Guard", 999, "RG-26-GUARDX", { paymentModel: "RECURRING_MONTHLY", ...period, coveredLocation: "High Street" })],
-    ] as const
-    for (const [name, document] of samples) {
-      writeFileSync(new URL(name, directory), buildBillingPdf(document!, logo))
-    }
   })
 })

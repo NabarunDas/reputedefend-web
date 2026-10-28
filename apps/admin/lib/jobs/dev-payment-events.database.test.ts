@@ -450,7 +450,14 @@ describe("DEV payment event worker", () => {
     expect(await receiptCount(opened.orderId)).toBe(1)
     expect(await confirmationCount(opened.caseId)).toBe(1)
     expect(await rows<{ state: string }>("select state from public.service_orders where id = $1", [opened.orderId])).toEqual([{ state: "ACCEPTED_AWAITING_PAYMENT" }])
-    expect(await rows<{ work_stage: string }>("select work_stage from public.cases where id = $1", [opened.caseId])).toEqual([{ work_stage: "PAYMENT_REQUIRED" }])
+    expect(await rows<{ work_stage: string; status: string; next_action_at: string | null }>(
+      "select work_stage, status, next_action_at from public.cases where id = $1",
+      [opened.caseId],
+    )).toEqual([{ work_stage: "PREPARATION", status: "UNDER_REVIEW", next_action_at: null }])
+    expect(await count(
+      "select count(*)::int as n from public.case_events where case_id = $1 and event_type = 'GUIDED_PAYMENT_HANDOVER' and actor_type = 'SYSTEM'",
+      [opened.caseId],
+    )).toBe(1)
     const letter = (await rows<{ body_text: string }>(
       "select body_text from public.communications where case_id = $1 and template_key = 'PAYMENT_CONFIRMATION'",
       [opened.caseId],

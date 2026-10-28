@@ -86,7 +86,8 @@ export function trackLabel(track: Parameters<typeof serviceLabel>[0]): string | 
 }
 
 const OPEN_STATES = new Set<ObligationState>(["DUE", "COLLECTING", "AUTHENTICATION_REQUIRED", "FAILED"])
-const NEUTRAL_PAYMENT = "Several payments are recorded for this case. Each one is listed under Payments for this case."
+const SEVERAL_ORDERS = "More than one service order is recorded. View Payments for this case for details."
+const FINALISING = "Payment confirmation is being finalised. See Payments for this case."
 
 function openUpfront(order: PaymentOrder): PaymentObligation | null {
   return order.obligations.find(obligation => obligation.kind === "upfront" && OPEN_STATES.has(obligation.state)) ?? null
@@ -104,9 +105,29 @@ function dueNow(order: PaymentOrder): PaymentObligation | null {
   return openUpfront(order) ?? issuedSuccessFee(order)
 }
 
-function settled(order: PaymentOrder): boolean {
-  if (dueNow(order)) return false
-  return order.receipts.length > 0 || order.obligations.some(obligation => obligation.state === "PAID")
+function sameMoney(
+  left: { amountMinor: number; currency: string; taxBehaviour: PaymentOrder["taxBehaviour"]; taxAmountMinor: number },
+  right: { amountMinor: number; currency: string; taxBehaviour: PaymentOrder["taxBehaviour"]; taxAmountMinor: number },
+): boolean {
+  return left.amountMinor === right.amountMinor
+    && left.currency === right.currency
+    && left.taxBehaviour === right.taxBehaviour
+    && left.taxAmountMinor === right.taxAmountMinor
+}
+
+/** One PAID obligation and one receipt, agreeing with each other and the order. */
+function consistentReceipt(order: PaymentOrder): PaymentOrder["receipts"][number] | null {
+  if (order.receipts.length !== 1) return null
+  const paid = order.obligations.filter(obligation => obligation.state === "PAID")
+  if (paid.length !== 1 || order.obligations.some(obligation => obligation.state === "VOID")) return null
+  const receipt = order.receipts[0]
+  if (!sameMoney(receipt, paid[0]) || !sameMoney(receipt, order)) return null
+  return receipt
+}
+
+function confirmationIncomplete(order: PaymentOrder): boolean {
+  const signal = order.receipts.length > 0 || order.obligations.some(obligation => obligation.state === "PAID")
+  return signal && !consistentReceipt(order)
 }
 
 function voidedOnly(order: PaymentOrder): boolean {
@@ -116,37 +137,47 @@ function voidedOnly(order: PaymentOrder): boolean {
     && !dueNow(order)
 }
 
+function openPaymentSentence(obligation: PaymentObligation): string {
+  const amount = moneyLabel(obligation.amountMinor, obligation.currency)
+  if (obligation.state === "DUE") return `Payment due ${amount}`
+  return `${obligationHeadline(obligation.kind, obligation.state)} ${amount}`
+}
+
 function paidAmount(orders: PaymentOrder[]): { amountMinor: number; currency: string } | null {
   const receipts = orders.flatMap(order => order.receipts)
-  if (receipts.length === 1) return receipts[0]
-  if (receipts.length > 1) return null
-  const paid = orders.flatMap(order => order.obligations.filter(obligation => obligation.state === "PAID"))
-  return paid.length === 1 ? paid[0] : null
+  return receipts.length === 1 ? receipts[0] : null
 }
 
 /**
  * Read-only summary of recorded orders. Order array order is not meaningful.
+ * Paid is shown only when one receipt matches one PAID obligation and the order.
  * This does not infer a catalogue product from case status, and it does not
  * start or repeat a charge.
  */
 export function presentCaseCommerce(item: PaymentCase): { purchasedService: string | null; payment: string | null } {
   if (item.orders.length === 0) return { purchasedService: null, payment: null }
-  const due = item.orders.filter(order => dueNow(order))
-  const paid = item.orders.filter(settled)
+  if (item.orders.some(confirmationIncomplete)) {
+    return {
+      purchasedService: item.orders.length === 1 ? item.orders[0].serviceName : null,
+      payment: FINALISING,
+    }
+  }
+  const paid = item.orders.filter(order => consistentReceipt(order))
+  const due = item.orders.filter(order => !consistentReceipt(order) && dueNow(order))
   if (due.length > 1 || (due.length === 1 && paid.length > 0)) {
-    return { purchasedService: null, payment: NEUTRAL_PAYMENT }
+    return { purchasedService: null, payment: SEVERAL_ORDERS }
   }
   if (due.length === 1 && paid.length === 0) {
     const obligation = dueNow(due[0])
     return {
       purchasedService: due[0].serviceName,
-      payment: obligation ? `Payment due ${moneyLabel(obligation.amountMinor, obligation.currency)}` : "Payment due",
+      payment: obligation ? openPaymentSentence(obligation) : "Payment due",
     }
   }
   if (paid.length > 0) {
     const names = new Set(paid.map(order => order.serviceName))
     const amount = names.size === 1 ? paidAmount(paid) : null
-    if (names.size !== 1 || !amount) return { purchasedService: null, payment: NEUTRAL_PAYMENT }
+    if (names.size !== 1 || !amount) return { purchasedService: null, payment: SEVERAL_ORDERS }
     return {
       purchasedService: [...names][0],
       payment: `Paid ${moneyLabel(amount.amountMinor, amount.currency)}`,
@@ -160,5 +191,5 @@ export function presentCaseCommerce(item: PaymentCase): { purchasedService: stri
   }
   if (item.orders.every(voidedOnly)) return { purchasedService: null, payment: "This payment was voided." }
   if (item.orders.length === 1) return { purchasedService: item.orders[0].serviceName, payment: null }
-  return { purchasedService: null, payment: NEUTRAL_PAYMENT }
+  return { purchasedService: null, payment: SEVERAL_ORDERS }
 }

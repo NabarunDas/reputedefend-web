@@ -107,7 +107,7 @@ describe("recorded case commerce", () => {
       obligations: [obligation({ state: "PAID" })],
       receipts: [receipt()],
     })
-    const neutral = { purchasedService: null, payment: "Several payments are recorded for this case. Each one is listed under Payments for this case." }
+    const neutral = { purchasedService: null, payment: "More than one service order is recorded. View Payments for this case for details." }
     expect(presentCaseCommerce(item([historicalDue, currentPaid]))).toEqual(neutral)
     expect(presentCaseCommerce(item([currentPaid, historicalDue]))).toEqual(neutral)
     expect(presentCaseCommerce(item([
@@ -137,9 +137,98 @@ describe("recorded case commerce", () => {
       order({ serviceName: "Guided Relaunch", obligations: [obligation({ state: "VOID" })], receipts: [] }),
       order({ orderRef: "SO-26-ZZZZZZ", serviceName: "Managed Profile Recovery", obligations: [obligation({ state: "VOID" })], receipts: [] }),
     ]))).toEqual({ purchasedService: null, payment: "This payment was voided." })
+  })
+
+  it("names several service orders without calling them payments when nothing has been paid", () => {
+    const expected = {
+      purchasedService: null,
+      payment: "More than one service order is recorded. View Payments for this case for details.",
+    }
+    const openOrders = presentCaseCommerce(item([
+      order({ orderRef: "SO-26-AAAAAA" }),
+      order({ orderRef: "SO-26-ZZZZZZ", serviceName: "Guided Review" }),
+    ]))
+    const unpaidOrders = presentCaseCommerce(item([
+      order({ orderRef: "SO-26-AAAAAA", obligations: [], receipts: [] }),
+      order({ orderRef: "SO-26-ZZZZZZ", serviceName: "Guided Review", obligations: [], receipts: [] }),
+    ]))
+    expect(openOrders).toEqual(expected)
+    expect(unpaidOrders).toEqual(expected)
+    expect(openOrders.payment).not.toMatch(/paid/i)
+    expect(unpaidOrders.payment).not.toContain("Several payments")
+  })
+})
+
+describe("payment summary settlement proof", () => {
+  const finalising = {
+    purchasedService: "Guided Relaunch",
+    payment: "Payment confirmation is being finalised. See Payments for this case.",
+  }
+
+  it("keeps the recorded £99 only when the receipt, paid obligation and order agree", () => {
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID" })],
+      receipts: [receipt()],
+    })]))).toEqual({ purchasedService: "Guided Relaunch", payment: "Paid £99.00" })
+  })
+
+  it("does not claim payment received without a matching receipt", () => {
     expect(presentCaseCommerce(item([order({
       obligations: [obligation({ state: "PAID" })],
       receipts: [],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "DUE" })],
+      receipts: [receipt()],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID", amountMinor: 10000 })],
+      receipts: [receipt()],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID" })],
+      receipts: [receipt({ currency: "USD" })],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID", currency: "EUR" })],
+      receipts: [receipt({ currency: "EUR" })],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID", taxBehaviour: "INCLUSIVE", taxAmountMinor: 1650 })],
+      receipts: [receipt({ taxBehaviour: "INCLUSIVE", taxAmountMinor: 1650 })],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      amountMinor: 10000,
+      obligations: [obligation({ state: "PAID", amountMinor: 10000 })],
+      receipts: [receipt()],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID" })],
+      receipts: [receipt(), receipt({ selector: `rc-${"cd".repeat(32)}` })],
+    })]))).toEqual(finalising)
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "PAID" }), obligation({ state: "VOID" })],
+      receipts: [receipt()],
+    })]))).toEqual(finalising)
+  })
+
+  it("uses the obligation state and lets a consistent receipt replace a stale attempt", () => {
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "COLLECTING" })],
+    })])).payment).toBe("Payment pending £99.00")
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "AUTHENTICATION_REQUIRED" })],
+    })])).payment).toBe("Authentication required £99.00")
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "FAILED" })],
+    })])).payment).toBe("Payment was not completed £99.00")
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "FAILED" }), obligation({ state: "PAID" })],
+      receipts: [receipt()],
     })]))).toEqual({ purchasedService: "Guided Relaunch", payment: "Paid £99.00" })
+    expect(presentCaseCommerce(item([order({
+      obligations: [obligation({ state: "FAILED" }), obligation({ state: "PAID" })],
+      receipts: [],
+    })]))).toEqual(finalising)
   })
 })

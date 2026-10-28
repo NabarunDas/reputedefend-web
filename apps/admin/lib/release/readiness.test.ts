@@ -152,9 +152,9 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261028240000_dev_mail_dispatch_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261029000000_dev_mail_dispatch_v1.sql"])
     expect(appliedMigrationHead.version).toBe("20261028223000")
-    expect(migrationHead.filename).toBe("20261028240000_dev_mail_dispatch_v1.sql")
+    expect(migrationHead.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -316,9 +316,12 @@ describe("the cutover document matches the model", () => {
 
   it("reports the status counts the model actually holds", () => {
     const counts = statusCounts()
-    expect(counts).toEqual({ READY: 15, READY_DISABLED: 8, ACTION_REQUIRED: 7, BLOCKED: 2, DEFERRED: 3 })
+    expect(counts).toEqual({ READY: 15, READY_DISABLED: 8, ACTION_REQUIRED: 7, BLOCKED: 3, DEFERRED: 3 })
     expect(doc).toContain(
-      "Fifteen items are `READY`, eight are `READY_DISABLED`, seven are\n`ACTION_REQUIRED`, two are `BLOCKED` and three are `DEFERRED`",
+      "Fifteen items are `READY`, eight are `READY_DISABLED`, seven are\n`ACTION_REQUIRED`, three are `BLOCKED` and three are `DEFERRED`",
     )
+    expect(item("email.dev-mail-schedule")?.status).toBe("BLOCKED")
+    expect(item("email.dev-mail-schedule")?.requirement).toContain("default branch, which is main")
+    expect(item("email.dev-mail-schedule")?.evidence).toContain("returned 404")
   })
 })

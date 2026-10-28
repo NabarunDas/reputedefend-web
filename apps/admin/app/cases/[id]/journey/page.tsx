@@ -12,6 +12,7 @@ import { emptyPaymentRequestEmail, projectPaymentRequestEmail } from "@/lib/case
 import { acceptedOrderOutstandingLabel, acceptedServiceProjection, activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
 import { loadPackNotificationDispatch } from "@/lib/case-journey/pack-notification"
+import { devMailAutomaticDispatchActive } from "@/lib/jobs/dev-mail-dispatch"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { presentJourneyClosure } from "@/lib/case-journey/closure"
@@ -377,6 +378,7 @@ async function loadJourneyPreparation(
       recordsConflict,
       mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
       dispatch,
+      automaticDispatchActive: devMailAutomaticDispatchActive(),
     }),
   }
 }

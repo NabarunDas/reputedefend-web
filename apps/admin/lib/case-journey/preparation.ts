@@ -102,6 +102,8 @@ export type PackReadyNotification = {
   phase: PackNotificationPhase
   communicationId: string | null
   stalled: boolean
+  /** True only when the worker gate is open and the main-branch schedule is installed. */
+  automaticDispatchActive: boolean
 }
 
 const failedDelivery = new Set(["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "FAILED"])
@@ -113,6 +115,7 @@ const failedDelivery = new Set(["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOU
 export function packReadyNotification(
   communications: CaseFlowCommunicationFact[],
   dispatch: PackNotificationDispatch | null = null,
+  automaticDispatchActive = false,
 ): PackReadyNotification {
   const rows = communications.filter(row => row.templateKey === "GUIDED_PACK_READY" && row.lifecycle !== "CANCELLED")
   const row = [...rows].sort((left, right) => left.draftedAt.localeCompare(right.draftedAt)).at(-1)
@@ -124,6 +127,7 @@ export function packReadyNotification(
       phase: "none",
       communicationId: null,
       stalled: false,
+      automaticDispatchActive,
     }
   }
   const delivery = row.deliveryStatus
@@ -146,15 +150,26 @@ export function packReadyNotification(
   if (row.lifecycle === "QUEUED" && (delivery === "NONE" || delivery == null)) {
     const processing = dispatch?.phase === "processing" && dispatch.communicationId === communicationId
     if (processing) {
-      return notice(communicationId, "processing", "Not met", "The pack-ready notification is being processed. Another copy is not sent while that lease is live.")
+      return notice(communicationId, "processing", "Not met", "The pack-ready notification is being processed. Another copy is not sent while that lease is live.", automaticDispatchActive)
+    }
+    if (!automaticDispatchActive) {
+      return {
+        headline: "Pack published",
+        detail: "Email is queued. Automatic sending is not active. Queued is not sent.",
+        state: "Not met",
+        phase: "queued",
+        communicationId,
+        stalled: false,
+        automaticDispatchActive: false,
+      }
     }
     const stalled = dispatch == null || dispatch.stalled || dispatch.workerLate || dispatch.communicationId !== communicationId
     const detail = stalled
       ? "Email queued for automatic sending. Automatic sending has not moved it. Queued is not sent."
       : "Email queued for automatic sending. Queued is not sent."
-    return { headline: "Pack published", detail, state: "Not met", phase: "queued", communicationId, stalled }
+    return { headline: "Pack published", detail, state: "Not met", phase: "queued", communicationId, stalled, automaticDispatchActive: true }
   }
-  return notice(communicationId, "acceptance_unknown", "Not met", "The pack-ready notification status is not confirmed, so another copy was not sent.")
+  return notice(communicationId, "acceptance_unknown", "Not met", "The pack-ready notification status is not confirmed, so another copy was not sent.", automaticDispatchActive)
 }
 
 function notice(
@@ -162,8 +177,9 @@ function notice(
   phase: PackNotificationPhase,
   state: "Met" | "Not met",
   detail: string,
+  automaticDispatchActive = false,
 ): PackReadyNotification {
-  return { headline: "Pack published", detail, state, phase, communicationId, stalled: false }
+  return { headline: "Pack published", detail, state, phase, communicationId, stalled: false, automaticDispatchActive }
 }
 
 export type PreparationReadiness = {
@@ -219,6 +235,7 @@ export function buildJourneyPreparationPanel(input: {
   recordsConflict: boolean
   mailRecovery?: boolean
   dispatch?: PackNotificationDispatch | null
+  automaticDispatchActive?: boolean
 }): JourneyPreparationPanel {
   const facts = input.facts
   const loaded = input.packs
@@ -250,7 +267,7 @@ export function buildJourneyPreparationPanel(input: {
     ? { ...loaded, eligible }
     : null
 
-  const notification = packReadyNotification(facts.communications, input.dispatch ?? null)
+  const notification = packReadyNotification(facts.communications, input.dispatch ?? null, input.automaticDispatchActive === true)
   const headline = disagreed
     ? "Pack records disagree"
     : readiness.stale
@@ -331,10 +348,13 @@ export function buildJourneyPreparationPanel(input: {
   const packEmailRecovery = input.mailRecovery && readiness.ready && notification.phase === "none" && stored
     ? { packId: stored.id, recordVersion: stored.recordVersion }
     : null
-  const packNotificationRecovery = input.mailRecovery && readiness.ready && notification.phase === "queued" && notification.stalled && notification.communicationId
+  const packNotificationRecovery = input.mailRecovery && readiness.ready && notification.phase === "queued" && notification.communicationId
+    && (!notification.automaticDispatchActive || notification.stalled)
     ? { communicationId: notification.communicationId }
     : null
-  if (packNotificationRecovery) {
+  if (packNotificationRecovery && !notification.automaticDispatchActive) {
+    notices.push("Automatic sending is not active. Process queued notification now sends only this pack-ready communication.")
+  } else if (packNotificationRecovery) {
     notices.push("The pack-ready notification is still queued. Process queued notification now sends only this communication.")
   }
 

@@ -1114,9 +1114,10 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // GUIDED-PACK-MAIL-AUTO-01. Repository tail. Not applied on DEV or Production.
     // Do not apply it from this change and do not process a queued pack-ready email.
-    // Repository file is 18,345 characters. SHA-256 d5852d119b9ef114312a8f4afc9d3f0bbaf72de6269e48166df5d3c9e8111342.
-    version: "20261028240000",
-    filename: "20261028240000_dev_mail_dispatch_v1.sql",
+    // The hour-24 name 20261028240000 is not a migration and was not applied.
+    // Repository file is 20,338 characters. SHA-256 9a510a79f57da4641176c3d1bec52a9d6d10f3880763924dc7c47057ecb89a2a.
+    version: "20261029000000",
+    filename: "20261029000000_dev_mail_dispatch_v1.sql",
     step: "GUIDED-PACK-MAIL-AUTO-01 develop mail dispatch",
     kind: "additive",
     appliedToDev: false,
@@ -1138,7 +1139,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261028223000`. The context function volatility change was applied once
  * to DEV and must not be replayed. It is not applied to Production. Draft
  * document role `20261028200000` remains applied and must not be replayed.
- * Repository migration `20261028240000` is later in the chain and has not
+ * Repository migration `20261029000000` is later in the chain and has not
  * been applied on DEV or Production. Production remains on its own historical
  * migration head `20261014170000`.
  */

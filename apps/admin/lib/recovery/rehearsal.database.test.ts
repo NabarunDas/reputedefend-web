@@ -56,9 +56,9 @@ describe("rebuilding the whole schema from zero", () => {
     // Production and AWS approved backup heads remain at SEC-08.
     // The DEV applied head remains the context-function volatility change.
     // It was applied once and must not be replayed. The repository tail
-    // 20261028240000 has not been applied on DEV or Production.
+    // 20261029000000 has not been applied on DEV or Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261028240000_dev_mail_dispatch_v1.sql")
+    expect(migrationHead.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261028223000")
   })

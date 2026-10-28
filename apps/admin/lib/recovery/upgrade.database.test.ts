@@ -62,7 +62,7 @@ describe("upgrading a database that is already running", () => {
     // The repository tail is the applied context-function volatility change.
     // It must not be replayed. This disposable rebuild is not a live apply.
     // Production remains at SEC-08.
-    expect(pending.at(-1)?.filename).toBe("20261028240000_dev_mail_dispatch_v1.sql")
+    expect(pending.at(-1)?.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261028223000_admin_pack_mail_context_volatile_v1.sql")
     expect(pending.at(-2)?.appliedToDev).toBe(true)

@@ -47,6 +47,16 @@ export function devMailDispatchWorkerSecret(env: EnvMap = process.env): string |
   return secret && secret.length >= 32 ? secret : null
 }
 
+/** Set only after the separate main workflow review confirms the five-minute schedule. */
+export function devMailScheduleInstalled(env: EnvMap = process.env): boolean {
+  return env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED === "true"
+}
+
+/** Automatic sending is active only when the worker gate and the installed schedule both hold. */
+export function devMailAutomaticDispatchActive(): boolean {
+  return devMailDispatchWorkerBlock() === null && devMailScheduleInstalled()
+}
+
 export type ProductionMailDispatchAssessment = {
   ready: boolean
   reasons: Array<"production_worker_disabled" | "cadence_above_300" | "mail_gate_closed">
@@ -116,6 +126,7 @@ export async function runDevMailDispatchWorker(options: {
     await heartbeat(options.rpc, "start", null)
     const listed = await options.rpc.rpc<{ status?: string; communications?: Candidate[] }>("dev_mail_dispatch_candidates_v1", {
       p_limit: 20,
+      p_customer_origin: origin,
     })
     for (const candidate of listed.communications ?? []) {
       if (counts.claimed >= MAX_CLAIMS_PER_RUN) break

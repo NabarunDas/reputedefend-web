@@ -2,7 +2,9 @@ name: DEV mail dispatch worker
 
 on:
   schedule:
-    # GitHub runs this only from the default branch, which is main.
+    # GitHub runs schedule events only from the default branch, which is main.
+    # This file on develop does not register the cron. A separate workflow-only
+    # change on main is the activation. Manual workflow_dispatch is not that schedule.
     - cron: "*/5 * * * *"
   workflow_dispatch:
 

@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", () => ({ backend: () => mocks }))
 
 import {
+  devMailAutomaticDispatchActive,
   devMailDispatchWorkerBlock,
+  devMailScheduleInstalled,
   parseDevMailCadenceSeconds,
   productionEmailDispatcherAssessment,
   runDevMailDispatchRequest,
@@ -95,6 +97,27 @@ describe("DEV mail dispatch gate", () => {
       COMMUNICATIONS_SEND_ENABLED: "true",
       RESEND_API_KEY: "re_dev_placeholder",
       COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+    }).ready).toBe(true)
+  })
+
+  it("keeps automatic sending inactive until the separate main schedule is recorded", () => {
+    expect(devMailScheduleInstalled({})).toBe(false)
+    expect(devMailScheduleInstalled({ DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED: "true" })).toBe(true)
+    expect(devMailAutomaticDispatchActive()).toBe(false)
+    const handler = readFileSync(new URL("../communications/handler.ts", import.meta.url), "utf8")
+    const dispatcher = readFileSync(new URL("./dev-mail-dispatch.ts", import.meta.url), "utf8")
+    expect(handler).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
+    expect(dispatcher).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
+    expect(productionEmailDispatcherAssessment({
+      VERCEL_ENV: "production",
+      JOB_WORKER_ENABLED: "true",
+      CRON_SECRET: "c".repeat(32),
+      JOB_WORKER_CADENCE_SECONDS: "300",
+      JOB_PROVIDER_MODE: "production",
+      COMMUNICATIONS_SEND_ENABLED: "true",
+      RESEND_API_KEY: "re_dev_placeholder",
+      COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+      DEV_MAIL_ALLOWED_RECIPIENTS: "only-this-mailbox@example.com",
     }).ready).toBe(true)
   })
 })

@@ -396,8 +396,10 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(show("NONE").headline).toBe("Pack published")
-    expect(show("NONE").who).toBe("Email queued for automatic sending. Automatic sending has not moved it. Queued is not sent.")
+    expect(show("NONE").who).toBe("Email is queued. Automatic sending is not active. Queued is not sent.")
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Automatic sending is not active/)
     expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Queued is not sent/)
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).not.toMatch(/delivered|provider accepted/)
     expect(show("NONE").packNotificationRecovery).toBeNull()
     expect(show("SUPPRESSED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/blocked/)
     expect(show("PROVIDER_ACCEPTED").headline).toBe("Pack published")
@@ -427,20 +429,23 @@ describe("prepared pack panel", () => {
         draftedAt: "2026-06-02T12:00:00.000Z",
       }],
     }
-    const stalled = buildJourneyPreparationPanel({
+    const inactive = buildJourneyPreparationPanel({
       facts: factsWithMail,
       packs,
       recordsConflict: false,
       mailRecovery: true,
+      dispatch: { phase: "queued", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
     })
-    expect(stalled.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
-    expect(stalled.packEmailRecovery).toBeNull()
-    expect(stalled.notices.join(" ")).toMatch(/Process queued notification now/)
+    expect(inactive.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
+    expect(inactive.packEmailRecovery).toBeNull()
+    expect(inactive.who).toBe("Email is queued. Automatic sending is not active. Queued is not sent.")
+    expect(inactive.notices.join(" ")).toMatch(/Automatic sending is not active/)
     const moving = buildJourneyPreparationPanel({
       facts: factsWithMail,
       packs,
       recordsConflict: false,
       mailRecovery: true,
+      automaticDispatchActive: true,
       dispatch: { phase: "processing", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
     })
     expect(moving.packNotificationRecovery).toBeNull()
@@ -450,10 +455,21 @@ describe("prepared pack panel", () => {
       packs,
       recordsConflict: false,
       mailRecovery: true,
+      automaticDispatchActive: true,
       dispatch: { phase: "queued", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
     })
     expect(healthy.packNotificationRecovery).toBeNull()
     expect(healthy.who).toBe("Email queued for automatic sending. Queued is not sent.")
+    const stalled = buildJourneyPreparationPanel({
+      facts: factsWithMail,
+      packs,
+      recordsConflict: false,
+      mailRecovery: true,
+      automaticDispatchActive: true,
+      dispatch: { phase: "queued", communicationId: "mail-1", stalled: true, workerLate: true, workerSeen: true },
+    })
+    expect(stalled.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
+    expect(stalled.who).toBe("Email queued for automatic sending. Automatic sending has not moved it. Queued is not sent.")
   })
 })
 

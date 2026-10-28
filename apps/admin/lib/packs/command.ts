@@ -58,6 +58,7 @@ const successMessage: Record<PackOperation, string> = {
   add_item: "The evidence version has been added to the pack.",
   remove_item: "The evidence version has been removed from the pack.",
   move_item: "The pack order has been updated.",
+  set_item_role: "The document role has been updated. The pack is still a draft.",
   approve: "The prepared pack has been approved. This does not confirm payment, permission or submission to Google.",
   publish: "The approved pack is now available in the customer portal. This does not submit anything to Google.",
   unpublish: "The pack is no longer published. The customer cannot view these files until it is published again.",

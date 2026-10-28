@@ -61,6 +61,17 @@ export function packArgs(operation: PackOperation, raw: unknown): PackArgs | nul
       ...("role" in body ? { role: body.role as PackItemRole } : {}),
     }
   }
+  if (operation === "set_item_role") {
+    if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "versionId", "role"]) || !isUuid(body.versionId)) return null
+    if (body.role !== "DELIVERABLE" && body.role !== "EVIDENCE" && body.role !== "INSTRUCTIONS") return null
+    return {
+      caseId: body.caseId,
+      packId: body.packId,
+      recordVersion: body.recordVersion as number,
+      versionId: body.versionId,
+      role: body.role,
+    }
+  }
   if (operation === "move_item") {
     if (!onlyKeys(body, ["operation", "caseId", "packId", "recordVersion", "versionId", "direction"])) return null
     if (body.direction !== "up" && body.direction !== "down") return null

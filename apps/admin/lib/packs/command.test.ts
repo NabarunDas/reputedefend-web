@@ -63,6 +63,47 @@ describe("prepared pack commands", () => {
     }))).status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+  it("accepts a draft role change and rejects a missing or invented role", async () => {
+    expect(packArgs("set_item_role", {
+      operation: "set_item_role", caseId, packId, recordVersion: 4, versionId, role: "INSTRUCTIONS",
+    })).toMatchObject({ role: "INSTRUCTIONS", versionId })
+    expect(packArgs("set_item_role", {
+      operation: "set_item_role", caseId, packId, recordVersion: 4, versionId,
+    })).toBeNull()
+    expect(packArgs("set_item_role", {
+      operation: "set_item_role", caseId, packId, recordVersion: 4, versionId, role: "deliverable",
+    })).toBeNull()
+    expect(packArgs("set_item_role", {
+      operation: "set_item_role", caseId, packId, recordVersion: 4, versionId, role: "EVIDENCE", documentTitle: "Forged",
+    })).toBeNull()
+    mocks.rpc.mockResolvedValue({ status: "success", id: packId, packStatus: "DRAFT", recordVersion: 5 })
+    const response = await packCommand(req({
+      operation: "set_item_role", caseId, packId, recordVersion: 4, versionId, role: "EVIDENCE",
+    }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ message: "The document role has been updated. The pack is still a draft." })
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_prepared_pack_command_v1", expect.objectContaining({
+      p_operation: "set_item_role", p_data: { versionId, role: "EVIDENCE" },
+    }))
+  })
+  it("explains a Guided approval denial by the missing or duplicated role", async () => {
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "deliverable" })
+    const denied = await packCommand(req({
+      operation: "approve", caseId, packId, recordVersion: 6, note: "This exact evidence selection is the prepared pack.", confirmed: true,
+    }))
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ message: packDeniedMessage("approve", "deliverable") })
+    expect(packDeniedMessage("approve", "deliverable")).toBe("This Guided pack needs exactly one completed statement. Nothing was approved.")
+    expect(packDeniedMessage("approve", "instructions")).toBe("This Guided pack needs exactly one customer submission instructions document. Nothing was approved.")
+    expect(packDeniedMessage("approve", "role")).toMatch(/needs a role/)
+    expect(packDeniedMessage("approve", "document")).toMatch(/different documents/)
+    expect(packDeniedMessage("approve", "author")).toMatch(/staff-authored/)
+    expect(packDeniedMessage("approve", "evidence")).toMatch(/belong to this case/)
+    expect(packDeniedMessage("approve", "empty")).toMatch(/no files/)
+    expect(packDeniedMessage("approve", "version")).toMatch(/not a clean, accepted version/)
+    expect(packDeniedMessage("approve")).toBe("That action is not allowed for this pack.")
+    expect(packDeniedMessage("publish", "deliverable")).toMatch(/Nothing was made visible and the pack was not published/)
+  })
   it("requires confirmation and a meaningful note to approve", async () => {
     expect(packArgs("approve", { operation: "approve", caseId, packId, recordVersion: 2, note: "too short", confirmed: true })).toBeNull()
     expect(packArgs("approve", { operation: "approve", caseId, packId, recordVersion: 2, note: "This exact evidence selection is the prepared pack.", confirmed: false })).toBeNull()

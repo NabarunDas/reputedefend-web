@@ -29,7 +29,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual(["20261028200000_admin_pack_draft_role_v1.sql"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261028160000",
       name: "guided_pack_publish_visibility_v1",
@@ -79,6 +79,17 @@ describe("the migration history validator", () => {
     })
     expect(codes(result)).toContain("replay_of_applied_migration")
     expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("allows the unapplied draft-role migration to be offered once", () => {
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261028200000_admin_pack_draft_role_v1.sql"],
+    })
+    expect(result.status).toBe("clean")
+    expect(codes(result)).toEqual([])
+    expect(mayApplyMigrations(result)).toBe(true)
   })
 
   it("refuses to replay Guided pack publication now that DEV has received it", () => {

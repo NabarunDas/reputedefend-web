@@ -8,6 +8,7 @@
 
 import type { CaseFlowCommunicationFact, CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
 import type { EligiblePackVersion, PreparedPackCase } from "../packs/model"
+import { guidedPackRoleMessages } from "../packs/roles"
 
 export type JourneyPreparationPack = {
   id: string
@@ -32,6 +33,8 @@ export type JourneyPreparationPanel = {
   who: string
   /** The existing pack panel. Null withholds every pack command. */
   commands: PreparedPackCase | null
+  /** Guided packs need one completed statement and one customer instructions file. */
+  guided: boolean
   /** One recovery for a published pack whose announcement was never queued. */
   packEmailRecovery: { packId: string; recordVersion: number } | null
 }
@@ -168,14 +171,20 @@ export function preparationReadiness(
   return { current, latestPublished, stale, otherPublished, ready }
 }
 
-function listedPack(pack: { id: string; packNumber: number; status: string; published?: boolean; itemCount?: number; items?: { length: number } }): JourneyPreparationPack {
+function listedPack(pack: { id: string; packNumber: number; status: string; published?: boolean; itemCount?: number; items?: { length: number } }, currentId: string | null): JourneyPreparationPack {
   return {
     id: pack.id,
     number: pack.packNumber,
     state: packDisplayState(pack),
     items: pack.items ? pack.items.length : pack.itemCount ?? 0,
-    history: pack.status === "SUPERSEDED",
+    history: pack.status === "SUPERSEDED" || (currentId !== null && pack.id !== currentId),
   }
+}
+
+function draftRoleGaps(facts: CaseFlowFacts, loaded: PreparedPackCase | null, current: PreparationReadiness["current"]): string[] {
+  if (facts.serviceTrack !== "GUIDED" || !loaded || !current || current.status !== "DRAFT" || current.itemCount === 0) return []
+  const pack = loaded.packs.find(item => item.id === current.id)
+  return pack ? guidedPackRoleMessages(pack.items) : []
 }
 
 export function buildJourneyPreparationPanel(input: {
@@ -193,12 +202,15 @@ export function buildJourneyPreparationPanel(input: {
   if (input.recordsConflict) notices.push("The customer, business or authority records disagree, so this step does not treat a pack as ready and no pack command is offered from here.")
 
   const source = loaded ?? null
-  const display = (source ? source.packs : facts.packs.packs).map(listedPack)
   const readiness = preparationReadiness(facts.packs.packs, {
     packRecordsDisagree: disagreed,
     recordsConflict: input.recordsConflict,
   })
   const current = readiness.current
+  const display = (source ? source.packs : facts.packs.packs).map(pack => listedPack(pack, current?.id ?? null))
+  const roleGaps = !disagreed && !readiness.stale && !readiness.otherPublished && !input.recordsConflict
+    ? draftRoleGaps(facts, loaded, current)
+    : []
   const eligible = loaded ? provenEligible(facts, loaded) : []
   if (loaded && eligible.length !== loaded.eligible.length) {
     notices.push("A listed file is not an accepted, validated, clean version. A customer upload still has to be linked to its request. It is not offered for this pack.")
@@ -224,8 +236,10 @@ export function buildJourneyPreparationPanel(input: {
             ? "Prepare the submission materials"
             : current.status === "DRAFT" && current.itemCount === 0
               ? "Add the statement, evidence and customer instructions"
-              : current.status === "DRAFT"
-                ? "Approve the completed pack"
+              : current.status === "DRAFT" && roleGaps.length > 0
+                ? "Choose one completed statement and one set of customer instructions"
+                : current.status === "DRAFT"
+                  ? "Approve the completed pack"
                 : current.status === "APPROVED" && !current.published
                   ? "Send the completed pack"
                   : readiness.ready
@@ -278,8 +292,10 @@ export function buildJourneyPreparationPanel(input: {
           ? "ProfileRelaunch creates a new draft from the current accepted evidence and approves it again."
           : current?.status === "APPROVED" && !current.published
             ? "Send the completed pack. Sending it does not submit anything to Google."
-            : current?.status === "DRAFT"
-              ? "Approve the completed pack. Sending it comes after approval."
+            : roleGaps.length > 0
+              ? "Choose one completed statement and one set of customer instructions. Approval stays closed until those roles are set."
+              : current?.status === "DRAFT"
+                ? "Approve the completed pack. Sending it comes after approval."
               : readiness.ready
                 ? notification.detail
                 : "Prepare the submission materials."
@@ -289,5 +305,5 @@ export function buildJourneyPreparationPanel(input: {
     ? { packId: stored.id, recordVersion: stored.recordVersion }
     : null
 
-  return { headline, detail, packs: display, requirements, notices, who, commands, packEmailRecovery }
+  return { headline, detail, packs: display, requirements, notices, who, commands, guided: facts.serviceTrack === "GUIDED", packEmailRecovery }
 }

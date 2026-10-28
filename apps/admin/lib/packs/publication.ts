@@ -45,7 +45,31 @@ export function packPublicationBlockMessage(reason: string): string {
   }
 }
 
+export function packApproveDeniedMessage(reason?: string): string {
+  switch (reason) {
+    case "deliverable":
+      return "This Guided pack needs exactly one completed statement. Nothing was approved."
+    case "instructions":
+      return "This Guided pack needs exactly one customer submission instructions document. Nothing was approved."
+    case "role":
+      return "Every file in this Guided pack needs a role. Nothing was approved."
+    case "document":
+      return "The completed statement and the customer instructions must be different documents. Nothing was approved."
+    case "author":
+      return "The completed statement and the customer instructions must be staff-authored files on this case. Nothing was approved."
+    case "evidence":
+      return "Supporting evidence must belong to this case. Nothing was approved."
+    case "empty":
+      return "This pack has no files. Nothing was approved."
+    case "version":
+      return "A listed file is not a clean, accepted version. Nothing was approved."
+    default:
+      return "That action is not allowed for this pack."
+  }
+}
+
 export function packDeniedMessage(operation: PackOperation, reason?: string): string {
+  if (operation === "approve") return packApproveDeniedMessage(reason)
   if (operation === "send_pack_email") {
     if (reason === "unpaid" || reason === "receipt" || reason === "refunded") return "This Guided pack cannot be sent until the upfront payment is settled and the receipt is on the case."
     if (reason === "authority") return "This Guided pack cannot be sent until the customer's authority is verified."

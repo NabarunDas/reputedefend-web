@@ -197,7 +197,7 @@ export function EvidenceWorkspace({
         {model.completedRequests.map(request => <EvidenceRequestCard key={request.request.id} caseId={caseDetail.id} request={request} showVisibility={!review} />)}
       </section>}
 
-      {!review && <PreparedPackPanel caseId={caseDetail.id} packs={packs} />}
+      {!review && <PreparedPackPanel caseId={caseDetail.id} packs={packs} guided={caseDetail.track === "GUIDED"} />}
     </>}
   </>
 }

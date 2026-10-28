@@ -152,9 +152,21 @@ describe("guided case preparation", () => {
   it("approves a draft without publishing it or submitting to Google", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The prepared pack has been approved. This does not confirm payment, permission or submission to Google." }) })
     vi.stubGlobal("fetch", fetchMock)
-    show(facts(), { caseId: CASE_ID, packs: [draft()], eligible: [] })
+    const instructions = {
+      ...draft().items[0],
+      id: "item-2",
+      documentId: "88888888-8888-4888-8888-888888888888",
+      versionId: "99999999-9999-4999-8999-999999999999",
+      documentTitle: "How to submit",
+      originalFilename: "instructions.pdf",
+      role: "INSTRUCTIONS" as const,
+    }
+    show(facts({
+      packs: { packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 2 }], eligibleCount: 0 },
+    }), { caseId: CASE_ID, packs: [draft({ items: [{ ...draft().items[0], role: "DELIVERABLE" }, instructions] })], eligible: [] })
     expect(document.querySelector("[data-step='PREPARATION']")).not.toHaveAttribute("data-state", "COMPLETED")
     expect(screen.getByText("Pack #1: Draft.")).toBeTruthy()
+    expect(screen.getByText(/This is the current pack/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Review and publish pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()

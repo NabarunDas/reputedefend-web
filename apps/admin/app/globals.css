@@ -645,6 +645,27 @@ summary { cursor: pointer; }
 }
 .badge-row { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .75rem; }
 .evidence-document { margin: 1.15rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+.pack-actions {
+  margin: .75rem 0 1rem;
+  padding: .9rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  max-width: 42rem;
+}
+.pack-status { font-weight: 800; margin: 0 0 .35rem; }
+.pack-action-row { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.pack-action-row > button { margin: 0; }
+.pack-actions .record-form { margin-top: .35rem; }
+.pack-secondary-note { color: var(--muted); margin: .35rem 0; }
+.pack-review { margin-top: .75rem; }
+.pack-inventory { margin: .4rem 0 .8rem; padding-left: 1.25rem; }
+.pack-inventory li { margin: .45rem 0; }
+.pack-filename, .pack-role { display: block; }
+@media (max-width: 640px) {
+  .pack-actions { max-width: none; padding: .85rem; }
+  .pack-action-row > button, .pack-actions form button { width: 100%; }
+}
 .evidence-version {
   margin: .85rem 0 0;
   padding: 1rem;

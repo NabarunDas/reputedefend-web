@@ -30,6 +30,7 @@ export type PreparedPackItem = {
   sizeBytes: number
   versionNumber: number
   customerVisible?: boolean
+  role?: "DELIVERABLE" | "EVIDENCE" | "INSTRUCTIONS"
 }
 
 export type PreparedPack = {

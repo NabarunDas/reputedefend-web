@@ -29,7 +29,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual(["20261029000000_dev_mail_dispatch_v1.sql"])
+    expect(pending.map(entry => entry.filename)).toEqual(["20261029000000_dev_mail_dispatch_v1.sql", "20261029010000_dev_mail_shared_dispatch_v1.sql"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261028223000",
       name: "admin_pack_mail_context_volatile_v1",
@@ -93,7 +93,7 @@ describe("the migration history validator", () => {
     const result = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
-      candidates: ["20261029000000_dev_mail_dispatch_v1.sql"],
+      candidates: ["20261029000000_dev_mail_dispatch_v1.sql", "20261029010000_dev_mail_shared_dispatch_v1.sql"],
     })
     expect(result.status).toBe("clean")
     expect(codes(result)).toEqual([])

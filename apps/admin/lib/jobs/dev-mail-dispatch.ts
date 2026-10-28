@@ -47,12 +47,25 @@ export function devMailDispatchWorkerSecret(env: EnvMap = process.env): string |
   return secret && secret.length >= 32 ? secret : null
 }
 
-/** Set only after the separate main workflow review confirms the five-minute schedule. */
+/** Set only after the reviewed DEV database recovery job and activation row are in place. */
 export function devMailScheduleInstalled(env: EnvMap = process.env): boolean {
   return env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED === "true"
 }
 
-/** Automatic sending is active only when the worker gate and the installed schedule both hold. */
+/**
+ * After the queue transaction has committed, ask the shared dispatcher to
+ * claim eligible mail. A closed gate or a failed wake leaves the row queued.
+ */
+export async function wakeDevMailDispatch(): Promise<void> {
+  if (devMailDispatchWorkerBlock()) return
+  try {
+    await runDevMailDispatchWorker({ rpc: backend() })
+  } catch {
+    // The business transaction has already committed. Recovery can claim the row later.
+  }
+}
+
+/** Automatic sending is active only when the worker gate and the installed recovery both hold. */
 export function devMailAutomaticDispatchActive(): boolean {
   return devMailDispatchWorkerBlock() === null && devMailScheduleInstalled()
 }

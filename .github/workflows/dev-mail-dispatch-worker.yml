@@ -1,11 +1,10 @@
 name: DEV mail dispatch worker
 
 on:
-  schedule:
-    # GitHub runs schedule events only from the default branch, which is main.
-    # This file on develop does not register the cron. A separate workflow-only
-    # change on main is the activation. Manual workflow_dispatch is not that schedule.
-    - cron: "*/5 * * * *"
+  # No schedule. A five-minute GitHub runner would start even when the queue is
+  # empty. Recovery is the DEV database function, which returns before any HTTP
+  # call when nothing is eligible. workflow_dispatch is an emergency control:
+  # it does call the preview, so it is not the empty-queue check.
   workflow_dispatch:
 
 permissions:

@@ -156,7 +156,7 @@ export function QuotePanel({
         validUntil={quote.validUntil}
       />}
       {next === "queued" && <>
-        <p><strong>Quotation email queued</strong></p>
+        <p><strong>Queued for sending</strong></p>
         <p>Queued is not sent, and it is not delivered.</p>
         {email.canProcessPending && email.communicationId
           ? <ProcessPendingQuotationEmail communicationId={email.communicationId} />
@@ -268,11 +268,11 @@ function quotationStatus(panel: JourneyQuotePanel, email: QuoteEmailView): strin
   if (panel.headline === "Quote expired") return "Expired"
   if (panel.headline === "Acceptance link expired") return "Offered — acceptance link expired"
   if (panel.headline === "Quote offered") {
-    if (email.phase === "queued") return "Offered — email queued"
-    if (email.phase === "submitted") return "Offered — submitted to the email provider"
-    if (email.phase === "delivered") return "Offered — delivered, waiting for the customer"
-    if (email.phase === "attention" || email.phase === "unavailable") return "Offered — email needs attention"
-    if (panel.quote?.actionId) return "Offered — link not emailed"
+    if (email.phase === "queued") return "Offered — Queued for sending"
+    if (email.phase === "submitted") return "Offered — Sent to email provider"
+    if (email.phase === "delivered") return "Offered — Delivered"
+    if (email.phase === "attention" || email.phase === "unavailable") return "Offered — Delivery status needs review"
+    if (panel.quote?.actionId) return "Offered — Preparing notification"
     return "Offered"
   }
   if (panel.headline === "Draft quote") return panel.quote?.taxBehaviour === "UNCONFIRMED" ? "Draft" : "Draft — pricing saved"

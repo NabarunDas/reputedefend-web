@@ -48,7 +48,7 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(86)
+    expect(migrationChain).toHaveLength(87)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
@@ -58,7 +58,7 @@ describe("rebuilding the whole schema from zero", () => {
     // It was applied once and must not be replayed. The repository tail
     // 20261029000000 has not been applied on DEV or Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")
+    expect(migrationHead.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261028223000")
   })

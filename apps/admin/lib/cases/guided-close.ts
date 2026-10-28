@@ -97,6 +97,10 @@ export async function guidedFulfilmentClose(request: NextRequest) {
       p_data: { note, summary, ...email },
     })
     if (result.status === "success") {
+      if (result.completionEmail === "success" || result.completionEmail === "already_queued") {
+        const { wakeDevMailDispatch } = await import("@/lib/jobs/dev-mail-dispatch")
+        await wakeDevMailDispatch()
+      }
       if (result.recovered) {
         if (result.completionEmail === "already_queued") {
           return reply("The completion update was already queued. Another copy was not sent. The case stays closed.", 200)

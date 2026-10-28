@@ -31,6 +31,8 @@ type Json = {
   attempts?: number
   phase?: string
   stalled?: boolean
+  eligible?: number
+  wake?: string
   communications?: Array<{ communicationId?: string }>
   messages?: Array<{ communicationId?: string; templateKey?: string; eligible?: boolean; reason?: string }>
   workers?: Array<{ workerName?: string }>
@@ -106,22 +108,29 @@ afterAll(async () => { await db.close() })
 
 describe("develop mail dispatch", () => {
   it("leases one SEND_EMAIL job and leaves every other topic untouched", async () => {
-    const sql = readFileSync(new URL("../../../../supabase/migrations/20261029000000_dev_mail_dispatch_v1.sql", import.meta.url), "utf8")
+    const sql = readFileSync(new URL("../../../../supabase/migrations/20261029010000_dev_mail_shared_dispatch_v1.sql", import.meta.url), "utf8")
     expect(sql).not.toContain("job_promote_outbox_v1")
     expect(sql).not.toContain("job_claim_batch_v1")
     expect(sql).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
     expect(sql).not.toContain("PR-26-GHNLB9")
+    const before = await rpc<Json>("dev_mail_dispatch_inventory_v1", [origin])
+    expect(before.messages?.find(row => row.communicationId === packMail)).toMatchObject({ eligible: false, reason: "before_activation" })
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "success", eligible: 0, wake: "not_needed" })
+    expect(await rpc("dev_mail_dispatch_claim_v1", [packMail, origin])).toMatchObject({ status: "denied", reason: "before_activation" })
+    await db.query("insert into admin_private.dev_mail_dispatch_activation(id, active_from, note) values (1, now() - interval '1 day', 'Disposable activation')")
     const inventory = await rpc<Json>("dev_mail_dispatch_inventory_v1", [origin])
     expect(inventory.status).toBe("success")
-    expect(inventory.messages?.find(row => row.communicationId === packMail)).toMatchObject({ eligible: true, reason: "pack_ready", templateKey: "GUIDED_PACK_READY" })
-    expect(inventory.messages?.find(row => row.communicationId === completionMail)).toMatchObject({ eligible: false, reason: "template_out_of_scope" })
-    expect(inventory.messages?.find(row => row.communicationId === evidenceMail)).toMatchObject({ eligible: false, reason: "template_out_of_scope" })
+    expect(inventory.messages?.find(row => row.communicationId === packMail)).toMatchObject({ eligible: true, reason: "eligible", templateKey: "GUIDED_PACK_READY" })
+    expect(inventory.messages?.find(row => row.communicationId === completionMail)).toMatchObject({ eligible: true, reason: "eligible", templateKey: "GUIDED_COMPLETION" })
+    expect(inventory.messages?.find(row => row.communicationId === evidenceMail)).toMatchObject({ eligible: false, reason: "origin" })
     expect(inventory.messages?.find(row => row.communicationId === mismatchMail)).toMatchObject({ eligible: false, reason: "recipient_mismatch" })
     expect(JSON.stringify(inventory)).not.toContain("@")
+    const recovered = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(recovered).toMatchObject({ status: "success", wake: "not_configured" })
+    expect(recovered.eligible).toBeGreaterThan(0)
     const listed = await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])
-    expect(listed.communications?.map(row => row.communicationId)).toEqual([packMail])
-    expect(await rpc("dev_mail_dispatch_claim_v1", [completionMail, origin])).toMatchObject({ status: "denied", reason: "not_send_email" })
-    expect(await rpc("dev_mail_dispatch_claim_v1", [evidenceMail, origin])).toMatchObject({ status: "denied", reason: "not_send_email" })
+    expect(listed.communications?.map(row => row.communicationId)).toEqual([packMail, completionMail])
+    expect(await rpc("dev_mail_dispatch_claim_v1", [evidenceMail, origin])).toMatchObject({ status: "denied", reason: "origin" })
     expect(await rpc("dev_mail_dispatch_claim_v1", [mismatchMail, origin])).toMatchObject({ status: "denied", reason: "recipient_mismatch" })
     await db.query("insert into admin_private.email_suppressions(address_normalized, reason) values ('alex@example.com', 'SUPPRESSED')")
     expect(await rpc("dev_mail_dispatch_claim_v1", [packMail, origin])).toMatchObject({ status: "denied", reason: "suppressed" })
@@ -138,9 +147,9 @@ describe("develop mail dispatch", () => {
     expect(await count("select count(*)::int as n from admin_private.jobs where job_type <> 'SEND_EMAIL'")).toBe(0)
 
     await db.query("update public.communications set delivery_status = 'PROVIDER_ACCEPTED' where id = $1", [completionMail])
-    expect(await rpc("dev_mail_dispatch_claim_v1", [completionMail, origin])).toMatchObject({ status: "denied", reason: "not_send_email" })
+    expect(await rpc("dev_mail_dispatch_claim_v1", [completionMail, origin])).toMatchObject({ status: "denied", reason: "already_processed" })
     await db.query("update public.communications set delivery_status = 'ACCEPTANCE_UNKNOWN', first_provider_attempt_at = now() where id = $1", [completionMail])
-    expect(await rpc("dev_mail_dispatch_claim_v1", [completionMail, origin])).toMatchObject({ status: "denied", reason: "not_send_email" })
+    expect(await rpc("dev_mail_dispatch_claim_v1", [completionMail, origin])).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
     await db.exec("alter table public.communications disable trigger communications_fulfilment_email_guard")
     await db.query(
       `insert into public.communications(

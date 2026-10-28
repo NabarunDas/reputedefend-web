@@ -237,20 +237,20 @@ export const readinessModel: readonly ReadinessItem[] = [
     id: "email.dev-mail-schedule",
     area: "Email — outgoing transactional",
     requirement:
-      "Automatic DEV pack-ready dispatch is not scheduled. GitHub runs a schedule only from the default branch, which is main. A workflow file on develop does not register that schedule. Merging this change to develop does not start a five-minute run. Manual workflow_dispatch is not the recurring schedule. A separate workflow-only review on main is required before automatic sending can run, and that review must not change Production.",
+      "Automatic DEV customer-mail recovery is not a GitHub Actions schedule. The database function checks for eligible queued mail and returns without an HTTP call when the count is zero. pg_cron and pg_net are not enabled by this change. The activation row is absent, so mail queued earlier, including the existing pack-ready message, is not claimed. Payment confirmations stay on the DEV payment-event worker. Production mail is unchanged.",
     status: "BLOCKED",
     evidence:
-      "On 28 October 2026 GitHub reported default_branch main. The contents request for .github/workflows/dev-mail-dispatch-worker.yml at ref main returned 404. The same path for dev-payment-event-worker.yml on main was present, which is the existing develop-preview schedule pattern. assessDevMailSchedule returns absent_from_default_branch when the workflow is missing from main even if the file in this branch contains cron */5 * * * *. It returns scheduled only when the default branch is main, the workflow file is on that branch, the cron is */5 * * * *, the host pattern is the develop Admin preview, and the path is /api/internal/jobs/dev-mail-dispatch.",
+      "assessDevMailSchedule returns github_schedule_refused when the workflow contains a cron, and database_recovery when it does not. The workflow in this branch has workflow_dispatch only. supabase/dev-only/dev_mail_dispatch_schedule.sql is not a migration. public.dev_mail_dispatch_recovery_v1 returns wake not_needed when the eligible count is zero, before it looks for pg_net.",
     codeAction:
-      "Keep assessDevMailSchedule closed unless an observation shows the reviewed workflow file on main. Do not treat the copy in this branch as an installed schedule.",
+      "Keep the GitHub workflow free of a schedule key. Do not grant the recovery function a path that calls Resend when the eligible count is zero.",
     externalAction:
-      "After this pull request is reviewed, open a separate workflow-only change against main whose only file is .github/workflows/dev-mail-dispatch-worker.yml. Do not change Production application settings, vercel.json, or Production environment variables in that change. Before it merges, confirm gh reports default_branch main and the workflow path on main is absent. After it merges, confirm the file on main has cron */5 * * * * and accepts only the develop Admin preview. Then set the develop Preview DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED to true. Leave that name absent on Production.",
+      "After review, enable pg_cron and pg_net on the DEV project only, store the preview URL and worker secret in Supabase Vault, and apply supabase/dev-only/dev_mail_dispatch_schedule.sql. Read dev_mail_dispatch_inventory_v1 before inserting the activation row. Set the develop Preview DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED to true only after that row exists. Leave the worker gate and that name absent on Production. Do not add a five-minute GitHub schedule.",
     requiredBeforeAdminProductionAccess: false,
     requiredBeforeActivationOf: [],
     verification:
-      "Run assessDevMailSchedule with the live default-branch observation. Scheduled is true only after the workflow file is on main and the host, path and cron match. A file that exists only on develop stays absent_from_default_branch.",
+      "Call dev_mail_dispatch_recovery_v1 on an empty queue and confirm wake is not_needed. Confirm the GitHub workflow has no cron key. Confirm the activation table is empty until the inventory has been read.",
     stopCondition:
-      "If the workflow on main names any host other than the develop Admin preview, or the cron is not */5 * * * *, remove that workflow file from main and leave DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED unset. Do not process the queued pack-ready email while correcting it.",
+      "If a GitHub workflow on main gains a mail-dispatch cron, remove that schedule. If recovery calls the preview while the eligible count is zero, disable the database job and leave DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED unset. Do not process mail queued before the activation time while correcting it.",
   },
 
   // ----------------------------------------------------------------- Supabase

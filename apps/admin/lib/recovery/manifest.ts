@@ -1125,6 +1125,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Develop mail dispatch", probe: "public.dev_mail_dispatch_claim_v1" },
   },
+  {
+    // Shared DEV dispatcher. Repository tail. Not applied on DEV or Production.
+    // Does not insert an activation row, enable pg_cron, or send mail.
+    // Payment confirmations remain on the payment-event worker.
+    version: "20261029010000",
+    filename: "20261029010000_dev_mail_shared_dispatch_v1.sql",
+    step: "GUIDED-PACK-MAIL-AUTO-01 shared develop mail dispatch",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Shared develop mail dispatch", probe: "public.dev_mail_dispatch_recovery_v1" },
+  },
 ]
 
 /**
@@ -1139,8 +1152,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261028223000`. The context function volatility change was applied once
  * to DEV and must not be replayed. It is not applied to Production. Draft
  * document role `20261028200000` remains applied and must not be replayed.
- * Repository migration `20261029000000` is later in the chain and has not
- * been applied on DEV or Production. Production remains on its own historical
+ * Repository migrations `20261029000000` and `20261029010000` are later in
+ * the chain and have not been applied on DEV or Production. Production remains on its own historical
  * migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

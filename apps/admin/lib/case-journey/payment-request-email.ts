@@ -61,7 +61,7 @@ function phaseFor(row: CaseCommunicationRow, devSend: boolean): PaymentRequestEm
     return {
       phase: "delivered",
       communicationId: row.id,
-      detail: "The payment-request email was delivered. Delivery is not payment.",
+      detail: "Delivered. The payment-request email was delivered. Delivery is not payment.",
       canProcessPending: false,
     }
   }
@@ -69,7 +69,7 @@ function phaseFor(row: CaseCommunicationRow, devSend: boolean): PaymentRequestEm
     return {
       phase: "submitted",
       communicationId: row.id,
-      detail: "The email provider accepted the payment-request email. Accepted by the provider is not delivered, and the payment is not complete.",
+      detail: "Sent to email provider. The email provider accepted the payment-request email. Accepted by the provider is not delivered, and the payment is not complete.",
       canProcessPending: false,
     }
   }
@@ -77,7 +77,7 @@ function phaseFor(row: CaseCommunicationRow, devSend: boolean): PaymentRequestEm
     return {
       phase: "attention",
       communicationId: row.id,
-      detail: "Provider acceptance is unknown, so the payment-request email was not sent again.",
+      detail: "Delivery status needs review. Provider acceptance is unknown, so the payment-request email was not sent again.",
       canProcessPending: false,
     }
   }
@@ -93,7 +93,7 @@ function phaseFor(row: CaseCommunicationRow, devSend: boolean): PaymentRequestEm
     return {
       phase: "queued",
       communicationId: row.id,
-      detail: "The payment-request email is queued. The email provider has not accepted it, and queued is not delivered.",
+      detail: "Queued for sending. The payment-request email is queued. The email provider has not accepted it, and queued is not delivered.",
       canProcessPending: devSend && !row.firstProviderAttemptAt,
     }
   }

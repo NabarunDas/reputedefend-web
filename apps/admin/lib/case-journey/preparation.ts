@@ -7,6 +7,7 @@
  */
 
 import type { CaseFlowCommunicationFact, CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
+import { customerNotificationLabel } from "./customer-mail"
 import type { EligiblePackVersion, PreparedPackCase } from "../packs/model"
 import { guidedPackRoleMessages } from "../packs/roles"
 
@@ -122,7 +123,7 @@ export function packReadyNotification(
   if (!row) {
     return {
       headline: "Pack published",
-      detail: "Available in portal; email not sent.",
+      detail: "Preparing notification. Available in portal; email not sent.",
       state: "Not met",
       phase: "none",
       communicationId: null,
@@ -133,29 +134,29 @@ export function packReadyNotification(
   const delivery = row.deliveryStatus
   const communicationId = row.id
   if (delivery === "ACCEPTANCE_UNKNOWN") {
-    return notice(communicationId, "acceptance_unknown", "Not met", "Provider acceptance of the pack-ready notification is unknown, so another copy was not sent.")
+    return notice(communicationId, "acceptance_unknown", "Not met", "Delivery status needs review. Provider acceptance of the pack-ready notification is unknown, so another copy was not sent.")
   }
   if (delivery === "DELIVERED") {
-    return notice(communicationId, "delivered", "Met", "The provider reported delivery of the pack-ready notification. That is not a download.")
+    return notice(communicationId, "delivered", "Met", "Delivered. The provider reported delivery of the pack-ready notification. That is not a download.")
   }
   if (delivery === "PROVIDER_ACCEPTED") {
-    return notice(communicationId, "provider_accepted", "Not met", "The email provider accepted the pack-ready notification. That is not proof the customer received it.")
+    return notice(communicationId, "provider_accepted", "Not met", "Sent to email provider. The email provider accepted the pack-ready notification. That is not proof the customer received it.")
   }
   if (delivery === "SUPPRESSED") {
-    return notice(communicationId, "blocked", "Not met", "The pack-ready notification is blocked. Another copy was not sent.")
+    return notice(communicationId, "blocked", "Not met", "Delivery failed. The pack-ready notification is blocked. Another copy was not sent.")
   }
   if (delivery && failedDelivery.has(delivery)) {
-    return notice(communicationId, "failed", "Not met", "The pack-ready notification failed. Another copy was not sent.")
+    return notice(communicationId, "failed", "Not met", "Delivery failed. The pack-ready notification failed. Another copy was not sent.")
   }
   if (row.lifecycle === "QUEUED" && (delivery === "NONE" || delivery == null)) {
     const processing = dispatch?.phase === "processing" && dispatch.communicationId === communicationId
     if (processing) {
-      return notice(communicationId, "processing", "Not met", "The pack-ready notification is being processed. Another copy is not sent while that lease is live.", automaticDispatchActive)
+      return notice(communicationId, "processing", "Not met", "Sending. The pack-ready notification is being processed. Another copy is not sent while that lease is live.", automaticDispatchActive)
     }
     if (!automaticDispatchActive) {
       return {
         headline: "Pack published",
-        detail: "Email is queued. Automatic sending is not active. Queued is not sent.",
+        detail: "Queued for sending. Automatic sending is not active. Queued is not sent.",
         state: "Not met",
         phase: "queued",
         communicationId,
@@ -164,12 +165,13 @@ export function packReadyNotification(
       }
     }
     const stalled = dispatch == null || dispatch.stalled || dispatch.workerLate || dispatch.communicationId !== communicationId
+    const label = customerNotificationLabel({ lifecycle: row.lifecycle, deliveryStatus: delivery, stalled })
     const detail = stalled
-      ? "Email queued for automatic sending. Automatic sending has not moved it. Queued is not sent."
-      : "Email queued for automatic sending. Queued is not sent."
+      ? `${label}. Automatic sending has not moved it. Queued is not sent.`
+      : `${label}. Queued is not sent.`
     return { headline: "Pack published", detail, state: "Not met", phase: "queued", communicationId, stalled, automaticDispatchActive: true }
   }
-  return notice(communicationId, "acceptance_unknown", "Not met", "The pack-ready notification status is not confirmed, so another copy was not sent.", automaticDispatchActive)
+  return notice(communicationId, "acceptance_unknown", "Not met", "Delivery status needs review. The pack-ready notification status is not confirmed, so another copy was not sent.", automaticDispatchActive)
 }
 
 function notice(

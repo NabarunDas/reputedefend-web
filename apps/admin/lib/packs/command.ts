@@ -155,6 +155,10 @@ export async function packCommand(request: NextRequest) {
       p_data: payload,
     })
     if (result.status !== "success") return reply(commandMessage(operation, result.status, result.reason), mapStatus(result.status))
+    if ((operation === "publish" || operation === "send_pack_email") && (result.packEmail === "success" || result.packEmail === "already_queued")) {
+      const { wakeDevMailDispatch } = await import("@/lib/jobs/dev-mail-dispatch")
+      await wakeDevMailDispatch()
+    }
     const message = operation === "send_pack_email" && result.packEmail === "already_queued"
       ? "The pack notification was already queued. Another copy was not sent."
       : successMessage[operation]

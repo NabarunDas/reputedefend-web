@@ -290,7 +290,7 @@ export function presentJourneyClosure(input: {
     && facts.caseStatus === "CLOSED"
     && facts.serviceTrack === "GUIDED"
     && !facts.outcome
-    && completionStatus.startsWith("No case-closure email")
+    && completionStatus.includes("No case-closure email")
     && facts.outcomeSummary.trim().length >= 10
     && facts.outcomeSummary.length <= 2000
   const managedClose = close && facts.serviceTrack === "MANAGED" && !fulfilment
@@ -298,7 +298,7 @@ export function presentJourneyClosure(input: {
     && verified
     && (facts.caseStatus === "CLOSED" || facts.caseStatus === "CANCELLED")
     && facts.serviceTrack === "MANAGED"
-    && customerMailStatus(facts.communications, "MANAGED_COMPLETION", "completion email").startsWith("No completion email")
+    && customerMailStatus(facts.communications, "MANAGED_COMPLETION", "completion email").includes("No completion email")
   const notices = [
     "Optional Guard is not required to close this case.",
   ]

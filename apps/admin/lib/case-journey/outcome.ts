@@ -503,7 +503,7 @@ export function presentJourneyOutcome(input: {
     ? customerMailStatus(input.facts.communications, "MANAGED_INVOICE", "invoice email")
     : null
   if (invoiceMail) notices.push(invoiceMail)
-  const invoiceRecovery = invoiceMail?.startsWith("No invoice email") === true
+  const invoiceRecovery = invoiceMail?.includes("No invoice email") === true
   if (position === "settled") notices.push("Settlement is the provider receipt. An approval, an invoice link, a saved card and a checkout return are not that receipt.")
   const canPauseCollection = input.facts.serviceTrack === "MANAGED"
     && !!paired?.obligationId

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { evidenceActions, type EvidenceRequest } from "@/lib/evidence/model"
@@ -370,10 +370,15 @@ describe("prepared pack publication actions", () => {
     expect(history.querySelector("summary")?.tagName).toBe("SUMMARY")
     expect(history.open).toBe(false)
     expect(screen.queryByRole("button", { name: "Review and publish pack", hidden: true })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Unpublish pack", hidden: true })).toBeNull()
     expect(screen.queryByRole("button", { name: "Publish pack", hidden: true })).toBeNull()
+    expect(within(screen.getByRole("article", { name: "Current pack 2" })).queryByRole("button", { name: "Unpublish pack" })).toBeNull()
     history.open = true
-    expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Published — available in the customer portal")
+    expect(fetchMock).not.toHaveBeenCalled()
+    const previous = screen.getByRole("article", { name: "Pack 1" })
+    expect(within(previous).getByRole("button", { name: "Unpublish pack" })).toBeTruthy()
+    expect(within(previous).queryByRole("button", { name: "Change role" })).toBeNull()
+    expect(within(previous).queryByRole("button", { name: "Remove" })).toBeNull()
+    expect(previous).toHaveTextContent("Published — available in the customer portal")
     expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Creating a draft does not remove customer access.")
     expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Publication note: Shared with the customer.")
     expect(screen.getByRole("article", { name: "Pack 1" }).querySelector("button[type='submit']")).toBeNull()
@@ -475,5 +480,102 @@ describe("prepared pack publication actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review and approve pack" }))
     expect(screen.getByText("Role counts match. The server still checks these files before approval.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Approve prepared pack" })).toBeEnabled()
+  })
+
+  it("lets staff unpublish a published history pack without touching the newer draft", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The pack is no longer published." }) })
+    const older = pack({
+      id: "88888888-8888-4888-8888-888888888888",
+      packNumber: 1,
+      status: "APPROVED",
+      published: true,
+      recordVersion: 9,
+    })
+    const draft = pack({
+      id: "77777777-7777-4777-8777-777777777771",
+      packNumber: 2,
+      status: "DRAFT",
+      approvedAt: null,
+      published: false,
+      items: [item],
+    })
+    render(<PreparedPackPanel caseId={caseId} guided packs={{ caseId, packs: [older, draft], eligible: [] }} />)
+    const history = screen.getByText("Previous packs / History").closest("details") as HTMLDetailsElement
+    history.open = true
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/Creating a draft does not remove customer access/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Unpublish pack" }))
+    expect(fetchMock).not.toHaveBeenCalled()
+    const reason = "Withdraw this published pack from customer access."
+    fireEvent.change(screen.getByRole("textbox", { name: /Reason for unpublishing/ }), { target: { value: reason } })
+    fireEvent.click(screen.getByRole("checkbox", { name: "I confirm this pack should no longer be published." }))
+    fireEvent.submit(screen.getByRole("button", { name: "Unpublish pack" }).closest("form")!)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      operation: "unpublish",
+      caseId,
+      packId: older.id,
+      recordVersion: 9,
+      reason,
+      confirmed: true,
+    })
+    const previous = screen.getByRole("article", { name: "Pack 1" })
+    expect(within(previous).queryByRole("button", { name: "Review and publish pack" })).toBeNull()
+    expect(within(previous).queryByRole("button", { name: "Change role" })).toBeNull()
+    expect(within(previous).queryByRole("button", { name: "Remove" })).toBeNull()
+  })
+
+  it("adds a Managed file without a Guided role", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The file has been added to the draft pack." }) })
+    const draft = pack({ status: "DRAFT", approvedAt: null, published: false, items: [item] })
+    render(<PreparedPackPanel caseId={caseId} packs={{
+      caseId,
+      packs: [draft],
+      eligible: [{
+        documentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        versionNumber: 1,
+        documentTitle: "Ownership letter",
+        originalFilename: "ownership.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 2048,
+      }],
+    }} />)
+    expect(screen.queryByRole("combobox", { name: "Role in the Guided pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Change role" })).toBeNull()
+    expect(screen.queryByText(/exactly one completed statement/)).toBeNull()
+    fireEvent.submit(screen.getByRole("button", { name: "Add to pack" }).closest("form")!)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      operation: "add_item",
+      caseId,
+      packId: draft.id,
+      recordVersion: draft.recordVersion,
+      versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    })
+  })
+
+  it("shows a newer stale pack as the pack to replace and keeps the older approval unpublished", () => {
+    const approved = pack({
+      id: "88888888-8888-4888-8888-888888888888",
+      packNumber: 1,
+      status: "APPROVED",
+      published: false,
+    })
+    const stale = pack({
+      id: "77777777-7777-4777-8777-777777777771",
+      packNumber: 2,
+      status: "STALE",
+      items: [item],
+    })
+    render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [approved, stale], eligible: [] }} />)
+    expect(screen.getByRole("article", { name: "Current pack 2" })).toHaveTextContent("Stale — do not publish this pack")
+    expect(screen.getByRole("button", { name: "Create new draft pack" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Review and publish pack", hidden: true })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Unpublish pack", hidden: true })).toBeNull()
+    const history = screen.getByText("Previous packs / History").closest("details") as HTMLDetailsElement
+    history.open = true
+    expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("This is not the pack to publish.")
+    expect(screen.queryByRole("button", { name: "Review and publish pack", hidden: true })).toBeNull()
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { CaseFlowEvidenceVersionFact, CaseFlowFacts } from "../case-flow/model"
 import type { EligiblePackVersion, PreparedPack, PreparedPackCase } from "../packs/model"
+import { currentWorkingPack } from "../packs/roles"
 import { buildJourneyPreparationPanel, packReadyNotification, preparationReadiness } from "./preparation"
 
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
@@ -167,6 +168,27 @@ describe("prepared pack panel", () => {
     })
     expect(view.headline).toBe("Choose one completed statement and one set of customer instructions")
     expect(view.packs.map(row => row.history)).toEqual([true, false])
+    expect(currentWorkingPack(view.commands?.packs ?? [])?.id).toBe("pack-2")
+  })
+
+  it("keeps a newer stale pack current when an older pack is still approved", () => {
+    const projected = [
+      { id: "pack-1", packNumber: 1, status: "APPROVED" as const, published: false, everPublished: false, itemCount: 1 },
+      { id: "pack-2", packNumber: 2, status: "STALE" as const, published: false, everPublished: true, itemCount: 1 },
+    ]
+    const rows = [
+      pack({ status: "APPROVED", approvedAt: "2026-06-02T12:00:00.000Z" }),
+      pack({ id: "pack-2", packNumber: 2, status: "STALE", createdAt: "2026-06-03T12:00:00.000Z" }),
+    ]
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: projected, eligibleCount: 0 }),
+      packs: loaded(rows),
+      recordsConflict: false,
+    })
+    expect(view.headline).toBe("Replace the stale pack before sending it")
+    expect(view.packs.map(row => [row.id, row.history])).toEqual([["pack-1", true], ["pack-2", false]])
+    expect(preparationReadiness(projected).current?.id).toBe("pack-2")
+    expect(currentWorkingPack(rows)?.id).toBe(preparationReadiness(projected).current?.id)
   })
 
   it("drops unscanned, rejected, superseded and unlinked files", () => {
@@ -298,6 +320,11 @@ describe("prepared pack panel", () => {
     expect(view.headline).toBe("Another pack is still published")
     expect(view.commands).toBeNull()
     expect(view.who).toMatch(/evidence workspace/)
+    expect(view.packs.map(row => row.history)).toEqual([true, false])
+    expect(currentWorkingPack([
+      pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" }),
+      pack({ id: "pack-2", packNumber: 2, status: "DRAFT" }),
+    ])?.id).toBe("pack-2")
   })
 
   it("treats superseded history as read-only and a single published pack as current", () => {

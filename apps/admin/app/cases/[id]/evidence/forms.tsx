@@ -246,7 +246,7 @@ function RoleSelect({ defaultValue }: { defaultValue: string }) {
   </label>
 }
 
-function PackItemActions({ caseId, pack, item, index, last, editable }: { caseId: string; pack: PreparedPack; item: PreparedPack["items"][number]; index: number; last: boolean; editable: boolean }) {
+function PackItemActions({ caseId, pack, item, index, last, editable, guided }: { caseId: string; pack: PreparedPack; item: PreparedPack["items"][number]; index: number; last: boolean; editable: boolean; guided: boolean }) {
   const actions = evidenceActions({
     uploadStatus: "UPLOADED", scanStatus: "NO_THREATS_FOUND", validationStatus: "VALID", reviewStatus: "ACCEPTED",
     contentType: item.contentType,
@@ -256,11 +256,11 @@ function PackItemActions({ caseId, pack, item, index, last, editable }: { caseId
     {role && <span className="pack-role">Role: {role}</span>}
     <AccessButtons caseId={caseId} versionId={item.versionId} actions={actions} />
     {editable && <>
-      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Change role" payload={form => ({
+      {guided && <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Change role" payload={form => ({
         operation: "set_item_role", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: item.versionId, role: form.get("role"),
       })}>
         <RoleSelect defaultValue={item.role ?? ""} />
-      </CommandForm>
+      </CommandForm>}
       <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Remove" payload={() => ({
         operation: "remove_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: item.versionId,
       })} />
@@ -283,11 +283,17 @@ function EligibleVersionRow({ caseId, pack, version, guided }: { caseId: string;
     <strong>{version.documentTitle}</strong> · {version.originalFilename} · {fileTypeLabel(version.contentType)} · {formatBytes(version.sizeBytes)} · version {version.versionNumber}
     <div className="evidence-actions">
       <AccessButtons caseId={caseId} versionId={version.versionId} actions={actions} />
-      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={form => ({
-        operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId, role: form.get("role"),
-      })}>
-        <RoleSelect defaultValue="" />
-        {guided && <p className="muted">Choose a role. A Guided pack needs exactly one completed statement and exactly one customer submission instructions. Other files are supporting evidence.</p>}
+      <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Add to pack" payload={form => {
+        const role = form.get("role")
+        return {
+          operation: "add_item", caseId, packId: pack.id, recordVersion: pack.recordVersion, versionId: version.versionId,
+          ...(guided && typeof role === "string" && role ? { role } : {}),
+        }
+      }}>
+        {guided && <>
+          <RoleSelect defaultValue="" />
+          <p className="muted">Choose a role. A Guided pack needs exactly one completed statement and exactly one customer submission instructions. Other files are supporting evidence.</p>
+        </>}
       </CommandForm>
     </div>
   </li>
@@ -423,7 +429,7 @@ function PackSummary({ pack, current }: { pack: PreparedPack; current: boolean }
   if (pack.status === "APPROVED") {
     if (!current) return <>
       <p className="pack-status">Approved — kept as history</p>
-      <p>{count}. This is not the pack to publish while a newer draft is open. Customer access is unchanged.</p>
+      <p>{count}. This is not the pack to publish. Customer access is unchanged.</p>
     </>
     return <>
       <p className="pack-status">Approved — not yet shared with customer</p>
@@ -470,14 +476,14 @@ function PackArticle({
       <div className="pack-action-row">
         {editable && pack.items.length > 0 && <ApprovePackForm caseId={caseId} pack={pack} guided={guided} />}
         {current && pack.status === "APPROVED" && !pack.published && <PublishPackForm caseId={caseId} pack={pack} />}
-        {current && pack.published && <UnpublishPackForm caseId={caseId} pack={pack} />}
+        {pack.published && <UnpublishPackForm caseId={caseId} pack={pack} />}
       </div>
       {replacement && <CreateDraftPackForm caseId={caseId} intent="replacement" />}
     </div>
     {!pack.items.length && editable && <p className="muted">This draft is empty. Add accepted evidence below.</p>}
     {pack.items.length > 0 && <ol className="task-list">{pack.items.map((item, index) => <li key={item.id}>
       <strong>{item.documentTitle}</strong> · {item.originalFilename} · {fileTypeLabel(item.contentType)} · {formatBytes(item.sizeBytes)} · version {item.versionNumber}
-      <PackItemActions caseId={caseId} pack={pack} item={item} index={index} last={index === pack.items.length - 1} editable={editable} />
+      <PackItemActions caseId={caseId} pack={pack} item={item} index={index} last={index === pack.items.length - 1} editable={editable} guided={guided && current} />
     </li>)}</ol>}
     {editable && <>
       <h4>Eligible accepted evidence</h4>

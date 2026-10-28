@@ -20,14 +20,11 @@ export function guidedPackRoleMessages(items: Pick<PreparedPackItem, "role">[]):
 }
 
 /**
- * The pack staff should work on. A draft wins. Otherwise the newest approved
- * pack is the review target. Older packs stay available as history.
+ * The same pack Step 8 treats as current: the highest pack number that has
+ * not been superseded. A newer stale pack stays current. A superseded pack
+ * is current only when every pack has been superseded.
  */
 export function currentWorkingPack(packs: PreparedPack[]): PreparedPack | null {
   const ranked = [...packs].sort((left, right) => right.packNumber - left.packNumber || right.createdAt.localeCompare(left.createdAt))
-  return ranked.find(pack => pack.status === "DRAFT")
-    ?? ranked.find(pack => pack.status === "APPROVED")
-    ?? ranked.find(pack => pack.status !== "SUPERSEDED")
-    ?? ranked[0]
-    ?? null
+  return ranked.find(pack => pack.status !== "SUPERSEDED") ?? ranked[0] ?? null
 }

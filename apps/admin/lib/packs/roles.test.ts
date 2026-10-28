@@ -57,14 +57,19 @@ describe("guided pack roles", () => {
     ])).toEqual([])
   })
 
-  it("chooses the newest draft, then the newest approved pack", () => {
-    const approved = pack({ id: "approved", packNumber: 1, status: "APPROVED" })
-    const draft = pack({ id: "draft", packNumber: 2, status: "DRAFT", createdAt: "2026-10-02T00:00:00.000Z" })
-    const published = pack({ id: "published", packNumber: 3, status: "APPROVED", published: true })
+  it("uses the latest pack that has not been superseded", () => {
+    const approved = pack({ id: "approved", packNumber: 1, status: "APPROVED", createdAt: "2026-10-01T00:00:00.000Z" })
+    const published = pack({ id: "published", packNumber: 2, status: "APPROVED", published: true, createdAt: "2026-10-02T00:00:00.000Z" })
+    const draft = pack({ id: "draft", packNumber: 3, status: "DRAFT", createdAt: "2026-10-03T00:00:00.000Z" })
+    const stale = pack({ id: "stale", packNumber: 4, status: "STALE", createdAt: "2026-10-04T00:00:00.000Z" })
     expect(currentWorkingPack([approved, published, draft])?.id).toBe("draft")
     expect(currentWorkingPack([approved, published])?.id).toBe("published")
-    expect(currentWorkingPack([pack({ id: "stale", packNumber: 4, status: "STALE" }), published])?.id).toBe("published")
-    expect(currentWorkingPack([pack({ id: "old", status: "SUPERSEDED" })])?.id).toBe("old")
+    expect(currentWorkingPack([approved, stale])?.id).toBe("stale")
+    expect(currentWorkingPack([published, stale])?.id).toBe("stale")
+    expect(currentWorkingPack([
+      pack({ id: "first", packNumber: 1, status: "SUPERSEDED" }),
+      pack({ id: "second", packNumber: 2, status: "SUPERSEDED" }),
+    ])?.id).toBe("second")
     expect(currentWorkingPack([])).toBeNull()
   })
 })

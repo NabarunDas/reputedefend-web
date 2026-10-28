@@ -116,12 +116,57 @@ describe("prepared pack panel", () => {
       packs: loaded([pack()], [eligible()]),
       recordsConflict: false,
     })
-    expect(view.headline).toBe("Approve the completed pack")
+    expect(view.headline).toBe("Choose one completed statement and one set of customer instructions")
+    expect(view.who).toMatch(/Approval stays closed until those roles are set/)
     expect(view.commands?.packs[0]?.id).toBe("pack-1")
     expect(view.commands?.eligible).toHaveLength(1)
     expect(view.requirements.find(item => item.label === "Approval")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Not met")
     expect(view.detail).toMatch(/does not submit anything to Google/)
+    expect(view.packs[0]?.history).toBe(false)
+  })
+
+  it("keeps approval available once a Guided draft has one statement and one set of instructions", () => {
+    const statement = { ...item(), id: "item-1", role: "DELIVERABLE" as const }
+    const instructions = { ...item("99999999-9999-4999-8999-999999999999"), id: "item-2", documentId: "88888888-8888-4888-8888-888888888888", documentTitle: "How to submit", originalFilename: "instructions.pdf", role: "INSTRUCTIONS" as const }
+    const evidence = { ...item("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), id: "item-3", documentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", role: "EVIDENCE" as const }
+    const view = buildJourneyPreparationPanel({
+      facts: facts({ packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 3 }], eligibleCount: 0 }),
+      packs: loaded([pack({ items: [statement, instructions, evidence] })]),
+      recordsConflict: false,
+    })
+    expect(view.headline).toBe("Approve the completed pack")
+    expect(view.guided).toBe(true)
+    expect(view.commands).not.toBeNull()
+  })
+
+  it("does not apply Guided role counts to a Managed draft", () => {
+    const view = buildJourneyPreparationPanel({
+      facts: { ...facts({ packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 1 }], eligibleCount: 0 }), serviceTrack: "MANAGED" },
+      packs: loaded([pack()]),
+      recordsConflict: false,
+    })
+    expect(view.headline).toBe("Approve the completed pack")
+    expect(view.guided).toBe(false)
+  })
+
+  it("marks an older approved pack as history while a newer draft is current", () => {
+    const view = buildJourneyPreparationPanel({
+      facts: facts({
+        packs: [
+          { id: "pack-1", packNumber: 1, status: "APPROVED", published: false, everPublished: false, itemCount: 1 },
+          { id: "pack-2", packNumber: 2, status: "DRAFT", published: false, everPublished: false, itemCount: 1 },
+        ],
+        eligibleCount: 0,
+      }),
+      packs: loaded([
+        pack({ status: "APPROVED", approvedAt: "2026-06-02T12:00:00.000Z" }),
+        pack({ id: "pack-2", packNumber: 2, status: "DRAFT", createdAt: "2026-06-03T12:00:00.000Z" }),
+      ]),
+      recordsConflict: false,
+    })
+    expect(view.headline).toBe("Choose one completed statement and one set of customer instructions")
+    expect(view.packs.map(row => row.history)).toEqual([true, false])
   })
 
   it("drops unscanned, rejected, superseded and unlinked files", () => {

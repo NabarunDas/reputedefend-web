@@ -345,4 +345,135 @@ describe("prepared pack publication actions", () => {
     absent("Prepare a replacement draft")
     absent("Review and approve pack")
   })
+
+  it("keeps the current draft in front and leaves older packs in history", () => {
+    const older = pack({
+      id: "88888888-8888-4888-8888-888888888888",
+      packNumber: 1,
+      status: "APPROVED",
+      published: true,
+      publicationNote: "Shared with the customer.",
+    })
+    const draft = pack({
+      id: "77777777-7777-4777-8777-777777777771",
+      packNumber: 2,
+      status: "DRAFT",
+      approvedAt: null,
+      published: false,
+      publicationNote: undefined,
+      items: [{ ...item, role: "DELIVERABLE" }],
+    })
+    render(<PreparedPackPanel caseId={caseId} guided packs={{ caseId, packs: [older, draft], eligible: [] }} />)
+    expect(screen.getByRole("article", { name: "Current pack 2" })).toHaveTextContent("This is the pack to change.")
+    expect(screen.getByRole("article", { name: "Current pack 2" })).toHaveTextContent("Draft — add documents, then approve")
+    const history = screen.getByText("Previous packs / History").closest("details") as HTMLDetailsElement
+    expect(history.querySelector("summary")?.tagName).toBe("SUMMARY")
+    expect(history.open).toBe(false)
+    expect(screen.queryByRole("button", { name: "Review and publish pack", hidden: true })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Unpublish pack", hidden: true })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Publish pack", hidden: true })).toBeNull()
+    history.open = true
+    expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Published — available in the customer portal")
+    expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Creating a draft does not remove customer access.")
+    expect(screen.getByRole("article", { name: "Pack 1" })).toHaveTextContent("Publication note: Shared with the customer.")
+    expect(screen.getByRole("article", { name: "Pack 1" }).querySelector("button[type='submit']")).toBeNull()
+    expect(screen.getAllByRole("button", { name: "View" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0)
+  })
+
+  it("requires a chosen role before a file can be added", () => {
+    render(<PreparedPackPanel caseId={caseId} guided packs={{
+      caseId,
+      packs: [pack({ status: "DRAFT", approvedAt: null, published: false, items: [{ ...item, role: "DELIVERABLE" }] })],
+      eligible: [{
+        documentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        versionNumber: 1,
+        documentTitle: "Ownership letter",
+        originalFilename: "ownership.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 2048,
+      }],
+    }} />)
+    const selects = screen.getAllByRole("combobox", { name: "Role in the Guided pack" }) as HTMLSelectElement[]
+    expect(selects.map(select => select.value).sort()).toEqual(["", "DELIVERABLE"])
+    expect(selects.every(select => select.required)).toBe(true)
+    expect(screen.getAllByRole("option", { name: "Choose a role" }).every(option => (option as HTMLOptionElement).disabled)).toBe(true)
+    expect(screen.getByText(/Choose a role\. A Guided pack needs exactly one completed statement/)).toBeTruthy()
+  })
+
+  it("changes a draft document role without removing the file", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The document role has been updated. The pack is still a draft." }) })
+    render(<PreparedPackPanel caseId={caseId} guided packs={{
+      caseId,
+      packs: [pack({ status: "DRAFT", approvedAt: null, published: false, items: [{ ...item, role: "DELIVERABLE" }] })],
+      eligible: [],
+    }} />)
+    const form = screen.getByRole("button", { name: "Change role" }).closest("form")!
+    fireEvent.change(form.querySelector("select")!, { target: { value: "INSTRUCTIONS" } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      operation: "set_item_role",
+      caseId,
+      packId: "99999999-9999-4999-8999-999999999999",
+      recordVersion: 4,
+      versionId: version.id,
+      role: "INSTRUCTIONS",
+    })
+  })
+
+  it("explains a Guided draft that has five statements and no instructions", () => {
+    const files = ["DELIVERABLE", "DELIVERABLE", "DELIVERABLE", "DELIVERABLE", "DELIVERABLE"].map((role, index) => ({
+      ...item,
+      id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${index}`,
+      documentId: `bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb${index}`,
+      versionId: `cccccccc-cccc-4ccc-8ccc-ccccccccccc${index}`,
+      role: role as "DELIVERABLE",
+    }))
+    render(<PreparedPackPanel caseId={caseId} guided packs={{
+      caseId,
+      packs: [pack({ status: "DRAFT", approvedAt: null, published: false, items: files })],
+      eligible: [],
+    }} />)
+    expect(screen.getByRole("button", { name: "Approve prepared pack" })).toBeDisabled()
+    expect(screen.getByRole("alert")).toHaveTextContent("5 completed statements; exactly 1 required")
+    expect(screen.getByRole("alert")).toHaveTextContent("0 customer submission instructions; exactly 1 required")
+    expect(screen.queryByRole("button", { name: "Review and approve pack" })).toBeNull()
+    expect(screen.queryByText("That action is not allowed for this pack.")).toBeNull()
+  })
+
+  it("explains a missing instructions document and allows a valid 1, 1 and 3 draft to be reviewed", () => {
+    const missing = [
+      { ...item, role: "DELIVERABLE" as const },
+      { ...second, id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", role: "EVIDENCE" as const },
+      { ...second, id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2", versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2", documentId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2", role: "EVIDENCE" as const },
+      { ...second, id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3", versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3", documentId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd3", role: "EVIDENCE" as const },
+    ]
+    render(<PreparedPackPanel caseId={caseId} guided packs={{
+      caseId,
+      packs: [pack({ status: "DRAFT", approvedAt: null, published: false, items: missing })],
+      eligible: [],
+    }} />)
+    expect(screen.getByRole("button", { name: "Approve prepared pack" })).toBeDisabled()
+    expect(screen.getByRole("alert")).toHaveTextContent("0 customer submission instructions; exactly 1 required")
+    expect(screen.getByRole("alert")).not.toHaveTextContent("completed statements")
+    cleanup()
+    const ready = [
+      missing[0],
+      { ...second, role: "INSTRUCTIONS" as const },
+      missing[1],
+      missing[2],
+      missing[3],
+    ]
+    render(<PreparedPackPanel caseId={caseId} guided packs={{
+      caseId,
+      packs: [pack({ status: "DRAFT", approvedAt: null, published: false, items: ready })],
+      eligible: [],
+    }} />)
+    expect(screen.queryByRole("alert")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Review and approve pack" }))
+    expect(screen.getByText("Role counts match. The server still checks these files before approval.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Approve prepared pack" })).toBeEnabled()
+  })
 })

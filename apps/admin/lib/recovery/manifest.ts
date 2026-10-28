@@ -1078,6 +1078,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided pack publication", probe: "admin_private.pack_publication_block_v1" },
   },
+  {
+    // ADMIN-PACK-STEP8. Source only. Not applied to DEV or Production.
+    // Repository file SHA-256 75052ce67d660f5836b59b8cb1f98cd76b39076ea68fa87ec5cdcaf522b56368.
+    // Applying this file does not change a live pack, publish a pack, send mail, or take payment.
+    version: "20261028200000",
+    filename: "20261028200000_admin_pack_draft_role_v1.sql",
+    step: "ADMIN-PACK-STEP8 draft document role change",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Draft pack role", probe: "public.admin_prepared_pack_command_v1" },
+  },
 ]
 
 /**
@@ -1091,7 +1104,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * Newest DEV-applied migration is the verified DEV ledger head
  * `20261028160000`. Guided pack publication was applied once to DEV and
  * must not be replayed. It is not applied to Production. Guided post-payment
- * handover `20261028120000` remains applied and must not be replayed. Production
+ * handover `20261028120000` remains applied and must not be replayed.
+ * `20261028200000` is source only and is not the DEV head. Production
  * remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

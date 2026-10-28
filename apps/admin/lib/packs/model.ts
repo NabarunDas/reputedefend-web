@@ -1,7 +1,7 @@
 export const packStatuses = ["DRAFT", "APPROVED", "STALE", "SUPERSEDED"] as const
 export type PackStatus = (typeof packStatuses)[number]
 
-export const packOperations = ["create", "add_item", "remove_item", "move_item", "approve", "publish", "unpublish", "send_pack_email"] as const
+export const packOperations = ["create", "add_item", "remove_item", "move_item", "set_item_role", "approve", "publish", "unpublish", "send_pack_email"] as const
 export type PackOperation = (typeof packOperations)[number]
 
 export const PACK_APPROVAL_WARNING =

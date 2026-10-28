@@ -10,7 +10,7 @@ export function PreparationPanel({ caseId, panel }: { caseId: string; panel: Jou
     <p><strong>{panel.headline}.</strong> {panel.detail}</p>
     {panel.packs.length > 0 && <ul>
       {panel.packs.map(pack => <li key={pack.id}>
-        <strong>Pack #{pack.number}: {pack.state}.</strong> {pack.items} item{pack.items === 1 ? "" : "s"}.{pack.history ? " This approved history is read-only." : ""}
+        <strong>Pack #{pack.number}: {pack.state}.</strong> {pack.items} item{pack.items === 1 ? "" : "s"}.{pack.history ? pack.state === "Superseded" ? " This approved history is read-only." : " Previous pack. It stays in the history and is not the pack to change." : " This is the current pack."}
       </li>)}
     </ul>}
     <ul>
@@ -19,7 +19,7 @@ export function PreparationPanel({ caseId, panel }: { caseId: string; panel: Jou
     <p><strong>Who must act.</strong> {panel.who}</p>
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     {panel.packEmailRecovery && <RecoverPackEmailForm caseId={caseId} pack={panel.packEmailRecovery} />}
-    {panel.commands && <PreparedPackPanel caseId={caseId} packs={panel.commands} />}
+    {panel.commands && <PreparedPackPanel caseId={caseId} packs={panel.commands} guided={panel.guided} />}
     <p>Saving a draft, approving it, or publishing it does not submit anything to Google and does not make the files available without the existing case-access check.</p>
   </div>
 }

@@ -29,14 +29,16 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261028160000_guided_pack_publish_visibility_v1.sql",
-    ])
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
+      version: "20261028160000",
+      name: "guided_pack_publish_visibility_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
       version: "20261028120000",
       name: "guided_postpayment_handover_v1",
     })
-    expect(healthyRemote.at(-2)).toEqual({
+    expect(healthyRemote.at(-3)).toEqual({
       version: "20261027120000",
       name: "billing_documents_v1",
     })
@@ -74,6 +76,16 @@ describe("the migration history validator", () => {
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261021214813_gross_customer_price_v1.sql"],
+    })
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
+  })
+
+  it("refuses to replay Guided pack publication now that DEV has received it", () => {
+    const result = validateMigrationHistory({
+      repoFilenames,
+      remote: healthyRemote,
+      candidates: ["20261028160000_guided_pack_publish_visibility_v1.sql"],
     })
     expect(codes(result)).toContain("replay_of_applied_migration")
     expect(mayApplyMigrations(result)).toBe(false)

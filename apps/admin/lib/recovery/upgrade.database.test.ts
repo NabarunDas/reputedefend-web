@@ -59,12 +59,11 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail is the unapplied publication migration. The observed
-    // DEV head remains Guided post-payment handover. It is already applied and
-    // must not be replayed. This disposable rebuild is not a live apply.
+    // The repository tail is Guided pack publication. It is already applied to
+    // DEV and must not be replayed. This disposable rebuild is not a live apply.
     // Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261028160000_guided_pack_publish_visibility_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.filename).toMatch(/guided_postpayment_handover_v1\.sql$/)
     expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.filename).toMatch(/billing_documents_v1\.sql$/)

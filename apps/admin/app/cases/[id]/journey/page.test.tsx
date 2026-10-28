@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import type { CaseFlowFacts } from "@/lib/case-flow/model"
+import type { PreparedPackCase } from "@/lib/packs/model"
 import { caseDetail, CASE_ID, CUSTOMER_ID } from "../cockpit/fixtures"
 
 const notFoundError = new Error("NEXT_NOT_FOUND")
@@ -21,7 +22,7 @@ const loadQuote = vi.fn(async (..._args: unknown[]) => null)
 const loadOrder = vi.fn(async (..._args: unknown[]) => null)
 const loadMoney = vi.fn(async (..._args: unknown[]) => ({ orders: [] }))
 const getCaseAuthorization = vi.fn(async (..._args: unknown[]) => null)
-const getPreparedPackCase = vi.fn(async (..._args: unknown[]) => ({ caseId: "55555555-5555-4555-8555-555555555555", packs: [], eligible: [] }))
+const getPreparedPackCase = vi.fn(async (..._args: unknown[]): Promise<PreparedPackCase> => ({ caseId: "55555555-5555-4555-8555-555555555555", packs: [], eligible: [] }))
 
 vi.mock("next/navigation", () => ({
   notFound: () => { throw notFoundError },

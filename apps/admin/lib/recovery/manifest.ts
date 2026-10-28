@@ -1049,6 +1049,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Billing documents", probe: "public.customer_portal_invoice_document_v1" },
   },
+  {
+    // GUIDED-POSTPAYMENT-HANDOVER-01. Source only.
+    // Do not apply to DEV or Production from this change.
+    // It does not update an existing case, create a receipt, charge a card, or send mail.
+    version: "20261028120000",
+    filename: "20261028120000_guided_postpayment_handover_v1.sql",
+    step: "GUIDED-POSTPAYMENT-HANDOVER-01 guided post-payment handover",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided post-payment handover", probe: "public.guided_postpayment_reconcile_v1" },
+  },
 ]
 
 /**
@@ -1065,7 +1078,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * presentation `20261026140000`, checkout refresh `20261026170000`, the DEV
  * payment event worker `20261026180000` and receipt delivery `20261026190000`
  * are already in the DEV ledger and must not be replayed. Billing documents
- * `20261027120000` remain unapplied. Do not apply that file from this change.
+ * `20261027120000` and Guided post-payment handover `20261028120000` remain
+ * unapplied. Do not apply either file from this change.
  * Production remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

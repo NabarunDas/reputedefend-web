@@ -154,9 +154,10 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261027120000_billing_documents_v1.sql",
+      "20261028120000_guided_postpayment_handover_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261026190000")
-    expect(migrationHead.filename).toMatch(/billing_documents_v1\.sql$/)
+    expect(migrationHead.filename).toMatch(/guided_postpayment_handover_v1\.sql$/)
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -193,7 +194,8 @@ describe("readiness model", () => {
     expect(supabase?.stopCondition).toContain("If DEV head differs from canonical 20261026190000")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261025163000, 20261026140000 or 20261026170000")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261026180000 or 20261026190000")
-    expect(supabase?.stopCondition).toContain("Do not apply 20261027120000 to DEV or Production from this change.")
+    expect(supabase?.stopCondition).toContain("Do not apply 20261027120000 or 20261028120000 to DEV or Production from this change.")
+    expect(supabase?.requirement).toContain("Guided post-payment handover 20261028120000 remains unapplied")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261025020000, 20261025140000 or 20261025160000")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021155147")
     expect(supabase?.stopCondition).toContain("Do not replay DEV-applied 20261021214813 or apply it to Production")

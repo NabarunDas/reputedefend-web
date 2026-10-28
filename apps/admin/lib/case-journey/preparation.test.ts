@@ -335,3 +335,74 @@ describe("prepared pack panel", () => {
     expect(packReadyNotification([]).headline).toBe("Available in portal; email not sent")
   })
 })
+
+const ineligibleNotice = /A listed file is not an accepted, validated, clean version/
+
+describe("eligible accepted evidence", () => {
+  const draftPack = { id: "pack-1", packNumber: 1, status: "DRAFT" as const, published: false, everPublished: false, itemCount: 0 }
+
+  function shown(versions: CaseFlowEvidenceVersionFact[], listed: EligiblePackVersion[]) {
+    return buildJourneyPreparationPanel({
+      facts: facts({ packs: [draftPack], eligibleCount: listed.length }, versions),
+      packs: loaded([pack({ items: [] })], listed),
+      recordsConflict: false,
+    })
+  }
+
+  it("offers an accepted staff upload with no request and a customer upload linked to its request", () => {
+    const staff = eligible({ versionId: "staff-letter", documentId: "document-staff", documentTitle: "How to submit", originalFilename: "How to submit.docx" })
+    const customer = eligible({ versionId: "customer-letter", documentId: "document-customer", documentTitle: "Ownership letter", originalFilename: "ownership.pdf" })
+    const view = shown(
+      [
+        version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" }),
+        version({ versionId: "customer-letter", documentId: "document-customer", evidenceRequestId: "request-1", submissionSource: "CUSTOMER" }),
+      ],
+      [staff, customer],
+    )
+    expect(view.commands?.eligible.map(item => item.originalFilename)).toEqual(["How to submit.docx", "ownership.pdf"])
+    expect(view.notices.join(" ")).not.toMatch(ineligibleNotice)
+    expect(view.requirements.find(item => item.label === "Eligible evidence")?.state).toBe("Met")
+  })
+
+  it("excludes unscanned, invalid, rejected, superseded, missing-source and incorrectly linked files", () => {
+    const names = ["scan", "invalid", "rejected", "replaced", "missing-source", "unlinked-customer", "wrong-document"] as const
+    const listed = names.map(name => eligible({ versionId: name, documentId: name === "wrong-document" ? "document-listed" : `document-${name}` }))
+    const staff = eligible({ versionId: "staff-letter", documentId: "document-staff" })
+    const view = shown(
+      [
+        version({ versionId: "scan", documentId: "document-scan", submissionSource: "ADMIN", evidenceRequestId: null, scanStatus: "PENDING" }),
+        version({ versionId: "invalid", documentId: "document-invalid", submissionSource: "ADMIN", evidenceRequestId: null, validationStatus: "INVALID" }),
+        version({ versionId: "rejected", documentId: "document-rejected", submissionSource: "ADMIN", evidenceRequestId: null, reviewStatus: "REJECTED" }),
+        version({ versionId: "replaced", documentId: "document-replaced", submissionSource: "ADMIN", evidenceRequestId: null, reviewStatus: "SUPERSEDED" }),
+        version({ versionId: "missing-source", documentId: "document-missing-source", submissionSource: null, evidenceRequestId: null }),
+        version({ versionId: "unlinked-customer", documentId: "document-unlinked-customer", submissionSource: "CUSTOMER", evidenceRequestId: null }),
+        version({ versionId: "wrong-document", documentId: "document-actual", submissionSource: "ADMIN", evidenceRequestId: null }),
+        version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" }),
+      ],
+      [...listed, staff],
+    )
+    expect(view.commands?.eligible.map(item => item.versionId)).toEqual(["staff-letter"])
+    expect(view.notices.join(" ")).toMatch(ineligibleNotice)
+  })
+
+  it("warns about ineligible files only when a listed file fails the same checks", () => {
+    const clean = shown(
+      [version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" })],
+      [eligible({ versionId: "staff-letter", documentId: "document-staff" })],
+    )
+    expect(clean.notices.join(" ")).not.toMatch(ineligibleNotice)
+
+    const mixed = shown(
+      [
+        version({ versionId: "staff-letter", documentId: "document-staff", evidenceRequestId: null, submissionSource: "ADMIN" }),
+        version({ versionId: "scan", documentId: "document-scan", submissionSource: "ADMIN", evidenceRequestId: null, scanStatus: "PENDING" }),
+      ],
+      [
+        eligible({ versionId: "staff-letter", documentId: "document-staff" }),
+        eligible({ versionId: "scan", documentId: "document-scan" }),
+      ],
+    )
+    expect(mixed.commands?.eligible.map(item => item.versionId)).toEqual(["staff-letter"])
+    expect(mixed.notices.join(" ")).toMatch(ineligibleNotice)
+  })
+})

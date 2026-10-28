@@ -261,3 +261,116 @@ describe("guided case preparation", () => {
     noCommands()
   })
 })
+
+const STAFF_VERSION = "da34e42a-64eb-4bec-9e83-2cd4f0c8788f"
+const STAFF_DOCUMENT = "99999999-9999-4999-8999-999999999991"
+const CUSTOMER_VERSION = "99999999-9999-4999-8999-999999999992"
+const CUSTOMER_DOCUMENT = "99999999-9999-4999-8999-999999999993"
+
+function accepted(overrides: Partial<CaseFlowFacts["evidence"]["versions"][number]> = {}): CaseFlowFacts["evidence"]["versions"][number] {
+  return {
+    documentId: STAFF_DOCUMENT,
+    versionId: STAFF_VERSION,
+    evidenceRequestId: null,
+    uploadStatus: "UPLOADED",
+    scanStatus: "NO_THREATS_FOUND",
+    validationStatus: "VALID",
+    reviewStatus: "ACCEPTED",
+    submissionSource: "ADMIN",
+    ...overrides,
+  }
+}
+
+function offer(versionId: string, documentId: string, filename: string, title: string) {
+  return {
+    documentId,
+    versionId,
+    versionNumber: 1,
+    documentTitle: title,
+    originalFilename: filename,
+    contentType: filename.endsWith(".docx")
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/pdf",
+    sizeBytes: 1200,
+  }
+}
+
+describe("Step 8 eligible accepted evidence", () => {
+  function open(versions: CaseFlowFacts["evidence"]["versions"], eligible: ReturnType<typeof offer>[], items: PreparedPack["items"] = []) {
+    const listed = facts({
+      evidence: { requests: [{ id: "request-1", status: "FULFILLED", dueAt: null, createdAt: "2026-05-01T12:00:00.000Z" }], versions },
+      packs: { packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: items.length }], eligibleCount: eligible.length },
+    })
+    show(listed, {
+      caseId: CASE_ID,
+      packs: [draft({ items })],
+      eligible,
+    })
+  }
+
+  it("shows a staff upload with no request and a linked customer upload, and can add the staff file", () => {
+    open(
+      [
+        accepted(),
+        accepted({
+          documentId: CUSTOMER_DOCUMENT,
+          versionId: CUSTOMER_VERSION,
+          evidenceRequestId: "request-1",
+          submissionSource: "CUSTOMER",
+        }),
+      ],
+      [
+        offer(STAFF_VERSION, STAFF_DOCUMENT, "How to submit.docx", "How to submit"),
+        offer(CUSTOMER_VERSION, CUSTOMER_DOCUMENT, "ownership.pdf", "Ownership letter"),
+      ],
+    )
+    expect(screen.getByRole("heading", { name: "Eligible accepted evidence" })).toBeTruthy()
+    expect(screen.getByText(/How to submit\.docx/)).toBeTruthy()
+    expect(screen.getByText(/ownership\.pdf/)).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Add to pack" })).toHaveLength(2)
+    expect(screen.queryByText(/A listed file is not an accepted, validated, clean version/)).toBeNull()
+  })
+
+  it("does not offer a file that is already in the draft, or a file that fails the evidence checks", () => {
+    open(
+      [accepted()],
+      [offer(STAFF_VERSION, STAFF_DOCUMENT, "How to submit.docx", "How to submit")],
+      [{
+        id: "item-staff",
+        documentId: STAFF_DOCUMENT,
+        versionId: STAFF_VERSION,
+        position: 1,
+        documentTitle: "How to submit",
+        originalFilename: "How to submit.docx",
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sizeBytes: 1200,
+        versionNumber: 1,
+        customerVisible: true,
+      }],
+    )
+    expect(screen.getByText("No further accepted, clean and valid versions are available to add.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Add to pack" })).toBeNull()
+    expect(screen.queryByText(/A listed file is not an accepted, validated, clean version/)).toBeNull()
+
+    cleanup()
+    open(
+      [
+        accepted(),
+        accepted({
+          documentId: "99999999-9999-4999-8999-999999999994",
+          versionId: "99999999-9999-4999-8999-999999999995",
+          submissionSource: null,
+          evidenceRequestId: null,
+        }),
+      ],
+      [
+        offer(STAFF_VERSION, STAFF_DOCUMENT, "How to submit.docx", "How to submit"),
+        offer("99999999-9999-4999-8999-999999999995", "99999999-9999-4999-8999-999999999994", "unlinked.pdf", "Unlinked"),
+      ],
+    )
+    expect(screen.getByText(/How to submit\.docx/)).toBeTruthy()
+    expect(screen.queryByText(/unlinked\.pdf/)).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Add to pack" })).toHaveLength(1)
+    expect(screen.getByText(/A listed file is not an accepted, validated, clean version/)).toBeTruthy()
+  })
+})

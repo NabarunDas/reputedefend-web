@@ -556,15 +556,14 @@ describe("guided fulfilment handover", () => {
     expect(unauthorised).toMatchObject({ status: "denied", reason: "authority" })
     await verify()
     await setVisible(caseId, statement.versionId!, false)
-    const unsafe = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
-    expect(unsafe.status).toBe("denied")
-    await setVisible(caseId, statement.versionId!, true)
+    expect(await rows<{ reason: string | null }>("select admin_private.pack_publication_block_v1($1) as reason", [draft.id])).toEqual([{ reason: null }])
 
     const partial = await packCmd(caseId, "publish", { note: packNote, confirmed: true, subject: "Only a subject" }, draft.id, approved.recordVersion)
     expect(partial.status).toBe("denied")
     expect((await rows<{ published_at: string | null }>("select published_at from public.case_prepared_packs where id = $1", [draft.id]))[0].published_at).toBeNull()
     const silent = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
     expect(silent, JSON.stringify(silent)).toMatchObject({ status: "success", packEmail: "skipped" })
+    expect((await rows<{ customer_visible: boolean }>("select customer_visible from public.case_document_versions where id = $1", [statement.versionId]))[0].customer_visible).toBe(true)
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
     const recoveredMail = renderPackReady({
       serviceCode: "GUIDED_RELAUNCH",

@@ -10,6 +10,7 @@ import { communicationsSendEnabled, outgoingFromAddress } from "../communication
 import { isUuid } from "../records/model"
 import { packArgs, isPackApproveArgs, isPackEmailArgs, isPackItemArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
 import { packOperations, type PackOperation } from "./model"
+import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage } from "./publication"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -39,17 +40,17 @@ function mapStatus(status: string | undefined): number {
   }
 }
 
-function commandMessage(status: string | undefined, fallback: string, reason?: string): string {
+function commandMessage(operation: PackOperation, status: string | undefined, reason?: string): string {
   if (status === "unauthorized") return "Your session has ended. Please sign in again."
-  if (status === "conflict") return "That pack is not available. Reload the case before trying again."
-  if (status === "denied") {
-    if (reason === "unpaid" || reason === "receipt" || reason === "refunded") return "This Guided pack cannot be sent until the upfront payment is settled and the receipt is on the case."
-    if (reason === "authority") return "This Guided pack cannot be sent until the customer's authority is verified."
-    if (reason === "order") return "This Guided pack cannot be sent until the accepted Guided order matches this case."
-    return "That action is not allowed for this pack."
-  }
+  if (status === "conflict") return PACK_COMMAND_CONFLICT
+  if (status === "denied") return packDeniedMessage(operation, reason)
   if (status === "invalid") return "Check the fields before saving."
-  return fallback
+  return PACK_COMMAND_UNCERTAIN
+}
+
+function safeErrorName(error: unknown): string {
+  const name = error instanceof Error ? error.name : ""
+  return /^[A-Za-z0-9_]+$/.test(name) ? name : "Error"
 }
 
 const successMessage: Record<PackOperation, string> = {
@@ -72,6 +73,7 @@ export async function packCommand(request: NextRequest) {
   const token = request.cookies.get(sessionCookie)?.value, key = request.headers.get("idempotency-key")
   if (!validToken(token)) return reply("Please sign in again.", 401)
   if (!isUuid(key)) return reply("Reload the form and try again.", 400)
+  let operation: PackOperation | null = null
   try {
     const parsed = await readJson(request)
     if (parsed instanceof NextResponse) return parsed
@@ -79,7 +81,7 @@ export async function packCommand(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body) || typeof (body as { operation?: unknown }).operation !== "string" || !packOperations.includes((body as { operation: PackOperation }).operation)) {
       return reply("Check the fields before saving.", 400)
     }
-    const operation = (body as { operation: PackOperation }).operation
+    operation = (body as { operation: PackOperation }).operation
     const args = packArgs(operation, body)
     if (!args) return reply("Check the fields before saving.", 400)
     let email: Record<string, unknown> = {}
@@ -148,14 +150,20 @@ export async function packCommand(request: NextRequest) {
       p_operation: operation,
       p_data: payload,
     })
-    if (result.status !== "success") return reply(commandMessage(result.status, "The prepared pack could not be updated.", result.reason), mapStatus(result.status))
+    if (result.status !== "success") return reply(commandMessage(operation, result.status, result.reason), mapStatus(result.status))
     const message = operation === "send_pack_email" && result.packEmail === "already_queued"
       ? "The pack notification was already queued. Another copy was not sent."
       : successMessage[operation]
     return reply(message, 200, {
       id: result.id, packNumber: result.packNumber, packStatus: result.packStatus, recordVersion: result.recordVersion, itemId: result.itemId,
     })
-  } catch {
-    return reply("We couldn’t confirm the change. Reload the case before trying again.", 503)
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "pack_command_uncertain",
+      operation,
+      correlationId: key,
+      errorName: safeErrorName(error),
+    }))
+    return reply(PACK_COMMAND_UNCERTAIN, 503, { correlationId: key })
   }
 }

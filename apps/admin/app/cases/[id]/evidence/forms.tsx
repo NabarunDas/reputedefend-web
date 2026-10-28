@@ -11,6 +11,7 @@ import {
   PACK_APPROVAL_WARNING, PACK_CONFIRMATION, PACK_PUBLISH_CONFIRMATION, PACK_PUBLISH_WARNING, PACK_STALE_WARNING, packStatusTone,
   type EligiblePackVersion, type PreparedPack, type PreparedPackCase,
 } from "@/lib/packs/model"
+import { PACK_PUBLISH_ELIGIBILITY_UNKNOWN, PACK_PUBLISH_WILL_SHARE, packPublicationBlockMessage } from "@/lib/packs/publication"
 
 const endpoint = "/api/evidence/command"
 const time = (form: FormData, name: string) => form.get(name) ? new Date(`${form.get(name)}:00Z`).toISOString() : null
@@ -324,8 +325,12 @@ export function ApprovePackForm({ caseId, pack }: { caseId: string; pack: Prepar
   </div>
 }
 
-function packPublishable(pack: PreparedPack) {
-  return pack.status === "APPROVED" && pack.items.length > 0 && pack.items.every(item => item.customerVisible !== false)
+function publicationHold(pack: PreparedPack): string | null {
+  if (pack.publicationBlock === undefined) return PACK_PUBLISH_ELIGIBILITY_UNKNOWN
+  if (pack.publicationBlock) return packPublicationBlockMessage(pack.publicationBlock)
+  if (pack.items.length === 0) return packPublicationBlockMessage("empty")
+  if (pack.items.some(item => item.shareable === false)) return packPublicationBlockMessage("version")
+  return null
 }
 
 const PACK_FILE_CONFIRMATION = "I confirm these exact files are suitable for this customer to access."
@@ -335,19 +340,24 @@ export function PublishPackForm({ caseId, pack }: { caseId: string; pack: Prepar
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { if (open) heading.current?.focus() }, [open])
   if (!open) return <button type="button" aria-expanded="false" onClick={() => setOpen(true)}>Review and publish pack</button>
+  const hold = publicationHold(pack)
+  const willShare = hold === null && pack.items.some(item => item.customerVisible !== true)
   return <div className="pack-review" role="region" aria-label="Review pack before publishing">
     <h4 ref={heading} tabIndex={-1}>Files that will be shared</h4>
-    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Publish pack" payload={form => ({
+    <PackFileInventory pack={pack} />
+    <p className="notice-warning">Check every file in this list. This screen does not decide whether a file name is safe to share.</p>
+    {hold ? <>
+      <p id="pack-publish-block" className="notice-danger" role="alert">{hold}</p>
+      <button type="button" disabled aria-describedby="pack-publish-block">Publish pack</button>
+    </> : <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Publish pack" payload={form => ({
       operation: "publish", caseId, packId: pack.id, recordVersion: pack.recordVersion, note: form.get("note"), confirmed: form.get("confirmed") === "true",
     })}>
-      <PackFileInventory pack={pack} />
-      <p className="notice-warning">Check every file in this list. This screen does not decide whether a file name is safe to share.</p>
-      {!packPublishable(pack) && <p className="notice-danger">Every included version must be accepted, clean, valid and customer-visible before publication.</p>}
+      {willShare && <p>{PACK_PUBLISH_WILL_SHARE}</p>}
       <p>{PACK_PUBLISH_WARNING}</p>
       <Reason name="note" label="Publication note" maxLength={2000} />
       <label className="checkbox"><input type="checkbox" name="filesSuitable" value="true" required />{PACK_FILE_CONFIRMATION}</label>
       <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />{PACK_PUBLISH_CONFIRMATION}</label>
-    </CommandForm>
+    </CommandForm>}
   </div>
 }
 

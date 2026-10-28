@@ -203,7 +203,7 @@ describe("evidence forms", () => {
       id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "APPROVED",
       approvalNote: "This exact evidence selection is the prepared pack for internal use.",
       createdAt: "2026-09-18T10:00:00.000Z", approvedAt: "2026-09-18T11:00:00.000Z", recordVersion: 3,
-      published: false, items: [item],
+      published: false, publicationBlock: null, items: [item],
     }
     render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [approved], eligible: [] }} />)
     expect(screen.getByText("Approved — not yet shared with customer")).toBeTruthy()
@@ -245,7 +245,7 @@ describe("prepared pack publication actions", () => {
     return {
       id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "APPROVED",
       approvalNote: "Selected evidence only.", createdAt: "2026-09-18T10:00:00.000Z",
-      approvedAt: "2026-09-18T11:00:00.000Z", recordVersion: 4, published: false, items: [item, second],
+      approvedAt: "2026-09-18T11:00:00.000Z", recordVersion: 4, published: false, publicationBlock: null, items: [item, second],
       ...overrides,
     }
   }
@@ -286,11 +286,31 @@ describe("prepared pack publication actions", () => {
     expect(request.headers["idempotency-key"]).toEqual(expect.any(String))
   })
 
-  it("warns when a listed file cannot be published and still does not submit", () => {
-    show([pack({ items: [{ ...item, customerVisible: false }] })])
+  it("explains that publishing will share files which are not visible yet", () => {
+    show([pack({ items: [{ ...item, customerVisible: false, shareable: true }, { ...second, customerVisible: false, shareable: true }] })])
     fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
-    expect(screen.getByText("Every included version must be accepted, clean, valid and customer-visible before publication.")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Publish pack" })).toBeTruthy()
+    expect(screen.getByText("Publishing makes these exact files available in the customer portal. Staff do not mark each file visible separately.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Publish pack" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Prepare a replacement draft" })).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Evidence & Documents/i)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("disables publication when eligibility is missing or a real blocker is known", () => {
+    show([pack({ publicationBlock: undefined })])
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("Eligibility could not be confirmed")
+    expect(screen.getByRole("button", { name: "Publish pack" })).toBeDisabled()
+    expect(screen.queryByRole("checkbox")).toBeNull()
+    expect(screen.getByRole("button", { name: "Prepare a replacement draft" })).toBeTruthy()
+    expect(fetchMock).not.toHaveBeenCalled()
+    cleanup()
+    show([pack({ publicationBlock: "version", items: [{ ...item, customerVisible: false, shareable: false }] })])
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("A listed file is not a clean, accepted version")
+    expect(screen.getByRole("button", { name: "Publish pack" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Prepare a replacement draft" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Publish pack" }))
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

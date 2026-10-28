@@ -30,7 +30,8 @@ export type PreparedPackItem = {
   sizeBytes: number
   versionNumber: number
   customerVisible?: boolean
-  role?: "DELIVERABLE" | "EVIDENCE" | "INSTRUCTIONS"
+  shareable?: boolean
+  role?: "DELIVERABLE" | "EVIDENCE" | "INSTRUCTIONS" | null
 }
 
 export type PreparedPack = {
@@ -46,6 +47,7 @@ export type PreparedPack = {
   publicationNote?: string
   unpublishedAt?: string | null
   unpublishedReason?: string
+  publicationBlock?: string | null
   items: PreparedPackItem[]
 }
 

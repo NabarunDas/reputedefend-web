@@ -167,7 +167,7 @@ export default async function CaseJourneyPage({
     authorityRecordsDisagree: brief.authority === "records_disagree",
   }) : null
   const preparationOpen = selected?.id === "PREPARATION" && selected.state !== "LOCKED" && selected.state !== "NOT_APPLICABLE"
-  const preparation = preparationOpen ? await loadJourneyPreparation(facts, journeyOptions.recordConflict || journeyOptions.emailRecordsDisagree || journeyOptions.authorityRecordsDisagree) : null
+  const preparation = preparationOpen ? await loadJourneyPreparation(journeyFacts, journeyOptions.recordConflict || journeyOptions.emailRecordsDisagree || journeyOptions.authorityRecordsDisagree) : null
   if (preparation?.disagreed) {
     journey = presentCaseJourney(journeyFacts, now, events, { ...journeyOptions, packRecordsDisagree: true })
   }

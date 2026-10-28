@@ -311,6 +311,192 @@ describe("the case journey route", () => {
     expect(getPreparedPackCase).not.toHaveBeenCalled()
   })
 
+  it("offers an accepted staff upload on Step 8 from the evidence record, not the unenriched projection", async () => {
+    allowPreview()
+    records()
+    const versionId = "da34e42a-64eb-4bec-9e83-2cd4f0c8788f"
+    const documentId = "99999999-9999-4999-8999-999999999991"
+    const customerVersionId = "99999999-9999-4999-8999-999999999992"
+    const customerDocumentId = "99999999-9999-4999-8999-999999999993"
+    const requestId = "99999999-9999-4999-8999-999999999994"
+    const stamp = "2026-05-01T12:00:00.000Z"
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    recordDetail.mockImplementation(async (entity: string) => ({
+      record: entity === "client"
+        ? { id: "client", name: "Alex Mercer", email: "alex@example.com", phone: null, emailVerified: true, version: 1 }
+        : entity === "business"
+          ? { id: "business", name: "Mercer Bakery", website: null, version: 1 }
+          : { id: "location", name: "High Street", country: "United Kingdom", profileUrl: null, version: 1 },
+      memberships: [],
+      submittedBusinesses: [],
+      duplicates: [],
+      work: [],
+    }))
+    getMembership.mockResolvedValue({ status: "verified" })
+    getCase.mockResolvedValue(caseDetail({ stage: "PREPARATION", track: "GUIDED", status: "UNDER_REVIEW" }))
+    loadCaseFlowFacts.mockResolvedValue({
+      ...facts(),
+      technicalStage: "PREPARATION",
+      caseStatus: "UNDER_REVIEW",
+      serviceTrack: "GUIDED",
+      allowedTransitions: ["READY_TO_SUBMIT"],
+      authorization: {
+        ...facts().authorization,
+        membershipStatus: "verified",
+        customerEmailVerified: true,
+        businessAuthorityVerified: true,
+      },
+      payment: {
+        complete: true,
+        orders: [{
+          orderId: "88888888-8888-4888-8888-888888888888",
+          paymentModel: "UPFRONT",
+          orderState: "ACCEPTED_AWAITING_PAYMENT",
+          obligationKind: "UPFRONT",
+          obligationState: "PAID",
+          setupReady: false,
+          consentRecorded: false,
+          receiptRecorded: true,
+        }],
+      },
+      evidence: {
+        requests: [{ id: requestId, status: "FULFILLED", dueAt: null, createdAt: stamp }],
+        versions: [
+          {
+            documentId,
+            versionId,
+            evidenceRequestId: null,
+            uploadStatus: "UPLOADED",
+            scanStatus: "NO_THREATS_FOUND",
+            validationStatus: "VALID",
+            reviewStatus: "ACCEPTED",
+          },
+          {
+            documentId: customerDocumentId,
+            versionId: customerVersionId,
+            evidenceRequestId: requestId,
+            uploadStatus: "UPLOADED",
+            scanStatus: "NO_THREATS_FOUND",
+            validationStatus: "VALID",
+            reviewStatus: "ACCEPTED",
+          },
+        ],
+      },
+      packs: {
+        packs: [{ id: "pack-1", packNumber: 1, status: "DRAFT", published: false, everPublished: false, itemCount: 0 }],
+        eligibleCount: 2,
+      },
+    })
+    getEvidenceCase.mockResolvedValue({
+      caseId: CASE_ID,
+      reference: "PR-1042",
+      requests: [{ id: requestId, title: "Ownership letter", instructions: "", status: "FULFILLED", dueAt: null, createdAt: stamp, fulfilledAt: stamp, version: 1 }],
+      documents: [
+        {
+          id: documentId,
+          title: "How to submit",
+          evidenceRequestId: null,
+          createdAt: stamp,
+          updatedAt: stamp,
+          version: 1,
+          versions: [{
+            id: versionId,
+            versionNumber: 1,
+            originalFilename: "How to submit.docx",
+            contentType: docx,
+            sizeBytes: 4096,
+            uploadStatus: "UPLOADED",
+            scanStatus: "NO_THREATS_FOUND",
+            validationStatus: "VALID",
+            validationError: null,
+            reviewStatus: "ACCEPTED",
+            reviewNote: null,
+            customerVisible: true,
+            createdAt: stamp,
+            uploadedAt: stamp,
+            validatedAt: stamp,
+            reviewedAt: stamp,
+            recordVersion: 1,
+            submissionSource: "ADMIN",
+          }],
+        },
+        {
+          id: customerDocumentId,
+          title: "Ownership letter",
+          evidenceRequestId: requestId,
+          createdAt: stamp,
+          updatedAt: stamp,
+          version: 1,
+          versions: [{
+            id: customerVersionId,
+            versionNumber: 1,
+            originalFilename: "ownership.pdf",
+            contentType: "application/pdf",
+            sizeBytes: 2048,
+            uploadStatus: "UPLOADED",
+            scanStatus: "NO_THREATS_FOUND",
+            validationStatus: "VALID",
+            validationError: null,
+            reviewStatus: "ACCEPTED",
+            reviewNote: null,
+            customerVisible: true,
+            createdAt: stamp,
+            uploadedAt: stamp,
+            validatedAt: stamp,
+            reviewedAt: stamp,
+            recordVersion: 1,
+            submissionSource: "CUSTOMER",
+          }],
+        },
+      ],
+    })
+    getPreparedPackCase.mockResolvedValue({
+      caseId: CASE_ID,
+      packs: [{
+        id: "pack-1",
+        packNumber: 1,
+        status: "DRAFT",
+        approvalNote: "",
+        createdAt: stamp,
+        approvedAt: null,
+        recordVersion: 2,
+        published: false,
+        items: [],
+      }],
+      eligible: [
+        {
+          documentId,
+          versionId,
+          versionNumber: 1,
+          documentTitle: "How to submit",
+          originalFilename: "How to submit.docx",
+          contentType: docx,
+          sizeBytes: 4096,
+        },
+        {
+          documentId: customerDocumentId,
+          versionId: customerVersionId,
+          versionNumber: 1,
+          documentTitle: "Ownership letter",
+          originalFilename: "ownership.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 2048,
+        },
+      ],
+    })
+    render(await CaseJourneyPage({
+      params: Promise.resolve({ id: CASE_ID }),
+      searchParams: Promise.resolve({ step: "PREPARATION" }),
+    }))
+    expect(document.querySelector("[data-step='PREPARATION']")).not.toHaveAttribute("data-state", "LOCKED")
+    expect(screen.getByRole("heading", { name: "Eligible accepted evidence" })).toBeInTheDocument()
+    expect(screen.getByText(/How to submit\.docx/)).toBeInTheDocument()
+    expect(screen.getByText(/ownership\.pdf/)).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Add to pack" })).toHaveLength(2)
+    expect(screen.queryByText(/A listed file is not an accepted, validated, clean version/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Submit to Google|Send email|Mark as paid/i })).toBeNull()
+  })
+
   it("keeps submission tracking closed until the earlier steps are recorded", async () => {
     allowPreview()
     records()

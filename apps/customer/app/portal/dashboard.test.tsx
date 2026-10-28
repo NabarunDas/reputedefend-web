@@ -38,7 +38,8 @@ afterEach(cleanup)
 describe("customer dashboard", () => {
   it("shows the no-case copy and only the three summary terms", () => {
     render(<PortalHome dashboard={dashboard()} />)
-    expect(screen.getByRole("heading", { level: 1, name: "Welcome to My ProfileRelaunch" })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome back" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Tell us about your business" })).toHaveAttribute("href", "https://profilerelaunch.com/get-help")
     expect(screen.getByRole("heading", { level: 2, name: "No active cases" })).toBeTruthy()
     expect(screen.getByText("When you start a ProfileRelaunch case, it will appear here.")).toBeTruthy()
     const terms = screen.getAllByRole("term").map(item => item.textContent)
@@ -101,17 +102,8 @@ describe("customer dashboard", () => {
     expect(screen.getAllByText("Requested by 8 October 2026").length).toBeGreaterThan(0)
     expect(screen.getByRole("link", { name: "View all active cases" })).toHaveAttribute("href", "/portal/cases?view=active")
     expect(screen.getAllByRole("list").length).toBeGreaterThan(0)
-    const recent = screen.getByRole("heading", { name: "Your cases" }).parentElement
-    expect(recent?.querySelectorAll("article")).toHaveLength(3)
-    expect(screen.getByRole("link", { name: "View all cases" })).toHaveAttribute("href", "/portal/cases?view=all")
-    const cardLinks = [...(recent?.querySelectorAll(".case-list a") ?? [])]
-    expect(cardLinks.map(link => link.getAttribute("href"))).toEqual([
-      "/portal/cases/PR-26-AAAAA2/documents",
-      "/portal/cases/PR-26-AAAAA2",
-      "/portal/cases/PR-26-AAAAA3",
-      "/portal/cases/PR-26-AAAAA4",
-    ])
-    expect(cardLinks.every(link => !link.getAttribute("href")?.match(/[0-9a-f]{8}-[0-9a-f]{4}/))).toBe(true)
+    expect(screen.queryByRole("heading", { name: "Your cases" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "View all cases" })).toBeNull()
   })
 
   it("keeps previous cases visible when nothing is active", () => {

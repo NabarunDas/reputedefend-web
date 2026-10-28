@@ -1,4 +1,4 @@
-import { pricingGroups } from "@/lib/pricing"
+import { pricingGroups } from "./pricing"
 
 function readGuardPrice() {
   const price = pricingGroups.find((group) => group.id === "relaunch-guard")?.items[0]?.price

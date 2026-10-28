@@ -41,16 +41,18 @@ describe("messages page", () => {
   it("lists a customer-safe conversation and marks Messages in the navigation", () => {
     render(<PortalLayout><MessagesView page={page([thread()])} earlier={false} /></PortalLayout>)
     expect(screen.getByRole("heading", { level: 1, name: "Messages" })).toBeTruthy()
-    expect(screen.getByRole("heading", { level: 2, name: longSubject })).toBeTruthy()
-    expect(screen.getByText("Open conversation")).toBeTruthy()
-    expect(screen.getByText("Case PR-26-ABCDEF")).toBeTruthy()
-    expect(screen.getByText("Harbour Bakery, High Street")).toBeTruthy()
-    expect(screen.getByText("Plain update for you.")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "View conversation" })).toHaveAttribute("href", `/portal/messages/${selector}`)
+    const row = screen.getByRole("link", { name: new RegExp(longSubject) })
+    expect(row).toHaveAttribute("href", `/portal/messages/${selector}`)
+    expect(row).toHaveTextContent("View message")
+    expect(row.querySelector(".message-chevron")).toBeTruthy()
+    expect(row).not.toHaveTextContent("Open conversation")
+    expect(row).toHaveTextContent("Case PR-26-ABCDEF")
+    expect(row).toHaveTextContent("Harbour Bakery, High Street")
+    expect(row).toHaveTextContent("4 Sept 2026, 13:00")
+    expect(screen.queryByText("Plain update for you.")).toBeNull()
     expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByText(/email received from the verified email address on your ProfileRelaunch account/)).toBeTruthy()
     expect(screen.queryByText(/email you sent/i)).toBeNull()
-    expect(screen.getByText(/This page does not send messages/)).toBeTruthy()
+    expect(screen.queryByText(/This page does not send messages/)).toBeNull()
     expect(screen.queryByRole("textbox")).toBeNull()
     expect(screen.queryByRole("button", { name: /reply|send/i })).toBeNull()
     expect(document.body.innerHTML).not.toContain("dangerouslySetInnerHTML")
@@ -109,8 +111,34 @@ describe("messages page", () => {
     expect(screen.queryByRole("heading", { name: "You" })).toBeNull()
     expect(screen.getByText("Thanks, this is my reply.")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/authenticated sender|confirmed sender|confirmed customer|verified sender|sent by you|MATCHES_VERIFIED_CONTACT/i)
+    expect(screen.getByText("To reply, use the email ProfileRelaunch sent you.")).toBeTruthy()
     expect(screen.getByText("Earlier messages in this conversation are not shown here.")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/\b(read|seen|opened)\b/i)
+  })
+
+  it("keeps the stored subject and body on the message page", () => {
+    const stored = "Payment received for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"
+    const requested = "Payment requested for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"
+    render(<MessageView thread={{
+      ...thread({ subject: stored, state: "Message from ProfileRelaunch" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch", at, subject: stored, body: "We recorded your payment of £99.00.\n\nThis message is the full stored text.", delivery: null }],
+    }} />)
+    expect(screen.getByRole("heading", { level: 1, name: "Payment received for your Guided Relaunch" })).toBeTruthy()
+    expect(screen.getByText(stored)).toBeTruthy()
+    expect(screen.getByText(/We recorded your payment of £99\.00/)).toBeTruthy()
+    expect(screen.getByText("This message is the full stored text.")).toBeTruthy()
+    expect(screen.getByText("4 Sept 2026, 13:00")).toBeTruthy()
+    expect(screen.queryByRole("textbox")).toBeNull()
+    cleanup()
+    render(<MessageView thread={{
+      ...thread({ subject: requested, state: "Message from ProfileRelaunch" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch", at, subject: requested, body: "A payment is requested.", delivery: null }],
+    }} />)
+    expect(screen.getByRole("heading", { level: 1, name: "Payment requested for your Guided Relaunch" })).toBeTruthy()
+    expect(screen.getByText(requested)).toBeTruthy()
+    expect(screen.queryByText(stored)).toBeNull()
     expect(screen.queryByRole("textbox")).toBeNull()
   })
 })

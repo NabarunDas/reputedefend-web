@@ -8,11 +8,10 @@ import {
   moneyLabel,
   obligationDetail,
   obligationHeadline,
-  paidOn,
-  taxNote,
   trackLabel,
 } from "@/lib/portal/payments/model"
 import type { PaymentAction, PaymentCase, PaymentObligation, PaymentOrder } from "@/lib/portal/payments/parse"
+import { formatPortalDate } from "@/lib/portal/cases/model"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
 
 type Operation = "confirm_consent" | "start_checkout" | "refresh_checkout"
@@ -24,7 +23,6 @@ function actionFor(actions: PaymentAction[], kind: PaymentAction["kind"], orderR
 export function PaymentsUnavailable() {
   return (
     <div className="payments-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load payments</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>
@@ -100,7 +98,6 @@ export function PaymentsView({
           </ol>
         </nav>
       ) : null}
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>{title}</h1>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
       {cases.length === 0 ? <p>You don&apos;t have any payments yet.</p> : null}
@@ -179,14 +176,17 @@ function OrderSection({
       <h3>{order.serviceName}</h3>
       <p className="payments-order-ref">Order {order.orderRef}</p>
       <p className="payments-amount">{moneyLabel(order.amountMinor, order.currency)}</p>
-      {order.paymentModel === "UPFRONT" ? <p>One-time payment</p> : null}
-      <p>{priceNote}</p>
-      {order.paymentModel === "SUCCESS_FEE" ? (
-        <div className="payments-authority">
-          <h4>Managed service payment</h4>
-          <p>The Managed success fee is invoiced only after documented success. Saving a card for an off-session charge is not available, and no card is charged automatically.</p>
-        </div>
-      ) : null}
+      <details className="portal-more">
+        <summary>Payment notes</summary>
+        {order.paymentModel === "UPFRONT" ? <p>One-time payment</p> : null}
+        <p>{priceNote}</p>
+        {order.paymentModel === "SUCCESS_FEE" ? (
+          <div className="payments-authority">
+            <h4>Managed service payment</h4>
+            <p>The Managed success fee is invoiced only after documented success. Saving a card for an off-session charge is not available, and no card is charged automatically.</p>
+          </div>
+        ) : null}
+      </details>
       {order.obligations.map((obligation, index) => (
         <ObligationBlock
           key={`${order.orderRef}-${obligation.kind}-${index}`}
@@ -205,10 +205,11 @@ function OrderSection({
           <ul className="document-list">
             {order.receipts.map(receipt => (
               <li key={receipt.selector}>
-                <p>{moneyLabel(receipt.amountMinor, receipt.currency)} · {paidOn(receipt.paidAt)}</p>
-                <p>{taxNote(receipt.taxBehaviour)}</p>
-                <p><a href={`/portal/payments/receipt?selector=${receipt.selector}`}>View receipt for {order.orderRef}</a></p>
-                <p><a href={`/api/portal/payments/receipt?selector=${receipt.selector}`}>Download receipt for {order.orderRef}</a></p>
+                <p className="payments-paid-line">Paid {moneyLabel(receipt.amountMinor, receipt.currency)} · {formatPortalDate(receipt.paidAt)}</p>
+                <p className="portal-actions">
+                  <a className="portal-button" href={`/portal/payments/receipt?selector=${receipt.selector}`}>View receipt for {order.orderRef}</a>
+                  <a className="portal-button secondary" href={`/api/portal/payments/receipt?selector=${receipt.selector}`}>Download receipt for {order.orderRef}</a>
+                </p>
               </li>
             ))}
           </ul>

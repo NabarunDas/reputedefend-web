@@ -11,7 +11,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <div className="portal-context">
         <div className="portal-context-copy">
           <p className="portal-context-title">My ProfileRelaunch</p>
-          <p className="portal-context-note">Secure customer area</p>
         </div>
         <SignOutButton />
       </div>

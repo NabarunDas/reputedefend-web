@@ -32,7 +32,7 @@ export function CustomerHeader() {
           />
         </a>
         {portal ? (
-          <p className="customer-header-context">Secure customer area</p>
+          <p className="customer-header-context">Your account</p>
         ) : (
           <a className="customer-header-return" href={marketingOrigin}>Back to ProfileRelaunch</a>
         )}

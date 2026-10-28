@@ -7,7 +7,6 @@ import { GuidedHandoverForm } from "./handover-form"
 export function CaseDocumentsUnavailable() {
   return (
     <div className="documents-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load documents for this case</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal/cases">Back to cases</a></p>
@@ -27,7 +26,6 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
           <li aria-current="page">Documents and evidence</li>
         </ol>
       </nav>
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <p className="case-ref">{item.reference}</p>
       <h1>Documents and evidence</h1>
       <p className="case-business">{item.businessName}</p>

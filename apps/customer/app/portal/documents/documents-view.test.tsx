@@ -107,7 +107,7 @@ describe("documents pages", () => {
     render(<PortalLayout><DocumentsView documents={documents} /></PortalLayout>)
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
     expect(screen.getByRole("heading", { level: 1, name: "Documents" })).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Evidence we need from you" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Action needed" })).toBeTruthy()
     expect(screen.getAllByRole("heading", { name: "Proof of control" }).length).toBeGreaterThan(0)
     expect(screen.getByText("Upload the document that shows you control the profile.")).toBeTruthy()
     expect(screen.getByText("Requested by 8 October 2026")).toBeTruthy()
@@ -119,7 +119,8 @@ describe("documents pages", () => {
     expect(screen.getByText("Accepted")).toBeTruthy()
     expect(screen.getByText("We need another document")).toBeTruthy()
     expect(screen.getAllByText("Submitted 4 October 2026").length).toBeGreaterThan(0)
-    expect(screen.getByRole("heading", { name: "Documents from ProfileRelaunch" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Submitted" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Ready for you" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Download letter.pdf" })).toHaveAttribute(
       "href",
       "/api/portal/documents/download?reference=PR-26-ABCDEF&selector=pd-1",

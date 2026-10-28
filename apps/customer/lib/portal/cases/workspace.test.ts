@@ -56,12 +56,12 @@ describe("customer progress presentation", () => {
     expect(presentProgress("CANCELLED", "FINISHED")).toBeNull()
     const progress = presentProgress("UNDER_REVIEW", "SERVICE_SELECTION")
     expect(progress?.map(step => step.text)).toEqual([
-      "Case received — earlier step",
-      "Information — earlier step",
-      "Service setup — current step",
-      "Preparing your case — upcoming step",
-      "Submitted to Google — upcoming step",
-      "Decision — upcoming step",
+      "Case received. Completed.",
+      "Information. Completed.",
+      "Service setup. Now.",
+      "Preparing your case. Upcoming.",
+      "Submitted to Google. Upcoming.",
+      "Decision. Upcoming.",
     ])
     expect(progress?.find(step => step.position === "current")?.code).toBe("SERVICE_SETUP")
     const source = readFileSync(new URL("./workspace.ts", import.meta.url), "utf8")
@@ -69,6 +69,41 @@ describe("customer progress presentation", () => {
     expect(source).toContain("If the authoritative case moves backward")
     expect(source).not.toMatch(/\.rpc\(|insert into|update public/i)
     expect(customerProgressStep("UNDER_REVIEW", "INITIAL_REVIEW")).toBe(customerProgressStep("UNDER_REVIEW", "INITIAL_REVIEW"))
+  })
+
+  it("keeps a Guided preparation journey free of a mandatory Google decision", () => {
+    const preparing = presentProgress("UNDER_REVIEW", "PREPARATION", { serviceTrack: "GUIDED" })
+    expect(preparing?.map(step => step.text)).toEqual([
+      "Case received. Completed.",
+      "Information. Completed.",
+      "Service setup. Completed.",
+      "Preparing your pack. Now.",
+      "Pack ready for you. Upcoming.",
+    ])
+    const ready = presentProgress("UNDER_REVIEW", "READY_TO_SUBMIT", { serviceTrack: "GUIDED" })
+    expect(ready?.find(step => step.position === "current")?.label).toBe("Pack ready for you")
+    expect(ready?.some(step => step.code === "SUBMITTED" || step.code === "DECISION")).toBe(false)
+    const handedOver = presentProgress("CLOSED", "FINISHED", { serviceTrack: "GUIDED", outcomeCode: null })
+    expect(handedOver?.find(step => step.position === "current")?.code).toBe("HANDOVER")
+    expect(handedOver?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
+    expect(customerProgressStep("CLOSED", "FINISHED", "GUIDED")).toBe("HANDOVER")
+    expect(customerProgressStep("CLOSED", "INITIAL_REVIEW", "GUIDED")).toBe("RECEIVED")
+    const submitted = presentProgress("UNDER_REVIEW", "SUBMITTED", { serviceTrack: "GUIDED" })
+    expect(submitted?.find(step => step.position === "current")?.label).toBe("Submission recorded")
+    expect(submitted?.some(step => step.code === "DECISION")).toBe(false)
+    const decided = presentProgress("CLOSED", "FINISHED", {
+      serviceTrack: "GUIDED",
+      outcomeCode: "RESTORED",
+      timeline: [{ code: "SUBMITTED_TO_GOOGLE" }],
+    })
+    expect(decided?.find(step => step.position === "current")?.code).toBe("DECISION")
+    expect(decided?.find(step => step.code === "SUBMISSION")?.position).toBe("earlier")
+    const decisionWithoutSubmission = presentProgress("CLOSED", "FINISHED", {
+      serviceTrack: "GUIDED",
+      timeline: [{ code: "GOOGLE_DECISION_RECORDED" }],
+    })
+    expect(decisionWithoutSubmission?.some(step => step.code === "SUBMISSION")).toBe(false)
+    expect(decisionWithoutSubmission?.find(step => step.position === "current")?.code).toBe("DECISION")
   })
 })
 
@@ -118,8 +153,30 @@ describe("what happens next", () => {
       body: "We've received your request and are reviewing the information you provided.",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "PREPARATION" })).toMatchObject({
-      title: "We're working on your case",
+      title: "We're preparing your case",
       body: "Nothing is needed from you right now. We'll let you know when that changes.",
+    })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "PREPARATION", serviceTrack: "GUIDED" })).toMatchObject({
+      title: "We're preparing your pack",
+      body: "Nothing is needed from you right now. We'll let you know when your pack is ready.",
+      href: null,
+    })
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "READY_TO_SUBMIT", serviceTrack: "GUIDED" })).toMatchObject({
+      title: "Your pack is ready",
+      body: "Your preparation is ready. The pack will appear here when it is available for you.",
+      href: null,
+      actionLabel: null,
+    })
+    expect(presentNextStep({
+      ...base,
+      status: "UNDER_REVIEW",
+      workStage: "READY_TO_SUBMIT",
+      serviceTrack: "GUIDED",
+      packHref: "/portal/cases/PR-26-ABCDEF/documents",
+    })).toMatchObject({
+      title: "Your pack is ready",
+      href: "/portal/cases/PR-26-ABCDEF/documents",
+      actionLabel: "Open your pack",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED" })).toMatchObject({
       title: "Your case has been submitted",
@@ -194,8 +251,13 @@ describe("what happens next", () => {
     })
     expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", serviceTrack: "GUIDED" })).toMatchObject({
       title: "Your Guided preparation is complete",
+      body: "Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.",
+      href: null,
     })
-    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED", serviceTrack: "GUIDED" }).body).toMatch(/does not submit it/)
+    expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED", serviceTrack: "GUIDED" })).toMatchObject({
+      title: "A submission has been recorded",
+      body: "We've recorded that this pack was sent to Google. That record is not a decision from Google.",
+    })
     expect(presentNextStep({ ...base, status: "CANCELLED", workStage: "FINISHED" })).toMatchObject({
       title: "This case was cancelled",
       body: "No further action is currently available for this case.",
@@ -233,7 +295,7 @@ describe("timeline wording", () => {
       { code: "CASE_RECEIVED", occurredAt: submittedAt },
     ]))
     expect(presented.map(item => item.message).join(" ")).not.toMatch(/CASE_|actor|review_note|_/)
-    expect(presented[1].dateLabel).toBe("3 October 2026")
+    expect(presented[1].dateLabel).toBe("3 Oct 2026, 13:00")
   })
 
   it("keeps an earlier Google decision when the case is later withdrawn", () => {
@@ -261,10 +323,10 @@ describe("timeline wording", () => {
 describe("case detail rows", () => {
   it("omits an empty location, an undecided service, and a missing closed date", () => {
     const rows = presentDetailRows(detail({ locationName: null, serviceTrack: "UNDECIDED", closedAt: null }))
-    expect(rows.map(row => row.term)).toEqual(["Reference", "Service", "Business", "Started"])
+    expect(rows.map(row => row.term)).toEqual(["Reference", "Business", "Case", "Status", "Started"])
     const closed = presentDetailRows(detail({ closedAt, locationName: "High Street" }))
-    expect(closed.map(row => row.term)).toEqual(["Reference", "Service", "Business", "Location", "Service type", "Started", "Closed"])
+    expect(closed.map(row => row.term)).toEqual(["Reference", "Business", "Location", "Case", "Arrangement", "Status", "Started", "Closed"])
     expect(closed.find(row => row.term === "Closed")?.value).toBe("8 October 2026")
-    expect(closed.find(row => row.term === "Service type")?.value).toBe("Managed service")
+    expect(closed.find(row => row.term === "Arrangement")?.value).toBe("Managed service")
   })
 })

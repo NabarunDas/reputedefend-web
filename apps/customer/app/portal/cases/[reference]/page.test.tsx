@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
 const load = vi.hoisted(() => vi.fn())
+const payments = vi.hoisted(() => vi.fn())
 const gate = vi.hoisted(() => vi.fn(() => true))
 
 vi.mock("next/navigation", () => ({
@@ -13,6 +14,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/portal/config", () => ({ portalAvailable: gate }))
 vi.mock("@/lib/portal/cases/queries", () => ({ loadCustomerCase: load }))
+vi.mock("@/lib/portal/payments/queries", () => ({ loadCustomerCasePayments: payments }))
 
 const submittedAt = "2026-10-03T09:00:00.000Z"
 const ready = {
@@ -42,6 +44,8 @@ const closedAt = "2026-10-08T09:00:00.000Z"
 describe("customer case page", () => {
   beforeEach(() => {
     load.mockReset()
+    payments.mockReset()
+    payments.mockResolvedValue({ status: "unavailable" })
     gate.mockReset()
     gate.mockReturnValue(true)
   })

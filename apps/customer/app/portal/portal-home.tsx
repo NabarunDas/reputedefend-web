@@ -1,11 +1,11 @@
 import { CaseSummary } from "./case-summary"
 import { attentionIntro, calmActiveCopy, presentCase } from "@/lib/portal/cases/model"
 import type { CustomerDashboard } from "@/lib/portal/cases/parse"
+import { brandSiteUrl } from "../../../../lib/brand"
 
 export function PortalUnavailable() {
   return (
     <div className="portal-dashboard">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load your customer space</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
     </div>
@@ -14,13 +14,13 @@ export function PortalUnavailable() {
 
 export function PortalHome({ dashboard }: { dashboard: CustomerDashboard }) {
   const attention = dashboard.attentionCases.map(presentCase)
-  const recent = dashboard.recentCases.map(presentCase)
+  const attentionRefs = new Set(attention.map(item => item.reference))
+  const recent = dashboard.recentCases.map(presentCase).filter(item => !attentionRefs.has(item.reference))
   const { activeCases, attentionCases, previousCases } = dashboard.summary
   return (
     <div className="portal-dashboard">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
-      <h1>Welcome to My ProfileRelaunch</h1>
-      <p className="lead">See what needs your attention and where your cases stand.</p>
+      <h1>Welcome back</h1>
+      <p className="lead">Here is where your cases stand, and the one step that needs you when there is one.</p>
 
       {attentionCases > 0 ? (
         <section className="attention-surface" aria-labelledby="attention-heading">
@@ -48,6 +48,9 @@ export function PortalHome({ dashboard }: { dashboard: CustomerDashboard }) {
               ? "Your previous ProfileRelaunch cases are still available below."
               : "When you start a ProfileRelaunch case, it will appear here."}
           </p>
+          {previousCases === 0 ? (
+            <p><a href={`${brandSiteUrl}/get-help`}>Tell us about your business</a></p>
+          ) : null}
         </section>
       )}
 

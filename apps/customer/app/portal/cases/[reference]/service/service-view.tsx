@@ -30,7 +30,6 @@ function actionFor(actions: ServiceAction[], kind: ServiceAction["kind"], target
 export function ServiceUnavailable() {
   return (
     <div className="service-page">
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>We couldn&apos;t load service details</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal/cases">Back to cases</a></p>
@@ -108,7 +107,6 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
           <li aria-current="page">Service and permissions</li>
         </ol>
       </nav>
-      <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Service and permissions</h1>
       <p className="case-ref">{item.reference}</p>
       <p className="case-business">{item.businessName}</p>

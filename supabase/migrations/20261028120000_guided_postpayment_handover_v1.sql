@@ -8,8 +8,14 @@
 -- only when admin_private.guided_settlement_reason_v1 is NULL.
 -- The commercial order state, including ACCEPTED_AWAITING_PAYMENT, is left unchanged.
 -- Handover runs after settlement, inside a nested exception block, so a workflow
--- failure cannot roll back a valid Stripe receipt. The same guarded function retries
--- from a later duplicate webhook and from public.guided_postpayment_reconcile_v1.
+-- failure cannot roll back a valid Stripe receipt.
+-- An already processed Stripe provider_event_id returns before handover. Replaying
+-- that same event does not retry the move and does not create another receipt.
+-- A later payment_intent.succeeded or invoice.paid with a different provider_event_id
+-- reaches the duplicate-receipt branch and calls the same handover once.
+-- checkout.session, payment_failed and setup_intent do not hand the case over.
+-- If no later event arrives, service_role calls
+-- public.guided_postpayment_reconcile_v1(p_case uuid) for that one case.
 -- The automatic actor is SYSTEM. No admin user id is invented for case_work_events.
 
 BEGIN;
@@ -79,9 +85,9 @@ REVOKE ALL ON FUNCTION admin_private.record_guided_postpayment_failure_v1(uuid, 
 
 -- One PAYMENT_REQUIRED -> PREPARATION move for a strictly settled Guided upfront order.
 -- NULL settlement reason is the only automatic permission. A later stage is left as staff set it.
--- One open CUSTOMER FOLLOW_UP is the payment-stage prompt and does not block.
--- Any other open customer task, a second follow-up, or an open payment, quote or agreement
--- action blocks the move and stays visible for recovery.
+-- The single payment-stage CUSTOMER FOLLOW_UP created with the case transition is marked DONE.
+-- Any other open task, a second payment follow-up, or an open payment, quote or agreement
+-- action blocks the move. Those rows stay open for recovery.
 CREATE FUNCTION admin_private.guided_postpayment_handover_v1(
   p_case uuid, p_source text, p_request uuid
 ) RETURNS jsonb
@@ -98,7 +104,11 @@ DECLARE
   reason text;
   event_id uuid;
   version_after integer;
+  payment_task uuid;
+  payment_tasks integer := 0;
+  block_reason text;
   staff_action text := 'Prepare the Guided pack for this customer. The upfront payment is already recorded.';
+  payment_resolution text := 'The upfront Guided payment is recorded, so this payment follow-up is complete.';
 BEGIN
   IF p_case IS NULL OR p_request IS NULL OR p_source IS NULL OR p_source NOT IN (
     'reconcile', 'payment_intent.succeeded', 'payment_intent.succeeded:duplicate',
@@ -142,7 +152,33 @@ BEGIN
     RETURN jsonb_build_object('status', 'denied', 'reason', reason);
   END IF;
 
-  IF EXISTS (
+  SELECT count(*)::integer INTO payment_tasks
+  FROM public.case_tasks task
+  WHERE task.case_id = c.id
+    AND task.status = 'OPEN'
+    AND task.owner = 'CUSTOMER'
+    AND task.kind = 'FOLLOW_UP'
+    AND task.deadline_source = 'Internal follow-up; not a Google deadline'
+    AND task.deadline_timezone = 'UTC'
+    AND task.reminder_policy = 'MANUAL_QUEUE'
+    AND task.title = left(c.next_action, 200)
+    AND length(btrim(c.next_action)) >= 3;
+  IF payment_tasks = 1 THEN
+    SELECT task.id INTO payment_task
+    FROM public.case_tasks task
+    WHERE task.case_id = c.id
+      AND task.status = 'OPEN'
+      AND task.owner = 'CUSTOMER'
+      AND task.kind = 'FOLLOW_UP'
+      AND task.deadline_source = 'Internal follow-up; not a Google deadline'
+      AND task.deadline_timezone = 'UTC'
+      AND task.reminder_policy = 'MANUAL_QUEUE'
+      AND task.title = left(c.next_action, 200)
+    FOR UPDATE;
+  END IF;
+  IF payment_tasks > 1 THEN
+    block_reason := 'ambiguous_follow_up';
+  ELSIF EXISTS (
     SELECT 1 FROM public.customer_actions action
     WHERE action.case_id = c.id
       AND action.status = 'OPEN'
@@ -152,19 +188,20 @@ BEGIN
       )
   ) OR EXISTS (
     SELECT 1 FROM public.case_tasks task
+    WHERE task.case_id = c.id AND task.status = 'OPEN' AND task.kind IS DISTINCT FROM 'FOLLOW_UP'
+  ) THEN
+    block_reason := 'customer_work';
+  ELSIF EXISTS (
+    SELECT 1 FROM public.case_tasks task
     WHERE task.case_id = c.id
       AND task.status = 'OPEN'
-      AND task.owner = 'CUSTOMER'
-      AND task.kind IS DISTINCT FROM 'FOLLOW_UP'
-  ) OR (
-    SELECT count(*) FROM public.case_tasks task
-    WHERE task.case_id = c.id
-      AND task.status = 'OPEN'
-      AND task.owner = 'CUSTOMER'
-      AND task.kind = 'FOLLOW_UP'
-  ) > 1 THEN
-    PERFORM admin_private.record_guided_postpayment_failure_v1(c.id, p_source, 'customer_work', p_request, '');
-    RETURN jsonb_build_object('status', 'blocked', 'reason', 'customer_work');
+      AND task.id IS DISTINCT FROM payment_task
+  ) THEN
+    block_reason := 'unrelated_follow_up';
+  END IF;
+  IF block_reason IS NOT NULL THEN
+    PERFORM admin_private.record_guided_postpayment_failure_v1(c.id, p_source, block_reason, p_request, '');
+    RETURN jsonb_build_object('status', 'blocked', 'reason', block_reason);
   END IF;
 
   SELECT * INTO ord FROM public.service_orders candidate
@@ -179,6 +216,14 @@ BEGIN
     AND obligation.kind = 'UPFRONT'
     AND obligation.state <> 'VOID';
   SELECT * INTO receipt FROM public.payment_receipts WHERE obligation_id = ob.id;
+
+  IF payment_task IS NOT NULL THEN
+    UPDATE public.case_tasks
+    SET status = 'DONE',
+        resolved_at = now(),
+        resolution = payment_resolution
+    WHERE id = payment_task AND case_id = c.id AND status = 'OPEN';
+  END IF;
 
   UPDATE public.cases
   SET work_stage = 'PREPARATION',
@@ -199,7 +244,8 @@ BEGIN
       'receiptRef', receipt.public_ref,
       'obligationId', ob.id,
       'serviceOrderId', ord.id,
-      'orderState', ord.state
+      'orderState', ord.state,
+      'paymentFollowUpTaskId', payment_task
     )
   )
   RETURNING id INTO event_id;
@@ -226,7 +272,8 @@ BEGIN
       'receiptRef', receipt.public_ref,
       'obligationId', ob.id,
       'serviceOrderId', ord.id,
-      'workflowVersion', version_after
+      'workflowVersion', version_after,
+      'paymentFollowUpTaskId', payment_task
     )
   );
 
@@ -276,53 +323,37 @@ $$;
 REVOKE ALL ON FUNCTION admin_private.isolate_guided_postpayment_handover_v1(uuid, text)
   FROM PUBLIC, anon, authenticated, service_role;
 
--- Scans settled Guided cases still waiting at PAYMENT_REQUIRED. No case id is built in.
+-- One explicit case. No scan of other settled cases. No case id is built into the function.
 -- service_role may run it. anon and authenticated may not.
-CREATE FUNCTION public.guided_postpayment_reconcile_v1()
+CREATE FUNCTION public.guided_postpayment_reconcile_v1(p_case uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-DECLARE
-  candidate uuid;
-  examined integer := 0;
-  handed integer := 0;
-  blocked integer := 0;
-  skipped integer := 0;
-  result jsonb;
+DECLARE result jsonb;
 BEGIN
-  FOR candidate IN
-    SELECT c.id
-    FROM public.cases c
-    WHERE c.service_track = 'GUIDED'
-      AND c.work_stage = 'PAYMENT_REQUIRED'
-      AND c.status NOT IN ('CLOSED', 'CANCELLED')
-      AND admin_private.guided_settlement_reason_v1(c.id) IS NULL
-    ORDER BY c.created_at, c.id
-  LOOP
-    examined := examined + 1;
-    result := admin_private.guided_postpayment_handover_v1(candidate, 'reconcile', gen_random_uuid());
-    IF result->>'status' = 'success' THEN
-      handed := handed + 1;
-    ELSIF result->>'status' IN ('blocked', 'denied') THEN
-      blocked := blocked + 1;
-    ELSE
-      skipped := skipped + 1;
-    END IF;
-  END LOOP;
+  IF p_case IS NULL THEN
+    RETURN jsonb_build_object(
+      'status', 'invalid', 'examined', 0, 'handedOver', 0, 'blocked', 0, 'skipped', 0, 'disposition', 'invalid'
+    );
+  END IF;
+  result := admin_private.guided_postpayment_handover_v1(p_case, 'reconcile', gen_random_uuid());
   RETURN jsonb_build_object(
     'status', 'success',
-    'examined', examined,
-    'handedOver', handed,
-    'blocked', blocked,
-    'skipped', skipped
+    'examined', 1,
+    'handedOver', CASE WHEN result->>'status' = 'success' THEN 1 ELSE 0 END,
+    'blocked', CASE WHEN result->>'status' IN ('blocked', 'denied') THEN 1 ELSE 0 END,
+    'skipped', CASE WHEN result->>'status' IN ('success', 'blocked', 'denied') THEN 0 ELSE 1 END,
+    'disposition', coalesce(result->>'status', 'invalid'),
+    'reason', result->>'reason',
+    'stage', result->>'stage'
   );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.guided_postpayment_reconcile_v1() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.guided_postpayment_reconcile_v1() TO service_role;
+REVOKE ALL ON FUNCTION public.guided_postpayment_reconcile_v1(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.guided_postpayment_reconcile_v1(uuid) TO service_role;
 
 -- Guided preparation now uses the strict settlement proof. Managed authorisation is unchanged.
 CREATE OR REPLACE FUNCTION admin_private.case_stage_ready_v1(p_case public.cases, p_target text) RETURNS boolean

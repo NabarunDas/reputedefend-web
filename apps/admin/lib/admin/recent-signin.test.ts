@@ -43,7 +43,6 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       safeToReplay: false,
     })
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261027120000_billing_documents_v1.sql",
       "20261028120000_guided_postpayment_handover_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))

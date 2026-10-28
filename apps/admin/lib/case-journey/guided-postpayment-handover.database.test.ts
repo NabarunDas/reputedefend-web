@@ -282,6 +282,24 @@ describe("guided post-payment handover", () => {
       [caseId],
     )
     expect(event).toEqual([{ actor_type: "SYSTEM", receipt_ref: expect.stringMatching(/^RC-/) }])
+    const followUp = await rows<{ status: string; resolution: string; resolved: boolean }>(
+      `select status, resolution, resolved_at is not null as resolved
+       from public.case_tasks where case_id = $1`,
+      [caseId],
+    )
+    expect(followUp).toEqual([{
+      status: "DONE",
+      resolution: "The upfront Guided payment is recorded, so this payment follow-up is complete.",
+      resolved: true,
+    }])
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])).toBe(0)
+    const closeAttempt = await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, moved.workflow_version, {
+        note: "Reviewed the caller’s request and confirmed the details.",
+        summary: "The Guided pack is ready for the customer.",
+      },
+    ])
+    expect(closeAttempt).toMatchObject({ status: "denied", reason: "pack" })
     expect(await count("select count(*)::int as n from public.payment_ledger")).toBe(ledgerBefore + 2)
 
     const replay = await apply("evt_hndset", "payment_intent.succeeded", "pi_hndset", succeededPayload(order, obligationId, started))
@@ -525,13 +543,31 @@ describe("guided post-payment handover", () => {
     expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [obligationId])).toBe(1)
     await db.exec("rollback")
 
-    const reconciled = await rpc<Json>("guided_postpayment_reconcile_v1", [])
-    expect(reconciled.handedOver).toBeGreaterThanOrEqual(1)
+    await db.exec("begin")
+    await db.query(
+      `insert into public.case_tasks(case_id, title, owner, kind, due_at, deadline_source, deadline_timezone, reminder_policy)
+       values ($1, 'Call the customer about the listing', 'CUSTOMER', 'FOLLOW_UP', now() + interval '2 days', 'Staff asked for a call', 'UTC', 'MANUAL_QUEUE')`,
+      [caseId],
+    )
+    expect(await privateHandover(caseId)).toMatchObject({ status: "blocked", reason: "unrelated_follow_up" })
+    expect(await count(
+      "select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN' and title = 'Call the customer about the listing'",
+      [caseId],
+    )).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN' and title = 'Customer pays the accepted Guided fee through the existing secure payment action.'",
+      [caseId],
+    )).toBe(1)
+    await db.exec("rollback")
+
+    const reconciled = await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])
+    expect(reconciled).toMatchObject({ examined: 1, handedOver: 1, disposition: "success" })
     expect((await stageOf(caseId)).work_stage).toBe("PREPARATION")
     expect((await stageOf(caseId)).next_action).toBe(staffAction)
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])).toBe(0)
     expect(await handoverEvents(caseId)).toBe(1)
-    const again = await rpc<Json>("guided_postpayment_reconcile_v1", [])
-    expect(again).toMatchObject({ status: "success", handedOver: 0 })
+    const again = await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])
+    expect(again).toMatchObject({ status: "success", handedOver: 0, disposition: "already_handed_over" })
     expect(await handoverEvents(caseId)).toBe(1)
     expect(await count("select count(*)::int as n from public.communications where case_id = $1", [caseId])).toBe(mailBefore)
     expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [obligationId])).toBe(1)
@@ -558,9 +594,17 @@ describe("guided post-payment handover", () => {
       "select count(*)::int as n from admin_private.guided_postpayment_handover_failures where case_id = $1 and reason = 'exception' and resolved_at is null",
       [caseId],
     )).toBe(1)
+    const sameEvent = await apply("evt_hndflt", "payment_intent.succeeded", "pi_hndflt", succeededPayload(order, obligationId, started))
+    expect(sameEvent).toMatchObject({ status: "success", duplicate: true })
+    expect((await stageOf(caseId)).work_stage).toBe("PAYMENT_REQUIRED")
+    expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [obligationId])).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from admin_private.guided_postpayment_handover_failures where case_id = $1 and reason = 'exception' and resolved_at is null",
+      [caseId],
+    )).toBe(1)
     await db.exec(raised)
 
-    const reconciled = await rpc<Json>("guided_postpayment_reconcile_v1", [])
+    const reconciled = await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])
     expect(reconciled.status).toBe("success")
     expect((await stageOf(caseId)).work_stage).toBe("PREPARATION")
     expect(await handoverEvents(caseId)).toBe(1)
@@ -572,7 +616,7 @@ describe("guided post-payment handover", () => {
     expect(duplicate.status).toBe("success")
     expect(await handoverEvents(caseId)).toBe(1)
     expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [obligationId])).toBe(1)
-    expect(await rpc<Json>("guided_postpayment_reconcile_v1", [])).toMatchObject({ handedOver: 0 })
+    expect(await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])).toMatchObject({ handedOver: 0, disposition: "already_handed_over" })
   })
 
   it("lets a staff transition and a webhook produce one preparation without rewriting the other", async () => {
@@ -628,18 +672,31 @@ describe("guided post-payment handover", () => {
     expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])).toBe(0)
     expect((await rows<{ reason: string | null }>("select admin_private.guided_settlement_reason_v1($1) as reason", [caseId]))[0].reason).toBeNull()
     expect((await stageOf(caseId)).work_stage).toBe("PAYMENT_REQUIRED")
+    const otherId = await insertCase("PR-26-HNDSC2")
+    await acceptQuote(otherId)
+    await guidedToPaymentRequired(otherId)
+    await db.query("update public.case_tasks set status = 'DONE', resolution = 'Payment follow-up is no longer open.', resolved_at = now() where case_id = $1 and status = 'OPEN'", [otherId])
+    const otherCheckout = await checkout(otherId, "hndsc2")
+    expect((await apply("evt_hndsc2", "payment_intent.succeeded", "pi_hndsc2", succeededPayload(otherCheckout.order, otherCheckout.obligationId, otherCheckout.started))).status).toBe("success")
+    const otherVersion = await caseVersion(otherId)
     const sql = (await rows<{ src: string }>(
-      "select pg_get_functiondef('public.guided_postpayment_reconcile_v1()'::regprocedure) as src",
+      "select pg_get_functiondef('public.guided_postpayment_reconcile_v1(uuid)'::regprocedure) as src",
     ))[0].src
+    expect(sql).toContain("p_case")
+    expect(sql).not.toMatch(/FOR candidate/)
     expect(sql).not.toMatch(/PR-26-GHNLB9|SO-26-GHHRGY|RC-26-NSV9PP/)
     await db.exec(held)
     const versionBefore = await caseVersion(caseId)
-    const run = await rpc<Json>("guided_postpayment_reconcile_v1", [])
-    expect(run.handedOver).toBeGreaterThanOrEqual(1)
+    const run = await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])
+    expect(run).toMatchObject({ examined: 1, handedOver: 1, disposition: "success" })
+    expect((await stageOf(otherId)).work_stage).toBe("PAYMENT_REQUIRED")
+    expect(await caseVersion(otherId)).toBe(otherVersion)
+    expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [otherCheckout.obligationId])).toBe(1)
     const after = await stageOf(caseId)
     expect(after).toMatchObject({ status: "UNDER_REVIEW", work_stage: "PREPARATION", next_action: staffAction, next_action_at: null })
     expect(after.workflow_version).toBe(versionBefore + 1)
-    expect(await rpc<Json>("guided_postpayment_reconcile_v1", [])).toMatchObject({ handedOver: 0 })
+    expect(await rpc<Json>("guided_postpayment_reconcile_v1", [caseId])).toMatchObject({ handedOver: 0, disposition: "already_handed_over" })
+    expect((await stageOf(otherId)).work_stage).toBe("PAYMENT_REQUIRED")
     expect(await handoverEvents(caseId)).toBe(1)
     expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [obligationId])).toBe(1)
     expect((await orderOf(caseId)).state).toBe("ACCEPTED_AWAITING_PAYMENT")
@@ -647,11 +704,11 @@ describe("guided post-payment handover", () => {
 
   it("keeps the reconciler off browser roles and strict Guided readiness off a paid flag alone", async () => {
     for (const role of ["anon", "authenticated"]) {
-      expect((await rows<{ ok: boolean }>("select has_function_privilege($1, 'public.guided_postpayment_reconcile_v1()', 'EXECUTE') as ok", [role]))[0].ok).toBe(false)
+      expect((await rows<{ ok: boolean }>("select has_function_privilege($1, 'public.guided_postpayment_reconcile_v1(uuid)', 'EXECUTE') as ok", [role]))[0].ok).toBe(false)
       expect((await rows<{ ok: boolean }>("select has_function_privilege($1, $2, 'EXECUTE') as ok", [role, handoverSignature]))[0].ok).toBe(false)
     }
     expect((await rows<{ ok: boolean }>(
-      "select has_function_privilege('service_role', 'public.guided_postpayment_reconcile_v1()', 'EXECUTE') as ok",
+      "select has_function_privilege('service_role', 'public.guided_postpayment_reconcile_v1(uuid)', 'EXECUTE') as ok",
     ))[0].ok).toBe(true)
     const managed = await insertCase("PR-26-HNDMAN", "MANAGED")
     await db.query("update public.cases set work_stage = 'AUTHORIZATION_REQUIRED', status = 'AWAITING_CUSTOMER' where id = $1", [managed])

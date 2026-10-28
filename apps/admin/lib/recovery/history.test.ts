@@ -29,22 +29,24 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261028223000_admin_pack_mail_context_volatile_v1.sql",
-    ])
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
+      version: "20261028223000",
+      name: "admin_pack_mail_context_volatile_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
       version: "20261028200000",
       name: "admin_pack_draft_role_v1",
     })
-    expect(healthyRemote.at(-2)).toEqual({
+    expect(healthyRemote.at(-3)).toEqual({
       version: "20261028160000",
       name: "guided_pack_publish_visibility_v1",
     })
-    expect(healthyRemote.at(-3)).toEqual({
+    expect(healthyRemote.at(-4)).toEqual({
       version: "20261028120000",
       name: "guided_postpayment_handover_v1",
     })
-    expect(healthyRemote.at(-4)).toEqual({
+    expect(healthyRemote.at(-5)).toEqual({
       version: "20261027120000",
       name: "billing_documents_v1",
     })
@@ -87,15 +89,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(false)
   })
 
-  it("allows the unapplied mail-context volatility migration to be offered once", () => {
+  it("refuses to replay the context volatility migration now that DEV has received it", () => {
     const result = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261028223000_admin_pack_mail_context_volatile_v1.sql"],
     })
-    expect(result.status).toBe("clean")
-    expect(codes(result)).toEqual([])
-    expect(mayApplyMigrations(result)).toBe(true)
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("refuses to replay the draft-role migration now that DEV has received it", () => {

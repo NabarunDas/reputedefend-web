@@ -54,12 +54,12 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The repository tail is the unapplied context-function volatility change.
-    // The DEV applied head stays the draft-role command. It was applied once
-    // and must not be replayed. Production stays at SEC-08.
+    // The repository tail and the DEV applied head are the context-function
+    // volatility change. It was applied once and must not be replayed.
+    // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261028223000_admin_pack_mail_context_volatile_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261028200000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261028223000")
   })
 
   it("rebuilds one independently constrained evidence slot per requested document", async () => {

@@ -1064,7 +1064,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided post-payment handover", probe: "public.guided_postpayment_reconcile_v1" },
   },
   {
-    // GUIDED pack publication. Observed DEV ledger head, applied once.
+    // GUIDED pack publication. Already in the DEV ledger, applied once.
     // The reviewer aligned generated ledger version 20261028161444 to canonical
     // 20261028160000 after verifying the source. Do not replay. Not applied to Production.
     // Repository file SHA-256 ce08c89bb8a5388bf75c1edb2c33979eca396ea5d92665cf0f799ef9d858ef83.
@@ -1079,14 +1079,17 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided pack publication", probe: "admin_private.pack_publication_block_v1" },
   },
   {
-    // ADMIN-PACK-STEP8. Source only. Not applied to DEV or Production.
+    // ADMIN-PACK-STEP8. Observed DEV ledger head, applied once.
+    // The reviewer aligned generated ledger version 20261028185030 to canonical
+    // 20261028200000 after verifying the 23,704-character source. Do not replay.
+    // Not applied to Production.
     // Repository file SHA-256 75052ce67d660f5836b59b8cb1f98cd76b39076ea68fa87ec5cdcaf522b56368.
-    // Applying this file does not change a live pack, publish a pack, send mail, or take payment.
+    // The applied file does not change a live pack, publish a pack, send mail, or take payment.
     version: "20261028200000",
     filename: "20261028200000_admin_pack_draft_role_v1.sql",
     step: "ADMIN-PACK-STEP8 draft document role change",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Draft pack role", probe: "public.admin_prepared_pack_command_v1" },
@@ -1102,11 +1105,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261028160000`. Guided pack publication was applied once to DEV and
- * must not be replayed. It is not applied to Production. Guided post-payment
- * handover `20261028120000` remains applied and must not be replayed.
- * `20261028200000` is source only and is not the DEV head. Production
- * remains on its own historical migration head.
+ * `20261028200000`. The draft document role change was applied once to DEV
+ * and must not be replayed. It is not applied to Production. Guided pack
+ * publication `20261028160000` remains applied and must not be replayed.
+ * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

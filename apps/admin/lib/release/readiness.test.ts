@@ -152,15 +152,24 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261028223000_admin_pack_mail_context_volatile_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261028200000")
-    expect(migrationHead.filename).toBe("20261028200000_admin_pack_draft_role_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261028223000_admin_pack_mail_context_volatile_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
     expect(supabase?.requirement).toContain("Observed DEV ledger head is 20261028200000")
+    expect(supabase?.requirement).toContain("d78e22b62753beb07a1013370b885abbe0e51cd940dfdc4c223888b492789d2c")
+    expect(supabase?.requirement).toContain("1,698 characters")
+    expect(supabase?.requirement).toContain("admin_guided_pack_mail_context_v1(text, uuid, uuid)")
+    expect(supabase?.requirement).toContain("admin_guided_completion_context_v1(text, uuid)")
+    expect(supabase?.requirement).toContain("admin_managed_notice_context_v1(text, text, uuid, uuid)")
+    expect(supabase?.requirement).toContain("NOTIFY pgrst, 'reload schema'")
+    expect(supabase?.requirement).toContain("20261028223000 admin_pack_mail_context_volatile_v1 is the repository file head and is not applied to DEV or Production")
     expect(supabase?.requirement).toContain("Draft document role 20261028200000 is the observed DEV ledger head")
     expect(supabase?.requirement).toContain("75052ce67d660f5836b59b8cb1f98cd76b39076ea68fa87ec5cdcaf522b56368")
     expect(supabase?.requirement).toContain("20261028185030")

@@ -10,7 +10,7 @@ import { communicationsSendEnabled, outgoingFromAddress } from "../communication
 import { isUuid } from "../records/model"
 import { packArgs, isPackApproveArgs, isPackEmailArgs, isPackItemArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
 import { packOperations, type PackOperation } from "./model"
-import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage } from "./publication"
+import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage, packPreflightFailedMessage } from "./publication"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -75,6 +75,7 @@ export async function packCommand(request: NextRequest) {
   if (!validToken(token)) return reply("Please sign in again.", 401)
   if (!isUuid(key)) return reply("Reload the form and try again.", 400)
   let operation: PackOperation | null = null
+  let stage: "request" | "mail_context" | "command" = "request"
   try {
     const parsed = await readJson(request)
     if (parsed instanceof NextResponse) return parsed
@@ -88,6 +89,7 @@ export async function packCommand(request: NextRequest) {
     let email: Record<string, unknown> = {}
     if ((operation === "publish" || operation === "send_pack_email") && (operation === "send_pack_email" || communicationsSendEnabled()) && ("packId" in args)) {
       if (operation === "send_pack_email" && !communicationsSendEnabled()) return reply("Outgoing email is switched off. The pack stays available in the portal and no email was queued.", 403)
+      stage = "mail_context"
       const context = await backend().rpc<{
         status?: string
         caseRef?: string
@@ -134,6 +136,7 @@ export async function packCommand(request: NextRequest) {
         return reply("This pack is not ready for a customer notification. No email was queued.", 409)
       }
     }
+    stage = "command"
     const payload = operation === "create" ? {}
       : operation === "send_pack_email" && isPackEmailArgs(args) ? email
       : operation === "publish" && isPackApproveArgs(args) ? { note: args.note, confirmed: true as const, ...email }
@@ -159,11 +162,23 @@ export async function packCommand(request: NextRequest) {
       id: result.id, packNumber: result.packNumber, packStatus: result.packStatus, recordVersion: result.recordVersion, itemId: result.itemId,
     })
   } catch (error) {
+    const errorName = safeErrorName(error)
+    if (stage === "mail_context") {
+      console.error(JSON.stringify({
+        event: "pack_command_preflight_failed",
+        operation,
+        correlationId: key,
+        stage: "mail_context",
+        errorName,
+      }))
+      return reply(packPreflightFailedMessage(operation), 503, { correlationId: key })
+    }
     console.error(JSON.stringify({
       event: "pack_command_uncertain",
       operation,
       correlationId: key,
-      errorName: safeErrorName(error),
+      stage: "command",
+      errorName,
     }))
     return reply(PACK_COMMAND_UNCERTAIN, 503, { correlationId: key })
   }

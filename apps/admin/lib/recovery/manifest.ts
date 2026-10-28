@@ -1094,6 +1094,22 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Draft pack role", probe: "public.admin_prepared_pack_command_v1" },
   },
+  {
+    // ADMIN-PACK-PUBLISH-SESSION-01. Not applied to DEV or Production.
+    // Marks the three STABLE Admin context functions that call admin_session_v1
+    // VOLATILE, and notifies PostgREST to reload schema. Function bodies,
+    // authorisation and the 30-minute session window stay unchanged.
+    // Repository file SHA-256 d78e22b62753beb07a1013370b885abbe0e51cd940dfdc4c223888b492789d2c.
+    // Applying this file does not publish a pack, change a document, send mail, or take payment.
+    version: "20261028223000",
+    filename: "20261028223000_admin_pack_mail_context_volatile_v1.sql",
+    step: "ADMIN-PACK-PUBLISH-SESSION-01 context function volatility",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided pack mail context", probe: "public.admin_guided_pack_mail_context_v1" },
+  },
 ]
 
 /**
@@ -1108,6 +1124,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261028200000`. The draft document role change was applied once to DEV
  * and must not be replayed. It is not applied to Production. Guided pack
  * publication `20261028160000` remains applied and must not be replayed.
+ * Repository migration `20261028223000` is the only unapplied tail and must
+ * not be applied to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

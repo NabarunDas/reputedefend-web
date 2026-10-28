@@ -9,6 +9,13 @@ export const PACK_PUBLISH_ELIGIBILITY_UNKNOWN =
 export const PACK_COMMAND_UNCERTAIN =
   "The result of this pack action is uncertain. Reload the case and read the pack status before doing anything else. Do not submit it again until you have checked."
 
+export function packPreflightFailedMessage(operation: PackOperation | null): string {
+  if (operation === "send_pack_email") {
+    return "The pack notification was not queued. The email check failed before any message was queued. The pack was not changed."
+  }
+  return "The pack was not published. The publication check failed before the pack was changed. Nothing was made visible and no email was queued."
+}
+
 export const PACK_COMMAND_CONFLICT =
   "That pack record changed or is no longer available. Reload the case and read the pack status before doing anything else. Do not submit this action again until you have checked."
 

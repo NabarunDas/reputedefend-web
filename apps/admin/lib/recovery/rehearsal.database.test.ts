@@ -48,16 +48,17 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(84)
+    expect(migrationChain).toHaveLength(85)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The repository tail and the DEV applied head are the draft-role command.
-    // It was applied once and must not be replayed. Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261028200000_admin_pack_draft_role_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    // The repository tail is the unapplied context-function volatility change.
+    // The DEV applied head stays the draft-role command. It was applied once
+    // and must not be replayed. Production stays at SEC-08.
+    expect(migrationHead.filename).toBe("20261028223000_admin_pack_mail_context_volatile_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261028200000")
   })
 

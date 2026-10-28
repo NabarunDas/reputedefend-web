@@ -5,7 +5,7 @@ vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof impo
 import { POST } from "@/app/api/packs/command/route"
 import { packCommand } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
-import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage } from "./publication"
+import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage, packPreflightFailedMessage } from "./publication"
 import { packArgs } from "./validation"
 
 const origin = "https://admin.profilerelaunch.com"
@@ -170,10 +170,121 @@ describe("prepared pack commands", () => {
     expect(body).not.toContain(secret)
     expect(PACK_COMMAND_UNCERTAIN).not.toMatch(/try again/i)
     const record = JSON.parse(String(logged.mock.calls[0][0]))
-    expect(record).toEqual({ event: "pack_command_uncertain", operation: "publish", correlationId: key, errorName: "PostgrestError" })
+    expect(record).toEqual({ event: "pack_command_uncertain", operation: "publish", correlationId: key, stage: "command", errorName: "PostgrestError" })
     expect(JSON.stringify(record)).not.toContain(filename)
     expect(JSON.stringify(record)).not.toContain(mailbox)
     expect(JSON.stringify(record)).not.toContain(secret)
     logged.mockRestore()
   })
+
+  it("reports a mail-context failure as a preflight miss and does not call the publication command", async () => {
+    enableOutgoingMail()
+    const secret = "sb_secret_token_value"
+    const sql = "cannot execute UPDATE in a read-only transaction"
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_guided_pack_mail_context_v1") {
+        throw Object.assign(new Error(`${sql} ${secret}`), { name: "PostgrestError", code: "25006" })
+      }
+      return { status: "success", id: packId, packStatus: "APPROVED", recordVersion: 4 }
+    })
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    const publishBody = {
+      operation: "publish" as const, caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }
+    const response = await packCommand(req(publishBody))
+    expect(response.status).toBe(503)
+    const body = await response.text()
+    expect(body).toContain(packPreflightFailedMessage("publish"))
+    expect(body).not.toContain(PACK_COMMAND_UNCERTAIN)
+    expect(body).not.toContain(sql)
+    expect(body).not.toContain("25006")
+    expect(body).not.toContain(secret)
+    expect(body).not.toContain("a".repeat(64))
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_guided_pack_mail_context_v1"])
+    expect(JSON.parse(String(logged.mock.calls[0][0]))).toEqual({
+      event: "pack_command_preflight_failed",
+      operation: "publish",
+      correlationId: key,
+      stage: "mail_context",
+      errorName: "PostgrestError",
+    })
+    logged.mockRestore()
+
+    mocks.rpc.mockClear()
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_guided_pack_mail_context_v1") throw Object.assign(new Error(sql), { name: "PostgrestError" })
+      return { status: "success" }
+    })
+    const loggedEmail = vi.spyOn(console, "error").mockImplementation(() => {})
+    const emailResponse = await packCommand(req({ operation: "send_pack_email", caseId, packId, recordVersion: 4 }))
+    expect(emailResponse.status).toBe(503)
+    const emailBody = await emailResponse.text()
+    expect(emailBody).toContain(packPreflightFailedMessage("send_pack_email"))
+    expect(emailBody).not.toContain(PACK_COMMAND_UNCERTAIN)
+    expect(emailBody).not.toContain(sql)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_guided_pack_mail_context_v1"])
+    expect(JSON.parse(String(loggedEmail.mock.calls[0][0])).stage).toBe("mail_context")
+    loggedEmail.mockRestore()
+  })
+
+  it("keeps a failure during the publication command uncertain after preflight succeeds", async () => {
+    enableOutgoingMail()
+    const secret = "sb_secret_token_value"
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_guided_pack_mail_context_v1") {
+        return {
+          status: "applicable",
+          caseRef: "PR-26-MXAAAC",
+          amountMinor: 9900,
+          currency: "GBP",
+          serviceCode: "GUIDED_RELAUNCH",
+          serviceName: "Guided Relaunch",
+        }
+      }
+      throw Object.assign(new Error(`publish command failed ${secret}`), { name: "PostgrestError" })
+    })
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    const response = await packCommand(req({
+      operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }))
+    expect(response.status).toBe(503)
+    const body = await response.text()
+    expect(body).toContain(PACK_COMMAND_UNCERTAIN)
+    expect(body).not.toContain(packPreflightFailedMessage("publish"))
+    expect(body).not.toContain(secret)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "admin_guided_pack_mail_context_v1",
+      "admin_prepared_pack_command_v1",
+    ])
+    expect(JSON.parse(String(logged.mock.calls[0][0]))).toMatchObject({
+      event: "pack_command_uncertain",
+      stage: "command",
+      operation: "publish",
+    })
+    logged.mockRestore()
+
+    mocks.rpc.mockClear()
+    const loggedEmail = vi.spyOn(console, "error").mockImplementation(() => {})
+    const emailResponse = await packCommand(req({ operation: "send_pack_email", caseId, packId, recordVersion: 4 }))
+    expect(emailResponse.status).toBe(503)
+    expect(await emailResponse.text()).toContain(PACK_COMMAND_UNCERTAIN)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "admin_guided_pack_mail_context_v1",
+      "admin_prepared_pack_command_v1",
+    ])
+    loggedEmail.mockRestore()
+  })
 })
+
+function enableOutgoingMail() {
+  vi.stubEnv("VERCEL_ENV", "production")
+  vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
+  vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+  vi.stubEnv("JOB_WORKER_ENABLED", "true")
+  vi.stubEnv("JOB_PROVIDER_MODE", "production")
+  vi.stubEnv("RESEND_API_KEY", "re_test_key")
+  vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+  vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+}

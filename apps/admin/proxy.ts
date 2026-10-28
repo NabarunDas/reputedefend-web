@@ -31,13 +31,17 @@ export async function proxy(request: NextRequest) {
   const cronRead = (request.method === "GET" || request.method === "HEAD") && pathname === "/api/internal/jobs/run"
   // This endpoint authenticates its own dedicated bearer. Do not require a
   // staff session, but expose it only on the protected develop Preview alias.
-  const devPaymentCronRead = request.method === "GET"
-    && pathname === "/api/internal/jobs/dev-payment-events"
-    && request.nextUrl.hostname === "profilerelaunch-admin-git-develop-clientcove.vercel.app"
+  const developPreviewCron = request.nextUrl.hostname === "profilerelaunch-admin-git-develop-clientcove.vercel.app"
     && process.env.VERCEL_ENV === "preview"
     && process.env.VERCEL_GIT_COMMIT_REF === "develop"
+  const devPaymentCronRead = request.method === "GET"
+    && pathname === "/api/internal/jobs/dev-payment-events"
+    && developPreviewCron
+  const devMailCronRead = request.method === "GET"
+    && pathname === "/api/internal/jobs/dev-mail-dispatch"
+    && developPreviewCron
   const providerWebhook = request.method === "POST" && (pathname === "/api/webhooks/resend" || pathname === "/api/webhooks/resend/inbound" || pathname === "/api/webhooks/stripe")
-  if (isPublicRead(pathname, request.method) || authPost || cronRead || devPaymentCronRead || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
+  if (isPublicRead(pathname, request.method) || authPost || cronRead || devPaymentCronRead || devMailCronRead || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     response = NextResponse.next()
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {
     response = NextResponse.json({ error: "Staff sign-in is required." }, { status: 401 })

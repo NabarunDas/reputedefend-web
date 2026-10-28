@@ -1,0 +1,77 @@
+name: DEV mail dispatch worker
+
+on:
+  schedule:
+    # GitHub runs this only from the default branch, which is main.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-mail-dispatch-worker
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    # A schedule event always reports the default branch. A manual run is
+    # accepted from develop or main. The request below still refuses every
+    # host except the develop Admin preview.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PREVIEW_ORIGIN: ${{ secrets.DEV_ADMIN_PREVIEW_URL }}
+      WORKER_SECRET: ${{ secrets.DEV_MAIL_DISPATCH_WORKER_SECRET }}
+      BYPASS: ${{ secrets.DEV_VERCEL_AUTOMATION_BYPASS }}
+    steps:
+      - name: Dispatch queued DEV customer email
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${PREVIEW_ORIGIN:?Missing DEV_ADMIN_PREVIEW_URL repository secret}"
+          : "${WORKER_SECRET:?Missing DEV_MAIL_DISPATCH_WORKER_SECRET repository secret}"
+          : "${BYPASS:?Missing DEV_VERCEL_AUTOMATION_BYPASS repository secret}"
+          python3 - <<'PY'
+          import os, re, sys
+          origin = os.environ["PREVIEW_ORIGIN"]
+          secret = os.environ["WORKER_SECRET"]
+          bypass = os.environ["BYPASS"]
+          if not re.fullmatch(r"https://profilerelaunch-admin-git-develop-[a-z0-9-]+\.vercel\.app", origin):
+              sys.exit("DEV_ADMIN_PREVIEW_URL must be the https develop Admin origin, with no path or query")
+          unsafe = re.compile(r"[\s$`\"'\\]")
+          if len(secret) < 32 or unsafe.search(secret):
+              sys.exit("DEV_MAIL_DISPATCH_WORKER_SECRET must be one line of at least 32 characters")
+          if not bypass or unsafe.search(bypass):
+              sys.exit("DEV_VERCEL_AUTOMATION_BYPASS must be one line")
+          PY
+          path="/api/internal/jobs/dev-mail-dispatch"
+          # A protection redirect must stay 302 or 401. Do not follow it, and do not forward the bearer.
+          unauth="$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' "${PREVIEW_ORIGIN}${path}")"
+          echo "unauthenticated develop preview -> HTTP ${unauth}"
+          if [ "$unauth" != "302" ] && [ "$unauth" != "401" ]; then
+            echo "Deployment protection did not intercept the unauthenticated request"
+            exit 1
+          fi
+          body="$(mktemp)"
+          code="$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 60 --output "$body" --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${WORKER_SECRET}" \
+            --header "x-vercel-protection-bypass: ${BYPASS}" \
+            "${PREVIEW_ORIGIN}${path}")"
+          echo "worker -> HTTP ${code}"
+          python3 - "$body" "$code" <<'PY'
+          import json, sys
+          body, code = sys.argv[1], sys.argv[2]
+          if code != "200":
+              sys.exit("worker route did not accept the scheduled call")
+          payload = json.load(open(body, encoding="utf-8"))
+          if payload.get("status") != "success":
+              sys.exit("worker did not report success")
+          allowed = {"status", "claimed", "succeeded", "retried", "deadLettered", "isolated", "skipped"}
+          extra = set(payload) - allowed
+          if extra:
+              sys.exit("worker response included unexpected fields")
+          print("claimed", payload.get("claimed"), "succeeded", payload.get("succeeded"))
+          PY
+          rm -f "$body"

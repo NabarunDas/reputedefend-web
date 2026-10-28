@@ -5,9 +5,11 @@ import "@testing-library/jest-dom/vitest"
 
 const loadJobHealth = vi.fn()
 const loadPaymentEventQueue = vi.fn()
+const loadWorkerHeartbeats = vi.fn()
 vi.mock("@/lib/jobs/queries", () => ({
   loadJobHealth: (...args: unknown[]) => loadJobHealth(...args),
   loadPaymentEventQueue: (...args: unknown[]) => loadPaymentEventQueue(...args),
+  loadWorkerHeartbeats: (...args: unknown[]) => loadWorkerHeartbeats(...args),
 }))
 
 import JobsPage from "./page"
@@ -31,7 +33,9 @@ afterEach(() => {
 beforeEach(() => {
   loadJobHealth.mockReset()
   loadPaymentEventQueue.mockReset()
+  loadWorkerHeartbeats.mockReset()
   loadPaymentEventQueue.mockResolvedValue(null)
+  loadWorkerHeartbeats.mockResolvedValue(null)
 })
 
 function health() {
@@ -135,5 +139,29 @@ describe("operations jobs page", () => {
     render(await JobsPage())
     expect(screen.getByText("No unprocessed test-mode payment events.")).toBeTruthy()
     expect(screen.queryByText(/Signed provider delivery is not complete/)).toBeNull()
+  })
+
+  it("lists the DEV mail dispatcher separately from the DEV payment worker", async () => {
+    loadJobHealth.mockResolvedValue(health())
+    loadWorkerHeartbeats.mockResolvedValue([
+      {
+        workerName: "dev-mail-dispatch",
+        environment: "preview",
+        status: "HEALTHY",
+        lastSuccessAt: "2026-10-28T12:00:00.000Z",
+        expectedIntervalSeconds: 300,
+      },
+      {
+        workerName: "dev-payment-events",
+        environment: "preview",
+        status: "LATE",
+        lastSuccessAt: null,
+        expectedIntervalSeconds: 300,
+      },
+    ])
+    render(await JobsPage())
+    expect(screen.getByText(/DEV mail dispatch/)).toBeTruthy()
+    expect(screen.getByText(/DEV payment events/)).toBeTruthy()
+    expect(screen.getByText(/Last success never/)).toBeTruthy()
   })
 })

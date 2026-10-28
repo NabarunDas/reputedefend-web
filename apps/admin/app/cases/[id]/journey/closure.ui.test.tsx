@@ -444,7 +444,8 @@ describe("the closure step", () => {
       submissions: [],
     })
     render(<ClosurePanel caseDetail={detail} panel={panelFor(source, detail, true, false)} />)
-    expect(screen.getByText(/No completion email has been queued/)).toBeTruthy()
+    expect(screen.getByText(/No case-closure email has been queued/)).toBeTruthy()
+    expect(screen.getByText(/document-ready email/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Send completion update" })).toBeNull()
     cleanup()
     render(<ClosurePanel caseDetail={detail} panel={panelFor(source, detail, true, true)} />)

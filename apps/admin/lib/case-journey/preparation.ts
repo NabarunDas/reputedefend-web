@@ -37,6 +37,8 @@ export type JourneyPreparationPanel = {
   guided: boolean
   /** One recovery for a published pack whose announcement was never queued. */
   packEmailRecovery: { packId: string; recordVersion: number } | null
+  /** One recovery for a queued pack-ready notification the dispatcher has not moved. */
+  packNotificationRecovery: { communicationId: string } | null
 }
 
 export function packDisplayState(pack: { status: string; published?: boolean }): JourneyPreparationPack["state"] {
@@ -75,69 +77,93 @@ export function provenEligible(facts: CaseFlowFacts, packs: PreparedPackCase): E
   return packs.eligible.filter(item => safeVersion(versions.get(item.versionId), item.documentId))
 }
 
+export type PackNotificationPhase =
+  | "none"
+  | "queued"
+  | "processing"
+  | "provider_accepted"
+  | "delivered"
+  | "failed"
+  | "blocked"
+  | "acceptance_unknown"
+
+export type PackNotificationDispatch = {
+  phase: PackNotificationPhase
+  communicationId: string | null
+  stalled: boolean
+  workerLate: boolean
+  workerSeen: boolean
+}
+
 export type PackReadyNotification = {
   headline: string
   detail: string
   state: "Met" | "Not met"
+  phase: PackNotificationPhase
+  communicationId: string | null
+  stalled: boolean
 }
 
-const failedDelivery = new Set(["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "SUPPRESSED", "FAILED"])
+const failedDelivery = new Set(["BOUNCED", "TRANSIENT_BOUNCE", "UNDETERMINED_BOUNCE", "COMPLAINED", "FAILED"])
 
 /**
  * Publication makes the pack available. It does not prove the customer was told.
- * Provider acceptance and a reported delivery stay separate from a download.
+ * Queued, processing, provider acceptance and a reported delivery stay separate.
  */
-export function packReadyNotification(communications: CaseFlowCommunicationFact[]): PackReadyNotification {
+export function packReadyNotification(
+  communications: CaseFlowCommunicationFact[],
+  dispatch: PackNotificationDispatch | null = null,
+): PackReadyNotification {
   const rows = communications.filter(row => row.templateKey === "GUIDED_PACK_READY" && row.lifecycle !== "CANCELLED")
   const row = [...rows].sort((left, right) => left.draftedAt.localeCompare(right.draftedAt)).at(-1)
   if (!row) {
     return {
-      headline: "Available in portal; email not sent",
+      headline: "Pack published",
       detail: "Available in portal; email not sent.",
       state: "Not met",
+      phase: "none",
+      communicationId: null,
+      stalled: false,
     }
   }
   const delivery = row.deliveryStatus
+  const communicationId = row.id
   if (delivery === "ACCEPTANCE_UNKNOWN") {
-    return {
-      headline: "Pack available; provider acceptance is unknown",
-      detail: "Provider acceptance is unknown, so another copy was not sent.",
-      state: "Not met",
-    }
+    return notice(communicationId, "acceptance_unknown", "Not met", "Provider acceptance of the pack-ready notification is unknown, so another copy was not sent.")
   }
   if (delivery === "DELIVERED") {
-    return {
-      headline: "Pack available; the provider reported delivery",
-      detail: "The provider reported delivery. That is not a download.",
-      state: "Met",
-    }
+    return notice(communicationId, "delivered", "Met", "The provider reported delivery of the pack-ready notification. That is not a download.")
   }
   if (delivery === "PROVIDER_ACCEPTED") {
-    return {
-      headline: "Pack available; the provider accepted the notification",
-      detail: "The email provider accepted the notification. That is not proof the customer received it.",
-      state: "Not met",
-    }
+    return notice(communicationId, "provider_accepted", "Not met", "The email provider accepted the pack-ready notification. That is not proof the customer received it.")
+  }
+  if (delivery === "SUPPRESSED") {
+    return notice(communicationId, "blocked", "Not met", "The pack-ready notification is blocked. Another copy was not sent.")
   }
   if (delivery && failedDelivery.has(delivery)) {
-    return {
-      headline: "Pack available; the notification was not delivered",
-      detail: "The notification was not delivered. Resume the same communication only when that is safe.",
-      state: "Not met",
-    }
+    return notice(communicationId, "failed", "Not met", "The pack-ready notification failed. Another copy was not sent.")
   }
   if (row.lifecycle === "QUEUED" && (delivery === "NONE" || delivery == null)) {
-    return {
-      headline: "Pack available; notification queued",
-      detail: "The notification is queued. Queued is not delivered.",
-      state: "Not met",
+    const processing = dispatch?.phase === "processing" && dispatch.communicationId === communicationId
+    if (processing) {
+      return notice(communicationId, "processing", "Not met", "The pack-ready notification is being processed. Another copy is not sent while that lease is live.")
     }
+    const stalled = dispatch == null || dispatch.stalled || dispatch.workerLate || dispatch.communicationId !== communicationId
+    const detail = stalled
+      ? "Email queued for automatic sending. Automatic sending has not moved it. Queued is not sent."
+      : "Email queued for automatic sending. Queued is not sent."
+    return { headline: "Pack published", detail, state: "Not met", phase: "queued", communicationId, stalled }
   }
-  return {
-    headline: "Pack available; provider acceptance is unknown",
-    detail: "The notification status is not confirmed, so another copy was not sent.",
-    state: "Not met",
-  }
+  return notice(communicationId, "acceptance_unknown", "Not met", "The pack-ready notification status is not confirmed, so another copy was not sent.")
+}
+
+function notice(
+  communicationId: string,
+  phase: PackNotificationPhase,
+  state: "Met" | "Not met",
+  detail: string,
+): PackReadyNotification {
+  return { headline: "Pack published", detail, state, phase, communicationId, stalled: false }
 }
 
 export type PreparationReadiness = {
@@ -192,6 +218,7 @@ export function buildJourneyPreparationPanel(input: {
   packs: PreparedPackCase | null
   recordsConflict: boolean
   mailRecovery?: boolean
+  dispatch?: PackNotificationDispatch | null
 }): JourneyPreparationPanel {
   const facts = input.facts
   const loaded = input.packs
@@ -223,7 +250,7 @@ export function buildJourneyPreparationPanel(input: {
     ? { ...loaded, eligible }
     : null
 
-  const notification = packReadyNotification(facts.communications)
+  const notification = packReadyNotification(facts.communications, input.dispatch ?? null)
   const headline = disagreed
     ? "Pack records disagree"
     : readiness.stale
@@ -243,7 +270,7 @@ export function buildJourneyPreparationPanel(input: {
                 : current.status === "APPROVED" && !current.published
                   ? "Send the completed pack"
                   : readiness.ready
-                    ? notification.headline
+                    ? "Pack published"
                     : "The completed pack is not ready"
 
   const detail = "Case preparation is the current approved pack after it has been published. Approval does not publish it. Publication uses the existing customer case-access rule and does not submit anything to Google."
@@ -301,9 +328,26 @@ export function buildJourneyPreparationPanel(input: {
                 : "Prepare the submission materials."
 
   const stored = source?.packs.find(pack => pack.id === current?.id)
-  const packEmailRecovery = input.mailRecovery && readiness.ready && notification.headline === "Available in portal; email not sent" && stored
+  const packEmailRecovery = input.mailRecovery && readiness.ready && notification.phase === "none" && stored
     ? { packId: stored.id, recordVersion: stored.recordVersion }
     : null
+  const packNotificationRecovery = input.mailRecovery && readiness.ready && notification.phase === "queued" && notification.stalled && notification.communicationId
+    ? { communicationId: notification.communicationId }
+    : null
+  if (packNotificationRecovery) {
+    notices.push("The pack-ready notification is still queued. Process queued notification now sends only this communication.")
+  }
 
-  return { headline, detail, packs: display, requirements, notices, who, commands, guided: facts.serviceTrack === "GUIDED", packEmailRecovery }
+  return {
+    headline,
+    detail,
+    packs: display,
+    requirements,
+    notices,
+    who,
+    commands,
+    guided: facts.serviceTrack === "GUIDED",
+    packEmailRecovery,
+    packNotificationRecovery,
+  }
 }

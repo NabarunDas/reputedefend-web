@@ -80,7 +80,8 @@ export type JourneyClosurePanel = {
 const GUARD_HREF = "/guard" as const
 
 export function guidedCompletionNotice(communications: CaseFlowFacts["communications"]): string {
-  return customerMailStatus(communications, "GUIDED_COMPLETION", "completion email")
+  const status = customerMailStatus(communications, "GUIDED_COMPLETION", "case-closure email")
+  return `${status} This is not the document-ready email.`
 }
 
 function outcomeLabel(value: string | null | undefined): string {
@@ -289,7 +290,7 @@ export function presentJourneyClosure(input: {
     && facts.caseStatus === "CLOSED"
     && facts.serviceTrack === "GUIDED"
     && !facts.outcome
-    && completionStatus.startsWith("No completion email")
+    && completionStatus.startsWith("No case-closure email")
     && facts.outcomeSummary.trim().length >= 10
     && facts.outcomeSummary.length <= 2000
   const managedClose = close && facts.serviceTrack === "MANAGED" && !fulfilment

@@ -295,7 +295,7 @@ describe("evidence workspace presentation", () => {
       published: true, items: [item],
     }
     show(evidence([], []), [], { caseId, packs: [approved], eligible: [] })
-    expect(screen.getByText("Published for customer case access")).toBeTruthy()
+    expect(screen.getByText("Published — available in the customer portal")).toBeTruthy()
     expect(screen.getByText(/does not confirm payment, permission or submission to Google/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: /submit to google/i })).toBeNull()
   })

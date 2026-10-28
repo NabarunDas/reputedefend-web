@@ -156,8 +156,9 @@ describe("guided case preparation", () => {
     expect(document.querySelector("[data-step='PREPARATION']")).not.toHaveAttribute("data-state", "COMPLETED")
     expect(screen.getByText("Pack #1: Draft.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Review and publish pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
-    fireEvent.click(screen.getByText("Approve pack"))
+    fireEvent.click(screen.getByRole("button", { name: "Review and approve pack" }))
     fireEvent.change(screen.getByRole("textbox", { name: /Approval note/ }), { target: { value: "The invoice is the selected evidence." } })
     fireEvent.click(screen.getByRole("checkbox", { name: /exact evidence selection/i, hidden: true }))
     fireEvent.submit(screen.getByRole("button", { name: "Approve prepared pack" }).closest("form")!)
@@ -173,7 +174,11 @@ describe("guided case preparation", () => {
     show(facts({
       packs: { packs: [{ id: "pack-1", packNumber: 1, status: "APPROVED", published: false, everPublished: false, itemCount: 1 }], eligibleCount: 0 },
     }), { caseId: CASE_ID, packs: [draft({ status: "APPROVED", approvedAt: "2026-06-02T12:00:00.000Z", approvalNote: "Selected evidence only." })], eligible: [] })
-    expect(screen.getByRole("button", { name: "Publish pack", hidden: true })).toBeTruthy()
+    expect(screen.getByText("Approved — not yet shared with customer")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Review and publish pack" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Prepare a replacement draft" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Create new draft pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Approve prepared pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
     expect(document.querySelector("[data-step='PREPARATION']")).not.toHaveAttribute("data-state", "COMPLETED")
@@ -202,7 +207,7 @@ describe("guided case preparation", () => {
     const published = draft({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z", approvalNote: "Selected evidence only." })
     const row = { id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }
     const noCommands = () => {
-      for (const name of ["Create new draft pack", "Approve prepared pack", "Publish pack", "Unpublish pack"]) {
+      for (const name of ["Create new draft pack", "Prepare a replacement draft", "Review and approve pack", "Approve prepared pack", "Review and publish pack", "Publish pack", "Unpublish pack"]) {
         expect(screen.queryByRole("button", { name, hidden: true })).toBeNull()
       }
       expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
@@ -212,7 +217,9 @@ describe("guided case preparation", () => {
     expect(document.querySelector("[data-step='PREPARATION']")).toHaveAttribute("data-state", "COMPLETED")
     expect(document.querySelector("[data-preparation]")).toHaveAttribute("data-preparation", "Available in portal; email not sent")
     expect(screen.getByText(/Publication: Met/)).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Unpublish pack", hidden: true })).toBeTruthy()
+    expect(screen.getByText("Published — available in the customer portal")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Unpublish pack" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Review and publish pack" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send pack-ready email" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Submit to Google/i })).toBeNull()
     cleanup()

@@ -1,5 +1,5 @@
 "use client"
-import { useRef, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { CommandForm, Reason } from "../../../records/forms"
 import { Badge } from "../../../ui"
@@ -222,11 +222,14 @@ export function UploadEvidenceForm({ caseId, documents, openRequests }: { caseId
 
 const packEndpoint = "/api/packs/command"
 
-export function CreateDraftPackForm({ caseId }: { caseId: string }) {
-  return <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Create new draft pack" payload={() => ({
+export function CreateDraftPackForm({ caseId, intent = "create" }: { caseId: string; intent?: "create" | "replacement" }) {
+  const replacement = intent === "replacement"
+  return <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel={replacement ? "Prepare a replacement draft" : "Create new draft pack"} submitClass={replacement ? "secondary" : undefined} payload={() => ({
     operation: "create", caseId,
   })}>
-    <p>{PACK_APPROVAL_WARNING}</p>
+    {replacement
+      ? <p className="pack-secondary-note">Use this if the approved documents need correcting. The approved pack stays as it is.</p>
+      : <p>{PACK_APPROVAL_WARNING}</p>}
   </CommandForm>
 }
 
@@ -279,45 +282,90 @@ function EligibleVersionRow({ caseId, pack, version }: { caseId: string; pack: P
   </li>
 }
 
+function packRoleLabel(role: PreparedPack["items"][number]["role"]) {
+  if (role === "DELIVERABLE") return "Completed statement"
+  if (role === "EVIDENCE") return "Supporting evidence"
+  if (role === "INSTRUCTIONS") return "Customer submission instructions"
+  return null
+}
+
+function PackFileInventory({ pack }: { pack: PreparedPack }) {
+  const count = pack.items.length
+  return <>
+    <p><strong>{count} file{count === 1 ? "" : "s"}.</strong></p>
+    <ol className="pack-inventory">
+      {pack.items.map(item => {
+        const role = packRoleLabel(item.role)
+        return <li key={item.id}>
+          <strong>{item.documentTitle}</strong>
+          <span className="pack-filename">File name: {item.originalFilename}</span>
+          {role && <span className="pack-role">Role: {role}</span>}
+        </li>
+      })}
+    </ol>
+  </>
+}
+
 export function ApprovePackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
-  return <details><summary>Approve pack</summary>
+  const [open, setOpen] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { if (open) heading.current?.focus() }, [open])
+  if (!open) return <button type="button" aria-expanded="false" onClick={() => setOpen(true)}>Review and approve pack</button>
+  return <div className="pack-review" role="region" aria-label="Review pack before approval">
+    <h4 ref={heading} tabIndex={-1}>Approve this draft</h4>
     <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Approve prepared pack" payload={form => ({
       operation: "approve", caseId, packId: pack.id, recordVersion: pack.recordVersion, note: form.get("note"), confirmed: form.get("confirmed") === "true",
     })}>
       <p>{PACK_APPROVAL_WARNING}</p>
+      <PackFileInventory pack={pack} />
       <Reason name="note" label="Approval note" maxLength={2000} />
       <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />{PACK_CONFIRMATION}</label>
     </CommandForm>
-  </details>
+  </div>
 }
 
 function packPublishable(pack: PreparedPack) {
   return pack.status === "APPROVED" && pack.items.length > 0 && pack.items.every(item => item.customerVisible !== false)
 }
 
+const PACK_FILE_CONFIRMATION = "I confirm these exact files are suitable for this customer to access."
+
 export function PublishPackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
-  return <details><summary>Publish pack for customer case access</summary>
+  const [open, setOpen] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { if (open) heading.current?.focus() }, [open])
+  if (!open) return <button type="button" aria-expanded="false" onClick={() => setOpen(true)}>Review and publish pack</button>
+  return <div className="pack-review" role="region" aria-label="Review pack before publishing">
+    <h4 ref={heading} tabIndex={-1}>Files that will be shared</h4>
     <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Publish pack" payload={form => ({
       operation: "publish", caseId, packId: pack.id, recordVersion: pack.recordVersion, note: form.get("note"), confirmed: form.get("confirmed") === "true",
     })}>
-      <p>{PACK_PUBLISH_WARNING}</p>
+      <PackFileInventory pack={pack} />
+      <p className="notice-warning">Check every file in this list. This screen does not decide whether a file name is safe to share.</p>
       {!packPublishable(pack) && <p className="notice-danger">Every included version must be accepted, clean, valid and customer-visible before publication.</p>}
+      <p>{PACK_PUBLISH_WARNING}</p>
       <Reason name="note" label="Publication note" maxLength={2000} />
+      <label className="checkbox"><input type="checkbox" name="filesSuitable" value="true" required />{PACK_FILE_CONFIRMATION}</label>
       <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />{PACK_PUBLISH_CONFIRMATION}</label>
     </CommandForm>
-  </details>
+  </div>
 }
 
 export function UnpublishPackForm({ caseId, pack }: { caseId: string; pack: PreparedPack }) {
-  return <details><summary>Unpublish pack</summary>
-    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Unpublish pack" payload={form => ({
+  const [open, setOpen] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { if (open) heading.current?.focus() }, [open])
+  if (!open) return <button type="button" className="secondary" aria-expanded="false" onClick={() => setOpen(true)}>Unpublish pack</button>
+  return <div className="pack-review" role="region" aria-label="Unpublish pack">
+    <h4 ref={heading} tabIndex={-1}>Remove customer access</h4>
+    <CommandForm actionUrl={packEndpoint} endpoint="command" submitLabel="Unpublish pack" submitClass="secondary" payload={form => ({
       operation: "unpublish", caseId, packId: pack.id, recordVersion: pack.recordVersion, reason: form.get("reason"), confirmed: form.get("confirmed") === "true",
     })}>
       <p>The customer will lose access immediately. Publishing again later requires a new explicit publish.</p>
       <Reason name="reason" label="Reason for unpublishing" maxLength={2000} />
       <label className="checkbox"><input type="checkbox" name="confirmed" value="true" required />I confirm this pack should no longer be published.</label>
     </CommandForm>
-  </details>
+  </div>
 }
 
 export function RecoverPackEmailForm({ caseId, pack }: { caseId: string; pack: { packId: string; recordVersion: number } }) {
@@ -328,37 +376,81 @@ export function RecoverPackEmailForm({ caseId, pack }: { caseId: string; pack: {
   </CommandForm>
 }
 
+function PackSummary({ pack }: { pack: PreparedPack }) {
+  const count = `${pack.items.length} file${pack.items.length === 1 ? "" : "s"}`
+  if (pack.published) {
+    return <>
+      <p className="pack-status">Published — available in the customer portal</p>
+      <p>{count}. The customer can open this pack in the portal. That does not by itself prove an email was delivered.</p>
+      <p>This does not confirm payment, permission or submission to Google.</p>
+    </>
+  }
+  if (pack.status === "APPROVED") {
+    return <>
+      <p className="pack-status">Approved — not yet shared with customer</p>
+      <p>{count}. Next: review these files and publish the pack for customer access. This does not send an email by itself.</p>
+      <p>This does not confirm payment, permission or submission to Google.</p>
+    </>
+  }
+  if (pack.status === "DRAFT") {
+    return <>
+      <p className="pack-status">{pack.items.length ? "Draft — add documents, then approve" : "Draft — add the accepted documents"}</p>
+      <p>{pack.items.length
+        ? `${count}. Add any remaining accepted documents, then approve the pack. Approval does not share it with the customer.`
+        : "Next: add accepted documents. An empty draft cannot be approved."}</p>
+    </>
+  }
+  if (pack.status === "STALE") return <p className="pack-status">Stale — do not publish this pack</p>
+  return <>
+    <p className="pack-status">Superseded — read-only history</p>
+    <p>This pack was replaced by a later pack. It cannot be changed or published.</p>
+  </>
+}
+
 export function PreparedPackPanel({ caseId, packs }: { caseId: string; packs: PreparedPackCase }) {
   const draft = packs.packs.find(pack => pack.status === "DRAFT")
   const inDraft = new Set(draft?.items.map(item => item.versionId) ?? [])
   const eligible = packs.eligible.filter(version => !inDraft.has(version.versionId))
+  const replacementId = draft ? null : (
+    packs.packs.find(pack => pack.status === "APPROVED" && !pack.published)?.id
+    ?? packs.packs.find(pack => pack.published)?.id
+    ?? null
+  )
   return <section className="panel">
     <h2>Prepared submission pack</h2>
-    <p>{PACK_APPROVAL_WARNING}</p>
-    {!packs.packs.length && <p className="muted">No prepared packs recorded.</p>}
+    {!packs.packs.length && <>
+      <p>No prepared pack yet. Create a draft, add the accepted documents, then approve it.</p>
+      <CreateDraftPackForm caseId={caseId} />
+    </>}
     {packs.packs.map(pack => <article key={pack.id} className="evidence-document">
-      <h3>Pack #{pack.packNumber} · {pack.status}</h3>
-      <p className="badge-row"><Badge tone={packStatusTone(pack.status)}>{pack.status}</Badge></p>
-      {pack.status === "STALE" && <p className="notice-danger">{PACK_STALE_WARNING}</p>}
-      {pack.status === "SUPERSEDED" && <p className="muted">This pack was replaced by a later approved pack. It is read-only history.</p>}
-      {pack.status === "APPROVED" && <p className="muted">This pack is a read-only snapshot of the approved evidence versions. It does not confirm payment, permission or submission to Google.</p>}
-      {pack.published && <p className="badge-row"><Badge tone="success">Published for customer case access</Badge></p>}
-      {pack.approvalNote && <p className="preserve-lines">Approval note: {pack.approvalNote}</p>}
-      {pack.publicationNote && <p className="preserve-lines">Publication note: {pack.publicationNote}</p>}
-      {!pack.items.length && <p className="muted">This draft is empty. Add accepted evidence below.</p>}
-      <ol className="task-list">{pack.items.map((item, index) => <li key={item.id}>
+      <h3>Pack #{pack.packNumber}</h3>
+      <p className="badge-row"><Badge tone={pack.published ? "success" : packStatusTone(pack.status)}>{pack.published ? "Published" : pack.status}</Badge></p>
+      <div className="pack-actions">
+        <PackSummary pack={pack} />
+        {pack.status === "STALE" && <p className="notice-danger">{PACK_STALE_WARNING}</p>}
+        {pack.approvalNote && <p className="preserve-lines">Approval note: {pack.approvalNote}</p>}
+        {pack.publicationNote && <p className="preserve-lines">Publication note: {pack.publicationNote}</p>}
+        <div className="pack-action-row">
+          {pack.status === "DRAFT" && pack.items.length > 0 && <ApprovePackForm caseId={caseId} pack={pack} />}
+          {pack.status === "APPROVED" && !pack.published && <PublishPackForm caseId={caseId} pack={pack} />}
+          {pack.published && <UnpublishPackForm caseId={caseId} pack={pack} />}
+        </div>
+        {pack.id === replacementId && <CreateDraftPackForm caseId={caseId} intent="replacement" />}
+      </div>
+      {!pack.items.length && pack.status === "DRAFT" && <p className="muted">This draft is empty. Add accepted evidence below.</p>}
+      {pack.items.length > 0 && <ol className="task-list">{pack.items.map((item, index) => <li key={item.id}>
         <strong>{item.documentTitle}</strong> · {item.originalFilename} · {fileTypeLabel(item.contentType)} · {formatBytes(item.sizeBytes)} · version {item.versionNumber}
         <PackItemActions caseId={caseId} pack={pack} item={item} index={index} last={index === pack.items.length - 1} />
-      </li>)}</ol>
+      </li>)}</ol>}
       {pack.status === "DRAFT" && <>
         <h4>Eligible accepted evidence</h4>
         {!eligible.length && <p className="muted">No further accepted, clean and valid versions are available to add.</p>}
         <ul className="task-list">{eligible.map(version => <EligibleVersionRow key={version.versionId} caseId={caseId} pack={pack} version={version} />)}</ul>
-        {pack.items.length > 0 && <ApprovePackForm caseId={caseId} pack={pack} />}
       </>}
-      {pack.status === "APPROVED" && !pack.published && <PublishPackForm caseId={caseId} pack={pack} />}
-      {pack.published && <UnpublishPackForm caseId={caseId} pack={pack} />}
     </article>)}
-    {!draft && <CreateDraftPackForm caseId={caseId} />}
+    {!draft && packs.packs.length > 0 && !replacementId && <div className="pack-actions">
+      <p>Next: create a new draft from the accepted documents.</p>
+      <CreateDraftPackForm caseId={caseId} />
+    </div>}
   </section>
 }

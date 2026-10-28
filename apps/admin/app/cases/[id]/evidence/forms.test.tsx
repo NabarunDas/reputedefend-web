@@ -187,7 +187,7 @@ describe("evidence forms", () => {
       id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "DRAFT", approvalNote: "",
       createdAt: "2026-09-18T10:00:00.000Z", approvedAt: null, recordVersion: 2, items: [],
     }} />)
-    fireEvent.click(screen.getByText("Approve pack"))
+    fireEvent.click(screen.getByRole("button", { name: "Review and approve pack" }))
     expect(screen.getByText("Approval note")).toBeTruthy()
     expect((screen.getByRole("checkbox", { name: PACK_CONFIRMATION }) as HTMLInputElement).required).toBe(true)
     expect(screen.queryByRole("button", { name: /submit to google/i })).toBeNull()
@@ -206,14 +206,123 @@ describe("evidence forms", () => {
       published: false, items: [item],
     }
     render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [approved], eligible: [] }} />)
-    fireEvent.click(screen.getByText("Publish pack for customer case access"))
+    expect(screen.getByText("Approved — not yet shared with customer")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Review and publish pack" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Prepare a replacement draft" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Create new draft pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
     expect(screen.getByText(PACK_PUBLISH_WARNING)).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Review pack before publishing" })).toHaveTextContent("Supporting invoice")
+    expect(screen.getByRole("region", { name: "Review pack before publishing" })).toHaveTextContent("File name: invoice.pdf")
     expect((screen.getByRole("checkbox", { name: PACK_PUBLISH_CONFIRMATION }) as HTMLInputElement).required).toBe(true)
+    expect((screen.getByRole("checkbox", { name: "I confirm these exact files are suitable for this customer to access." }) as HTMLInputElement).required).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
     expect(document.body.textContent).not.toMatch(/Submit to Google|Mark as paid|customer upload/i)
     cleanup()
     render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: [{ ...approved, published: true, publicationNote: "Publish this pack for the customer case-access view." }], eligible: [] }} />)
-    expect(screen.getByText("Published for customer case access")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Unpublish pack" })).toBeTruthy()
-    expect(screen.queryByText("Publish pack for customer case access")).toBeNull()
+    expect(screen.getByText("Published — available in the customer portal")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Unpublish pack" })).toHaveClass("secondary")
+    expect(screen.queryByRole("button", { name: "Review and publish pack" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Publish pack" })).toBeNull()
+  })
+})
+
+describe("prepared pack publication actions", () => {
+  const caseId = "55555555-5555-4555-8555-555555555555"
+  const item = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", documentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    versionId: version.id, position: 1, documentTitle: "How to submit", originalFilename: "How to submit.docx",
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", sizeBytes: 4096, versionNumber: 1,
+    customerVisible: true, role: "INSTRUCTIONS" as const,
+  }
+  const second = {
+    ...item, id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", documentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    versionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", position: 2, documentTitle: "Ownership letter",
+    originalFilename: "ownership.pdf", contentType: "application/pdf", role: undefined,
+  }
+  function pack(overrides: Partial<PreparedPack> = {}): PreparedPack {
+    return {
+      id: "99999999-9999-4999-8999-999999999999", packNumber: 1, status: "APPROVED",
+      approvalNote: "Selected evidence only.", createdAt: "2026-09-18T10:00:00.000Z",
+      approvedAt: "2026-09-18T11:00:00.000Z", recordVersion: 4, published: false, items: [item, second],
+      ...overrides,
+    }
+  }
+  function show(rows: PreparedPack[]) {
+    render(<PreparedPackPanel caseId={caseId} packs={{ caseId, packs: rows, eligible: [] }} />)
+  }
+  const absent = (name: string) => expect(screen.queryByRole("button", { name })).toBeNull()
+
+  it("keeps publish behind the file inventory and sends the existing payload", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: "The pack is available in the portal." }) })
+    show([pack()])
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
+    const review = screen.getByRole("region", { name: "Review pack before publishing" })
+    expect(review).toHaveTextContent("2 files.")
+    expect(review).toHaveTextContent("How to submit")
+    expect(review).toHaveTextContent("File name: How to submit.docx")
+    expect(review).toHaveTextContent("Role: Customer submission instructions")
+    expect(review).toHaveTextContent("Ownership letter")
+    expect(review).toHaveTextContent("File name: ownership.pdf")
+    expect(review).not.toHaveTextContent("Role: Supporting evidence")
+    expect(review).toHaveTextContent("This screen does not decide whether a file name is safe to share.")
+    expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole("textbox", { name: /Publication note/ }), { target: { value: "Share these two files in the portal." } })
+    fireEvent.click(screen.getByRole("checkbox", { name: "I confirm these exact files are suitable for this customer to access." }))
+    fireEvent.click(screen.getByRole("checkbox", { name: PACK_PUBLISH_CONFIRMATION }))
+    fireEvent.submit(screen.getByRole("button", { name: "Publish pack" }).closest("form")!)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [url, request] = fetchMock.mock.calls[0]
+    expect(url).toBe("/api/packs/command")
+    expect(JSON.parse(request.body)).toEqual({
+      operation: "publish",
+      caseId,
+      packId: "99999999-9999-4999-8999-999999999999",
+      recordVersion: 4,
+      note: "Share these two files in the portal.",
+      confirmed: true,
+    })
+    expect(request.headers["idempotency-key"]).toEqual(expect.any(String))
+  })
+
+  it("warns when a listed file cannot be published and still does not submit", () => {
+    show([pack({ items: [{ ...item, customerVisible: false }] })])
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish pack" }))
+    expect(screen.getByText("Every included version must be accepted, clean, valid and customer-visible before publication.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Publish pack" })).toBeTruthy()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("emphasises adding documents and approval while a draft is open", () => {
+    show([pack({ status: "DRAFT", approvedAt: null, published: false, items: [item] })])
+    expect(screen.getByText("Draft — add documents, then approve")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Eligible accepted evidence" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Review and approve pack" })).toBeTruthy()
+    absent("Review and publish pack")
+    absent("Publish pack")
+    absent("Create new draft pack")
+    absent("Prepare a replacement draft")
+    absent("Unpublish pack")
+  })
+
+  it("offers no publication action for a stale or superseded pack", () => {
+    show([pack({ status: "STALE", items: [item] })])
+    expect(screen.getByText(/Pack stale/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Create new draft pack" })).toBeTruthy()
+    absent("Review and publish pack")
+    absent("Publish pack")
+    absent("Unpublish pack")
+    absent("Review and approve pack")
+    cleanup()
+    show([pack({ status: "SUPERSEDED", published: false, items: [item] })])
+    expect(screen.getByText("Superseded — read-only history")).toBeTruthy()
+    expect(screen.getByText("This pack was replaced by a later pack. It cannot be changed or published.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Create new draft pack" })).toBeTruthy()
+    absent("Review and publish pack")
+    absent("Publish pack")
+    absent("Unpublish pack")
+    absent("Prepare a replacement draft")
+    absent("Review and approve pack")
   })
 })

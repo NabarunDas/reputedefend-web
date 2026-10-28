@@ -1050,7 +1050,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Billing documents", probe: "public.customer_portal_invoice_document_v1" },
   },
   {
-    // GUIDED-POSTPAYMENT-HANDOVER-01. Observed DEV ledger head, applied once.
+    // GUIDED-POSTPAYMENT-HANDOVER-01. Already in the DEV ledger, applied once.
     // Do not replay. Not applied to Production.
     // Repository file SHA-256 01f1e7c1a91d5414177da91a8f109e5dd24062ad1d2a863a5b5395b58b01baa4.
     // The applied file does not update an existing case, create a receipt, charge a card, or send mail.
@@ -1064,14 +1064,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided post-payment handover", probe: "public.guided_postpayment_reconcile_v1" },
   },
   {
-    // Source-only Guided publication. Not applied to DEV or Production.
-    // Do not replay it and do not apply it to repair an existing pack.
-    // The file does not publish a pack, change a document, send mail, or take payment.
+    // GUIDED pack publication. Observed DEV ledger head, applied once.
+    // The reviewer aligned generated ledger version 20261028161444 to canonical
+    // 20261028160000 after verifying the source. Do not replay. Not applied to Production.
+    // Repository file SHA-256 ce08c89bb8a5388bf75c1edb2c33979eca396ea5d92665cf0f799ef9d858ef83.
+    // The applied file does not publish a pack, change a document, send mail, or take payment.
     version: "20261028160000",
     filename: "20261028160000_guided_pack_publish_visibility_v1.sql",
     step: "GUIDED pack publication establishes visibility for the confirmed files",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided pack publication", probe: "admin_private.pack_publication_block_v1" },
@@ -1087,9 +1089,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261028120000`. Guided post-payment handover was applied once to DEV and
- * must not be replayed. It is not applied to Production. Billing documents
- * `20261027120000` remains applied and must not be replayed. Production
+ * `20261028160000`. Guided pack publication was applied once to DEV and
+ * must not be replayed. It is not applied to Production. Guided post-payment
+ * handover `20261028120000` remains applied and must not be replayed. Production
  * remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

@@ -1038,7 +1038,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // PROFILERELAUNCH-UNIFIED-BILLING-DOCUMENTS-01. Customer billing documents.
-    // Observed DEV ledger head, applied once. Do not replay. Not applied to Production.
+    // Already in the DEV ledger, applied once. Do not replay. Not applied to Production.
     // Repository file SHA-256 bb3ff59154e28d73208529557f67cdce144a4cf1b017257198c8be4301ab52e0.
     version: "20261027120000",
     filename: "20261027120000_billing_documents_v1.sql",
@@ -1050,14 +1050,15 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Billing documents", probe: "public.customer_portal_invoice_document_v1" },
   },
   {
-    // GUIDED-POSTPAYMENT-HANDOVER-01. Source only.
-    // Do not apply to DEV or Production from this change.
-    // It does not update an existing case, create a receipt, charge a card, or send mail.
+    // GUIDED-POSTPAYMENT-HANDOVER-01. Observed DEV ledger head, applied once.
+    // Do not replay. Not applied to Production.
+    // Repository file SHA-256 01f1e7c1a91d5414177da91a8f109e5dd24062ad1d2a863a5b5395b58b01baa4.
+    // The applied file does not update an existing case, create a receipt, charge a card, or send mail.
     version: "20261028120000",
     filename: "20261028120000_guided_postpayment_handover_v1.sql",
     step: "GUIDED-POSTPAYMENT-HANDOVER-01 guided post-payment handover",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided post-payment handover", probe: "public.guided_postpayment_reconcile_v1" },
@@ -1073,10 +1074,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261027120000`. Billing documents was observed once in the DEV ledger and
- * must not be replayed. It is not applied to Production. Guided post-payment
- * handover `20261028120000` remains unapplied. Do not apply that file from
- * this change. Production remains on its own historical migration head.
+ * `20261028120000`. Guided post-payment handover was applied once to DEV and
+ * must not be replayed. It is not applied to Production. Billing documents
+ * `20261027120000` remains applied and must not be replayed. Production
+ * remains on its own historical migration head.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

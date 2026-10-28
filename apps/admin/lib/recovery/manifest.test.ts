@@ -18,10 +18,10 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261027120000_billing_documents_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261028120000_guided_postpayment_handover_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(migrationHead.filename).toMatch(/guided_postpayment_handover_v1\.sql$/)
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261019163645_admin_journey_05_assessment_dev_v1.sql")?.appliedToDev).toBe(true)
@@ -34,9 +34,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261028120000_guided_postpayment_handover_v1.sql",
-    ])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261027120000_billing_documents_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261025163000_managed_success_verification_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261026140000_checkout_presentation_v1.sql")?.appliedToDev).toBe(true)
@@ -49,11 +49,13 @@ describe("the migration chain manifest", () => {
     expect(createHash("sha256").update(receiptSql).digest("hex")).toBe("2304f0760ad42a64f82c7cee5f8081ef5789deda3f9e3e3373691f10f1949611")
     const billingSql = readFileSync(new URL("20261027120000_billing_documents_v1.sql", directory), "utf8")
     expect(createHash("sha256").update(billingSql).digest("hex")).toBe("bb3ff59154e28d73208529557f67cdce144a4cf1b017257198c8be4301ab52e0")
+    const handoverSql = readFileSync(new URL("20261028120000_guided_postpayment_handover_v1.sql", directory), "utf8")
+    expect(createHash("sha256").update(handoverSql).digest("hex")).toBe("01f1e7c1a91d5414177da91a8f109e5dd24062ad1d2a863a5b5395b58b01baa4")
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023000158_email_confirmation_challenge_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration("20261024233701_admin_reconcile_accepted_service_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261025020000_guided_payment_request_email_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261025140000_guided_fulfilment_handover_v1.sql")?.appliedToDev).toBe(true)

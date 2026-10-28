@@ -1063,6 +1063,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided post-payment handover", probe: "public.guided_postpayment_reconcile_v1" },
   },
+  {
+    // Source-only Guided publication. Not applied to DEV or Production.
+    // Do not replay it and do not apply it to repair an existing pack.
+    // The file does not publish a pack, change a document, send mail, or take payment.
+    version: "20261028160000",
+    filename: "20261028160000_guided_pack_publish_visibility_v1.sql",
+    step: "GUIDED pack publication establishes visibility for the confirmed files",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided pack publication", probe: "admin_private.pack_publication_block_v1" },
+  },
 ]
 
 /**

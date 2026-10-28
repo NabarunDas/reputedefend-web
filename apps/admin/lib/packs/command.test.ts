@@ -5,6 +5,7 @@ vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof impo
 import { POST } from "@/app/api/packs/command/route"
 import { packCommand } from "./command"
 import { sessionCookie } from "@/lib/auth/config"
+import { PACK_COMMAND_CONFLICT, PACK_COMMAND_UNCERTAIN, packDeniedMessage } from "./publication"
 import { packArgs } from "./validation"
 
 const origin = "https://admin.profilerelaunch.com"
@@ -94,6 +95,44 @@ describe("prepared pack commands", () => {
     expect(denied.status).toBe(403)
     expect(await denied.text()).not.toMatch(/storage|arn:aws/)
     mocks.rpc.mockResolvedValue({ status: "conflict" })
-    expect((await packCommand(req())).status).toBe(409)
+    const conflict = await packCommand(req())
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ message: PACK_COMMAND_CONFLICT })
+    expect(PACK_COMMAND_CONFLICT).not.toMatch(/try again/i)
+  })
+  it("states a known publication block without claiming the pack was shared", async () => {
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "version" })
+    const response = await packCommand(req({
+      operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }))
+    expect(response.status).toBe(403)
+    const body = await response.json()
+    expect(body.message).toBe(packDeniedMessage("publish", "version"))
+    expect(body.message).toMatch(/Nothing was made visible and the pack was not published/)
+    expect(body.message).not.toMatch(/try again|succeeded|visible to the customer/i)
+  })
+  it("logs an uncertain pack command without the error text", async () => {
+    const filename = "private-statement.pdf"
+    const mailbox = "person@example.com"
+    const secret = "sb_secret_token_value"
+    mocks.rpc.mockRejectedValue(Object.assign(new Error(`read failed ${filename} ${mailbox} ${secret}`), { name: "PostgrestError" }))
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    const response = await packCommand(req({
+      operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }))
+    expect(response.status).toBe(503)
+    const body = await response.text()
+    expect(body).toContain(PACK_COMMAND_UNCERTAIN)
+    expect(body).toContain(key)
+    expect(body).not.toContain(filename)
+    expect(body).not.toContain(mailbox)
+    expect(body).not.toContain(secret)
+    expect(PACK_COMMAND_UNCERTAIN).not.toMatch(/try again/i)
+    const record = JSON.parse(String(logged.mock.calls[0][0]))
+    expect(record).toEqual({ event: "pack_command_uncertain", operation: "publish", correlationId: key, errorName: "PostgrestError" })
+    expect(JSON.stringify(record)).not.toContain(filename)
+    expect(JSON.stringify(record)).not.toContain(mailbox)
+    expect(JSON.stringify(record)).not.toContain(secret)
+    logged.mockRestore()
   })
 })

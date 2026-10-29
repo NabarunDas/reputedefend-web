@@ -100,10 +100,10 @@ describe("DEV mail dispatch gate", () => {
     }).ready).toBe(true)
   })
 
-  it("keeps automatic sending inactive until the separate main schedule is recorded", () => {
+  it("keeps automatic sending inactive until the separate main schedule is recorded", async () => {
     expect(devMailScheduleInstalled({})).toBe(false)
     expect(devMailScheduleInstalled({ DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED: "true" })).toBe(true)
-    expect(devMailAutomaticDispatchActive()).toBe(false)
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
     const handler = readFileSync(new URL("../communications/handler.ts", import.meta.url), "utf8")
     const dispatcher = readFileSync(new URL("./dev-mail-dispatch.ts", import.meta.url), "utf8")
     expect(handler).not.toContain("DEV_MAIL_ALLOWED_RECIPIENTS")
@@ -119,6 +119,41 @@ describe("DEV mail dispatch gate", () => {
       COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
       DEV_MAIL_ALLOWED_RECIPIENTS: "only-this-mailbox@example.com",
     }).ready).toBe(true)
+  })
+
+  it("stays inactive when activation, recovery, worker health, or credentials are missing", async () => {
+    for (const [name, value] of Object.entries({ ...preview, DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED: "true" })) {
+      vi.stubEnv(name, value)
+    }
+    mocks.rpc.mockReset()
+    mocks.rpc.mockResolvedValue({
+      status: "success", automatic: false, activation: false, schedule: true, workerHealthy: true, credentials: true,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockResolvedValue({
+      status: "success", automatic: true, activation: true, schedule: false, workerHealthy: true, credentials: true,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockResolvedValue({
+      status: "success", automatic: true, activation: true, schedule: true, workerHealthy: false, credentials: true,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockResolvedValue({
+      status: "success", automatic: true, activation: true, schedule: true, workerHealthy: true, credentials: false,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockRejectedValue(new Error("readiness unavailable"))
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockResolvedValue({
+      status: "unavailable", automatic: false, activation: false, schedule: false, workerHealthy: false, credentials: false,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(false)
+    mocks.rpc.mockResolvedValue({
+      status: "success", automatic: true, activation: true, schedule: true, workerHealthy: true, credentials: true,
+    })
+    expect(await devMailAutomaticDispatchActive()).toBe(true)
+    expect(mocks.rpc).toHaveBeenCalledWith("dev_mail_dispatch_readiness_v1", {})
+    vi.unstubAllEnvs()
   })
 })
 
@@ -170,6 +205,54 @@ describe("DEV mail dispatch run", () => {
     expect(sends).toBe(1)
     expect(calls).not.toContain("job_promote_outbox_v1")
     expect(calls).not.toContain("job_claim_batch_v1")
+  })
+
+  it("schedules a later retry after an explicit 429 and does not resend unknown acceptance", async () => {
+    for (const [name, value] of Object.entries(preview)) vi.stubEnv(name, value)
+    const seen: string[] = []
+    const failures: Array<Record<string, unknown>> = []
+    const rpc: JobRpc = {
+      async rpc<T>(name: string, args?: Record<string, unknown>): Promise<T> {
+        seen.push(name)
+        if (name === "job_fail_v1") failures.push(args ?? {})
+        if (name === "dev_mail_dispatch_candidates_v1") {
+          return { status: "success", communications: [{ communicationId }] } as T
+        }
+        if (name === "dev_mail_dispatch_claim_v1") {
+          if (seen.filter(item => item === name).length > 1) return { status: "conflict", reason: "leased" } as T
+          return {
+            status: "success",
+            jobId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            jobType: "SEND_EMAIL",
+            idempotencyKey: `send-email:${communicationId}:v1`,
+            payload: { communicationId, contentVersion: 1 },
+            leaseToken: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          } as T
+        }
+        if (name === "communication_load_send_v1") return loadedSend() as T
+        if (name === "communication_begin_provider_attempt_v1") return { status: "success", providerCallPermitted: true } as T
+        return { status: "success" } as T
+      },
+    }
+    const rejected = await runDevMailDispatchWorker({
+      rpc,
+      mailProvider: { send: async () => ({ ok: false, retryable: true, error: "Email provider rejected the message" }) },
+    })
+    expect(rejected.counts).toMatchObject({ claimed: 1, retried: 1, succeeded: 0 })
+    expect(seen).not.toContain("communication_mark_acceptance_unknown_v1")
+    expect(seen).not.toContain("communication_mark_provider_rejected_v1")
+    expect(failures[0]).toMatchObject({ p_retryable: true })
+
+    seen.length = 0
+    failures.length = 0
+    const uncertain = await runDevMailDispatchWorker({
+      rpc,
+      mailProvider: { send: async () => ({ ok: false, retryable: true, acceptanceUnknown: true, error: "Email provider acceptance is unknown" }) },
+    })
+    expect(uncertain.counts.succeeded).toBe(0)
+    expect(seen).toContain("communication_mark_acceptance_unknown_v1")
+    expect(seen).not.toContain("communication_mark_provider_accepted_v1")
+    expect(failures.at(-1)).toMatchObject({ p_retryable: true })
   })
 })
 

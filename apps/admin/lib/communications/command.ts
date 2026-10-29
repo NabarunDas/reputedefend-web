@@ -174,13 +174,7 @@ export async function communicationsCommand(request: NextRequest) {
       p_payload: payload,
       p_version: typeof version === "number" ? version : null,
     })
-    if (result?.status === "success") {
-      if (operation === "queue") {
-        const { wakeDevMailDispatch } = await import("@/lib/jobs/dev-mail-dispatch")
-        await wakeDevMailDispatch()
-      }
-      return reply(messages[operation], 200)
-    }
+    if (result?.status === "success") return reply(messages[operation], 200)
     if (result?.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
     if (result?.status === "conflict") return reply("That communication changed. Reload the page and try again.", 409)
     if (result?.status === "denied") return reply("That communication cannot be changed that way.", 403)

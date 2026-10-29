@@ -38,6 +38,15 @@ describe("DEV mail recovery target", () => {
     expect(schedule).toContain("*/5 * * * *")
     expect(schedule).not.toMatch(/Bearer [A-Za-z0-9]/)
     expect(schedule).not.toContain("supabase/migrations")
+    expect(recovery).toContain("x-vercel-protection-bypass")
+    expect(recovery).toContain("dev_mail_dispatch_bypass")
+    expect(recovery).toContain("'blocked'")
+    expect(recovery).not.toMatch(/x-vercel-protection-bypass=/)
+    expect(recovery).toContain("profilerelaunch-admin-git-develop-")
+    expect(schedule).toContain("dev_mail_dispatch_bypass")
+    expect(schedule).toContain("x-vercel-protection-bypass")
+    expect(workflow).toContain("x-vercel-protection-bypass")
+    expect(workflow).not.toMatch(/--location|-L |x-vercel-protection-bypass=/)
   })
 
   it("treats a GitHub cron as refused even on main", () => {

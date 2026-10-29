@@ -6,12 +6,16 @@
 -- without calling the Admin preview, Vercel, or Resend.
 --
 -- Before running this script, a reviewer enables pg_cron and pg_net on the
--- DEV project and stores two Supabase Vault secrets. This file does not
--- contain either value:
---   dev_mail_dispatch_url     the develop Admin preview dispatch route
---   dev_mail_dispatch_bearer  the develop worker secret
--- The URL must be the develop Admin preview. The recovery function refuses
--- any other host.
+-- DEV project and stores three Supabase Vault secrets. This file does not
+-- contain any of those values:
+--   dev_mail_dispatch_url      the develop Admin preview dispatch route
+--   dev_mail_dispatch_bearer   the develop worker secret
+--   dev_mail_dispatch_bypass   the Vercel automation protection bypass
+-- The URL must be exactly
+-- https://profilerelaunch-admin-git-develop-<name>.vercel.app/api/internal/jobs/dev-mail-dispatch
+-- with no query string. The bypass is sent as the x-vercel-protection-bypass
+-- header. Deployment protection stays enabled. A 302 or 401 is a blocked
+-- wake, not a successful send.
 --
 -- Also insert the single activation row only after the pending-email
 -- inventory has been read. Mail queued before active_from is not claimed.

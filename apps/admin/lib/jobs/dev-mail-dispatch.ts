@@ -52,22 +52,33 @@ export function devMailScheduleInstalled(env: EnvMap = process.env): boolean {
   return env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED === "true"
 }
 
-/**
- * After the queue transaction has committed, ask the shared dispatcher to
- * claim eligible mail. A closed gate or a failed wake leaves the row queued.
- */
-export async function wakeDevMailDispatch(): Promise<void> {
-  if (devMailDispatchWorkerBlock()) return
-  try {
-    await runDevMailDispatchWorker({ rpc: backend() })
-  } catch {
-    // The business transaction has already committed. Recovery can claim the row later.
-  }
+export type DevMailReadiness = {
+  status?: string
+  automatic?: boolean
+  activation?: boolean
+  schedule?: boolean
+  workerHealthy?: boolean
+  credentials?: boolean
 }
 
-/** Automatic sending is active only when the worker gate and the installed recovery both hold. */
-export function devMailAutomaticDispatchActive(): boolean {
-  return devMailDispatchWorkerBlock() === null && devMailScheduleInstalled()
+/**
+ * Automatic sending is operational only when the worker gate is open and the
+ * database confirms activation, the five-minute recovery job, worker health
+ * and the Vault credentials. A read failure stays inactive.
+ */
+export async function devMailAutomaticDispatchActive(): Promise<boolean> {
+  if (devMailDispatchWorkerBlock() || !devMailScheduleInstalled()) return false
+  try {
+    const result = await backend().rpc<DevMailReadiness>("dev_mail_dispatch_readiness_v1", {})
+    return result?.status === "success"
+      && result.automatic === true
+      && result.activation === true
+      && result.schedule === true
+      && result.workerHealthy === true
+      && result.credentials === true
+  } catch {
+    return false
+  }
 }
 
 export type ProductionMailDispatchAssessment = {

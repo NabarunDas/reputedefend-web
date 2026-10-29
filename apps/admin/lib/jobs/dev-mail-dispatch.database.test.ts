@@ -28,11 +28,18 @@ type Json = {
   jobId?: string
   jobType?: string
   leaseToken?: string
+  idempotencyKey?: string
+  jobStatus?: string
   attempts?: number
   phase?: string
   stalled?: boolean
   eligible?: number
   wake?: string
+  automatic?: boolean
+  activation?: boolean
+  schedule?: boolean
+  workerHealthy?: boolean
+  credentials?: boolean
   communications?: Array<{ communicationId?: string }>
   messages?: Array<{ communicationId?: string; templateKey?: string; eligible?: boolean; reason?: string }>
   workers?: Array<{ workerName?: string }>
@@ -166,6 +173,22 @@ describe("develop mail dispatch", () => {
     const marker = await rows<{ provolatile: string; proconfig: string[] | null }>(
       "select provolatile, proconfig from pg_proc where oid = 'public.admin_pack_notification_status_v1(text,uuid,integer)'::regprocedure",
     )
+    const url = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app/api/internal/jobs/dev-mail-dispatch"
+    const bearer = "b".repeat(32)
+    const bypass = "p".repeat(32)
+    const credentials = async (target: string | null, token: string | null, header: string | null) =>
+      (await rows<{ value: Json }>("select admin_private.dev_mail_dispatch_wake_credentials_v1($1, $2, $3) as value", [target, token, header]))[0].value
+    expect(await credentials(url, bearer, bypass)).toMatchObject({ ok: true })
+    expect(await credentials(url, bearer, null)).toMatchObject({ ok: false, reason: "invalid_bypass" })
+    expect(await credentials(url, bearer, "short-bypass")).toMatchObject({ ok: false, reason: "invalid_bypass" })
+    expect(await credentials(url, "short-bearer", bypass)).toMatchObject({ ok: false, reason: "invalid_bearer" })
+    expect(await credentials(url, `${bearer.slice(0, 16)} ${bearer.slice(16)}`, bypass)).toMatchObject({ ok: false, reason: "invalid_bearer" })
+    expect(await credentials("https://admin.profilerelaunch.com/api/internal/jobs/dev-mail-dispatch", bearer, bypass)).toMatchObject({ ok: false, reason: "invalid_url" })
+    expect(await credentials(`${url}?x-vercel-protection-bypass=${bypass}`, bearer, bypass)).toMatchObject({ ok: false, reason: "invalid_url" })
+    expect(await credentials(null, bearer, bypass)).toMatchObject({ ok: false, reason: "invalid_url" })
+    expect(sql).toContain("x-vercel-protection-bypass")
+    expect(sql).not.toMatch(/x-vercel-protection-bypass=/)
+
     expect(marker).toEqual([{ provolatile: "v", proconfig: ["search_path=\"\""] }])
     const status = await rpc<Json>("admin_pack_notification_status_v1", [token, caseId, 300])
     expect(status.phase).toBe("processing")
@@ -182,5 +205,89 @@ describe("develop mail dispatch", () => {
       expect((await rows<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(false)
       expect((await rows<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(true)
     }
+    for (const signature of [
+      "public.dev_mail_dispatch_readiness_v1()",
+      "admin_private.dev_mail_dispatch_wake_credentials_v1(text,text,text)",
+    ]) {
+      expect((await rows<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(false)
+      expect((await rows<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature]))[0].ok).toBe(true)
+    }
+    expect((await rows<{ ok: boolean }>("select has_function_privilege('service_role', 'admin_private.dev_mail_retry_due_v1(uuid)', 'EXECUTE') as ok"))[0].ok).toBe(false)
+  })
+
+  it("retries an explicit rejection once and leaves uncertain acceptance unsent", async () => {
+    await db.query(
+      "insert into admin_private.dev_mail_dispatch_activation(id, active_from, note) values (1, now() - interval '1 day', 'Disposable activation') on conflict (id) do nothing",
+    )
+    const readiness = await rpc<Json>("dev_mail_dispatch_readiness_v1", [])
+    expect(readiness).toMatchObject({ status: "success", automatic: false, activation: true, schedule: false, credentials: false })
+    await db.query(
+      `insert into admin_private.job_worker_heartbeats(worker_name, environment, last_success_at, expected_interval_seconds, late_after_seconds)
+       values ('dev-mail-dispatch', 'preview', now(), 300, 600)`,
+    )
+    expect(await rpc<Json>("dev_mail_dispatch_readiness_v1", [])).toMatchObject({
+      status: "success", automatic: false, activation: true, schedule: false, workerHealthy: true, credentials: false,
+    })
+    await db.query(
+      "update admin_private.job_worker_heartbeats set last_success_at = now() - interval '2 hours' where worker_name = 'dev-mail-dispatch'",
+    )
+    expect((await rpc<Json>("dev_mail_dispatch_readiness_v1", [])).workerHealthy).toBe(false)
+
+    const retryMail = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    const unknownMail = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    const exhaustedMail = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    const page = `${origin}/portal/cases/PR-26-MALL2A/documents`
+    await db.exec("alter table public.communications disable trigger communications_fulfilment_email_guard")
+    for (const id of [retryMail, unknownMail, exhaustedMail]) {
+      await db.query(
+        `insert into public.communications(
+          id, case_id, communication_type, recipient, subject, lifecycle, delivery_status, template_key, template_version,
+          body_text, body_html, content_version, content_locked, customer_id
+        ) values ($1,$2,'CASE_UPDATE','alex@example.com','Your preparation is complete','QUEUED','NONE','GUIDED_COMPLETION',1,$3,$4,1,true,$5)`,
+        [id, caseId, `The preparation is complete.\n${page}`, `<p>The preparation is complete.</p><p>${page}</p>`, customer],
+      )
+      await db.query(
+        `select admin_private.enqueue_outbox_v1($1, 'SEND_EMAIL', 'communication', $2::uuid, $3::jsonb, now() - interval '10 minutes')`,
+        [`send-email:${id}:v1`, id, JSON.stringify({ communicationId: id, contentVersion: 1 })],
+      )
+    }
+    await db.exec("alter table public.communications enable trigger communications_fulfilment_email_guard")
+
+    const first = await rpc<Json>("dev_mail_dispatch_claim_v1", [retryMail, origin])
+    expect(first).toMatchObject({ status: "success", attempts: 1, idempotencyKey: `send-email:${retryMail}:v1` })
+    expect(await rpc<Json>("communication_begin_provider_attempt_v1", [retryMail, 1, first.idempotencyKey])).toMatchObject({
+      status: "success", providerCallPermitted: true,
+    })
+    expect(await rpc<Json>("job_fail_v1", [first.jobId, first.leaseToken, "Email provider rejected the message", true])).toMatchObject({
+      status: "success", jobStatus: "RETRY",
+    })
+    expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(retryMail)
+    await db.query("update admin_private.jobs set scheduled_at = now() - interval '1 minute' where id = $1", [first.jobId])
+    const again = await rpc<Json>("dev_mail_dispatch_claim_v1", [retryMail, origin])
+    expect(again).toMatchObject({ status: "success", attempts: 2, idempotencyKey: first.idempotencyKey, jobId: first.jobId })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [retryMail, origin])).toMatchObject({ status: "conflict", reason: "leased" })
+    expect(await count("select count(*)::int as n from admin_private.jobs where idempotency_key = $1", [`send-email:${retryMail}:v1`])).toBe(1)
+
+    const ambiguous = await rpc<Json>("dev_mail_dispatch_claim_v1", [unknownMail, origin])
+    expect(ambiguous.status).toBe("success")
+    expect(await rpc<Json>("communication_begin_provider_attempt_v1", [unknownMail, 1, ambiguous.idempotencyKey])).toMatchObject({ status: "success" })
+    await db.query("update admin_private.jobs set lease_expires_at = now() - interval '1 minute' where id = $1", [ambiguous.jobId])
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [unknownMail, origin])).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+    await db.query(
+      "update public.communications set delivery_status = 'ACCEPTANCE_UNKNOWN' where id = $1",
+      [unknownMail],
+    )
+    await db.query("update admin_private.jobs set status = 'RETRY', scheduled_at = now() - interval '1 minute', lease_expires_at = null where id = $1", [ambiguous.jobId])
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [unknownMail, origin])).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+
+    const exhausted = await rpc<Json>("dev_mail_dispatch_claim_v1", [exhaustedMail, origin])
+    expect(exhausted.status).toBe("success")
+    expect(await rpc<Json>("communication_begin_provider_attempt_v1", [exhaustedMail, 1, exhausted.idempotencyKey])).toMatchObject({ status: "success" })
+    expect(await rpc<Json>("job_fail_v1", [exhausted.jobId, exhausted.leaseToken, "Email provider rejected the message", true])).toMatchObject({ jobStatus: "RETRY" })
+    await db.query("update admin_private.jobs set attempts = max_attempts, scheduled_at = now() - interval '1 minute' where id = $1", [exhausted.jobId])
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [exhaustedMail, origin])).toMatchObject({ status: "denied", reason: "dead_letter" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [exhaustedMail, origin])).toMatchObject({ status: "denied", reason: "dead_letter" })
+    expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(exhaustedMail)
+    expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(unknownMail)
   })
 })

@@ -15,6 +15,45 @@ CREATE TABLE admin_private.dev_mail_dispatch_activation (
 ALTER TABLE admin_private.dev_mail_dispatch_activation ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.dev_mail_dispatch_activation FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE FUNCTION admin_private.dev_mail_retry_due_v1(p_outbox uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM admin_private.jobs j
+    WHERE j.outbox_id = p_outbox
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RETRY'
+      AND j.scheduled_at <= now()
+  );
+$$;
+
+CREATE FUNCTION admin_private.dev_mail_dispatch_wake_credentials_v1(
+  p_url text, p_bearer text, p_bypass text
+) RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+BEGIN
+  IF p_url IS NULL
+    OR p_url !~ '^https://profilerelaunch-admin-git-develop-[a-z0-9-]+\.vercel\.app/api/internal/jobs/dev-mail-dispatch$'
+  THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_url');
+  END IF;
+  IF p_bearer IS NULL OR length(p_bearer) < 32 OR p_bearer ~ '[[:space:]]' OR position(p_bearer IN p_url) > 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_bearer');
+  END IF;
+  IF p_bypass IS NULL OR length(p_bypass) < 32 OR p_bypass ~ '[[:space:]]' OR position(p_bypass IN p_url) > 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_bypass');
+  END IF;
+  RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_candidates_v1(p_limit integer, p_customer_origin text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -64,7 +103,10 @@ BEGIN
       AND c.delivery_status IS DISTINCT FROM 'SUPPRESSED'
       AND c.delivery_status IS DISTINCT FROM 'FAILED'
       AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
-      AND c.first_provider_attempt_at IS NULL
+      AND (
+        c.first_provider_attempt_at IS NULL
+        OR admin_private.dev_mail_retry_due_v1(o.id)
+      )
       AND position('#t=' in coalesce(c.body_text, '')) = 0
       AND position('#t=' in coalesce(c.body_html, '')) = 0
       AND position(p_customer_origin IN coalesce(c.body_text, '')) > 0
@@ -157,11 +199,46 @@ BEGIN
   ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'already_processed');
   END IF;
-  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' OR comm.first_provider_attempt_at IS NOT NULL THEN
+  v_key := 'send-email:' || comm.id::text || ':v' || comm.content_version::text;
+  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
+  END IF;
+  -- A recorded attempt is safe to repeat only when the job itself is a due RETRY.
+  -- A live lease stays a conflict. An expired lease without that RETRY stays unsent.
+  IF comm.first_provider_attempt_at IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RUNNING'
+      AND j.lease_expires_at IS NOT NULL
+      AND j.lease_expires_at >= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'DEAD_LETTER'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter');
+  END IF;
+  IF comm.first_provider_attempt_at IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RETRY'
+      AND j.scheduled_at <= now()
+  ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
   END IF;
 
-  v_key := 'send-email:' || comm.id::text || ':v' || comm.content_version::text;
   IF length(v_key) > 200 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
 
   IF position('#t=' in coalesce(comm.body_text, '')) > 0
@@ -341,7 +418,10 @@ BEGIN
     JOIN public.customers cu ON cu.id = cs.customer_id
     WHERE c.lifecycle = 'QUEUED'
       AND c.content_locked IS TRUE
-      AND c.first_provider_attempt_at IS NULL
+      AND (
+        c.first_provider_attempt_at IS NULL
+        OR admin_private.dev_mail_retry_due_v1(o.id)
+      )
       AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
       AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
       AND c.delivery_status IS DISTINCT FROM 'TRANSIENT_BOUNCE'
@@ -369,6 +449,9 @@ DECLARE
   n integer;
   v_url text;
   v_bearer text;
+  v_bypass text;
+  v_http integer;
+  v_credentials jsonb;
 BEGIN
   SELECT count(*) INTO n
   FROM public.communications c
@@ -387,7 +470,16 @@ BEGIN
       'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
     )
     AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
-    AND c.first_provider_attempt_at IS NULL
+    AND (
+      c.first_provider_attempt_at IS NULL
+      OR EXISTS (
+        SELECT 1 FROM admin_private.jobs j
+        WHERE j.outbox_id = o.id
+          AND j.job_type = 'SEND_EMAIL'
+          AND j.status = 'RETRY'
+          AND j.scheduled_at <= now()
+      )
+    )
     AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
     AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
     AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
@@ -411,16 +503,37 @@ BEGIN
   END IF;
   EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_url USING 'dev_mail_dispatch_url';
   EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bearer USING 'dev_mail_dispatch_bearer';
-  IF v_url IS NULL OR v_bearer IS NULL OR position('https://profilerelaunch-admin-git-develop-' IN v_url) <> 1 THEN
-    RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured');
+  EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bypass USING 'dev_mail_dispatch_bypass';
+  v_credentials := admin_private.dev_mail_dispatch_wake_credentials_v1(v_url, v_bearer, v_bypass);
+  IF coalesce(v_credentials->>'ok', 'false') <> 'true' THEN
+    RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured', 'reason', v_credentials->>'reason');
   END IF;
-  EXECUTE 'SELECT net.http_post(url := $1, headers := $2, body := $3, timeout_milliseconds := 5000)'
-    USING v_url,
-      jsonb_build_object('Authorization', 'Bearer ' || v_bearer, 'Content-Type', 'application/json'),
-      '{"source":"recovery"}'::jsonb;
-  RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'requested');
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace
+    WHERE ns.nspname = 'net' AND c.relname = '_http_response'
+  ) THEN
+    EXECUTE 'SELECT status_code FROM net._http_response WHERE url = $1 ORDER BY created DESC LIMIT 1'
+      INTO v_http USING v_url;
+    IF v_http IN (301, 302, 303, 307, 308, 401, 403) THEN
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'blocked', 'httpStatus', v_http);
+    END IF;
+  END IF;
+  BEGIN
+    EXECUTE 'SELECT net.http_post(url := $1, headers := $2, body := $3, timeout_milliseconds := 5000)'
+      USING v_url,
+        jsonb_build_object(
+          'Authorization', 'Bearer ' || v_bearer,
+          'Content-Type', 'application/json',
+          'x-vercel-protection-bypass', v_bypass
+        ),
+        '{"source":"recovery"}'::jsonb;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
+  END;
+  RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'requested');
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured');
+  RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
 END;
 $$;
 
@@ -445,15 +558,86 @@ CREATE TRIGGER dev_mail_dispatch_wake
   AFTER INSERT ON admin_private.job_outbox
   FOR EACH ROW EXECUTE FUNCTION admin_private.dev_mail_dispatch_wake_v1();
 
+CREATE FUNCTION public.dev_mail_dispatch_readiness_v1()
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_activation boolean := false;
+  v_schedule boolean := false;
+  v_worker boolean := false;
+  v_credentials boolean := false;
+  v_url text;
+  v_bearer text;
+  v_bypass text;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM admin_private.dev_mail_dispatch_activation
+    WHERE active_from <= now()
+  ) INTO v_activation;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_cron') THEN
+    EXECUTE $sql$
+      SELECT EXISTS (
+        SELECT 1 FROM cron.job
+        WHERE jobname = 'dev-mail-dispatch-recovery'
+          AND schedule = '*/5 * * * *'
+          AND command LIKE '%dev_mail_dispatch_recovery_v1%'
+      )
+    $sql$ INTO v_schedule;
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM admin_private.job_worker_heartbeats hb
+    WHERE hb.worker_name = 'dev-mail-dispatch'
+      AND hb.environment = 'preview'
+      AND hb.last_success_at IS NOT NULL
+      AND hb.last_success_at >= now() - make_interval(secs => hb.late_after_seconds)
+  ) INTO v_worker;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'vault') THEN
+    EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_url USING 'dev_mail_dispatch_url';
+    EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bearer USING 'dev_mail_dispatch_bearer';
+    EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bypass USING 'dev_mail_dispatch_bypass';
+    v_credentials := coalesce(
+      admin_private.dev_mail_dispatch_wake_credentials_v1(v_url, v_bearer, v_bypass)->>'ok',
+      'false'
+    ) = 'true';
+  END IF;
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'automatic', v_activation AND v_schedule AND v_worker AND v_credentials,
+    'activation', v_activation,
+    'schedule', v_schedule,
+    'workerHealthy', v_worker,
+    'credentials', v_credentials
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'status', 'unavailable',
+    'automatic', false,
+    'activation', false,
+    'schedule', false,
+    'workerHealthy', false,
+    'credentials', false
+  );
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_v1(uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_inventory_v1(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_recovery_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_v1() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.dev_mail_retry_due_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_credentials_v1(text, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.dev_mail_dispatch_readiness_v1() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_v1(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_inventory_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_recovery_v1() TO service_role;
+GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_readiness_v1() TO service_role;
+GRANT EXECUTE ON FUNCTION admin_private.dev_mail_dispatch_wake_credentials_v1(text, text, text) TO service_role;
 
 NOTIFY pgrst, 'reload schema';
 

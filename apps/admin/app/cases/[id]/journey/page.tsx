@@ -378,7 +378,7 @@ async function loadJourneyPreparation(
       recordsConflict,
       mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
       dispatch,
-      automaticDispatchActive: devMailAutomaticDispatchActive(),
+      automaticDispatchActive: await devMailAutomaticDispatchActive(),
     }),
   }
 }

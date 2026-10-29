@@ -60,6 +60,7 @@ describe("DEV mail dispatch gate", () => {
     expect(devMailDispatchWorkerBlock({ ...preview, VERCEL_ENV: "production" })).toBe("wrong_environment")
     expect(devMailDispatchWorkerBlock({ ...preview, VERCEL_GIT_COMMIT_REF: "main" })).toBe("wrong_lane")
     expect(devMailDispatchWorkerBlock({ ...preview, DEV_MAIL_DISPATCH_WORKER_ENABLED: undefined })).toBe("disabled")
+    expect(devMailDispatchWorkerBlock({ ...preview, DEV_MAIL_DISPATCH_WORKER_ENABLED: "false" })).toBe("disabled")
     expect(devMailDispatchWorkerBlock({ ...preview, DEV_MAIL_DISPATCH_WORKER_SECRET: "short" })).toBe("missing_secret")
     expect(devMailDispatchWorkerBlock({ ...preview, COMMUNICATIONS_SEND_ENABLED: "false" })).toBe("mail_disabled")
     expect(devMailDispatchWorkerBlock({

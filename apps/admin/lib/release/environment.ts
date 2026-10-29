@@ -108,7 +108,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "authConfig() and customerBackendConfig() are null, so customer actions and the Customer Portal both stay closed. The marketing site falls back to its email-only intake path.",
     blocksAdminLaunch: true,
     blocksOptionalCapabilityOnly: false,
-    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/customer/lib/config.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts", "lib/payments/config.ts", "lib/supabase/config.ts"],
+    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/proxy.ts", "apps/customer/lib/config.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts", "lib/payments/config.ts", "lib/supabase/config.ts"],
   },
   {
     name: "SUPABASE_SECRET_KEY",

@@ -6,8 +6,8 @@ const repoFilenames = manifestFilenames()
 const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
-// initial foundation entries tracked in issue #190. After DEV-HISTORY-01 the
-// synthetic chain ends at the observed DEV ledger head 20261022172455.
+// initial foundation entries tracked in issue #190. The synthetic chain ends
+// at the observed DEV ledger head 20261029010000.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -29,26 +29,26 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual(["20261029000000_dev_mail_dispatch_v1.sql", "20261029010000_dev_mail_shared_dispatch_v1.sql"])
+    expect(pending).toEqual([])
     expect(healthyRemote.at(-1)).toEqual({
+      version: "20261029010000",
+      name: "dev_mail_shared_dispatch_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
+      version: "20261029000000",
+      name: "dev_mail_dispatch_v1",
+    })
+    expect(healthyRemote.at(-3)).toEqual({
       version: "20261028223000",
       name: "admin_pack_mail_context_volatile_v1",
     })
-    expect(healthyRemote.at(-2)).toEqual({
+    expect(healthyRemote.at(-4)).toEqual({
       version: "20261028200000",
       name: "admin_pack_draft_role_v1",
     })
-    expect(healthyRemote.at(-3)).toEqual({
+    expect(healthyRemote.at(-5)).toEqual({
       version: "20261028160000",
       name: "guided_pack_publish_visibility_v1",
-    })
-    expect(healthyRemote.at(-4)).toEqual({
-      version: "20261028120000",
-      name: "guided_postpayment_handover_v1",
-    })
-    expect(healthyRemote.at(-5)).toEqual({
-      version: "20261027120000",
-      name: "billing_documents_v1",
     })
     expect(healthyRemote.some(row => row.version === "20261015230000" && row.name === "dev_stripe_one_shot_v1")).toBe(true)
     const result = validateMigrationHistory({ repoFilenames, remote: healthyRemote })
@@ -89,15 +89,14 @@ describe("the migration history validator", () => {
     expect(mayApplyMigrations(result)).toBe(false)
   })
 
-  it("offers the unapplied develop mail dispatch migration once", () => {
+  it("refuses to replay the develop mail dispatch migrations now that DEV has received them", () => {
     const result = validateMigrationHistory({
       repoFilenames,
       remote: healthyRemote,
       candidates: ["20261029000000_dev_mail_dispatch_v1.sql", "20261029010000_dev_mail_shared_dispatch_v1.sql"],
     })
-    expect(result.status).toBe("clean")
-    expect(codes(result)).toEqual([])
-    expect(mayApplyMigrations(result)).toBe(true)
+    expect(codes(result)).toContain("replay_of_applied_migration")
+    expect(mayApplyMigrations(result)).toBe(false)
   })
 
   it("refuses to replay the context volatility migration now that DEV has received it", () => {

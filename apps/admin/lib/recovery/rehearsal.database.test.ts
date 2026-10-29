@@ -54,13 +54,13 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head remains the context-function volatility change.
-    // It was applied once and must not be replayed. The repository tail
-    // 20261029000000 has not been applied on DEV or Production.
+    // The DEV applied head is the shared mail dispatcher.
+    // It was applied once and must not be replayed. Develop mail dispatch
+    // 20261029000000 was applied once and must not be replayed.
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261028223000")
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.version).toBe("20261029010000")
   })
 
   it("rebuilds one independently constrained evidence slot per requested document", async () => {

@@ -79,7 +79,7 @@ describe("resend webhook", () => {
 
   it("applies a verified event with the provider timestamp and hides secrets", async () => {
     mocks.rpc.mockResolvedValue({ status: "success", duplicate: false, applied: true })
-    const createdAt = "2026-09-29T12:00:00.000Z"
+    const createdAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
     const response = await handleResendWebhook(signed(JSON.stringify({ type: "email.delivered", created_at: createdAt, data: { email_id: "msg_1" } })), process.env)
     expect(response.status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledWith("communication_apply_provider_event_v1", expect.objectContaining({
@@ -103,7 +103,7 @@ describe("resend webhook", () => {
     mocks.rpc.mockResolvedValue({ status: "success", duplicate: false, applied: true })
     const body = JSON.stringify({
       type: "email.bounced",
-      created_at: "2026-09-29T12:00:00.000Z",
+      created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       data: { email_id: "msg_bounce", bounce: { type: "Transient", message: "mailbox full" } },
     })
     const response = await handleResendWebhook(signed(body, "evt_bounce_class"), process.env)

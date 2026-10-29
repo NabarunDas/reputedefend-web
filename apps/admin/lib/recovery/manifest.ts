@@ -1095,7 +1095,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Draft pack role", probe: "public.admin_prepared_pack_command_v1" },
   },
   {
-    // ADMIN-PACK-PUBLISH-SESSION-01. Observed DEV ledger head, applied once.
+    // ADMIN-PACK-PUBLISH-SESSION-01. Already in the DEV ledger, applied once.
     // The reviewer aligned generated ledger version 20261028200606 to canonical
     // 20261028223000 after verifying the 1,698-character source. Do not replay.
     // Not applied to Production. Function bodies, authorisation and the
@@ -1112,28 +1112,35 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided pack mail context", probe: "public.admin_guided_pack_mail_context_v1" },
   },
   {
-    // GUIDED-PACK-MAIL-AUTO-01. Repository tail. Not applied on DEV or Production.
-    // Do not apply it from this change and do not process a queued pack-ready email.
-    // The hour-24 name 20261028240000 is not a migration and was not applied.
-    // Repository file is 20,338 characters. SHA-256 9a510a79f57da4641176c3d1bec52a9d6d10f3880763924dc7c47057ecb89a2a.
+    // GUIDED-PACK-MAIL-AUTO-01. Applied once to DEV.
+    // The reviewer aligned generated ledger version 20261029150125 to canonical
+    // 20261029000000 after verifying the 20,338-character source. Do not replay.
+    // Not applied to Production. The hour-24 name 20261028240000 is not a
+    // migration and was not applied.
+    // Repository file SHA-256 9a510a79f57da4641176c3d1bec52a9d6d10f3880763924dc7c47057ecb89a2a.
+    // The applied file does not insert an activation row, enable pg_cron, or send mail.
     version: "20261029000000",
     filename: "20261029000000_dev_mail_dispatch_v1.sql",
     step: "GUIDED-PACK-MAIL-AUTO-01 develop mail dispatch",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Develop mail dispatch", probe: "public.dev_mail_dispatch_claim_v1" },
   },
   {
-    // Shared DEV dispatcher. Repository tail. Not applied on DEV or Production.
-    // Does not insert an activation row, enable pg_cron, or send mail.
-    // Payment confirmations remain on the payment-event worker.
+    // GUIDED-PACK-MAIL-AUTO-01. Observed DEV ledger head, applied once.
+    // The reviewer aligned generated ledger version 20261029150239 to canonical
+    // 20261029010000 after verifying the 35,478-character source. Do not replay.
+    // Not applied to Production. Payment confirmations remain on the
+    // payment-event worker.
+    // Repository file SHA-256 db1a0d28fb368c7f9c9d12970f83ed46065109a1c9147451e3e75cc835fa6e56.
+    // The applied file does not insert an activation row, enable pg_cron, or send mail.
     version: "20261029010000",
     filename: "20261029010000_dev_mail_shared_dispatch_v1.sql",
     step: "GUIDED-PACK-MAIL-AUTO-01 shared develop mail dispatch",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Shared develop mail dispatch", probe: "public.dev_mail_dispatch_recovery_v1" },
@@ -1149,12 +1156,12 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261028223000`. The context function volatility change was applied once
- * to DEV and must not be replayed. It is not applied to Production. Draft
- * document role `20261028200000` remains applied and must not be replayed.
- * Repository migrations `20261029000000` and `20261029010000` are later in
- * the chain and have not been applied on DEV or Production. Production remains on its own historical
- * migration head `20261014170000`.
+ * `20261029010000`. The shared dispatcher was applied once to DEV and must
+ * not be replayed. It is not applied to Production. Develop mail dispatch
+ * `20261029000000` remains applied and must not be replayed. Context function
+ * volatility `20261028223000` and draft document role `20261028200000` remain
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
 

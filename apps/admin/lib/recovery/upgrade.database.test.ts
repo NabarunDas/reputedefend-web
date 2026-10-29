@@ -59,13 +59,13 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail is the applied context-function volatility change.
+    // The repository tail is the applied shared mail dispatcher.
     // It must not be replayed. This disposable rebuild is not a live apply.
     // Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.filename).toBe("20261028223000_admin_pack_mail_context_volatile_v1.sql")
     expect(pending.at(-3)?.appliedToDev).toBe(true)
     expect(pending.at(-4)?.filename).toBe("20261028200000_admin_pack_draft_role_v1.sql")

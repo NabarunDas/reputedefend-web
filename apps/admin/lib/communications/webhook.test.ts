@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createHmac } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { NextRequest } from "next/server"
 import { Resend } from "resend"
 
@@ -112,5 +113,62 @@ describe("resend webhook", () => {
       p_event_type: "email.bounced", p_bounce_class: "transient", p_provider_message_id: "msg_bounce",
     }))
     expect(JSON.stringify(mocks.rpc.mock.calls[0][1])).not.toMatch(/mailbox full|raw|payload/i)
+  })
+
+  it("reports a duplicate delivery without calling the database again", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", duplicate: true, applied: true })
+    const createdAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const response = await handleResendWebhook(signed(JSON.stringify({
+      type: "email.delivered",
+      created_at: createdAt,
+      data: { email_id: "msg_1", to: ["alex@example.com"] },
+    }), "evt_duplicate"), process.env)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "success", duplicate: true })
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1])).not.toMatch(/alex@example.com/)
+  })
+
+  it("forwards a complaint and leaves an unmatched message for the database to refuse", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", duplicate: false, applied: false })
+    const createdAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const complaint = await handleResendWebhook(signed(JSON.stringify({
+      type: "email.complained",
+      created_at: createdAt,
+      data: { email_id: "msg_other_environment", to: ["other@example.com"] },
+    }), "evt_complaint"), process.env)
+    expect(complaint.status).toBe(200)
+    expect(await complaint.json()).toEqual({ status: "success", duplicate: false })
+    expect(mocks.rpc).toHaveBeenCalledWith("communication_apply_provider_event_v1", expect.objectContaining({
+      p_provider: "resend",
+      p_provider_event_id: "evt_complaint",
+      p_event_type: "email.complained",
+      p_provider_message_id: "msg_other_environment",
+      p_occurred_at: createdAt,
+      p_bounce_class: null,
+    }))
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1])).not.toMatch(/other@example.com/)
+  })
+
+  it("fails closed on a short secret and an oversized body before any database call", async () => {
+    vi.stubEnv("RESEND_WEBHOOK_SECRET", "too-short")
+    const missing = await handleResendWebhook(signed("{}"), process.env)
+    expect(missing.status).toBe(503)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    vi.stubEnv("RESEND_WEBHOOK_SECRET", secret)
+    const oversized = "x".repeat(70_000)
+    const response = await handleResendWebhook(signed(JSON.stringify({
+      type: "email.delivered",
+      data: { email_id: oversized },
+    })), process.env)
+    expect(response.status).toBe(413)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("exposes only the signed POST route", () => {
+    const route = readFileSync(new URL("../../app/api/webhooks/resend/route.ts", import.meta.url), "utf8")
+    expect(route).toContain("export async function POST")
+    expect(route).not.toMatch(/export (async function|const) (GET|HEAD|PUT|PATCH|DELETE|OPTIONS)/)
+    expect(route).toContain("handleResendWebhook")
   })
 })

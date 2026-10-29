@@ -6,12 +6,28 @@ import { isProductionAdminEnvironment, PROD_ADMIN_ORIGIN, sessionCookie } from "
 // This stable DEV hostname is intentionally a webhook-only public surface.
 // Vercel Authentication excludes custom domains on this existing project; the
 // host guard must run before normal public-path and session handling.
-const DEV_STRIPE_WEBHOOK_HOST = "dev-hooks.profilerelaunch.com"
+const DEV_WEBHOOK_HOST = "dev-hooks.profilerelaunch.com"
+const DEV_SUPABASE_URL = "https://rmzozuiamjcclvtgutgd.supabase.co"
+
+function devHooksStripePost(request: NextRequest): boolean {
+  return process.env.VERCEL_ENV === "preview"
+    && request.method === "POST"
+    && request.nextUrl.pathname === "/api/webhooks/stripe"
+}
+
+/** Signed Resend delivery events. Stripe's preview-only rule stays unchanged. */
+function devHooksResendPost(request: NextRequest): boolean {
+  const project = (process.env.SUPABASE_URL ?? "").trim().replace(/\/$/, "")
+  return process.env.VERCEL_ENV === "preview"
+    && process.env.VERCEL_GIT_COMMIT_REF === "develop"
+    && project === DEV_SUPABASE_URL
+    && request.method === "POST"
+    && request.nextUrl.pathname === "/api/webhooks/resend"
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-  if (request.nextUrl.hostname === DEV_STRIPE_WEBHOOK_HOST &&
-      (process.env.VERCEL_ENV !== "preview" || request.method !== "POST" || pathname !== "/api/webhooks/stripe")) {
+  if (request.nextUrl.hostname === DEV_WEBHOOK_HOST && !devHooksStripePost(request) && !devHooksResendPost(request)) {
     const denied = NextResponse.json({ error: "Not found." }, { status: 404 })
     for (const [key, value] of Object.entries(privateResponseHeaders)) denied.headers.set(key, value)
     return denied

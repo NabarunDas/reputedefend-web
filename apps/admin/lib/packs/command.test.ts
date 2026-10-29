@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
@@ -273,6 +274,42 @@ describe("prepared pack commands", () => {
       "admin_prepared_pack_command_v1",
     ])
     loggedEmail.mockRestore()
+  })
+
+  it("returns after the pack is published while a hanging mail provider is not awaited", async () => {
+    enableOutgoingMail()
+    const source = readFileSync(new URL("./command.ts", import.meta.url), "utf8")
+    expect(source).not.toContain("wakeDevMailDispatch")
+    expect(source).not.toContain("runDevMailDispatchWorker")
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name.startsWith("dev_mail_dispatch_") || name === "communication_begin_provider_attempt_v1" || name === "job_claim_batch_v1") {
+        return new Promise(() => {})
+      }
+      if (name === "admin_guided_pack_mail_context_v1") {
+        return {
+          status: "applicable",
+          caseRef: "PR-26-MALL2A",
+          amountMinor: 9900,
+          currency: "GBP",
+          serviceCode: "GUIDED_RELAUNCH",
+          serviceName: "Guided Relaunch",
+        }
+      }
+      return { status: "success", id: packId, packNumber: 1, packStatus: "APPROVED", recordVersion: 4, packEmail: "success" }
+    })
+    const pending = packCommand(req({
+      operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+    }))
+    const response = await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("publish waited for the mail provider")), 800)),
+    ])
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ packStatus: "APPROVED" })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "admin_guided_pack_mail_context_v1",
+      "admin_prepared_pack_command_v1",
+    ])
   })
 })
 

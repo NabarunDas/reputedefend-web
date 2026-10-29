@@ -94,6 +94,13 @@ export function jobStatusLabel(status: string): string {
   return status
 }
 
+export function workerDisplayName(workerName: string | null | undefined): string {
+  if (workerName === "dev-mail-dispatch") return "DEV mail dispatch"
+  if (workerName === "dev-payment-events") return "DEV payment events"
+  if (workerName === "admin-jobs") return "Admin jobs"
+  return workerName && workerName.trim() ? workerName : "Worker"
+}
+
 export function heartbeatLabel(status: HeartbeatStatus): string {
   if (status === "HEALTHY") return "Healthy"
   if (status === "LATE") return "Late"

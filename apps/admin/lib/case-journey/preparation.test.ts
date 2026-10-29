@@ -272,7 +272,7 @@ describe("prepared pack panel", () => {
       ]),
       recordsConflict: false,
     })
-    expect(history.headline).toBe("Available in portal; email not sent")
+    expect(history.headline).toBe("Pack published")
     expect(history.packs.map(item => item.state)).toEqual(["Superseded", "Published"])
     expect(history.packs[0]?.history).toBe(true)
   })
@@ -342,8 +342,8 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(rows).ready).toBe(true)
-    expect(view.headline).toBe("Available in portal; email not sent")
-    expect(view.who).toBe("Available in portal; email not sent.")
+    expect(view.headline).toBe("Pack published")
+    expect(view.who).toBe("Preparing notification. Available in portal; email not sent.")
     expect(view.requirements.find(item => item.label === "Customer notification")?.state).toBe("Not met")
     expect(view.requirements.find(item => item.label === "Publication")?.state).toBe("Met")
     expect(view.requirements.find(item => item.label === "Current pack")?.state).toBe("Met")
@@ -356,7 +356,7 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(preparationReadiness(alone).ready).toBe(true)
-    expect(single.headline).toBe("Available in portal; email not sent")
+    expect(single.headline).toBe("Pack published")
     expect(single.commands).not.toBeNull()
   })
 
@@ -395,16 +395,81 @@ describe("prepared pack panel", () => {
       packs,
       recordsConflict: false,
     })
-    expect(show("NONE").headline).toBe("Pack available; notification queued")
-    expect(show("NONE").who).toBe("The notification is queued. Queued is not delivered.")
-    expect(show("PROVIDER_ACCEPTED").headline).toBe("Pack available; the provider accepted the notification")
+    expect(show("NONE").headline).toBe("Pack published")
+    expect(show("NONE").who).toBe("Queued for sending. Automatic sending is not active. Queued is not sent.")
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Automatic sending is not active/)
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Queued is not sent/)
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).not.toMatch(/delivered|provider accepted/)
+    expect(show("NONE").packNotificationRecovery).toBeNull()
+    expect(show("SUPPRESSED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/blocked/)
+    expect(show("PROVIDER_ACCEPTED").headline).toBe("Pack published")
+    expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/provider accepted/)
     expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.state).toBe("Not met")
-    expect(show("DELIVERED").headline).toBe("Pack available; the provider reported delivery")
+    expect(show("DELIVERED").headline).toBe("Pack published")
     expect(show("DELIVERED").who).toMatch(/not a download/)
-    expect(show("BOUNCED").headline).toBe("Pack available; the notification was not delivered")
-    expect(show("ACCEPTANCE_UNKNOWN").headline).toBe("Pack available; provider acceptance is unknown")
+    expect(show("BOUNCED").headline).toBe("Pack published")
+    expect(show("BOUNCED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/failed/)
+    expect(show("ACCEPTANCE_UNKNOWN").headline).toBe("Pack published")
     expect(show("ACCEPTANCE_UNKNOWN").who).toMatch(/another copy was not sent/)
-    expect(packReadyNotification([]).headline).toBe("Available in portal; email not sent")
+    expect(packReadyNotification([]).headline).toBe("Pack published")
+    expect(packReadyNotification([]).detail).toBe("Preparing notification. Available in portal; email not sent.")
+  })
+
+  it("offers the queued-notification recovery only when automatic sending has not moved it", () => {
+    const rows = [{ id: "pack-1", packNumber: 1, status: "APPROVED", published: true, everPublished: true, itemCount: 1 }]
+    const packs = loaded([pack({ status: "APPROVED", published: true, approvedAt: "2026-06-02T12:00:00.000Z" })])
+    const factsWithMail = {
+      ...facts({ packs: rows, eligibleCount: 0 }),
+      communications: [{
+        id: "mail-1",
+        templateKey: "GUIDED_PACK_READY" as const,
+        lifecycle: "QUEUED" as const,
+        deliveryStatus: "NONE" as const,
+        legacyStatus: null,
+        draftedAt: "2026-06-02T12:00:00.000Z",
+      }],
+    }
+    const inactive = buildJourneyPreparationPanel({
+      facts: factsWithMail,
+      packs,
+      recordsConflict: false,
+      mailRecovery: true,
+      dispatch: { phase: "queued", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
+    })
+    expect(inactive.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
+    expect(inactive.packEmailRecovery).toBeNull()
+    expect(inactive.who).toBe("Queued for sending. Automatic sending is not active. Queued is not sent.")
+    expect(inactive.notices.join(" ")).toMatch(/Automatic sending is not active/)
+    const moving = buildJourneyPreparationPanel({
+      facts: factsWithMail,
+      packs,
+      recordsConflict: false,
+      mailRecovery: true,
+      automaticDispatchActive: true,
+      dispatch: { phase: "processing", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
+    })
+    expect(moving.packNotificationRecovery).toBeNull()
+    expect(moving.requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/being processed/)
+    const healthy = buildJourneyPreparationPanel({
+      facts: factsWithMail,
+      packs,
+      recordsConflict: false,
+      mailRecovery: true,
+      automaticDispatchActive: true,
+      dispatch: { phase: "queued", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
+    })
+    expect(healthy.packNotificationRecovery).toBeNull()
+    expect(healthy.who).toBe("Queued for sending. Queued is not sent.")
+    const stalled = buildJourneyPreparationPanel({
+      facts: factsWithMail,
+      packs,
+      recordsConflict: false,
+      mailRecovery: true,
+      automaticDispatchActive: true,
+      dispatch: { phase: "queued", communicationId: "mail-1", stalled: true, workerLate: true, workerSeen: true },
+    })
+    expect(stalled.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
+    expect(stalled.who).toBe("Delivery delayed. Automatic sending has not moved it. Queued is not sent.")
   })
 })
 

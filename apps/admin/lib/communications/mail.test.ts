@@ -59,6 +59,24 @@ describe("outgoing mail adapters", () => {
     expect(JSON.stringify(result)).not.toMatch(/re_secret/)
   })
 
+  it("treats an explicit 429 as a retryable rejection", async () => {
+    const provider = createResendMailProvider("re_secret", "ops@example.com", {
+      emails: { send: async () => ({ data: null, error: { message: "Too many requests (429)" } }) },
+    })
+    const result = await provider.send({ idempotencyKey: "send-email:1:v1", to: "alex@example.com", subject: "S", text: "T" })
+    expect(result).toEqual({ ok: false, retryable: true, error: "Email provider rejected the message" })
+    expect(result).not.toHaveProperty("acceptanceUnknown")
+  })
+
+  it("treats a dropped connection as unknown acceptance", async () => {
+    const provider = createResendMailProvider("re_secret", "ops@example.com", {
+      emails: { send: async () => ({ data: null, error: { message: "connect ECONNRESET" } }) },
+    })
+    expect(await provider.send({ idempotencyKey: "send-email:1:v1", to: "alex@example.com", subject: "S", text: "T" })).toEqual({
+      ok: false, retryable: true, acceptanceUnknown: true, error: "Email provider acceptance is unknown",
+    })
+  })
+
   it("treats a provider timeout as unknown acceptance", async () => {
     const provider = createResendMailProvider("re_secret", "ops@example.com", {
       emails: { send: async () => { throw new Error("timeout") } },

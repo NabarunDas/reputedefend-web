@@ -282,12 +282,12 @@ describe("guided service activation", () => {
     const queued: PaymentRequestEmailView = {
       phase: "queued",
       communicationId: "comm-1",
-      detail: "The payment-request email is queued. The email provider has not accepted it, and queued is not delivered.",
+      detail: "Queued for sending. The payment-request email is queued. The email provider has not accepted it, and queued is not delivered.",
       canProcessPending: false,
     }
     show(facts({ customerActions: [openPayment()] }), null, [money()], { mailReady: true, paymentEmail: queued })
     expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
-    expect(screen.getByText(/Email status: The payment-request email is queued/)).toBeTruthy()
+    expect(screen.getByText(/Email status: Queued for sending/)).toBeTruthy()
     cleanup()
 
     const unavailable: PaymentRequestEmailView = {

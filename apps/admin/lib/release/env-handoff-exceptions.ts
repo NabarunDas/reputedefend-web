@@ -62,6 +62,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     reason: "Reads JOB_WORKER_CADENCE_SECONDS and is part of the live-mail gate, which must be drivable from a synthetic environment.",
   },
   {
+    helper: "jobWorkerConfig",
+    files: ["apps/admin/lib/jobs/dev-mail-dispatch.ts"],
+    reason: "The develop mail dispatcher refuses to run when the production worker is already enabled, using the same enabled, environment and secret decision.",
+  },
+  {
     helper: "canRegisterLiveProvider",
     files: ["apps/admin/lib/communications/mail.ts", "apps/admin/lib/jobs/adapters.ts"],
     reason: "Combines an already-resolved mode with the production guard, so it needs the environment the guard reads.",
@@ -74,6 +79,7 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
       "apps/admin/lib/communications/gate.ts",
       "apps/admin/lib/communications/handler.ts",
       "apps/admin/lib/communications/mail.ts",
+      "apps/admin/lib/jobs/dev-mail-dispatch.ts",
       "apps/admin/lib/payments/handlers.ts",
       "apps/admin/lib/release/gates.ts",
       "apps/admin/lib/settings/system-status.ts",
@@ -82,12 +88,12 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
   },
   {
     helper: "devPreviewMailConfigured",
-    files: ["apps/admin/lib/communications/gate.ts"],
+    files: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/jobs/dev-mail-dispatch.ts"],
     reason: "The develop DEV mail lane reads the branch host, DEV database, customer portal origin and evidence bucket together. The synthetic gate tests must drive that whole check.",
   },
   {
     helper: "devAdminOutgoingMailLane",
-    files: ["apps/admin/lib/communications/gate.ts"],
+    files: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/jobs/dev-mail-dispatch.ts"],
     reason: "Selects the develop DEV preview so the disabled-mail message can name that lane. It reads the same identity values as the send gate.",
   },
   {

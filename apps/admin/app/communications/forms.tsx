@@ -70,7 +70,17 @@ export function QueueCommunicationForm({ communicationId, version }: { communica
   return <SimpleCommandForm operation="queue" communicationId={communicationId} version={version} label="Queue for sending" busyLabel="Queuing…" confirm="Queue this reviewed communication. It will not send from this page." />
 }
 
-export function DevSendQueuedEmailForm({ communicationId }: { communicationId: string }) {
+export function DevSendQueuedEmailForm({
+  communicationId,
+  label = "Process queued email",
+  confirmLabel = "Send this queued email",
+  intro = "Processes this one queued email through the durable SEND_EMAIL job. It does not run payments, Guard, or Google jobs.",
+}: {
+  communicationId: string
+  label?: string
+  confirmLabel?: string
+  intro?: string
+}) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmed, setConfirmed] = useState(false)
@@ -99,12 +109,12 @@ export function DevSendQueuedEmailForm({ communicationId }: { communicationId: s
     }
   }
   return <form onSubmit={submit}>
-    <p className="muted">Processes this one queued email through the durable SEND_EMAIL job. It does not run payments, Guard, or Google jobs.</p>
+    <p className="muted">{intro}</p>
     <label className="checkbox">
       <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
-      {" "}Send this queued email
+      {" "}{confirmLabel}
     </label>
-    <button type="submit" disabled={busy || !confirmed}>{busy ? "Sending…" : "Process queued email"}</button>
+    <button type="submit" disabled={busy || !confirmed}>{busy ? "Sending…" : label}</button>
     {message && <p role="status">{message}</p>}
   </form>
 }

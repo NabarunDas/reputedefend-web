@@ -62,6 +62,9 @@ const loadEmailConfirmationStatus = vi.fn(async (..._args: unknown[]) => null as
 vi.mock("@/lib/case-journey/email-confirmation-status", () => ({
   loadEmailConfirmationStatus: (...args: unknown[]) => loadEmailConfirmationStatus(...args),
 }))
+vi.mock("@/lib/case-journey/pack-notification", () => ({
+  loadPackNotificationDispatch: async () => null,
+}))
 
 import CaseJourneyPage, { metadata } from "./page"
 

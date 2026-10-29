@@ -1,4 +1,5 @@
 import type { JourneyPreparationPanel } from "@/lib/case-journey/preparation"
+import { DevSendQueuedEmailForm } from "@/app/communications/forms"
 import { PreparedPackPanel, RecoverPackEmailForm } from "../evidence/forms"
 
 /**
@@ -19,6 +20,12 @@ export function PreparationPanel({ caseId, panel }: { caseId: string; panel: Jou
     <p><strong>Who must act.</strong> {panel.who}</p>
     {panel.notices.map(notice => <p key={notice} className="notice">{notice}</p>)}
     {panel.packEmailRecovery && <RecoverPackEmailForm caseId={caseId} pack={panel.packEmailRecovery} />}
+    {panel.packNotificationRecovery && <DevSendQueuedEmailForm
+      communicationId={panel.packNotificationRecovery.communicationId}
+      label="Process queued notification now"
+      confirmLabel="Process this queued pack-ready notification"
+      intro="Processes this one queued pack-ready notification through the durable SEND_EMAIL job. It does not send a different email, a case-closure email, or run payments, Guard, or Google."
+    />}
     {panel.commands && <PreparedPackPanel caseId={caseId} packs={panel.commands} guided={panel.guided} />}
     <p>Saving a draft, approving it, or publishing it does not submit anything to Google and does not make the files available without the existing case-access check.</p>
   </div>

@@ -1,7 +1,7 @@
 import { ukDate } from "@/lib/admin/activity"
 import { devStripeOneShotBlock } from "@/lib/jobs/dev-stripe-one-shot"
-import { heartbeatLabel, isDailyHobbyCadence, jobStatusLabel, workerCadenceLabel } from "@/lib/jobs/model"
-import { loadJobHealth, loadPaymentEventQueue } from "@/lib/jobs/queries"
+import { heartbeatLabel, isDailyHobbyCadence, jobStatusLabel, workerCadenceLabel, workerDisplayName } from "@/lib/jobs/model"
+import { loadJobHealth, loadPaymentEventQueue, loadWorkerHeartbeats } from "@/lib/jobs/queries"
 import { Badge, EmptyState, PageHeader } from "../../ui"
 import { DevStripeOneShotForm, EnqueueProbeForm, ReplayJobForm } from "./forms"
 
@@ -23,6 +23,7 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
 export default async function JobsPage() {
   const health = await loadJobHealth()
   const paymentEvents = await loadPaymentEventQueue()
+  const workers = await loadWorkerHeartbeats()
   const heartbeat = health.heartbeat
   const oneShotOpen = devStripeOneShotBlock() === null
   const paymentWaiting = paymentEvents !== null && paymentEvents.unprocessed > 0
@@ -36,8 +37,14 @@ export default async function JobsPage() {
       <p>
         <Badge tone={heartbeatTone(heartbeat.status)}>{heartbeatLabel(heartbeat.status)}</Badge>
         {heartbeat.environment ? ` · ${heartbeat.environment}` : ""}
-        {heartbeat.workerName ? ` · ${heartbeat.workerName}` : ""}
+        {heartbeat.workerName ? ` · ${workerDisplayName(heartbeat.workerName)}` : ""}
       </p>
+      {workers && workers.length > 0 && <ul>
+        {workers.map(worker => <li key={`${worker.workerName}:${worker.environment}`}>
+          <strong>{workerDisplayName(worker.workerName)}.</strong> {worker.environment}. {heartbeatLabel(worker.status)}.
+          Last success {worker.lastSuccessAt ? ukDate(worker.lastSuccessAt) : "never"}.
+        </li>)}
+      </ul>}
       <p>Expected worker cadence: {workerCadenceLabel(heartbeat.expectedIntervalSeconds)}</p>
       {isDailyHobbyCadence(heartbeat.expectedIntervalSeconds) && <p className="muted">The current scheduler is configured for daily Hobby-compatible execution. Time-sensitive background work requires a more frequent production scheduler before customer communications, payments or monitoring are enabled.</p>}
       <p className="muted">

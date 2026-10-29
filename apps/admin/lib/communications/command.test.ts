@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -265,5 +266,31 @@ describe("communications admin commands", () => {
     const marked = await communicationsCommand(req({ operation: "mark_delivered", communicationId: key, version: 1 }))
     expect(marked.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("returns after the email is queued while a hanging mail provider is not awaited", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_WORKER_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("JOB_WORKER_CADENCE_SECONDS", "300")
+    const source = readFileSync(new URL("./command.ts", import.meta.url), "utf8")
+    expect(source).not.toContain("wakeDevMailDispatch")
+    expect(source).not.toContain("runDevMailDispatchWorker")
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name.startsWith("dev_mail_dispatch_") || name === "communication_begin_provider_attempt_v1") return new Promise(() => {})
+      return { status: "success" }
+    })
+    const pending = communicationsCommand(req({ operation: "queue", communicationId: key, version: 1 }))
+    const response = await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("queue waited for the mail provider")), 800)),
+    ])
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ message: "The communication was queued for the durable email worker." })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["admin_communication_command_v1"])
   })
 })

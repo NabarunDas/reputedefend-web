@@ -290,7 +290,8 @@ describe("guided closure", () => {
     expect(panel.detail).toMatch(/not a Google decision/)
     expect(panel.guard.offered).toBe(false)
     expect(panel.completionRecovery).toBe(false)
-    expect(panel.notices.join(" ")).toMatch(/No completion email/)
+    expect(panel.notices.join(" ")).toMatch(/No case-closure email/)
+    expect(panel.notices.join(" ")).toMatch(/document-ready email/)
   })
 
   it("offers one completion update when a closed Guided case has no completion email", () => {

@@ -572,7 +572,7 @@ export function SendQuotationForm({
       <p>Only the subject and introduction can be edited.</p>
     </> : <p><button type="button" onClick={() => setEditing(true)}>Edit</button></p>}
     {held?.kind === "process" && <ProcessPendingQuotationEmail communicationId={held.id} />}
-    {held?.kind === "queued" && <p><strong>Quotation email queued</strong> Queued is not sent, and it is not delivered.</p>}
+    {held?.kind === "queued" && <p><strong>Queued for sending</strong> Queued is not sent, and it is not delivered.</p>}
     {held?.kind === "submitted" && <p><strong>Quotation submitted to email provider</strong></p>}
     {held?.kind === "delivered" && <>
       <p><strong>Quotation delivered</strong></p>

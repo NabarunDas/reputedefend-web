@@ -11,6 +11,8 @@ import { emptyQuoteEmail, projectQuoteEmail } from "@/lib/case-journey/quote-ema
 import { emptyPaymentRequestEmail, projectPaymentRequestEmail } from "@/lib/case-journey/payment-request-email"
 import { acceptedOrderOutstandingLabel, acceptedServiceProjection, activationOrderLink, buildJourneyActivationPanel } from "@/lib/case-journey/activation"
 import { buildJourneyPreparationPanel, preparationRecordsDisagree } from "@/lib/case-journey/preparation"
+import { loadPackNotificationDispatch } from "@/lib/case-journey/pack-notification"
+import { devMailAutomaticDispatchActive } from "@/lib/jobs/dev-mail-dispatch"
 import { buildJourneySubmissionPanel, submissionRecordsDisagree } from "@/lib/case-journey/submission"
 import { presentJourneyOutcome } from "@/lib/case-journey/outcome"
 import { presentJourneyClosure } from "@/lib/case-journey/closure"
@@ -367,6 +369,7 @@ async function loadJourneyPreparation(
   recordsConflict: boolean,
 ) {
   const packs = await getPreparedPackCase(facts.caseId)
+  const dispatch = await loadPackNotificationDispatch(facts.caseId)
   return {
     disagreed: preparationRecordsDisagree(facts, packs),
     panel: buildJourneyPreparationPanel({
@@ -374,6 +377,8 @@ async function loadJourneyPreparation(
       packs,
       recordsConflict,
       mailRecovery: communicationsSendEnabled() && confirmedReplyMailbox() != null,
+      dispatch,
+      automaticDispatchActive: await devMailAutomaticDispatchActive(),
     }),
   }
 }

@@ -66,9 +66,10 @@ $$;
 
 -- Portal links are required only for templates that open a customer page.
 -- Case updates, conversation replies and Guard alerts may be plain text.
--- Any http(s) URL on any template must stay on the DEV customer origin.
+-- The shared template may also carry the exact ProfileRelaunch website and logo.
+-- Every other http(s) URL must be the DEV customer portal for this case.
 CREATE FUNCTION admin_private.dev_mail_link_reason_v1(
-  p_template text, p_text text, p_html text, p_origin text
+  p_template text, p_text text, p_html text, p_origin text, p_case_ref text
 ) RETURNS text
 LANGUAGE plpgsql
 STABLE
@@ -77,6 +78,12 @@ AS $fn$
 DECLARE
   body text := coalesce(p_text, '') || ' ' || coalesce(p_html, '');
   url text;
+  action_id text;
+  text_action text;
+  html_action text;
+  text_actions integer;
+  html_actions integer;
+  ref text;
   needs_portal boolean;
 BEGIN
   IF position('#t=' in coalesce(p_text, '')) > 0 OR position('#t=' in coalesce(p_html, '')) > 0 THEN
@@ -85,12 +92,56 @@ BEGIN
   FOR url IN
     SELECT m[1] FROM regexp_matches(body, 'https?://[^[:space:]<>"]+', 'g') AS m
   LOOP
+    IF position('?' in url) > 0 OR position('#' in url) > 0 OR left(url, 8) IS DISTINCT FROM 'https://' THEN
+      RETURN 'origin';
+    END IF;
+    -- Exact branding only. Not a path, subdomain, token, or action link.
+    IF url IN (
+      'https://profilerelaunch.com',
+      'https://profilerelaunch.com/',
+      'https://www.profilerelaunch.com',
+      'https://www.profilerelaunch.com/',
+      'https://profilerelaunch.com/brand/profile-relaunch-logo.png'
+    ) THEN
+      CONTINUE;
+    END IF;
     IF p_origin IS NULL THEN
       IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app(/|$)' THEN
         RETURN 'foreign_link';
       END IF;
     ELSIF NOT (url = p_origin OR left(url, length(p_origin) + 1) = p_origin || '/') THEN
       RETURN 'foreign_link';
+    END IF;
+    IF position('/portal/cases/' IN url) > 0 THEN
+      IF p_case_ref IS NULL
+        OR (
+          position('/portal/cases/' || p_case_ref || '/' IN url) = 0
+          AND right(url, length('/portal/cases/' || p_case_ref)) IS DISTINCT FROM '/portal/cases/' || p_case_ref
+        )
+      THEN
+        RETURN 'origin';
+      END IF;
+    END IF;
+    IF position('/action/' IN url) > 0 THEN
+      IF p_template IN (
+        'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
+        'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+      ) THEN
+        RETURN 'origin';
+      END IF;
+      IF p_origin IS NULL THEN
+        IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+          RETURN 'origin';
+        END IF;
+      ELSE
+        IF left(url, length(p_origin) + 8) IS DISTINCT FROM p_origin || '/action/' THEN
+          RETURN 'origin';
+        END IF;
+        action_id := substring(url FROM length(p_origin) + 9);
+        IF action_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+          RETURN 'origin';
+        END IF;
+      END IF;
     END IF;
   END LOOP;
   IF p_template IN ('CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT') THEN
@@ -105,14 +156,43 @@ BEGIN
   IF NOT needs_portal THEN
     RETURN 'origin';
   END IF;
+  IF p_case_ref IS NOT NULL THEN
+    IF position(p_case_ref IN coalesce(p_text, '')) = 0 OR position(p_case_ref IN coalesce(p_html, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    FOR ref IN
+      SELECT m[1] FROM regexp_matches(body, '((?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})', 'g') AS m
+    LOOP
+      IF ref IS DISTINCT FROM p_case_ref THEN
+        RETURN 'origin';
+      END IF;
+    END LOOP;
+  END IF;
   IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_text, '')) = 0 THEN
     RETURN 'origin';
   END IF;
   IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_text, '')) = 0 THEN
     RETURN 'origin';
   END IF;
+  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_html, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template IN ('EVIDENCE_REQUEST', 'QUOTE_OFFER') THEN
+    SELECT count(*) INTO text_actions
+    FROM regexp_matches(coalesce(p_text, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    SELECT count(*) INTO html_actions
+    FROM regexp_matches(coalesce(p_html, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    text_action := substring(coalesce(p_text, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    html_action := substring(coalesce(p_html, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    IF text_actions IS DISTINCT FROM 1 OR html_actions IS DISTINCT FROM 1 OR text_action IS DISTINCT FROM html_action THEN
+      RETURN 'origin';
+    END IF;
+  END IF;
   IF p_template = 'GUIDED_PACK_READY'
-    AND admin_private.fulfilment_page_count_v1(p_text, 'documents') IS DISTINCT FROM 1
+    AND (
+      admin_private.fulfilment_page_count_v1(p_text, 'documents') IS DISTINCT FROM 1
+      OR admin_private.fulfilment_page_count_v1(p_html, 'documents') IS DISTINCT FROM 1
+    )
   THEN
     RETURN 'origin';
   END IF;
@@ -120,6 +200,8 @@ BEGIN
     AND (
       position('/portal/cases/' IN coalesce(p_text, '')) = 0
       OR position('/documents' IN coalesce(p_text, '')) = 0
+      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
+      OR position('/documents' IN coalesce(p_html, '')) = 0
     )
   THEN
     RETURN 'origin';
@@ -128,6 +210,8 @@ BEGIN
     AND (
       position('/portal/cases/' IN coalesce(p_text, '')) = 0
       OR position('/payments' IN coalesce(p_text, '')) = 0
+      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
+      OR position('/payments' IN coalesce(p_html, '')) = 0
       OR position('/action/' IN body) > 0
     )
   THEN
@@ -190,7 +274,7 @@ BEGIN
         c.first_provider_attempt_at IS NULL
         OR admin_private.dev_mail_retry_due_v1(o.id)
       )
-      AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin) IS NULL
+      AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref) IS NULL
     ORDER BY coalesce(c.queued_at, c.created_at) NULLS LAST, c.created_at, c.id
     LIMIT v_limit
   ) picked;
@@ -217,6 +301,7 @@ DECLARE
   attempt_no integer;
   v_key text;
   v_link text;
+  v_case_ref text;
 BEGIN
   IF p_communication IS NULL
     OR p_customer_origin IS NULL
@@ -316,7 +401,8 @@ BEGIN
 
   IF length(v_key) > 200 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
 
-  v_link := admin_private.dev_mail_link_reason_v1(comm.template_key, comm.body_text, comm.body_html, p_customer_origin);
+  SELECT cs.public_ref INTO v_case_ref FROM public.cases cs WHERE cs.id = comm.case_id;
+  v_link := admin_private.dev_mail_link_reason_v1(comm.template_key, comm.body_text, comm.body_html, p_customer_origin, v_case_ref);
   IF v_link IS NOT NULL THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', v_link);
   END IF;
@@ -473,8 +559,8 @@ BEGIN
           SELECT 1 FROM admin_private.dev_mail_dispatch_activation gate
           WHERE coalesce(c.queued_at, c.created_at) >= gate.active_from
         ) THEN 'before_activation'
-        WHEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin) IS NOT NULL
-          THEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin)
+        WHEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref) IS NOT NULL
+          THEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref)
         ELSE 'eligible'
       END AS reason
     FROM public.communications c
@@ -557,7 +643,7 @@ BEGIN
     AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
     AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
     AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
-    AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, NULL) IS NULL
+    AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, NULL, cs.public_ref) IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM admin_private.email_suppressions s
       WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
@@ -732,7 +818,7 @@ REVOKE ALL ON FUNCTION public.dev_mail_dispatch_inventory_v1(text) FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_recovery_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_retry_due_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin_private.dev_mail_link_reason_v1(text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.dev_mail_link_reason_v1(text, text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_credentials_v1(text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_readiness_v1() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text) TO service_role;

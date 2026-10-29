@@ -293,6 +293,154 @@ describe("develop mail dispatch", () => {
     expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(unknownMail)
   })
 
+  it("accepts branded first-party mail and refuses a foreign or wrong-case link", async () => {
+    await db.query(
+      "insert into admin_private.dev_mail_dispatch_activation(id, active_from, note) values (1, now() - interval '1 day', 'Disposable activation') on conflict (id) do nothing",
+    )
+    const caseRef = "PR-26-MALL2A"
+    const brandSite = "https://profilerelaunch.com"
+    const logo = "https://profilerelaunch.com/brand/profile-relaunch-logo.png"
+    const actionUrl = `${origin}/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1`
+    const paymentsUrl = `${origin}/portal/cases/${caseRef}/payments`
+    const documentsUrl = `${origin}/portal/cases/${caseRef}/documents`
+    const branded = (prose: string, secureUrl: string | null) => {
+      const text = [prose, secureUrl, `Case reference: ${caseRef}`, brandSite].filter(Boolean).join("\n\n")
+      const button = secureUrl ? `<p><a href="${secureUrl}">Open securely</a></p>` : ""
+      const html = `<p>${prose}</p>${button}<img src="${logo}" alt="ProfileRelaunch"><p><a href="${brandSite}">profilerelaunch.com</a></p><p>Case reference: ${caseRef}</p>`
+      return { text, html }
+    }
+    const evidence = "14141414-1414-4414-8414-141414141414"
+    const quote = "15151515-1515-4515-8515-151515151515"
+    const payment = "16161616-1616-4616-8616-161616161616"
+    const pack = "17171717-1717-4717-8717-171717171717"
+    const completion = "18181818-1818-4818-8818-181818181818"
+    const reply = "19191919-1919-4919-8919-191919191919"
+    const wwwReply = "1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a"
+    const foreignCustomer = "1b1b1b1b-1b1b-4b1b-8b1b-1b1b1b1b1b1b"
+    const thirdParty = "1c1c1c1c-1c1c-4c1c-8c1c-1c1c1c1c1c1c"
+    const insecure = "1d1d1d1d-1d1d-4d1d-8d1d-1d1d1d1d1d1d"
+    const redirect = "1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e"
+    const wrongCase = "1f1f1f1f-1f1f-4f1f-8f1f-1f1f1f1f1f1f"
+    const otherPreview = "20202020-2020-4202-8202-202020202020"
+    const confirmation = "21212121-2121-4212-8212-212121212121"
+    const evidenceBody = branded("Please send the shop licence for this synthetic case.", actionUrl)
+    const before = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(before.wake).toBe("not_configured")
+    await db.exec("alter table public.communications disable trigger communications_fulfilment_email_guard")
+    await db.query(
+      `insert into public.communications(
+        id, case_id, communication_type, recipient, subject, lifecycle, delivery_status, template_key, template_version,
+        body_text, body_html, content_version, content_locked, customer_id
+      ) values ($1,$2,'CASE_UPDATE','alex@example.com','Supporting documents','QUEUED','NONE','EVIDENCE_REQUEST',1,$3,$4,1,true,$5)`,
+      [evidence, caseId, evidenceBody.text, evidenceBody.html, customer],
+    )
+    await db.exec(`
+      alter table public.communications enable trigger communications_fulfilment_email_guard;
+      alter table public.communications enable trigger communications_quote_offer_email_guard;
+      alter table public.communications enable trigger communications_guided_payment_request_guard;
+    `)
+    await db.query(
+      `select admin_private.enqueue_outbox_v1($1, 'SEND_EMAIL', 'communication', $2::uuid, $3::jsonb, now() - interval '10 minutes')`,
+      [`send-email:${evidence}:v1`, evidence, JSON.stringify({ communicationId: evidence, contentVersion: 1 })],
+    )
+    const one = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(one).toMatchObject({ status: "success", wake: "not_configured", eligible: (before.eligible ?? 0) + 1 })
+    expect(JSON.stringify(one)).not.toMatch(/delivered|PROVIDER_ACCEPTED/)
+
+    const quoteBody = branded("Your synthetic quotation is ready to review.", actionUrl)
+    const paymentBody = branded("Your synthetic payment page is ready.", paymentsUrl)
+    const packBody = branded("Your synthetic submission pack is ready.", documentsUrl)
+    const completionBody = branded("Your synthetic preparation is complete.", documentsUrl)
+    const replyBody = branded("We have reviewed the synthetic case and will write again.", null)
+    const wwwBody = {
+      text: "The website is https://www.profilerelaunch.com",
+      html: "<p>The website is https://www.profilerelaunch.com</p>",
+    }
+    const foreignBody = branded("Please read the other portal.", "https://customer.profilerelaunch.com/portal/cases/PR-26-MALL2A")
+    const thirdBody = branded("An outside page.", "https://evil.example/offer")
+    const insecureBody = {
+      text: "http://profilerelaunch.com",
+      html: `<p><a href="http://profilerelaunch.com">http://profilerelaunch.com</a></p>`,
+    }
+    const redirectBody = {
+      text: "https://profilerelaunch.com/go?next=https://evil.example",
+      html: `<p><a href="https://profilerelaunch.com/go?next=https://evil.example">Continue</a></p>`,
+    }
+    const wrongCaseUrl = `${origin}/portal/cases/PR-26-ZZZZZ2/documents`
+    const wrongBody = {
+      text: `The pack is ready.\n\n${wrongCaseUrl}\n\n${brandSite}`,
+      html: `<p><a href="${wrongCaseUrl}">Open</a></p><img src="${logo}" alt="ProfileRelaunch"><p><a href="${brandSite}">profilerelaunch.com</a></p>`,
+    }
+    const previewBody = branded("Another preview.", "https://profilerelaunch-customer-git-develop-other.vercel.app/portal/cases/PR-26-MALL2A/documents")
+    const confirmationBody = branded("The synthetic payment was received.", paymentsUrl)
+    const rowsToInsert: Array<[string, string, string, string]> = [
+      [quote, "QUOTE_OFFER", quoteBody.text, quoteBody.html],
+      [payment, "GUIDED_PAYMENT_REQUEST", paymentBody.text, paymentBody.html],
+      [pack, "GUIDED_PACK_READY", packBody.text, packBody.html],
+      [completion, "GUIDED_COMPLETION", completionBody.text, completionBody.html],
+      [reply, "CONVERSATION_REPLY", replyBody.text, replyBody.html],
+      [wwwReply, "CONVERSATION_REPLY", wwwBody.text, wwwBody.html],
+      [foreignCustomer, "CASE_UPDATE", foreignBody.text, foreignBody.html],
+      [thirdParty, "CASE_UPDATE", thirdBody.text, thirdBody.html],
+      [insecure, "CONVERSATION_REPLY", insecureBody.text, insecureBody.html],
+      [redirect, "CONVERSATION_REPLY", redirectBody.text, redirectBody.html],
+      [wrongCase, "GUIDED_PACK_READY", wrongBody.text, wrongBody.html],
+      [otherPreview, "GUIDED_PACK_READY", previewBody.text, previewBody.html],
+      [confirmation, "PAYMENT_CONFIRMATION", confirmationBody.text, confirmationBody.html],
+    ]
+    await db.exec(`
+      alter table public.communications disable trigger communications_fulfilment_email_guard;
+      alter table public.communications disable trigger communications_quote_offer_email_guard;
+      alter table public.communications disable trigger communications_guided_payment_request_guard;
+    `)
+    for (const [id, template, text, html] of rowsToInsert) {
+      await db.query(
+        `insert into public.communications(
+          id, case_id, communication_type, recipient, subject, lifecycle, delivery_status, template_key, template_version,
+          body_text, body_html, content_version, content_locked, customer_id
+        ) values ($1,$2,'CASE_UPDATE','alex@example.com','Synthetic customer note','QUEUED','NONE',$3,1,$4,$5,1,true,$6)`,
+        [id, caseId, template, text, html, customer],
+      )
+    }
+    await db.exec(`
+      alter table public.communications enable trigger communications_fulfilment_email_guard;
+      alter table public.communications enable trigger communications_quote_offer_email_guard;
+      alter table public.communications enable trigger communications_guided_payment_request_guard;
+    `)
+    for (const [id] of rowsToInsert) {
+      await db.query(
+        `select admin_private.enqueue_outbox_v1($1, 'SEND_EMAIL', 'communication', $2::uuid, $3::jsonb, now() - interval '10 minutes')`,
+        [`send-email:${id}:v1`, id, JSON.stringify({ communicationId: id, contentVersion: 1 })],
+      )
+    }
+
+    const listed = (await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)
+    for (const id of [evidence, quote, payment, pack, completion, reply, wwwReply]) {
+      expect(listed).toContain(id)
+    }
+    for (const id of [foreignCustomer, thirdParty, insecure, redirect, wrongCase, otherPreview, confirmation]) {
+      expect(listed).not.toContain(id)
+    }
+    const inventory = await rpc<Json>("dev_mail_dispatch_inventory_v1", [origin])
+    for (const id of [evidence, quote, payment, pack, completion, reply, wwwReply]) {
+      expect(inventory.messages?.find(row => row.communicationId === id)?.eligible).toBe(true)
+    }
+    expect(inventory.messages?.find(row => row.communicationId === foreignCustomer)).toMatchObject({ eligible: false, reason: "foreign_link" })
+    expect(inventory.messages?.find(row => row.communicationId === thirdParty)).toMatchObject({ eligible: false, reason: "foreign_link" })
+    expect(inventory.messages?.find(row => row.communicationId === otherPreview)).toMatchObject({ eligible: false, reason: "foreign_link" })
+    expect(inventory.messages?.find(row => row.communicationId === insecure)).toMatchObject({ eligible: false, reason: "origin" })
+    expect(inventory.messages?.find(row => row.communicationId === redirect)).toMatchObject({ eligible: false, reason: "origin" })
+    expect(inventory.messages?.find(row => row.communicationId === wrongCase)).toMatchObject({ eligible: false, reason: "origin" })
+    expect(inventory.messages?.find(row => row.communicationId === confirmation)).toMatchObject({ eligible: false, reason: "payment_worker_owned" })
+
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [evidence, origin])).toMatchObject({ status: "success", jobType: "SEND_EMAIL" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [pack, origin])).toMatchObject({ status: "success", jobType: "SEND_EMAIL" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [foreignCustomer, origin])).toMatchObject({ status: "denied", reason: "foreign_link" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [thirdParty, origin])).toMatchObject({ status: "denied", reason: "foreign_link" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [wrongCase, origin])).toMatchObject({ status: "denied", reason: "origin" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [confirmation, origin])).toMatchObject({ status: "denied", reason: "payment_worker_owned" })
+  })
+
   it("allows a linkless reply, rejects a foreign link, and wakes with GET by response id", async () => {
     await db.query(
       "insert into admin_private.dev_mail_dispatch_activation(id, active_from, note) values (1, now() - interval '1 day', 'Disposable activation') on conflict (id) do nothing",

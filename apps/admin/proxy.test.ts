@@ -117,6 +117,7 @@ describe("DEV public webhook-only hostname", () => {
     ["GET", "/api/webhooks/resend"],
     ["GET", "/api/webhooks/resend?x-vercel-protection-bypass=present"],
     ["HEAD", "/api/webhooks/resend"],
+    ["HEAD", "/api/webhooks/resend?x-vercel-protection-bypass=present"],
     ["PUT", "/api/webhooks/resend"],
     ["DELETE", "/api/webhooks/resend"],
     ["OPTIONS", "/api/webhooks/resend"],

@@ -115,6 +115,7 @@ describe("DEV public webhook-only hostname", () => {
 
   it.each([
     ["GET", "/api/webhooks/resend"],
+    ["GET", "/api/webhooks/resend?x-vercel-protection-bypass=present"],
     ["HEAD", "/api/webhooks/resend"],
     ["PUT", "/api/webhooks/resend"],
     ["DELETE", "/api/webhooks/resend"],

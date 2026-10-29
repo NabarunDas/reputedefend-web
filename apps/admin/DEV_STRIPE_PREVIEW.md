@@ -2,7 +2,7 @@
 
 15 October 2026 checkpoint. Stripe sandbox API key and webhook signing secret are stored as protected Vercel Preview variables, now restricted to the `develop` Git branch. `PAYMENTS_PROVIDER_MODE=stripe_test` applies to that branch only. This document records configuration state and forces a fresh Admin Preview build; it never includes actual secret values, changes Production configuration or activates live payments.
 
-Only `POST /api/webhooks/stripe` may reach the DEV webhook handler via `dev-hooks.profilerelaunch.com`. Verify HTTP routing and signed event delivery separately before marking sandbox end-to-end tested.
+`POST /api/webhooks/stripe` remains the Stripe route on `dev-hooks.profilerelaunch.com`, and only while `VERCEL_ENV=preview`. The same host also forwards exactly `POST /api/webhooks/resend` when that deployment is Preview, `VERCEL_GIT_COMMIT_REF` is `develop`, and `SUPABASE_URL` is the DEV project `rmzozuiamjcclvtgutgd`. Every other path and method on that host stays 404. The Resend handler still verifies the Svix signature before any database call. Do not configure the live Resend endpoint, store `RESEND_WEBHOOK_SECRET`, or turn the mail worker on from this note.
 
 ## PAY-ENV-04 controlled manual acceptance — 16 October 2026
 

@@ -294,6 +294,45 @@ describe("communications outgoing mail SQL", () => {
     expect((await db.query<{ delivery_status: string }>("select delivery_status from public.communications where id=$1", [row.id])).rows[0].delivery_status).toBe("DELIVERED")
   })
 
+  it("moves provider acceptance to delivered and refuses another environment's message", async () => {
+    const row = await reviewed()
+    await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])
+    await rpc("communication_mark_provider_accepted_v1", [row.id, "resend", "msg_match", `send-email:${row.id}:v1`])
+    const accepted = (await db.query<{ delivery_status: string; record_version: number; delivered_at: string | null }>(
+      "select delivery_status, record_version, delivered_at from public.communications where id=$1",
+      [row.id],
+    )).rows[0]
+    expect(accepted).toMatchObject({ delivery_status: "PROVIDER_ACCEPTED", delivered_at: null })
+    const occurred = "2026-10-29T17:28:00.000Z"
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_match_delivered", "email.delivered", "msg_match", occurred,
+    ])).toMatchObject({ status: "success", applied: true, duplicate: false })
+    const delivered = (await db.query<{ delivery_status: string; delivered_at: Date; record_version: number }>(
+      "select delivery_status, delivered_at, record_version from public.communications where id=$1",
+      [row.id],
+    )).rows[0]
+    expect(delivered.delivery_status).toBe("DELIVERED")
+    expect(new Date(delivered.delivered_at).toISOString()).toBe(occurred)
+    expect(delivered.record_version).toBe(accepted.record_version + 1)
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_match_delivered", "email.delivered", "msg_match", occurred,
+    ])).toMatchObject({ status: "success", duplicate: true, applied: true })
+    expect((await db.query<{ record_version: number }>(
+      "select record_version from public.communications where id=$1",
+      [row.id],
+    )).rows[0].record_version).toBe(delivered.record_version)
+    expect(await rpc("communication_apply_provider_event_v1", [
+      "resend", "evt_other_environment", "email.delivered", "msg_from_production", occurred,
+    ])).toMatchObject({ status: "success", applied: false, duplicate: false })
+    expect((await db.query<{ n: number }>("select count(*)::int as n from public.communications")).rows[0].n).toBe(1)
+    expect((await db.query<{ delivery_status: string }>(
+      "select delivery_status from public.communications where id=$1",
+      [row.id],
+    )).rows[0].delivery_status).toBe("DELIVERED")
+    const listed = await rpc("admin_communication_list_v1", [token, caseId])
+    expect(listed?.communications?.find(item => item.id === row.id)?.deliveryStatus).toBe("DELIVERED")
+  })
+
   it("surfaces bounce and blocks a blind retry to the same address", async () => {
     const row = await reviewed()
     await rpc("admin_communication_command_v1", [token, key(), "queue", queueBody(row.id), row.version])

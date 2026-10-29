@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import { NextRequest } from "next/server"
 import { proxy } from "./proxy"
 import { GET, POST } from "./app/api/[[...path]]/route"
+import { devMailDispatchWorkerBlock, devMailScheduleInstalled } from "./lib/jobs/dev-mail-dispatch"
 
 describe("DEV public webhook-only hostname", () => {
   const host = "https://dev-hooks.profilerelaunch.com"
+  const devProject = "https://rmzozuiamjcclvtgutgd.supabase.co"
   async function withPreview<T>(fn: () => Promise<T>): Promise<T> {
     const previous = process.env.VERCEL_ENV
     process.env.VERCEL_ENV = "preview"
@@ -12,6 +14,40 @@ describe("DEV public webhook-only hostname", () => {
       if (previous === undefined) delete process.env.VERCEL_ENV
       else process.env.VERCEL_ENV = previous
     }
+  }
+
+  function restoreEnv(previous: {
+    env: string | undefined
+    branch: string | undefined
+    project: string | undefined
+    worker: string | undefined
+    schedule: string | undefined
+  }) {
+    const assign = (name: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    assign("VERCEL_ENV", previous.env)
+    assign("VERCEL_GIT_COMMIT_REF", previous.branch)
+    assign("SUPABASE_URL", previous.project)
+    assign("DEV_MAIL_DISPATCH_WORKER_ENABLED", previous.worker)
+    assign("DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED", previous.schedule)
+  }
+
+  async function withDevResend<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = {
+      env: process.env.VERCEL_ENV,
+      branch: process.env.VERCEL_GIT_COMMIT_REF,
+      project: process.env.SUPABASE_URL,
+      worker: process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED,
+      schedule: process.env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED,
+    }
+    process.env.VERCEL_ENV = "preview"
+    process.env.VERCEL_GIT_COMMIT_REF = "develop"
+    process.env.SUPABASE_URL = devProject
+    process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED = "false"
+    process.env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED = "false"
+    try { return await fn() } finally { restoreEnv(previous) }
   }
 
   it("allows only the signed Stripe route to reach its handler on DEV Preview", () => withPreview(async () => {
@@ -31,6 +67,101 @@ describe("DEV public webhook-only hostname", () => {
     const response = await proxy(new NextRequest(`${host}${route}`, { method }))
     expect(response.status).toBe(404)
     expect(response.headers.get("cache-control")).toContain("no-store")
+  }))
+
+  it("forwards only the signed Resend path on the DEV project, with the mail worker left off", async () => {
+    const previous = {
+      env: process.env.VERCEL_ENV,
+      branch: process.env.VERCEL_GIT_COMMIT_REF,
+      project: process.env.SUPABASE_URL,
+      worker: process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED,
+      schedule: process.env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED,
+    }
+    process.env.VERCEL_ENV = "preview"
+    process.env.VERCEL_GIT_COMMIT_REF = "develop"
+    process.env.SUPABASE_URL = devProject
+    process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED = "false"
+    process.env.DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED = "false"
+    try {
+      const accepted = await proxy(new NextRequest(`${host}/api/webhooks/resend`, { method: "POST" }))
+      expect(accepted.headers.get("x-middleware-next")).toBe("1")
+      expect(accepted.headers.get("cache-control")).toContain("no-store")
+      const queried = await proxy(new NextRequest(`${host}/api/webhooks/resend?x-vercel-protection-bypass=present`, { method: "POST" }))
+      expect(queried.headers.get("x-middleware-next")).toBe("1")
+      process.env.SUPABASE_URL = `${devProject}/`
+      expect((await proxy(new NextRequest(`${host}/api/webhooks/resend`, { method: "POST" }))).headers.get("x-middleware-next")).toBe("1")
+      const stripe = await proxy(new NextRequest(`${host}/api/webhooks/stripe`, { method: "POST" }))
+      expect(stripe.headers.get("x-middleware-next")).toBe("1")
+      expect(devMailScheduleInstalled()).toBe(false)
+      expect(devMailDispatchWorkerBlock({
+        VERCEL_ENV: "preview",
+        VERCEL_GIT_COMMIT_REF: "develop",
+        VERCEL_BRANCH_URL: "profilerelaunch-admin-git-develop-clientcove.vercel.app",
+        SUPABASE_URL: devProject,
+        AWS_EVIDENCE_BUCKET: "profilerelaunch-evidence-dev-01",
+        CUSTOMER_ORIGIN: "https://profilerelaunch-customer-git-develop-clientcove.vercel.app",
+        COMMUNICATIONS_SEND_ENABLED: "true",
+        JOB_PROVIDER_MODE: "production",
+        RESEND_API_KEY: "re_dev_placeholder",
+        COMMUNICATIONS_FROM_EMAIL: "ops@example.com",
+        DEV_MAIL_DISPATCH_WORKER_ENABLED: "false",
+        DEV_MAIL_DISPATCH_SCHEDULE_INSTALLED: "false",
+        DEV_MAIL_DISPATCH_WORKER_SECRET: "d".repeat(32),
+      })).toBe("disabled")
+    } finally {
+      restoreEnv(previous)
+    }
+  })
+
+  it.each([
+    ["GET", "/api/webhooks/resend"],
+    ["HEAD", "/api/webhooks/resend"],
+    ["PUT", "/api/webhooks/resend"],
+    ["DELETE", "/api/webhooks/resend"],
+    ["OPTIONS", "/api/webhooks/resend"],
+    ["POST", "/api/webhooks/resend/"],
+    ["POST", "/api/webhooks/resend/inbound"],
+    ["POST", "/api/webhooks/stripe/extra"],
+    ["GET", "/"],
+    ["POST", "/auth/send"],
+  ])("rejects %s %s on the hooks host even when the DEV mail project matches", (method, route) => withDevResend(async () => {
+    const response = await proxy(new NextRequest(`${host}${route}`, { method }))
+    expect(response.status).toBe(404)
+    expect(response.headers.get("cache-control")).toContain("no-store")
+  }))
+
+  it.each([
+    ["main", devProject, "preview"],
+    ["develop", "https://cxwwekdzkkjjbiyofrov.supabase.co", "preview"],
+    ["develop", "https://example.supabase.co", "preview"],
+    ["develop", undefined, "preview"],
+    ["develop", devProject, "production"],
+    ["develop", devProject, "development"],
+  ])("rejects the Resend path for branch %s, project %s and environment %s", (branch, project, environment) => withDevResend(async () => {
+    process.env.VERCEL_GIT_COMMIT_REF = branch
+    process.env.VERCEL_ENV = environment
+    if (project === undefined) delete process.env.SUPABASE_URL
+    else process.env.SUPABASE_URL = project
+    const response = await proxy(new NextRequest(`${host}/api/webhooks/resend`, { method: "POST" }))
+    expect(response.status).toBe(404)
+    const stripe = await proxy(new NextRequest(`${host}/api/webhooks/stripe`, { method: "POST" }))
+    if (environment === "preview") expect(stripe.headers.get("x-middleware-next")).toBe("1")
+    else expect(stripe.status).toBe(404)
+  }))
+
+  it("does not treat a lookalike hostname as the DEV hooks host", () => withDevResend(async () => {
+    for (const impostor of [
+      "https://dev-hooks.profilerelaunch.com.evil.example/api/webhooks/resend",
+      "https://hooks.profilerelaunch.com/api/webhooks/resend",
+      "https://dev-hooks.profilerelaunch.co/api/webhooks/resend",
+    ]) {
+      const response = await proxy(new NextRequest(impostor, { method: "POST" }))
+      expect(response.status).not.toBe(404)
+      expect(response.headers.get("x-middleware-next")).toBe("1")
+    }
+    const production = await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/resend", { method: "POST" }))
+    expect(production.headers.get("x-middleware-next")).toBe("1")
+    expect((await proxy(new NextRequest("https://admin.profilerelaunch.com/api/webhooks/resend"))).status).toBe(401)
   }))
 
   it("ignores query text but still only forwards the exact signed Stripe route", () => withPreview(async () => {

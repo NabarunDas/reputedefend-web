@@ -14,8 +14,10 @@
 -- The URL must be exactly
 -- https://profilerelaunch-admin-git-develop-<name>.vercel.app/api/internal/jobs/dev-mail-dispatch
 -- with no query string. The bypass is sent as the x-vercel-protection-bypass
--- header. Deployment protection stays enabled. A 302 or 401 is a blocked
--- wake, not a successful send.
+-- header. The wake is an HTTP GET, the same method as the Admin route.
+-- Deployment protection stays enabled. A 302, 401, timeout, or missing
+-- response is a blocked wake, not a successful send. Queuing the GET is
+-- not provider acceptance.
 --
 -- Also insert the single activation row only after the pending-email
 -- inventory has been read. Mail queued before active_from is not claimed.

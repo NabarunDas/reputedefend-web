@@ -15,6 +15,16 @@ CREATE TABLE admin_private.dev_mail_dispatch_activation (
 ALTER TABLE admin_private.dev_mail_dispatch_activation ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.dev_mail_dispatch_activation FROM PUBLIC, anon, authenticated, service_role;
 
+-- The last pg_net request id. Responses are read from net._http_response.id.
+-- A queued request is not provider acceptance.
+CREATE TABLE admin_private.dev_mail_dispatch_http (
+  id smallint PRIMARY KEY CHECK (id = 1),
+  request_id bigint NOT NULL,
+  requested_at timestamptz NOT NULL
+);
+ALTER TABLE admin_private.dev_mail_dispatch_http ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE admin_private.dev_mail_dispatch_http FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION admin_private.dev_mail_retry_due_v1(p_outbox uuid)
 RETURNS boolean
 LANGUAGE sql
@@ -53,6 +63,79 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 END;
 $$;
+
+-- Portal links are required only for templates that open a customer page.
+-- Case updates, conversation replies and Guard alerts may be plain text.
+-- Any http(s) URL on any template must stay on the DEV customer origin.
+CREATE FUNCTION admin_private.dev_mail_link_reason_v1(
+  p_template text, p_text text, p_html text, p_origin text
+) RETURNS text
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $fn$
+DECLARE
+  body text := coalesce(p_text, '') || ' ' || coalesce(p_html, '');
+  url text;
+  needs_portal boolean;
+BEGIN
+  IF position('#t=' in coalesce(p_text, '')) > 0 OR position('#t=' in coalesce(p_html, '')) > 0 THEN
+    RETURN 'origin';
+  END IF;
+  FOR url IN
+    SELECT m[1] FROM regexp_matches(body, 'https?://[^[:space:]<>"]+', 'g') AS m
+  LOOP
+    IF p_origin IS NULL THEN
+      IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app(/|$)' THEN
+        RETURN 'foreign_link';
+      END IF;
+    ELSIF NOT (url = p_origin OR left(url, length(p_origin) + 1) = p_origin || '/') THEN
+      RETURN 'foreign_link';
+    END IF;
+  END LOOP;
+  IF p_template IN ('CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT') THEN
+    IF position('/action/' in body) > 0 THEN
+      RETURN 'origin';
+    END IF;
+    RETURN NULL;
+  END IF;
+  needs_portal := p_template IN (
+    'EVIDENCE_REQUEST', 'QUOTE_OFFER', 'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+  );
+  IF NOT needs_portal THEN
+    RETURN 'origin';
+  END IF;
+  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_text, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_text, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template = 'GUIDED_PACK_READY'
+    AND admin_private.fulfilment_page_count_v1(p_text, 'documents') IS DISTINCT FROM 1
+  THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template = 'GUIDED_COMPLETION'
+    AND (
+      position('/portal/cases/' IN coalesce(p_text, '')) = 0
+      OR position('/documents' IN coalesce(p_text, '')) = 0
+    )
+  THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template = 'GUIDED_PAYMENT_REQUEST'
+    AND (
+      position('/portal/cases/' IN coalesce(p_text, '')) = 0
+      OR position('/payments' IN coalesce(p_text, '')) = 0
+      OR position('/action/' IN body) > 0
+    )
+  THEN
+    RETURN 'origin';
+  END IF;
+  RETURN NULL;
+END;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_candidates_v1(p_limit integer, p_customer_origin text)
 RETURNS jsonb
@@ -107,16 +190,7 @@ BEGIN
         c.first_provider_attempt_at IS NULL
         OR admin_private.dev_mail_retry_due_v1(o.id)
       )
-      AND position('#t=' in coalesce(c.body_text, '')) = 0
-      AND position('#t=' in coalesce(c.body_html, '')) = 0
-      AND position(p_customer_origin IN coalesce(c.body_text, '')) > 0
-      AND (
-        c.template_key IS DISTINCT FROM 'GUIDED_PACK_READY'
-        OR (
-          admin_private.fulfilment_page_count_v1(c.body_text, 'documents') = 1
-          AND position(p_customer_origin || '/portal/cases/' IN c.body_text) > 0
-        )
-      )
+      AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin) IS NULL
     ORDER BY coalesce(c.queued_at, c.created_at) NULLS LAST, c.created_at, c.id
     LIMIT v_limit
   ) picked;
@@ -142,6 +216,7 @@ DECLARE
   token uuid;
   attempt_no integer;
   v_key text;
+  v_link text;
 BEGIN
   IF p_communication IS NULL
     OR p_customer_origin IS NULL
@@ -241,11 +316,9 @@ BEGIN
 
   IF length(v_key) > 200 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
 
-  IF position('#t=' in coalesce(comm.body_text, '')) > 0
-    OR position('#t=' in coalesce(comm.body_html, '')) > 0
-    OR position(p_customer_origin IN coalesce(comm.body_text, '')) = 0
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
+  v_link := admin_private.dev_mail_link_reason_v1(comm.template_key, comm.body_text, comm.body_html, p_customer_origin);
+  IF v_link IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', v_link);
   END IF;
   IF comm.template_key = 'GUIDED_PACK_READY' THEN
     expected := 'documents';
@@ -400,13 +473,8 @@ BEGIN
           SELECT 1 FROM admin_private.dev_mail_dispatch_activation gate
           WHERE coalesce(c.queued_at, c.created_at) >= gate.active_from
         ) THEN 'before_activation'
-        WHEN position('#t=' in coalesce(c.body_text, '')) > 0
-          OR position(p_customer_origin IN coalesce(c.body_text, '')) = 0
-          OR (
-            c.template_key = 'GUIDED_PACK_READY'
-            AND admin_private.fulfilment_page_count_v1(c.body_text, 'documents') IS DISTINCT FROM 1
-          )
-          THEN 'origin'
+        WHEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin) IS NOT NULL
+          THEN admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin)
         ELSE 'eligible'
       END AS reason
     FROM public.communications c
@@ -451,6 +519,12 @@ DECLARE
   v_bearer text;
   v_bypass text;
   v_http integer;
+  v_timed boolean;
+  v_error text;
+  v_found boolean;
+  v_stored bigint;
+  v_request bigint;
+  v_requested timestamptz;
   v_credentials jsonb;
 BEGIN
   SELECT count(*) INTO n
@@ -483,12 +557,7 @@ BEGIN
     AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
     AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
     AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
-    AND position('#t=' in coalesce(c.body_text, '')) = 0
-    AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(c.body_text, '')) > 0
-    AND (
-      c.template_key IS DISTINCT FROM 'GUIDED_PACK_READY'
-      OR admin_private.fulfilment_page_count_v1(c.body_text, 'documents') = 1
-    )
+    AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, NULL) IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM admin_private.email_suppressions s
       WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
@@ -496,7 +565,14 @@ BEGIN
   IF n = 0 THEN
     RETURN jsonb_build_object('status', 'success', 'eligible', 0, 'wake', 'not_needed');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_net')
+  IF NOT (
+      EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_net')
+      OR EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = p.pronamespace
+        WHERE ns.nspname = 'net' AND p.proname = 'http_get'
+      )
+    )
     OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'vault')
   THEN
     RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured');
@@ -508,30 +584,56 @@ BEGIN
   IF coalesce(v_credentials->>'ok', 'false') <> 'true' THEN
     RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured', 'reason', v_credentials->>'reason');
   END IF;
-  IF EXISTS (
+  SELECT h.request_id, h.requested_at INTO v_stored, v_requested
+  FROM admin_private.dev_mail_dispatch_http h
+  WHERE h.id = 1;
+  IF v_stored IS NOT NULL AND EXISTS (
     SELECT 1 FROM pg_catalog.pg_class c
     JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace
     WHERE ns.nspname = 'net' AND c.relname = '_http_response'
   ) THEN
-    EXECUTE 'SELECT status_code FROM net._http_response WHERE url = $1 ORDER BY created DESC LIMIT 1'
-      INTO v_http USING v_url;
-    IF v_http IN (301, 302, 303, 307, 308, 401, 403) THEN
-      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'blocked', 'httpStatus', v_http);
+    v_found := false;
+    EXECUTE 'SELECT status_code, timed_out, error_msg, true FROM net._http_response WHERE id = $1'
+      INTO v_http, v_timed, v_error, v_found USING v_stored;
+    IF v_found IS NOT TRUE THEN
+      IF v_requested > now() - interval '2 minutes' THEN
+        RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'in_flight', 'requestId', v_stored);
+      END IF;
+      DELETE FROM admin_private.dev_mail_dispatch_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'missing', 'requestId', v_stored);
     END IF;
+    IF coalesce(v_timed, false) THEN
+      DELETE FROM admin_private.dev_mail_dispatch_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'timed_out', 'requestId', v_stored);
+    END IF;
+    IF v_error IS NOT NULL OR v_http IS NULL OR v_http >= 400 OR v_http IN (301, 302, 303, 307, 308) THEN
+      DELETE FROM admin_private.dev_mail_dispatch_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'blocked', 'httpStatus', v_http, 'requestId', v_stored);
+    END IF;
+    -- A completed HTTP response only means the worker route was reached.
+    DELETE FROM admin_private.dev_mail_dispatch_http WHERE id = 1;
   END IF;
   BEGIN
-    EXECUTE 'SELECT net.http_post(url := $1, headers := $2, body := $3, timeout_milliseconds := 5000)'
+    EXECUTE 'SELECT net.http_get(url := $1, headers := $2, timeout_milliseconds := $3)'
+      INTO v_request
       USING v_url,
         jsonb_build_object(
           'Authorization', 'Bearer ' || v_bearer,
           'Content-Type', 'application/json',
           'x-vercel-protection-bypass', v_bypass
         ),
-        '{"source":"recovery"}'::jsonb;
+        5000;
   EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
   END;
-  RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'requested');
+  IF v_request IS NULL THEN
+    RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
+  END IF;
+  INSERT INTO admin_private.dev_mail_dispatch_http(id, request_id, requested_at)
+  VALUES (1, v_request, now())
+  ON CONFLICT (id) DO UPDATE
+    SET request_id = EXCLUDED.request_id, requested_at = EXCLUDED.requested_at;
+  RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'requested', 'requestId', v_request);
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
 END;
@@ -630,6 +732,7 @@ REVOKE ALL ON FUNCTION public.dev_mail_dispatch_inventory_v1(text) FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_recovery_v1() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_retry_due_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.dev_mail_link_reason_v1(text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.dev_mail_dispatch_wake_credentials_v1(text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dev_mail_dispatch_readiness_v1() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text) TO service_role;

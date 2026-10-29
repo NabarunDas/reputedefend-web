@@ -23,7 +23,7 @@ const origin = "https://customer.example"
 const devOrigin = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
 const alexAuth = "55555555-5555-4555-8555-555555555555"
 const portalHash = "d".repeat(64)
-const openUntil = "2026-10-29T00:47:00.000Z"
+const openUntil = new Date(Math.ceil(Date.now() / 1000) * 1000 + 3 * 24 * 60 * 60 * 1000).toISOString()
 let serial = 0
 
 const agreements: Record<string, { version: string; hash: string }> = {

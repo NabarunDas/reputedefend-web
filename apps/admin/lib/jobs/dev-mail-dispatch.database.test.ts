@@ -35,6 +35,8 @@ type Json = {
   stalled?: boolean
   eligible?: number
   wake?: string
+  requestId?: number
+  httpStatus?: number
   automatic?: boolean
   activation?: boolean
   schedule?: boolean
@@ -289,5 +291,146 @@ describe("develop mail dispatch", () => {
     expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [exhaustedMail, origin])).toMatchObject({ status: "denied", reason: "dead_letter" })
     expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(exhaustedMail)
     expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)).not.toContain(unknownMail)
+  })
+
+  it("allows a linkless reply, rejects a foreign link, and wakes with GET by response id", async () => {
+    await db.query(
+      "insert into admin_private.dev_mail_dispatch_activation(id, active_from, note) values (1, now() - interval '1 day', 'Disposable activation') on conflict (id) do nothing",
+    )
+    const reply = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    const foreign = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    const guard = "12121212-1212-4212-8212-121212121212"
+    const payment = "13131313-1313-4313-8313-131313131313"
+    await db.exec("alter table public.communications disable trigger communications_fulfilment_email_guard")
+    await db.query(
+      `insert into public.communications(
+        id, case_id, communication_type, recipient, subject, lifecycle, delivery_status, template_key, template_version,
+        body_text, body_html, content_version, content_locked, customer_id
+      ) values
+        ($1,$2,'CASE_UPDATE','alex@example.com','A note on your case','QUEUED','NONE','CONVERSATION_REPLY',1,'We have reviewed the case and will write again.','<p>We have reviewed the case and will write again.</p>',1,true,$3),
+        ($4,$2,'CASE_UPDATE','alex@example.com','A note on your case','QUEUED','NONE','CASE_UPDATE',1,'Please read https://customer.profilerelaunch.com/portal/cases/PR-26-MALL2A','<p>Please read https://customer.profilerelaunch.com/portal/cases/PR-26-MALL2A</p>',1,true,$3),
+        ($5,$2,'CASE_UPDATE','alex@example.com','A monitoring note','QUEUED','NONE','GUARD_ALERT',1,'A new review was posted. No action is required today.','<p>A new review was posted. No action is required today.</p>',1,true,$3),
+        ($6,$2,'CASE_UPDATE','alex@example.com','Payment received','QUEUED','NONE','PAYMENT_CONFIRMATION',1,'The payment was received.','<p>The payment was received.</p>',1,true,$3)`,
+      [reply, caseId, customer, foreign, guard, payment],
+    )
+    await db.exec("alter table public.communications enable trigger communications_fulfilment_email_guard")
+    for (const id of [reply, foreign, guard, payment]) {
+      await db.query(
+        `select admin_private.enqueue_outbox_v1($1, 'SEND_EMAIL', 'communication', $2::uuid, $3::jsonb, now() - interval '10 minutes')`,
+        [`send-email:${id}:v1`, id, JSON.stringify({ communicationId: id, contentVersion: 1 })],
+      )
+    }
+    const listed = (await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, origin])).communications?.map(row => row.communicationId)
+    expect(listed).toContain(reply)
+    expect(listed).toContain(guard)
+    expect(listed).not.toContain(foreign)
+    expect(listed).not.toContain(payment)
+    const inventory = await rpc<Json>("dev_mail_dispatch_inventory_v1", [origin])
+    expect(inventory.messages?.find(row => row.communicationId === reply)).toMatchObject({ eligible: true, reason: "eligible", templateKey: "CONVERSATION_REPLY" })
+    expect(inventory.messages?.find(row => row.communicationId === guard)).toMatchObject({ eligible: true, reason: "eligible", templateKey: "GUARD_ALERT" })
+    expect(inventory.messages?.find(row => row.communicationId === foreign)).toMatchObject({ eligible: false, reason: "foreign_link" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [foreign, origin])).toMatchObject({ status: "denied", reason: "foreign_link" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [payment, origin])).toMatchObject({ status: "denied", reason: "payment_worker_owned" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [reply, origin])).toMatchObject({ status: "success", jobType: "SEND_EMAIL" })
+
+    const dispatchUrl = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app/api/internal/jobs/dev-mail-dispatch"
+    await db.exec(`
+      CREATE SCHEMA net;
+      CREATE TABLE net._http_response (
+        id bigint PRIMARY KEY,
+        status_code integer,
+        content_type text,
+        headers jsonb,
+        content text,
+        timed_out boolean,
+        error_msg text,
+        created timestamptz DEFAULT now()
+      );
+      CREATE TABLE net._http_request (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        method text NOT NULL CHECK (method = 'GET'),
+        url text NOT NULL,
+        headers jsonb,
+        timeout_milliseconds integer
+      );
+      CREATE FUNCTION net.http_get(url text, params jsonb DEFAULT '{}'::jsonb, headers jsonb DEFAULT '{}'::jsonb, timeout_milliseconds integer DEFAULT 1000)
+      RETURNS bigint LANGUAGE plpgsql AS $fn$
+      DECLARE v_id bigint;
+      BEGIN
+        INSERT INTO net._http_request(method, url, headers, timeout_milliseconds)
+        VALUES ('GET', url, headers, timeout_milliseconds)
+        RETURNING id INTO v_id;
+        RETURN v_id;
+      END $fn$;
+      CREATE SCHEMA vault;
+      CREATE TABLE vault.decrypted_secrets (name text PRIMARY KEY, decrypted_secret text);
+    `)
+    await db.query(
+      `insert into vault.decrypted_secrets(name, decrypted_secret) values
+        ('dev_mail_dispatch_url', $1),
+        ('dev_mail_dispatch_bearer', $2),
+        ('dev_mail_dispatch_bypass', $3)`,
+      [dispatchUrl, "b".repeat(32), "p".repeat(32)],
+    )
+    const columns = (await rows<{ column_name: string }>(
+      "select column_name from information_schema.columns where table_schema = 'net' and table_name = '_http_response'",
+    )).map(row => row.column_name)
+    expect(columns).toEqual(expect.arrayContaining(["id", "status_code", "timed_out", "error_msg", "created"]))
+    expect(columns).not.toContain("url")
+
+    const queued = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(queued.status).toBe("pending")
+    expect(queued.wake).toBe("requested")
+    expect(queued.requestId).toBe(1)
+    expect(JSON.stringify(queued)).not.toMatch(/delivered|PROVIDER_ACCEPTED|b{32}|p{32}/)
+    const calls = await rows<{ method: string; url: string; headers: { Authorization?: string; "x-vercel-protection-bypass"?: string } }>(
+      "select method, url, headers from net._http_request order by id",
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0].method).toBe("GET")
+    expect(calls[0].url).toBe(dispatchUrl)
+    expect(calls[0].url).not.toContain("?")
+    expect(calls[0].headers.Authorization).toBe(`Bearer ${"b".repeat(32)}`)
+    expect(calls[0].headers["x-vercel-protection-bypass"]).toBe("p".repeat(32))
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "pending", wake: "in_flight", requestId: 1 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(1)
+
+    await db.query("insert into net._http_response(id, status_code, timed_out) values (1, 302, false)")
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "blocked", wake: "blocked", httpStatus: 302, requestId: 1 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(1)
+
+    const again = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(again).toMatchObject({ status: "pending", wake: "requested", requestId: 2 })
+    await db.query("insert into net._http_response(id, status_code, timed_out) values (2, 401, false)")
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "blocked", wake: "blocked", httpStatus: 401, requestId: 2 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(2)
+
+    const forbidden = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(forbidden).toMatchObject({ status: "pending", wake: "requested", requestId: 3 })
+    await db.query("insert into net._http_response(id, status_code, timed_out) values (3, 403, false)")
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "blocked", wake: "blocked", httpStatus: 403, requestId: 3 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(3)
+
+    const timed = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(timed).toMatchObject({ status: "pending", wake: "requested", requestId: 4 })
+    await db.query("insert into net._http_response(id, status_code, timed_out, error_msg) values (4, null, true, 'timeout')")
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "blocked", wake: "timed_out", requestId: 4 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(4)
+
+    const retried = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(retried).toMatchObject({ status: "pending", wake: "requested", requestId: 5 })
+    await db.query("update admin_private.dev_mail_dispatch_http set requested_at = now() - interval '10 minutes' where id = 1")
+    expect(await rpc<Json>("dev_mail_dispatch_recovery_v1", [])).toMatchObject({ status: "blocked", wake: "missing", requestId: 5 })
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(5)
+
+    const reached = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(reached).toMatchObject({ status: "pending", wake: "requested", requestId: 6 })
+    await db.query("insert into net._http_response(id, status_code, timed_out) values (6, 200, false)")
+    const followed = await rpc<Json>("dev_mail_dispatch_recovery_v1", [])
+    expect(followed.status).toBe("pending")
+    expect(followed.wake).toBe("requested")
+    expect(followed.requestId).toBe(7)
+    expect(JSON.stringify(followed)).not.toMatch(/delivered|PROVIDER_ACCEPTED/)
+    expect(await count("select count(*)::int as n from net._http_request")).toBe(7)
   })
 })

@@ -162,12 +162,15 @@ main.customer-main > section.auth-card {
 .customer-header-context {
   margin: 0;
   min-width: 0;
+  max-width: min(11rem, 42vw);
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.92rem;
   font-weight: 600;
   line-height: 1.3;
   text-align: right;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* footer */
@@ -1000,8 +1003,11 @@ main.customer-main > section .document-list a {
 .evidence-upload input:focus-visible,
 .evidence-upload button:focus-visible,
 .documents-page a:focus-visible,
+.documents-page button:focus-visible,
+.documents-page summary:focus-visible,
 .case-documents-link a:focus-visible,
-.attention-action a:focus-visible {
+.attention-action a:focus-visible,
+.customer-header a:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
@@ -1587,13 +1593,64 @@ main.customer-main > section .document-list a {
 
 .document-row {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.35rem;
   min-width: 0;
   padding-top: 0.75rem;
   border-top: 1px solid var(--line);
 }
 
-.document-row h3 { margin: 0; font-size: 1.05rem; }
+.document-row h3,
+.document-file h3 { margin: 0; font-size: 1.02rem; overflow-wrap: anywhere; }
+
+.document-case-identity { display: grid; gap: 0.15rem; min-width: 0; }
+.document-case-business { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.document-case-location,
+.document-case-service,
+.document-filename,
+.document-meta,
+.document-published,
+.document-file-role { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.document-published,
+.document-file-role { font-size: 0.85rem; }
+.document-pack-note { display: grid; gap: 0.35rem; }
+.document-pack-title { margin: 0; font-weight: 700; }
+.documents-status { margin: 0 0 1rem; color: var(--muted); }
+.documents-action,
+.documents-ready,
+.documents-history { display: grid; gap: 0.75rem; }
+.documents-history summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.document-files {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.document-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+.document-file-copy { display: grid; gap: 0.2rem; min-width: 0; }
+.document-download { min-width: 7.5rem; }
+
+@media (min-width: 768px) {
+  .customer-header-context { max-width: 18rem; }
+}
+
+@media (max-width: 640px) {
+  .document-file { grid-template-columns: minmax(0, 1fr); }
+  .document-file .portal-button { width: 100%; }
+}
 
 .account-help {
   padding: 1rem;

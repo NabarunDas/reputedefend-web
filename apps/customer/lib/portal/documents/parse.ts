@@ -282,7 +282,7 @@ export function parseCaseDocuments(value: unknown): CustomerCaseDocuments | "not
   return { found: true, case: shared, requests: parsedRequests, submissions: parsedSubmissions, documents: parsedDocuments, pack }
 }
 
-const GUIDED_PACK_INSTRUCTIONS = "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you."
+export const GUIDED_PACK_INSTRUCTIONS = "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you."
 
 function parseGuidedPack(value: unknown): GuidedPackHandover | null | undefined {
   if (value === null) return null

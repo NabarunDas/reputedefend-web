@@ -10,6 +10,12 @@ function withPrivate(response: NextResponse) {
   return response
 }
 
+function proceed(request: NextRequest) {
+  const headers = new Headers(request.headers)
+  headers.set("x-customer-pathname", request.nextUrl.pathname)
+  return NextResponse.next({ request: { headers } })
+}
+
 function redirectTo(request: NextRequest, pathname: string) {
   const destination = request.nextUrl.clone()
   destination.pathname = pathname
@@ -38,6 +44,7 @@ export async function proxy(request: NextRequest) {
     || pathname === "/api/portal/service/quotation"
     || pathname === "/api/portal/guard/document"
     || pathname === "/api/portal/documents/download"
+    || pathname === "/api/portal/documents/archive"
   )
   const loginRead = portalOn && pathname === "/login" && (method === "GET" || method === "HEAD")
   const portalPage = pathname === "/portal" || pathname.startsWith("/portal/")
@@ -45,21 +52,21 @@ export async function proxy(request: NextRequest) {
 
   let response: NextResponse
   if (isPublicRead(pathname, method) || loginRead || actionPost || portalPreAuth || portalSignOut) {
-    response = NextResponse.next()
+    response = proceed(request)
   } else if (portalPage) {
     if (!portalOn) response = redirectTo(request, "/")
-    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = NextResponse.next()
+    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = proceed(request)
     else response = redirectTo(request, "/login")
   } else if (portalMutation || portalRead) {
     if (!portalOn) response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 404 })
-    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = NextResponse.next()
+    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = proceed(request)
     else response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 401 })
   } else if (portalApi) {
     // An action session must not open a portal API that this proxy has not classified.
     response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: portalOn ? 401 : 404 })
   } else if (await actionSessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     // A portal cookie is never read here. Action routes stay on the action session.
-    response = NextResponse.next()
+    response = proceed(request)
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(method)) {
     response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 401 })
   } else {

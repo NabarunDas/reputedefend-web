@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
 const nav = vi.hoisted(() => ({ pathname: "/" }))
+const headerPath = vi.hoisted(() => ({ value: "" }))
 
 vi.mock("next/font/google", () => ({
   Inter: () => ({ variable: "--font-body" }),
@@ -18,6 +19,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }))
 
+vi.mock("next/headers", () => ({
+  headers: async () => ({ get: (name: string) => name === "x-customer-pathname" ? headerPath.value : null }),
+  cookies: async () => ({ get: () => undefined }),
+}))
+
 vi.mock("next/image", () => ({
   default: ({ alt, src, className }: { alt: string; src: string; className?: string }) => (
     // Test double only. The app uses next/image.
@@ -26,16 +32,18 @@ vi.mock("next/image", () => ({
   ),
 }))
 
+import { CustomerHeader } from "@/components/customer-header"
 import RootLayout, { metadata } from "./layout"
 
 afterEach(() => {
   cleanup()
   nav.pathname = "/"
+  headerPath.value = ""
 })
 
 describe("customer layout", () => {
-  it("uses the approved logo, essential footer links, and no tracking", () => {
-    const { container } = render(<RootLayout><p>Secure page</p></RootLayout>)
+  it("uses the approved logo, essential footer links, and no tracking", async () => {
+    const { container } = render(await RootLayout({ children: <p>Secure page</p> }))
     const homes = screen.getAllByRole("link", { name: "ProfileRelaunch home" })
     const home = homes.find(link => link.getAttribute("href") === "https://profilerelaunch.com")
     expect(home).toBeTruthy()
@@ -64,12 +72,26 @@ describe("customer layout", () => {
     expect(container.querySelector("header.brand")).toBeNull()
   })
 
-  it("replaces the marketing return link with quiet portal context", () => {
+  it("replaces the marketing return link with the customer's name on portal pages only", async () => {
     nav.pathname = "/portal"
-    render(<RootLayout><p>Portal</p></RootLayout>)
+    headerPath.value = "/portal"
+    render(await RootLayout({ children: <p>Portal</p> }))
     expect(screen.queryByRole("link", { name: "Back to ProfileRelaunch" })).toBeNull()
-    expect(screen.getByText("Your account").tagName).toBe("P")
+    expect(screen.getByText("My account").tagName).toBe("P")
     expect(screen.getAllByRole("link", { name: "ProfileRelaunch home" }).some(link => link.getAttribute("href") === "https://profilerelaunch.com")).toBe(true)
+    cleanup()
+
+    nav.pathname = "/portal/documents"
+    render(<CustomerHeader accountName="Aarshav Das" />)
+    expect(screen.getByText("Aarshav Das")).toHaveAttribute("title", "Aarshav Das")
+    expect(screen.queryByText("Harbour Bakery")).toBeNull()
+    cleanup()
+
+    nav.pathname = "/"
+    const { container } = render(<CustomerHeader accountName="Aarshav Das" />)
+    expect(screen.getByRole("link", { name: "Back to ProfileRelaunch" })).toBeTruthy()
+    expect(container.textContent).not.toContain("Aarshav Das")
+    expect(container.textContent).not.toContain("My account")
   })
 
   it("keeps the customer app out of search indexes and off marketing metadata", () => {

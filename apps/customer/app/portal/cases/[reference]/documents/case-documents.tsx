@@ -1,6 +1,7 @@
 import { caseTypeLabel, formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
-import { evidenceStateLabel, publishedFileDetail } from "@/lib/portal/documents/model"
-import type { CustomerCaseDocuments } from "@/lib/portal/documents/parse"
+import { evidenceStateLabel } from "@/lib/portal/documents/model"
+import type { CustomerCaseDocuments, EvidenceSubmission } from "@/lib/portal/documents/parse"
+import { ReadyForYou, SubmittedEvidence, needsAttention } from "../../../documents/document-sections"
 import { EvidenceUploadForm } from "../../../documents/upload-form"
 import { GuidedHandoverForm } from "./handover-form"
 
@@ -17,6 +18,24 @@ export function CaseDocumentsUnavailable() {
 export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments }) {
   const item = documents.case
   const service = serviceLabel(item.serviceTrack)
+  const requests = documents.requests.filter(request => needsAttention(request.state, request.canUpload))
+  const submissions: EvidenceSubmission[] = documents.submissions.map(submission => ({ ...item, ...submission }))
+  const ready = documents.documents.length > 0 || documents.pack ? [{
+    ...item,
+    guidedPack: documents.pack !== null,
+    packTitle: documents.pack?.title ?? null,
+    files: documents.documents.map(file => ({
+      ...file,
+      instructions: documents.pack?.instructionSelectors.includes(file.selector) ?? false,
+    })),
+    footer: documents.pack ? (
+      <GuidedHandoverForm
+        reference={item.reference}
+        submitted={documents.pack.customerSubmitted}
+        correctionRequested={documents.pack.correctionRequested}
+      />
+    ) : null,
+  }] : []
   return (
     <div className="documents-page">
       <nav className="case-breadcrumb" aria-label="Breadcrumb">
@@ -32,13 +51,13 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
       {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
       <p>{caseTypeLabel(item.caseType)}{service ? ` · ${service}` : ""}</p>
 
-      <section aria-labelledby="requests-heading">
-        <h2 id="requests-heading">Evidence requests</h2>
-        {documents.requests.length === 0 ? <p>There are no evidence requests for this case.</p> : (
+      {requests.length === 0 ? <p className="documents-status">Nothing is waiting for you to upload.</p> : (
+        <section className="documents-action" aria-labelledby="requests-heading">
+          <h2 id="requests-heading">Action needed</h2>
           <ul className="document-list">
-            {documents.requests.map(request => (
+            {requests.map(request => (
               <li key={request.selector}>
-                <article className="case-card">
+                <article className="document-row">
                   <h3>{request.title}</h3>
                   <p>{request.requestText}</p>
                   {request.dueAt ? <p>Requested by {formatPortalDate(request.dueAt)}</p> : null}
@@ -49,63 +68,11 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
               </li>
             ))}
           </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="case-submitted-heading">
-        <h2 id="case-submitted-heading">Your submitted evidence</h2>
-        {documents.submissions.length === 0 ? <p>You haven&apos;t submitted any evidence for this case yet.</p> : (
-          <ul className="document-list">
-            {documents.submissions.map(submission => (
-              <li key={`${submission.title}-${submission.submittedAt}`}>
-                <article className="case-card">
-                  <h3>{submission.title}</h3>
-                  <p>{submission.filename}</p>
-                  <p>Submitted {formatPortalDate(submission.submittedAt)}</p>
-                  <p>{evidenceStateLabel(submission.state)}</p>
-                </article>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {documents.pack ? (
-        <section aria-labelledby="guided-pack-heading">
-          <h2 id="guided-pack-heading">{documents.pack.title}</h2>
-          <p>{documents.pack.instructions}</p>
-          <p>Download the files below. The instructions file is marked for you. You submit this pack to Google yourself.</p>
-          <GuidedHandoverForm
-            reference={item.reference}
-            submitted={documents.pack.customerSubmitted}
-            correctionRequested={documents.pack.correctionRequested}
-          />
         </section>
-      ) : null}
+      )}
 
-      <section aria-labelledby="case-published-heading">
-        <h2 id="case-published-heading">Documents from ProfileRelaunch</h2>
-        {documents.documents.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for this case yet.</p> : (
-          <ul className="document-list">
-            {documents.documents.map(file => (
-              <li key={file.selector}>
-                <article className="case-card">
-                  <h3>{file.title}</h3>
-                  {documents.pack?.instructionSelectors.includes(file.selector) ? <p>Customer submission instructions</p> : null}
-                  <p>{file.filename}</p>
-                  <p>{publishedFileDetail(file)}</p>
-                  <p>
-                    <a href={`/api/portal/documents/download?reference=${encodeURIComponent(item.reference)}&selector=${encodeURIComponent(file.selector)}`}>
-                      Download {file.filename}
-                    </a>
-                  </p>
-                </article>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
+      <ReadyForYou cases={ready} />
+      <SubmittedEvidence submissions={submissions} expanded={requests.length > 0} />
       <p className="case-back"><a href={`/portal/cases/${item.reference}`}>Back to this case</a></p>
     </div>
   )

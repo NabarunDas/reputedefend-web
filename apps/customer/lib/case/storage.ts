@@ -9,11 +9,13 @@ import { GUARDDUTY_TAG, MAX_EVIDENCE_BYTES, READ_EXPIRES_SECONDS, UPLOAD_EXPIRES
 export type PresignedUpload = { url: string; fields: Record<string, string>; expiresSeconds: number; conditions: unknown[] }
 export type ObjectProbe = { exists: boolean; scan: ScanStatus }
 export type ReadDisposition = "inline" | "attachment"
+export type ObjectBody = { body: ReadableStream<Uint8Array> | null; contentLength: number | null }
 export type CustomerEvidenceStorage = {
   bucket: string
   createUpload(input: { key: string; contentType: string }): Promise<PresignedUpload>
   probeObject(key: string): Promise<ObjectProbe>
   createReadUrl(input: { key: string; contentType: string; filename: string; disposition: ReadDisposition }): Promise<string>
+  openObject(key: string): Promise<ObjectBody>
 }
 
 /**
@@ -111,6 +113,17 @@ export function createCustomerEvidenceStorage(): CustomerEvidenceStorage | null 
         ResponseContentDisposition: contentDisposition(filename, disposition),
       })
       return getSignedUrl(client, command, { expiresIn: READ_EXPIRES_SECONDS })
+    },
+    async openObject(key) {
+      try {
+        const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }))
+        const body = result.Body?.transformToWebStream() ?? null
+        const contentLength = typeof result.ContentLength === "number" ? result.ContentLength : null
+        return { body, contentLength }
+      } catch (error) {
+        if (isMissingS3Object(error)) return { body: null, contentLength: null }
+        throw error
+      }
     },
   }
 }

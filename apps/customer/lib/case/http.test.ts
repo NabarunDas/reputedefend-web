@@ -38,6 +38,7 @@ function storage(overrides: Partial<CustomerEvidenceStorage> = {}): CustomerEvid
     createUpload: vi.fn(async () => ({ url: "https://s3.example/post", fields: { key: "cases/x" }, expiresSeconds: 300, conditions: [] })),
     probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
     createReadUrl: vi.fn(async () => "https://s3.example/object?X-Amz-Expires=60"),
+    openObject: vi.fn(async () => ({ body: null, contentLength: null })),
     ...overrides,
   }
 }

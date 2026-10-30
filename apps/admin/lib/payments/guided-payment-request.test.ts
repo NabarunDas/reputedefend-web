@@ -35,6 +35,7 @@ function order(overrides: Record<string, unknown> = {}) {
     id: orderId,
     publicRef: "SO-26-GHHRGY",
     caseReference: "PR-26-GHNLB9",
+    businessName: "North Bakery",
     serviceCode: "GUIDED_RELAUNCH",
     amountMinor: 9900,
     currency: "GBP",
@@ -85,6 +86,7 @@ describe("guided payment-request command", () => {
     expect(payload.version).toBe(4)
     expect(payload.customerOrigin).toBe(portal)
     expect(payload.recipient).toBeUndefined()
+    expect(payload.bodyText).toContain("Business: North Bakery")
     expect(payload.bodyText).toContain("Pay £99.00 securely")
     expect(payload.bodyText).toContain(`${portal}/portal/cases/PR-26-GHNLB9/payments`)
     expect(payload.bodyText).not.toContain("#t=")

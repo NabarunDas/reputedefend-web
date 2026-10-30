@@ -259,11 +259,13 @@ describe("guided service activation", () => {
     expect(document.querySelector("[data-step='SERVICE_ACTIVATION']")).not.toHaveAttribute("data-state", "COMPLETED")
   })
 
-  it("does not offer a payment-request email when no open action can be reused", () => {
+  it("offers a payment request when the accepted order has no payment action yet", () => {
     show(facts(), null, [money()], { mailReady: true })
-    expect(screen.queryByRole("button", { name: "Send payment request" })).toBeNull()
-    expect(screen.getByText(/No open payment action is available to reuse/)).toBeTruthy()
-    expect(screen.queryByText(/Email status:/)).toBeNull()
+    expect(screen.getByRole("button", { name: "Send payment request" })).toBeTruthy()
+    expect(screen.getByText(/creates the payment step only when none is open/)).toBeTruthy()
+    expect(screen.getByText(/Email status: No payment-request email has been queued/)).toBeTruthy()
+    expect(screen.queryByText(/No open payment action is available to reuse/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /Mark as paid/i })).toBeNull()
   })
 
   it("does not replace an expired payment action from this step", () => {

@@ -327,8 +327,9 @@ export function buildJourneyActivationPanel(input: {
   const expiredGuidedPayments = facts.customerActions.filter(action =>
     action.kind === "GUIDED_PAYMENT" && action.status === "OPEN" && action.expiresAt <= input.now)
   const canIssue = flow.primaryAction?.id === "START_UPFRONT_PAYMENT" && flow.primaryAction.state === "ACTION_REQUIRED"
+  const missingPaymentAction = openGuidedPayments.length === 0 && expiredGuidedPayments.length === 0 && facts.capabilities.paymentsEnabled
   const identityCandidate = facts.serviceTrack === "GUIDED" && listsComplete && !tied && !linkProblem && !input.recordsConflict && !moneyDisagrees
-    && (canIssue || openGuidedPayments.length > 0 || expiredGuidedPayments.length > 0)
+    && (canIssue || openGuidedPayments.length > 0 || expiredGuidedPayments.length > 0 || missingPaymentAction)
   const identityProblem = identityCandidate
     ? paymentLinkProblem(facts, link, moneyOrder, loadedOrder, input.orderDetailMissing)
     : null
@@ -347,15 +348,13 @@ export function buildJourneyActivationPanel(input: {
   const paymentRequestBase = facts.serviceTrack === "GUIDED"
     && listsComplete && !tied && !linkProblem && !input.recordsConflict && !input.orderDetailMissing && !moneyDisagrees
     && !identityProblem && obligationDue && trustReady && !!link.quoteOrderId && !!moneyOrder
-    && openGuidedPayments.length === 1 && expiredGuidedPayments.length === 0
+    && expiredGuidedPayments.length === 0 && openGuidedPayments.length <= 1
+    && (openGuidedPayments.length === 1 || missingPaymentAction)
   if (paymentRequestBase && !input.mailReady) {
     notices.push("Outgoing mail or the monitored Reply-To is not confirmed, so the payment-request email is not queued from here.")
   }
   if (obligationDue && !identityProblem && expiredGuidedPayments.length > 0 && openGuidedPayments.length === 0) {
     notices.push("The open payment action has expired, so this step does not send the payment-request email or create a replacement link.")
-  }
-  if (issueUpfront && openGuidedPayments.length === 0) {
-    notices.push("No open payment action is available to reuse, so the payment-request email is not sent from here.")
   }
   if (openGuidedPayments.length > 1 && obligationDue) {
     notices.push("More than one payment action is open, so no payment-request email is queued from here.")

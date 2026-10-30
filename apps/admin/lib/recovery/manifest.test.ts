@@ -18,9 +18,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
+    expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -35,8 +35,7 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261030120000_guided_pack_stage_sync_v1.sql",
-      "20261030130000_guided_assessment_pack_basis_v1.sql",
+      "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
@@ -92,6 +91,20 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    const paymentSql = readFileSync(new URL("20261030200000_guided_payment_request_after_acceptance_v1.sql", directory), "utf8")
+    expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("e54e8065318f6d1890d47bf55ed5da5f65fbe25d6670d84b80c5139763875b43")
+    expect(paymentSql).toContain("SECURITY DEFINER")
+    expect(paymentSql).toContain("SET search_path = ''")
+    expect(paymentSql).toContain("REVOKE ALL ON FUNCTION public.customer_action_claim_guided_payment_email_v1(text, uuid, text)")
+    expect(paymentSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_action_claim_guided_payment_email_v1(text, uuid, text)\n  TO service_role;")
+    expect(paymentSql).not.toContain("p_communication")
+    expect(paymentSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_action_claim_guided_payment_email_v1(text, uuid, text)\n  TO anon")
+    expect(paymentSql).not.toContain("PR-26-GHNLB9")
+    expect(paymentSql).not.toContain("PR-26-MEVY5P")
+    expect(findMigration("20261030120000_guided_pack_stage_sync_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261030130000_guided_assessment_pack_basis_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261030120000_guided_pack_stage_sync_v1.sql")?.safeToReplay).toBe(false)
+    expect(findMigration("20261030130000_guided_assessment_pack_basis_v1.sql")?.safeToReplay).toBe(false)
     const basisSql = readFileSync(new URL("20261030130000_guided_assessment_pack_basis_v1.sql", directory), "utf8")
     expect(basisSql).not.toContain("PR-26-GHNLB9")
     expect(basisSql).not.toContain("advance_guided_pack_ready_v1")

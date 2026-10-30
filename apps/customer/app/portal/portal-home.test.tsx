@@ -9,8 +9,13 @@ import PortalLayout from "./layout"
 import { PortalHome } from "./portal-home"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
+const replaceDocument = vi.hoisted(() => vi.fn())
 const nav = vi.hoisted(() => ({ pathname: "/portal" }))
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => nav.pathname }))
+vi.mock("@/lib/portal/account/document", () => ({
+  replaceAuthenticatedDocument: replaceDocument,
+  reloadAuthenticatedDocument: vi.fn(),
+}))
 
 const fetchMock = vi.fn()
 
@@ -29,6 +34,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
   router.push.mockReset()
+  replaceDocument.mockReset()
 })
 afterEach(() => {
   cleanup()
@@ -130,7 +136,8 @@ describe("portal shell", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) })
     renderPortal()
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/login"))
+    await waitFor(() => expect(replaceDocument).toHaveBeenCalledWith("login"))
+    expect(router.push).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledWith("/api/portal/auth/sign-out", expect.objectContaining({ method: "POST" }))
     expect(fetchMock.mock.calls[0][1].body).toBe("{}")
   })
@@ -142,10 +149,12 @@ describe("portal shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
     expect(await screen.findByRole("button", { name: "Signing out…" })).toBeDisabled()
     expect(router.push).not.toHaveBeenCalled()
+    expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("heading", { name: "Welcome back" })).toBeTruthy()
     resolveFetch({ ok: false, status: 500, json: async () => ({}) })
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We couldn't sign you out. Try again."))
     expect(router.push).not.toHaveBeenCalled()
+    expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
   })
 })

@@ -1445,32 +1445,96 @@ main.customer-main > section .document-list a {
   .agreement-document h4 { break-after: avoid; }
 }
 
-.payments-page { display: grid; gap: 1.5rem; }
-.payments-case-identity {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-  padding: 1rem 1.15rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-.payments-case-identity > * { margin: 0; }
+.payments-page.payments-page { display: grid; gap: 1rem; }
+.payments-intro { display: grid; gap: 0.2rem; }
+.payments-intro h1,
+.payments-intro p { margin: 0; }
+.payments-intro p:last-child { color: var(--muted); max-width: 42rem; }
 .payments-case,
 .payments-order,
 .payments-obligation,
 .payments-authority,
 .payments-receipts,
-.payments-invoice { display: grid; gap: 0.75rem; min-width: 0; }
-.payments-order,
-.payments-authority {
-  padding: 1rem;
+.payments-invoice,
+.payments-figure,
+.payments-identity { display: grid; gap: 0.35rem; min-width: 0; }
+.payments-case { gap: 0.75rem; }
+.payments-case-context { display: grid; gap: 0.15rem; }
+.payments-case-context h2,
+.payments-order h2,
+.payments-order h3,
+.payments-order h4,
+.payments-order p { margin: 0; }
+.payments-case-context h2 { font-size: 1.15rem; }
+.payments-case-context p,
+.payments-support,
+.payments-order-ref,
+.payments-secondary-total,
+.payments-paid-date,
+.payments-empty-case { color: var(--muted); }
+.payments-order {
+  gap: 0.7rem;
+  padding: 1rem 1.1rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
-.payments-order-ref { margin: 0; color: var(--muted); }
-.payments-amount { margin: 0; font-size: 1.75rem; font-variant-numeric: tabular-nums; }
+.payments-card-top {
+  display: grid;
+  gap: 0.75rem;
+  align-items: start;
+}
+.payments-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem 0.75rem;
+}
+.payments-service { flex: 0 1 auto; font-size: 1.35rem; line-height: 1.2; }
+.payments-amount,
+.payments-outstanding {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.6rem, 4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.payments-secondary-total { font-variant-numeric: tabular-nums; }
+.payments-actions { margin: 0; }
+.payments-receipt-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.payments-receipt,
+.payments-receipt-list li { display: grid; gap: 0.45rem; }
+.payments-receipts-label { font-weight: 700; }
+.payments-order .service-confirm,
+.payments-order .payments-authority {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.payments-order .service-confirm { justify-items: start; }
+.payments-order form button { margin: 0; }
+.payments-order .payments-authority { gap: 0.35rem; }
+@media (min-width: 768px) {
+  .payments-card-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 1.5rem;
+  }
+  .payments-figure { justify-items: end; text-align: right; }
+}
+@media (max-width: 389px) {
+  .payments-order { padding: 0.8rem; }
+  .payments-service { font-size: 1.2rem; }
+}
 .payments-refresh { display: grid; gap: 0.35rem; }
 .payments-refresh p { margin: 0; color: var(--muted); }
 .payments-page button:focus-visible,

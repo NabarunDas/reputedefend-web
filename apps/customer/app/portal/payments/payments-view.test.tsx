@@ -152,7 +152,7 @@ describe("payments screens", () => {
       })],
       actions: [{ selector, kind: "managed_setup", orderRef: "SO-26-ABCDEF" }],
     })]} />)
-    const notes = screen.getByText("Payment notes").closest("details")
+    const notes = screen.getByText("Payment details").closest("details")
     expect(notes?.querySelector("h4")?.textContent).toBe("Managed service payment")
     expect(notes?.textContent).toMatch(/invoiced only after documented success/)
     expect(screen.queryByRole("button", { name: /Save payment method|Record consent/ })).toBeNull()
@@ -218,14 +218,19 @@ describe("payments screens", () => {
       })],
       actions: [],
     })]} focused={false} />)
-    expect(screen.getByRole("link", { name: "Download receipt for SO-26-ABCDEF" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View receipt for SO-26-ABCDEF" })).toHaveAttribute(
+      "href",
+      `/portal/payments/receipt?selector=${receiptSelector}`,
+    )
+    expect(screen.getByRole("link", { name: "Download PDF for SO-26-ABCDEF" })).toHaveAttribute(
       "href",
       `/api/portal/payments/receipt?selector=${receiptSelector}`,
     )
-    expect(screen.getByRole("link", { name: "View payments for PR-26-ABCDEF" })).toHaveAttribute(
-      "href",
-      "/portal/cases/PR-26-ABCDEF/payments",
-    )
+    expect(screen.getByRole("link", { name: "View receipt for SO-26-ABCDEF" }).textContent).toBe("View receipt")
+    expect(screen.getByRole("link", { name: "Download PDF for SO-26-ABCDEF" }).textContent).toBe("Download PDF")
+    expect(screen.queryByRole("link", { name: /View payments for/ })).toBeNull()
+    expect(document.querySelector(".payments-case-identity")).toBeNull()
+    expect(document.querySelectorAll(".payments-order")).toHaveLength(1)
     expect(document.body.innerHTML).not.toMatch(/storage|provider_receipt|stripe_/i)
   })
 
@@ -235,18 +240,21 @@ describe("payments screens", () => {
     })]} />)
     expect(screen.getByRole("heading", { name: "Guided Relaunch" })).toBeTruthy()
     expect(screen.getByText("Order SO-26-ABCDEF")).toBeTruthy()
-    expect(screen.getAllByText("£99.00")).toHaveLength(2)
-    expect(document.querySelector(".payments-amount")?.textContent).toBe("£99.00")
-    expect(document.querySelector(".payments-amount")?.previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.getByText("Your payments and receipts.")).toBeTruthy()
+    expect(document.querySelectorAll(".payments-order")).toHaveLength(1)
     expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
-    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Outstanding")
-    const notes = screen.getByText("Payment notes").closest("details")
+    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Amount due")
+    expect(document.querySelector(".payments-amount")).toBeNull()
+    expect(screen.getByText("Order total £99.00")).toBeTruthy()
+    expect(screen.getAllByText("£99.00")).toHaveLength(1)
+    const notes = screen.getByText("Payment details").closest("details")
     expect(notes?.textContent).toContain("One-time payment")
     expect(notes?.textContent).toContain("The total includes any applicable taxes. ProfileRelaunch does not add a further fee.")
-    expect(screen.getByText(/An amount still due is shown separately/)).toBeTruthy()
+    expect(screen.queryByText(/An amount still due is shown separately/)).toBeNull()
     expect(document.body.textContent).not.toMatch(/\bobligation\b/i)
     expect(screen.queryByText("The amount shown is the amount recorded for this order.")).toBeNull()
-    expect(screen.queryByText("Amount")).toBeNull()
+    expect(screen.queryByText("Amount", { exact: true })).toBeNull()
+    expect(screen.queryByText("Outstanding")).toBeNull()
     expect(screen.queryByRole("button", { name: "Start a fresh secure checkout" })).toBeNull()
     expect(screen.getByRole("button", { name: "Pay £99.00 securely" })).toBeTruthy()
     cleanup()
@@ -301,15 +309,17 @@ function orderTotal(): HTMLElement {
 describe("payment amount headings", () => {
   it("keeps an unpaid upfront order total separate from the recorded amount due", () => {
     render(<PaymentsView focused cases={[item()]} />)
-    expect(orderTotal().textContent).toBe("£99.00")
-    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
     expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
+    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Amount due")
+    expect(screen.getByText("Order total £99.00")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Payment required" })).toBeTruthy()
     expect(screen.getByText("No payment recorded yet.")).toBeTruthy()
     expect(screen.queryByText("£0.00")).toBeNull()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByRole("link", { name: /View payments for/ })).toBeNull()
   })
 
-  it("shows a paid order total and the receipt amount, not an outstanding balance", () => {
+  it("shows one paid amount and the receipt date, not an outstanding balance", () => {
     render(<PaymentsView focused cases={[item({
       orders: [order({
         obligations: [obligation({ state: "PAID" })],
@@ -317,11 +327,16 @@ describe("payment amount headings", () => {
       })],
       actions: [],
     })]} />)
-    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
-    expect(screen.getByText(/Paid £99\.00/)).toBeTruthy()
+    expect(orderTotal().textContent).toBe("£99.00")
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Amount paid")
+    expect(screen.getByText(/Paid on/)).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Paid" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "View receipt for SO-26-ABCDEF" })).toBeTruthy()
+    expect(screen.queryByText(/Paid £99\.00/)).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("No payment recorded yet.")).toBeNull()
+    expect(screen.getByText("Order total £99.00")).toBeTruthy()
   })
 
   it("uses the stored due obligation for a mixed order and does not subtract receipts", () => {
@@ -334,12 +349,13 @@ describe("payment amount headings", () => {
         receipts: [receipt(4000, "cd")],
       })],
     })]} />)
-    expect(orderTotal().textContent).toBe("£99.00")
-    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
-    expect(screen.getByText(/Paid £40\.00/)).toBeTruthy()
     expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
-    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Outstanding")
+    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Amount due")
+    expect(screen.getByText(/Paid £40\.00/)).toBeTruthy()
+    expect(screen.getByText("Order total £99.00")).toBeTruthy()
     expect(document.body.textContent).not.toContain("£59.00")
+    expect(screen.getAllByText("Amount due")).toHaveLength(1)
+    expect(screen.getByRole("heading", { name: "Payment required" })).toBeTruthy()
     cleanup()
 
     render(<PaymentsView focused cases={[item({
@@ -351,9 +367,10 @@ describe("payment amount headings", () => {
         receipts: [receipt(4000, "ef")],
       })],
     })]} />)
-    expect(orderTotal().textContent).toBe("£99.00")
     expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£59.00")
-    expect(screen.getAllByText("Outstanding")).toHaveLength(1)
+    expect(screen.getByText("Order total £99.00")).toBeTruthy()
+    expect(screen.getAllByText("Amount due")).toHaveLength(1)
+    expect(document.body.textContent).not.toContain("£19.00")
   })
 
   it("does not turn a failed or unconfirmed payment into an outstanding balance", () => {
@@ -362,8 +379,12 @@ describe("payment amount headings", () => {
     })]} />)
     expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
     expect(screen.getByRole("heading", { name: "Payment was not completed" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Try secure checkout again" })).toBeTruthy()
+    expect(screen.getByText("The last attempt did not complete. You can try again when secure checkout is available.")).toBeTruthy()
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
     expect(screen.getByText("No payment recorded yet.")).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/payment has been received/i)
     cleanup()
 
     render(<PaymentsView focused cases={[item({
@@ -371,8 +392,10 @@ describe("payment amount headings", () => {
     })]} />)
     expect(screen.getByRole("heading", { name: "Payment pending" })).toBeTruthy()
     expect(screen.getByText("We're confirming this payment. It is not marked paid.")).toBeTruthy()
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
     expect(orderTotal().textContent).toBe("£99.00")
+    expect(document.body.textContent).not.toMatch(/payment has been received/i)
   })
 
   it("labels a void obligation as void and leaves the order total unchanged", () => {
@@ -381,8 +404,11 @@ describe("payment amount headings", () => {
       actions: [],
     })]} />)
     expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(orderTotal().textContent).toBe("£99.00")
     expect(screen.getByRole("heading", { name: "Void" })).toBeTruthy()
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Pay|checkout/i })).toBeNull()
     expect(screen.getByText("No payment was recorded.")).toBeTruthy()
   })
 
@@ -398,7 +424,10 @@ describe("payment amount headings", () => {
     })]} />)
     expect(orderTotal().textContent).toBe("£99.00")
     expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Pay|checkout|invoice/i })).toBeNull()
+    expect(screen.getByText("No charge is due yet.")).toBeTruthy()
     expect(screen.getByText("No payment was recorded.")).toBeTruthy()
     expect(screen.getByText(/invoiced only after documented success/)).toBeTruthy()
   })
@@ -413,8 +442,13 @@ describe("payment amount headings", () => {
     })]} />)
     expect(screen.getByText(/Paid £50\.00/)).toBeTruthy()
     expect(screen.getByText(/Paid £49\.00/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "View receipt 1 for SO-26-ABCDEF" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "View receipt 2 for SO-26-ABCDEF" })).toBeTruthy()
+    expect(screen.queryByText("Amount due")).toBeNull()
+    expect(screen.queryByText("Amount paid")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
     expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(orderTotal().textContent).toBe("£99.00")
     expect(document.body.textContent).not.toContain("£1.00")
   })
 
@@ -424,8 +458,88 @@ describe("payment amount headings", () => {
       actions: [],
     })]} />)
     expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.queryByText("Amount due")).toBeNull()
     expect(screen.queryByText("Outstanding")).toBeNull()
     expect(screen.queryByText(/Paid £/)).toBeNull()
     expect(screen.getByText("No payment was recorded.")).toBeTruthy()
+  })
+
+  it("does not treat one receipt as proof the order is paid", () => {
+    render(<PaymentsView cases={[item({
+      orders: [order({
+        obligations: [obligation({ state: "DUE" })],
+        receipts: [receipt(9900, "ab")],
+      })],
+    })]} focused={false} />)
+    expect(screen.getByRole("heading", { name: "Payment required" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Paid" })).toBeNull()
+    expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
+    expect(screen.getByText(/Paid £99\.00/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Pay £99.00 securely" })).toBeTruthy()
+    expect(screen.queryByText("£0.00")).toBeNull()
+  })
+
+  it("groups several orders under one case and keeps separate cards", () => {
+    render(<PaymentsView cases={[item({
+      orders: [
+        order({ serviceName: "Guided Relaunch", obligations: [obligation({ state: "PAID" })], receipts: [receipt(9900, "aa")] }),
+        order({
+          orderRef: "SO-26-SECOND",
+          serviceName: "Profile Recovery",
+          amountMinor: 14900,
+          obligations: [obligation({ state: "DUE", amountMinor: 14900 })],
+          receipts: [],
+        }),
+      ],
+      actions: [{ selector, kind: "guided_payment", orderRef: "SO-26-SECOND" }],
+    })]} focused={false} />)
+    expect(screen.getByRole("heading", { level: 2, name: "Harbour Bakery" })).toBeTruthy()
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1)
+    expect(screen.getByRole("heading", { level: 3, name: "Guided Relaunch" })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 3, name: "Profile Recovery" })).toBeTruthy()
+    expect(screen.getAllByText("Order SO-26-ABCDEF").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Order SO-26-SECOND").length).toBeGreaterThan(0)
+    expect(document.querySelectorAll(".payments-order")).toHaveLength(2)
+    expect(document.querySelector(".payments-case-identity")).toBeNull()
+    expect(screen.getAllByText("Harbour Bakery")).toHaveLength(1)
+    expect(screen.queryByRole("link", { name: /View payments for/ })).toBeNull()
+  })
+
+  it("gives each case its own card without repeating a case heading", () => {
+    render(<PaymentsView cases={[
+      item({
+        reference: "PR-26-AAAAAA",
+        businessName: "Harbour Bakery",
+        orders: [order({ serviceName: "Guided Relaunch", obligations: [obligation({ state: "PAID" })], receipts: [receipt(9900, "aa")] })],
+        actions: [],
+      }),
+      item({
+        reference: "PR-26-BBBBBB",
+        businessName: "North Lane Studio",
+        orders: [order({
+          orderRef: "SO-26-BBBBBB",
+          serviceName: "Profile Recovery",
+          obligations: [obligation({ state: "DUE" })],
+          receipts: [],
+        })],
+      }),
+    ]} focused={false} />)
+    expect(screen.getByRole("heading", { name: "Payments" })).toBeTruthy()
+    expect(screen.getByText("Your payments and receipts.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Guided Relaunch" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Profile Recovery" })).toBeTruthy()
+    expect(screen.getByText("Harbour Bakery · PR-26-AAAAAA")).toBeTruthy()
+    expect(screen.getByText("North Lane Studio · PR-26-BBBBBB")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "PR-26-AAAAAA" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Harbour Bakery" })).toBeNull()
+    expect(document.querySelectorAll(".payments-order")).toHaveLength(2)
+    expect(document.querySelectorAll(".payments-case-identity")).toHaveLength(0)
+  })
+
+  it("does not draw a card when a case has no order", () => {
+    render(<PaymentsView cases={[item({ orders: [], actions: [] })]} focused={false} />)
+    expect(screen.getByText("There isn't a payment for Harbour Bakery (PR-26-ABCDEF) yet.")).toBeTruthy()
+    expect(document.querySelector(".payments-order")).toBeNull()
+    expect(document.querySelector(".payments-case-identity")).toBeNull()
   })
 })

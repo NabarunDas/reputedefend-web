@@ -4,6 +4,7 @@ import Image from "next/image"
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { brandLogoDark, customerHeaderLogoSizes, logoSize, marketingHomeLabel, marketingOrigin } from "@/lib/brand"
+import { reloadAuthenticatedDocument } from "@/lib/portal/account/document"
 
 export function CustomerHeader({ accountName = null }: { accountName?: string | null }) {
   const pathname = usePathname()
@@ -15,6 +16,14 @@ export function CustomerHeader({ accountName = null }: { accountName?: string | 
     update()
     window.addEventListener("scroll", update, { passive: true })
     return () => window.removeEventListener("scroll", update)
+  }, [])
+
+  useEffect(() => {
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) reloadAuthenticatedDocument()
+    }
+    window.addEventListener("pageshow", onPageShow)
+    return () => window.removeEventListener("pageshow", onPageShow)
   }, [])
 
   return (

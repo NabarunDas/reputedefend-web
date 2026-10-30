@@ -6,7 +6,11 @@ import "@testing-library/jest-dom/vitest"
 import { LoginClient } from "./login-client"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
+const replaceDocument = vi.hoisted(() => vi.fn())
 vi.mock("next/navigation", () => ({ useRouter: () => router }))
+vi.mock("@/lib/portal/account/document", () => ({
+  replaceAuthenticatedDocument: replaceDocument,
+}))
 
 const fetchMock = vi.fn()
 
@@ -14,6 +18,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
   router.push.mockReset()
+  replaceDocument.mockReset()
   window.localStorage.clear()
   window.sessionStorage.clear()
 })
@@ -93,6 +98,7 @@ describe("portal login screen", () => {
     expect(verifying).toBeDisabled()
     expect(verifying.closest("form")).toHaveAttribute("aria-busy", "true")
     expect(router.push).not.toHaveBeenCalled()
+    expect(replaceDocument).not.toHaveBeenCalled()
     resolveVerify({ ok: false, status: 401, json: async () => ({ message: "We couldn't verify that code. Check it and try again, or request a new code." }) })
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy())
   })
@@ -111,6 +117,7 @@ describe("portal login screen", () => {
     expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("aria-describedby", "portal-code-error")
     expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("aria-invalid", "true")
     expect(router.push).not.toHaveBeenCalled()
+    expect(replaceDocument).not.toHaveBeenCalled()
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/portal/auth/verify")).toHaveLength(1)
   })
 })
@@ -203,6 +210,7 @@ describe("portal login OTP slots", () => {
     expect(verifyCalls()).toHaveLength(1)
     expect(verifyCalls()[0][1]).toMatchObject({ method: "POST", body: JSON.stringify({ code: "12345678" }) })
     expect(router.push).not.toHaveBeenCalled()
+    expect(replaceDocument).not.toHaveBeenCalled()
   })
 
   it("signs in after one successful verification", async () => {
@@ -211,8 +219,9 @@ describe("portal login OTP slots", () => {
     expect(verifyCalls()).toHaveLength(0)
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: "ok" }) })
     fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }))
-    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1))
-    expect(router.push).toHaveBeenCalledWith("/portal")
+    await waitFor(() => expect(replaceDocument).toHaveBeenCalledTimes(1))
+    expect(replaceDocument).toHaveBeenCalledWith("portal")
+    expect(router.push).not.toHaveBeenCalled()
     expect(screen.getByRole("heading", { name: "You're signed in" })).toBeTruthy()
     expect(screen.getByText("Opening your customer space.")).toBeTruthy()
     expect(verifyCalls()).toHaveLength(1)

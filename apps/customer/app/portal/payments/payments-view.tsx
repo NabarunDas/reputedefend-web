@@ -39,6 +39,37 @@ function actionFor(actions: PaymentAction[], kind: PaymentAction["kind"], orderR
   return actions.find(item => item.kind === kind && item.orderRef === orderRef) ?? null
 }
 
+function dueObligations(order: PaymentOrder): PaymentObligation[] {
+  return order.obligations.filter(recordedOutstanding)
+}
+
+type Figure = { caption: "Amount due" | "Amount paid" | "Order total"; minor: number; currency: string; kind: "due" | "paid" | "total" }
+
+/**
+ * The large figure is one stored amount. A receipt does not make the order paid,
+ * and receipts are never subtracted from the order total.
+ */
+function prominentFigure(order: PaymentOrder): Figure {
+  const dues = dueObligations(order)
+  if (dues.length === 1) return { caption: "Amount due", minor: dues[0].amountMinor, currency: dues[0].currency, kind: "due" }
+  const solePaid = order.obligations.length === 1 && order.obligations[0].state === "PAID" && order.receipts.length === 1
+  if (solePaid) {
+    const receipt = order.receipts[0]
+    return { caption: "Amount paid", minor: receipt.amountMinor, currency: receipt.currency, kind: "paid" }
+  }
+  return { caption: "Order total", minor: order.amountMinor, currency: order.currency, kind: "total" }
+}
+
+function sameMoney(minor: number, currency: string, otherMinor: number, otherCurrency: string) {
+  return minor === otherMinor && currency === otherCurrency
+}
+
+function receiptAbsence(order: PaymentOrder): string | null {
+  if (order.receipts.length > 0) return null
+  if (order.obligations.some(item => item.state === "PAID")) return null
+  return openObligation(order) ? "No payment recorded yet." : "No payment was recorded."
+}
+
 export function PaymentsUnavailable() {
   return (
     <div className="payments-page state-panel">
@@ -117,10 +148,10 @@ export function PaymentsView({
           </ol>
         </nav>
       ) : null}
-      <header className={styles.summary}>
+      <header className="payments-intro">
         <p className={styles.kicker}>Billing</p>
         <h1>{title}</h1>
-        <p>The order total is the amount recorded for the order. Receipts show what has been paid. An amount still due is shown separately, and only when that amount has been recorded.</p>
+        <p>Your payments and receipts.</p>
       </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
       {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}
@@ -151,25 +182,28 @@ function PaymentCaseSection({
   freshOrders: string[]
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
-  const track = trackLabel(item.serviceTrack)
+  if (item.orders.length === 0) {
+    return <p className="payments-empty-case">There isn&apos;t a payment for {item.businessName} ({item.reference}) yet.</p>
+  }
+  const grouped = item.orders.length > 1
+  const labelId = grouped ? `payments-${item.reference}` : `payments-service-${item.orders[0].orderRef}`
+  const context = [focused ? null : item.reference, item.locationName].filter(Boolean).join(" · ")
   return (
-    <section className="payments-case" aria-labelledby={`payments-${item.reference}`}>
-      <header className="payments-case-identity">
-        {focused ? null : <h2 id={`payments-${item.reference}`}>{item.reference}</h2>}
-        {focused ? <p className="case-ref" id={`payments-${item.reference}`}>{item.reference}</p> : null}
-        <p className="case-business">{item.businessName}</p>
-        {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
-        {track ? <p className="case-service">{track}</p> : null}
-        {focused ? null : (
-          <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/payments`}>View payments for {item.reference}</a></p>
-        )}
-      </header>
-      {item.orders.length === 0 ? <p>There isn&apos;t a payment for this case yet.</p> : null}
+    <section className="payments-case" aria-labelledby={labelId}>
+      {grouped ? (
+        <header className="payments-case-context">
+          <h2 id={labelId}>{item.businessName}</h2>
+          {context ? <p>{context}</p> : null}
+        </header>
+      ) : null}
       {item.orders.map(order => (
         <OrderSection
           key={order.orderRef}
           item={item}
           order={order}
+          focused={focused}
+          grouped={grouped}
+          labelId={grouped ? undefined : labelId}
           busy={busy}
           fresh={freshOrders.includes(order.orderRef)}
           onSubmit={onSubmit}
@@ -182,30 +216,98 @@ function PaymentCaseSection({
 function OrderSection({
   item,
   order,
+  focused,
+  grouped,
+  labelId,
   busy,
   fresh,
   onSubmit,
 }: {
   item: PaymentCase
   order: PaymentOrder
+  focused: boolean
+  grouped: boolean
+  labelId?: string
   busy: string | null
   fresh: boolean
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
-  const invoiceAction = actionFor(item.actions, "invoice", order.orderRef)
+  const figure = prominentFigure(order)
+  const dues = dueObligations(order)
+  const soleReceipt = figure.kind === "paid" ? order.receipts[0] : null
+  const listedReceipts = soleReceipt ? [] : order.receipts
+  const orderTotalVisible = figure.kind !== "total" && !sameMoney(figure.minor, figure.currency, order.amountMinor, order.currency)
+  const single = order.obligations.length === 1 ? order.obligations[0] : null
+  const support = grouped ? null : [item.businessName, focused ? null : item.reference].filter(Boolean).join(" · ")
   const priceNote = order.taxBehaviour === "EXCLUSIVE"
     ? "The total shown is the amount recorded on this quote."
     : "The total includes any applicable taxes. ProfileRelaunch does not add a further fee."
+  const issuedInvoice = order.obligations.some(obligation => obligation.invoice?.status === "ISSUED")
+  const track = trackLabel(item.serviceTrack)
+  const ServiceHeading = grouped ? "h3" : "h2"
   return (
     <article className="payments-order">
-      <h3>{order.serviceName}</h3>
-      <p className="payments-order-ref">Order {order.orderRef}</p>
-      <p className={styles.moneyCaption}>Order total</p>
-      <p className="payments-amount">{moneyLabel(order.amountMinor, order.currency)}</p>
+      <div className="payments-card-top">
+        <div className="payments-identity">
+          <div className="payments-title-row">
+            <ServiceHeading id={labelId} className="payments-service">{order.serviceName}</ServiceHeading>
+            {single ? (
+              <h4 className={`${styles.status} ${obligationTone(single.state)}`}>{obligationHeadline(single.kind, single.state)}</h4>
+            ) : null}
+          </div>
+          {support ? <p className="payments-support">{support}</p> : null}
+          {!grouped && item.locationName ? <p className="payments-support">{item.locationName}</p> : null}
+          {grouped ? <p className="payments-order-ref">Order {order.orderRef}</p> : null}
+        </div>
+        <div className="payments-figure">
+          <p className={styles.moneyCaption}>{figure.caption}</p>
+          <p className={figure.kind === "due" ? "payments-outstanding" : "payments-amount"}>{moneyLabel(figure.minor, figure.currency)}</p>
+          {orderTotalVisible ? <p className="payments-secondary-total">Order total {moneyLabel(order.amountMinor, order.currency)}</p> : null}
+        </div>
+      </div>
+      {soleReceipt ? (
+        <div className="payments-receipt">
+          <p className="payments-paid-date">Paid on <time dateTime={soleReceipt.paidAt}>{formatPortalDate(soleReceipt.paidAt)}</time></p>
+          <ReceiptActions orderRef={order.orderRef} receipt={soleReceipt} index={0} total={1} />
+        </div>
+      ) : null}
+      {order.paymentModel === "SUCCESS_FEE" && !issuedInvoice ? <p className="payments-support">No charge is due yet.</p> : null}
+      {order.obligations.map((obligation, index) => (
+        <ObligationBlock
+          key={`${order.orderRef}-${obligation.kind}-${index}`}
+          item={item}
+          order={order}
+          obligation={obligation}
+          invoiceAction={actionFor(item.actions, "invoice", order.orderRef)}
+          busy={busy}
+          fresh={fresh && obligation.kind === "upfront" && (obligation.state === "DUE" || obligation.state === "COLLECTING")}
+          hideStatus={single !== null}
+          showDueAmount={recordedOutstanding(obligation) && dues.length !== 1}
+          suppressPaidDetail={obligation.state === "PAID" && order.receipts.length > 0}
+          onSubmit={onSubmit}
+        />
+      ))}
+      {listedReceipts.length > 0 ? (
+        <div className="payments-receipts">
+          <p className="payments-receipts-label">Receipts</p>
+          <ul className="payments-receipt-list">
+            {listedReceipts.map((receipt, index) => (
+              <li key={receipt.selector}>
+                <p className="payments-paid-line">Paid {moneyLabel(receipt.amountMinor, receipt.currency)} · {formatPortalDate(receipt.paidAt)}</p>
+                <ReceiptActions orderRef={order.orderRef} receipt={receipt} index={index} total={listedReceipts.length} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {receiptAbsence(order) ? <p className="payments-support">{receiptAbsence(order)}</p> : null}
       <details className="portal-more">
-        <summary>Payment notes</summary>
+        <summary>Payment details</summary>
+        <p>Order {order.orderRef}</p>
+        {figure.kind !== "total" && !orderTotalVisible ? <p>Order total {moneyLabel(order.amountMinor, order.currency)}</p> : null}
         {order.paymentModel === "UPFRONT" ? <p>One-time payment</p> : null}
         <p>{priceNote}</p>
+        {track ? <p>{track}</p> : null}
         {order.paymentModel === "SUCCESS_FEE" ? (
           <div className="payments-authority">
             <h4>Managed service payment</h4>
@@ -213,36 +315,27 @@ function OrderSection({
           </div>
         ) : null}
       </details>
-      {order.obligations.map((obligation, index) => (
-        <ObligationBlock
-          key={`${order.orderRef}-${obligation.kind}-${index}`}
-          item={item}
-          order={order}
-          obligation={obligation}
-          invoiceAction={invoiceAction}
-          busy={busy}
-          fresh={fresh && obligation.kind === "upfront" && (obligation.state === "DUE" || obligation.state === "COLLECTING")}
-          onSubmit={onSubmit}
-        />
-      ))}
-      {order.receipts.length === 0 ? <p>{openObligation(order) ? "No payment recorded yet." : "No payment was recorded."}</p> : null}
-      {order.receipts.length > 0 ? (
-        <div className="payments-receipts">
-          <h4>Receipts</h4>
-          <ul className="document-list">
-            {order.receipts.map(receipt => (
-              <li key={receipt.selector}>
-                <p className="payments-paid-line">Paid {moneyLabel(receipt.amountMinor, receipt.currency)} · {formatPortalDate(receipt.paidAt)}</p>
-                <p className={`portal-actions ${styles.links}`}>
-                  <a className="portal-button" href={`/portal/payments/receipt?selector=${receipt.selector}`}>View receipt for {order.orderRef}</a>
-                  <a className="portal-button secondary" href={`/api/portal/payments/receipt?selector=${receipt.selector}`}>Download receipt for {order.orderRef}</a>
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </article>
+  )
+}
+
+function ReceiptActions({
+  orderRef,
+  receipt,
+  index,
+  total,
+}: {
+  orderRef: string
+  receipt: PaymentOrder["receipts"][number]
+  index: number
+  total: number
+}) {
+  const which = total > 1 ? ` ${index + 1}` : ""
+  return (
+    <p className="portal-actions payments-actions">
+      <a className="portal-button" href={`/portal/payments/receipt?selector=${receipt.selector}`} aria-label={`View receipt${which} for ${orderRef}`}>View receipt</a>
+      <a className="portal-button secondary" href={`/api/portal/payments/receipt?selector=${receipt.selector}`} aria-label={`Download PDF${which} for ${orderRef}`}>Download PDF</a>
+    </p>
   )
 }
 
@@ -253,6 +346,9 @@ function ObligationBlock({
   invoiceAction,
   busy,
   fresh,
+  hideStatus,
+  showDueAmount,
+  suppressPaidDetail,
   onSubmit,
 }: {
   item: PaymentCase
@@ -261,24 +357,28 @@ function ObligationBlock({
   invoiceAction: PaymentAction | null
   busy: string | null
   fresh: boolean
+  hideStatus: boolean
+  showDueAmount: boolean
+  suppressPaidDetail: boolean
   onSubmit: (reference: string, selector: string, operation: Operation) => void
 }) {
   const control = checkoutControl(order, item.actions, obligation)
   const slot = control ? `start_checkout:${control.selector}` : ""
   const refreshSlot = control ? `refresh_checkout:${control.selector}` : ""
-  const repeatAmount = obligation.amountMinor !== order.amountMinor || obligation.currency !== order.currency
+  const detail = obligation.state === "DUE" || suppressPaidDetail ? null : obligationDetail(obligation.state)
+  if (hideStatus && !showDueAmount && !detail && !control && !obligation.invoice) return null
   return (
     <div className="payments-obligation">
-      <h4>
-        <span className={`${styles.status} ${obligationTone(obligation.state)}`}>{obligationHeadline(obligation.kind, obligation.state)}</span>
-      </h4>
-      {recordedOutstanding(obligation) ? (
+      {hideStatus ? null : (
+        <h4 className={`${styles.status} ${obligationTone(obligation.state)}`}>{obligationHeadline(obligation.kind, obligation.state)}</h4>
+      )}
+      {showDueAmount ? (
         <>
-          <p className={styles.moneyCaption}>Outstanding</p>
+          <p className={styles.moneyCaption}>Amount due</p>
           <p className="payments-outstanding">{moneyLabel(obligation.amountMinor, obligation.currency)}</p>
         </>
-      ) : repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
-      {obligation.state === "DUE" ? null : <p>{obligationDetail(obligation.state)}</p>}
+      ) : null}
+      {detail ? <p>{detail}</p> : null}
       {control ? (
         <form
           className="service-confirm"
@@ -310,21 +410,19 @@ function ObligationBlock({
         <div className="payments-invoice">
           <p>{invoiceSentence(obligation.invoice.status, obligation.invoice.hostedAvailable)}</p>
           {obligation.invoice.status === "ISSUED" && invoiceAction ? (
-            <>
-          <p className={`portal-actions ${styles.links}`}>
-            <a className="portal-button" href={`/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>
-              View payment request for {order.orderRef}
-            </a>
-            <a className="portal-button secondary" href={`/api/portal/payments/invoice-document?reference=${item.reference}&selector=${invoiceAction.selector}`}>
-              Download invoice PDF for {order.orderRef}
-            </a>
-          </p>
-            </>
+            <p className="portal-actions payments-actions">
+              <a className="portal-button" href={`/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`} aria-label={`View payment request for ${order.orderRef}`}>
+                View payment request
+              </a>
+              <a className="portal-button secondary" href={`/api/portal/payments/invoice-document?reference=${item.reference}&selector=${invoiceAction.selector}`} aria-label={`Download invoice for ${order.orderRef}`}>
+                Download invoice
+              </a>
+            </p>
           ) : null}
           {obligation.invoice.hostedAvailable && invoiceAction ? (
             <p>
-              <a href={`/api/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>
-                Open invoice for {order.orderRef}
+              <a href={`/api/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`} aria-label={`Open invoice for ${order.orderRef}`}>
+                Open invoice
               </a>
             </p>
           ) : null}

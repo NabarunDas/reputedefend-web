@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { useRouter } from "next/navigation"
+import { replaceAuthenticatedDocument } from "@/lib/portal/account/document"
 import { PORTAL_EMAIL_INVALID, PORTAL_UNAVAILABLE, PORTAL_VERIFY_ERROR, normalizePortalEmail, portalLoginNotice } from "@/lib/portal/email"
 import { CUSTOMER_OTP_PATTERN } from "@/lib/otp"
 import { OtpInput } from "./otp-input"
@@ -30,7 +30,6 @@ export function LoginClient({ preview }: {
     pending?: "" | "send" | "resend" | "verify"
   }
 } = {}) {
-  const router = useRouter()
   const [phase, setPhase] = useState<"email" | "code" | "done">(preview?.phase ?? "email")
   const [email, setEmail] = useState(preview?.email ?? "")
   const [typedEmail, setTypedEmail] = useState(preview?.phase === "email" ? "" : preview?.email ?? "")
@@ -47,8 +46,8 @@ export function LoginClient({ preview }: {
 
   useEffect(() => {
     if (phase !== "done" || preview) return
-    router.push("/portal")
-  }, [phase, preview, router])
+    replaceAuthenticatedDocument("portal")
+  }, [phase, preview])
 
   useEffect(() => {
     if (preview || resendIn <= 0) return

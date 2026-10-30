@@ -1549,6 +1549,108 @@ describe("guided fulfilment handover", () => {
     expect(await count("select count(*)::int as n from pg_trigger where tgname = 'case_prepared_packs_guided_ready'")).toBe(0)
   })
 
+  it("keeps an approval current when staff files saved with it are later classified", async () => {
+    const reference = "PR-26-PRECLS"
+    const caseId = await insertCase(reference)
+    const request = await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, null, null, "create", "Ownership letter", "Upload the ownership letter for this bakery.", null, null,
+    ])
+    expect(request.status, JSON.stringify(request)).toBe("success")
+    const evidence = await rpc<Json>("admin_evidence_begin_v1", [
+      adminToken, key(), caseId, null, "ownership-letter.pdf", "application/pdf", 1024, "Ownership letter", "test-evidence", request.id,
+    ])
+    expect(evidence.versionId, JSON.stringify(evidence)).toBeTruthy()
+    await rpc("admin_evidence_finalize_v1", [adminToken, key(), caseId, evidence.versionId])
+    await rpc("admin_evidence_refresh_scan_v1", [adminToken, key(), caseId, evidence.versionId, "NO_THREATS_FOUND", "VALID", null])
+    const evidenceMeta = await rpc<Json>("admin_evidence_version_v1", [adminToken, caseId, evidence.versionId])
+    expect((await rpc<Json>("admin_evidence_review_v1", [
+      adminToken, key(), caseId, evidence.versionId, evidenceMeta.recordVersion, "accept", "Accepted after a clean scan.", null,
+    ])).status).toBe("success")
+    await setVisible(caseId, evidence.versionId!, true)
+    expect((await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, request.id, request.version, "fulfill", null, null, null, "Completed after the customer sent the letter.",
+    ])).status).toBe("success")
+
+    const statement = await acceptedFile(caseId, "included-statement.pdf")
+    const instructions = await acceptedFile(caseId, "included-instructions.pdf")
+    const draftAssessment = {
+      recordVersion: 0,
+      findings: "The profile was suspended and the ownership letter matches the bakery account.",
+      evidenceConsidered: "One accepted ownership letter, plus the staff statement and submission instructions.",
+      profileIssue: "The Google listing is suspended.",
+      policyConcerns: "Ownership of the profile is the policy concern in view.",
+      recommendedAction: "Recommend Guided recovery and leave the quote for a later step.",
+      servicePathway: "GUIDED",
+      rationale: "The accepted evidence is enough to recommend Guided rather than Managed.",
+      risks: "Google may still refuse the recovery request.",
+      outstandingInformation: "",
+    }
+    const saved = await rpc<Json>("admin_case_assessment_command_v1", [adminToken, key(), caseId, await caseVersion(caseId), "save_draft", draftAssessment])
+    expect(saved.status, JSON.stringify(saved)).toBe("success")
+    const submitted = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "submit_review", { recordVersion: saved.recordVersion },
+    ])
+    expect(submitted.status, JSON.stringify(submitted)).toBe("success")
+    const approved = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "approve", { recordVersion: submitted.recordVersion },
+    ])
+    expect(approved.status, JSON.stringify(approved)).toBe("success")
+
+    const stored = async () => (await rows<{ basis_fingerprint: string }>(
+      "select basis_fingerprint from public.case_assessments where case_id = $1 and status = 'APPROVED' order by version_number desc limit 1",
+      [caseId],
+    ))[0].basis_fingerprint
+    const fingerprintOf = async (basis: string) => (await rows<{ fp: string }>(
+      `select admin_private.case_assessment_fingerprint_v1(admin_private.${basis}($1)) as fp`,
+      [caseId],
+    ))[0].fp
+    const read = async () => rpc<{ versions: Array<{ current: boolean; stale: boolean; staleReason: string | null }> }>(
+      "admin_case_assessment_read_v1",
+      [adminToken, caseId],
+    )
+
+    const approvedFingerprint = await stored()
+    expect(await fingerprintOf("case_assessment_basis_v1")).toBe(approvedFingerprint)
+    expect(await fingerprintOf("case_assessment_inclusive_basis_v1")).toBe(approvedFingerprint)
+    expect((await read()).versions[0]).toMatchObject({ current: true, stale: false, staleReason: null })
+
+    const pack = await packCmd(caseId, "create", {})
+    const added = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, pack.id, pack.recordVersion)
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, pack.id, added.recordVersion)
+    expect(withInstructions.status, JSON.stringify(withInstructions)).toBe("success")
+    expect(await fingerprintOf("case_assessment_basis_v1")).not.toBe(approvedFingerprint)
+    expect(await fingerprintOf("case_assessment_inclusive_basis_v1")).toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+    expect((await read()).versions[0]).toMatchObject({ current: true, stale: false, staleReason: null })
+
+    await db.exec("begin")
+    try {
+      await db.query(
+        `insert into public.case_work_events(case_id, actor_id, event, note)
+         values ($1, $2, 'reopen', 'The customer asked for the assessment to be reopened.')`,
+        [caseId, admin],
+      )
+      expect((await read()).versions[0]).toMatchObject({ current: false, stale: true, staleReason: "reopened" })
+      expect(await stored()).toBe(approvedFingerprint)
+    } finally {
+      await db.exec("rollback")
+    }
+    expect((await read()).versions[0]).toMatchObject({ current: true, stale: false, staleReason: null })
+
+    const laterRequest = await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, null, null, "create", "Trading licence", "Upload the trading licence for this bakery.", null, null,
+    ])
+    expect(laterRequest.status, JSON.stringify(laterRequest)).toBe("success")
+    const customerFile = await rpc<Json>("customer_portal_evidence_begin_v1", [
+      alexSession, key(), reference, "er-2", "trading-licence.pdf", "application/pdf", 1024, "test-evidence",
+    ])
+    expect(customerFile.status, JSON.stringify(customerFile)).toBe("success")
+    expect(await fingerprintOf("case_assessment_basis_v1")).not.toBe(approvedFingerprint)
+    expect(await fingerprintOf("case_assessment_inclusive_basis_v1")).not.toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+    expect((await read()).versions[0]).toMatchObject({ current: false, stale: true, staleReason: "facts" })
+  })
+
   it("closes a paid Guided case from its current published pack without a Google decision", async () => {
     const reference = "PR-26-READYX"
     const caseId = await insertCase(reference)

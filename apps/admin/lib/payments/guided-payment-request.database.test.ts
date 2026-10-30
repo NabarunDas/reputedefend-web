@@ -242,6 +242,38 @@ function payloadFor(row: Awaited<ReturnType<typeof seed>>, overrides: Record<str
   }
 }
 
+async function quoteMail(row: { caseId: string; acceptanceAction: string }, portal = devOrigin) {
+  const id = crypto.randomUUID()
+  const link = `${portal}/action/${row.acceptanceAction}`
+  await db.query(
+    `insert into public.communications(
+      id, case_id, customer_id, business_id, customer_action_id,
+      channel, communication_type, direction, recipient, subject, body_text, body_html,
+      status, lifecycle, delivery_status, template_key, template_version,
+      author_id, reviewer_id, reviewed_at, queued_at, sender_address, reply_to_address,
+      content_version, record_version, content_locked, link_key_version
+    ) values (
+      $1,$2,$3,$4,$5,
+      'EMAIL','QUOTE_OFFER','OUTBOUND','alex@example.com','Your quotation',$6,$7,
+      'PENDING','QUEUED','NONE','QUOTE_OFFER',1,
+      $8,$8,now(),now(),'quotes@profilerelaunch.com','cases@profilerelaunch.com',
+      1,1,true,1
+    )`,
+    [id, row.caseId, customer, business, row.acceptanceAction, `Review at ${link}`, `<p>Review at ${link}</p>`, admin],
+  )
+  return id
+}
+
+function customerBody(row: Awaited<ReturnType<typeof seed>>, portal = devOrigin) {
+  const source = payloadFor(row, {}, portal).body
+  return {
+    serviceOrderId: source.serviceOrderId,
+    subject: source.subject,
+    bodyText: source.bodyText,
+    bodyHtml: source.bodyHtml,
+  }
+}
+
 async function queue(row: Awaited<ReturnType<typeof seed>>, overrides: Record<string, unknown> = {}, request = crypto.randomUUID(), portal = origin) {
   const prepared = payloadFor(row, overrides, portal)
   const result = await rpc("admin_queue_guided_payment_request_v1", [token, request, prepared.body])
@@ -533,7 +565,7 @@ describe("guided payment-request queue", () => {
     await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [token])
   })
 
-  it("queues a held payment email from the customer portal and reuses the open action", async () => {
+  it("queues an immediate payment email from the customer portal and reuses the open action", async () => {
     await db.query(
       "insert into auth.users(id, email, email_confirmed_at) values ($1, 'alex@example.com', now()) on conflict (id) do nothing",
       [alexAuth],
@@ -546,40 +578,42 @@ describe("guided payment-request queue", () => {
       [portalHash, customer, alexAuth],
     )
     const row = await seed({ openAction: true, expiresAt: openUntil })
+    await quoteMail(row)
     const prepared = payloadFor(row, {}, devOrigin)
-    const customerPayload = { ...prepared.body }
-    delete (customerPayload as { version?: number }).version
+    const portalRequest = crypto.randomUUID()
+    const customerPayload = { ...customerBody(row), fromAddress: "attacker@evil.test" }
     const beforeOps = await count("select count(*)::int as n from public.provider_operations")
-    const first = await rpc("customer_queue_guided_payment_request_v1", [portalHash, crypto.randomUUID(), customerPayload])
+    const first = await rpc("customer_queue_guided_payment_request_v1", [portalHash, portalRequest, customerPayload])
     expect(first).toMatchObject({ status: "success", reusedAction: true, actionId: row.paymentAction, replay: false, lifecycle: "QUEUED" })
     expect(first).not.toHaveProperty("actionUrl")
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and sender_address = 'quotes@profilerelaunch.com' and reply_to_address = 'cases@profilerelaunch.com'", [first.id])).toBe(1)
     const held = await db.query<{ available_at: string; promoted_at: string | null }>(
       "select available_at, promoted_at from admin_private.job_outbox where aggregate_id = $1",
       [first.id],
     )
     expect(held.rows[0].promoted_at).toBeNull()
-    expect(new Date(held.rows[0].available_at).getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000)
+    expect(new Date(held.rows[0].available_at).getTime()).toBeLessThan(Date.now() + 60_000)
+    await db.query("update admin_private.job_outbox set available_at = now() + interval '10 minutes' where aggregate_id = $1", [first.id])
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [portalRequest, devOrigin])).toMatchObject({ status: "denied", reason: "not_ready" })
+    await db.query("update admin_private.job_outbox set available_at = now() where aggregate_id = $1", [first.id])
     expect(await count("select count(*)::int as n from public.customer_actions where service_order_id = $1 and kind = 'GUIDED_PAYMENT'", [row.order])).toBe(1)
     const replay = await rpc("customer_queue_guided_payment_request_v1", [portalHash, crypto.randomUUID(), customerPayload])
     expect(replay).toMatchObject({ status: "success", replay: true, id: first.id, reusedAction: true })
     expect(await count("select count(*)::int as n from public.communications where customer_action_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [row.paymentAction])).toBe(1)
     await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [token])
-    expect(await rpc("admin_dev_send_email_claim_v1", [token, crypto.randomUUID(), first.id, true, devOrigin])).toMatchObject({ status: "denied", reason: "not_ready" })
     expect(await count("select count(*)::int as n from public.provider_operations")).toBe(beforeOps)
     expect(await count("select count(*)::int as n from public.provider_operations where kind = 'CREATE_CHECKOUT_SESSION'")).toBe(0)
     expect(await rpc("admin_queue_guided_payment_request_v1", [token, crypto.randomUUID(), { ...prepared.body, useCurrentVersion: true }])).toMatchObject({ status: "invalid" })
 
     const managed = await seed({ serviceCode: "MANAGED_RELAUNCH" })
+    await quoteMail(managed)
     expect(await rpc("customer_queue_guided_payment_request_v1", [portalHash, crypto.randomUUID(), {
       serviceOrderId: managed.order,
-      customerOrigin: devOrigin,
       subject: "Pay now",
       bodyText: "Pay £299 securely",
       bodyHtml: "<p>Pay £299 securely</p>",
-      fromAddress: "ops@example.com",
-      sendEnabled: true,
     }])).toMatchObject({ status: "denied", reason: "success_fee" })
-    expect(await count("select count(*)::int as n from public.communications where case_id = $1", [managed.caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [managed.caseId])).toBe(0)
     expect(await rpc("customer_queue_guided_payment_request_v1", [portalHash, crypto.randomUUID(), { ...customerPayload, serviceOrderId: crypto.randomUUID() }])).toMatchObject({ status: "denied", reason: "mismatch" })
 
     await db.query("update public.payment_obligations set state = 'PAID' where id = $1", [row.obligationId])
@@ -613,15 +647,23 @@ describe("guided payment-request queue", () => {
       [alexAuth],
     )
     const row = await seed()
+    await quoteMail(row)
     const hash = "e".repeat(64)
     await db.query(
       `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
        values ($1, $2, $3, now() + interval '15 minutes')`,
       [hash, row.acceptanceAction, alexAuth],
     )
-    const prepared = payloadFor(row, {}, devOrigin)
-    const customerPayload = { ...prepared.body }
-    delete (customerPayload as { version?: number }).version
+    const customerPayload = customerBody(row)
+    const identity = await rpc("customer_guided_payment_mail_identity_v1", [hash, row.order])
+    expect(identity).toMatchObject({
+      status: "success",
+      customerOrigin: devOrigin,
+      fromAddress: "quotes@profilerelaunch.com",
+      replyTo: "cases@profilerelaunch.com",
+    })
+    expect(identity).not.toHaveProperty("recipient")
+    expect(JSON.stringify(identity)).not.toContain("alex@example.com")
     const obligations = await count("select count(*)::int as n from public.payment_obligations where service_order_id = $1", [row.order])
     const first = await rpc("customer_action_queue_guided_payment_request_v1", [hash, crypto.randomUUID(), customerPayload])
     expect(first).toMatchObject({ status: "success", reusedAction: false, replay: false, lifecycle: "QUEUED", deliveryStatus: "NONE" })
@@ -640,14 +682,14 @@ describe("guided payment-request queue", () => {
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [row.caseId])).toBe(1)
 
     const again = await seed()
+    await quoteMail(again)
     const againHash = "f".repeat(64)
     await db.query(
       `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
        values ($1, $2, $3, now() + interval '15 minutes')`,
       [againHash, again.acceptanceAction, alexAuth],
     )
-    const againPayload = { ...payloadFor(again, {}, devOrigin).body }
-    delete (againPayload as { version?: number }).version
+    const againPayload = customerBody(again)
     const raced = await Promise.all([
       rpc("customer_action_queue_guided_payment_request_v1", [againHash, crypto.randomUUID(), againPayload]),
       rpc("customer_action_queue_guided_payment_request_v1", [againHash, crypto.randomUUID(), againPayload]),
@@ -669,6 +711,7 @@ describe("guided payment-request queue", () => {
     expect(await rpc("customer_action_queue_guided_payment_request_v1", [expiredHash, crypto.randomUUID(), customerPayload])).toMatchObject({ status: "unauthorized" })
 
     const managed = await seed({ serviceCode: "MANAGED_RELAUNCH" })
+    await quoteMail(managed)
     const managedHash = "2".repeat(64)
     await db.query(
       `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
@@ -677,41 +720,37 @@ describe("guided payment-request queue", () => {
     )
     expect(await rpc("customer_action_queue_guided_payment_request_v1", [managedHash, crypto.randomUUID(), {
       serviceOrderId: managed.order,
-      customerOrigin: devOrigin,
       subject: "Pay now",
       bodyText: "Pay £299 securely",
       bodyHtml: "<p>Pay £299 securely</p>",
-      fromAddress: "ops@example.com",
-      replyTo: "cases@profilerelaunch.com",
-      sendEnabled: true,
     }])).toMatchObject({ status: "denied", reason: "success_fee" })
-    expect(await count("select count(*)::int as n from public.communications where case_id = $1", [managed.caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [managed.caseId])).toBe(0)
 
     const paid = await seed({ obligation: "PAID" })
+    await quoteMail(paid)
     const paidHash = "3".repeat(64)
     await db.query(
       `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
        values ($1, $2, $3, now() + interval '15 minutes')`,
       [paidHash, paid.acceptanceAction, alexAuth],
     )
-    const paidPayload = { ...payloadFor(paid, {}, devOrigin).body }
-    delete (paidPayload as { version?: number }).version
+    const paidPayload = customerBody(paid)
     expect(await rpc("customer_action_queue_guided_payment_request_v1", [paidHash, crypto.randomUUID(), paidPayload])).toMatchObject({ status: "denied", reason: "already_paid" })
     expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [paid.caseId])).toBe(0)
 
     await db.query("delete from public.customer_contact_verifications where customer_id = $1", [customer])
     try {
       const unverified = await seed()
+      await quoteMail(unverified)
       const unverifiedHash = "4".repeat(64)
       await db.query(
         `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
          values ($1, $2, $3, now() + interval '15 minutes')`,
         [unverifiedHash, unverified.acceptanceAction, alexAuth],
       )
-      const unverifiedPayload = { ...payloadFor(unverified, {}, devOrigin).body }
-      delete (unverifiedPayload as { version?: number }).version
+      const unverifiedPayload = customerBody(unverified)
       expect(await rpc("customer_action_queue_guided_payment_request_v1", [unverifiedHash, crypto.randomUUID(), unverifiedPayload])).toMatchObject({ status: "denied", reason: "contact_unverified" })
-      expect(await count("select count(*)::int as n from public.communications where case_id = $1", [unverified.caseId])).toBe(0)
+      expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [unverified.caseId])).toBe(0)
     } finally {
       await db.query(
         `insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
@@ -725,16 +764,16 @@ describe("guided payment-request queue", () => {
     )
     try {
       const unauthorised = await seed()
+      await quoteMail(unauthorised)
       const unauthorisedHash = "5".repeat(64)
       await db.query(
         `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
          values ($1, $2, $3, now() + interval '15 minutes')`,
         [unauthorisedHash, unauthorised.acceptanceAction, alexAuth],
       )
-      const unauthorisedPayload = { ...payloadFor(unauthorised, {}, devOrigin).body }
-      delete (unauthorisedPayload as { version?: number }).version
+      const unauthorisedPayload = customerBody(unauthorised)
       expect(await rpc("customer_action_queue_guided_payment_request_v1", [unauthorisedHash, crypto.randomUUID(), unauthorisedPayload])).toMatchObject({ status: "denied", reason: "authority_unverified" })
-      expect(await count("select count(*)::int as n from public.communications where case_id = $1", [unauthorised.caseId])).toBe(0)
+      expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [unauthorised.caseId])).toBe(0)
     } finally {
       await db.query(
         "update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $3 where customer_id = $1 and business_id = $2",
@@ -743,52 +782,74 @@ describe("guided payment-request queue", () => {
     }
   })
 
-  it("claims only the action-session payment email and sends it once", async () => {
+  it("dispatches action and portal payment emails through the central request claim", async () => {
     await db.query(
       "insert into auth.users(id, email, email_confirmed_at) values ($1, 'alex@example.com', now()) on conflict (id) do nothing",
       [alexAuth],
     )
     const row = await seed()
+    const quotationId = await quoteMail(row)
     const hash = "7".repeat(64)
     const requestId = crypto.randomUUID()
+    const quotationRequest = crypto.randomUUID()
     await db.query(
       `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
        values ($1, $2, $3, now() + interval '15 minutes')`,
       [hash, row.acceptanceAction, alexAuth],
     )
-    const customerPayload = { ...payloadFor(row, {}, devOrigin).body }
-    delete (customerPayload as { version?: number }).version
+    await db.query(
+      `insert into admin_private.communication_command_receipts(request_id, actor_id, fingerprint, response, created_at)
+       values ($1, $2, 'quotation-receipt', $3::jsonb, now())`,
+      [quotationRequest, admin, JSON.stringify({ status: "success", id: quotationId })],
+    )
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [quotationRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "not_send_email",
+    })
+    const customerPayload = customerBody(row)
     const queued = await rpc("customer_action_queue_guided_payment_request_v1", [hash, requestId, customerPayload])
     expect(queued).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [queued.id])).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_v1", [queued.id, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "before_activation",
+    })
     await db.query("update admin_private.job_outbox set available_at = now() + interval '10 minutes' where aggregate_id = $1", [queued.id])
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
       status: "denied",
       reason: "not_ready",
     })
     await db.query("update admin_private.job_outbox set available_at = now() where aggregate_id = $1", [queued.id])
-    const claimed = await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin]) as DevSendClaim
+    const claimed = await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin]) as DevSendClaim
     expect(claimed).toMatchObject({ status: "success", jobType: "SEND_EMAIL", replay: false })
     expect(claimed.leaseToken).toEqual(expect.any(String))
     expect(claimed.payload).not.toHaveProperty("recipient")
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
+      status: "conflict",
+      reason: "leased",
+    })
     const provider = createIdempotentMailProvider()
     expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed, provider })).toBe("succeeded")
     expect(provider.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
       status: "denied",
       reason: "already_processed",
     })
     expect(provider.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, crypto.randomUUID(), devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [crypto.randomUUID(), devOrigin])).toMatchObject({
       status: "denied",
       reason: "not_queued",
     })
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, "https://customer.profilerelaunch.com"])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, "https://customer.profilerelaunch.com"])).toMatchObject({
       status: "denied",
       reason: "origin",
     })
     expect(await count("select count(*)::int as n from public.communications where id = $1 and delivery_status = 'PROVIDER_ACCEPTED'", [queued.id])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.jobs where id = $1 and status = 'SUCCEEDED'", [claimed.jobId])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.job_attempts where job_id = $1 and lease_owner = 'dev-mail-dispatch'", [claimed.jobId])).toBe(1)
 
     const held = await seed()
+    await quoteMail(held)
     const heldHash = "8".repeat(64)
     const heldRequest = crypto.randomUUID()
     await db.query(
@@ -798,15 +859,23 @@ describe("guided payment-request queue", () => {
       on conflict (token_hash) do nothing`,
       [heldHash, customer, alexAuth],
     )
-    const heldPayload = { ...payloadFor(held, {}, devOrigin).body }
-    delete (heldPayload as { version?: number }).version
+    const heldPayload = customerBody(held)
     const heldQueued = await rpc("customer_queue_guided_payment_request_v1", [heldHash, heldRequest, heldPayload])
     expect(heldQueued).toMatchObject({ status: "success" })
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [heldHash, heldRequest, devOrigin])).toMatchObject({
-      status: "unauthorized",
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [heldQueued.id])).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_v1", [heldQueued.id, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "before_activation",
     })
+    const heldClaim = await rpc("dev_mail_dispatch_claim_request_v1", [heldRequest, devOrigin]) as DevSendClaim
+    expect(heldClaim.status).toBe("success")
+    const heldProvider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: heldClaim, provider: heldProvider })).toBe("succeeded")
+    expect(heldProvider.effects).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and delivery_status = 'PROVIDER_ACCEPTED'", [heldQueued.id])).toBe(1)
 
     const retry = await seed()
+    await quoteMail(retry)
     const retryHash = "9".repeat(64)
     const retryRequest = crypto.randomUUID()
     await db.query(
@@ -814,10 +883,9 @@ describe("guided payment-request queue", () => {
        values ($1, $2, $3, now() + interval '15 minutes')`,
       [retryHash, retry.acceptanceAction, alexAuth],
     )
-    const retryPayload = { ...payloadFor(retry, {}, devOrigin).body }
-    delete (retryPayload as { version?: number }).version
+    const retryPayload = customerBody(retry)
     expect(await rpc("customer_action_queue_guided_payment_request_v1", [retryHash, retryRequest, retryPayload])).toMatchObject({ status: "success" })
-    const retryClaim = await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin]) as DevSendClaim
+    const retryClaim = await rpc("dev_mail_dispatch_claim_request_v1", [retryRequest, devOrigin]) as DevSendClaim
     const failing = {
       effects: 0,
       async send() {
@@ -827,7 +895,7 @@ describe("guided payment-request queue", () => {
     }
     expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: retryClaim, provider: failing })).toBe("retry")
     expect(failing.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [retryRequest, devOrigin])).toMatchObject({
       status: "denied",
       reason: "acceptance_unknown",
     })
@@ -837,9 +905,60 @@ describe("guided payment-request queue", () => {
       [retryClaim.jobId],
     )).toBe(1)
 
-    const claimSignature = "public.customer_action_claim_guided_payment_email_v1(text,uuid,text)"
+    const unknown = await seed()
+    await quoteMail(unknown)
+    const unknownHash = "a".repeat(64)
+    const unknownRequest = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
+       values ($1, $2, $3, now() + interval '15 minutes')`,
+      [unknownHash, unknown.acceptanceAction, alexAuth],
+    )
+    const unknownPayload = customerBody(unknown)
+    const unknownQueued = await rpc("customer_action_queue_guided_payment_request_v1", [unknownHash, unknownRequest, unknownPayload])
+    expect(unknownQueued).toMatchObject({ status: "success" })
+    const unknownClaim = await rpc("dev_mail_dispatch_claim_request_v1", [unknownRequest, devOrigin]) as DevSendClaim
+    const unknownProvider = {
+      effects: 0,
+      async send() {
+        this.effects += 1
+        return { ok: false as const, retryable: true, acceptanceUnknown: true, error: "Email provider acceptance is unknown" }
+      },
+    }
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: unknownClaim, provider: unknownProvider })).toBe("retry")
+    expect(unknownProvider.effects).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [unknownRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "acceptance_unknown",
+    })
+    expect(unknownProvider.effects).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from public.communications where id = $1 and delivery_status = 'ACCEPTANCE_UNKNOWN'",
+      [unknownQueued.id],
+    )).toBe(1)
+
+    const paidLater = await seed()
+    await quoteMail(paidLater)
+    const paidLaterHash = "b".repeat(64)
+    const paidLaterRequest = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
+       values ($1, $2, $3, now() + interval '15 minutes')`,
+      [paidLaterHash, paidLater.acceptanceAction, alexAuth],
+    )
+    const paidLaterQueued = await rpc("customer_action_queue_guided_payment_request_v1", [paidLaterHash, paidLaterRequest, customerBody(paidLater)])
+    expect(paidLaterQueued).toMatchObject({ status: "success" })
+    await db.query("update public.payment_obligations set state = 'PAID' where id = $1", [paidLater.obligationId])
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [paidLaterRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "already_paid",
+    })
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and lifecycle = 'CANCELLED' and first_provider_attempt_at is null", [paidLaterQueued.id])).toBe(1)
+
+    const claimSignature = "public.dev_mail_dispatch_claim_request_v1(uuid,text)"
     const handoverSignature = "public.customer_record_guided_payment_handover_v1(text,uuid,uuid,text)"
-    for (const signature of [claimSignature, handoverSignature]) {
+    const identitySignature = "public.customer_guided_payment_mail_identity_v1(text,uuid)"
+    for (const signature of [claimSignature, handoverSignature, identitySignature]) {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('authenticated', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(true)
@@ -847,5 +966,6 @@ describe("guided payment-request queue", () => {
     const recorded = await rpc("customer_record_guided_payment_handover_v1", [hash, crypto.randomUUID(), row.order, "queue_unavailable"])
     expect(recorded).toEqual({ status: "recorded" })
     expect(await rpc("customer_record_guided_payment_handover_v1", [hash, crypto.randomUUID(), row.order, "relation missing"])).toEqual({ status: "invalid" })
+    expect(await rpc("customer_record_guided_payment_handover_v1", [hash, crypto.randomUUID(), row.order, "already_paid"])).toEqual({ status: "recorded" })
   })
 })

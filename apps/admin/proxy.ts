@@ -56,8 +56,11 @@ export async function proxy(request: NextRequest) {
   const devMailCronRead = request.method === "GET"
     && pathname === "/api/internal/jobs/dev-mail-dispatch"
     && developPreviewCron
+  const devMailEventPost = request.method === "POST"
+    && pathname === "/api/internal/mail/dispatch"
+    && developPreviewCron
   const providerWebhook = request.method === "POST" && (pathname === "/api/webhooks/resend" || pathname === "/api/webhooks/resend/inbound" || pathname === "/api/webhooks/stripe")
-  if (isPublicRead(pathname, request.method) || authPost || cronRead || devPaymentCronRead || devMailCronRead || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
+  if (isPublicRead(pathname, request.method) || authPost || cronRead || devPaymentCronRead || devMailCronRead || devMailEventPost || providerWebhook || await sessionFromToken(request.cookies.get(sessionCookie)?.value)) {
     response = NextResponse.next()
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {
     response = NextResponse.json({ error: "Staff sign-in is required." }, { status: 401 })

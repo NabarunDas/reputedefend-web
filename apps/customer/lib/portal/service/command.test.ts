@@ -175,28 +175,31 @@ describe("portal service command", () => {
     hash[8] = (hash[8] & 0x3f) | 0x80
     const requestId = hash.subarray(0, 16).toString("hex")
     const paymentRequest = `${requestId.slice(0, 8)}-${requestId.slice(8, 12)}-${requestId.slice(12, 16)}-${requestId.slice(16, 20)}-${requestId.slice(20, 32)}`
-    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
-    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
-    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
-    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
+    const identity = {
+      status: "success",
+      customerOrigin: origin,
+      fromAddress: "quotes@profilerelaunch.com",
+      replyTo: "cases@profilerelaunch.com",
+    }
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "")
+    vi.stubEnv("JOB_WORKER_ENABLED", "")
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" })
     const response = await portalServiceCommand(req(accept))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "success" })
-    expect(mocks.rpc).toHaveBeenCalledTimes(2)
-    const queued = mocks.rpc.mock.calls[1]
+    expect(mocks.rpc).toHaveBeenCalledTimes(3)
+    expect(mocks.rpc.mock.calls[1][0]).toBe("customer_guided_payment_mail_identity_v1")
+    const queued = mocks.rpc.mock.calls[2]
     expect(queued[0]).toBe("customer_queue_guided_payment_request_v1")
     expect(queued[1]).toMatchObject({
       p_token_hash: `hash-${token.slice(0, 8)}`,
       p_request: paymentRequest,
-      p_payload: {
-        serviceOrderId: orderId,
-        customerOrigin: origin,
-        fromAddress: "ops@example.com",
-        replyTo: "cases@profilerelaunch.com",
-        sendEnabled: true,
-      },
+      p_payload: { serviceOrderId: orderId },
     })
+    expect(queued[1].p_payload).not.toHaveProperty("fromAddress")
+    expect(queued[1].p_payload).not.toHaveProperty("customerOrigin")
+    expect(queued[1].p_payload).not.toHaveProperty("sendEnabled")
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
     const paymentsUrl = `${origin}/portal/cases/PR-26-ABCDEF/payments`
     expect(payload.subject).toContain("Pay for your ProfileRelaunch Guided Relaunch — SO-26-ABCDEF")
@@ -209,23 +212,22 @@ describe("portal service command", () => {
     expect(`${payload.bodyText}\n${payload.bodyHtml}`).not.toMatch(/#t=|\/action\//)
     expect(JSON.stringify(queued[1])).not.toMatch(/useCurrentVersion|dispatchHoldSeconds|RESEND|actionUrl/)
     mocks.rpc.mockClear()
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success", replay: true })
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success", replay: true })
     expect((await portalServiceCommand(req(accept))).status).toBe(200)
-    expect(mocks.rpc.mock.calls[1][1].p_request).toBe(paymentRequest)
+    expect(mocks.rpc.mock.calls[2][1].p_request).toBe(paymentRequest)
 
     mocks.rpc.mockReset()
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "recorded" })
-    const held = await portalServiceCommand(req(accept))
-    expect(held.status).toBe(200)
-    expect(await held.json()).toEqual({ status: "success" })
-    expect(mocks.rpc).toHaveBeenCalledTimes(2)
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "mail_not_configured" })
-    vi.stubEnv("JOB_WORKER_ENABLED", "true")
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
-    expect((await portalServiceCommand(req(accept))).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(4)
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" })
+    const production = await portalServiceCommand(req(accept))
+    expect(production.status).toBe(200)
+    expect(await production.json()).toEqual({ status: "success" })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_portal_service_command_v1",
+      "customer_guided_payment_mail_identity_v1",
+      "customer_queue_guided_payment_request_v1",
+    ])
 
     mocks.rpc.mockReset()
     vi.stubEnv("VERCEL_ENV", "")
@@ -238,7 +240,7 @@ describe("portal service command", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
 
     mocks.rpc.mockReset()
-    mocks.rpc.mockResolvedValueOnce(accepted).mockRejectedValueOnce(new Error("relation communications does not exist"))
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockRejectedValueOnce(new Error("relation communications does not exist"))
     const failedQueue = await portalServiceCommand(req(accept))
     const failedBody = await failedQueue.json()
     expect(failedQueue.status).toBe(200)
@@ -246,18 +248,18 @@ describe("portal service command", () => {
     expect(JSON.stringify(failedBody)).not.toMatch(/communications|SQL/)
 
     mocks.rpc.mockReset()
-    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
     mocks.rpc.mockResolvedValueOnce({
       ...accepted,
       snapshot: { ...accepted.snapshot, amountMinor: 7920 },
-    }).mockResolvedValueOnce({ status: "recorded" })
+    }).mockResolvedValueOnce({ status: "success", customerOrigin: origin }).mockResolvedValueOnce({ status: "recorded" })
     const unconfirmed = await portalServiceCommand(req(accept))
     expect(unconfirmed.status).toBe(200)
     expect(await unconfirmed.json()).toEqual({ status: "success" })
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
       "customer_portal_service_command_v1",
+      "customer_guided_payment_mail_identity_v1",
       "customer_record_guided_payment_handover_v1",
     ])
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "queue_denied" })
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_reason: "queue_denied" })
   })
 })

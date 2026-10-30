@@ -17,9 +17,10 @@ const keyB = "cases/55555555-5555-4555-8555-555555555555/documents/66666666-6666
 const token = "c".repeat(64)
 const publishedAt = "2026-10-05T12:00:00.000Z"
 
-function req(query = "reference=PR-26-ABCDEF", cookie = `${portalSessionCookieName()}=${token}`) {
+function req(query = "reference=PR-26-ABCDEF", cookie = `${portalSessionCookieName()}=${token}`, signal?: AbortSignal) {
   return new NextRequest(`${origin}/api/portal/documents/archive?${query}`, {
     headers: cookie ? { cookie } : {},
+    signal,
   })
 }
 
@@ -153,9 +154,11 @@ describe("portal document archive", () => {
     const unsafe = await portalDocumentArchive(req(), storage({ [keyA]: "alpha" }, "THREATS_FOUND"))
     expect(unsafe.status).toBe(404)
 
-    mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf")])).mockResolvedValueOnce(resolved("letter.pdf", keyA))
-    const missing = await portalDocumentArchive(req(), storage({}))
+    mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf")])).mockResolvedValueOnce(resolved("letter.pdf", keyA)).mockResolvedValueOnce({ status: "success" })
+    const missingStore = storage({})
+    const missing = await portalDocumentArchive(req(), missingStore)
     expect(missing.status).toBe(404)
+    expect(missingStore.openObject).toHaveBeenCalledTimes(1)
 
     const oversized = Array.from({ length: 5 }, (_, index) => file(`pd-${index + 1}`, `file-${index + 1}.pdf`, 10_485_760))
     mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", oversized))
@@ -168,6 +171,20 @@ describe("portal document archive", () => {
     mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", many))
     const tooMany = await portalDocumentArchive(req(), storage())
     expect(tooMany.status).toBe(413)
+
+    const exact = Array.from({ length: MAX_ARCHIVE_FILES }, (_, index) => file(`pd-${index + 1}`, `file-${index + 1}.pdf`, MAX_ARCHIVE_BYTES / MAX_ARCHIVE_FILES))
+    expect(exact.reduce((sum, item) => sum + item.sizeBytes, 0)).toBe(MAX_ARCHIVE_BYTES)
+    mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", exact)).mockResolvedValueOnce({ found: true, available: false })
+    const atLimit = await portalDocumentArchive(req(), storage())
+    expect(atLimit.status).toBe(404)
+
+    const share = MAX_ARCHIVE_BYTES / MAX_ARCHIVE_FILES
+    const over = Array.from({ length: MAX_ARCHIVE_FILES }, (_, index) => file(`pd-${index + 1}`, `file-${index + 1}.pdf`, index === MAX_ARCHIVE_FILES - 1 ? share + 1 : share))
+    expect(over.reduce((sum, item) => sum + item.sizeBytes, 0)).toBe(MAX_ARCHIVE_BYTES + 1)
+    mocks.rpc.mockResolvedValueOnce(projection("PR-26-ABCDEF", over))
+    const oneByteOver = await portalDocumentArchive(req(), storage())
+    expect(oneByteOver.status).toBe(413)
+    expect(await oneByteOver.text()).toMatch(/Download the files individually/)
   })
 
   it("renames a path-like filename and still downloads files listed for a closed case projection", async () => {
@@ -181,4 +198,175 @@ describe("portal document archive", () => {
     expect(Object.keys(entries)).toEqual(["secret.txt"])
     expect(Object.keys(entries).join(" ")).not.toMatch(/\.\./)
   })
+
+  it("reads the next file only after a slow consumer drains the previous one", async () => {
+    const first = paced("a".repeat(128), 4)
+    const second = paced("b".repeat(128), 4)
+    const opens: string[] = []
+    mocks.rpc
+      .mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf", first.text.length), file("pd-2", "notes.pdf", second.text.length)]))
+      .mockResolvedValueOnce(resolved("letter.pdf", keyA))
+      .mockResolvedValueOnce(resolved("notes.pdf", keyB))
+      .mockResolvedValueOnce({ status: "success" })
+      .mockResolvedValueOnce({ status: "success" })
+    const store = storage({})
+    store.openObject = vi.fn(async (key: string) => {
+      opens.push(key)
+      const source = key === keyA ? first : second
+      return { body: source.stream, contentLength: source.text.length }
+    })
+    const response = await portalDocumentArchive(req(), store)
+    expect(response.status).toBe(200)
+    expect(opens).toEqual([keyA])
+    expect(first.reads).toBeLessThan(first.chunks)
+    const reader = response.body!.getReader()
+    const received: Uint8Array[] = []
+    const firstChunk = await reader.read()
+    if (firstChunk.value) received.push(firstChunk.value)
+    expect(first.reads).toBeLessThan(first.chunks)
+    expect(opens).toEqual([keyA])
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.value) received.push(chunk.value)
+      if (chunk.done) break
+    }
+    expect(opens).toEqual([keyA, keyB])
+    expect(first.reads).toBeGreaterThan(1)
+    expect(second.reads).toBeGreaterThan(1)
+    expect(first.stream.locked).toBe(false)
+    expect(second.stream.locked).toBe(false)
+    expect(first.cancelled).toBe(false)
+    expect(second.cancelled).toBe(false)
+    const bytes = concat(received)
+    const entries = unzipSync(bytes)
+    expect(strFromU8(entries["letter.pdf"])).toBe(first.text)
+    expect(strFromU8(entries["notes.pdf"])).toBe(second.text)
+  })
+
+  it("cancels the open object when the consumer or the request stops early", async () => {
+    const source = paced("alpha-file-contents", 4)
+    mocks.rpc
+      .mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf", source.text.length), file("pd-2", "notes.pdf", 4)]))
+      .mockResolvedValueOnce(resolved("letter.pdf", keyA))
+      .mockResolvedValueOnce(resolved("notes.pdf", keyB))
+      .mockResolvedValueOnce({ status: "success" })
+      .mockResolvedValueOnce({ status: "success" })
+    const store = storage({})
+    const opens: string[] = []
+    store.openObject = vi.fn(async (key: string) => {
+      opens.push(key)
+      return { body: source.stream, contentLength: source.text.length }
+    })
+    const response = await portalDocumentArchive(req(), store)
+    const reader = response.body!.getReader()
+    await reader.read()
+    await reader.cancel()
+    expect(source.cancelled).toBe(true)
+    expect(source.stream.locked).toBe(false)
+    expect(opens).toEqual([keyA])
+
+    const aborted = paced("alpha-file-contents", 4)
+    const controller = new AbortController()
+    mocks.rpc
+      .mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf", aborted.text.length)]))
+      .mockResolvedValueOnce(resolved("letter.pdf", keyA))
+      .mockResolvedValueOnce({ status: "success" })
+    const abortStore = storage({})
+    abortStore.openObject = vi.fn(async () => ({ body: aborted.stream, contentLength: aborted.text.length }))
+    const abortResponse = await portalDocumentArchive(req(undefined, undefined, controller.signal), abortStore)
+    expect(abortResponse.status).toBe(200)
+    controller.abort()
+    await expect(abortResponse.body!.getReader().read()).rejects.toThrow()
+    expect(aborted.cancelled).toBe(true)
+    expect(aborted.stream.locked).toBe(false)
+  })
+
+  it("stops a partial transfer when a later object cannot be read", async () => {
+    const first = paced("alpha-file-contents", 4)
+    const failed = { cancelled: false, reads: 0 }
+    const failing = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        failed.reads += 1
+        controller.enqueue(new Uint8Array(8))
+      },
+      cancel() { failed.cancelled = true },
+    })
+    mocks.rpc
+      .mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf", first.text.length), file("pd-2", "notes.pdf", 4)]))
+      .mockResolvedValueOnce(resolved("letter.pdf", keyA))
+      .mockResolvedValueOnce(resolved("notes.pdf", keyB))
+      .mockResolvedValueOnce({ status: "success" })
+      .mockResolvedValueOnce({ status: "success" })
+    const store = storage({})
+    const opens: string[] = []
+    store.openObject = vi.fn(async (key: string) => {
+      opens.push(key)
+      if (key === keyB) return { body: failing, contentLength: 4 }
+      return { body: first.stream, contentLength: first.text.length }
+    })
+    const response = await portalDocumentArchive(req(), store)
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    const received: Uint8Array[] = []
+    await expect((async () => {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) return
+        received.push(chunk.value)
+      }
+    })()).rejects.toThrow()
+    expect(received.length).toBeGreaterThan(0)
+    expect(() => unzipSync(concat(received))).toThrow()
+    expect(opens).toEqual([keyA, keyB])
+    expect(failed.cancelled).toBe(true)
+    expect(failing.locked).toBe(false)
+    expect(first.stream.locked).toBe(false)
+    expect(store.createReadUrl).not.toHaveBeenCalled()
+  })
+
+  it("releases a reader when the object body fails mid-transfer", async () => {
+    const failing = new ReadableStream<Uint8Array>({
+      pull() { throw new Error("s3 read failed") },
+    })
+    mocks.rpc
+      .mockResolvedValueOnce(projection("PR-26-ABCDEF", [file("pd-1", "letter.pdf", 4)]))
+      .mockResolvedValueOnce(resolved("letter.pdf", keyA))
+      .mockResolvedValueOnce({ status: "success" })
+    const store = storage({})
+    store.openObject = vi.fn(async () => ({ body: failing, contentLength: 4 }))
+    const response = await portalDocumentArchive(req(), store)
+    await expect(response.arrayBuffer()).rejects.toThrow()
+    expect(failing.locked).toBe(false)
+  })
 })
+
+function concat(parts: Uint8Array[]) {
+  const size = parts.reduce((sum, part) => sum + part.byteLength, 0)
+  const out = new Uint8Array(size)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.byteLength
+  }
+  return out
+}
+
+function paced(text: string, size: number) {
+  const bytes = new TextEncoder().encode(text)
+  const state = { text, reads: 0, cancelled: false, chunks: Math.ceil(bytes.length / size), stream: null as unknown as ReadableStream<Uint8Array> }
+  let offset = 0
+  state.stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      state.reads += 1
+      if (offset >= bytes.length) {
+        controller.close()
+        return
+      }
+      const next = bytes.subarray(offset, Math.min(bytes.length, offset + size))
+      offset += next.byteLength
+      controller.enqueue(next)
+    },
+    cancel() { state.cancelled = true },
+  })
+  return state
+}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { caseTypeLabel, formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
-import { archiveActionLabel, evidenceStateLabel, GUIDED_PACK_READY, publishedFileMeta } from "@/lib/portal/documents/model"
+import { ARCHIVE_TOGETHER_LIMIT, archiveActionLabel, archiveFitsLimits, evidenceStateLabel, GUIDED_PACK_READY, publishedFileMeta } from "@/lib/portal/documents/model"
 import { GUIDED_PACK_INSTRUCTIONS } from "@/lib/portal/documents/parse"
 import type { EvidenceNeed, EvidenceState, EvidenceSubmission, PortalCaseContext, PublishedDocument } from "@/lib/portal/documents/parse"
 
@@ -109,13 +109,13 @@ function ReadyCaseCard({ item }: { item: ReadyCase }) {
           <p>{GUIDED_PACK_INSTRUCTIONS}</p>
         </div>
       ) : null}
-      {item.files.length > 0 ? (
+      {item.files.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for this case yet.</p> : archiveFitsLimits(item.files) ? (
         <p>
           <a className="portal-button" href={archiveHref(item.reference)}>
             {archiveActionLabel(item.files.length)}
           </a>
         </p>
-      ) : <p>ProfileRelaunch hasn&apos;t published any documents for this case yet.</p>}
+      ) : <p className="documents-status">{ARCHIVE_TOGETHER_LIMIT}</p>}
       <ul className="document-files">
         {item.files.map(file => (
           <li key={file.selector}>

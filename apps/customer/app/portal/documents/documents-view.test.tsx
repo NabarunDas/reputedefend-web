@@ -10,6 +10,7 @@ import { CaseDocuments, CaseDocumentsUnavailable } from "../cases/[reference]/do
 import { DocumentsUnavailable, DocumentsView } from "./documents-view"
 import { EvidenceUploadForm } from "./upload-form"
 import type { CustomerCaseDocuments, CustomerDocuments } from "@/lib/portal/documents/parse"
+import { ARCHIVE_TOGETHER_LIMIT, MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES } from "@/lib/portal/documents/model"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/documents" }))
 const refresh = vi.hoisted(() => vi.fn())
@@ -257,6 +258,55 @@ describe("documents pages", () => {
     expect(screen.getAllByText("Needs another document").length).toBeGreaterThan(0)
     expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Download all 1 file" })).toBeTruthy()
+  })
+
+  it("offers one archive only when the published pack fits the shared limits", () => {
+    const published = documents.documents[0]
+    const below = Array.from({ length: 2 }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: 1024,
+    }))
+    const { unmount } = render(<DocumentsView documents={{ needs: [], submissions: [], documents: below }} />)
+    expect(screen.getByRole("link", { name: "Download all 2 files" })).toBeTruthy()
+    expect(screen.queryByText(ARCHIVE_TOGETHER_LIMIT)).toBeNull()
+    unmount()
+
+    const exactSize = MAX_ARCHIVE_BYTES / MAX_ARCHIVE_FILES
+    const exact = Array.from({ length: MAX_ARCHIVE_FILES }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: exactSize,
+    }))
+    const exactView = render(<DocumentsView documents={{ needs: [], submissions: [], documents: exact }} />)
+    expect(screen.getByRole("link", { name: "Download all 20 files" })).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download Prepared letter" })).toHaveLength(MAX_ARCHIVE_FILES)
+    expect(screen.queryByText(ARCHIVE_TOGETHER_LIMIT)).toBeNull()
+    exactView.unmount()
+
+    const tooMany = Array.from({ length: MAX_ARCHIVE_FILES + 1 }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: 1024,
+    }))
+    const manyView = render(<DocumentsView documents={{ needs: [], submissions: [], documents: tooMany }} />)
+    expect(screen.queryByRole("link", { name: /Download all/ })).toBeNull()
+    expect(screen.getByText(ARCHIVE_TOGETHER_LIMIT)).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download Prepared letter" })).toHaveLength(MAX_ARCHIVE_FILES + 1)
+    manyView.unmount()
+
+    const tooLarge = render(<CaseDocuments documents={{
+      ...caseDocuments,
+      requests: [],
+      documents: [{ ...caseDocuments.documents[0], sizeBytes: MAX_ARCHIVE_BYTES + 1 }],
+    }} />)
+    expect(screen.queryByRole("link", { name: /Download all/ })).toBeNull()
+    expect(screen.getByText(ARCHIVE_TOGETHER_LIMIT)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
+    tooLarge.unmount()
   })
 
   it("keeps a case documents failure distinct from a missing case", () => {

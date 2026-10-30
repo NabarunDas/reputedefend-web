@@ -3,8 +3,10 @@ import { useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 
 /**
- * One Step 7 action. It queues the payment-request email and reuses an open
- * payment action. It does not show a bearer link or mark the obligation paid.
+ * One Step 7 recovery action. It asks the server to queue the payment-request
+ * email. The server creates the payment action only when none is open, and
+ * reuses one open valid action. It does not show a bearer link or mark the
+ * obligation paid.
  */
 export function PaymentRequestForm({ serviceOrderId, version }: { serviceOrderId: string; version: number }) {
   const router = useRouter()
@@ -37,7 +39,7 @@ export function PaymentRequestForm({ serviceOrderId, version }: { serviceOrderId
   }
 
   return <form onSubmit={submit}>
-    <p>Use this only when an accepted Guided order is still unpaid and no payment-request email is queued. A new acceptance queues that email itself. This recovery step reuses the open payment action. It does not create another link, repeat the quotation, open Stripe, or mark the payment complete.</p>
+    <p>Use this when an accepted Guided order is still unpaid and no payment-request email is queued. Sending asks the server to queue that email. The server creates the payment step only when none is open, and reuses one open valid step. It does not replace an expired step, create a second email, repeat the quotation, open Stripe, or mark the payment complete.</p>
     <button type="submit" disabled={busy}>Send payment request</button>
     <p role="status">{message}</p>
   </form>

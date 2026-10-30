@@ -156,7 +156,7 @@ function localRefusal(order: ServiceOrder): { message: string; status: number } 
   return null
 }
 
-/** Queues one Guided payment-request email and reuses an open payment action. It does not return a bearer link. */
+/** Queues one Guided payment-request email. The server creates a payment action only when none is open. It does not return a bearer link. */
 export async function queueGuidedPaymentRequest(request: NextRequest): Promise<NextResponse> {
   if (!devCaseJourneyPreviewEnabled()) return reply("Unavailable.", 404)
   const config = authConfig()
@@ -215,6 +215,7 @@ export async function queueGuidedPaymentRequest(request: NextRequest): Promise<N
       currency: order.currency,
       origin: customerOrigin,
       replyTo: confirmedReplyMailbox(),
+      businessName: order.businessName,
     })
     if (!rendered) return reply("This order is not ready for a Guided payment email. No email was queued.", 409)
     const result = await backend().rpc<QueueResult>("admin_queue_guided_payment_request_v1", {

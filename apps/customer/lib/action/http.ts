@@ -5,6 +5,7 @@ import { cookieOptions, customerConfig, pendingCookie, sessionCookie, customerRe
 import { validCustomerOtp } from "@/lib/otp"
 import { stripUntrustedHostedInvoice } from "../../../../lib/payments/stripe-url"
 import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "./identity"
+import { queueAcceptedGuidedPayment } from "../payments/queue-accepted-guided-payment"
 import { isUuid } from "../uuid"
 
 const reply = (extra: Record<string, unknown> = {}, http = 401) =>
@@ -216,6 +217,16 @@ export async function command(request: NextRequest) {
           }
         }
       }
+    }
+    if (operation === "accept") {
+      try {
+        await queueAcceptedGuidedPayment({
+          token,
+          acceptanceKey: key,
+          result,
+          rpc: "customer_action_queue_guided_payment_request_v1",
+        })
+      } catch { /* Acceptance stands. Step 7 can queue the email once. */ }
     }
     return NextResponse.json({ status: "ok", message: "This action is complete." }, { headers: privateResponseHeaders })
   } catch { return reply() }

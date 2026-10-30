@@ -1173,6 +1173,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided assessment basis", probe: "admin_private.assessment_evidence_document_v1" },
   },
+  {
+    // Action-session Guided payment queue after quotation acceptance.
+    // Repository only. appliedToDev is false. The observed DEV ledger head
+    // remains 20261029010000. Do not apply this file from the pull request.
+    // It does not insert an action, queue an email, or mark a payment.
+    version: "20261030200000",
+    filename: "20261030200000_guided_payment_request_after_acceptance_v1.sql",
+    step: "Quotation-email acceptance can queue a Guided payment request",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided payment request after acceptance", probe: "public.customer_action_queue_guided_payment_request_v1" },
+  },
 ]
 
 /**
@@ -1190,8 +1204,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains unapplied
  * `20261030120000_guided_pack_stage_sync_v1.sql` and unapplied
- * `20261030130000_guided_assessment_pack_basis_v1.sql`. Do not apply either
- * without a separate approval, and do not apply either to Production.
+ * `20261030130000_guided_assessment_pack_basis_v1.sql`, and unapplied
+ * `20261030200000_guided_payment_request_after_acceptance_v1.sql`. Do not
+ * apply any of them without a separate approval, and do not apply any of
+ * them to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

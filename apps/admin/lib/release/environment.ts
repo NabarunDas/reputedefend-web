@@ -173,7 +173,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "Customer self-origin still works on Vercel. Admin cross-app Preview links and payment return URLs remain unavailable until an explicit Customer target is configured.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-mail-dispatch.ts", "apps/customer/lib/config.ts", "apps/customer/lib/portal/service/command.ts", "lib/payments/config.ts"],
+    readBy: ["apps/admin/lib/auth/config.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-mail-dispatch.ts", "apps/customer/lib/config.ts", "apps/customer/lib/payments/queue-accepted-guided-payment.ts", "lib/payments/config.ts"],
   },
   {
     name: "NODE_ENV",
@@ -228,7 +228,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/admin/proxy.ts",
       "apps/customer/lib/case/config.ts",
       "apps/customer/lib/config.ts",
-      "apps/customer/lib/portal/service/command.ts",
+      "apps/customer/lib/payments/queue-accepted-guided-payment.ts",
       "lib/cases/email-confirmation.ts",
       "lib/cases/persistence-config.ts",
       "lib/payments/config.ts",
@@ -314,7 +314,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "The scheduled worker is disabled and no batch of jobs is claimed. Production outgoing mail stays closed, and a Production customer acceptance does not queue a payment email. The develop DEV email runner does not use this flag.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/conversations/gate.ts", "apps/admin/lib/jobs/config.ts", "apps/customer/lib/portal/service/command.ts"],
+    readBy: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/conversations/gate.ts", "apps/admin/lib/jobs/config.ts", "apps/customer/lib/payments/queue-accepted-guided-payment.ts"],
   },
   {
     name: "JOB_PROVIDER_MODE",
@@ -498,7 +498,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "communicationsSendEnabled() is false, the queue command refuses and neither the scheduled worker nor the develop DEV runner sends. A customer acceptance does not queue a payment email.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/gate.ts", "apps/customer/lib/portal/service/command.ts"],
+    readBy: ["apps/admin/lib/communications/gate.ts", "apps/customer/lib/payments/queue-accepted-guided-payment.ts"],
   },
   {
     name: "COMMUNICATIONS_INBOUND_ENABLED",
@@ -524,7 +524,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "The outgoing gate reads false because it requires a parseable from-address. A customer acceptance does not queue a payment email.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/communications/mail.ts", "apps/admin/lib/conversations/gate.ts", "apps/customer/lib/portal/service/command.ts"],
+    readBy: ["apps/admin/lib/communications/gate.ts", "apps/admin/lib/communications/mail.ts", "apps/admin/lib/conversations/gate.ts", "apps/customer/lib/payments/queue-accepted-guided-payment.ts"],
   },
   {
     name: "COMMUNICATIONS_REPLY_TO_EMAIL",

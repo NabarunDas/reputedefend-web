@@ -20,7 +20,7 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
+    expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -37,6 +37,7 @@ describe("the migration chain manifest", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261030120000_guided_pack_stage_sync_v1.sql",
       "20261030130000_guided_assessment_pack_basis_v1.sql",
+      "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)

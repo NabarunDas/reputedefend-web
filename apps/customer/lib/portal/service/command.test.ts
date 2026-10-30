@@ -167,7 +167,7 @@ describe("portal service command", () => {
         paymentModel: "UPFRONT",
         amountMinor: 9900,
         currency: "GBP",
-        quotationSnapshot: { serviceName: "Guided Relaunch", caseReference: "PR-26-ABCDEF" },
+        quotationSnapshot: { serviceName: "Guided Relaunch", caseReference: "PR-26-ABCDEF", businessName: "North Bakery" },
       },
     }
     const hash = createHash("sha1").update(`guided-payment-request:${key}`).digest()
@@ -199,7 +199,8 @@ describe("portal service command", () => {
     })
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
     const paymentsUrl = `${origin}/portal/cases/PR-26-ABCDEF/payments`
-    expect(payload.subject).toContain("SO-26-ABCDEF")
+    expect(payload.subject).toContain("Pay for your ProfileRelaunch Guided Relaunch — SO-26-ABCDEF")
+    expect(payload.bodyText).toContain("Business: North Bakery")
     expect(payload.bodyText).toContain("Pay £99.00 securely")
     expect(payload.bodyText).toContain("£99.00 GBP")
     expect(payload.bodyText).toContain(paymentsUrl)

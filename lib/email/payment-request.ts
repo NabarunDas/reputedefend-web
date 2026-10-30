@@ -36,6 +36,15 @@ export function portalPaymentsUrl(origin: string, caseRef: string): string | nul
   return `${root}/portal/cases/${caseRef}/payments`
 }
 
+/** A business name may appear as plain text. A URL in the name is omitted so the email keeps one payments link. */
+export function paymentRequestBusinessLine(name: string | null | undefined): string | null {
+  const trimmed = name?.trim() ?? ""
+  if (!trimmed || trimmed.length > 200) return null
+  if (/https?:\/\//i.test(trimmed) || trimmed.includes("/action/") || trimmed.includes("#t=")) return null
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(trimmed)) return null
+  return `Business: ${trimmed}`
+}
+
 export function renderPaymentRequest(input: {
   serviceCode: string
   serviceName: string
@@ -45,6 +54,7 @@ export function renderPaymentRequest(input: {
   currency: string
   origin: string
   replyTo?: string | null
+  businessName?: string | null
 }): { subject: string; html: string; text: string; paymentsUrl: string; buttonLabel: string } | null {
   const serviceName = paymentRequestServiceName(input.serviceCode)
   const buttonLabel = paymentRequestButtonLabel(input.serviceCode, input.amountMinor)
@@ -57,9 +67,11 @@ export function renderPaymentRequest(input: {
   if (!orderRefPattern.test(orderRef) || !caseRefPattern.test(caseRef)) return null
   if (input.currency !== "GBP") return null
   const subject = `Pay for your ${brandName} ${serviceName} — ${orderRef}`
+  const businessLine = paymentRequestBusinessLine(input.businessName)
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
     { type: "paragraph", text: `Your ${serviceName} order ${orderRef} is accepted.` },
+    ...(businessLine ? [{ type: "paragraph" as const, text: businessLine }] : []),
     { type: "paragraph", text: `Amount: ${amountLabel}` },
     { type: "paragraph", text: customerPriceBoundary },
     { type: "paragraph", text: paymentRequestOpeningSentence },

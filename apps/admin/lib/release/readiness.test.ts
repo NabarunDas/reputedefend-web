@@ -155,9 +155,10 @@ describe("readiness model", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261030120000_guided_pack_stage_sync_v1.sql",
       "20261030130000_guided_assessment_pack_basis_v1.sql",
+      "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261029010000")
-    expect(migrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
+    expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -166,6 +167,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Observed DEV ledger head is 20261029010000")
     expect(supabase?.requirement).toContain("unapplied 20261030120000 guided_pack_stage_sync_v1")
     expect(supabase?.requirement).toContain("unapplied 20261030130000 guided_assessment_pack_basis_v1")
+    expect(supabase?.requirement).toContain("unapplied 20261030200000 guided_payment_request_after_acceptance_v1")
     expect(supabase?.requirement).toContain("The repository applied-file head remains 20261029010000")
     expect(supabase?.requirement).toContain("Shared develop mail dispatch 20261029010000 is the observed DEV ledger head")
     expect(supabase?.requirement).toContain("35,478 characters")

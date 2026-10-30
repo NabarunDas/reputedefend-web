@@ -5,6 +5,7 @@ import {
   paymentRequestOpeningSentence,
   renderPaymentRequest,
 } from "../../../../lib/email/payment-request"
+import { brandName } from "../../../../lib/brand"
 
 const origin = "https://customer.example"
 const guided = {
@@ -16,6 +17,7 @@ const guided = {
   currency: "GBP",
   origin,
   replyTo: "cases@profilerelaunch.com",
+  businessName: "North Bakery",
 }
 
 describe("guided payment-request email", () => {
@@ -23,8 +25,11 @@ describe("guided payment-request email", () => {
     const rendered = renderPaymentRequest(guided)
     expect(rendered?.buttonLabel).toBe("Pay £99.00 securely")
     expect(rendered?.paymentsUrl).toBe(`${origin}/portal/cases/PR-26-GHNLB9/payments`)
-    expect(rendered?.subject).toContain("SO-26-GHHRGY")
+    expect(rendered?.subject).toBe(`Pay for your ${brandName} Guided Relaunch — SO-26-GHHRGY`)
+    expect(rendered?.text).toContain("Business: North Bakery")
+    expect(rendered?.text).toContain("Case reference: PR-26-GHNLB9")
     expect(rendered?.text).toContain("Guided Relaunch")
+    expect(rendered?.text).not.toMatch(/payment is complete|already paid|paid in full/i)
     expect(rendered?.text).toContain("Amount: £99.00 GBP")
     expect(rendered?.text).toContain(customerPriceBoundary)
     expect(rendered?.text).toContain(paymentRequestOpeningSentence)
@@ -62,5 +67,9 @@ describe("guided payment-request email", () => {
     expect(renderPaymentRequest({ ...guided, amountMinor: 0 })).toBeNull()
     expect(renderPaymentRequest({ ...guided, origin: "https://customer.example/portal" })).toBeNull()
     expect(renderPaymentRequest({ ...guided, caseRef: "PR-1" })).toBeNull()
+    const linkedName = renderPaymentRequest({ ...guided, businessName: "https://evil.example" })
+    expect(linkedName?.text).not.toContain("https://evil.example")
+    expect(linkedName?.text).toContain("Pay £99.00 securely")
+    expect(renderPaymentRequest({ ...guided, businessName: "North Bakery" })?.text).toContain("Business: North Bakery")
   })
 })

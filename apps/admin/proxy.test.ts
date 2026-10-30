@@ -228,6 +228,28 @@ describe("admin access boundary", () => {
     }
   })
 
+  it("passes only the develop Preview customer mail event through to its own check", async () => {
+    const oldEnv = process.env.VERCEL_ENV
+    const oldBranch = process.env.VERCEL_GIT_COMMIT_REF
+    const hostname = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const path = "/api/internal/mail/dispatch"
+    try {
+      process.env.VERCEL_ENV = "preview"
+      process.env.VERCEL_GIT_COMMIT_REF = "develop"
+      const accepted = await proxy(new NextRequest(hostname + path, { method: "POST" }))
+      expect(accepted.headers.get("x-middleware-next")).toBe("1")
+      expect((await proxy(new NextRequest(hostname + path))).status).toBe(401)
+      expect((await proxy(new NextRequest("https://profilerelaunch-admin.vercel.app" + path, { method: "POST" }))).status).toBe(401)
+      process.env.VERCEL_GIT_COMMIT_REF = "main"
+      expect((await proxy(new NextRequest(hostname + path, { method: "POST" }))).status).toBe(401)
+    } finally {
+      if (oldEnv === undefined) delete process.env.VERCEL_ENV
+      else process.env.VERCEL_ENV = oldEnv
+      if (oldBranch === undefined) delete process.env.VERCEL_GIT_COMMIT_REF
+      else process.env.VERCEL_GIT_COMMIT_REF = oldBranch
+    }
+  })
+
   it("passes only the develop Preview mail-dispatch route through to its own bearer check", async () => {
     const oldEnv = process.env.VERCEL_ENV
     const oldBranch = process.env.VERCEL_GIT_COMMIT_REF

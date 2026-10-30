@@ -743,7 +743,7 @@ describe("guided payment-request queue", () => {
     }
   })
 
-  it("claims only the action-session payment email and sends it once", async () => {
+  it("dispatches action and portal payment emails through the central request claim", async () => {
     await db.query(
       "insert into auth.users(id, email, email_confirmed_at) values ($1, 'alex@example.com', now()) on conflict (id) do nothing",
       [alexAuth],
@@ -760,33 +760,44 @@ describe("guided payment-request queue", () => {
     delete (customerPayload as { version?: number }).version
     const queued = await rpc("customer_action_queue_guided_payment_request_v1", [hash, requestId, customerPayload])
     expect(queued).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [queued.id])).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_v1", [queued.id, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "before_activation",
+    })
     await db.query("update admin_private.job_outbox set available_at = now() + interval '10 minutes' where aggregate_id = $1", [queued.id])
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
       status: "denied",
       reason: "not_ready",
     })
     await db.query("update admin_private.job_outbox set available_at = now() where aggregate_id = $1", [queued.id])
-    const claimed = await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin]) as DevSendClaim
+    const claimed = await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin]) as DevSendClaim
     expect(claimed).toMatchObject({ status: "success", jobType: "SEND_EMAIL", replay: false })
     expect(claimed.leaseToken).toEqual(expect.any(String))
     expect(claimed.payload).not.toHaveProperty("recipient")
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
+      status: "conflict",
+      reason: "leased",
+    })
     const provider = createIdempotentMailProvider()
     expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed, provider })).toBe("succeeded")
     expect(provider.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, devOrigin])).toMatchObject({
       status: "denied",
       reason: "already_processed",
     })
     expect(provider.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, crypto.randomUUID(), devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [crypto.randomUUID(), devOrigin])).toMatchObject({
       status: "denied",
       reason: "not_queued",
     })
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, "https://customer.profilerelaunch.com"])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [requestId, "https://customer.profilerelaunch.com"])).toMatchObject({
       status: "denied",
       reason: "origin",
     })
     expect(await count("select count(*)::int as n from public.communications where id = $1 and delivery_status = 'PROVIDER_ACCEPTED'", [queued.id])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.jobs where id = $1 and status = 'SUCCEEDED'", [claimed.jobId])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.job_attempts where job_id = $1 and lease_owner = 'dev-mail-dispatch'", [claimed.jobId])).toBe(1)
 
     const held = await seed()
     const heldHash = "8".repeat(64)
@@ -802,9 +813,21 @@ describe("guided payment-request queue", () => {
     delete (heldPayload as { version?: number }).version
     const heldQueued = await rpc("customer_queue_guided_payment_request_v1", [heldHash, heldRequest, heldPayload])
     expect(heldQueued).toMatchObject({ status: "success" })
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [heldHash, heldRequest, devOrigin])).toMatchObject({
-      status: "unauthorized",
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and template_key = 'GUIDED_PAYMENT_REQUEST'", [heldQueued.id])).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_v1", [heldQueued.id, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "before_activation",
     })
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [heldRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "not_ready",
+    })
+    await db.query("update admin_private.job_outbox set available_at = now() where aggregate_id = $1", [heldQueued.id])
+    const heldClaim = await rpc("dev_mail_dispatch_claim_request_v1", [heldRequest, devOrigin]) as DevSendClaim
+    const heldProvider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: heldClaim, provider: heldProvider })).toBe("succeeded")
+    expect(heldProvider.effects).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and delivery_status = 'PROVIDER_ACCEPTED'", [heldQueued.id])).toBe(1)
 
     const retry = await seed()
     const retryHash = "9".repeat(64)
@@ -817,7 +840,7 @@ describe("guided payment-request queue", () => {
     const retryPayload = { ...payloadFor(retry, {}, devOrigin).body }
     delete (retryPayload as { version?: number }).version
     expect(await rpc("customer_action_queue_guided_payment_request_v1", [retryHash, retryRequest, retryPayload])).toMatchObject({ status: "success" })
-    const retryClaim = await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin]) as DevSendClaim
+    const retryClaim = await rpc("dev_mail_dispatch_claim_request_v1", [retryRequest, devOrigin]) as DevSendClaim
     const failing = {
       effects: 0,
       async send() {
@@ -827,7 +850,7 @@ describe("guided payment-request queue", () => {
     }
     expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: retryClaim, provider: failing })).toBe("retry")
     expect(failing.effects).toBe(1)
-    expect(await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin])).toMatchObject({
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [retryRequest, devOrigin])).toMatchObject({
       status: "denied",
       reason: "acceptance_unknown",
     })
@@ -837,7 +860,39 @@ describe("guided payment-request queue", () => {
       [retryClaim.jobId],
     )).toBe(1)
 
-    const claimSignature = "public.customer_action_claim_guided_payment_email_v1(text,uuid,text)"
+    const unknown = await seed()
+    const unknownHash = "a".repeat(64)
+    const unknownRequest = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
+       values ($1, $2, $3, now() + interval '15 minutes')`,
+      [unknownHash, unknown.acceptanceAction, alexAuth],
+    )
+    const unknownPayload = { ...payloadFor(unknown, {}, devOrigin).body }
+    delete (unknownPayload as { version?: number }).version
+    const unknownQueued = await rpc("customer_action_queue_guided_payment_request_v1", [unknownHash, unknownRequest, unknownPayload])
+    expect(unknownQueued).toMatchObject({ status: "success" })
+    const unknownClaim = await rpc("dev_mail_dispatch_claim_request_v1", [unknownRequest, devOrigin]) as DevSendClaim
+    const unknownProvider = {
+      effects: 0,
+      async send() {
+        this.effects += 1
+        return { ok: false as const, retryable: true, acceptanceUnknown: true, error: "Email provider acceptance is unknown" }
+      },
+    }
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: unknownClaim, provider: unknownProvider })).toBe("retry")
+    expect(unknownProvider.effects).toBe(1)
+    expect(await rpc("dev_mail_dispatch_claim_request_v1", [unknownRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "acceptance_unknown",
+    })
+    expect(unknownProvider.effects).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from public.communications where id = $1 and delivery_status = 'ACCEPTANCE_UNKNOWN'",
+      [unknownQueued.id],
+    )).toBe(1)
+
+    const claimSignature = "public.dev_mail_dispatch_claim_request_v1(uuid,text)"
     const handoverSignature = "public.customer_record_guided_payment_handover_v1(text,uuid,uuid,text)"
     for (const signature of [claimSignature, handoverSignature]) {
       expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)

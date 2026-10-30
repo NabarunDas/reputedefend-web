@@ -1172,11 +1172,12 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided assessment basis", probe: "admin_private.assessment_evidence_document_v1" },
   },
   {
-    // Action-session Guided payment queue and the DEV acceptance claim.
+    // Action-session Guided payment queue and the request-scoped mail claim.
     // Repository only. appliedToDev is false. The observed DEV ledger head is
     // 20261030130000. Do not apply this file from the pull request. The queue
     // wrapper does not insert an action, queue an email, or mark a payment.
-    // The claim does not take a communication id and does not call the provider.
+    // The request claim does not take a communication id and does not call the provider.
+    // The sweep claim still requires the activation watermark.
     version: "20261030200000",
     filename: "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     step: "Quotation-email acceptance can queue a Guided payment request",

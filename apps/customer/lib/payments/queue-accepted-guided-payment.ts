@@ -2,14 +2,8 @@ import { createHash } from "node:crypto"
 import { backend, tokenHash } from "@/lib/backend"
 import { renderPaymentRequest } from "../../../../lib/email/payment-request"
 import { confirmedReplyMailbox, validReplyMailbox } from "../../../../lib/email/reply-mailbox"
-import {
-  devCustomerPaymentPreview,
-  devCustomerPaymentSendOpen,
-  dispatchAcceptedPaymentEmail,
-  handoverForQueue,
-  type PaymentHandoverReason,
-  type PaymentMailSender,
-} from "./dev-payment-dispatch"
+import { customerDispatchLaneOpen, customerDispatchPreview, requestCentralDispatch } from "./central-dispatch"
+import type { PaymentHandoverReason } from "./handover"
 
 /**
  * Portal sessions and Secure Action sessions are different credentials.
@@ -73,7 +67,6 @@ export async function queueAcceptedGuidedPayment(input: {
   acceptanceKey: string
   result: object
   rpc: GuidedPaymentQueueRpc
-  sender?: PaymentMailSender
 }): Promise<void> {
   const result = input.result as Record<string, unknown>
   const snapshot = isRecord(result.snapshot) ? result.snapshot : null
@@ -126,21 +119,16 @@ export async function queueAcceptedGuidedPayment(input: {
     await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_unavailable" })
     return
   }
-  if (input.rpc === "customer_action_queue_guided_payment_request_v1" && queued?.status === "success" && devCustomerPaymentSendOpen()) {
-    const reason = await dispatchAcceptedPaymentEmail({
-      rpc: backend(),
-      tokenHash: tokenHash(input.token),
-      requestId,
-      origin: mail.origin,
-      sender: input.sender,
-    })
+  if (queued?.status === "success" && customerDispatchLaneOpen()) {
+    const reason = await requestCentralDispatch({ requestId })
     await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason })
     return
   }
-  const reason = handoverForQueue({
-    rpcName: input.rpc,
-    queued,
-    preview: devCustomerPaymentPreview(),
-  })
-  if (reason) await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason })
+  if (!queued || queued.status !== "success") {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_denied" })
+    return
+  }
+  if (input.rpc === "customer_action_queue_guided_payment_request_v1" && customerDispatchPreview()) {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "dispatch_not_configured" })
+  }
 }

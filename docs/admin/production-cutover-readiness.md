@@ -112,6 +112,7 @@ capability gate is expected to be missing.
 | `VERCEL_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Every one of those capabilities stays off, which is the safe direction. |
 | `VERCEL_DEPLOYMENT_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The heartbeat records null. Nothing else changes. |
 | `VERCEL_GIT_COMMIT_REF` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The DEV Stripe one-shot refuses the request. No other Admin behaviour reads it. |
+| `VERCEL_ORG_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The customer mail event refuses the caller. Queued email stays queued. Production scheduled mail does not read it. |
 | `CRON_SECRET` | admin | PROVIDER_SECRET | secret | PRESENT | jobWorkerConfig() reports disabled and the cron entry point answers 503 rather than running work. |
 | `JOB_WORKER_ENABLED` | admin, customer | FEATURE_GATE | non-secret | ABSENT | The worker is disabled, no job is claimed, and both mail gates read false whatever else is set. A Production customer acceptance does not queue a payment email. |
 | `JOB_PROVIDER_MODE` | admin | FEATURE_GATE | non-secret | ABSENT | Provider mode is "disabled" and no handler performs an external effect. |

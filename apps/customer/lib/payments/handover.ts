@@ -1,0 +1,12 @@
+export type PaymentHandoverReason =
+  | "mail_not_configured"
+  | "queue_denied"
+  | "queue_unavailable"
+  | "dispatch_not_configured"
+  | "dispatch_held"
+  | "dispatch_conflict"
+  | "provider_accepted"
+  | "provider_retryable"
+  | "provider_dead"
+  | "acceptance_unknown"
+  | "queued"

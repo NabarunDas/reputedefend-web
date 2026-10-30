@@ -13,9 +13,11 @@ BEGIN;
 -- The body remains authoritative for the order, obligation, duplicate action,
 -- paid, authority and snapshot checks. The queue wrapper does not insert an
 -- action, queue an email, or mark a payment.
--- The claim below does not take a communication id. It leases only the
--- payment email stored for this action session and this request. It does not
--- call the provider, enable a worker, or insert an activation row.
+-- Immediate sending stays in the Admin dispatcher. This file does not call a
+-- provider, enable the mail worker, or insert an activation row.
+-- dev_mail_dispatch_claim_request_v1 leases the communication stored for one
+-- queue request. The caller cannot name a communication. The sweep claim
+-- public.dev_mail_dispatch_claim_v1 still requires the activation watermark.
 -- Source only. Do not apply this file to DEV or Production from this change.
 
 CREATE FUNCTION public.customer_action_queue_guided_payment_request_v1(
@@ -86,12 +88,13 @@ REVOKE ALL ON FUNCTION public.customer_action_queue_guided_payment_request_v1(te
 GRANT EXECUTE ON FUNCTION public.customer_action_queue_guided_payment_request_v1(text, uuid, jsonb)
   TO service_role;
 
--- Leases the payment email this action session already queued for this request.
--- The caller cannot name a communication. A portal session, a different
--- request, or a held outbox row does not receive a lease. Provider-attempt,
--- delivery-status, lease and attempt-limit checks match the admin one-shot.
-CREATE FUNCTION public.customer_action_claim_guided_payment_email_v1(
-  p_token_hash text,
+-- Leases the communication stored for one queue request.
+-- The caller cannot name a communication. Portal and action receipts use the
+-- same lookup. Held mail, a provider attempt, and an exhausted lease stay
+-- refused. This does not check the activation watermark: that watermark still
+-- gates public.dev_mail_dispatch_claim_v1, so the sweep cannot send older mail.
+-- This function does not call a provider.
+CREATE FUNCTION public.dev_mail_dispatch_claim_request_v1(
   p_request uuid,
   p_customer_origin text
 ) RETURNS jsonb
@@ -100,92 +103,57 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  sess admin_private.customer_action_sessions;
-  act public.customer_actions;
-  ord public.service_orders;
+  receipt jsonb;
   comm public.communications;
-  pay public.customer_actions;
+  expected text;
+  text_upload text;
+  html_upload text;
+  text_urls integer;
+  html_urls integer;
   outbox admin_private.job_outbox;
   row admin_private.jobs;
-  receipt jsonb;
-  v_key text;
-  expected text;
-  case_ref text;
-  order_count integer;
   token uuid;
   attempt_no integer;
+  v_key text;
+  v_link text;
+  v_case_ref text;
 BEGIN
-  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$' OR p_request IS NULL THEN
-    RETURN jsonb_build_object('status', 'unauthorized');
-  END IF;
-  IF p_customer_origin IS NULL
+  IF p_request IS NULL
+    OR p_customer_origin IS NULL
     OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
   THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
   END IF;
-  SELECT * INTO sess FROM admin_private.customer_action_sessions
-    WHERE token_hash = p_token_hash AND expires_at > now();
-  IF sess.token_hash IS NULL THEN
-    RETURN jsonb_build_object('status', 'unauthorized');
-  END IF;
-  SELECT * INTO act FROM public.customer_actions WHERE id = sess.action_id;
-  IF act.id IS NULL OR act.kind IS DISTINCT FROM 'QUOTE_ACCEPTANCE' OR act.status IS DISTINCT FROM 'COMPLETED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
-  END IF;
-  SELECT count(*) INTO order_count
-  FROM public.service_orders candidate
-  JOIN public.quote_acceptances acc ON acc.id = candidate.quote_acceptance_id
-  WHERE acc.customer_action_id = act.id
-    AND acc.quote_version_id = act.quote_version_id
-    AND candidate.customer_id = act.customer_id
-    AND candidate.case_id = act.case_id
-    AND candidate.business_id = act.business_id
-    AND candidate.location_id = act.location_id;
-  IF order_count IS DISTINCT FROM 1 THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
-  END IF;
-  SELECT candidate.* INTO ord
-  FROM public.service_orders candidate
-  JOIN public.quote_acceptances acc ON acc.id = candidate.quote_acceptance_id
-  WHERE acc.customer_action_id = act.id
-    AND acc.quote_version_id = act.quote_version_id
-    AND candidate.customer_id = act.customer_id
-    AND candidate.case_id = act.case_id
-    AND candidate.business_id = act.business_id
-    AND candidate.location_id = act.location_id;
   SELECT response INTO receipt
   FROM admin_private.communication_command_receipts
-  WHERE request_id = p_request AND actor_id = sess.auth_user_id;
+  WHERE request_id = p_request;
   IF receipt IS NULL OR receipt->>'status' IS DISTINCT FROM 'success' OR receipt->>'id' IS NULL THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
   BEGIN
     SELECT * INTO comm FROM public.communications
       WHERE id = (receipt->>'id')::uuid
-      FOR UPDATE;
+      FOR UPDATE SKIP LOCKED;
   EXCEPTION WHEN invalid_text_representation OR datatype_mismatch THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END;
-  IF NOT FOUND OR comm.id IS NULL OR comm.lifecycle IS DISTINCT FROM 'QUEUED' OR comm.content_locked IS NOT TRUE THEN
+  IF NOT FOUND THEN
+    IF EXISTS (SELECT 1 FROM public.communications WHERE id = (receipt->>'id')::uuid) THEN
+      RETURN jsonb_build_object('status', 'conflict', 'reason', 'locked');
+    END IF;
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
-  IF comm.template_key IS DISTINCT FROM 'GUIDED_PAYMENT_REQUEST'
-    OR comm.case_id IS DISTINCT FROM act.case_id
-    OR comm.customer_id IS DISTINCT FROM act.customer_id
-    OR comm.business_id IS DISTINCT FROM act.business_id
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
+  IF comm.lifecycle IS DISTINCT FROM 'QUEUED' OR comm.content_locked IS NOT TRUE THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
-  SELECT * INTO pay FROM public.customer_actions
-    WHERE id = comm.customer_action_id
-      AND kind = 'GUIDED_PAYMENT'
-      AND service_order_id = ord.id
-      AND customer_id = act.customer_id
-      AND case_id = act.case_id
-      AND business_id = act.business_id
-      AND location_id = act.location_id;
-  IF pay.id IS NULL THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'mismatch');
+  IF comm.template_key = 'PAYMENT_CONFIRMATION' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'payment_worker_owned');
+  END IF;
+  IF comm.template_key IS NULL OR comm.template_key NOT IN (
+    'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+    'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
   END IF;
   IF NOT EXISTS (
     SELECT 1
@@ -196,34 +164,49 @@ BEGIN
   ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_mismatch');
   END IF;
-  SELECT cs.public_ref INTO case_ref FROM public.cases cs WHERE cs.id = comm.case_id;
-  expected := p_customer_origin || '/portal/cases/' || coalesce(case_ref, '') || '/payments';
-  IF comm.body_html IS NULL
-    OR case_ref IS NULL
-    OR position(expected IN comm.body_text) = 0
-    OR position(expected IN comm.body_html) = 0
-    OR (length(comm.body_text) - length(replace(comm.body_text, expected, ''))) IS DISTINCT FROM length(expected)
-    OR (length(comm.body_html) - length(replace(comm.body_html, expected, ''))) IS DISTINCT FROM length(expected)
-    OR position('#t=' IN comm.body_text) > 0
-    OR position('#t=' IN comm.body_html) > 0
-    OR position('/action/' IN comm.body_text) > 0
-    OR position('/action/' IN comm.body_html) > 0
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
+  IF EXISTS (
+    SELECT 1 FROM admin_private.email_suppressions s
+    WHERE s.address_normalized = admin_private.normalize_email_v1(comm.recipient)
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'suppressed');
   END IF;
-  IF comm.delivery_status IN ('PROVIDER_ACCEPTED', 'DELIVERED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN
+  IF comm.delivery_status IN (
+    'PROVIDER_ACCEPTED', 'DELIVERED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE',
+    'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
+  ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'already_processed');
   END IF;
-  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' OR comm.first_provider_attempt_at IS NOT NULL THEN
+  v_key := 'send-email:' || comm.id::text || ':v' || comm.content_version::text;
+  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
   END IF;
-  v_key := 'send-email:' || comm.id::text || ':v' || comm.content_version::text;
   IF length(v_key) > 200 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
-  SELECT * INTO outbox FROM admin_private.job_outbox WHERE event_key = v_key FOR UPDATE SKIP LOCKED;
-  IF NOT FOUND THEN
-    IF EXISTS (SELECT 1 FROM admin_private.job_outbox WHERE event_key = v_key) THEN
-      RETURN jsonb_build_object('status', 'conflict', 'reason', 'locked');
+  SELECT cs.public_ref INTO v_case_ref FROM public.cases cs WHERE cs.id = comm.case_id;
+  v_link := admin_private.dev_mail_link_reason_v1(comm.template_key, comm.body_text, comm.body_html, p_customer_origin, v_case_ref);
+  IF v_link IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', v_link);
+  END IF;
+  IF comm.template_key = 'GUIDED_PACK_READY' THEN
+    expected := 'documents';
+    text_upload := substring(comm.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/(?:payments|documents)');
+    html_upload := substring(coalesce(comm.body_html, '') from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/(?:payments|documents)');
+    text_urls := admin_private.fulfilment_page_count_v1(comm.body_text, expected);
+    html_urls := admin_private.fulfilment_page_count_v1(comm.body_html, expected);
+    IF comm.body_html IS NULL
+      OR text_urls IS DISTINCT FROM 1
+      OR html_urls IS DISTINCT FROM 1
+      OR text_upload IS DISTINCT FROM html_upload
+      OR text_upload IS NULL
+      OR position(p_customer_origin || '/portal/cases/' IN text_upload) IS DISTINCT FROM 1
+      OR right(text_upload, length(expected)) IS DISTINCT FROM expected
+      OR position('/action/' in comm.body_text) > 0
+      OR position('/action/' in comm.body_html) > 0
+    THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
     END IF;
+  END IF;
+  SELECT * INTO outbox FROM admin_private.job_outbox WHERE event_key = v_key FOR UPDATE;
+  IF NOT FOUND THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
   IF outbox.topic IS DISTINCT FROM 'SEND_EMAIL'
@@ -235,6 +218,47 @@ BEGIN
   END IF;
   IF outbox.promoted_at IS NULL AND outbox.available_at > now() THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_ready');
+  END IF;
+  IF comm.first_provider_attempt_at IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    WHERE j.outbox_id = outbox.id
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RUNNING'
+      AND j.lease_expires_at IS NOT NULL
+      AND j.lease_expires_at >= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
+  END IF;
+  IF comm.first_provider_attempt_at IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    WHERE j.outbox_id = outbox.id
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RETRY'
+      AND j.scheduled_at <= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    WHERE j.outbox_id = outbox.id
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RUNNING'
+      AND j.lease_expires_at IS NOT NULL
+      AND j.lease_expires_at >= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    WHERE j.outbox_id = outbox.id
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'DEAD_LETTER'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter');
   END IF;
   IF outbox.promoted_at IS NULL THEN
     INSERT INTO admin_private.jobs(outbox_id, job_type, idempotency_key, payload, status, scheduled_at)
@@ -281,13 +305,13 @@ BEGIN
       WHERE id = row.id AND status IN ('PENDING', 'RETRY');
     RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter', 'jobId', row.id, 'jobStatus', 'DEAD_LETTER');
   END IF;
-  token := gen_random_uuid();
+  token := extensions.gen_random_uuid();
   SELECT coalesce(max(a.attempt_number), 0) + 1 INTO attempt_no
   FROM admin_private.job_attempts a WHERE a.job_id = row.id;
   UPDATE admin_private.jobs
     SET status = 'RUNNING', claimed_at = now(),
         lease_expires_at = now() + make_interval(secs => 120),
-        lease_owner = 'dev-send-email', lease_token = token,
+        lease_owner = 'dev-mail-dispatch', lease_token = token,
         attempts = row.attempts + 1, updated_at = now(),
         record_version = row.record_version + 1
     WHERE id = row.id AND attempts < max_attempts
@@ -296,12 +320,7 @@ BEGIN
     RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
   END IF;
   INSERT INTO admin_private.job_attempts(job_id, attempt_number, lease_owner, lease_token, deployment_id)
-  VALUES (row.id, attempt_no, 'dev-send-email', token, NULL);
-  PERFORM admin_private.write_record_audit_v1(
-    sess.auth_user_id, 'OPERATIONS_CHANGED', 'success', row.id, p_request, 'job',
-    'DEV payment acceptance claimed one queued payment email',
-    jsonb_build_object('operation', 'customer_dev_payment_send', 'jobType', 'SEND_EMAIL')
-  );
+  VALUES (row.id, attempt_no, 'dev-mail-dispatch', token, NULL);
   RETURN jsonb_build_object(
     'status', 'success',
     'replay', false,
@@ -314,9 +333,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.customer_action_claim_guided_payment_email_v1(text, uuid, text)
+REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_request_v1(uuid, text)
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.customer_action_claim_guided_payment_email_v1(text, uuid, text)
+GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_request_v1(uuid, text)
   TO service_role;
 
 -- Records a fixed handover reason for the accepted order. It does not accept

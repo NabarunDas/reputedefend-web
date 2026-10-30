@@ -120,7 +120,7 @@ export function PaymentsView({
       <header className={styles.summary}>
         <p className={styles.kicker}>Billing</p>
         <h1>{title}</h1>
-        <p>The order total is the amount recorded for the order. Receipts show what has been paid. A due obligation shows the amount recorded on that obligation.</p>
+        <p>The order total is the amount recorded for the order. Receipts show what has been paid. An amount still due is shown separately, and only when that amount has been recorded.</p>
       </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
       {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}

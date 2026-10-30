@@ -26,7 +26,7 @@ export function CustomerHeader({ accountName = null }: { accountName?: string | 
             alt=""
             width={logoSize.width}
             height={logoSize.height}
-            sizes="(max-width: 767px) 160px, 200px"
+            sizes="(max-width: 767px) 160px, 208px"
             className="customer-logo"
             priority
           />

@@ -196,7 +196,7 @@ describe("portal receipt download", () => {
     expect(response.headers.get("location")).toBeNull()
     const text = await response.text()
     expect(text).toContain("payment link is withheld")
-    expect(text).toContain("does not say the payment provider has cancelled")
+    expect(text).toContain("The invoice has not been cancelled")
     expect(text).not.toContain(hosted)
   })
 

@@ -11,7 +11,7 @@ import { billingPdfResponse } from "./pdf-response"
 
 const UNAVAILABLE = "This invoice is no longer available."
 const RETRY = "This invoice can't be downloaded right now. Please try again shortly."
-const PAUSED = "Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. This does not say the payment provider has cancelled the invoice."
+const PAUSED = "Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. The invoice has not been cancelled."
 const SELECTOR = /^ca-[a-f0-9]{64}$/
 
 function textReply(message: string, http: number) {

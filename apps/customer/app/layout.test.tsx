@@ -118,7 +118,7 @@ describe("customer layout", () => {
     const config = readFileSync(join(process.cwd(), "next.config.mjs"), "utf8")
     expect(header).not.toContain("unoptimized")
     expect(footer).not.toContain("unoptimized")
-    expect(header).toContain('sizes="(max-width: 767px) 160px, 200px"')
+    expect(header).toContain('sizes="(max-width: 767px) 160px, 208px"')
     expect(footer).toContain('sizes="180px"')
     expect(header).toContain("width={logoSize.width}")
     expect(header).toContain("height={logoSize.height}")

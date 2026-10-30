@@ -50,7 +50,7 @@ button, input, textarea { font: inherit; color: inherit; }
 
 /* accessibility */
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--green);
   outline-offset: 3px;
 }
 
@@ -120,7 +120,7 @@ main.customer-main > section.auth-card {
   z-index: 20;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
-  min-height: 68px;
+  min-height: 4.75rem;
   min-width: 0;
 }
 
@@ -135,7 +135,7 @@ main.customer-main > section.auth-card {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 68px;
+  min-height: 4.75rem;
   min-width: 0;
   padding-block: 10px;
 }
@@ -151,7 +151,7 @@ main.customer-main > section.auth-card {
 
 .customer-header .customer-logo {
   display: block;
-  width: 160px;
+  width: clamp(136px, 36vw, 208px);
   max-width: 100%;
   height: auto;
 }
@@ -344,7 +344,7 @@ textarea:hover {
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 textarea:focus {
   border-color: var(--green);
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--green);
   outline-offset: 2px;
 }
 
@@ -425,7 +425,7 @@ input.otp-control:not([type="checkbox"]):not([type="radio"]):not([type="file"]):
 
 .otp-slot[data-current="true"] {
   border-color: var(--green);
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--green);
   outline-offset: 2px;
 }
 
@@ -1145,8 +1145,6 @@ main.customer-main > section .document-list a {
     width: min(720px, calc(100% - 24px));
   }
 
-  .customer-header .customer-logo { width: 148px; }
-
   .customer-header-return {
     max-width: 8.25rem;
     font-size: 0.8125rem;
@@ -1232,13 +1230,6 @@ main.customer-main > section .document-list a {
   .customer-container {
     width: min(1180px, calc(100% - 48px));
   }
-
-  .customer-header,
-  .customer-header-inner {
-    min-height: 76px;
-  }
-
-  .customer-header .customer-logo { width: 200px; }
 
   .customer-header-return { max-width: none; }
 

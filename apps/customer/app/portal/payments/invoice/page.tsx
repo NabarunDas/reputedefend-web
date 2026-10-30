@@ -27,7 +27,7 @@ export default async function InvoicePage({
     return (
       <div className="billing-page">
         <h1>Payment request withheld</h1>
-        <p>Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. This does not say the payment provider has cancelled the invoice.</p>
+        <p>Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. The invoice has not been cancelled.</p>
         <p className="case-back"><a href={`/portal/cases/${reference}/payments`}>Back to payments</a></p>
       </div>
     )

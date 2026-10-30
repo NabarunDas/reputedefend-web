@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import PortalLayout from "../../layout"
 import { CaseUnavailable, CaseWorkspace } from "./case-workspace"
+import { GUIDED_PROGRESS_NOTE, MANAGED_PROGRESS_NOTE } from "@/lib/portal/cases/workspace"
 import { parseCaseDetail, type CustomerCaseDetail } from "@/lib/portal/cases/parse"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/cases/PR-26-ABCDEF" }))
@@ -81,6 +82,9 @@ describe("customer case workspace", () => {
     const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Information")
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Now")
+    expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Your step")
+    expect(screen.getByText(GUIDED_PROGRESS_NOTE)).toBeTruthy()
+    expect(screen.queryByText(MANAGED_PROGRESS_NOTE)).toBeNull()
     expect(screen.getByText("Case received")).toBeTruthy()
     expect(screen.getByText("Pack ready for you")).toBeTruthy()
     expect(screen.queryByText("Submitted to Google")).toBeNull()
@@ -145,6 +149,8 @@ describe("customer case workspace", () => {
     expect(screen.getByRole("heading", { name: "The review was removed" })).toBeTruthy()
     expect(screen.getByText("This case is complete.")).toBeTruthy()
     expect(screen.getByText("Decision")).toBeTruthy()
+    expect(screen.getByText(MANAGED_PROGRESS_NOTE)).toBeTruthy()
+    expect(screen.queryByText(GUIDED_PROGRESS_NOTE)).toBeNull()
     expect(screen.getByText("The review was removed and the case was completed.")).toBeTruthy()
     expect(screen.queryByText("Complete history")).toBeNull()
 

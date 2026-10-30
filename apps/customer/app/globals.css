@@ -718,24 +718,70 @@ form button { margin: 1rem 0; }
 }
 
 .case-card {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
   min-width: 0;
-  padding: 1rem 1.1rem;
+  padding: 1.15rem 1.2rem 1.2rem;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: none;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   overflow-wrap: anywhere;
 }
 
+.case-card-active {
+  border-color: var(--green);
+  box-shadow: var(--shadow-card);
+}
+
+.case-card-complete {
+  background: var(--paper);
+  border-left: 4px solid var(--lime);
+}
+
+.case-card-cancelled {
+  background: var(--paper);
+  border-left: 4px solid var(--line);
+}
+
+.case-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  align-items: flex-start;
+}
+
+.case-card-identity { min-width: 0; flex: 1 1 12rem; }
+
+.case-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.45rem;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+}
+
+.case-meta .case-service::before {
+  content: "·";
+  margin-right: 0.45rem;
+}
+
 .case-ref {
-  margin: 0 0 0.25rem;
+  margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
   letter-spacing: 0.04em;
   overflow-wrap: anywhere;
 }
 
-.case-title { margin: 0 0 0.35rem; }
+.case-title {
+  margin: 0;
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
 
 .case-business,
 .case-location,
@@ -829,7 +875,14 @@ form button { margin: 1rem 0; }
 }
 
 .case-open,
-.case-back { margin: 1rem 0 0; }
+.case-back { margin: 0.25rem 0 0; }
+
+.case-open .portal-button {
+  width: 100%;
+  color: var(--paper);
+}
+
+.cases-empty { margin: 0; }
 
 .case-workspace {
   min-width: 0;
@@ -854,7 +907,41 @@ form button { margin: 1rem 0; }
 
 .case-workspace-header { min-width: 0; }
 
-.case-workspace-header h1,
+.case-summary-band {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 1.15rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.case-summary-identity,
+.case-summary-status { min-width: 0; }
+
+.case-identity-business {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.case-stage {
+  margin: 0.35rem 0 0;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.case-workspace-header h1 {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: clamp(1.7rem, 3vw, 2.25rem);
+  line-height: 1.12;
+}
+
 .case-next h2,
 .case-next h3 { margin-bottom: 0.35rem; }
 
@@ -913,9 +1000,17 @@ form button { margin: 1rem 0; }
 
 .case-details {
   display: grid;
-  gap: 0.85rem;
+  gap: 0;
   margin: 0.75rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
 }
+
+.case-details > div { padding: 0.8rem 1rem; }
+
+.case-details > div + div { border-top: 1px solid var(--line); }
 
 .case-details div { min-width: 0; }
 
@@ -930,6 +1025,13 @@ form button { margin: 1rem 0; }
 }
 
 @media (min-width: 768px) {
+  .case-summary-band {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .case-summary-status { text-align: right; }
+
   .case-details {
     grid-template-columns: 11rem 1fr;
   }
@@ -944,6 +1046,10 @@ form button { margin: 1rem 0; }
 }
 
 @media (min-width: 1024px) {
+  .cases-page .case-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .case-progress {
     grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
   }
@@ -1642,15 +1748,35 @@ main.customer-main > section .document-list a {
 
 .case-progress-label { display: block; }
 
+.case-progress-note {
+  max-width: 42rem;
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
 .case-progress-now {
   display: inline-block;
   margin-top: 0.35rem;
+  margin-right: 0.45rem;
   color: var(--green-dark);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.case-progress-owner {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.case-progress-owner-you { color: var(--green-dark); }
+
+.case-progress-owner-team { color: var(--ink); }
+
+.case-progress-owner-recorded { color: var(--muted); }
 
 .case-progress-current {
   box-shadow: inset 4px 0 0 var(--green);
@@ -1663,6 +1789,14 @@ main.customer-main > section .document-list a {
 }
 
 .timeline-more { margin-top: 0.75rem; }
+
+.timeline-more[open] .case-timeline {
+  max-height: 24rem;
+  margin-top: 0.35rem;
+  padding-right: 0.35rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .timeline-more summary {
   min-height: 44px;
@@ -1691,8 +1825,18 @@ main.customer-main > section .document-list a {
 .message-recorded { display: grid; gap: 0.2rem; min-width: 0; }
 
 .message-row-title {
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.message-row-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .message-row-action {
@@ -1720,6 +1864,37 @@ main.customer-main > section .document-list a {
 .message-row time { white-space: nowrap; }
 
 .message-body p { margin: 0 0 0.85rem; }
+
+.message-reading {
+  max-width: 42rem;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.message-entry-team { border-left: 3px solid var(--green); }
+
+.message-entry-customer {
+  border-left: 3px solid var(--green-dark);
+  background: var(--warm);
+}
+
+.message-reply {
+  max-width: 42rem;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.message-more summary {
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.messages-empty p:last-child { margin-bottom: 0; }
 
 .message-recorded { margin: 0 0 1rem; }
 
@@ -1781,10 +1956,16 @@ main.customer-main > section .document-list a {
 }
 
 .document-row h3,
-.document-file h3 { margin: 0; font-size: 1.02rem; overflow-wrap: anywhere; }
+.document-file h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
 
 .document-case-identity { display: grid; gap: 0.15rem; min-width: 0; }
-.document-case-business { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.document-case-business {
+  margin: 0;
+  font-family: var(--font-display), "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
 .document-case-location,
 .document-case-service,
 .document-filename,
@@ -1793,9 +1974,22 @@ main.customer-main > section .document-list a {
 .document-file-role { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .document-published,
 .document-file-role { font-size: 0.85rem; }
-.document-pack-note { display: grid; gap: 0.35rem; }
+.document-pack-note {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--lime);
+}
 .document-pack-title { margin: 0; font-weight: 700; }
-.documents-status { margin: 0 0 1rem; color: var(--muted); }
+.documents-status { margin: 0; color: var(--muted); }
+.documents-empty {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
 .documents-action,
 .documents-ready,
 .documents-history { display: grid; gap: 0.75rem; }
@@ -2010,6 +2204,11 @@ main.customer-main > section .document-list a {
 }
 
 @media (min-width: 1024px) {
+  .portal-dashboard.cases-page,
+  .portal-dashboard.state-panel {
+    display: block;
+  }
+
   .portal-dashboard {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);

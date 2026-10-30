@@ -31,7 +31,7 @@ export function CasesView({ view, page }: { view: CasesView; page: CustomerCaseP
     ? `/portal/cases?view=${view}&before=${encodeURIComponent(next.submittedAt)}&ref=${encodeURIComponent(next.reference)}`
     : null
   return (
-    <div className="portal-dashboard">
+    <div className="portal-dashboard cases-page">
       <h1>Cases</h1>
       <p className="lead">See your active and previous ProfileRelaunch cases.</p>
       <nav aria-label="Case filters">
@@ -48,7 +48,7 @@ export function CasesView({ view, page }: { view: CasesView; page: CustomerCaseP
           })}
         </ul>
       </nav>
-      {cases.length === 0 ? <p>{EMPTY[view]}</p> : (
+      {cases.length === 0 ? <p className="state-panel cases-empty">{EMPTY[view]}</p> : (
         <ul className="case-list">
           {cases.map(item => (
             <li key={item.reference}>

@@ -90,9 +90,24 @@ describe("customer progress presentation", () => {
     expect(handedOver?.find(step => step.position === "current")?.code).toBe("HANDOVER")
     expect(handedOver?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
     expect(customerProgressStep("CLOSED", "FINISHED", "GUIDED")).toBe("HANDOVER")
+    expect(handedOver?.find(step => step.position === "current")?.ownerLabel).toBe("Your step")
+    expect(preparing?.find(step => step.code === "PREPARATION")?.ownerLabel).toBe("ProfileRelaunch")
+    const reopened = presentProgress("UNDER_REVIEW", "PREPARATION", { serviceTrack: "GUIDED", packPublished: false })
+    expect(reopened?.find(step => step.position === "current")?.label).toBe("Preparing your pack")
+    expect(reopened?.find(step => step.code === "HANDOVER")?.position).toBe("upcoming")
+    expect(reopened?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
+    expect(presentProgress("UNDER_REVIEW", "PREPARATION", { serviceTrack: "MANAGED" })?.map(step => step.label)).toEqual([
+      "Case received",
+      "Information",
+      "Service setup",
+      "Preparing your case",
+      "Submitted to Google",
+      "Decision",
+    ])
     expect(customerProgressStep("CLOSED", "INITIAL_REVIEW", "GUIDED")).toBe("RECEIVED")
     const submitted = presentProgress("UNDER_REVIEW", "SUBMITTED", { serviceTrack: "GUIDED" })
     expect(submitted?.find(step => step.position === "current")?.label).toBe("Submission recorded")
+    expect(submitted?.find(step => step.position === "current")?.ownerLabel).toBe("Recorded")
     expect(submitted?.some(step => step.code === "DECISION")).toBe(false)
     const decided = presentProgress("CLOSED", "FINISHED", {
       serviceTrack: "GUIDED",

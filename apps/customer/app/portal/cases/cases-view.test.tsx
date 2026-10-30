@@ -77,6 +77,20 @@ describe("cases page", () => {
     expect(next.getAttribute("href")).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/)
   })
 
+  it("distinguishes active, completed and cancelled cards without changing the view-case control", () => {
+    render(<CasesView view="all" page={page([
+      row(),
+      row({ reference: "PR-26-CLOSED", status: "CLOSED", workStage: "FINISHED", attentionItems: [], closedAt: submittedAt }),
+      row({ reference: "PR-26-CANCLD", status: "CANCELLED", workStage: "FINISHED", attentionItems: [], closedAt: submittedAt }),
+    ])} />)
+    expect(document.querySelector(".case-card-active")).toBeTruthy()
+    expect(document.querySelector(".case-card-complete")).toBeTruthy()
+    expect(document.querySelector(".case-card-cancelled")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "View case PR-26-CLOSED" })).toHaveAttribute("href", "/portal/cases/PR-26-CLOSED")
+    expect(screen.getByRole("link", { name: "View case PR-26-CANCLD" })).toHaveAttribute("href", "/portal/cases/PR-26-CANCLD")
+    expect(screen.getAllByRole("link", { name: /^View case / })).toHaveLength(3)
+  })
+
   it("uses the empty copy for each filter and a distinct failure", () => {
     const { rerender } = render(<CasesView view="active" page={page([])} />)
     expect(screen.getByText("You don't have any active cases.")).toBeTruthy()

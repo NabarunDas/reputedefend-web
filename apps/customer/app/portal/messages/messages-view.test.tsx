@@ -49,7 +49,7 @@ describe("messages page", () => {
     expect(row).toHaveTextContent("Case PR-26-ABCDEF")
     expect(row).toHaveTextContent("Harbour Bakery, High Street")
     expect(row).toHaveTextContent("4 Sept 2026, 13:00")
-    expect(screen.queryByText("Plain update for you.")).toBeNull()
+    expect(screen.getByText("Plain update for you.")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page")
     expect(screen.queryByText(/email you sent/i)).toBeNull()
     expect(screen.queryByText(/This page does not send messages/)).toBeNull()
@@ -140,5 +140,23 @@ describe("messages page", () => {
     expect(screen.getByText(requested)).toBeTruthy()
     expect(screen.queryByText(stored)).toBeNull()
     expect(screen.queryByRole("textbox")).toBeNull()
+  })
+
+  it("keeps a long message readable and collapses only the extra paragraphs", () => {
+    const paragraphs = ["First update.", "Second update.", "Third update.", "Fourth update.", "Fifth update."]
+    render(<MessageView thread={{
+      ...thread({ subject: "A longer update", state: "Message from ProfileRelaunch" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch", at, subject: null, body: paragraphs.join("\n\n"), delivery: null }],
+    }} />)
+    expect(screen.getByText("First update.")).toBeTruthy()
+    expect(screen.getByText("Second update.")).toBeTruthy()
+    const summary = screen.getByText("Show the rest of this message")
+    const details = summary.closest("details")
+    expect(details).not.toHaveAttribute("open")
+    expect(details).toHaveTextContent("Fifth update.")
+    expect(document.querySelector(".message-entry-team")).toBeTruthy()
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(screen.getByText("To reply, use the email ProfileRelaunch sent you.")).toBeTruthy()
   })
 })

@@ -49,6 +49,38 @@ export type PresentedProgressStep = {
   label: string
   position: ProgressPosition
   text: string
+  /** Who the customer should understand as responsible for this stage. */
+  ownerLabel: "Your step" | "ProfileRelaunch" | "Recorded"
+}
+
+export const GUIDED_PROGRESS_NOTE = "Preparation, a published pack, a submission to Google, and Google's decision are separate. This page only shows a decision when one has been recorded."
+
+export const MANAGED_PROGRESS_NOTE = "ProfileRelaunch prepares and submits a managed case. An outcome appears here only after it has been recorded."
+
+export function progressContext(serviceTrack: string | undefined): string | null {
+  if (serviceTrack === "GUIDED") return GUIDED_PROGRESS_NOTE
+  if (serviceTrack === "MANAGED") return MANAGED_PROGRESS_NOTE
+  return null
+}
+
+function progressOwnerLabel(code: CustomerProgressStep): PresentedProgressStep["ownerLabel"] {
+  switch (code) {
+    case "INFORMATION":
+    case "SERVICE_SETUP":
+    case "HANDOVER":
+      return "Your step"
+    case "SUBMISSION":
+    case "DECISION":
+      return "Recorded"
+    case "RECEIVED":
+    case "PREPARATION":
+    case "SUBMITTED":
+      return "ProfileRelaunch"
+    default: {
+      const unreachable: never = code
+      return unreachable
+    }
+  }
 }
 
 const TIMELINE_MESSAGES: Record<CustomerTimelineCode, string> = {
@@ -163,7 +195,13 @@ export function presentProgress(
   return steps.map((step, stepIndex) => {
     const position: ProgressPosition = stepIndex < index ? "earlier" : stepIndex === index ? "current" : "upcoming"
     const state = position === "earlier" ? "Completed" : position === "current" ? "Now" : "Upcoming"
-    return { code: step.code, label: step.label, position, text: `${step.label}. ${state}.` }
+    return {
+      code: step.code,
+      label: step.label,
+      position,
+      text: `${step.label}. ${state}.`,
+      ownerLabel: progressOwnerLabel(step.code),
+    }
   })
 }
 

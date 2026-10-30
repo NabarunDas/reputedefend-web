@@ -19,4 +19,11 @@ export const brandAppleIcon = "/apple-icon.png"
 /** Natural pixel size of the approved horizontal lockup. */
 export const logoSize = { width: 1932, height: 446 } as const
 
+/**
+ * Display width of `.customer-header .customer-logo`: `clamp(136px, 36vw, 208px)`.
+ * 36vw reaches 136px at 378px and 208px at 578px, so the image slot matches
+ * those breakpoints instead of assuming 160px below 768px.
+ */
+export const customerHeaderLogoSizes = "(max-width: 377px) 136px, (max-width: 577px) 36vw, 208px"
+
 export const marketingHomeLabel = `${brandName} home`

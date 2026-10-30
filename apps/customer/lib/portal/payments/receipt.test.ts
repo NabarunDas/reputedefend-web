@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -15,6 +15,8 @@ vi.mock("@/lib/backend", async original => ({
 import { billingPdfText } from "../../../../../lib/billing/document-pdf"
 import { portalReceiptDownload } from "./receipt"
 import { portalInvoiceOpen } from "./invoice"
+import { portalInvoiceDocument } from "@/lib/portal/billing/invoice-document"
+import { PAUSED_INVOICE_MESSAGE } from "./paused-invoice"
 import { portalSessionCookieName } from "@/lib/portal/config"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -195,9 +197,31 @@ describe("portal receipt download", () => {
     expect(response.status).toBe(409)
     expect(response.headers.get("location")).toBeNull()
     const text = await response.text()
-    expect(text).toContain("payment link is withheld")
-    expect(text).toContain("The invoice has not been cancelled")
+    expect(text).toBe(PAUSED_INVOICE_MESSAGE)
+    expect(text).not.toMatch(/cancel|void|uncollectible|stripe/i)
     expect(text).not.toContain(hosted)
+  })
+
+  it("withholds the invoice document with the same paused sentence and does not claim it is uncancelled", async () => {
+    mocks.rpc.mockResolvedValue({ status: "collection_paused" })
+    const response = await portalInvoiceDocument(new NextRequest(
+      `${origin}/api/portal/payments/invoice-document?reference=PR-26-ABCDEF&selector=${actionSelector}`,
+      { headers: { cookie: `${portalSessionCookieName()}=${token}` } },
+    ))
+    expect(response.status).toBe(409)
+    expect(response.headers.get("content-type")).toContain("text/plain")
+    expect(response.headers.get("location")).toBeNull()
+    const text = await response.text()
+    expect(text).toBe(PAUSED_INVOICE_MESSAGE)
+    expect(text).not.toMatch(/cancel|void|uncollectible|stripe/i)
+    expect(text).not.toContain(hosted)
+    const page = readFileSync(join(process.cwd(), "app/portal/payments/invoice/page.tsx"), "utf8")
+    const hostedSource = readFileSync(join(process.cwd(), "lib/portal/payments/invoice.ts"), "utf8")
+    const documentSource = readFileSync(join(process.cwd(), "lib/portal/billing/invoice-document.ts"), "utf8")
+    for (const source of [page, hostedSource, documentSource]) {
+      expect(source).toContain("PAUSED_INVOICE_MESSAGE")
+      expect(source).not.toMatch(/has not been cancelled|payment provider has cancelled/)
+    }
   })
 
   it("does not redirect a hosted invoice to an untrusted address", async () => {

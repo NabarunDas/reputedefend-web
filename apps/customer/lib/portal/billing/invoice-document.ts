@@ -7,11 +7,11 @@ import { portalAvailable, portalSessionCookieName } from "@/lib/portal/config"
 import { BillingDocumentError } from "../../../../../lib/billing/document"
 import { documentFromInvoice } from "./present"
 import { parseInvoiceDocument } from "./parse"
+import { PAUSED_INVOICE_MESSAGE } from "../payments/paused-invoice"
 import { billingPdfResponse } from "./pdf-response"
 
 const UNAVAILABLE = "This invoice is no longer available."
 const RETRY = "This invoice can't be downloaded right now. Please try again shortly."
-const PAUSED = "Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. The invoice has not been cancelled."
 const SELECTOR = /^ca-[a-f0-9]{64}$/
 
 function textReply(message: string, http: number) {
@@ -40,7 +40,7 @@ export async function portalInvoiceDocument(request: NextRequest) {
     })
     if (resolved == null) return textReply("Sign in again to download this invoice.", 401)
     const invoice = parseInvoiceDocument(resolved)
-    if (invoice === "collection_paused") return textReply(PAUSED, 409)
+    if (invoice === "collection_paused") return textReply(PAUSED_INVOICE_MESSAGE, 409)
     if (invoice === "not_found" || !invoice) return textReply(UNAVAILABLE, 404)
     const document = documentFromInvoice(invoice)
     if (!document) return textReply(UNAVAILABLE, 404)

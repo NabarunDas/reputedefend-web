@@ -3,6 +3,7 @@ import { portalAvailable } from "@/lib/portal/config"
 import { isPublicCaseReference } from "@/lib/portal/cases/parse"
 import { loadInvoiceDocument } from "@/lib/portal/billing/load"
 import { BillingDocumentScreen, BillingUnavailable } from "@/lib/portal/billing/view"
+import { PAUSED_INVOICE_MESSAGE } from "@/lib/portal/payments/paused-invoice"
 
 export const metadata = { title: "Invoice" }
 
@@ -26,8 +27,8 @@ export default async function InvoicePage({
   if (loaded.status === "paused") {
     return (
       <div className="billing-page">
-        <h1>Payment request withheld</h1>
-        <p>Collection of this success fee is paused while the outcome is disputed. This payment request is withheld. The invoice has not been cancelled.</p>
+        <h1>Payment collection is paused</h1>
+        <p>{PAUSED_INVOICE_MESSAGE}</p>
         <p className="case-back"><a href={`/portal/cases/${reference}/payments`}>Back to payments</a></p>
       </div>
     )

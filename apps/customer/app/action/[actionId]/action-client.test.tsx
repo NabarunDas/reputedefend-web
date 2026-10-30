@@ -65,6 +65,16 @@ async function sendCodeSuccessfully() {
 }
 
 describe("customer action page", () => {
+  it("still exchanges once when the effect is mounted twice", async () => {
+    window.history.replaceState(null, "", `/action/${actionId}#t=${"b".repeat(64)}`)
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", maskedEmail: "a***@example.com" }) })
+    render(<React.StrictMode><ActionClient actionId={actionId} /></React.StrictMode>)
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send code" })).toBeTruthy())
+    const exchanges = fetchMock.mock.calls.filter(call => String(call[0]).includes("/api/action/exchange"))
+    expect(exchanges).toHaveLength(1)
+    expect(window.location.hash).toBe("")
+  })
+
   it("exchanges the fragment secret and removes it without using web storage", async () => {
     await renderAfterExchange("a***@example.com")
     expect(window.location.hash).toBe("")

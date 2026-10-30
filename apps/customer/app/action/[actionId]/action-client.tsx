@@ -166,15 +166,20 @@ export function ActionClient({ actionId }: { actionId: string }) {
   const [message, setMessage] = useState("")
   const [maskedEmail, setMaskedEmail] = useState("")
   const [session, setSession] = useState<Session | null>(null)
-  const exchanged = useRef(false)
+  const secretRef = useRef<string | null>(null)
   const resendTimer = useRef<number | null>(null)
   useEffect(() => {
-    if (exchanged.current) return
-    exchanged.current = true
-    const hash = window.location.hash
-    const secret = hash.startsWith("#t=") ? hash.slice(3) : ""
-    history.replaceState(null, "", window.location.pathname + window.location.search)
+    let active = true
+    if (secretRef.current === null) {
+      const hash = window.location.hash
+      secretRef.current = hash.startsWith("#t=") ? hash.slice(3) : ""
+      history.replaceState(null, "", window.location.pathname + window.location.search)
+    }
+    const secret = secretRef.current
     const timer = window.setTimeout(() => {
+      // Development Strict Mode clears the first timer after the fragment has
+      // already been removed. Keep the secret and start the check again.
+      if (!active) return
       if (!secret) { setPhase("unavailable"); return }
       void fetch("/api/action/exchange", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -186,7 +191,10 @@ export function ActionClient({ actionId }: { actionId: string }) {
         setPhase("otp")
       }).catch(() => setPhase("unavailable"))
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [actionId])
   useEffect(() => () => { if (resendTimer.current) window.clearTimeout(resendTimer.current) }, [])
 

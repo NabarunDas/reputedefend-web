@@ -63,6 +63,7 @@ const upgradedFiles = [
   "20261028223000_admin_pack_mail_context_volatile_v1.sql",
   "20261029000000_dev_mail_dispatch_v1.sql",
   "20261029010000_dev_mail_shared_dispatch_v1.sql",
+  "20261030120000_guided_pack_stage_sync_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()

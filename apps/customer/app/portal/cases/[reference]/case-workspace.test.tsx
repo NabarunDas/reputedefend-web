@@ -271,7 +271,7 @@ describe("customer case workspace", () => {
     const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Pack ready for you")
     expect(screen.getByText("Your pack was published for you to download.")).toBeTruthy()
-    expect(screen.getByText("The pack-ready email was delivered. That record is not you reading it.")).toBeTruthy()
+    expect(screen.getByText("We emailed you to let you know your pack is ready.")).toBeTruthy()
     expect(screen.queryByText("Submitted to Google")).toBeNull()
 
     rerender(<CaseWorkspace detail={published} packHref={null} packPublished={false} />)
@@ -279,6 +279,117 @@ describe("customer case workspace", () => {
     expect(screen.getByText("Nothing is needed from you right now. We'll let you know when your pack is ready.")).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Download your pack" })).toBeNull()
     expect(screen.getByRole("heading", { name: "Progress" }).parentElement?.querySelector("[aria-current='step']")).toHaveTextContent("Preparing your pack")
+  })
+
+  it("shows a completed Guided preparation, and the pack only while it is still available", () => {
+    const closed = detail({
+      attentionItems: [],
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+    }, {
+      timeline: [
+        { code: "CASE_COMPLETED", occurredAt: closedAt },
+        { code: "PACK_PUBLISHED", occurredAt: "2026-10-07T09:00:00.000Z" },
+        { code: "CASE_RECEIVED", occurredAt: submittedAt },
+      ],
+    })
+    const { rerender } = render(<CaseWorkspace detail={closed} packHref="/portal/cases/PR-26-ABCDEF/documents" packPublished />)
+    expect(screen.getByText("Preparation complete")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Your Guided preparation is complete" })).toBeTruthy()
+    expect(screen.getByText("Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open your pack" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
+    const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
+    expect(progress?.querySelector("[aria-current='step']")).toBeNull()
+    expect(progress).toHaveTextContent("Pack ready for you")
+    expect(progress).toHaveTextContent("Completed")
+    expect(progress).not.toHaveTextContent("Now")
+    expect(screen.queryByText("Submitted to Google")).toBeNull()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+
+    rerender(<CaseWorkspace detail={closed} packHref={null} packPublished={false} />)
+    expect(screen.queryByRole("link", { name: "Open your pack" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Download your pack" })).toBeNull()
+    expect(screen.getByText("Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.")).toBeTruthy()
+    const withoutPack = screen.getByRole("heading", { name: "Progress" }).parentElement
+    expect(withoutPack?.querySelector("[aria-current='step']")).toBeNull()
+    expect(withoutPack).not.toHaveTextContent("Pack ready for you")
+    expect(withoutPack).not.toHaveTextContent("Now")
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+    expect(screen.queryByText("Submitted to Google")).toBeNull()
+  })
+
+  it("shows a recorded customer submission and a recorded Google decision", () => {
+    const { rerender } = render(<CaseWorkspace detail={detail({
+      attentionItems: [],
+      status: "UNDER_REVIEW",
+      workStage: "SUBMITTED",
+    }, {
+      timeline: [
+        { code: "SUBMITTED_TO_GOOGLE", occurredAt: "2026-10-06T09:00:00.000Z" },
+        { code: "CASE_RECEIVED", occurredAt: submittedAt },
+      ],
+    })} />)
+    expect(screen.getByRole("heading", { name: "A submission has been recorded" })).toBeTruthy()
+    expect(screen.getByText("We've recorded that this pack was sent to Google. That record is not a decision from Google.")).toBeTruthy()
+    const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
+    expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Submission recorded")
+    expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Now")
+    expect(screen.queryByText("Decision")).toBeNull()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      attentionItems: [],
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+      outcomeCode: "RESTORED",
+    }, {
+      timeline: [
+        { code: "CASE_COMPLETED", occurredAt: closedAt },
+        { code: "GOOGLE_DECISION_RECORDED", occurredAt: "2026-10-07T09:00:00.000Z" },
+        { code: "SUBMITTED_TO_GOOGLE", occurredAt: "2026-10-06T09:00:00.000Z" },
+      ],
+    })} />)
+    expect(screen.getByRole("heading", { name: "Your profile was restored" })).toBeTruthy()
+    const decided = screen.getByRole("heading", { name: "Progress" }).parentElement
+    expect(decided?.querySelector("[aria-current='step']")).toHaveTextContent("Decision")
+    expect(decided).toHaveTextContent("Submission recorded")
+    expect(decided?.querySelector("[aria-current='step']")).not.toHaveTextContent("Submission recorded")
+    expect(screen.queryByText("Preparation complete")).toBeNull()
+
+    rerender(<CaseWorkspace detail={detail({
+      attentionItems: [],
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+    }, {
+      timeline: [
+        { code: "GOOGLE_DECISION_RECORDED", occurredAt: "2026-10-07T09:00:00.000Z" },
+        { code: "CASE_RECEIVED", occurredAt: submittedAt },
+      ],
+    })} />)
+    expect(screen.getByRole("heading", { name: "A Google decision was recorded" })).toBeTruthy()
+    expect(screen.getByText("We've recorded a decision from Google for this case.")).toBeTruthy()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+    expect(screen.queryByText("Preparation complete")).toBeNull()
+    expect(screen.getByRole("heading", { name: "Progress" }).parentElement?.querySelector("[aria-current='step']")).toHaveTextContent("Decision")
+  })
+
+  it("keeps two updates from the same day without an extra note", () => {
+    renderWorkspace(detail({ attentionItems: [], status: "UNDER_REVIEW", workStage: "PREPARATION" }, {
+      timeline: [
+        { code: "PAYMENT_RECEIVED", occurredAt: "2026-10-04T15:00:00.000Z" },
+        { code: "PAYMENT_RECEIVED", occurredAt: "2026-10-04T12:00:00.000Z" },
+      ],
+    }))
+    const times = document.querySelectorAll(".case-timeline time")
+    expect(times).toHaveLength(2)
+    expect(times[0]).toHaveAttribute("dateTime", "2026-10-04T15:00:00.000Z")
+    expect(times[1]).toHaveAttribute("dateTime", "2026-10-04T12:00:00.000Z")
+    expect(screen.getAllByText("We received a payment for this case.")).toHaveLength(2)
+    expect(screen.queryByText("Separate event on this day.")).toBeNull()
+    expect(screen.queryByText(/Separate event/)).toBeNull()
   })
 
   it("shows a load failure that is not a missing case", () => {

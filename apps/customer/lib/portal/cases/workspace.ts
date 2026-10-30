@@ -53,9 +53,9 @@ export type PresentedProgressStep = {
   ownerLabel: "Your step" | "ProfileRelaunch" | "Recorded"
 }
 
-export const GUIDED_PROGRESS_NOTE = "Preparation, a published pack, a submission to Google, and Google's decision are separate. This page only shows a decision when one has been recorded."
+export const GUIDED_PROGRESS_NOTE = "We prepare your pack. Sending it to Google is a separate step, and a Google decision appears here only after one has been recorded."
 
-export const MANAGED_PROGRESS_NOTE = "ProfileRelaunch prepares and submits a managed case. An outcome appears here only after it has been recorded."
+export const MANAGED_PROGRESS_NOTE = "We prepare your case and send it to Google. A Google decision appears here only after one has been recorded."
 
 export function progressContext(serviceTrack: string | undefined): string | null {
   if (serviceTrack === "GUIDED") return GUIDED_PROGRESS_NOTE
@@ -94,7 +94,7 @@ const TIMELINE_MESSAGES: Record<CustomerTimelineCode, string> = {
   CASE_PERMISSION_WITHDRAWN: "Case-management permission was withdrawn.",
   PAYMENT_RECEIVED: "We received a payment for this case.",
   PACK_PUBLISHED: "Your pack was published for you to download.",
-  NOTIFICATION_DELIVERED: "The pack-ready email was delivered. That record is not you reading it.",
+  NOTIFICATION_DELIVERED: "We emailed you to let you know your pack is ready.",
   SUBMITTED_TO_GOOGLE: "Your case was submitted to Google.",
   GOOGLE_DECISION_RECORDED: "A Google decision was recorded for your case.",
   CASE_COMPLETED: "This ProfileRelaunch case was completed.",
@@ -171,6 +171,19 @@ export function customerProgressStep(
   return stageStep(workStage)
 }
 
+/** Closed Guided preparation, with no recorded submission and no recorded Google decision. */
+function guidedPreparationSettled(
+  status: CaseStatus,
+  workStage: WorkStage,
+  serviceTrack: string | undefined,
+  evidence?: ProgressEvidence,
+): boolean {
+  if (serviceTrack !== "GUIDED" || status !== "CLOSED" || workStage !== "FINISHED") return false
+  if (evidence?.outcomeCode) return false
+  const google = recordedGoogle(evidence)
+  return !google.submission && !google.decision
+}
+
 function progressList(current: CustomerProgressStep, serviceTrack: string | undefined, evidence?: ProgressEvidence) {
   if (serviceTrack !== "GUIDED") return CUSTOMER_PROGRESS_STEPS
   const google = recordedGoogle(evidence)
@@ -189,11 +202,15 @@ export function presentProgress(
   const evidence = { outcomeCode: options?.outcomeCode, timeline: options?.timeline, packPublished: options?.packPublished }
   const current = customerProgressStep(status, workStage, serviceTrack, evidence)
   if (!current) return null
-  const steps = progressList(current, serviceTrack, evidence)
+  const settled = guidedPreparationSettled(status, workStage, serviceTrack, evidence)
+  const listed = progressList(current, serviceTrack, evidence)
+  const steps = settled && evidence.packPublished === false ? listed.filter(step => step.code !== "HANDOVER") : listed
   const index = steps.findIndex(step => step.code === current)
-  if (index < 0) return null
+  if (index < 0 && !settled) return null
   return steps.map((step, stepIndex) => {
-    const position: ProgressPosition = stepIndex < index ? "earlier" : stepIndex === index ? "current" : "upcoming"
+    const position: ProgressPosition = settled
+      ? "earlier"
+      : stepIndex < index ? "earlier" : stepIndex === index ? "current" : "upcoming"
     const state = position === "earlier" ? "Completed" : position === "current" ? "Now" : "Upcoming"
     return {
       code: step.code,
@@ -279,6 +296,7 @@ export function presentNextStep(input: {
   attentionItems: CustomerCaseDetail["case"]["attentionItems"]
   /** Set only after a read-only documents read finds a published pack. */
   packHref?: string | null
+  timeline?: ProgressEvidence["timeline"]
 }): PresentedNextStep {
   if (input.attentionItems.length > 0) {
     const [first, ...rest] = input.attentionItems.map(item => presentAttention(item, input.reference))
@@ -418,6 +436,31 @@ export function presentNextStep(input: {
     return { title: outcome.title, body: outcome.body, timing: null, support: null, href: null, actionLabel: null, alsoWaiting: null, remaining: [] }
   }
   if (input.status === "CLOSED" && input.workStage === "FINISHED" && !input.outcomeCode && input.serviceTrack === "GUIDED") {
+    const google = recordedGoogle({ timeline: input.timeline, outcomeCode: input.outcomeCode })
+    if (google.decision) {
+      return {
+        title: "A Google decision was recorded",
+        body: "We've recorded a decision from Google for this case.",
+        timing: null,
+        support: null,
+        href: null,
+        actionLabel: null,
+        alsoWaiting: null,
+        remaining: [],
+      }
+    }
+    if (google.submission) {
+      return {
+        title: "A submission has been recorded",
+        body: "We've recorded that this pack was sent to Google. That record is not a decision from Google.",
+        timing: null,
+        support: null,
+        href: null,
+        actionLabel: null,
+        alsoWaiting: null,
+        remaining: [],
+      }
+    }
     const packHref = input.packHref ?? null
     return {
       title: "Your Guided preparation is complete",

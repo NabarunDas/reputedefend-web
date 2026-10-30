@@ -1,25 +1,36 @@
+"use client"
+
+import { useId, useState } from "react"
 import { formatPortalDateTime } from "@/lib/portal/cases/model"
-import { messageParagraphs, messageTitle } from "@/lib/portal/messages/present"
+import { messageIsLong, messageParagraphs, messagePreview, messageTitle } from "@/lib/portal/messages/present"
 import type { CustomerMessageDetail, CustomerMessagePage, CustomerMessageThread } from "@/lib/portal/messages/parse"
 
 function MessageBody({ body }: { body: string }) {
   const paragraphs = messageParagraphs(body)
-  const expandable = body.length > 700 || paragraphs.length > 4
-  const visible = expandable ? paragraphs.slice(0, 2) : paragraphs
-  const rest = expandable ? paragraphs.slice(2) : []
+  const long = messageIsLong(body)
+  const [expanded, setExpanded] = useState(false)
+  const bodyId = useId()
+  if (!long) {
+    return (
+      <div className="message-body message-reading">
+        {paragraphs.map((paragraph, paragraphIndex) => (
+          <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
+        ))}
+      </div>
+    )
+  }
   return (
     <div className="message-body message-reading">
-      {visible.map((paragraph, paragraphIndex) => (
-        <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
-      ))}
-      {rest.length > 0 ? (
-        <details className="message-more">
-          <summary>Show the rest of this message</summary>
-          {rest.map((paragraph, paragraphIndex) => (
-            <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
-          ))}
-        </details>
-      ) : null}
+      <div id={bodyId} className="preserve-lines">{expanded ? body : messagePreview(body)}</div>
+      <button
+        type="button"
+        className="message-disclosure"
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        onClick={() => setExpanded(open => !open)}
+      >
+        {expanded ? "Collapse message" : "Expand message"}
+      </button>
     </div>
   )
 }

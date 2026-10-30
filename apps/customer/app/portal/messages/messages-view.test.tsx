@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import PortalLayout from "../layout"
@@ -142,21 +142,91 @@ describe("messages page", () => {
     expect(screen.queryByRole("textbox")).toBeNull()
   })
 
-  it("keeps a long message readable and collapses only the extra paragraphs", () => {
-    const paragraphs = ["First update.", "Second update.", "Third update.", "Fourth update.", "Fifth update."]
-    render(<MessageView thread={{
+  function messageThread(body: string, role: CustomerMessageDetail["entries"][number]["role"] = "ProfileRelaunch") {
+    return {
       ...thread({ subject: "A longer update", state: "Message from ProfileRelaunch" }),
       complete: true,
-      entries: [{ role: "ProfileRelaunch", at, subject: null, body: paragraphs.join("\n\n"), delivery: null }],
-    }} />)
-    expect(screen.getByText("First update.")).toBeTruthy()
-    expect(screen.getByText("Second update.")).toBeTruthy()
-    const summary = screen.getByText("Show the rest of this message")
-    const details = summary.closest("details")
-    expect(details).not.toHaveAttribute("open")
-    expect(details).toHaveTextContent("Fifth update.")
-    expect(document.querySelector(".message-entry-team")).toBeTruthy()
+      entries: [{ role, at, subject: null, body, delivery: null }],
+    }
+  }
+
+  function controlledText(name: string) {
+    const control = screen.getByRole("button", { name })
+    const region = document.getElementById(control.getAttribute("aria-controls") ?? "")
+    return { control, region }
+  }
+
+  it("keeps a short message fully visible, including markup-like text", () => {
+    render(<MessageView thread={messageThread("Hello <strong>there</strong><script>alert(1)</script>")} />)
+    expect(screen.getByText("Hello <strong>there</strong><script>alert(1)</script>")).toBeTruthy()
+    expect(document.querySelector(".messages-page strong, .messages-page script")).toBeNull()
+    expect(screen.queryByRole("button", { name: /expand message|collapse message/i })).toBeNull()
+    expect(document.body.innerHTML).not.toContain("dangerouslySetInnerHTML")
+  })
+
+  it("previews one long paragraph and restores every character when expanded", () => {
+    const body = `Start ${"word ".repeat(120)}end.`
+    render(<MessageView thread={messageThread(body)} />)
+    const collapsed = controlledText("Expand message")
+    expect(collapsed.control).toHaveAttribute("aria-expanded", "false")
+    expect(collapsed.control).toHaveAttribute("type", "button")
+    collapsed.control.focus()
+    expect(collapsed.control).toHaveFocus()
+    expect(collapsed.region?.textContent).not.toContain("end.")
+    expect(body.startsWith(collapsed.region?.textContent?.slice(0, -1) ?? "")).toBe(true)
+    fireEvent.click(collapsed.control)
+    const expanded = controlledText("Collapse message")
+    expect(expanded.control).toHaveAttribute("aria-expanded", "true")
+    expect(expanded.region?.textContent).toBe(body)
+    fireEvent.click(expanded.control)
+    expect(screen.getByRole("button", { name: "Expand message" })).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByRole("textbox")).toBeNull()
+  })
+
+  it("previews two long paragraphs without dropping the second when expanded", () => {
+    const first = `Alpha ${"word ".repeat(90)}`.trim()
+    const second = `Beta ${"word ".repeat(90)}end.`.trim()
+    const body = `${first}\n\n${second}`
+    render(<MessageView thread={messageThread(body)} />)
+    const collapsed = controlledText("Expand message")
+    expect(collapsed.region?.textContent).not.toContain("end.")
+    expect(collapsed.region?.textContent).toContain("Alpha")
+    fireEvent.click(collapsed.control)
+    expect(controlledText("Collapse message").region?.textContent).toBe(body)
+  })
+
+  it("previews many short paragraphs and keeps line breaks in the full message", () => {
+    const body = ["First update.", "Second update.", "Third update.", "Fourth update.", "Fifth update."].join("\n\n")
+    const withLines = `${body}\nStill in the fifth.`
+    render(<MessageView thread={messageThread(withLines)} />)
+    const collapsed = controlledText("Expand message")
+    expect(collapsed.region?.textContent).toBe("First update.\n\nSecond update.…")
+    expect(collapsed.region?.textContent).not.toContain("Fifth update.")
+    fireEvent.click(collapsed.control)
+    expect(controlledText("Collapse message").region?.textContent).toBe(withLines)
+    expect(document.querySelector(".message-entry-team")).toBeTruthy()
     expect(screen.getByText("To reply, use the email ProfileRelaunch sent you.")).toBeTruthy()
+  })
+
+  it("expands one long entry without changing a short neighbour, and keeps hostile text as text", () => {
+    const hostile = `<script>alert("xss")</script> ${"paragraph ".repeat(80)} <img src=x onerror=alert(1)>`
+    const shortReply = "Thanks, this is my reply."
+    render(<MessageView thread={{
+      ...thread({ subject: "A longer update", state: "Open conversation" }),
+      complete: true,
+      entries: [
+        { role: "ProfileRelaunch", at, subject: null, body: hostile, delivery: null },
+        { role: "From your verified email address", at: "2026-09-05T12:00:00Z", subject: null, body: shortReply, delivery: null },
+      ],
+    }} />)
+    expect(screen.getByText(shortReply)).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Expand message" })).toHaveLength(1)
+    expect(document.querySelector(".messages-page script, .messages-page img")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Expand message" }))
+    expect(controlledText("Collapse message").region?.textContent).toBe(hostile)
+    expect(screen.getByText(shortReply)).toBeTruthy()
+    expect(document.querySelector(".messages-page script, .messages-page img, .messages-page strong")).toBeNull()
+    expect(document.body.textContent).not.toMatch(/\b(read|seen|opened)\b/i)
+    expect(document.body.innerHTML).not.toContain("dangerouslySetInnerHTML")
   })
 })

@@ -1887,11 +1887,19 @@ main.customer-main > section .document-list a {
   background: var(--paper);
 }
 
-.message-more summary {
+.message-disclosure {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
-  cursor: pointer;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--green-dark);
+  font: inherit;
   font-weight: 700;
+  text-align: left;
+  cursor: pointer;
 }
 
 .messages-empty p:last-child { margin-bottom: 0; }

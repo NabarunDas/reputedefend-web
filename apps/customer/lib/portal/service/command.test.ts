@@ -216,13 +216,16 @@ describe("portal service command", () => {
     mocks.rpc.mockReset()
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("SUPABASE_URL", "https://cxwwekdzkkjjbiyofrov.supabase.co")
-    mocks.rpc.mockResolvedValueOnce(accepted)
-    expect((await portalServiceCommand(req(accept))).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "recorded" })
+    const held = await portalServiceCommand(req(accept))
+    expect(held.status).toBe(200)
+    expect(await held.json()).toEqual({ status: "success" })
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "mail_not_configured" })
     vi.stubEnv("JOB_WORKER_ENABLED", "true")
     mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
     expect((await portalServiceCommand(req(accept))).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(3)
+    expect(mocks.rpc).toHaveBeenCalledTimes(4)
 
     mocks.rpc.mockReset()
     vi.stubEnv("VERCEL_ENV", "")
@@ -247,8 +250,14 @@ describe("portal service command", () => {
     mocks.rpc.mockResolvedValueOnce({
       ...accepted,
       snapshot: { ...accepted.snapshot, amountMinor: 7920 },
-    })
-    expect((await portalServiceCommand(req(accept))).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    }).mockResolvedValueOnce({ status: "recorded" })
+    const unconfirmed = await portalServiceCommand(req(accept))
+    expect(unconfirmed.status).toBe(200)
+    expect(await unconfirmed.json()).toEqual({ status: "success" })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_portal_service_command_v1",
+      "customer_record_guided_payment_handover_v1",
+    ])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "queue_denied" })
   })
 })

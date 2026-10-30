@@ -142,6 +142,10 @@ describe("quotation acceptance payment request", () => {
     expect(failed.status).toBe(200)
     expect(body).toEqual({ status: "ok", message: "This action is complete." })
     expect(JSON.stringify(body)).not.toMatch(/communications|SQL/)
+    const handover = mocks.rpc.mock.calls.at(-1)
+    expect(handover?.[0]).toBe("customer_record_guided_payment_handover_v1")
+    expect(handover?.[1]).toMatchObject({ p_reason: "queue_unavailable", p_service_order: orderId })
+    expect(JSON.stringify(handover?.[1])).not.toMatch(/communications|relation/)
 
     mocks.rpc.mockReset()
     mocks.rpc.mockResolvedValueOnce({ status: "success" })
@@ -150,8 +154,15 @@ describe("quotation acceptance payment request", () => {
   })
 
   it("does not queue when outgoing mail is not confirmed", async () => {
-    mocks.rpc.mockResolvedValueOnce(accepted)
-    expect((await command(req(accept))).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "recorded" })
+    const response = await command(req(accept))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "ok", message: "This action is complete." })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_action_command_v1",
+      "customer_record_guided_payment_handover_v1",
+    ])
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "mail_not_configured", p_service_order: orderId })
+    expect(JSON.stringify(mocks.rpc.mock.calls[1][1])).not.toMatch(/@|SQL|relation /)
   })
 })

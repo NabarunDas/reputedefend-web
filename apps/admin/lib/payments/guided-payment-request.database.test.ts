@@ -742,4 +742,110 @@ describe("guided payment-request queue", () => {
       )
     }
   })
+
+  it("claims only the action-session payment email and sends it once", async () => {
+    await db.query(
+      "insert into auth.users(id, email, email_confirmed_at) values ($1, 'alex@example.com', now()) on conflict (id) do nothing",
+      [alexAuth],
+    )
+    const row = await seed()
+    const hash = "7".repeat(64)
+    const requestId = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
+       values ($1, $2, $3, now() + interval '15 minutes')`,
+      [hash, row.acceptanceAction, alexAuth],
+    )
+    const customerPayload = { ...payloadFor(row, {}, devOrigin).body }
+    delete (customerPayload as { version?: number }).version
+    const queued = await rpc("customer_action_queue_guided_payment_request_v1", [hash, requestId, customerPayload])
+    expect(queued).toMatchObject({ status: "success", lifecycle: "QUEUED" })
+    await db.query("update admin_private.job_outbox set available_at = now() + interval '10 minutes' where aggregate_id = $1", [queued.id])
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "not_ready",
+    })
+    await db.query("update admin_private.job_outbox set available_at = now() where aggregate_id = $1", [queued.id])
+    const claimed = await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin]) as DevSendClaim
+    expect(claimed).toMatchObject({ status: "success", jobType: "SEND_EMAIL", replay: false })
+    expect(claimed.leaseToken).toEqual(expect.any(String))
+    expect(claimed.payload).not.toHaveProperty("recipient")
+    const provider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed, provider })).toBe("succeeded")
+    expect(provider.effects).toBe(1)
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "already_processed",
+    })
+    expect(provider.effects).toBe(1)
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, crypto.randomUUID(), devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "not_queued",
+    })
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [hash, requestId, "https://customer.profilerelaunch.com"])).toMatchObject({
+      status: "denied",
+      reason: "origin",
+    })
+    expect(await count("select count(*)::int as n from public.communications where id = $1 and delivery_status = 'PROVIDER_ACCEPTED'", [queued.id])).toBe(1)
+
+    const held = await seed()
+    const heldHash = "8".repeat(64)
+    const heldRequest = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_portal_sessions(
+        token_hash, customer_id, auth_user_id, email_snapshot, authenticated_at, created_at, expires_at
+      ) values ($1, $2, $3, 'alex@example.com', now(), now(), now() + interval '8 hours')
+      on conflict (token_hash) do nothing`,
+      [heldHash, customer, alexAuth],
+    )
+    const heldPayload = { ...payloadFor(held, {}, devOrigin).body }
+    delete (heldPayload as { version?: number }).version
+    const heldQueued = await rpc("customer_queue_guided_payment_request_v1", [heldHash, heldRequest, heldPayload])
+    expect(heldQueued).toMatchObject({ status: "success" })
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [heldHash, heldRequest, devOrigin])).toMatchObject({
+      status: "unauthorized",
+    })
+
+    const retry = await seed()
+    const retryHash = "9".repeat(64)
+    const retryRequest = crypto.randomUUID()
+    await db.query(
+      `insert into admin_private.customer_action_sessions(token_hash, action_id, auth_user_id, expires_at)
+       values ($1, $2, $3, now() + interval '15 minutes')`,
+      [retryHash, retry.acceptanceAction, alexAuth],
+    )
+    const retryPayload = { ...payloadFor(retry, {}, devOrigin).body }
+    delete (retryPayload as { version?: number }).version
+    expect(await rpc("customer_action_queue_guided_payment_request_v1", [retryHash, retryRequest, retryPayload])).toMatchObject({ status: "success" })
+    const retryClaim = await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin]) as DevSendClaim
+    const failing = {
+      effects: 0,
+      async send() {
+        this.effects += 1
+        return { ok: false as const, retryable: true, error: "Email provider rejected the message" }
+      },
+    }
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: retryClaim, provider: failing })).toBe("retry")
+    expect(failing.effects).toBe(1)
+    expect(await rpc("customer_action_claim_guided_payment_email_v1", [retryHash, retryRequest, devOrigin])).toMatchObject({
+      status: "denied",
+      reason: "acceptance_unknown",
+    })
+    expect(failing.effects).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from admin_private.jobs where id = $1 and status = 'RETRY'",
+      [retryClaim.jobId],
+    )).toBe(1)
+
+    const claimSignature = "public.customer_action_claim_guided_payment_email_v1(text,uuid,text)"
+    const handoverSignature = "public.customer_record_guided_payment_handover_v1(text,uuid,uuid,text)"
+    for (const signature of [claimSignature, handoverSignature]) {
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege('authenticated', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)
+      expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(true)
+    }
+    const recorded = await rpc("customer_record_guided_payment_handover_v1", [hash, crypto.randomUUID(), row.order, "queue_unavailable"])
+    expect(recorded).toEqual({ status: "recorded" })
+    expect(await rpc("customer_record_guided_payment_handover_v1", [hash, crypto.randomUUID(), row.order, "relation missing"])).toEqual({ status: "invalid" })
+  })
 })

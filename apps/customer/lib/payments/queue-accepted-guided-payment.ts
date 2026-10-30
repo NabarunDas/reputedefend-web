@@ -2,6 +2,14 @@ import { createHash } from "node:crypto"
 import { backend, tokenHash } from "@/lib/backend"
 import { renderPaymentRequest } from "../../../../lib/email/payment-request"
 import { confirmedReplyMailbox, validReplyMailbox } from "../../../../lib/email/reply-mailbox"
+import {
+  devCustomerPaymentPreview,
+  devCustomerPaymentSendOpen,
+  dispatchAcceptedPaymentEmail,
+  handoverForQueue,
+  type PaymentHandoverReason,
+  type PaymentMailSender,
+} from "./dev-payment-dispatch"
 
 /**
  * Portal sessions and Secure Action sessions are different credentials.
@@ -40,23 +48,49 @@ function automaticPaymentMail(): { origin: string; from: string; replyTo: string
   return { origin, from, replyTo: confirmedReplyMailbox() }
 }
 
-/** Queues one payment email after Guided acceptance. Returns without throwing when the order is not a Guided upfront acceptance. */
+async function recordHandover(input: {
+  token: string
+  requestId: string
+  serviceOrderId: string
+  reason: PaymentHandoverReason
+}) {
+  console.error(JSON.stringify({ event: "guided_payment_handover", reason: input.reason }))
+  try {
+    await backend().rpc("customer_record_guided_payment_handover_v1", {
+      p_token_hash: tokenHash(input.token),
+      p_request: input.requestId,
+      p_service_order: input.serviceOrderId,
+      p_reason: input.reason,
+    })
+  } catch {
+    console.error(JSON.stringify({ event: "guided_payment_handover", reason: "queue_unavailable" }))
+  }
+}
+
+/** Queues one payment email after Guided acceptance. A queue or send failure does not undo the acceptance. */
 export async function queueAcceptedGuidedPayment(input: {
   token: string
   acceptanceKey: string
   result: object
   rpc: GuidedPaymentQueueRpc
+  sender?: PaymentMailSender
 }): Promise<void> {
   const result = input.result as Record<string, unknown>
-  const mail = automaticPaymentMail()
   const snapshot = isRecord(result.snapshot) ? result.snapshot : null
   const quotation = snapshot && isRecord(snapshot.quotationSnapshot) ? snapshot.quotationSnapshot : null
   const serviceCode = typeof snapshot?.serviceCode === "string" ? snapshot.serviceCode : ""
   const paymentModel = typeof snapshot?.paymentModel === "string" ? snapshot.paymentModel : ""
-  if (!mail || (serviceCode !== "GUIDED_RELAUNCH" && serviceCode !== "GUIDED_REVIEW") || paymentModel !== "UPFRONT") return
-  if (typeof result.orderId !== "string" || typeof result.orderRef !== "string") return
+  const guided = (serviceCode === "GUIDED_RELAUNCH" || serviceCode === "GUIDED_REVIEW") && paymentModel === "UPFRONT"
+  const orderId = typeof result.orderId === "string" ? result.orderId : ""
+  if (!guided || !orderId || typeof result.orderRef !== "string") return
   if (typeof snapshot?.amountMinor !== "number" || typeof snapshot.currency !== "string") return
   if (typeof quotation?.serviceName !== "string" || typeof quotation.caseReference !== "string") return
+  const requestId = paymentRequestId(input.acceptanceKey)
+  const mail = automaticPaymentMail()
+  if (!mail) {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "mail_not_configured" })
+    return
+  }
   const rendered = renderPaymentRequest({
     serviceCode,
     serviceName: quotation.serviceName,
@@ -68,19 +102,45 @@ export async function queueAcceptedGuidedPayment(input: {
     replyTo: mail.replyTo,
     businessName: typeof quotation.businessName === "string" ? quotation.businessName : null,
   })
-  if (!rendered) return
-  await backend().rpc(input.rpc, {
-    p_token_hash: tokenHash(input.token),
-    p_request: paymentRequestId(input.acceptanceKey),
-    p_payload: {
-      serviceOrderId: result.orderId,
-      customerOrigin: mail.origin,
-      subject: rendered.subject,
-      bodyText: rendered.text,
-      bodyHtml: rendered.html,
-      fromAddress: mail.from,
-      replyTo: mail.replyTo,
-      sendEnabled: true,
-    },
+  if (!rendered) {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_denied" })
+    return
+  }
+  let queued: { status?: string; reason?: string } | null = null
+  try {
+    queued = await backend().rpc(input.rpc, {
+      p_token_hash: tokenHash(input.token),
+      p_request: requestId,
+      p_payload: {
+        serviceOrderId: orderId,
+        customerOrigin: mail.origin,
+        subject: rendered.subject,
+        bodyText: rendered.text,
+        bodyHtml: rendered.html,
+        fromAddress: mail.from,
+        replyTo: mail.replyTo,
+        sendEnabled: true,
+      },
+    })
+  } catch {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_unavailable" })
+    return
+  }
+  if (input.rpc === "customer_action_queue_guided_payment_request_v1" && queued?.status === "success" && devCustomerPaymentSendOpen()) {
+    const reason = await dispatchAcceptedPaymentEmail({
+      rpc: backend(),
+      tokenHash: tokenHash(input.token),
+      requestId,
+      origin: mail.origin,
+      sender: input.sender,
+    })
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason })
+    return
+  }
+  const reason = handoverForQueue({
+    rpcName: input.rpc,
+    queued,
+    preview: devCustomerPaymentPreview(),
   })
+  if (reason) await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason })
 }

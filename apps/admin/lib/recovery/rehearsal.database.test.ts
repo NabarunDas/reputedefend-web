@@ -60,7 +60,7 @@ describe("rebuilding the whole schema from zero", () => {
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261029010000")
+    expect(appliedMigrationHead.version).toBe("20261030130000")
   })
 
   it("rebuilds one independently constrained evidence slot per requested document", async () => {

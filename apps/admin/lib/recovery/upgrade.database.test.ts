@@ -60,16 +60,16 @@ describe("upgrading a database that is already running", () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
     // The repository tail is the unapplied action-session payment queue.
-    // The Guided assessment basis and pack stage files remain unapplied before it.
+    // Guided assessment basis and pack stage sync are already applied on DEV.
     // The applied shared mail dispatcher remains before those files.
-    // None of the unapplied files may be replayed. This disposable rebuild is not a live apply.
+    // The unapplied file must not be applied from this change. This disposable rebuild is not a live apply.
     // Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.filename).toBe("20261030120000_guided_pack_stage_sync_v1.sql")
-    expect(pending.at(-3)?.appliedToDev).toBe(false)
+    expect(pending.at(-3)?.appliedToDev).toBe(true)
     expect(pending.at(-4)?.filename).toBe("20261029010000_dev_mail_shared_dispatch_v1.sql")
     expect(pending.at(-4)?.appliedToDev).toBe(true)
     expect(pending.at(-5)?.filename).toBe("20261029000000_dev_mail_dispatch_v1.sql")

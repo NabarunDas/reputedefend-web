@@ -152,9 +152,12 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261030120000_guided_pack_stage_sync_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261030120000_guided_pack_stage_sync_v1.sql",
+      "20261030130000_guided_assessment_pack_basis_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261029010000")
-    expect(migrationHead.filename).toBe("20261030120000_guided_pack_stage_sync_v1.sql")
+    expect(migrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")

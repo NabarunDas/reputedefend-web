@@ -1318,4 +1318,385 @@ describe("guided fulfilment handover", () => {
     expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [closeSignature])).rows[0].ok).toBe(false)
     expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [closeSignature])).rows[0].ok).toBe(true)
   })
+
+  it("keeps an approved assessment current when a prepared pack is added or revised", async () => {
+    const reference = "PR-26-EVBASE"
+    const caseId = await insertCase(reference)
+    const request = await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, null, null, "create", "Ownership letter", "Upload the ownership letter for this bakery.", null, null,
+    ])
+    expect(request.status, JSON.stringify(request)).toBe("success")
+    const evidence = await rpc<Json>("admin_evidence_begin_v1", [
+      adminToken, key(), caseId, null, "ownership-letter.pdf", "application/pdf", 1024, "Ownership letter", "test-evidence", request.id,
+    ])
+    expect(evidence.versionId, JSON.stringify(evidence)).toBeTruthy()
+    await rpc("admin_evidence_finalize_v1", [adminToken, key(), caseId, evidence.versionId])
+    await rpc("admin_evidence_refresh_scan_v1", [adminToken, key(), caseId, evidence.versionId, "NO_THREATS_FOUND", "VALID", null])
+    const evidenceMeta = await rpc<Json>("admin_evidence_version_v1", [adminToken, caseId, evidence.versionId])
+    expect((await rpc<Json>("admin_evidence_review_v1", [
+      adminToken, key(), caseId, evidence.versionId, evidenceMeta.recordVersion, "accept", "Accepted after a clean scan.", null,
+    ])).status).toBe("success")
+    await setVisible(caseId, evidence.versionId!, true)
+    expect((await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, request.id, request.version, "fulfill", null, null, null, "Completed after the customer sent the letter.",
+    ])).status).toBe("success")
+
+    const draftAssessment = {
+      recordVersion: 0,
+      findings: "The profile was suspended and the ownership letter matches the bakery account.",
+      evidenceConsidered: "One accepted ownership letter is the assessment evidence.",
+      profileIssue: "The Google listing is suspended.",
+      policyConcerns: "Ownership of the profile is the policy concern in view.",
+      recommendedAction: "Recommend Guided recovery and leave the quote for a later step.",
+      servicePathway: "GUIDED",
+      rationale: "The accepted evidence is enough to recommend Guided rather than Managed.",
+      risks: "Google may still refuse the recovery request.",
+      outstandingInformation: "",
+    }
+    const saved = await rpc<Json>("admin_case_assessment_command_v1", [adminToken, key(), caseId, await caseVersion(caseId), "save_draft", draftAssessment])
+    expect(saved.status, JSON.stringify(saved)).toBe("success")
+    const submitted = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "submit_review", { recordVersion: saved.recordVersion },
+    ])
+    expect(submitted.status, JSON.stringify(submitted)).toBe("success")
+    const approved = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "approve", { recordVersion: submitted.recordVersion },
+    ])
+    expect(approved.status, JSON.stringify(approved)).toBe("success")
+
+    const stored = async () => (await rows<{ basis_fingerprint: string }>(
+      "select basis_fingerprint from public.case_assessments where case_id = $1 and status = 'APPROVED' order by version_number desc limit 1",
+      [caseId],
+    ))[0].basis_fingerprint
+    const live = async () => (await rows<{ fp: string }>(
+      "select admin_private.case_assessment_fingerprint_v1(admin_private.case_assessment_basis_v1($1)) as fp",
+      [caseId],
+    ))[0].fp
+    const documentIds = async () => (await rows<{ id: string }>(
+      "select item->>'id' as id from jsonb_array_elements(admin_private.case_assessment_basis_v1($1)->'documents') item",
+      [caseId],
+    )).map(row => row.id)
+    const ready = async () => (await rows<{ ready: boolean }>(
+      "select admin_private.case_assessment_evidence_ready_v1($1) as ready",
+      [caseId],
+    ))[0].ready
+    const read = async () => rpc<{ versions: Array<{ current: boolean; stale: boolean; staleReason: string | null }> }>(
+      "admin_case_assessment_read_v1",
+      [adminToken, caseId],
+    )
+    const isEvidence = async (documentId: string) => (await rows<{ evidence: boolean }>(
+      "select admin_private.assessment_evidence_document_v1($1) as evidence",
+      [documentId],
+    ))[0].evidence
+
+    const approvedFingerprint = await stored()
+    expect(await live()).toBe(approvedFingerprint)
+    expect(await ready()).toBe(true)
+    expect((await read()).versions[0]).toMatchObject({ current: true, stale: false, staleReason: null })
+
+    const statement = await acceptedFile(caseId, "pack-statement.pdf")
+    const instructions = await acceptedFile(caseId, "pack-instructions.pdf")
+    expect(await isEvidence(statement.documentId!)).toBe(true)
+    expect(await live()).not.toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+    expect((await read()).versions[0]).toMatchObject({ current: false, stale: true, staleReason: "facts" })
+    expect(await documentIds()).toEqual(expect.arrayContaining([statement.documentId, evidence.documentId]))
+
+    const pack = await packCmd(caseId, "create", {})
+    expect(pack.status, JSON.stringify(pack)).toBe("success")
+    const added = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, pack.id, pack.recordVersion)
+    expect(added.status, JSON.stringify(added)).toBe("success")
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, pack.id, added.recordVersion)
+    expect(withInstructions.status, JSON.stringify(withInstructions)).toBe("success")
+    expect(await isEvidence(statement.documentId!)).toBe(false)
+    expect(await isEvidence(instructions.documentId!)).toBe(false)
+    expect(await live()).toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+    expect(await documentIds()).toEqual([evidence.documentId])
+    expect((await read()).versions[0]).toMatchObject({ current: true, stale: false, staleReason: null })
+
+    await db.query("update public.case_documents set title = 'Revised staff statement' where id = $1", [statement.documentId])
+    const revised = await acceptedFile(caseId, "pack-statement-v2.pdf", "NO_THREATS_FOUND", statement.documentId!)
+    expect(revised.documentId).toBe(statement.documentId)
+    expect(await live()).toBe(approvedFingerprint)
+    expect(await ready()).toBe(true)
+    expect(await stored()).toBe(approvedFingerprint)
+
+    const extra = await acceptedFile(caseId, "pack-annex.pdf")
+    expect(await live()).not.toBe(approvedFingerprint)
+    const extraAdded = await packCmd(caseId, "add_item", { versionId: extra.versionId, role: "DELIVERABLE" }, pack.id, withInstructions.recordVersion)
+    expect(extraAdded.status, JSON.stringify(extraAdded)).toBe("success")
+    expect(await isEvidence(extra.documentId!)).toBe(false)
+    expect(await live()).toBe(approvedFingerprint)
+    const markedEvidence = await packCmd(caseId, "set_item_role", { versionId: extra.versionId, role: "EVIDENCE" }, pack.id, extraAdded.recordVersion)
+    expect(markedEvidence.status, JSON.stringify(markedEvidence)).toBe("success")
+    expect(await isEvidence(extra.documentId!)).toBe(true)
+    expect(await live()).not.toBe(approvedFingerprint)
+    expect(await documentIds()).toContain(extra.documentId)
+    const restoredRole = await packCmd(caseId, "set_item_role", { versionId: extra.versionId, role: "DELIVERABLE" }, pack.id, markedEvidence.recordVersion)
+    expect(restoredRole.status, JSON.stringify(restoredRole)).toBe("success")
+    expect(await live()).toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+
+    await db.exec("begin")
+    try {
+      const untagged = await acceptedFile(caseId, "pack-untagged.pdf")
+      const untaggedAdded = await packCmd(caseId, "add_item", { versionId: untagged.versionId }, pack.id, restoredRole.recordVersion)
+      expect(untaggedAdded.status, JSON.stringify(untaggedAdded)).toBe("success")
+      expect(await isEvidence(untagged.documentId!)).toBe(true)
+      expect(await live()).not.toBe(approvedFingerprint)
+      const tagged = await packCmd(caseId, "set_item_role", { versionId: untagged.versionId, role: "DELIVERABLE" }, pack.id, untaggedAdded.recordVersion)
+      expect(tagged.status, JSON.stringify(tagged)).toBe("success")
+      expect(await isEvidence(untagged.documentId!)).toBe(false)
+      expect(await live()).toBe(approvedFingerprint)
+      const linked = await packCmd(caseId, "add_item", { versionId: evidence.versionId, role: "DELIVERABLE" }, pack.id, tagged.recordVersion)
+      expect(linked.status, JSON.stringify(linked)).toBe("success")
+      expect(await isEvidence(evidence.documentId!)).toBe(true)
+      expect(await documentIds()).toContain(evidence.documentId)
+      expect(await stored()).toBe(approvedFingerprint)
+    } finally {
+      await db.exec("rollback")
+    }
+    expect(await live()).toBe(approvedFingerprint)
+    expect(await stored()).toBe(approvedFingerprint)
+
+    const historical = await acceptedFile(caseId, "pack-historical.pdf")
+    const historicalAdded = await packCmd(caseId, "add_item", { versionId: historical.versionId, role: "EVIDENCE" }, pack.id, restoredRole.recordVersion)
+    expect(historicalAdded.status, JSON.stringify(historicalAdded)).toBe("success")
+    expect(await isEvidence(historical.documentId!)).toBe(true)
+    expect(await live()).not.toBe(approvedFingerprint)
+    const extraRemoved = await packCmd(caseId, "remove_item", { versionId: extra.versionId }, pack.id, historicalAdded.recordVersion)
+    expect(extraRemoved.status, JSON.stringify(extraRemoved)).toBe("success")
+    expect(await isEvidence(extra.documentId!)).toBe(true)
+    const approvedPack = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, pack.id, extraRemoved.recordVersion)
+    expect(approvedPack.status, JSON.stringify(approvedPack)).toBe("success")
+    expect(await isEvidence(statement.documentId!)).toBe(false)
+    expect(await isEvidence(instructions.documentId!)).toBe(false)
+    expect(await isEvidence(historical.documentId!)).toBe(true)
+
+    const laterInstructions = await acceptedFile(caseId, "pack-later-instructions.pdf")
+    const nextPack = await packCmd(caseId, "create", {})
+    expect(nextPack.status, JSON.stringify(nextPack)).toBe("success")
+    const relabelled = await packCmd(caseId, "add_item", { versionId: historical.versionId, role: "DELIVERABLE" }, nextPack.id, nextPack.recordVersion)
+    expect(relabelled.status, JSON.stringify(relabelled)).toBe("success")
+    expect(await isEvidence(historical.documentId!)).toBe(true)
+    const nextInstructions = await packCmd(caseId, "add_item", { versionId: laterInstructions.versionId, role: "INSTRUCTIONS" }, nextPack.id, relabelled.recordVersion)
+    expect(nextInstructions.status, JSON.stringify(nextInstructions)).toBe("success")
+    const nextPackApproved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, nextPack.id, nextInstructions.recordVersion)
+    expect(nextPackApproved.status, JSON.stringify(nextPackApproved)).toBe("success")
+    expect(await count("select count(*)::int as n from public.case_prepared_packs where id = $1 and status = 'SUPERSEDED'", [pack.id])).toBe(1)
+    expect(await isEvidence(historical.documentId!)).toBe(true)
+    expect(await isEvidence(statement.documentId!)).toBe(false)
+    expect(await isEvidence(laterInstructions.documentId!)).toBe(false)
+    expect(await documentIds()).toContain(historical.documentId)
+    expect(await documentIds()).not.toContain(statement.documentId)
+    expect(await stored()).toBe(approvedFingerprint)
+
+    const laterRequest = await rpc<Json>("admin_evidence_request_v1", [
+      adminToken, key(), caseId, null, null, "create", "Trading licence", "Upload the trading licence for this bakery.", null, null,
+    ])
+    expect(laterRequest.status, JSON.stringify(laterRequest)).toBe("success")
+    expect(await ready()).toBe(false)
+    expect(await live()).not.toBe(approvedFingerprint)
+    const customerFile = await rpc<Json>("customer_portal_evidence_begin_v1", [
+      alexSession, key(), reference, "er-2", "trading-licence.pdf", "application/pdf", 1024, "test-evidence",
+    ])
+    expect(customerFile.status, JSON.stringify(customerFile)).toBe("success")
+    const customerVersion = (await rows<{ id: string; document_id: string; submission_source: string; customer_request: string | null }>(
+      `select v.id, v.document_id, v.submission_source, v.customer_evidence_request_id::text as customer_request
+       from public.case_document_versions v
+       join public.case_documents d on d.id = v.document_id
+       where d.case_id = $1 and v.original_filename = 'trading-licence.pdf'`,
+      [caseId],
+    ))[0]
+    expect(customerVersion).toMatchObject({ submission_source: "CUSTOMER", customer_request: laterRequest.id })
+    expect(await isEvidence(customerVersion.document_id)).toBe(true)
+    expect(await documentIds()).toEqual(expect.arrayContaining([evidence.documentId, customerVersion.document_id]))
+    expect(await documentIds()).not.toContain(statement.documentId)
+    expect(await stored()).toBe(approvedFingerprint)
+    expect((await read()).versions[0]).toMatchObject({ current: false, stale: true, staleReason: "facts" })
+
+    const replacement = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "save_draft", draftAssessment,
+    ])
+    expect(replacement.status, JSON.stringify(replacement)).toBe("success")
+    const replacementReview = await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "submit_review", { recordVersion: replacement.recordVersion },
+    ])
+    expect(replacementReview.status, JSON.stringify(replacementReview)).toBe("success")
+    expect(await rpc<Json>("admin_case_assessment_command_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), "approve", { recordVersion: replacementReview.recordVersion },
+    ])).toMatchObject({ status: "prerequisite" })
+    expect(await stored()).toBe(approvedFingerprint)
+
+    for (const role of ["anon", "authenticated", "service_role"]) {
+      const privilege = await db.query<{ ok: boolean }>(
+        "select has_function_privilege($1, 'admin_private.assessment_evidence_document_v1(uuid)', 'EXECUTE') as ok",
+        [role],
+      )
+      expect(privilege.rows[0].ok, role).toBe(false)
+    }
+    expect(await count(
+      `select count(*)::int as n from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'admin_private'
+         and p.proname in ('advance_guided_pack_ready_v1', 'advance_guided_pack_on_publish_v1')`,
+    )).toBe(0)
+    expect(await count("select count(*)::int as n from pg_trigger where tgname = 'case_prepared_packs_guided_ready'")).toBe(0)
+  })
+
+  it("closes a paid Guided case from its current published pack without a Google decision", async () => {
+    const reference = "PR-26-READYX"
+    const caseId = await insertCase(reference)
+    expect((await acceptQuote(caseId)).status).toBe("success")
+    await guidedToPaymentRequired(caseId)
+    const statement = await acceptedFile(caseId, "ready-statement.pdf")
+    const draft = await packCmd(caseId, "create", {})
+    const deliverableOnly = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
+    expect(await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, deliverableOnly.recordVersion)).toMatchObject({ status: "denied", reason: "instructions" })
+    const instructions = await acceptedFile(caseId, "ready-instructions.pdf")
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, deliverableOnly.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withInstructions.recordVersion)
+    expect(approved.status, JSON.stringify(approved)).toBe("success")
+    expect(await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)).toMatchObject({ status: "denied", reason: "unpaid" })
+    const note = "The Guided pack was handed to the customer and the preparation is complete."
+    const summary = "The Guided preparation was handed to the customer. This does not record a Google decision."
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary },
+    ])).toMatchObject({ status: "denied", reason: "unpaid" })
+
+    const payment = await settle(caseId, "readyx", "evt_readyx")
+    expect(payment.settled.status).toBe("success")
+    expect((await rows<{ work_stage: string; status: string }>("select work_stage, status from public.cases where id = $1", [caseId]))[0]).toMatchObject({
+      work_stage: "PREPARATION",
+      status: "UNDER_REVIEW",
+    })
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary },
+    ])).toMatchObject({ status: "denied", reason: "pack" })
+
+    const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
+    expect(published, JSON.stringify(published)).toMatchObject({ status: "success", packEmail: "skipped" })
+    expect((await rows<{ work_stage: string; status: string; outcome: string | null }>(
+      "select work_stage, status, outcome from public.cases where id = $1",
+      [caseId],
+    ))[0]).toMatchObject({ work_stage: "READY_TO_SUBMIT", status: "UNDER_REVIEW", outcome: null })
+    expect(await count(
+      "select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'from' = 'PREPARATION' and details->>'to' = 'READY_TO_SUBMIT'",
+      [caseId],
+    )).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from public.case_work_events where case_id = $1 and details->>'source' = 'pack_publish'",
+      [caseId],
+    )).toBe(0)
+    expect(await count(
+      "select count(*)::int as n from public.admin_audit_events where target_id = $1 and details->>'source' = 'pack_publish'",
+      [caseId],
+    )).toBe(0)
+    expect(await count(
+      "select count(*)::int as n from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'admin_private' and p.proname = 'advance_guided_published_pack_stage_v1'",
+    )).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_COMPLETION'", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
+    expect((await rows<{ status: string }>("select status from public.cases where id = $1", [caseId]))[0].status).not.toBe("CLOSED")
+
+    const replacementFile = await acceptedFile(caseId, "ready-statement-v2.pdf")
+    const replacementInstructions = await acceptedFile(caseId, "ready-instructions-v2.pdf")
+    const next = await packCmd(caseId, "create", {})
+    const nextItem = await packCmd(caseId, "add_item", { versionId: replacementFile.versionId, role: "DELIVERABLE" }, next.id, next.recordVersion)
+    const nextInstructions = await packCmd(caseId, "add_item", { versionId: replacementInstructions.versionId, role: "INSTRUCTIONS" }, next.id, nextItem.recordVersion)
+    const nextApproved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, next.id, nextInstructions.recordVersion)
+    expect(nextApproved.status, JSON.stringify(nextApproved)).toBe("success")
+    expect(await count("select count(*)::int as n from public.case_prepared_packs where id = $1 and status = 'SUPERSEDED' and unpublished_at is not null", [draft.id])).toBe(1)
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary },
+    ])).toMatchObject({ status: "denied", reason: "pack" })
+    const nextPublished = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, next.id, nextApproved.recordVersion)
+    expect(nextPublished, JSON.stringify(nextPublished)).toMatchObject({ status: "success", packEmail: "skipped" })
+    expect(await count(
+      "select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'to' = 'READY_TO_SUBMIT'",
+      [caseId],
+    )).toBe(1)
+    expect(await count(
+      "select count(*)::int as n from public.case_work_events where case_id = $1 and details->>'source' = 'pack_publish'",
+      [caseId],
+    )).toBe(0)
+    expect((await rows<{ work_stage: string; status: string }>("select work_stage, status from public.cases where id = $1", [caseId]))[0]).toMatchObject({
+      work_stage: "READY_TO_SUBMIT",
+      status: "UNDER_REVIEW",
+    })
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
+
+    const quiet = await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary },
+    ])
+    expect(quiet, JSON.stringify(quiet)).toMatchObject({ status: "success", completionEmail: "not_sent" })
+    expect((await rows<{ status: string; work_stage: string; outcome: string | null }>(
+      "select status, work_stage, outcome from public.cases where id = $1",
+      [caseId],
+    ))[0]).toMatchObject({ status: "CLOSED", work_stage: "FINISHED", outcome: null })
+    const closedDownload = await rpc<{ found: boolean; available: boolean; storageKey?: string }>(
+      "customer_portal_document_resolve_v1",
+      [alexSession, reference, "pd-1"],
+    )
+    expect(closedDownload).toMatchObject({ found: true, available: true })
+    expect(closedDownload.storageKey).toContain(String(replacementFile.versionId))
+    const closeEvent = await rows<{ details: { fulfilment?: string; outcome?: string } }>(
+      "select details from public.case_work_events where case_id = $1 and event = 'close'",
+      [caseId],
+    )
+    expect(closeEvent).toHaveLength(1)
+    expect(closeEvent[0].details.fulfilment).toBe("guided_preparation")
+    expect(closeEvent[0].details.outcome).toBeUndefined()
+
+    const rendered = renderGuidedCompletion({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: 9900,
+      currency: "GBP",
+      origin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const payload = { note, summary, ...mailPayload(rendered!, "documents") }
+    const recovered = await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), payload,
+    ])
+    expect(recovered, JSON.stringify(recovered)).toMatchObject({ status: "success", completionEmail: "success", recovered: true })
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), payload,
+    ])).toMatchObject({ status: "success", completionEmail: "already_queued", recovered: true })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_COMPLETION'", [caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.guided_completion_notices where case_id = $1", [caseId])).toBe(1)
+    expect((await rows<{ outcome: string | null }>("select outcome from public.cases where id = $1", [caseId]))[0].outcome).toBeNull()
+  })
+
+  it("leaves Managed publication and closure on the existing rules", async () => {
+    const caseId = await insertCase("PR-26-MANPKG", "MANAGED")
+    await db.query("update public.cases set work_stage = 'PREPARATION', status = 'UNDER_REVIEW' where id = $1", [caseId])
+    const file = await acceptedFile(caseId, "managed-note.pdf")
+    const draft = await packCmd(caseId, "create", {})
+    const added = await packCmd(caseId, "add_item", { versionId: file.versionId }, draft.id, draft.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, added.recordVersion)
+    expect(approved.status, JSON.stringify(approved)).toBe("success")
+    const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
+    expect(published, JSON.stringify(published)).toMatchObject({ status: "success", packEmail: "skipped" })
+    expect((await rows<{ work_stage: string; status: string; outcome: string | null }>(
+      "select work_stage, status, outcome from public.cases where id = $1",
+      [caseId],
+    ))[0]).toMatchObject({ work_stage: "PREPARATION", status: "UNDER_REVIEW", outcome: null })
+    expect(await count(
+      "select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'source' = 'pack_publish'",
+      [caseId],
+    )).toBe(0)
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId),
+      { note: "This Managed case is not a Guided preparation.", summary: "Managed closure stays on the existing outcome command." },
+    ])).toMatchObject({ status: "denied", reason: "not_guided" })
+    expect(await caseCmd(caseId, "close", {
+      outcome: "RESTORED",
+      summary: "Google restored the profile after the appeal.",
+    })).toMatchObject({ status: "denied" })
+  })
 })

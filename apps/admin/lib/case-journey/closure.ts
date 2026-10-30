@@ -16,6 +16,7 @@ import { isQualifyingSuccessFeeOutcome } from "../payments/success-fee"
 import { presentJourneyOutcome } from "./outcome"
 import { assessProposedClose, coherentTerminalClosure, readStoredOutcome, type OutcomeProofEvent } from "./outcome-proposal"
 import { customerMailStatus } from "./customer-mail"
+import { preparationReadiness } from "./preparation"
 import { submissionRecordsDisagree } from "./submission"
 
 export type JourneyClosureHistory = {
@@ -258,7 +259,11 @@ export function presentJourneyClosure(input: {
     && upfront.obligationKind === "UPFRONT"
     && upfront.obligationState === "PAID"
     && upfront.receiptRecorded
+  // The same current published pack the Guided close command requires.
+  // Managed closure does not read this flag.
+  const packReady = preparationReadiness(facts.packs.packs).ready
   const fulfilment = guidedDelivered
+    && packReady
     && input.precedingComplete
     && identityAgrees
     && !outcomeView.disagreed
@@ -326,6 +331,7 @@ export function presentJourneyClosure(input: {
   if (databaseClosed && !verified) notices.push("This is an inconsistent closure. It is not a verified closed or cancelled result.")
   if (outcomeView.disagreed) notices.push("The outcome and billing records do not agree, so closure is not offered from here.")
   if (!input.precedingComplete && !databaseClosed) notices.push("Earlier guided steps are still open, so closure is not offered from here.")
+  if (guidedDelivered && !packReady && !databaseClosed) notices.push("A current published pack is not ready, so closure is not offered from here.")
   if (openTasks.length > 0) notices.push("An open task is still on the case. Resolve or cancel it before closure.")
   if (unresolved.length > 0) notices.push("A submission attempt has no decision or withdrawal.")
 
@@ -339,6 +345,7 @@ export function presentJourneyClosure(input: {
     if (!identityAgrees) blockers.push("The case record and the projection do not agree.")
     if (outcomeView.disagreed || (!billingMet && !guidedDelivered)) blockers.push("The billing position is not ready.")
     if (stored !== "pre_closure" && !guidedDelivered) blockers.push("No authoritative pre-closure outcome is stored.")
+    if (guidedDelivered && !packReady) blockers.push("A current published pack is not ready.")
     if (openTasks.length > 0) blockers.push("An open task remains.")
     if (unresolved.length > 0) blockers.push("A submission attempt is unresolved.")
     if (stored === "pre_closure" && proposed?.status === "refused") blockers.push("The existing close command would refuse this case.")

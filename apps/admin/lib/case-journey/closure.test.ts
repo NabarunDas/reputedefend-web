@@ -39,6 +39,18 @@ function upfront(overrides: Partial<CaseFlowOrderFact> = {}): CaseFlowOrderFact 
   }
 }
 
+function publishedPack(overrides: Partial<CaseFlowFacts["packs"]["packs"][number]> = {}) {
+  return {
+    id: "pack-1",
+    packNumber: 1,
+    status: "APPROVED",
+    published: true,
+    everPublished: true,
+    itemCount: 2,
+    ...overrides,
+  }
+}
+
 function successFee(overrides: Partial<CaseFlowOrderFact> = {}): CaseFlowOrderFact {
   return {
     orderId: ORDER_ID,
@@ -265,7 +277,8 @@ describe("guided closure", () => {
       outcome: null,
       outcomeSummary: "",
       submissions: [],
-      technicalStage: "PAYMENT_REQUIRED",
+      technicalStage: "READY_TO_SUBMIT",
+      packs: { packs: [publishedPack()], eligibleCount: 2 },
     }), { submissions: [] })
     expect(panel.fulfilmentClose).toBe(true)
     expect(panel.completionRecovery).toBe(false)
@@ -275,6 +288,57 @@ describe("guided closure", () => {
     expect(panel.notices.join(" ")).toMatch(/completion summary/)
     expect(panel.guard.offered).toBe(false)
     expect(panel.guard.text).toMatch(/does not enrol/)
+  })
+
+  it("withholds Guided closure when the pack is missing, unpublished, stale, empty or duplicated", () => {
+    const settled = {
+      outcome: null,
+      outcomeSummary: "",
+      submissions: [],
+      technicalStage: "READY_TO_SUBMIT" as const,
+    }
+    const missing = show(facts(settled), { submissions: [] })
+    expect(missing.fulfilmentClose).toBe(false)
+    expect(missing.commands).toBeNull()
+    expect(missing.blockers).toContain("A current published pack is not ready.")
+    expect(missing.notices.join(" ")).toMatch(/current published pack is not ready/)
+
+    const unpublished = show(facts({
+      ...settled,
+      packs: { packs: [publishedPack({ published: false })], eligibleCount: 2 },
+    }), { submissions: [] })
+    expect(unpublished.fulfilmentClose).toBe(false)
+
+    const stale = show(facts({
+      ...settled,
+      packs: { packs: [publishedPack({ status: "STALE", published: false, everPublished: true })], eligibleCount: 2 },
+    }), { submissions: [] })
+    expect(stale.fulfilmentClose).toBe(false)
+
+    const empty = show(facts({
+      ...settled,
+      packs: { packs: [publishedPack({ itemCount: 0 })], eligibleCount: 0 },
+    }), { submissions: [] })
+    expect(empty.fulfilmentClose).toBe(false)
+
+    const superseded = show(facts({
+      ...settled,
+      packs: { packs: [publishedPack({ status: "SUPERSEDED", published: false })], eligibleCount: 2 },
+    }), { submissions: [] })
+    expect(superseded.fulfilmentClose).toBe(false)
+
+    const duplicated = show(facts({
+      ...settled,
+      packs: {
+        packs: [
+          publishedPack(),
+          publishedPack({ id: "pack-2", packNumber: 2 }),
+        ],
+        eligibleCount: 2,
+      },
+    }), { submissions: [] })
+    expect(duplicated.fulfilmentClose).toBe(false)
+    expect(duplicated.blockers).toContain("A current published pack is not ready.")
   })
 
   it("verifies a closed Guided preparation that has no Google outcome", () => {

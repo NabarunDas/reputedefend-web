@@ -1159,6 +1159,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided pack stage", probe: "admin_private.advance_guided_published_pack_stage_v1" },
   },
+  {
+    // Guided assessment basis. Repository only. appliedToDev is false.
+    // The observed DEV ledger head remains 20261029010000. Do not apply this
+    // file from the pull request. It does not rewrite a stored assessment
+    // fingerprint, close a case, send mail, or move a case stage.
+    version: "20261030130000",
+    filename: "20261030130000_guided_assessment_pack_basis_v1.sql",
+    step: "Guided assessment basis excludes prepared pack deliverables",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided assessment basis", probe: "admin_private.assessment_evidence_document_v1" },
+  },
 ]
 
 /**
@@ -1174,9 +1188,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * not be replayed. It is not applied to Production. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only
- * unapplied `20261030120000_guided_pack_stage_sync_v1.sql`. Do not apply it
- * without a separate approval, and do not apply it to Production.
+ * applied and must not be replayed. `pendingMigrations()` contains unapplied
+ * `20261030120000_guided_pack_stage_sync_v1.sql` and unapplied
+ * `20261030130000_guided_assessment_pack_basis_v1.sql`. Do not apply either
+ * without a separate approval, and do not apply either to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

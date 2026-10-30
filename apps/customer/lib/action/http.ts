@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
+import { ACTION_CODE_INVALID, ACTION_RATE_LIMITED, ACTION_UNAVAILABLE, privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
 import { cookieOptions, customerConfig, pendingCookie, sessionCookie, customerRequestOriginAllowed } from "@/lib/config"
 import { validCustomerOtp } from "@/lib/otp"
@@ -71,7 +71,7 @@ export async function sendOtp(request: NextRequest) {
   if (!validToken(pending)) return reply()
   try {
     const started = await backend().rpc<{ status?: string; email?: string; maskedEmail?: string }>("customer_action_begin_otp_v1", { p_pending_hash: tokenHash(pending) })
-    if (started.status === "rate_limited") return NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 429, headers: privateResponseHeaders })
+    if (started.status === "rate_limited") return NextResponse.json({ message: ACTION_RATE_LIMITED }, { status: 429, headers: privateResponseHeaders })
     if (started.status !== "ok" || !started.email || started.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return reply()
     const service = backend()
     if (!await ensureCustomerAuthIdentity(service.database.auth.admin, started.email)) return reply({}, 503)
@@ -94,7 +94,12 @@ export async function verifyOtp(request: NextRequest) {
     if (allowed.status !== "ok" || !allowed.email) return reply()
     const service = backend()
     const { data, error } = await service.identity.auth.verifyOtp({ email: allowed.email, token: body.code, type: "email" })
-    if (error || !data.session || !data.user?.id || data.user.email?.toLowerCase() !== allowed.email || !data.user.email_confirmed_at) return reply()
+    // A rejected code leaves the pending challenge in place and does not open a session.
+    // Expired, exhausted, or mismatched challenges stay on the generic unavailable reply.
+    if (!data?.session) {
+      return NextResponse.json({ message: ACTION_CODE_INVALID, reason: "invalid_code" }, { status: 401, headers: privateResponseHeaders })
+    }
+    if (error || !data.user?.id || data.user.email?.toLowerCase() !== allowed.email || !data.user.email_confirmed_at) return reply()
     const revoked = await service.revokeProviderSession(data.session.access_token)
     if (!revoked || revoked.error) return reply()
     const token = newToken()

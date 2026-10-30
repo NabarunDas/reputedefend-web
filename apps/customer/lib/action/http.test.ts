@@ -18,6 +18,7 @@ import { POST as exchangePost } from "@/app/api/action/exchange/route"
 import { POST as otpPost } from "@/app/api/action/otp/route"
 import { POST as verifyPost } from "@/app/api/action/verify/route"
 import { POST as commandPost } from "@/app/api/action/command/route"
+import { ACTION_CODE_INVALID, ACTION_RATE_LIMITED, ACTION_UNAVAILABLE } from "@/lib/access"
 import { pendingCookie, sessionCookie } from "@/lib/config"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -169,11 +170,63 @@ describe("customer action HTTP", () => {
     expect(declineExtra.status).toBe(401)
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+  it("returns a rate limit without sending a code", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "rate_limited" })
+    const response = await otpPost(req("/api/action/otp", {}, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(429)
+    expect(payload).toEqual({ message: ACTION_RATE_LIMITED })
+    expect(JSON.stringify(payload)).not.toMatch(/alex@example.com|rate_limited/)
+    expect(mocks.signInWithOtp).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_begin_otp_v1"])
+  })
   it("rejects extra verify fields", async () => {
     const response = await verifyPost(req("/api/action/verify", { code: "12345678", email: "attacker@example.com" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
     expect(response.status).toBe(401)
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.verifyOtp).not.toHaveBeenCalled()
+  })
+  it("reports an invalid code without opening an action session", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+    mocks.verifyOtp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { message: "Token has expired or is invalid alex@example.com" },
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload).toEqual({ message: ACTION_CODE_INVALID, reason: "invalid_code" })
+    expect(JSON.stringify(payload)).not.toMatch(/alex@example.com|Token has expired/)
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+    expect(mocks.signOut).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_attempt_otp_v1"])
+  })
+  it("keeps an expired challenge distinct from an invalid code", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "unavailable" })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload).toEqual({ message: ACTION_UNAVAILABLE })
+    expect(payload.reason).toBeUndefined()
+    expect(mocks.verifyOtp).not.toHaveBeenCalled()
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+  })
+  it("does not describe an identity mismatch as an invalid code", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "ok", email: "alex@example.com" })
+    mocks.verifyOtp.mockResolvedValue({
+      data: {
+        session: { access_token: "jwt-must-not-leak" },
+        user: { id: "66666666-6666-4666-8666-666666666666", email: "other@example.com", email_confirmed_at: "2026-09-18T12:00:00.000Z" },
+      },
+      error: null,
+    })
+    const response = await verifyPost(req("/api/action/verify", { code: "12345678" }, { cookie: `${pendingCookie}=${"c".repeat(64)}` }))
+    const payload = await response.json()
+    expect(response.status).toBe(401)
+    expect(payload).toEqual({ message: ACTION_UNAVAILABLE })
+    expect(JSON.stringify(payload)).not.toMatch(/other@example.com|jwt-must-not-leak|invalid_code/)
+    expect(response.cookies.get(sessionCookie)?.value).toBeFalsy()
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_attempt_otp_v1"])
   })
   it("discards provider tokens and sets only the opaque action cookie", async () => {
     mocks.rpc

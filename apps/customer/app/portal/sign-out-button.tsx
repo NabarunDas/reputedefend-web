@@ -1,9 +1,8 @@
 "use client"
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { replaceAuthenticatedDocument } from "@/lib/portal/account/document"
 
 export function SignOutButton() {
-  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
@@ -21,7 +20,7 @@ export function SignOutButton() {
         setError("We couldn't sign you out. Try again.")
         return
       }
-      router.push("/login")
+      replaceAuthenticatedDocument("login")
     } catch {
       setError("We couldn't sign you out. Try again.")
     } finally {

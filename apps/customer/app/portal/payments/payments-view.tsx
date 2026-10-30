@@ -21,11 +21,11 @@ function openObligation(order: PaymentOrder): boolean {
   return order.obligations.some(item => item.state === "DUE" || item.state === "COLLECTING" || item.state === "AUTHENTICATION_REQUIRED" || item.state === "FAILED")
 }
 
-function amountCaption(order: PaymentOrder): string {
-  if (openObligation(order)) return "Outstanding"
-  if (order.receipts.length > 0) return "Paid"
-  if (order.obligations.length > 0 && order.obligations.every(item => item.state === "VOID")) return "Void"
-  return "Recorded total"
+/** A due obligation stores its own amount. That is not the order total, and it is not the order total minus receipts. */
+function recordedOutstanding(obligation: PaymentObligation): boolean {
+  if (obligation.state !== "DUE") return false
+  if (obligation.kind === "upfront") return true
+  return obligation.invoice?.status === "ISSUED"
 }
 
 function obligationTone(state: PaymentObligation["state"]): string {
@@ -120,7 +120,7 @@ export function PaymentsView({
       <header className={styles.summary}>
         <p className={styles.kicker}>Billing</p>
         <h1>{title}</h1>
-        <p>Outstanding and paid figures are the amounts already recorded for your orders.</p>
+        <p>The order total is the amount recorded for the order. Receipts show what has been paid. A due obligation shows the amount recorded on that obligation.</p>
       </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
       {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}
@@ -198,7 +198,7 @@ function OrderSection({
     <article className="payments-order">
       <h3>{order.serviceName}</h3>
       <p className="payments-order-ref">Order {order.orderRef}</p>
-      <p className={styles.moneyCaption}>{amountCaption(order)}</p>
+      <p className={styles.moneyCaption}>Order total</p>
       <p className="payments-amount">{moneyLabel(order.amountMinor, order.currency)}</p>
       <details className="portal-more">
         <summary>Payment notes</summary>
@@ -270,7 +270,12 @@ function ObligationBlock({
       <h4>
         <span className={`${styles.status} ${obligationTone(obligation.state)}`}>{obligationHeadline(obligation.kind, obligation.state)}</span>
       </h4>
-      {repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
+      {recordedOutstanding(obligation) ? (
+        <>
+          <p className={styles.moneyCaption}>Outstanding</p>
+          <p className="payments-outstanding">{moneyLabel(obligation.amountMinor, obligation.currency)}</p>
+        </>
+      ) : repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
       {obligation.state === "DUE" ? null : <p>{obligationDetail(obligation.state)}</p>}
       {control ? (
         <form

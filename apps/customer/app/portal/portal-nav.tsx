@@ -3,13 +3,13 @@
 import { usePathname } from "next/navigation"
 
 const linked = [
-  { label: "Dashboard", href: "/portal" },
-  { label: "Cases", href: "/portal/cases" },
-  { label: "Documents", href: "/portal/documents" },
-  { label: "Payments", href: "/portal/payments" },
-  { label: "Relaunch Guard", href: "/portal/guard" },
-  { label: "Messages", href: "/portal/messages" },
-  { label: "Account", href: "/portal/account" },
+  { label: "Dashboard", href: "/portal", priority: "primary" },
+  { label: "Cases", href: "/portal/cases", priority: "primary" },
+  { label: "Documents", href: "/portal/documents", priority: "primary" },
+  { label: "Payments", href: "/portal/payments", priority: "secondary" },
+  { label: "Relaunch Guard", href: "/portal/guard", priority: "secondary" },
+  { label: "Messages", href: "/portal/messages", priority: "primary" },
+  { label: "Account", href: "/portal/account", priority: "secondary" },
 ] as const
 
 function current(pathname: string, href: string) {
@@ -25,7 +25,7 @@ export function PortalNav() {
         {linked.map(item => {
           const active = current(pathname, item.href)
           return (
-            <li key={item.label}>
+            <li key={item.label} data-priority={item.priority}>
               <a className="portal-nav-link" href={item.href} {...(active ? { "aria-current": "page" as const } : {})}>
                 {item.label}
               </a>

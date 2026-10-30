@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation"
+import { loadPortalHeaderName } from "@/lib/portal/account/header"
 import { portalAvailable } from "@/lib/portal/config"
 import { loadCustomerDashboard } from "@/lib/portal/cases/queries"
 import { PortalHome, PortalUnavailable } from "./portal-home"
@@ -10,5 +11,6 @@ export default async function PortalPage() {
   const loaded = await loadCustomerDashboard()
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "unavailable") return <PortalUnavailable />
-  return <PortalHome dashboard={loaded.dashboard} />
+  const accountName = await loadPortalHeaderName()
+  return <PortalHome dashboard={loaded.dashboard} accountName={accountName} />
 }

@@ -3,7 +3,7 @@ import type { CustomerDocuments } from "@/lib/portal/documents/parse"
 
 export function DocumentsUnavailable() {
   return (
-    <div className="documents-page">
+    <div className="documents-page state-panel">
       <h1>We couldn&apos;t load your documents</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>

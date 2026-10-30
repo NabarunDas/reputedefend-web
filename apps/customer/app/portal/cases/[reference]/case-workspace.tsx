@@ -16,7 +16,7 @@ const PREVIEW_UPDATES = 5
 
 export function CaseUnavailable() {
   return (
-    <div className="case-workspace">
+    <div className="case-workspace state-panel">
       <h1>We couldn&apos;t load this case</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal/cases">Back to cases</a></p>

@@ -4,7 +4,7 @@ import { legalIdentity } from "../../../../../lib/legal"
 
 export function AccountUnavailable() {
   return (
-    <div className="account-page">
+    <div className="account-page state-panel">
       <h1>Account</h1>
       <h2>We couldn&apos;t load your account</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>

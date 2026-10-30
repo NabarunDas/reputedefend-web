@@ -7,7 +7,7 @@ import { GuidedHandoverForm } from "./handover-form"
 
 export function CaseDocumentsUnavailable() {
   return (
-    <div className="documents-page">
+    <div className="documents-page state-panel">
       <h1>We couldn&apos;t load documents for this case</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal/cases">Back to cases</a></p>

@@ -125,6 +125,26 @@ describe("customer dashboard", () => {
     expect(screen.getByRole("link", { name: "View all cases" })).toHaveAttribute("href", "/portal/cases?view=all")
   })
 
+  it("greets the signed-in customer and leaves the fallback unnamed", () => {
+    const { unmount } = render(<PortalHome dashboard={dashboard()} accountName="Aarshav Das" />)
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome back, Aarshav Das" })).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
+    unmount()
+    render(<PortalHome dashboard={dashboard()} accountName="My account" />)
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome back" })).toBeTruthy()
+  })
+
+  it("offers documents, payments and messages only when a case exists", () => {
+    render(<PortalHome dashboard={dashboard({
+      summary: { activeCases: 1, attentionCases: 0, previousCases: 0 },
+      recentCases: [row({ attentionItems: [] })],
+    })} />)
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute("href", "/portal/documents")
+    expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/portal/payments")
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("href", "/portal/messages")
+    expect(screen.queryByRole("link", { name: /Guard/ })).toBeNull()
+  })
+
   it("shows a load failure instead of an empty workspace", () => {
     render(<PortalUnavailable />)
     expect(screen.getByRole("heading", { level: 1, name: "We couldn't load your customer space" })).toBeTruthy()

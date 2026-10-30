@@ -266,8 +266,8 @@ async function setVisible(caseId: string, versionId: string, visible: boolean) {
   if (result.status !== "success") throw new Error(`visibility ${JSON.stringify(result)}`)
 }
 
-async function packCmd(caseId: string, operation: string, data: Record<string, unknown>, pack: string | null = null, version: number | null = null) {
-  return rpc<Json>("admin_prepared_pack_command_v1", [adminToken, key(), caseId, pack, version, operation, data])
+async function packCmd(caseId: string, operation: string, data: Record<string, unknown>, pack: string | null = null, version: number | null = null, request = key()) {
+  return rpc<Json>("admin_prepared_pack_command_v1", [adminToken, request, caseId, pack, version, operation, data])
 }
 
 const sendSignatures: Record<string, string[]> = {
@@ -1161,6 +1161,134 @@ describe("guided fulfilment handover", () => {
     expect(await count("select count(*)::int as n from public.guided_customer_reports where case_id = $1 and kind = 'GOOGLE_SUBMISSION'", [caseId])).toBe(2)
     expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
     expect(await count("select count(*)::int as n from public.guard_subscriptions")).toBe(0)
+  })
+
+  it("advances a published Guided pack from preparation to ready for the customer, and rolls that back when publication fails", async () => {
+    const reference = "PR-26-STAGE2"
+    const caseId = await insertCase(reference)
+    expect((await acceptQuote(caseId)).status).toBe("success")
+    await guidedToPaymentRequired(caseId)
+    const statement = await acceptedFile(caseId, "stage-statement.pdf")
+    const instructions = await acceptedFile(caseId, "stage-instructions.pdf")
+    const draft = await packCmd(caseId, "create", {})
+    const added = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, added.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withInstructions.recordVersion)
+    expect(approved.status).toBe("success")
+    const payment = await settle(caseId, "stage2", "evt_stage2")
+    expect(payment.settled.status).toBe("success")
+    const receipts = await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])
+    expect((await rows<{ work_stage: string; next_action: string }>(
+      "select work_stage, next_action from public.cases where id = $1", [caseId],
+    ))[0].work_stage).toBe("PREPARATION")
+    const blocked = await rows<{ value: { status?: string; reason?: string } }>(
+      "select admin_private.advance_guided_published_pack_stage_v1($1, c) as value from public.cases c where c.id = $2",
+      [adminToken, caseId],
+    )
+    expect(blocked[0].value).toMatchObject({ status: "denied", reason: "prerequisite" })
+    expect((await rows<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId]))[0].work_stage).toBe("PREPARATION")
+
+    const partial = await packCmd(caseId, "publish", { note: packNote, confirmed: true, subject: "Only a subject" }, draft.id, approved.recordVersion)
+    expect(partial).toMatchObject({ status: "denied" })
+    expect((await rows<{ published_at: string | null; work_stage: string }>(
+      `select p.published_at, c.work_stage from public.case_prepared_packs p join public.cases c on c.id = p.case_id where p.id = $1`,
+      [draft.id],
+    ))[0]).toMatchObject({ published_at: null, work_stage: "PREPARATION" })
+    expect(await count("select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'to' = 'READY_TO_SUBMIT'", [caseId])).toBe(0)
+
+    await db.query("delete from admin_private.case_transitions where from_stage = 'PREPARATION' and to_stage = 'READY_TO_SUBMIT'")
+    try {
+      const conflicted = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion)
+      expect(conflicted).toMatchObject({ status: "denied", reason: "transition" })
+      expect((await rows<{ published_at: string | null; work_stage: string }>(
+        `select p.published_at, c.work_stage from public.case_prepared_packs p join public.cases c on c.id = p.case_id where p.id = $1`,
+        [draft.id],
+      ))[0]).toMatchObject({ published_at: null, work_stage: "PREPARATION" })
+    } finally {
+      await db.query("insert into admin_private.case_transitions(from_stage, to_stage) values ('PREPARATION', 'READY_TO_SUBMIT') on conflict do nothing")
+    }
+
+    const request = key()
+    const published = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion, request)
+    expect(published, JSON.stringify(published)).toMatchObject({ status: "success", published: true, packEmail: "skipped", workStage: "READY_TO_SUBMIT" })
+    expect(await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, approved.recordVersion, request)).toEqual(published)
+    const again = await packCmd(caseId, "publish", { note: packNote, confirmed: true }, draft.id, published.recordVersion)
+    expect(again).toMatchObject({ status: "success", workStage: "READY_TO_SUBMIT" })
+    const moved = (await rows<{ work_stage: string; status: string; next_action: string; outcome: string | null; closed_at: string | null }>(
+      "select work_stage, status, next_action, outcome, closed_at from public.cases where id = $1",
+      [caseId],
+    ))[0]
+    expect(moved).toMatchObject({
+      work_stage: "READY_TO_SUBMIT",
+      status: "UNDER_REVIEW",
+      next_action: "The customer has the published pack and chooses if and when to submit it to Google. Do not record a Google submission until the customer confirms it.",
+      outcome: null,
+      closed_at: null,
+    })
+    expect(await count("select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'from' = 'PREPARATION' and details->>'to' = 'READY_TO_SUBMIT'", [caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+
+    const beforeMail = await rpc<{ found: boolean; case: { workStage: string }; timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(beforeMail.case.workStage).toBe("READY_TO_SUBMIT")
+    expect(beforeMail.timeline.map(event => event.code)).toContain("PACK_PUBLISHED")
+    expect(beforeMail.timeline.map(event => event.code)).not.toContain("NOTIFICATION_DELIVERED")
+    expect(JSON.stringify(beforeMail)).not.toMatch(/alex@example.com|readAt|openedAt/)
+
+    const withdrawn = await packCmd(caseId, "unpublish", { confirmed: true, reason: packNote }, draft.id, again.recordVersion)
+    expect(withdrawn.status).toBe("success")
+    expect((await rows<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId]))[0].work_stage).toBe("READY_TO_SUBMIT")
+    expect((await rpc<{ pack: unknown }>("customer_portal_case_documents_v1", [alexSession, reference])).pack).toBeNull()
+    const hidden = await rpc<{ timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(hidden.timeline.map(event => event.code)).not.toContain("PACK_PUBLISHED")
+
+    const rendered = renderPackReady({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: payment.order.amount_minor,
+      currency: "GBP",
+      origin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const republished = await packCmd(caseId, "publish", {
+      note: packNote, confirmed: true, ...mailPayload(rendered!, "documents"),
+    }, draft.id, withdrawn.recordVersion)
+    expect(republished).toMatchObject({ status: "success", packEmail: "success", workStage: "READY_TO_SUBMIT" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'transition' and details->>'to' = 'READY_TO_SUBMIT'", [caseId])).toBe(1)
+    const communicationId = (await rows<{ id: string }>("select communication_id as id from public.guided_pack_announcements where pack_id = $1", [draft.id]))[0].id
+    await providerAccept(communicationId, `${origin}/portal/cases/${reference}/documents`)
+    const acceptedOnly = await rpc<{ timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(acceptedOnly.timeline.map(event => event.code)).toContain("PACK_PUBLISHED")
+    expect(acceptedOnly.timeline.map(event => event.code)).not.toContain("NOTIFICATION_DELIVERED")
+    const messageId = (await rows<{ provider_message_id: string }>("select provider_message_id from public.communications where id = $1", [communicationId]))[0].provider_message_id
+    const deliveredAt = "2026-10-30T09:17:00.000Z"
+    expect(await rpc<Json>("communication_apply_provider_event_v1", ["resend", "evt_stage2_delivered", "email.delivered", messageId, deliveredAt])).toMatchObject({ applied: true })
+    expect(await rpc<Json>("communication_apply_provider_event_v1", ["resend", "evt_stage2_delivered", "email.delivered", messageId, deliveredAt])).toMatchObject({ duplicate: true })
+    expect(await rpc<Json>("communication_apply_provider_event_v1", ["resend", "evt_stage2_opened", "email.opened", messageId, "2026-10-30T09:20:00.000Z"])).toMatchObject({ applied: false })
+    const delivered = await rpc<{ timeline: { code: string; occurredAt: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    const deliveredEvents = delivered.timeline.filter(event => event.code === "NOTIFICATION_DELIVERED")
+    expect(deliveredEvents).toHaveLength(1)
+    expect(Date.parse(deliveredEvents[0].occurredAt)).toBe(Date.parse(deliveredAt))
+    expect(delivered.timeline.map(event => event.code)).not.toContain("SUBMITTED_TO_GOOGLE")
+    expect(JSON.stringify(delivered)).not.toMatch(/alex@example.com|readAt|openedAt/)
+    expect((await rows<{ status: string; work_stage: string }>("select status, work_stage from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "UNDER_REVIEW", work_stage: "READY_TO_SUBMIT" })
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+
+    await db.exec("begin")
+    try {
+      await db.query("update public.cases set work_stage = 'PREPARATION' where id = $1", [caseId])
+      expect((await rows<{ ready: boolean }>("select admin_private.case_stage_ready_v1(c, 'READY_TO_SUBMIT') as ready from public.cases c where id = $1", [caseId]))[0].ready).toBe(true)
+      expect(await caseCmd(caseId, "transition", {
+        target: "READY_TO_SUBMIT",
+        nextAction: "The customer has the published pack and chooses if and when to submit it to Google. Do not record a Google submission until the customer confirms it.",
+      })).toMatchObject({ status: "success" })
+    } finally {
+      await db.exec("rollback")
+    }
+    expect((await rows<{ work_stage: string }>("select work_stage from public.cases where id = $1", [caseId]))[0].work_stage).toBe("READY_TO_SUBMIT")
   })
 
   it("keeps the new handover tables closed to portal and service roles", async () => {

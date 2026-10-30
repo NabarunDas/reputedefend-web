@@ -28,10 +28,12 @@ export function CaseWorkspace({
   detail,
   commerce = null,
   packHref = null,
+  packPublished,
 }: {
   detail: CustomerCaseDetail
   commerce?: CaseCommerce | null
   packHref?: string | null
+  packPublished?: boolean
 }) {
   const item = detail.case
   const state = customerCaseState(item.status, item.workStage, item.attentionItems.length)
@@ -40,6 +42,7 @@ export function CaseWorkspace({
     serviceTrack: item.serviceTrack,
     outcomeCode: item.outcomeCode,
     timeline: detail.timeline,
+    packPublished,
   })
   const timeline = presentTimeline(detail)
   const details = presentDetailRows(detail, commerce)

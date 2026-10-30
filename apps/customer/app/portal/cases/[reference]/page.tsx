@@ -31,5 +31,5 @@ export default async function CustomerCasePage({ params }: { params: Promise<{ r
     if (documents.status === "unauthenticated") redirect("/login")
     if (documents.status === "ready" && documents.documents.pack) packHref = `/portal/cases/${reference}/documents`
   }
-  return <CaseWorkspace detail={loaded.detail} commerce={commerce} packHref={packHref} />
+  return <CaseWorkspace detail={loaded.detail} commerce={commerce} packHref={packHref} packPublished={handover ? packHref !== null : undefined} />
 }

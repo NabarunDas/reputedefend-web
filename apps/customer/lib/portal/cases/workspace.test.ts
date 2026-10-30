@@ -82,6 +82,9 @@ describe("customer progress presentation", () => {
     ])
     const ready = presentProgress("UNDER_REVIEW", "READY_TO_SUBMIT", { serviceTrack: "GUIDED" })
     expect(ready?.find(step => step.position === "current")?.label).toBe("Pack ready for you")
+    const unpublished = presentProgress("UNDER_REVIEW", "READY_TO_SUBMIT", { serviceTrack: "GUIDED", packPublished: false })
+    expect(unpublished?.find(step => step.position === "current")?.label).toBe("Preparing your pack")
+    expect(unpublished?.find(step => step.code === "HANDOVER")?.position).toBe("upcoming")
     expect(ready?.some(step => step.code === "SUBMITTED" || step.code === "DECISION")).toBe(false)
     const handedOver = presentProgress("CLOSED", "FINISHED", { serviceTrack: "GUIDED", outcomeCode: null })
     expect(handedOver?.find(step => step.position === "current")?.code).toBe("HANDOVER")
@@ -162,8 +165,8 @@ describe("what happens next", () => {
       href: null,
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "READY_TO_SUBMIT", serviceTrack: "GUIDED" })).toMatchObject({
-      title: "Your pack is ready",
-      body: "Your preparation is ready. The pack will appear here when it is available for you.",
+      title: "We're preparing your pack",
+      body: "Nothing is needed from you right now. We'll let you know when your pack is ready.",
       href: null,
       actionLabel: null,
     })
@@ -174,9 +177,10 @@ describe("what happens next", () => {
       serviceTrack: "GUIDED",
       packHref: "/portal/cases/PR-26-ABCDEF/documents",
     })).toMatchObject({
-      title: "Your pack is ready",
+      title: "Pack ready for you",
+      body: "Download your documents. You choose if and when to send them to Google. We have not sent them.",
       href: "/portal/cases/PR-26-ABCDEF/documents",
-      actionLabel: "Open your pack",
+      actionLabel: "Download your pack",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED" })).toMatchObject({
       title: "Your case has been submitted",
@@ -277,6 +281,8 @@ describe("timeline wording", () => {
     expect(timelineMessage("SERVICE_AGREEMENT_WITHDRAWN", null)).toBe("The service agreement authorisation was withdrawn.")
     expect(timelineMessage("CASE_PERMISSION_WITHDRAWN", null)).toBe("Case-management permission was withdrawn.")
     expect(timelineMessage("PAYMENT_RECEIVED", null)).toBe("We received a payment for this case.")
+    expect(timelineMessage("PACK_PUBLISHED", null)).toBe("Your pack was published for you to download.")
+    expect(timelineMessage("NOTIFICATION_DELIVERED", null)).toBe("The pack-ready email was delivered. That record is not you reading it.")
     expect(timelineMessage("SUBMITTED_TO_GOOGLE", null)).toBe("Your case was submitted to Google.")
     expect(timelineMessage("GOOGLE_DECISION_RECORDED", null)).toBe("A Google decision was recorded for your case.")
     expect(timelineMessage("CASE_COMPLETED", null)).toBe("This ProfileRelaunch case was completed.")

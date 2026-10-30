@@ -38,6 +38,8 @@ export type CustomerProgressStep =
 export type ProgressEvidence = {
   outcomeCode?: OutcomeCode | null
   timeline?: readonly { code: CustomerTimelineCode }[]
+  /** False only after a documents read found no current published pack. */
+  packPublished?: boolean
 }
 
 export type ProgressPosition = "earlier" | "current" | "upcoming"
@@ -59,6 +61,8 @@ const TIMELINE_MESSAGES: Record<CustomerTimelineCode, string> = {
   SERVICE_AGREEMENT_WITHDRAWN: "The service agreement authorisation was withdrawn.",
   CASE_PERMISSION_WITHDRAWN: "Case-management permission was withdrawn.",
   PAYMENT_RECEIVED: "We received a payment for this case.",
+  PACK_PUBLISHED: "Your pack was published for you to download.",
+  NOTIFICATION_DELIVERED: "The pack-ready email was delivered. That record is not you reading it.",
   SUBMITTED_TO_GOOGLE: "Your case was submitted to Google.",
   GOOGLE_DECISION_RECORDED: "A Google decision was recorded for your case.",
   CASE_COMPLETED: "This ProfileRelaunch case was completed.",
@@ -125,7 +129,7 @@ export function customerProgressStep(
     const atOutcome = status === "CLOSED" || workStage === "OUTCOME_REVIEW" || workStage === "FINISHED"
     if (google.decision && atOutcome) return "DECISION"
     if (SUBMISSION_STAGES.has(workStage)) return "SUBMISSION"
-    if (workStage === "READY_TO_SUBMIT") return "HANDOVER"
+    if (workStage === "READY_TO_SUBMIT") return evidence?.packPublished === false ? "PREPARATION" : "HANDOVER"
     if (workStage === "OUTCOME_REVIEW" || workStage === "FINISHED" || status === "CLOSED") {
       return google.submission ? "SUBMISSION" : workStage === "FINISHED" || workStage === "OUTCOME_REVIEW" ? "HANDOVER" : stageStep(workStage)
     }
@@ -150,7 +154,7 @@ export function presentProgress(
   options?: { serviceTrack?: string } & ProgressEvidence,
 ): PresentedProgressStep[] | null {
   const serviceTrack = options?.serviceTrack
-  const evidence = { outcomeCode: options?.outcomeCode, timeline: options?.timeline }
+  const evidence = { outcomeCode: options?.outcomeCode, timeline: options?.timeline, packPublished: options?.packPublished }
   const current = customerProgressStep(status, workStage, serviceTrack, evidence)
   if (!current) return null
   const steps = progressList(current, serviceTrack, evidence)
@@ -286,17 +290,27 @@ export function presentNextStep(input: {
   }
   if (state === "IN_PROGRESS" && input.workStage === "READY_TO_SUBMIT") {
     const packHref = input.serviceTrack === "GUIDED" ? input.packHref ?? null : null
+    if (input.serviceTrack === "GUIDED" && !packHref) {
+      return {
+        title: "We're preparing your pack",
+        body: "Nothing is needed from you right now. We'll let you know when your pack is ready.",
+        timing: null,
+        support: null,
+        href: null,
+        actionLabel: null,
+        alsoWaiting: null,
+        remaining: [],
+      }
+    }
     return {
-      title: input.serviceTrack === "GUIDED" ? "Your pack is ready" : "We're preparing your case",
+      title: input.serviceTrack === "GUIDED" ? "Pack ready for you" : "We're preparing your case",
       body: input.serviceTrack === "GUIDED"
-        ? packHref
-          ? "Your preparation pack is ready for you. You choose if and when to send it to Google."
-          : "Your preparation is ready. The pack will appear here when it is available for you."
+        ? "Download your documents. You choose if and when to send them to Google. We have not sent them."
         : "Nothing is needed from you right now. We'll let you know when that changes.",
       timing: null,
       support: null,
       href: packHref,
-      actionLabel: packHref ? "Open your pack" : null,
+      actionLabel: packHref ? "Download your pack" : null,
       alsoWaiting: null,
       remaining: [],
     }

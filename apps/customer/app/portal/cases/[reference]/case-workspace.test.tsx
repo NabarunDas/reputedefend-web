@@ -246,6 +246,35 @@ describe("customer case workspace", () => {
     expect(screen.queryByText("Decision")).toBeNull()
   })
 
+  it("shows a published Guided pack as ready to download, and preparation when that pack is withdrawn", () => {
+    const published = detail({
+      attentionItems: [],
+      status: "UNDER_REVIEW",
+      workStage: "READY_TO_SUBMIT",
+    }, {
+      timeline: [
+        { code: "NOTIFICATION_DELIVERED", occurredAt: "2026-10-30T09:17:00.000Z" },
+        { code: "PACK_PUBLISHED", occurredAt: "2026-10-30T09:16:00.000Z" },
+        { code: "CASE_RECEIVED", occurredAt: submittedAt },
+      ],
+    })
+    const { rerender } = render(<CaseWorkspace detail={published} packHref="/portal/cases/PR-26-ABCDEF/documents" packPublished />)
+    expect(screen.getByRole("heading", { name: "Pack ready for you" })).toBeTruthy()
+    expect(screen.getByText("Download your documents. You choose if and when to send them to Google. We have not sent them.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download your pack" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
+    const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
+    expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Pack ready for you")
+    expect(screen.getByText("Your pack was published for you to download.")).toBeTruthy()
+    expect(screen.getByText("The pack-ready email was delivered. That record is not you reading it.")).toBeTruthy()
+    expect(screen.queryByText("Submitted to Google")).toBeNull()
+
+    rerender(<CaseWorkspace detail={published} packHref={null} packPublished={false} />)
+    expect(screen.getByRole("heading", { name: "We're preparing your pack" })).toBeTruthy()
+    expect(screen.getByText("Nothing is needed from you right now. We'll let you know when your pack is ready.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Download your pack" })).toBeNull()
+    expect(screen.getByRole("heading", { name: "Progress" }).parentElement?.querySelector("[aria-current='step']")).toHaveTextContent("Preparing your pack")
+  })
+
   it("shows a load failure that is not a missing case", () => {
     render(<CaseUnavailable />)
     expect(screen.getByRole("heading", { level: 1, name: "We couldn't load this case" })).toBeTruthy()

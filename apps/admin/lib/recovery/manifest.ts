@@ -1145,6 +1145,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Shared develop mail dispatch", probe: "public.dev_mail_dispatch_recovery_v1" },
   },
+  {
+    // Guided pack publication advances PREPARATION to READY_TO_SUBMIT through
+    // the existing case command. Source only. Not applied to DEV or Production.
+    // Do not apply it without a separate approval. It does not update a live
+    // case, send mail, or close a case.
+    version: "20261030120000",
+    filename: "20261030120000_guided_pack_stage_sync_v1.sql",
+    step: "Guided pack publication advances the case to ready for customer submission",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided pack stage", probe: "admin_private.advance_guided_published_pack_stage_v1" },
+  },
 ]
 
 /**
@@ -1160,7 +1174,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * not be replayed. It is not applied to Production. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * unapplied `20261030120000_guided_pack_stage_sync_v1.sql`. Do not apply it
+ * without a separate approval, and do not apply it to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!
